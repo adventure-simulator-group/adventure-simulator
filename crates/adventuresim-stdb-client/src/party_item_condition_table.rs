@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::party_item_condition_type::PartyItemCondition;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `party_item_condition`.
 ///
@@ -36,7 +31,9 @@ pub trait PartyItemConditionTableAccess {
 impl PartyItemConditionTableAccess for super::RemoteTables {
     fn party_item_condition(&self) -> PartyItemConditionTableHandle<'_> {
         PartyItemConditionTableHandle {
-            imp: self.imp.get_table::<PartyItemCondition>("party_item_condition"),
+            imp: self
+                .imp
+                .get_table::<PartyItemCondition>("party_item_condition"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for PartyItemConditionTableHandle<'ctx> {
     type Row = PartyItemCondition;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = PartyItemCondition> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PartyItemCondition> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = PartyItemConditionInsertCallbackId;
 
@@ -96,41 +97,44 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PartyItemConditionTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `party_inventory_item_id` unique index on the table `party_item_condition`,
-        /// which allows point queries on the field of the same name
-        /// via the [`PartyItemConditionPartyInventoryItemIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.party_item_condition().party_inventory_item_id().find(...)`.
-        pub struct PartyItemConditionPartyInventoryItemIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<PartyItemCondition, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `party_inventory_item_id` unique index on the table `party_item_condition`,
+/// which allows point queries on the field of the same name
+/// via the [`PartyItemConditionPartyInventoryItemIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.party_item_condition().party_inventory_item_id().find(...)`.
+pub struct PartyItemConditionPartyInventoryItemIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<PartyItemCondition, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> PartyItemConditionTableHandle<'ctx> {
-            /// Get a handle on the `party_inventory_item_id` unique index on the table `party_item_condition`.
-            pub fn party_inventory_item_id(&self) -> PartyItemConditionPartyInventoryItemIdUnique<'ctx> {
-                PartyItemConditionPartyInventoryItemIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("party_inventory_item_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> PartyItemConditionTableHandle<'ctx> {
+    /// Get a handle on the `party_inventory_item_id` unique index on the table `party_item_condition`.
+    pub fn party_inventory_item_id(&self) -> PartyItemConditionPartyInventoryItemIdUnique<'ctx> {
+        PartyItemConditionPartyInventoryItemIdUnique {
+            imp: self
+                .imp
+                .get_unique_constraint::<u64>("party_inventory_item_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> PartyItemConditionPartyInventoryItemIdUnique<'ctx> {
-            /// Find the subscribed row whose `party_inventory_item_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<PartyItemCondition> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> PartyItemConditionPartyInventoryItemIdUnique<'ctx> {
+    /// Find the subscribed row whose `party_inventory_item_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<PartyItemCondition> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<PartyItemCondition>("party_item_condition");
-    _table.add_unique_constraint::<u64>("party_inventory_item_id", |row| &row.party_inventory_item_id);
+    _table.add_unique_constraint::<u64>("party_inventory_item_id", |row| {
+        &row.party_inventory_item_id
+    });
 }
 
 #[doc(hidden)]
@@ -138,26 +142,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<PartyItemCondition>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<PartyItemCondition>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<PartyItemCondition>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `PartyItemCondition`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait party_item_conditionQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `PartyItemCondition`.
-            fn party_item_condition(&self) -> __sdk::__query_builder::Table<PartyItemCondition>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PartyItemCondition`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait party_item_conditionQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PartyItemCondition`.
+    fn party_item_condition(&self) -> __sdk::__query_builder::Table<PartyItemCondition>;
+}
 
-        impl party_item_conditionQueryTableAccess for __sdk::QueryTableAccessor {
-            fn party_item_condition(&self) -> __sdk::__query_builder::Table<PartyItemCondition> {
-                __sdk::__query_builder::Table::new("party_item_condition")
-            }
-        }
-
+impl party_item_conditionQueryTableAccess for __sdk::QueryTableAccessor {
+    fn party_item_condition(&self) -> __sdk::__query_builder::Table<PartyItemCondition> {
+        __sdk::__query_builder::Table::new("party_item_condition")
+    }
+}

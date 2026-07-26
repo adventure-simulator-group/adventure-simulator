@@ -2,27 +2,22 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::settlement_description_batch_row_type::SettlementDescriptionBatchRow;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ImportSettlementDescriptionsArgs {
-    pub descriptions: Vec::<SettlementDescriptionBatchRow>,
+    pub descriptions: Vec<SettlementDescriptionBatchRow>,
 }
 
 impl From<ImportSettlementDescriptionsArgs> for super::Reducer {
     fn from(args: ImportSettlementDescriptionsArgs) -> Self {
         Self::ImportSettlementDescriptions {
             descriptions: args.descriptions,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for ImportSettlementDescriptionsArgs {
@@ -40,9 +35,11 @@ pub trait import_settlement_descriptions {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`import_settlement_descriptions:import_settlement_descriptions_then`] to run a callback after the reducer completes.
-    fn import_settlement_descriptions(&self, descriptions: Vec::<SettlementDescriptionBatchRow>,
-) -> __sdk::Result<()> {
-        self.import_settlement_descriptions_then(descriptions,  |_, _| {})
+    fn import_settlement_descriptions(
+        &self,
+        descriptions: Vec<SettlementDescriptionBatchRow>,
+    ) -> __sdk::Result<()> {
+        self.import_settlement_descriptions_then(descriptions, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `import_settlement_descriptions` to run as soon as possible,
@@ -53,24 +50,30 @@ pub trait import_settlement_descriptions {
     ///  and its status can be observed with the `callback`.
     fn import_settlement_descriptions_then(
         &self,
-        descriptions: Vec::<SettlementDescriptionBatchRow>,
+        descriptions: Vec<SettlementDescriptionBatchRow>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl import_settlement_descriptions for super::RemoteReducers {
     fn import_settlement_descriptions_then(
         &self,
-        descriptions: Vec::<SettlementDescriptionBatchRow>,
+        descriptions: Vec<SettlementDescriptionBatchRow>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ImportSettlementDescriptionsArgs { descriptions,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            ImportSettlementDescriptionsArgs { descriptions },
+            callback,
+        )
     }
 }
-

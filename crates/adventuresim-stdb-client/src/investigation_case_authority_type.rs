@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,11 +13,9 @@ pub struct InvestigationCaseAuthority {
     pub generation_explanation_json: String,
 }
 
-
 impl __sdk::InModule for InvestigationCaseAuthority {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `InvestigationCaseAuthority`.
 ///
@@ -32,7 +24,8 @@ pub struct InvestigationCaseAuthorityCols {
     pub id: __sdk::__query_builder::Col<InvestigationCaseAuthority, String>,
     pub problem_id: __sdk::__query_builder::Col<InvestigationCaseAuthority, String>,
     pub hidden_target_json: __sdk::__query_builder::Col<InvestigationCaseAuthority, String>,
-    pub generation_explanation_json: __sdk::__query_builder::Col<InvestigationCaseAuthority, String>,
+    pub generation_explanation_json:
+        __sdk::__query_builder::Col<InvestigationCaseAuthority, String>,
 }
 
 impl __sdk::__query_builder::HasCols for InvestigationCaseAuthority {
@@ -42,8 +35,10 @@ impl __sdk::__query_builder::HasCols for InvestigationCaseAuthority {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             problem_id: __sdk::__query_builder::Col::new(table_name, "problem_id"),
             hidden_target_json: __sdk::__query_builder::Col::new(table_name, "hidden_target_json"),
-            generation_explanation_json: __sdk::__query_builder::Col::new(table_name, "generation_explanation_json"),
-
+            generation_explanation_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "generation_explanation_json",
+            ),
         }
     }
 }
@@ -60,10 +55,8 @@ impl __sdk::__query_builder::HasIxCols for InvestigationCaseAuthority {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InvestigationCaseAuthorityIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationCaseAuthority {}
-

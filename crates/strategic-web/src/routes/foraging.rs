@@ -9,6 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeSet,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -17,8 +18,9 @@ use super::{AppState, local_return_url, persisted_route_position};
 use crate::{
     session::Session,
     spacetimedb::{
-        BackendCaseSitePin, BackendForageReceipt, Character, Party, PartyJourney,
-        PartyJourneyRoute, Settlement, sql_string_literal,
+        BackendCaseSitePin, BackendForageReceipt, Character, CharacterTime, OrganizationMembership,
+        OrganizationPresentation, Party, PartyJourney, PartyJourneyRoute, Settlement,
+        sql_string_literal,
     },
 };
 
@@ -38,7 +40,7 @@ struct ForageQuery {
 #[derive(Deserialize)]
 struct ForageForm {
     #[serde(default)]
-    target: Vec<String>,
+    source: Vec<String>,
     hours: u8,
     return_to: String,
 }
@@ -49,6 +51,125 @@ struct Vicinity {
     latitude: f64,
     longitude: f64,
     settlement: bool,
+}
+
+fn source_privilege(
+    source: adventuresim_core::foraging::ForageSource,
+) -> Option<adventuresim_core::organization::Privilege> {
+    use adventuresim_core::foraging::ForageSource;
+    use adventuresim_core::organization::Privilege;
+    Some(match source {
+        ForageSource::HighGame => Privilege::ForageHighGame,
+        ForageSource::LowGame => Privilege::ForageLowGame,
+        ForageSource::Fish => Privilege::ForageFish,
+        ForageSource::Plants => Privilege::ForagePlants,
+        ForageSource::HarmfulBeasts => return None,
+    })
+}
+
+async fn advisory_privileges(
+    state: &AppState,
+    character_id: u64,
+) -> BTreeSet<adventuresim_core::organization::Privilege> {
+    let presentation = state
+        .db
+        .query_one::<OrganizationPresentation>(&format!(
+            "SELECT * FROM organization_presentation WHERE character_id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten();
+    let memberships = state
+        .db
+        .query::<OrganizationMembership>(&format!(
+            "SELECT * FROM organization_membership WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let minute = state
+        .db
+        .query_one::<CharacterTime>(&format!(
+            "SELECT * FROM character_time WHERE character_id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .map(|row| row.minutes);
+    advisory_privileges_for(
+        presentation
+            .as_ref()
+            .map(|presentation| presentation.organization_id.as_str()),
+        &memberships,
+        minute,
+    )
+}
+
+fn advisory_privileges_for(
+    presented_organization_id: Option<&str>,
+    memberships: &[OrganizationMembership],
+    minute: Option<u64>,
+) -> BTreeSet<adventuresim_core::organization::Privilege> {
+    let Some((presented_organization_id, minute)) = presented_organization_id.zip(minute) else {
+        return BTreeSet::new();
+    };
+    let Some(definition) = adventuresim_core::organization::organization(presented_organization_id)
+    else {
+        return BTreeSet::new();
+    };
+    let Some(membership) = memberships.iter().find(|membership| {
+        membership.organization_id == presented_organization_id
+            && membership.status == "active"
+            && minute <= membership.dues_paid_through_minute
+    }) else {
+        return BTreeSet::new();
+    };
+    [
+        adventuresim_core::organization::Privilege::ForageHighGame,
+        adventuresim_core::organization::Privilege::ForageLowGame,
+        adventuresim_core::organization::Privilege::ForageFish,
+        adventuresim_core::organization::Privilege::ForagePlants,
+    ]
+    .into_iter()
+    .filter(|privilege| definition.has_privilege_at_rank(&membership.rank_id, *privilege))
+    .collect()
+}
+
+fn source_rows(
+    environment: adventuresim_core::foraging::ForageEnvironment,
+    privileges: &BTreeSet<adventuresim_core::organization::Privilege>,
+) -> Markup {
+    html! {
+        @for source in adventuresim_core::foraging::ForageSource::ALL {
+            @let available = adventuresim_core::foraging::source_available(source, environment);
+            @let licensed = source_privilege(source)
+                .is_none_or(|privilege| privileges.contains(&privilege));
+            @let tooltip = (!licensed).then_some(
+                "Your presented profession does not grant the hunting license required for this source. Selecting it is poaching."
+            );
+            label class=(format!(
+                    "forage-source-row{}{}",
+                    if !licensed { " forage-source-unlicensed" } else { "" },
+                    if !available { " forage-source-unavailable" } else { "" }
+                ))
+                tabindex=[(!licensed && available).then_some("0")]
+                data-strategic-tooltip=[tooltip] {
+                input type="checkbox" name="source" value=(source.id()) disabled[!available];
+                span class="forage-source-copy" {
+                    strong { (source.name()) }
+                    span { (source.description()) }
+                }
+                @if !available {
+                    span class="forage-source-status" { "Unavailable here" }
+                } @else if !licensed {
+                    span class="forage-source-status" { "Unlicensed" }
+                } @else if !source.requires_license() {
+                    span class="forage-source-status" { "No license required" }
+                } @else {
+                    span class="forage-source-status" { "Licensed" }
+                }
+            }
+        }
+    }
 }
 
 async fn vicinity(state: &AppState, character: &Character) -> Result<Vicinity, String> {
@@ -175,7 +296,7 @@ fn forage_result_href(return_to: &str, request_id: &str) -> String {
 fn forage_error_message(code: &str) -> Option<&'static str> {
     match code {
         "location" => Some("Foraging is unavailable at this location."),
-        "targets" => Some("Choose valid forage targets and try again."),
+        "targets" => Some("Choose valid forage sources and try again."),
         "duration" => Some("Choose a valid search duration and try again."),
         "unavailable" => Some("The search could not be completed."),
         _ => None,
@@ -184,7 +305,7 @@ fn forage_error_message(code: &str) -> Option<&'static str> {
 
 fn forage_error_code(error: &str) -> &'static str {
     let error = error.to_ascii_lowercase();
-    if error.contains("target") || error.contains("resource") {
+    if error.contains("target") || error.contains("resource") || error.contains("source") {
         "targets"
     } else if error.contains("hour") || error.contains("minute") || error.contains("duration") {
         "duration"
@@ -283,6 +404,7 @@ async fn environment(
         sea_or_coast: coastal,
         cultivated: cell.cultivated,
         settlement: location.settlement,
+        license_violation: false,
     };
     let attestation = json!({
         "package_digest": terrain.digest(),
@@ -329,15 +451,7 @@ pub(crate) async fn activity_dialog(
             ),
         ),
     };
-    let resources = environment
-        .as_ref()
-        .map(|environment| {
-            adventuresim_core::foraging::FORAGE_RESOURCES
-                .iter()
-                .filter(|resource| adventuresim_core::foraging::available(resource, *environment))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let privileges = advisory_privileges(state, character.id).await;
     let illegal =
         environment.is_some_and(|environment| environment.settlement || environment.cultivated);
     html! {
@@ -350,7 +464,7 @@ pub(crate) async fn activity_dialog(
                     h2 id="forage-title" { "Forage nearby" }
                     a class="character-action-dialog-close" href=(return_to) aria-label="Close foraging dialog" { "×" }
                 }
-                p id="forage-description" { "Search only the character's immediate vicinity. Multiple targets share the selected time." }
+                p id="forage-description" { "Search only the character's immediate vicinity. Selected sources share the search time." }
                 @if let Some(receipt) = receipt.as_ref() {
                     (forage_receipt_status(receipt))
                     div class="modal-actions" {
@@ -370,15 +484,10 @@ pub(crate) async fn activity_dialog(
                     }
                     form method="post" action="/forage" {
                         input type="hidden" name="return_to" value=(return_to);
-                        p id="forage-target-limit" class="text-muted small-copy" { "Choose at most eight targets. Every selected target shares the same search time." }
-                        fieldset id="forage-targets" aria-describedby="forage-target-limit" {
-                            legend { "Targets" }
-                            @for resource in resources {
-                                label class="inventory-row" {
-                                    input type="checkbox" name="target" value=(resource.item_id);
-                                    span { (resource.name) " · " (format!("{:?}", resource.rarity)) }
-                                }
-                            }
+                        p id="forage-source-help" class="text-muted small-copy" { "Choose food sources. Selected categories share one search-time budget." }
+                        fieldset id="forage-targets" aria-describedby="forage-source-help" {
+                            legend { "Food sources" }
+                            (source_rows(environment.expect("available environment"), &privileges))
                         }
                         label for="forage-hours" { "Search plan" }
                         input id="forage-hours" name="hours" type="range" min="1" max="24" value="4"
@@ -460,7 +569,7 @@ async fn perform(
                 &[
                     json!(character_id),
                     json!(&request_id),
-                    json!(&form.target),
+                    json!(&form.source),
                     json!(minutes),
                     attestation,
                 ],
@@ -489,6 +598,85 @@ async fn perform(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mixed_environment() -> adventuresim_core::foraging::ForageEnvironment {
+        adventuresim_core::foraging::ForageEnvironment {
+            terrain: adventuresim_core::foraging::LocalTerrainMixture {
+                plains: 400,
+                forest: 400,
+                hills: 200,
+            },
+            river_or_wet_ground: true,
+            sea_or_coast: false,
+            cultivated: false,
+            settlement: false,
+            license_violation: false,
+        }
+    }
+
+    #[test]
+    fn source_markup_is_ordered_accessible_and_keeps_poaching_enabled() {
+        let markup = source_rows(mixed_environment(), &BTreeSet::new()).into_string();
+        let positions = ["High Game", "Low Game", "Fish", "Harmful Beasts", "Plants"]
+            .map(|label| markup.find(label).unwrap());
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(markup.matches("type=\"checkbox\"").count(), 5);
+        assert_eq!(markup.matches("Unlicensed").count(), 4);
+        assert!(markup.contains("No license required"));
+        assert!(markup.contains("forage-source-unlicensed"));
+        assert!(markup.contains("data-strategic-tooltip="));
+        assert!(!markup.contains("title="));
+        assert!(!markup.contains("value=\"high_game\" disabled"));
+    }
+
+    #[test]
+    fn unavailable_source_remains_visible_and_disabled() {
+        let mut environment = mixed_environment();
+        environment.river_or_wet_ground = false;
+        let markup = source_rows(environment, &BTreeSet::new()).into_string();
+        assert!(markup.contains("value=\"fish\" disabled"));
+        assert!(markup.contains("Unavailable here"));
+    }
+
+    fn ranger_membership(rank_id: &str, status: &str, paid_through: u64) -> OrganizationMembership {
+        OrganizationMembership {
+            id: 1,
+            character_id: 7,
+            organization_id: "wardens_harz".into(),
+            rank_id: rank_id.into(),
+            joined_minute: 0,
+            dues_paid_through_minute: paid_through,
+            status: status.into(),
+            apprenticeship_minutes_accrued: 0,
+            practice_minutes_accrued: 0,
+        }
+    }
+
+    #[test]
+    fn advisory_licenses_require_matching_current_presentation_and_rank() {
+        use adventuresim_core::organization::Privilege;
+        let warden = ranger_membership("warden", "active", 100);
+        let common = advisory_privileges_for(Some("wardens_harz"), &[warden.clone()], Some(100));
+        assert!(common.contains(&Privilege::ForageLowGame));
+        assert!(common.contains(&Privilege::ForageFish));
+        assert!(common.contains(&Privilege::ForagePlants));
+        assert!(!common.contains(&Privilege::ForageHighGame));
+
+        let master = ranger_membership("master", "active", 100);
+        assert!(
+            advisory_privileges_for(Some("wardens_harz"), &[master], Some(100))
+                .contains(&Privilege::ForageHighGame)
+        );
+        assert!(advisory_privileges_for(None, &[warden.clone()], Some(100)).is_empty());
+        assert!(
+            advisory_privileges_for(Some("keepers_solling"), &[warden.clone()], Some(100))
+                .is_empty()
+        );
+        let lapsed = ranger_membership("master", "active", 99);
+        assert!(advisory_privileges_for(Some("wardens_harz"), &[lapsed], Some(100)).is_empty());
+        let suspended = ranger_membership("master", "suspended", 100);
+        assert!(advisory_privileges_for(Some("wardens_harz"), &[suspended], Some(100)).is_empty());
+    }
 
     #[test]
     fn receipt_lookup_is_exact_for_character_and_opaque_request() {

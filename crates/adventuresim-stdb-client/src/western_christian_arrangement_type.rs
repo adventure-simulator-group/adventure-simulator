@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::catholic_lutheran_church_type::CatholicLutheranChurch;
 use super::catholic_reformed_church_type::CatholicReformedChurch;
@@ -21,12 +16,8 @@ pub enum WesternChristianArrangement {
     CatholicReformed(CatholicReformedChurch),
 
     LutheranReformed(LutheranReformedChurch),
-
 }
-
-
 
 impl __sdk::InModule for WesternChristianArrangement {
     type Module = super::RemoteModule;
 }
-

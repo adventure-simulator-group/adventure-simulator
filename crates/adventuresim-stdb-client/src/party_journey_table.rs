@@ -2,15 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-use super::party_journey_type::PartyJourney;
 use super::camp_duration_mode_type::CampDurationMode;
 use super::journey_endpoint_type::JourneyEndpoint;
+use super::party_journey_type::PartyJourney;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `party_journey`.
 ///
@@ -51,8 +46,12 @@ impl<'ctx> __sdk::Table for PartyJourneyTableHandle<'ctx> {
     type Row = PartyJourney;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = PartyJourney> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PartyJourney> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = PartyJourneyInsertCallbackId;
 
@@ -83,8 +82,7 @@ impl<'ctx> __sdk::Table for PartyJourneyTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<PartyJourney>("party_journey");
+    let _table = client_cache.get_or_make_table::<PartyJourney>("party_journey");
 }
 
 #[doc(hidden)]
@@ -92,26 +90,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<PartyJourney>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<PartyJourney>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<PartyJourney>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `PartyJourney`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait party_journeyQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `PartyJourney`.
-            fn party_journey(&self) -> __sdk::__query_builder::Table<PartyJourney>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PartyJourney`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait party_journeyQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PartyJourney`.
+    fn party_journey(&self) -> __sdk::__query_builder::Table<PartyJourney>;
+}
 
-        impl party_journeyQueryTableAccess for __sdk::QueryTableAccessor {
-            fn party_journey(&self) -> __sdk::__query_builder::Table<PartyJourney> {
-                __sdk::__query_builder::Table::new("party_journey")
-            }
-        }
-
+impl party_journeyQueryTableAccess for __sdk::QueryTableAccessor {
+    fn party_journey(&self) -> __sdk::__query_builder::Table<PartyJourney> {
+        __sdk::__query_builder::Table::new("party_journey")
+    }
+}

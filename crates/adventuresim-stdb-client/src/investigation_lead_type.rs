@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -35,11 +29,9 @@ pub struct InvestigationLead {
     pub recorded_at: u64,
 }
 
-
 impl __sdk::InModule for InvestigationLead {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `InvestigationLead`.
 ///
@@ -84,14 +76,25 @@ impl __sdk::__query_builder::HasCols for InvestigationLead {
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             witness_name: __sdk::__query_builder::Col::new(table_name, "witness_name"),
-            witness_description: __sdk::__query_builder::Col::new(table_name, "witness_description"),
-            witness_occupation_or_relationship: __sdk::__query_builder::Col::new(table_name, "witness_occupation_or_relationship"),
+            witness_description: __sdk::__query_builder::Col::new(
+                table_name,
+                "witness_description",
+            ),
+            witness_occupation_or_relationship: __sdk::__query_builder::Col::new(
+                table_name,
+                "witness_occupation_or_relationship",
+            ),
             expected_location: __sdk::__query_builder::Col::new(table_name, "expected_location"),
-            current_learned_location: __sdk::__query_builder::Col::new(table_name, "current_learned_location"),
-            contradiction_group: __sdk::__query_builder::Col::new(table_name, "contradiction_group"),
+            current_learned_location: __sdk::__query_builder::Col::new(
+                table_name,
+                "current_learned_location",
+            ),
+            contradiction_group: __sdk::__query_builder::Col::new(
+                table_name,
+                "contradiction_group",
+            ),
             corrected_by: __sdk::__query_builder::Col::new(table_name, "corrected_by"),
             recorded_at: __sdk::__query_builder::Col::new(table_name, "recorded_at"),
-
         }
     }
 }
@@ -111,11 +114,12 @@ impl __sdk::__query_builder::HasIxCols for InvestigationLead {
         InvestigationLeadIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
-
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationLead {}
-

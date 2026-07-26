@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_site_id_type::CaseSiteId;
 use super::hostile_resolution_kind_type::HostileResolutionKind;
@@ -18,22 +13,20 @@ use super::mission_attempt_status_type::MissionAttemptStatus;
 pub struct MissionAuthority {
     pub id: String,
     pub party_id: String,
-    pub case_site_id: Option::<CaseSiteId>,
-    pub hostile_group_id: Option::<String>,
+    pub case_site_id: Option<CaseSiteId>,
+    pub hostile_group_id: Option<String>,
     pub observer_character_id: u64,
     pub case_id: String,
     pub outcome_entropy: u64,
     pub status: MissionAttemptStatus,
-    pub committed_resolution: Option::<HostileResolutionKind>,
-    pub committed_capture_subject_id: Option::<String>,
+    pub committed_resolution: Option<HostileResolutionKind>,
+    pub committed_capture_subject_id: Option<String>,
     pub scene_key: String,
 }
-
 
 impl __sdk::InModule for MissionAuthority {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `MissionAuthority`.
 ///
@@ -41,14 +34,15 @@ impl __sdk::InModule for MissionAuthority {
 pub struct MissionAuthorityCols {
     pub id: __sdk::__query_builder::Col<MissionAuthority, String>,
     pub party_id: __sdk::__query_builder::Col<MissionAuthority, String>,
-    pub case_site_id: __sdk::__query_builder::Col<MissionAuthority, Option::<CaseSiteId>>,
-    pub hostile_group_id: __sdk::__query_builder::Col<MissionAuthority, Option::<String>>,
+    pub case_site_id: __sdk::__query_builder::Col<MissionAuthority, Option<CaseSiteId>>,
+    pub hostile_group_id: __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
     pub observer_character_id: __sdk::__query_builder::Col<MissionAuthority, u64>,
     pub case_id: __sdk::__query_builder::Col<MissionAuthority, String>,
     pub outcome_entropy: __sdk::__query_builder::Col<MissionAuthority, u64>,
     pub status: __sdk::__query_builder::Col<MissionAuthority, MissionAttemptStatus>,
-    pub committed_resolution: __sdk::__query_builder::Col<MissionAuthority, Option::<HostileResolutionKind>>,
-    pub committed_capture_subject_id: __sdk::__query_builder::Col<MissionAuthority, Option::<String>>,
+    pub committed_resolution:
+        __sdk::__query_builder::Col<MissionAuthority, Option<HostileResolutionKind>>,
+    pub committed_capture_subject_id: __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
     pub scene_key: __sdk::__query_builder::Col<MissionAuthority, String>,
 }
 
@@ -60,14 +54,22 @@ impl __sdk::__query_builder::HasCols for MissionAuthority {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
             hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
-            observer_character_id: __sdk::__query_builder::Col::new(table_name, "observer_character_id"),
+            observer_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "observer_character_id",
+            ),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             outcome_entropy: __sdk::__query_builder::Col::new(table_name, "outcome_entropy"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
-            committed_resolution: __sdk::__query_builder::Col::new(table_name, "committed_resolution"),
-            committed_capture_subject_id: __sdk::__query_builder::Col::new(table_name, "committed_capture_subject_id"),
+            committed_resolution: __sdk::__query_builder::Col::new(
+                table_name,
+                "committed_resolution",
+            ),
+            committed_capture_subject_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "committed_capture_subject_id",
+            ),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
-
         }
     }
 }
@@ -86,10 +88,8 @@ impl __sdk::__query_builder::HasIxCols for MissionAuthority {
         MissionAuthorityIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for MissionAuthority {}
-

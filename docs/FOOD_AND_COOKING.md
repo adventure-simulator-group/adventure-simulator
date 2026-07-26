@@ -77,6 +77,8 @@ nutrition multiplier.
 
 Raw wild foods gathered through current-vicinity foraging enter personal
 inventory through the same validated non-fungible food-lot path as other food.
-Watercress and seaweed extend the catalog for wet-ground and coast foraging.
-Their authoritative mass, calories, value, and contamination follow the normal
-food definition. Foraging does not synthesize processed goods.
+Watercress and seaweed extend Plants for wet-ground and coast foraging.
+Venison is High Game, fowl is Low Game, fish requires wet ground or coast, and
+minimal beast meat keeps Harmful Beasts functional. All use authoritative
+mass, calories, value, Raw Meat contamination, and cooking definitions.
+Foraging does not synthesize processed goods.

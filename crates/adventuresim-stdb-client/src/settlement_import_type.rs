@@ -2,27 +2,22 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::drought_profile_type::DroughtProfile;
 use super::elevation_meters_type::ElevationMeters;
-use super::land_use_profile_type::LandUseProfile;
 use super::forest_cover_type::ForestCover;
-use super::potential_vegetation_type::PotentialVegetation;
 use super::historical_vegetation_type::HistoricalVegetation;
-use super::tree_species_profile_type::TreeSpeciesProfile;
+use super::inferred_industry_profile_type::InferredIndustryProfile;
+use super::land_use_profile_type::LandUseProfile;
+use super::potential_vegetation_type::PotentialVegetation;
+use super::settlement_economy_profile_type::SettlementEconomyProfile;
+use super::settlement_hydrology_type::SettlementHydrology;
+use super::settlement_language_profile_type::SettlementLanguageProfile;
+use super::settlement_religious_status_type::SettlementReligiousStatus;
 use super::soil_profile_type::SoilProfile;
 use super::surface_geology_type::SurfaceGeology;
-use super::settlement_religious_status_type::SettlementReligiousStatus;
-use super::settlement_language_profile_type::SettlementLanguageProfile;
-use super::drought_profile_type::DroughtProfile;
-use super::settlement_hydrology_type::SettlementHydrology;
-use super::inferred_industry_profile_type::InferredIndustryProfile;
-use super::settlement_economy_profile_type::SettlementEconomyProfile;
+use super::tree_species_profile_type::TreeSpeciesProfile;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -52,8 +47,6 @@ pub struct SettlementImport {
     pub sources: String,
 }
 
-
 impl __sdk::InModule for SettlementImport {
     type Module = super::RemoteModule;
 }
-

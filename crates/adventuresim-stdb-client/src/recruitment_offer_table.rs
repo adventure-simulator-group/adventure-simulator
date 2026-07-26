@@ -2,16 +2,11 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-use super::recruitment_offer_type::RecruitmentOffer;
 use super::recruitment_offer_id_type::RecruitmentOfferId;
-use super::recruitment_source_id_type::RecruitmentSourceId;
 use super::recruitment_offer_status_type::RecruitmentOfferStatus;
+use super::recruitment_offer_type::RecruitmentOffer;
+use super::recruitment_source_id_type::RecruitmentSourceId;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `recruitment_offer`.
 ///
@@ -52,8 +47,12 @@ impl<'ctx> __sdk::Table for RecruitmentOfferTableHandle<'ctx> {
     type Row = RecruitmentOffer;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = RecruitmentOffer> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = RecruitmentOffer> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = RecruitmentOfferInsertCallbackId;
 
@@ -99,99 +98,102 @@ impl<'ctx> __sdk::TableWithPrimaryKey for RecruitmentOfferTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `id_key` unique index on the table `recruitment_offer`,
-        /// which allows point queries on the field of the same name
-        /// via the [`RecruitmentOfferIdKeyUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.recruitment_offer().id_key().find(...)`.
-        pub struct RecruitmentOfferIdKeyUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<RecruitmentOffer, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `id_key` unique index on the table `recruitment_offer`,
+/// which allows point queries on the field of the same name
+/// via the [`RecruitmentOfferIdKeyUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.recruitment_offer().id_key().find(...)`.
+pub struct RecruitmentOfferIdKeyUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<RecruitmentOffer, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> RecruitmentOfferTableHandle<'ctx> {
-            /// Get a handle on the `id_key` unique index on the table `recruitment_offer`.
-            pub fn id_key(&self) -> RecruitmentOfferIdKeyUnique<'ctx> {
-                RecruitmentOfferIdKeyUnique {
-                    imp: self.imp.get_unique_constraint::<String>("id_key"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> RecruitmentOfferTableHandle<'ctx> {
+    /// Get a handle on the `id_key` unique index on the table `recruitment_offer`.
+    pub fn id_key(&self) -> RecruitmentOfferIdKeyUnique<'ctx> {
+        RecruitmentOfferIdKeyUnique {
+            imp: self.imp.get_unique_constraint::<String>("id_key"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> RecruitmentOfferIdKeyUnique<'ctx> {
-            /// Find the subscribed row whose `id_key` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<RecruitmentOffer> {
-                self.imp.find(col_val)
-            }
-        }
-        
-        /// Access to the `recruiting_party_id` unique index on the table `recruitment_offer`,
-        /// which allows point queries on the field of the same name
-        /// via the [`RecruitmentOfferRecruitingPartyIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.recruitment_offer().recruiting_party_id().find(...)`.
-        pub struct RecruitmentOfferRecruitingPartyIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<RecruitmentOffer, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+impl<'ctx> RecruitmentOfferIdKeyUnique<'ctx> {
+    /// Find the subscribed row whose `id_key` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<RecruitmentOffer> {
+        self.imp.find(col_val)
+    }
+}
 
-        impl<'ctx> RecruitmentOfferTableHandle<'ctx> {
-            /// Get a handle on the `recruiting_party_id` unique index on the table `recruitment_offer`.
-            pub fn recruiting_party_id(&self) -> RecruitmentOfferRecruitingPartyIdUnique<'ctx> {
-                RecruitmentOfferRecruitingPartyIdUnique {
-                    imp: self.imp.get_unique_constraint::<String>("recruiting_party_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
-        }
+/// Access to the `recruiting_party_id` unique index on the table `recruitment_offer`,
+/// which allows point queries on the field of the same name
+/// via the [`RecruitmentOfferRecruitingPartyIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.recruitment_offer().recruiting_party_id().find(...)`.
+pub struct RecruitmentOfferRecruitingPartyIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<RecruitmentOffer, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> RecruitmentOfferRecruitingPartyIdUnique<'ctx> {
-            /// Find the subscribed row whose `recruiting_party_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<RecruitmentOffer> {
-                self.imp.find(col_val)
-            }
+impl<'ctx> RecruitmentOfferTableHandle<'ctx> {
+    /// Get a handle on the `recruiting_party_id` unique index on the table `recruitment_offer`.
+    pub fn recruiting_party_id(&self) -> RecruitmentOfferRecruitingPartyIdUnique<'ctx> {
+        RecruitmentOfferRecruitingPartyIdUnique {
+            imp: self
+                .imp
+                .get_unique_constraint::<String>("recruiting_party_id"),
+            phantom: std::marker::PhantomData,
         }
-        
-        /// Access to the `settlement_npc_id` unique index on the table `recruitment_offer`,
-        /// which allows point queries on the field of the same name
-        /// via the [`RecruitmentOfferSettlementNpcIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.recruitment_offer().settlement_npc_id().find(...)`.
-        pub struct RecruitmentOfferSettlementNpcIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<RecruitmentOffer, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+    }
+}
 
-        impl<'ctx> RecruitmentOfferTableHandle<'ctx> {
-            /// Get a handle on the `settlement_npc_id` unique index on the table `recruitment_offer`.
-            pub fn settlement_npc_id(&self) -> RecruitmentOfferSettlementNpcIdUnique<'ctx> {
-                RecruitmentOfferSettlementNpcIdUnique {
-                    imp: self.imp.get_unique_constraint::<String>("settlement_npc_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
-        }
+impl<'ctx> RecruitmentOfferRecruitingPartyIdUnique<'ctx> {
+    /// Find the subscribed row whose `recruiting_party_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<RecruitmentOffer> {
+        self.imp.find(col_val)
+    }
+}
 
-        impl<'ctx> RecruitmentOfferSettlementNpcIdUnique<'ctx> {
-            /// Find the subscribed row whose `settlement_npc_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<RecruitmentOffer> {
-                self.imp.find(col_val)
-            }
+/// Access to the `settlement_npc_id` unique index on the table `recruitment_offer`,
+/// which allows point queries on the field of the same name
+/// via the [`RecruitmentOfferSettlementNpcIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.recruitment_offer().settlement_npc_id().find(...)`.
+pub struct RecruitmentOfferSettlementNpcIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<RecruitmentOffer, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
+
+impl<'ctx> RecruitmentOfferTableHandle<'ctx> {
+    /// Get a handle on the `settlement_npc_id` unique index on the table `recruitment_offer`.
+    pub fn settlement_npc_id(&self) -> RecruitmentOfferSettlementNpcIdUnique<'ctx> {
+        RecruitmentOfferSettlementNpcIdUnique {
+            imp: self
+                .imp
+                .get_unique_constraint::<String>("settlement_npc_id"),
+            phantom: std::marker::PhantomData,
         }
-        
+    }
+}
+
+impl<'ctx> RecruitmentOfferSettlementNpcIdUnique<'ctx> {
+    /// Find the subscribed row whose `settlement_npc_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<RecruitmentOffer> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<RecruitmentOffer>("recruitment_offer");
     _table.add_unique_constraint::<String>("id_key", |row| &row.id_key);
     _table.add_unique_constraint::<String>("recruiting_party_id", |row| &row.recruiting_party_id);
@@ -203,26 +205,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<RecruitmentOffer>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<RecruitmentOffer>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<RecruitmentOffer>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `RecruitmentOffer`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait recruitment_offerQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `RecruitmentOffer`.
-            fn recruitment_offer(&self) -> __sdk::__query_builder::Table<RecruitmentOffer>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `RecruitmentOffer`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait recruitment_offerQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `RecruitmentOffer`.
+    fn recruitment_offer(&self) -> __sdk::__query_builder::Table<RecruitmentOffer>;
+}
 
-        impl recruitment_offerQueryTableAccess for __sdk::QueryTableAccessor {
-            fn recruitment_offer(&self) -> __sdk::__query_builder::Table<RecruitmentOffer> {
-                __sdk::__query_builder::Table::new("recruitment_offer")
-            }
-        }
-
+impl recruitment_offerQueryTableAccess for __sdk::QueryTableAccessor {
+    fn recruitment_offer(&self) -> __sdk::__query_builder::Table<RecruitmentOffer> {
+        __sdk::__query_builder::Table::new("recruitment_offer")
+    }
+}

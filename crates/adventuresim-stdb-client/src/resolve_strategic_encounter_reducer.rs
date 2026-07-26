@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<ResolveStrategicEncounterArgs> for super::Reducer {
         Self::ResolveStrategicEncounter {
             character_id: args.character_id,
             choice: args.choice,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for ResolveStrategicEncounterArgs {
@@ -41,10 +35,8 @@ pub trait resolve_strategic_encounter {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`resolve_strategic_encounter:resolve_strategic_encounter_then`] to run a callback after the reducer completes.
-    fn resolve_strategic_encounter(&self, character_id: u64,
-choice: String,
-) -> __sdk::Result<()> {
-        self.resolve_strategic_encounter_then(character_id, choice,  |_, _| {})
+    fn resolve_strategic_encounter(&self, character_id: u64, choice: String) -> __sdk::Result<()> {
+        self.resolve_strategic_encounter_then(character_id, choice, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `resolve_strategic_encounter` to run as soon as possible,
@@ -56,11 +48,13 @@ choice: String,
     fn resolve_strategic_encounter_then(
         &self,
         character_id: u64,
-choice: String,
+        choice: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -68,13 +62,20 @@ impl resolve_strategic_encounter for super::RemoteReducers {
     fn resolve_strategic_encounter_then(
         &self,
         character_id: u64,
-choice: String,
+        choice: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ResolveStrategicEncounterArgs { character_id, choice,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            ResolveStrategicEncounterArgs {
+                character_id,
+                choice,
+            },
+            callback,
+        )
     }
 }
-

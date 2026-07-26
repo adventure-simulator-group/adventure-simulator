@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,11 +14,9 @@ pub struct CaseFinaleExecution {
     pub executed_at_minute: u64,
 }
 
-
 impl __sdk::InModule for CaseFinaleExecution {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CaseFinaleExecution`.
 ///
@@ -46,7 +38,6 @@ impl __sdk::__query_builder::HasCols for CaseFinaleExecution {
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             executed_at_minute: __sdk::__query_builder::Col::new(table_name, "executed_at_minute"),
-
         }
     }
 }
@@ -65,10 +56,8 @@ impl __sdk::__query_builder::HasIxCols for CaseFinaleExecution {
         CaseFinaleExecutionIxCols {
             finale_id: __sdk::__query_builder::IxCol::new(table_name, "finale_id"),
             source_id: __sdk::__query_builder::IxCol::new(table_name, "source_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CaseFinaleExecution {}
-

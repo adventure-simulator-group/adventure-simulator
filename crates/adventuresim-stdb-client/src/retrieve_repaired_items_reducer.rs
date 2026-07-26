@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,7 +10,7 @@ pub(super) struct RetrieveRepairedItemsArgs {
     pub character_id: u64,
     pub settlement_id: String,
     pub service: String,
-    pub item_id: Option::<String>,
+    pub item_id: Option<String>,
     pub limit: u32,
 }
 
@@ -28,8 +22,8 @@ impl From<RetrieveRepairedItemsArgs> for super::Reducer {
             service: args.service,
             item_id: args.item_id,
             limit: args.limit,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for RetrieveRepairedItemsArgs {
@@ -47,13 +41,22 @@ pub trait retrieve_repaired_items {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`retrieve_repaired_items:retrieve_repaired_items_then`] to run a callback after the reducer completes.
-    fn retrieve_repaired_items(&self, character_id: u64,
-settlement_id: String,
-service: String,
-item_id: Option::<String>,
-limit: u32,
-) -> __sdk::Result<()> {
-        self.retrieve_repaired_items_then(character_id, settlement_id, service, item_id, limit,  |_, _| {})
+    fn retrieve_repaired_items(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+        service: String,
+        item_id: Option<String>,
+        limit: u32,
+    ) -> __sdk::Result<()> {
+        self.retrieve_repaired_items_then(
+            character_id,
+            settlement_id,
+            service,
+            item_id,
+            limit,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `retrieve_repaired_items` to run as soon as possible,
@@ -65,14 +68,16 @@ limit: u32,
     fn retrieve_repaired_items_then(
         &self,
         character_id: u64,
-settlement_id: String,
-service: String,
-item_id: Option::<String>,
-limit: u32,
+        settlement_id: String,
+        service: String,
+        item_id: Option<String>,
+        limit: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -80,16 +85,26 @@ impl retrieve_repaired_items for super::RemoteReducers {
     fn retrieve_repaired_items_then(
         &self,
         character_id: u64,
-settlement_id: String,
-service: String,
-item_id: Option::<String>,
-limit: u32,
+        settlement_id: String,
+        service: String,
+        item_id: Option<String>,
+        limit: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(RetrieveRepairedItemsArgs { character_id, settlement_id, service, item_id, limit,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            RetrieveRepairedItemsArgs {
+                character_id,
+                settlement_id,
+                service,
+                item_id,
+                limit,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -23,11 +17,9 @@ pub struct InvestigationBelief {
     pub conflict_group: String,
 }
 
-
 impl __sdk::InModule for InvestigationBelief {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `InvestigationBelief`.
 ///
@@ -51,11 +43,13 @@ impl __sdk::__query_builder::HasCols for InvestigationBelief {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             proposition_id: __sdk::__query_builder::Col::new(table_name, "proposition_id"),
-            current_revision_id: __sdk::__query_builder::Col::new(table_name, "current_revision_id"),
+            current_revision_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "current_revision_id",
+            ),
             statement: __sdk::__query_builder::Col::new(table_name, "statement"),
             confidence_bps: __sdk::__query_builder::Col::new(table_name, "confidence_bps"),
             conflict_group: __sdk::__query_builder::Col::new(table_name, "conflict_group"),
-
         }
     }
 }
@@ -75,11 +69,12 @@ impl __sdk::__query_builder::HasIxCols for InvestigationBelief {
         InvestigationBeliefIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
-
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationBelief {}
-

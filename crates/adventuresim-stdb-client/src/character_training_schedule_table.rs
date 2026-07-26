@@ -2,14 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::character_training_schedule_type::CharacterTrainingSchedule;
 use super::schedule_allocation_type::ScheduleAllocation;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_training_schedule`.
 ///
@@ -37,7 +32,9 @@ pub trait CharacterTrainingScheduleTableAccess {
 impl CharacterTrainingScheduleTableAccess for super::RemoteTables {
     fn character_training_schedule(&self) -> CharacterTrainingScheduleTableHandle<'_> {
         CharacterTrainingScheduleTableHandle {
-            imp: self.imp.get_table::<CharacterTrainingSchedule>("character_training_schedule"),
+            imp: self
+                .imp
+                .get_table::<CharacterTrainingSchedule>("character_training_schedule"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -50,8 +47,12 @@ impl<'ctx> __sdk::Table for CharacterTrainingScheduleTableHandle<'ctx> {
     type Row = CharacterTrainingSchedule;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = CharacterTrainingSchedule> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = CharacterTrainingSchedule> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = CharacterTrainingScheduleInsertCallbackId;
 
@@ -97,40 +98,40 @@ impl<'ctx> __sdk::TableWithPrimaryKey for CharacterTrainingScheduleTableHandle<'
     }
 }
 
-        /// Access to the `character_id` unique index on the table `character_training_schedule`,
-        /// which allows point queries on the field of the same name
-        /// via the [`CharacterTrainingScheduleCharacterIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.character_training_schedule().character_id().find(...)`.
-        pub struct CharacterTrainingScheduleCharacterIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<CharacterTrainingSchedule, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `character_id` unique index on the table `character_training_schedule`,
+/// which allows point queries on the field of the same name
+/// via the [`CharacterTrainingScheduleCharacterIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.character_training_schedule().character_id().find(...)`.
+pub struct CharacterTrainingScheduleCharacterIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<CharacterTrainingSchedule, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> CharacterTrainingScheduleTableHandle<'ctx> {
-            /// Get a handle on the `character_id` unique index on the table `character_training_schedule`.
-            pub fn character_id(&self) -> CharacterTrainingScheduleCharacterIdUnique<'ctx> {
-                CharacterTrainingScheduleCharacterIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("character_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> CharacterTrainingScheduleTableHandle<'ctx> {
+    /// Get a handle on the `character_id` unique index on the table `character_training_schedule`.
+    pub fn character_id(&self) -> CharacterTrainingScheduleCharacterIdUnique<'ctx> {
+        CharacterTrainingScheduleCharacterIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("character_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> CharacterTrainingScheduleCharacterIdUnique<'ctx> {
-            /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<CharacterTrainingSchedule> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> CharacterTrainingScheduleCharacterIdUnique<'ctx> {
+    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<CharacterTrainingSchedule> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-    let _table = client_cache.get_or_make_table::<CharacterTrainingSchedule>("character_training_schedule");
+    let _table =
+        client_cache.get_or_make_table::<CharacterTrainingSchedule>("character_training_schedule");
     _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
 
@@ -139,26 +140,28 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<CharacterTrainingSchedule>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<CharacterTrainingSchedule>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<CharacterTrainingSchedule>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `CharacterTrainingSchedule`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait character_training_scheduleQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `CharacterTrainingSchedule`.
-            fn character_training_schedule(&self) -> __sdk::__query_builder::Table<CharacterTrainingSchedule>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `CharacterTrainingSchedule`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait character_training_scheduleQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `CharacterTrainingSchedule`.
+    fn character_training_schedule(
+        &self,
+    ) -> __sdk::__query_builder::Table<CharacterTrainingSchedule>;
+}
 
-        impl character_training_scheduleQueryTableAccess for __sdk::QueryTableAccessor {
-            fn character_training_schedule(&self) -> __sdk::__query_builder::Table<CharacterTrainingSchedule> {
-                __sdk::__query_builder::Table::new("character_training_schedule")
-            }
-        }
-
+impl character_training_scheduleQueryTableAccess for __sdk::QueryTableAccessor {
+    fn character_training_schedule(
+        &self,
+    ) -> __sdk::__query_builder::Table<CharacterTrainingSchedule> {
+        __sdk::__query_builder::Table::new("character_training_schedule")
+    }
+}

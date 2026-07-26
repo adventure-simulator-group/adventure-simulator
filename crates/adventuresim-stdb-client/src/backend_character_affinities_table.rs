@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::character_affinity_type::CharacterAffinity;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_character_affinities`.
 ///
@@ -36,7 +31,9 @@ pub trait BackendCharacterAffinitiesTableAccess {
 impl BackendCharacterAffinitiesTableAccess for super::RemoteTables {
     fn backend_character_affinities(&self) -> BackendCharacterAffinitiesTableHandle<'_> {
         BackendCharacterAffinitiesTableHandle {
-            imp: self.imp.get_table::<CharacterAffinity>("backend_character_affinities"),
+            imp: self
+                .imp
+                .get_table::<CharacterAffinity>("backend_character_affinities"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for BackendCharacterAffinitiesTableHandle<'ctx> {
     type Row = CharacterAffinity;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = CharacterAffinity> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = CharacterAffinity> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BackendCharacterAffinitiesInsertCallbackId;
 
@@ -81,8 +82,8 @@ impl<'ctx> __sdk::Table for BackendCharacterAffinitiesTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<CharacterAffinity>("backend_character_affinities");
+    let _table =
+        client_cache.get_or_make_table::<CharacterAffinity>("backend_character_affinities");
 }
 
 #[doc(hidden)]
@@ -90,26 +91,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<CharacterAffinity>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<CharacterAffinity>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<CharacterAffinity>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `CharacterAffinity`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait backend_character_affinitiesQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `CharacterAffinity`.
-            fn backend_character_affinities(&self) -> __sdk::__query_builder::Table<CharacterAffinity>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `CharacterAffinity`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait backend_character_affinitiesQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `CharacterAffinity`.
+    fn backend_character_affinities(&self) -> __sdk::__query_builder::Table<CharacterAffinity>;
+}
 
-        impl backend_character_affinitiesQueryTableAccess for __sdk::QueryTableAccessor {
-            fn backend_character_affinities(&self) -> __sdk::__query_builder::Table<CharacterAffinity> {
-                __sdk::__query_builder::Table::new("backend_character_affinities")
-            }
-        }
-
+impl backend_character_affinitiesQueryTableAccess for __sdk::QueryTableAccessor {
+    fn backend_character_affinities(&self) -> __sdk::__query_builder::Table<CharacterAffinity> {
+        __sdk::__query_builder::Table::new("backend_character_affinities")
+    }
+}

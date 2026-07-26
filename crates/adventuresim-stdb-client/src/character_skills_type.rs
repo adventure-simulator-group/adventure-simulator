@@ -2,16 +2,11 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::religion_hours_type::ReligionHours;
 use super::bestiary_hours_type::BestiaryHours;
 use super::oral_language_hours_type::OralLanguageHours;
+use super::religion_hours_type::ReligionHours;
 use super::written_language_hours_type::WrittenLanguageHours;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -53,11 +48,9 @@ pub struct CharacterSkills {
     pub smithing_hours: f32,
 }
 
-
 impl __sdk::InModule for CharacterSkills {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CharacterSkills`.
 ///
@@ -117,7 +110,10 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
             throw_hours: __sdk::__query_builder::Col::new(table_name, "throw_hours"),
             will_hours: __sdk::__query_builder::Col::new(table_name, "will_hours"),
             insight_hours: __sdk::__query_builder::Col::new(table_name, "insight_hours"),
-            self_awareness_hours: __sdk::__query_builder::Col::new(table_name, "self_awareness_hours"),
+            self_awareness_hours: __sdk::__query_builder::Col::new(
+                table_name,
+                "self_awareness_hours",
+            ),
             humor_hours: __sdk::__query_builder::Col::new(table_name, "humor_hours"),
             command_hours: __sdk::__query_builder::Col::new(table_name, "command_hours"),
             deception_hours: __sdk::__query_builder::Col::new(table_name, "deception_hours"),
@@ -130,14 +126,25 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
             written_languages: __sdk::__query_builder::Col::new(table_name, "written_languages"),
             stealth_hours: __sdk::__query_builder::Col::new(table_name, "stealth_hours"),
             balance_hours: __sdk::__query_builder::Col::new(table_name, "balance_hours"),
-            terrain_plains_hours: __sdk::__query_builder::Col::new(table_name, "terrain_plains_hours"),
-            terrain_forest_hours: __sdk::__query_builder::Col::new(table_name, "terrain_forest_hours"),
-            terrain_hills_hours: __sdk::__query_builder::Col::new(table_name, "terrain_hills_hours"),
-            terrain_urban_hours: __sdk::__query_builder::Col::new(table_name, "terrain_urban_hours"),
+            terrain_plains_hours: __sdk::__query_builder::Col::new(
+                table_name,
+                "terrain_plains_hours",
+            ),
+            terrain_forest_hours: __sdk::__query_builder::Col::new(
+                table_name,
+                "terrain_forest_hours",
+            ),
+            terrain_hills_hours: __sdk::__query_builder::Col::new(
+                table_name,
+                "terrain_hills_hours",
+            ),
+            terrain_urban_hours: __sdk::__query_builder::Col::new(
+                table_name,
+                "terrain_urban_hours",
+            ),
             anatomy_hours: __sdk::__query_builder::Col::new(table_name, "anatomy_hours"),
             tailoring_hours: __sdk::__query_builder::Col::new(table_name, "tailoring_hours"),
             smithing_hours: __sdk::__query_builder::Col::new(table_name, "smithing_hours"),
-
         }
     }
 }
@@ -154,10 +161,8 @@ impl __sdk::__query_builder::HasIxCols for CharacterSkills {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterSkillsIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterSkills {}
-

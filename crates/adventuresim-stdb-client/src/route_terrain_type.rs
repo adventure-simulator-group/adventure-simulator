@@ -2,25 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::dominant_aspect_type::DominantAspect;
+use super::located_route_landform_type::LocatedRouteLandform;
 use super::route_elevation_profile_type::RouteElevationProfile;
-use super::route_vertical_meters_type::RouteVerticalMeters;
+use super::route_encounter_tag_type::RouteEncounterTag;
+use super::route_relief_meters_type::RouteReliefMeters;
+use super::route_roughness_meters_type::RouteRoughnessMeters;
+use super::route_seasonal_risk_type::RouteSeasonalRisk;
 use super::route_signed_grade_permille_type::RouteSignedGradePermille;
 use super::route_slope_permille_type::RouteSlopePermille;
-use super::dominant_aspect_type::DominantAspect;
-use super::route_roughness_meters_type::RouteRoughnessMeters;
-use super::route_relief_meters_type::RouteReliefMeters;
-use super::located_route_landform_type::LocatedRouteLandform;
 use super::route_terrain_class_type::RouteTerrainClass;
+use super::route_vertical_meters_type::RouteVerticalMeters;
 use super::route_water_adjacency_type::RouteWaterAdjacency;
-use super::route_seasonal_risk_type::RouteSeasonalRisk;
-use super::route_encounter_tag_type::RouteEncounterTag;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -35,15 +30,13 @@ pub struct RouteTerrain {
     pub dominant_aspect: DominantAspect,
     pub roughness: RouteRoughnessMeters,
     pub relief: RouteReliefMeters,
-    pub landforms: Vec::<LocatedRouteLandform>,
+    pub landforms: Vec<LocatedRouteLandform>,
     pub class: RouteTerrainClass,
-    pub water_adjacencies: Vec::<RouteWaterAdjacency>,
-    pub seasonal_risks: Vec::<RouteSeasonalRisk>,
-    pub encounter_tags: Vec::<RouteEncounterTag>,
+    pub water_adjacencies: Vec<RouteWaterAdjacency>,
+    pub seasonal_risks: Vec<RouteSeasonalRisk>,
+    pub encounter_tags: Vec<RouteEncounterTag>,
 }
-
 
 impl __sdk::InModule for RouteTerrain {
     type Module = super::RemoteModule;
 }
-

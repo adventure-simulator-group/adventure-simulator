@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -26,8 +20,8 @@ impl From<InspectPhysicalEvidenceArgs> for super::Reducer {
             evidence_id: args.evidence_id,
             topic_id: args.topic_id,
             action_id: args.action_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for InspectPhysicalEvidenceArgs {
@@ -45,12 +39,20 @@ pub trait inspect_physical_evidence {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`inspect_physical_evidence:inspect_physical_evidence_then`] to run a callback after the reducer completes.
-    fn inspect_physical_evidence(&self, character_id: u64,
-evidence_id: String,
-topic_id: String,
-action_id: String,
-) -> __sdk::Result<()> {
-        self.inspect_physical_evidence_then(character_id, evidence_id, topic_id, action_id,  |_, _| {})
+    fn inspect_physical_evidence(
+        &self,
+        character_id: u64,
+        evidence_id: String,
+        topic_id: String,
+        action_id: String,
+    ) -> __sdk::Result<()> {
+        self.inspect_physical_evidence_then(
+            character_id,
+            evidence_id,
+            topic_id,
+            action_id,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `inspect_physical_evidence` to run as soon as possible,
@@ -62,13 +64,15 @@ action_id: String,
     fn inspect_physical_evidence_then(
         &self,
         character_id: u64,
-evidence_id: String,
-topic_id: String,
-action_id: String,
+        evidence_id: String,
+        topic_id: String,
+        action_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -76,15 +80,24 @@ impl inspect_physical_evidence for super::RemoteReducers {
     fn inspect_physical_evidence_then(
         &self,
         character_id: u64,
-evidence_id: String,
-topic_id: String,
-action_id: String,
+        evidence_id: String,
+        topic_id: String,
+        action_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InspectPhysicalEvidenceArgs { character_id, evidence_id, topic_id, action_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            InspectPhysicalEvidenceArgs {
+                character_id,
+                evidence_id,
+                topic_id,
+                action_id,
+            },
+            callback,
+        )
     }
 }
-

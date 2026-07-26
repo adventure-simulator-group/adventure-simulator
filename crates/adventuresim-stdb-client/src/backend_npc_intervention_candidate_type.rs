@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -26,11 +20,9 @@ pub struct BackendNpcInterventionCandidate {
     pub legal_strategies_json: String,
 }
 
-
 impl __sdk::InModule for BackendNpcInterventionCandidate {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendNpcInterventionCandidate`.
 ///
@@ -41,11 +33,13 @@ pub struct BackendNpcInterventionCandidateCols {
     pub settlement_id: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, String>,
     pub problem_summary: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, String>,
     pub incident_count: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, u16>,
-    pub earliest_intervention_minute: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, u64>,
+    pub earliest_intervention_minute:
+        __sdk::__query_builder::Col<BackendNpcInterventionCandidate, u64>,
     pub party_id: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, String>,
     pub party_name: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, String>,
     pub party_capability: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, u16>,
-    pub strategy_already_selected: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, bool>,
+    pub strategy_already_selected:
+        __sdk::__query_builder::Col<BackendNpcInterventionCandidate, bool>,
     pub legal_strategies_json: __sdk::__query_builder::Col<BackendNpcInterventionCandidate, String>,
 }
 
@@ -58,14 +52,21 @@ impl __sdk::__query_builder::HasCols for BackendNpcInterventionCandidate {
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             problem_summary: __sdk::__query_builder::Col::new(table_name, "problem_summary"),
             incident_count: __sdk::__query_builder::Col::new(table_name, "incident_count"),
-            earliest_intervention_minute: __sdk::__query_builder::Col::new(table_name, "earliest_intervention_minute"),
+            earliest_intervention_minute: __sdk::__query_builder::Col::new(
+                table_name,
+                "earliest_intervention_minute",
+            ),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             party_name: __sdk::__query_builder::Col::new(table_name, "party_name"),
             party_capability: __sdk::__query_builder::Col::new(table_name, "party_capability"),
-            strategy_already_selected: __sdk::__query_builder::Col::new(table_name, "strategy_already_selected"),
-            legal_strategies_json: __sdk::__query_builder::Col::new(table_name, "legal_strategies_json"),
-
+            strategy_already_selected: __sdk::__query_builder::Col::new(
+                table_name,
+                "strategy_already_selected",
+            ),
+            legal_strategies_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "legal_strategies_json",
+            ),
         }
     }
 }
-

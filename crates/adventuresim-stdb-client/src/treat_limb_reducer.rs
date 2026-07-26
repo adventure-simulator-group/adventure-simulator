@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -17,7 +11,7 @@ pub(super) struct TreatLimbArgs {
     pub patient_id: u64,
     pub limb_slug: String,
     pub procedure: String,
-    pub projectile_id: Option::<u64>,
+    pub projectile_id: Option<u64>,
     pub use_soap: bool,
 }
 
@@ -30,8 +24,8 @@ impl From<TreatLimbArgs> for super::Reducer {
             procedure: args.procedure,
             projectile_id: args.projectile_id,
             use_soap: args.use_soap,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for TreatLimbArgs {
@@ -49,14 +43,24 @@ pub trait treat_limb {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`treat_limb:treat_limb_then`] to run a callback after the reducer completes.
-    fn treat_limb(&self, actor_id: u64,
-patient_id: u64,
-limb_slug: String,
-procedure: String,
-projectile_id: Option::<u64>,
-use_soap: bool,
-) -> __sdk::Result<()> {
-        self.treat_limb_then(actor_id, patient_id, limb_slug, procedure, projectile_id, use_soap,  |_, _| {})
+    fn treat_limb(
+        &self,
+        actor_id: u64,
+        patient_id: u64,
+        limb_slug: String,
+        procedure: String,
+        projectile_id: Option<u64>,
+        use_soap: bool,
+    ) -> __sdk::Result<()> {
+        self.treat_limb_then(
+            actor_id,
+            patient_id,
+            limb_slug,
+            procedure,
+            projectile_id,
+            use_soap,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `treat_limb` to run as soon as possible,
@@ -68,15 +72,17 @@ use_soap: bool,
     fn treat_limb_then(
         &self,
         actor_id: u64,
-patient_id: u64,
-limb_slug: String,
-procedure: String,
-projectile_id: Option::<u64>,
-use_soap: bool,
+        patient_id: u64,
+        limb_slug: String,
+        procedure: String,
+        projectile_id: Option<u64>,
+        use_soap: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -84,17 +90,28 @@ impl treat_limb for super::RemoteReducers {
     fn treat_limb_then(
         &self,
         actor_id: u64,
-patient_id: u64,
-limb_slug: String,
-procedure: String,
-projectile_id: Option::<u64>,
-use_soap: bool,
+        patient_id: u64,
+        limb_slug: String,
+        procedure: String,
+        projectile_id: Option<u64>,
+        use_soap: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(TreatLimbArgs { actor_id, patient_id, limb_slug, procedure, projectile_id, use_soap,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            TreatLimbArgs {
+                actor_id,
+                patient_id,
+                limb_slug,
+                procedure,
+                projectile_id,
+                use_soap,
+            },
+            callback,
+        )
     }
 }
-

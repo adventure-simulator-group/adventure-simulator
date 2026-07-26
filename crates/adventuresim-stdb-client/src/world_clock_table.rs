@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::world_clock_type::WorldClock;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `world_clock`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for WorldClockTableHandle<'ctx> {
     type Row = WorldClock;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = WorldClock> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = WorldClock> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = WorldClockInsertCallbackId;
 
@@ -96,39 +95,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for WorldClockTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `id` unique index on the table `world_clock`,
-        /// which allows point queries on the field of the same name
-        /// via the [`WorldClockIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.world_clock().id().find(...)`.
-        pub struct WorldClockIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<WorldClock, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `id` unique index on the table `world_clock`,
+/// which allows point queries on the field of the same name
+/// via the [`WorldClockIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.world_clock().id().find(...)`.
+pub struct WorldClockIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<WorldClock, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> WorldClockTableHandle<'ctx> {
-            /// Get a handle on the `id` unique index on the table `world_clock`.
-            pub fn id(&self) -> WorldClockIdUnique<'ctx> {
-                WorldClockIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> WorldClockTableHandle<'ctx> {
+    /// Get a handle on the `id` unique index on the table `world_clock`.
+    pub fn id(&self) -> WorldClockIdUnique<'ctx> {
+        WorldClockIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> WorldClockIdUnique<'ctx> {
-            /// Find the subscribed row whose `id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<WorldClock> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> WorldClockIdUnique<'ctx> {
+    /// Find the subscribed row whose `id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<WorldClock> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<WorldClock>("world_clock");
     _table.add_unique_constraint::<u64>("id", |row| &row.id);
 }
@@ -138,26 +136,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<WorldClock>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<WorldClock>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<WorldClock>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `WorldClock`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait world_clockQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `WorldClock`.
-            fn world_clock(&self) -> __sdk::__query_builder::Table<WorldClock>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `WorldClock`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait world_clockQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `WorldClock`.
+    fn world_clock(&self) -> __sdk::__query_builder::Table<WorldClock>;
+}
 
-        impl world_clockQueryTableAccess for __sdk::QueryTableAccessor {
-            fn world_clock(&self) -> __sdk::__query_builder::Table<WorldClock> {
-                __sdk::__query_builder::Table::new("world_clock")
-            }
-        }
-
+impl world_clockQueryTableAccess for __sdk::QueryTableAccessor {
+    fn world_clock(&self) -> __sdk::__query_builder::Table<WorldClock> {
+        __sdk::__query_builder::Table::new("world_clock")
+    }
+}

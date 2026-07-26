@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<BootstrapDevelopmentWorldArgs> for super::Reducer {
         Self::BootstrapDevelopmentWorld {
             bootstrap_token: args.bootstrap_token,
             include_visual_demos: args.include_visual_demos,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for BootstrapDevelopmentWorldArgs {
@@ -41,10 +35,12 @@ pub trait bootstrap_development_world {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`bootstrap_development_world:bootstrap_development_world_then`] to run a callback after the reducer completes.
-    fn bootstrap_development_world(&self, bootstrap_token: String,
-include_visual_demos: bool,
-) -> __sdk::Result<()> {
-        self.bootstrap_development_world_then(bootstrap_token, include_visual_demos,  |_, _| {})
+    fn bootstrap_development_world(
+        &self,
+        bootstrap_token: String,
+        include_visual_demos: bool,
+    ) -> __sdk::Result<()> {
+        self.bootstrap_development_world_then(bootstrap_token, include_visual_demos, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `bootstrap_development_world` to run as soon as possible,
@@ -56,11 +52,13 @@ include_visual_demos: bool,
     fn bootstrap_development_world_then(
         &self,
         bootstrap_token: String,
-include_visual_demos: bool,
+        include_visual_demos: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -68,13 +66,20 @@ impl bootstrap_development_world for super::RemoteReducers {
     fn bootstrap_development_world_then(
         &self,
         bootstrap_token: String,
-include_visual_demos: bool,
+        include_visual_demos: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(BootstrapDevelopmentWorldArgs { bootstrap_token, include_visual_demos,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            BootstrapDevelopmentWorldArgs {
+                bootstrap_token,
+                include_visual_demos,
+            },
+            callback,
+        )
     }
 }
-

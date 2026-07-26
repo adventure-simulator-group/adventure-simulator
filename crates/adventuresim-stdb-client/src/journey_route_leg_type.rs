@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::journey_route_point_type::JourneyRoutePoint;
 use super::journey_terrain_span_type::JourneyTerrainSpan;
@@ -17,12 +12,10 @@ use super::journey_terrain_span_type::JourneyTerrainSpan;
 pub struct JourneyRouteLeg {
     pub distance_m: u64,
     pub minutes: u64,
-    pub points: Vec::<JourneyRoutePoint>,
-    pub spans: Vec::<JourneyTerrainSpan>,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
 }
-
 
 impl __sdk::InModule for JourneyRouteLeg {
     type Module = super::RemoteModule;
 }
-

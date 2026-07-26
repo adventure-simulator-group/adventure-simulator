@@ -10,7 +10,9 @@ currently asserting.
 `content/organizations/*.yaml` is compiled into `adventuresim-core`. Definitions
 declare stable IDs, names, chapters, recognition, admission requirements and
 fees, arbitrary ordered ranks, recurring dues, activity training and rewards,
-and privileges such as bearing arms or wearing armor.
+and privileges such as bearing arms, wearing armor, or licensed foraging.
+Organization-level privileges are inherited at every rank; rank-level
+privileges are additive.
 
 Requirements and training targets are tagged data. No code path decides that an
 organization is a guild because it teaches Smithing, or a church because it
@@ -20,6 +22,15 @@ requires a religion. Mixed requirements are intentional and supported.
 restrictions. Only the currently presented, recognized, active, dues-current
 membership supplies an exemption. Ownership is unaffected: when a character
 loses an exemption, prohibited equipment is unequipped.
+
+Foraging licenses use a separate global presented-privilege evaluation. They
+still require persisted presentation plus a matching active, dues-current
+membership and its current rank, but do not require the current settlement to
+recognize the organization. A valid persisted presentation therefore survives
+travel and entry into an unrecognizing settlement. This does not weaken the
+locally recognized equipment privilege rules. The three forester organizations
+grant Low Game, Fish, and Plants throughout their ranks; each has a terrain-4.0
+Master rank that adds High Game.
 
 The first catalog includes migrated trade and religious bodies, denomination-
 specific witch-hunter and knightly organizations, three regional forester
@@ -61,7 +72,8 @@ pre-launch schema does not yet add a composite unique index.
 ## Validation
 
 Build validation rejects unknown fields and invalid or duplicate IDs,
-requirements, ranks, weights, privileges, religions, skill leaves, and
+requirements, ranks, weights, organization- and rank-level privileges,
+religions, skill leaves, and
 settlement policies. A canonical check against a compiled Viabundus world is
 also required:
 

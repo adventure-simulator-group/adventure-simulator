@@ -2,33 +2,25 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct FilthProvenance {
     pub filth_id: u64,
-    pub source_character_id: Option::<u64>,
+    pub source_character_id: Option<u64>,
 }
-
 
 impl __sdk::InModule for FilthProvenance {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `FilthProvenance`.
 ///
 /// Provides typed access to columns for query building.
 pub struct FilthProvenanceCols {
     pub filth_id: __sdk::__query_builder::Col<FilthProvenance, u64>,
-    pub source_character_id: __sdk::__query_builder::Col<FilthProvenance, Option::<u64>>,
+    pub source_character_id: __sdk::__query_builder::Col<FilthProvenance, Option<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for FilthProvenance {
@@ -36,8 +28,10 @@ impl __sdk::__query_builder::HasCols for FilthProvenance {
     fn cols(table_name: &'static str) -> Self::Cols {
         FilthProvenanceCols {
             filth_id: __sdk::__query_builder::Col::new(table_name, "filth_id"),
-            source_character_id: __sdk::__query_builder::Col::new(table_name, "source_character_id"),
-
+            source_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "source_character_id",
+            ),
         }
     }
 }
@@ -54,10 +48,8 @@ impl __sdk::__query_builder::HasIxCols for FilthProvenance {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         FilthProvenanceIxCols {
             filth_id: __sdk::__query_builder::IxCol::new(table_name, "filth_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for FilthProvenance {}
-

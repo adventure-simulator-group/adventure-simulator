@@ -1500,7 +1500,7 @@ pub enum Reducer {
     ForageCurrentVicinity {
         character_id: u64,
         request_id: String,
-        target_item_ids: Vec<String>,
+        source_ids: Vec<String>,
         requested_minutes: u64,
         attestation: ForageEnvironmentAttestation,
     },
@@ -2440,13 +2440,13 @@ Reducer::CancelMissionRequest{
             Reducer::ForageCurrentVicinity{
                 character_id,
                 request_id,
-                target_item_ids,
+                source_ids,
                 requested_minutes,
                 attestation,
 }             => __sats::bsatn::to_vec(&forage_current_vicinity_reducer::ForageCurrentVicinityArgs {
                 character_id: character_id.clone(),
                 request_id: request_id.clone(),
-                target_item_ids: target_item_ids.clone(),
+                source_ids: source_ids.clone(),
                 requested_minutes: requested_minutes.clone(),
                 attestation: attestation.clone(),
 }),

@@ -51,7 +51,7 @@ pub struct ForageAttemptAuthority {
     pub completed_at: u64,
     pub requested_minutes: u64,
     pub elapsed_minutes: u64,
-    pub target_item_ids: Vec<String>,
+    pub source_ids: Vec<String>,
     pub yielded_item_ids: Vec<String>,
     pub yielded_quantities: Vec<u16>,
     pub interrupted: bool,
@@ -104,13 +104,44 @@ fn valid_request_id(request_id: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn canonical_targets(mut targets: Vec<String>) -> Result<Vec<String>, String> {
-    targets.sort();
-    if targets.windows(2).any(|pair| pair[0] == pair[1]) {
-        Err("Forage targets must be unique".into())
-    } else {
-        Ok(targets)
+fn canonical_sources(mut sources: Vec<String>) -> Result<Vec<String>, String> {
+    sources.sort();
+    if sources.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err("Forage sources must be unique".into());
     }
+    if sources
+        .iter()
+        .any(|id| foraging::ForageSource::from_id(id).is_none())
+    {
+        Err("Unknown forage source".into())
+    } else {
+        Ok(sources)
+    }
+}
+
+fn source_privilege(
+    source: foraging::ForageSource,
+) -> Option<adventuresim_core::organization::Privilege> {
+    use adventuresim_core::organization::Privilege;
+    Some(match source {
+        foraging::ForageSource::HighGame => Privilege::ForageHighGame,
+        foraging::ForageSource::LowGame => Privilege::ForageLowGame,
+        foraging::ForageSource::Fish => Privilege::ForageFish,
+        foraging::ForageSource::Plants => Privilege::ForagePlants,
+        foraging::ForageSource::HarmfulBeasts => return None,
+    })
+}
+
+fn license_violation_for_sources(
+    source_ids: &[String],
+    mut has_privilege: impl FnMut(adventuresim_core::organization::Privilege) -> bool,
+) -> bool {
+    source_ids.iter().any(|id| {
+        let Some(source) = foraging::ForageSource::from_id(id) else {
+            return true;
+        };
+        source_privilege(source).is_some_and(|privilege| !has_privilege(privilege))
+    })
 }
 
 #[view(accessor = backend_forage_receipts, public)]
@@ -254,6 +285,7 @@ fn validate_attestation(
         sea_or_coast: attestation.sea_or_coast,
         cultivated: attestation.cultivated,
         settlement,
+        license_violation: false,
     })
 }
 
@@ -318,7 +350,7 @@ fn resolution_seed(
     character_id: u64,
     started_at: u64,
     attestation: &ForageEnvironmentAttestation,
-    targets: &[String],
+    sources: &[String],
 ) -> u64 {
     let mut hasher = Sha256::new();
     hasher.update(b"forage-resolution-v2");
@@ -327,9 +359,9 @@ fn resolution_seed(
     hasher.update(started_at.to_le_bytes());
     hasher.update(attestation.latitude_e7.to_le_bytes());
     hasher.update(attestation.longitude_e7.to_le_bytes());
-    for target in targets {
-        hasher.update((target.len() as u64).to_le_bytes());
-        hasher.update(target.as_bytes());
+    for source in sources {
+        hasher.update((source.len() as u64).to_le_bytes());
+        hasher.update(source.as_bytes());
     }
     u64::from_le_bytes(
         hasher.finalize()[..8]
@@ -343,7 +375,7 @@ pub fn forage_current_vicinity(
     ctx: &ReducerContext,
     character_id: u64,
     request_id: String,
-    target_item_ids: Vec<String>,
+    source_ids: Vec<String>,
     requested_minutes: u64,
     attestation: ForageEnvironmentAttestation,
 ) -> Result<(), String> {
@@ -351,9 +383,12 @@ pub fn forage_current_vicinity(
     if !valid_request_id(&request_id) {
         return Err("Forage request id is invalid".into());
     }
-    let environment = validate_attestation(ctx, character_id, &attestation)?;
+    let mut environment = validate_attestation(ctx, character_id, &attestation)?;
     foraging::validate_duration(requested_minutes).map_err(str::to_owned)?;
-    let target_item_ids = canonical_targets(target_item_ids)?;
+    let source_ids = canonical_sources(source_ids)?;
+    environment.license_violation = license_violation_for_sources(&source_ids, |privilege| {
+        crate::organization::global_presented_privilege(ctx, character_id, privilege)
+    });
     let (terrain_check, stealth_check) = acting_checks(ctx, character_id, environment.terrain)?;
     crate::time::initialize_character_time(ctx, character_id)?;
     let started_at = ctx
@@ -368,12 +403,12 @@ pub fn forage_current_vicinity(
         character_id,
         started_at,
         &attestation,
-        &target_item_ids,
+        &source_ids,
     );
     let planned = foraging::resolve(
         seed,
         environment,
-        &target_item_ids,
+        &source_ids,
         requested_minutes,
         terrain_check,
         stealth_check,
@@ -480,11 +515,11 @@ pub fn forage_current_vicinity(
         completed_at,
         requested_minutes,
         elapsed_minutes: elapsed,
-        target_item_ids,
+        source_ids,
         yielded_item_ids,
         yielded_quantities,
         interrupted,
-        illegal: environment.settlement || environment.cultivated,
+        illegal: environment.settlement || environment.cultivated || environment.license_violation,
         stealth_dc_millirank: resolution.as_ref().and_then(|row| row.stealth_dc_millirank),
         stealth_succeeded: resolution.as_ref().and_then(|row| row.stealth_succeeded),
         virtue_lost,
@@ -518,11 +553,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn canonical_targets_make_permutations_identical_and_reject_duplicates() {
-        let first = canonical_targets(vec!["sage".into(), "berries".into()]).unwrap();
-        let second = canonical_targets(vec!["berries".into(), "sage".into()]).unwrap();
+    fn canonical_sources_make_permutations_identical_and_reject_bad_input() {
+        let first = canonical_sources(vec!["plants".into(), "fish".into()]).unwrap();
+        let second = canonical_sources(vec!["fish".into(), "plants".into()]).unwrap();
         assert_eq!(first, second);
-        assert!(canonical_targets(vec!["sage".into(), "sage".into()]).is_err());
+        assert!(canonical_sources(vec!["fish".into(), "fish".into()]).is_err());
+        assert!(canonical_sources(vec!["raw_fish".into()]).is_err());
     }
 
     #[test]
@@ -537,5 +573,42 @@ mod tests {
         assert!(valid_request_id(&"a".repeat(64)));
         assert!(!valid_request_id(&"A".repeat(64)));
         assert!(!valid_request_id(&"a".repeat(63)));
+    }
+
+    #[test]
+    fn source_privileges_cover_licensed_categories_and_exempt_harmful_beasts() {
+        use adventuresim_core::organization::Privilege;
+        assert_eq!(
+            source_privilege(foraging::ForageSource::HighGame),
+            Some(Privilege::ForageHighGame)
+        );
+        assert_eq!(
+            source_privilege(foraging::ForageSource::LowGame),
+            Some(Privilege::ForageLowGame)
+        );
+        assert_eq!(
+            source_privilege(foraging::ForageSource::Fish),
+            Some(Privilege::ForageFish)
+        );
+        assert_eq!(
+            source_privilege(foraging::ForageSource::Plants),
+            Some(Privilege::ForagePlants)
+        );
+        assert_eq!(
+            source_privilege(foraging::ForageSource::HarmfulBeasts),
+            None
+        );
+        assert!(!license_violation_for_sources(
+            &["harmful_beasts".into()],
+            |_| false
+        ));
+        assert!(!license_violation_for_sources(
+            &["plants".into(), "low_game".into()],
+            |_| true
+        ));
+        assert!(license_violation_for_sources(
+            &["harmful_beasts".into(), "plants".into()],
+            |_| false
+        ));
     }
 }

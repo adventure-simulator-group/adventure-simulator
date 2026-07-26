@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_local_problem_trade_effects`.
 ///
@@ -30,13 +25,18 @@ pub struct BackendLocalProblemTradeEffectsTableHandle<'ctx> {
 pub trait BackendLocalProblemTradeEffectsTableAccess {
     #[allow(non_snake_case)]
     /// Obtain a [`BackendLocalProblemTradeEffectsTableHandle`], which mediates access to the table `backend_local_problem_trade_effects`.
-    fn backend_local_problem_trade_effects(&self) -> BackendLocalProblemTradeEffectsTableHandle<'_>;
+    fn backend_local_problem_trade_effects(&self)
+    -> BackendLocalProblemTradeEffectsTableHandle<'_>;
 }
 
 impl BackendLocalProblemTradeEffectsTableAccess for super::RemoteTables {
-    fn backend_local_problem_trade_effects(&self) -> BackendLocalProblemTradeEffectsTableHandle<'_> {
+    fn backend_local_problem_trade_effects(
+        &self,
+    ) -> BackendLocalProblemTradeEffectsTableHandle<'_> {
         BackendLocalProblemTradeEffectsTableHandle {
-            imp: self.imp.get_table::<BackendLocalProblemTradeEffect>("backend_local_problem_trade_effects"),
+            imp: self
+                .imp
+                .get_table::<BackendLocalProblemTradeEffect>("backend_local_problem_trade_effects"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +49,12 @@ impl<'ctx> __sdk::Table for BackendLocalProblemTradeEffectsTableHandle<'ctx> {
     type Row = BackendLocalProblemTradeEffect;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = BackendLocalProblemTradeEffect> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = BackendLocalProblemTradeEffect> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BackendLocalProblemTradeEffectsInsertCallbackId;
 
@@ -81,8 +85,8 @@ impl<'ctx> __sdk::Table for BackendLocalProblemTradeEffectsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<BackendLocalProblemTradeEffect>("backend_local_problem_trade_effects");
+    let _table = client_cache
+        .get_or_make_table::<BackendLocalProblemTradeEffect>("backend_local_problem_trade_effects");
 }
 
 #[doc(hidden)]
@@ -93,23 +97,28 @@ pub(super) fn parse_table_update(
         __sdk::InternalError::failed_parse(
             "TableUpdate<BackendLocalProblemTradeEffect>",
             "TableUpdate",
-        ).with_cause(e).into()
+        )
+        .with_cause(e)
+        .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `BackendLocalProblemTradeEffect`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait backend_local_problem_trade_effectsQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `BackendLocalProblemTradeEffect`.
-            fn backend_local_problem_trade_effects(&self) -> __sdk::__query_builder::Table<BackendLocalProblemTradeEffect>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BackendLocalProblemTradeEffect`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait backend_local_problem_trade_effectsQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BackendLocalProblemTradeEffect`.
+    fn backend_local_problem_trade_effects(
+        &self,
+    ) -> __sdk::__query_builder::Table<BackendLocalProblemTradeEffect>;
+}
 
-        impl backend_local_problem_trade_effectsQueryTableAccess for __sdk::QueryTableAccessor {
-            fn backend_local_problem_trade_effects(&self) -> __sdk::__query_builder::Table<BackendLocalProblemTradeEffect> {
-                __sdk::__query_builder::Table::new("backend_local_problem_trade_effects")
-            }
-        }
-
+impl backend_local_problem_trade_effectsQueryTableAccess for __sdk::QueryTableAccessor {
+    fn backend_local_problem_trade_effects(
+        &self,
+    ) -> __sdk::__query_builder::Table<BackendLocalProblemTradeEffect> {
+        __sdk::__query_builder::Table::new("backend_local_problem_trade_effects")
+    }
+}

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -17,16 +11,14 @@ pub struct PhysiologyPresenceSpan {
     pub low_id: u64,
     pub high_id: u64,
     pub started_at: u64,
-    pub ended_at: Option::<u64>,
+    pub ended_at: Option<u64>,
     pub low_observer_band: u8,
     pub high_observer_band: u8,
 }
 
-
 impl __sdk::InModule for PhysiologyPresenceSpan {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `PhysiologyPresenceSpan`.
 ///
@@ -36,7 +28,7 @@ pub struct PhysiologyPresenceSpanCols {
     pub low_id: __sdk::__query_builder::Col<PhysiologyPresenceSpan, u64>,
     pub high_id: __sdk::__query_builder::Col<PhysiologyPresenceSpan, u64>,
     pub started_at: __sdk::__query_builder::Col<PhysiologyPresenceSpan, u64>,
-    pub ended_at: __sdk::__query_builder::Col<PhysiologyPresenceSpan, Option::<u64>>,
+    pub ended_at: __sdk::__query_builder::Col<PhysiologyPresenceSpan, Option<u64>>,
     pub low_observer_band: __sdk::__query_builder::Col<PhysiologyPresenceSpan, u8>,
     pub high_observer_band: __sdk::__query_builder::Col<PhysiologyPresenceSpan, u8>,
 }
@@ -52,7 +44,6 @@ impl __sdk::__query_builder::HasCols for PhysiologyPresenceSpan {
             ended_at: __sdk::__query_builder::Col::new(table_name, "ended_at"),
             low_observer_band: __sdk::__query_builder::Col::new(table_name, "low_observer_band"),
             high_observer_band: __sdk::__query_builder::Col::new(table_name, "high_observer_band"),
-
         }
     }
 }
@@ -73,10 +64,8 @@ impl __sdk::__query_builder::HasIxCols for PhysiologyPresenceSpan {
             high_id: __sdk::__query_builder::IxCol::new(table_name, "high_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             low_id: __sdk::__query_builder::IxCol::new(table_name, "low_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PhysiologyPresenceSpan {}
-

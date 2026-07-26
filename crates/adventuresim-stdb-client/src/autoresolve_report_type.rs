@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,14 +13,12 @@ pub struct AutoresolveReport {
     pub victor: String,
     pub rounds: u32,
     pub summary: String,
-    pub log: Vec::<String>,
+    pub log: Vec<String>,
 }
-
 
 impl __sdk::InModule for AutoresolveReport {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `AutoresolveReport`.
 ///
@@ -38,7 +30,7 @@ pub struct AutoresolveReportCols {
     pub victor: __sdk::__query_builder::Col<AutoresolveReport, String>,
     pub rounds: __sdk::__query_builder::Col<AutoresolveReport, u32>,
     pub summary: __sdk::__query_builder::Col<AutoresolveReport, String>,
-    pub log: __sdk::__query_builder::Col<AutoresolveReport, Vec::<String>>,
+    pub log: __sdk::__query_builder::Col<AutoresolveReport, Vec<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for AutoresolveReport {
@@ -52,7 +44,6 @@ impl __sdk::__query_builder::HasCols for AutoresolveReport {
             rounds: __sdk::__query_builder::Col::new(table_name, "rounds"),
             summary: __sdk::__query_builder::Col::new(table_name, "summary"),
             log: __sdk::__query_builder::Col::new(table_name, "log"),
-
         }
     }
 }
@@ -71,10 +62,8 @@ impl __sdk::__query_builder::HasIxCols for AutoresolveReport {
         AutoresolveReportIxCols {
             battle_id: __sdk::__query_builder::IxCol::new(table_name, "battle_id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for AutoresolveReport {}
-

@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::schedule_allocation_type::ScheduleAllocation;
 
@@ -25,8 +20,8 @@ impl From<UpdateTrainingScheduleArgs> for super::Reducer {
             character_id: args.character_id,
             downtime: args.downtime,
             travel: args.travel,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for UpdateTrainingScheduleArgs {
@@ -44,11 +39,13 @@ pub trait update_training_schedule {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`update_training_schedule:update_training_schedule_then`] to run a callback after the reducer completes.
-    fn update_training_schedule(&self, character_id: u64,
-downtime: ScheduleAllocation,
-travel: ScheduleAllocation,
-) -> __sdk::Result<()> {
-        self.update_training_schedule_then(character_id, downtime, travel,  |_, _| {})
+    fn update_training_schedule(
+        &self,
+        character_id: u64,
+        downtime: ScheduleAllocation,
+        travel: ScheduleAllocation,
+    ) -> __sdk::Result<()> {
+        self.update_training_schedule_then(character_id, downtime, travel, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `update_training_schedule` to run as soon as possible,
@@ -60,12 +57,14 @@ travel: ScheduleAllocation,
     fn update_training_schedule_then(
         &self,
         character_id: u64,
-downtime: ScheduleAllocation,
-travel: ScheduleAllocation,
+        downtime: ScheduleAllocation,
+        travel: ScheduleAllocation,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -73,14 +72,22 @@ impl update_training_schedule for super::RemoteReducers {
     fn update_training_schedule_then(
         &self,
         character_id: u64,
-downtime: ScheduleAllocation,
-travel: ScheduleAllocation,
+        downtime: ScheduleAllocation,
+        travel: ScheduleAllocation,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(UpdateTrainingScheduleArgs { character_id, downtime, travel,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            UpdateTrainingScheduleArgs {
+                character_id,
+                downtime,
+                travel,
+            },
+            callback,
+        )
     }
 }
-

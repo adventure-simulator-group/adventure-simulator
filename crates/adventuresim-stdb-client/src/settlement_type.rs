@@ -2,28 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::drought_profile_type::DroughtProfile;
 use super::elevation_meters_type::ElevationMeters;
-use super::land_use_profile_type::LandUseProfile;
 use super::forest_cover_type::ForestCover;
-use super::potential_vegetation_type::PotentialVegetation;
 use super::historical_vegetation_type::HistoricalVegetation;
-use super::tree_species_profile_type::TreeSpeciesProfile;
+use super::inferred_industry_profile_type::InferredIndustryProfile;
+use super::land_use_profile_type::LandUseProfile;
+use super::potential_vegetation_type::PotentialVegetation;
+use super::settlement_category_type::SettlementCategory;
+use super::settlement_economy_profile_type::SettlementEconomyProfile;
+use super::settlement_hydrology_type::SettlementHydrology;
+use super::settlement_language_profile_type::SettlementLanguageProfile;
+use super::settlement_religious_status_type::SettlementReligiousStatus;
 use super::soil_profile_type::SoilProfile;
 use super::surface_geology_type::SurfaceGeology;
-use super::settlement_religious_status_type::SettlementReligiousStatus;
-use super::settlement_language_profile_type::SettlementLanguageProfile;
-use super::drought_profile_type::DroughtProfile;
-use super::settlement_hydrology_type::SettlementHydrology;
-use super::inferred_industry_profile_type::InferredIndustryProfile;
-use super::settlement_economy_profile_type::SettlementEconomyProfile;
-use super::settlement_category_type::SettlementCategory;
+use super::tree_species_profile_type::TreeSpeciesProfile;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -52,15 +47,13 @@ pub struct Settlement {
     pub scene_key: String,
     pub religion_id: String,
     pub currency_id: String,
-    pub source_node_id: Option::<u64>,
+    pub source_node_id: Option<u64>,
     pub sources: String,
 }
-
 
 impl __sdk::InModule for Settlement {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `Settlement`.
 ///
@@ -90,7 +83,7 @@ pub struct SettlementCols {
     pub scene_key: __sdk::__query_builder::Col<Settlement, String>,
     pub religion_id: __sdk::__query_builder::Col<Settlement, String>,
     pub currency_id: __sdk::__query_builder::Col<Settlement, String>,
-    pub source_node_id: __sdk::__query_builder::Col<Settlement, Option::<u64>>,
+    pub source_node_id: __sdk::__query_builder::Col<Settlement, Option<u64>>,
     pub sources: __sdk::__query_builder::Col<Settlement, String>,
 }
 
@@ -103,13 +96,22 @@ impl __sdk::__query_builder::HasCols for Settlement {
             coord_x: __sdk::__query_builder::Col::new(table_name, "coord_x"),
             coord_y: __sdk::__query_builder::Col::new(table_name, "coord_y"),
             population_level: __sdk::__query_builder::Col::new(table_name, "population_level"),
-            population_estimate: __sdk::__query_builder::Col::new(table_name, "population_estimate"),
+            population_estimate: __sdk::__query_builder::Col::new(
+                table_name,
+                "population_estimate",
+            ),
             category: __sdk::__query_builder::Col::new(table_name, "category"),
             elevation: __sdk::__query_builder::Col::new(table_name, "elevation"),
             land_use: __sdk::__query_builder::Col::new(table_name, "land_use"),
             forest_cover: __sdk::__query_builder::Col::new(table_name, "forest_cover"),
-            potential_vegetation: __sdk::__query_builder::Col::new(table_name, "potential_vegetation"),
-            historical_vegetation: __sdk::__query_builder::Col::new(table_name, "historical_vegetation"),
+            potential_vegetation: __sdk::__query_builder::Col::new(
+                table_name,
+                "potential_vegetation",
+            ),
+            historical_vegetation: __sdk::__query_builder::Col::new(
+                table_name,
+                "historical_vegetation",
+            ),
             tree_species: __sdk::__query_builder::Col::new(table_name, "tree_species"),
             soil: __sdk::__query_builder::Col::new(table_name, "soil"),
             geology: __sdk::__query_builder::Col::new(table_name, "geology"),
@@ -124,7 +126,6 @@ impl __sdk::__query_builder::HasCols for Settlement {
             currency_id: __sdk::__query_builder::Col::new(table_name, "currency_id"),
             source_node_id: __sdk::__query_builder::Col::new(table_name, "source_node_id"),
             sources: __sdk::__query_builder::Col::new(table_name, "sources"),
-
         }
     }
 }
@@ -141,10 +142,8 @@ impl __sdk::__query_builder::HasIxCols for Settlement {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         SettlementIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for Settlement {}
-

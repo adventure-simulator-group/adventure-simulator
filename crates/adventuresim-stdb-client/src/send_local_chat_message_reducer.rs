@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -28,8 +22,8 @@ impl From<SendLocalChatMessageArgs> for super::Reducer {
             subject_id: args.subject_id,
             location_id: args.location_id,
             body: args.body,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for SendLocalChatMessageArgs {
@@ -47,13 +41,22 @@ pub trait send_local_chat_message {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`send_local_chat_message:send_local_chat_message_then`] to run a callback after the reducer completes.
-    fn send_local_chat_message(&self, sender_id: u64,
-subject_kind: String,
-subject_id: String,
-location_id: String,
-body: String,
-) -> __sdk::Result<()> {
-        self.send_local_chat_message_then(sender_id, subject_kind, subject_id, location_id, body,  |_, _| {})
+    fn send_local_chat_message(
+        &self,
+        sender_id: u64,
+        subject_kind: String,
+        subject_id: String,
+        location_id: String,
+        body: String,
+    ) -> __sdk::Result<()> {
+        self.send_local_chat_message_then(
+            sender_id,
+            subject_kind,
+            subject_id,
+            location_id,
+            body,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `send_local_chat_message` to run as soon as possible,
@@ -65,14 +68,16 @@ body: String,
     fn send_local_chat_message_then(
         &self,
         sender_id: u64,
-subject_kind: String,
-subject_id: String,
-location_id: String,
-body: String,
+        subject_kind: String,
+        subject_id: String,
+        location_id: String,
+        body: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -80,16 +85,26 @@ impl send_local_chat_message for super::RemoteReducers {
     fn send_local_chat_message_then(
         &self,
         sender_id: u64,
-subject_kind: String,
-subject_id: String,
-location_id: String,
-body: String,
+        subject_kind: String,
+        subject_id: String,
+        location_id: String,
+        body: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SendLocalChatMessageArgs { sender_id, subject_kind, subject_id, location_id, body,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            SendLocalChatMessageArgs {
+                sender_id,
+                subject_kind,
+                subject_id,
+                location_id,
+                body,
+            },
+            callback,
+        )
     }
 }
-

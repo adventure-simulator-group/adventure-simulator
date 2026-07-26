@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,8 +14,8 @@ impl From<ContinueCampTravelArgs> for super::Reducer {
     fn from(args: ContinueCampTravelArgs) -> Self {
         Self::ContinueCampTravel {
             character_id: args.character_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for ContinueCampTravelArgs {
@@ -39,9 +33,8 @@ pub trait continue_camp_travel {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`continue_camp_travel:continue_camp_travel_then`] to run a callback after the reducer completes.
-    fn continue_camp_travel(&self, character_id: u64,
-) -> __sdk::Result<()> {
-        self.continue_camp_travel_then(character_id,  |_, _| {})
+    fn continue_camp_travel(&self, character_id: u64) -> __sdk::Result<()> {
+        self.continue_camp_travel_then(character_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `continue_camp_travel` to run as soon as possible,
@@ -54,9 +47,11 @@ pub trait continue_camp_travel {
         &self,
         character_id: u64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -65,11 +60,13 @@ impl continue_camp_travel for super::RemoteReducers {
         &self,
         character_id: u64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ContinueCampTravelArgs { character_id,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(ContinueCampTravelArgs { character_id }, callback)
     }
 }
-

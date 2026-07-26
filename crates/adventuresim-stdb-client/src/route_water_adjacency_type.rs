@@ -2,15 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::water_distance_meters_type::WaterDistanceMeters;
 use super::route_water_feature_kind_type::RouteWaterFeatureKind;
+use super::water_distance_meters_type::WaterDistanceMeters;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,8 +14,6 @@ pub struct RouteWaterAdjacency {
     pub distance: WaterDistanceMeters,
 }
 
-
 impl __sdk::InModule for RouteWaterAdjacency {
     type Module = super::RemoteModule;
 }
-

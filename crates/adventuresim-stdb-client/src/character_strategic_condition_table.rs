@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::character_strategic_condition_type::CharacterStrategicCondition;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_strategic_condition`.
 ///
@@ -36,7 +31,9 @@ pub trait CharacterStrategicConditionTableAccess {
 impl CharacterStrategicConditionTableAccess for super::RemoteTables {
     fn character_strategic_condition(&self) -> CharacterStrategicConditionTableHandle<'_> {
         CharacterStrategicConditionTableHandle {
-            imp: self.imp.get_table::<CharacterStrategicCondition>("character_strategic_condition"),
+            imp: self
+                .imp
+                .get_table::<CharacterStrategicCondition>("character_strategic_condition"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for CharacterStrategicConditionTableHandle<'ctx> {
     type Row = CharacterStrategicCondition;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = CharacterStrategicCondition> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = CharacterStrategicCondition> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = CharacterStrategicConditionInsertCallbackId;
 
@@ -96,40 +97,40 @@ impl<'ctx> __sdk::TableWithPrimaryKey for CharacterStrategicConditionTableHandle
     }
 }
 
-        /// Access to the `character_id` unique index on the table `character_strategic_condition`,
-        /// which allows point queries on the field of the same name
-        /// via the [`CharacterStrategicConditionCharacterIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.character_strategic_condition().character_id().find(...)`.
-        pub struct CharacterStrategicConditionCharacterIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<CharacterStrategicCondition, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `character_id` unique index on the table `character_strategic_condition`,
+/// which allows point queries on the field of the same name
+/// via the [`CharacterStrategicConditionCharacterIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.character_strategic_condition().character_id().find(...)`.
+pub struct CharacterStrategicConditionCharacterIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<CharacterStrategicCondition, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> CharacterStrategicConditionTableHandle<'ctx> {
-            /// Get a handle on the `character_id` unique index on the table `character_strategic_condition`.
-            pub fn character_id(&self) -> CharacterStrategicConditionCharacterIdUnique<'ctx> {
-                CharacterStrategicConditionCharacterIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("character_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> CharacterStrategicConditionTableHandle<'ctx> {
+    /// Get a handle on the `character_id` unique index on the table `character_strategic_condition`.
+    pub fn character_id(&self) -> CharacterStrategicConditionCharacterIdUnique<'ctx> {
+        CharacterStrategicConditionCharacterIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("character_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> CharacterStrategicConditionCharacterIdUnique<'ctx> {
-            /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<CharacterStrategicCondition> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> CharacterStrategicConditionCharacterIdUnique<'ctx> {
+    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<CharacterStrategicCondition> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-    let _table = client_cache.get_or_make_table::<CharacterStrategicCondition>("character_strategic_condition");
+    let _table = client_cache
+        .get_or_make_table::<CharacterStrategicCondition>("character_strategic_condition");
     _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
 
@@ -141,23 +142,28 @@ pub(super) fn parse_table_update(
         __sdk::InternalError::failed_parse(
             "TableUpdate<CharacterStrategicCondition>",
             "TableUpdate",
-        ).with_cause(e).into()
+        )
+        .with_cause(e)
+        .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `CharacterStrategicCondition`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait character_strategic_conditionQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `CharacterStrategicCondition`.
-            fn character_strategic_condition(&self) -> __sdk::__query_builder::Table<CharacterStrategicCondition>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `CharacterStrategicCondition`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait character_strategic_conditionQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `CharacterStrategicCondition`.
+    fn character_strategic_condition(
+        &self,
+    ) -> __sdk::__query_builder::Table<CharacterStrategicCondition>;
+}
 
-        impl character_strategic_conditionQueryTableAccess for __sdk::QueryTableAccessor {
-            fn character_strategic_condition(&self) -> __sdk::__query_builder::Table<CharacterStrategicCondition> {
-                __sdk::__query_builder::Table::new("character_strategic_condition")
-            }
-        }
-
+impl character_strategic_conditionQueryTableAccess for __sdk::QueryTableAccessor {
+    fn character_strategic_condition(
+        &self,
+    ) -> __sdk::__query_builder::Table<CharacterStrategicCondition> {
+        __sdk::__query_builder::Table::new("character_strategic_condition")
+    }
+}

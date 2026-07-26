@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -24,8 +18,8 @@ impl From<DepositPartyInventoryItemArgs> for super::Reducer {
             character_id: args.character_id,
             inventory_item_id: args.inventory_item_id,
             quantity: args.quantity,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for DepositPartyInventoryItemArgs {
@@ -43,11 +37,13 @@ pub trait deposit_party_inventory_item {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`deposit_party_inventory_item:deposit_party_inventory_item_then`] to run a callback after the reducer completes.
-    fn deposit_party_inventory_item(&self, character_id: u64,
-inventory_item_id: u64,
-quantity: u32,
-) -> __sdk::Result<()> {
-        self.deposit_party_inventory_item_then(character_id, inventory_item_id, quantity,  |_, _| {})
+    fn deposit_party_inventory_item(
+        &self,
+        character_id: u64,
+        inventory_item_id: u64,
+        quantity: u32,
+    ) -> __sdk::Result<()> {
+        self.deposit_party_inventory_item_then(character_id, inventory_item_id, quantity, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `deposit_party_inventory_item` to run as soon as possible,
@@ -59,12 +55,14 @@ quantity: u32,
     fn deposit_party_inventory_item_then(
         &self,
         character_id: u64,
-inventory_item_id: u64,
-quantity: u32,
+        inventory_item_id: u64,
+        quantity: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -72,14 +70,22 @@ impl deposit_party_inventory_item for super::RemoteReducers {
     fn deposit_party_inventory_item_then(
         &self,
         character_id: u64,
-inventory_item_id: u64,
-quantity: u32,
+        inventory_item_id: u64,
+        quantity: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DepositPartyInventoryItemArgs { character_id, inventory_item_id, quantity,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            DepositPartyInventoryItemArgs {
+                character_id,
+                inventory_item_id,
+                quantity,
+            },
+            callback,
+        )
     }
 }
-

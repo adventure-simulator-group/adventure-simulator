@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,11 +13,9 @@ pub struct BackendLocalProblemTradeEffect {
     pub sell_penalty_bps: i32,
 }
 
-
 impl __sdk::InModule for BackendLocalProblemTradeEffect {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendLocalProblemTradeEffect`.
 ///
@@ -43,8 +35,6 @@ impl __sdk::__query_builder::HasCols for BackendLocalProblemTradeEffect {
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             buy_bps: __sdk::__query_builder::Col::new(table_name, "buy_bps"),
             sell_penalty_bps: __sdk::__query_builder::Col::new(table_name, "sell_penalty_bps"),
-
         }
     }
 }
-

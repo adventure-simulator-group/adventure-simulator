@@ -2,15 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-use super::retained_projectile_type::RetainedProjectile;
 use super::limb_region_type::LimbRegion;
 use super::projectile_kind_type::ProjectileKind;
+use super::retained_projectile_type::RetainedProjectile;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `retained_projectile`.
 ///
@@ -38,7 +33,9 @@ pub trait RetainedProjectileTableAccess {
 impl RetainedProjectileTableAccess for super::RemoteTables {
     fn retained_projectile(&self) -> RetainedProjectileTableHandle<'_> {
         RetainedProjectileTableHandle {
-            imp: self.imp.get_table::<RetainedProjectile>("retained_projectile"),
+            imp: self
+                .imp
+                .get_table::<RetainedProjectile>("retained_projectile"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -51,8 +48,12 @@ impl<'ctx> __sdk::Table for RetainedProjectileTableHandle<'ctx> {
     type Row = RetainedProjectile;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = RetainedProjectile> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = RetainedProjectile> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = RetainedProjectileInsertCallbackId;
 
@@ -98,39 +99,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for RetainedProjectileTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `id` unique index on the table `retained_projectile`,
-        /// which allows point queries on the field of the same name
-        /// via the [`RetainedProjectileIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.retained_projectile().id().find(...)`.
-        pub struct RetainedProjectileIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<RetainedProjectile, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `id` unique index on the table `retained_projectile`,
+/// which allows point queries on the field of the same name
+/// via the [`RetainedProjectileIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.retained_projectile().id().find(...)`.
+pub struct RetainedProjectileIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<RetainedProjectile, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> RetainedProjectileTableHandle<'ctx> {
-            /// Get a handle on the `id` unique index on the table `retained_projectile`.
-            pub fn id(&self) -> RetainedProjectileIdUnique<'ctx> {
-                RetainedProjectileIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> RetainedProjectileTableHandle<'ctx> {
+    /// Get a handle on the `id` unique index on the table `retained_projectile`.
+    pub fn id(&self) -> RetainedProjectileIdUnique<'ctx> {
+        RetainedProjectileIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> RetainedProjectileIdUnique<'ctx> {
-            /// Find the subscribed row whose `id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<RetainedProjectile> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> RetainedProjectileIdUnique<'ctx> {
+    /// Find the subscribed row whose `id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<RetainedProjectile> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<RetainedProjectile>("retained_projectile");
     _table.add_unique_constraint::<u64>("id", |row| &row.id);
 }
@@ -140,26 +140,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<RetainedProjectile>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<RetainedProjectile>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<RetainedProjectile>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `RetainedProjectile`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait retained_projectileQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `RetainedProjectile`.
-            fn retained_projectile(&self) -> __sdk::__query_builder::Table<RetainedProjectile>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `RetainedProjectile`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait retained_projectileQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `RetainedProjectile`.
+    fn retained_projectile(&self) -> __sdk::__query_builder::Table<RetainedProjectile>;
+}
 
-        impl retained_projectileQueryTableAccess for __sdk::QueryTableAccessor {
-            fn retained_projectile(&self) -> __sdk::__query_builder::Table<RetainedProjectile> {
-                __sdk::__query_builder::Table::new("retained_projectile")
-            }
-        }
-
+impl retained_projectileQueryTableAccess for __sdk::QueryTableAccessor {
+    fn retained_projectile(&self) -> __sdk::__query_builder::Table<RetainedProjectile> {
+        __sdk::__query_builder::Table::new("retained_projectile")
+    }
+}

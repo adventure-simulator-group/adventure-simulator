@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::settlement_description_kind_type::SettlementDescriptionKind;
 
@@ -17,12 +12,10 @@ pub struct SettlementDescriptionBatchRow {
     pub id: String,
     pub settlement_id: String,
     pub kind: SettlementDescriptionKind,
-    pub language: Option::<String>,
+    pub language: Option<String>,
     pub body: String,
 }
-
 
 impl __sdk::InModule for SettlementDescriptionBatchRow {
     type Module = super::RemoteModule;
 }
-

@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::direct_historical_vegetation_cover_type::DirectHistoricalVegetationCover;
 use super::direct_historical_vegetation_method_type::DirectHistoricalVegetationMethod;
@@ -19,8 +14,6 @@ pub struct DirectHistoricalVegetation {
     pub method: DirectHistoricalVegetationMethod,
 }
 
-
 impl __sdk::InModule for DirectHistoricalVegetation {
     type Module = super::RemoteModule;
 }
-

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,11 +13,9 @@ pub struct BloodExposureCheckpoint {
     pub evaluated_through: u64,
 }
 
-
 impl __sdk::InModule for BloodExposureCheckpoint {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BloodExposureCheckpoint`.
 ///
@@ -43,7 +35,6 @@ impl __sdk::__query_builder::HasCols for BloodExposureCheckpoint {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             disease_id: __sdk::__query_builder::Col::new(table_name, "disease_id"),
             evaluated_through: __sdk::__query_builder::Col::new(table_name, "evaluated_through"),
-
         }
     }
 }
@@ -60,10 +51,8 @@ impl __sdk::__query_builder::HasIxCols for BloodExposureCheckpoint {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         BloodExposureCheckpointIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for BloodExposureCheckpoint {}
-

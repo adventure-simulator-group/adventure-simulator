@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::character_attributes_type::CharacterAttributes;
 use super::character_personality_type::CharacterPersonality;
@@ -38,8 +33,8 @@ impl From<ConfigureSimulationCharacterArgs> for super::Reducer {
             skills: args.skills,
             downtime: args.downtime,
             personality: args.personality,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for ConfigureSimulationCharacterArgs {
@@ -57,16 +52,28 @@ pub trait configure_simulation_character {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`configure_simulation_character:configure_simulation_character_then`] to run a callback after the reducer completes.
-    fn configure_simulation_character(&self, nonce: String,
-character_id: u64,
-agent_id: u32,
-settlement_id: String,
-attributes: CharacterAttributes,
-skills: CharacterSkills,
-downtime: ScheduleAllocation,
-personality: CharacterPersonality,
-) -> __sdk::Result<()> {
-        self.configure_simulation_character_then(nonce, character_id, agent_id, settlement_id, attributes, skills, downtime, personality,  |_, _| {})
+    fn configure_simulation_character(
+        &self,
+        nonce: String,
+        character_id: u64,
+        agent_id: u32,
+        settlement_id: String,
+        attributes: CharacterAttributes,
+        skills: CharacterSkills,
+        downtime: ScheduleAllocation,
+        personality: CharacterPersonality,
+    ) -> __sdk::Result<()> {
+        self.configure_simulation_character_then(
+            nonce,
+            character_id,
+            agent_id,
+            settlement_id,
+            attributes,
+            skills,
+            downtime,
+            personality,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `configure_simulation_character` to run as soon as possible,
@@ -78,17 +85,19 @@ personality: CharacterPersonality,
     fn configure_simulation_character_then(
         &self,
         nonce: String,
-character_id: u64,
-agent_id: u32,
-settlement_id: String,
-attributes: CharacterAttributes,
-skills: CharacterSkills,
-downtime: ScheduleAllocation,
-personality: CharacterPersonality,
+        character_id: u64,
+        agent_id: u32,
+        settlement_id: String,
+        attributes: CharacterAttributes,
+        skills: CharacterSkills,
+        downtime: ScheduleAllocation,
+        personality: CharacterPersonality,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -96,19 +105,32 @@ impl configure_simulation_character for super::RemoteReducers {
     fn configure_simulation_character_then(
         &self,
         nonce: String,
-character_id: u64,
-agent_id: u32,
-settlement_id: String,
-attributes: CharacterAttributes,
-skills: CharacterSkills,
-downtime: ScheduleAllocation,
-personality: CharacterPersonality,
+        character_id: u64,
+        agent_id: u32,
+        settlement_id: String,
+        attributes: CharacterAttributes,
+        skills: CharacterSkills,
+        downtime: ScheduleAllocation,
+        personality: CharacterPersonality,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ConfigureSimulationCharacterArgs { nonce, character_id, agent_id, settlement_id, attributes, skills, downtime, personality,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            ConfigureSimulationCharacterArgs {
+                nonce,
+                character_id,
+                agent_id,
+                settlement_id,
+                attributes,
+                skills,
+                downtime,
+                personality,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::edge_endpoint_type::EdgeEndpoint;
 use super::land_water_crossing_type::LandWaterCrossing;
@@ -15,12 +10,10 @@ use super::land_water_crossing_type::LandWaterCrossing;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct LandRoute {
-    pub bridge: Option::<EdgeEndpoint>,
-    pub water_crossings: Vec::<LandWaterCrossing>,
+    pub bridge: Option<EdgeEndpoint>,
+    pub water_crossings: Vec<LandWaterCrossing>,
 }
-
 
 impl __sdk::InModule for LandRoute {
     type Module = super::RemoteModule;
 }
-

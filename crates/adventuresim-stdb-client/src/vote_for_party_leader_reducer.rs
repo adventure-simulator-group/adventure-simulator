@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<VoteForPartyLeaderArgs> for super::Reducer {
         Self::VoteForPartyLeader {
             voter_id: args.voter_id,
             candidate_id: args.candidate_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for VoteForPartyLeaderArgs {
@@ -41,10 +35,8 @@ pub trait vote_for_party_leader {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`vote_for_party_leader:vote_for_party_leader_then`] to run a callback after the reducer completes.
-    fn vote_for_party_leader(&self, voter_id: u64,
-candidate_id: u64,
-) -> __sdk::Result<()> {
-        self.vote_for_party_leader_then(voter_id, candidate_id,  |_, _| {})
+    fn vote_for_party_leader(&self, voter_id: u64, candidate_id: u64) -> __sdk::Result<()> {
+        self.vote_for_party_leader_then(voter_id, candidate_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `vote_for_party_leader` to run as soon as possible,
@@ -56,11 +48,13 @@ candidate_id: u64,
     fn vote_for_party_leader_then(
         &self,
         voter_id: u64,
-candidate_id: u64,
+        candidate_id: u64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -68,13 +62,20 @@ impl vote_for_party_leader for super::RemoteReducers {
     fn vote_for_party_leader_then(
         &self,
         voter_id: u64,
-candidate_id: u64,
+        candidate_id: u64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(VoteForPartyLeaderArgs { voter_id, candidate_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            VoteForPartyLeaderArgs {
+                voter_id,
+                candidate_id,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_site_id_type::CaseSiteId;
 
@@ -22,11 +17,9 @@ pub struct BackendCaseBattle {
     pub case_site_id: CaseSiteId,
 }
 
-
 impl __sdk::InModule for BackendCaseBattle {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendCaseBattle`.
 ///
@@ -50,7 +43,6 @@ impl __sdk::__query_builder::HasCols for BackendCaseBattle {
             battle_id: __sdk::__query_builder::Col::new(table_name, "battle_id"),
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
-
         }
     }
 }
@@ -69,10 +61,8 @@ impl __sdk::__query_builder::HasIxCols for BackendCaseBattle {
         BackendCaseBattleIxCols {
             battle_id: __sdk::__query_builder::IxCol::new(table_name, "battle_id"),
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for BackendCaseBattle {}
-

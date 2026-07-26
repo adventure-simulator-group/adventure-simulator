@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -28,11 +22,9 @@ pub struct BackendNpcCaseIntervention {
     pub public_story_markdown: String,
 }
 
-
 impl __sdk::InModule for BackendNpcCaseIntervention {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendNpcCaseIntervention`.
 ///
@@ -66,12 +58,16 @@ impl __sdk::__query_builder::HasCols for BackendNpcCaseIntervention {
             strategy: __sdk::__query_builder::Col::new(table_name, "strategy"),
             route: __sdk::__query_builder::Col::new(table_name, "route"),
             lead_summary: __sdk::__query_builder::Col::new(table_name, "lead_summary"),
-            preparation_summary: __sdk::__query_builder::Col::new(table_name, "preparation_summary"),
+            preparation_summary: __sdk::__query_builder::Col::new(
+                table_name,
+                "preparation_summary",
+            ),
             outcome: __sdk::__query_builder::Col::new(table_name, "outcome"),
             safe_summary: __sdk::__query_builder::Col::new(table_name, "safe_summary"),
-            public_story_markdown: __sdk::__query_builder::Col::new(table_name, "public_story_markdown"),
-
+            public_story_markdown: __sdk::__query_builder::Col::new(
+                table_name,
+                "public_story_markdown",
+            ),
         }
     }
 }
-

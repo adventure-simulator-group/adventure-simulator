@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_site_id_type::CaseSiteId;
 
@@ -23,8 +18,8 @@ impl From<TravelToCaseSiteArgs> for super::Reducer {
         Self::TravelToCaseSite {
             character_id: args.character_id,
             case_site_id: args.case_site_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for TravelToCaseSiteArgs {
@@ -42,10 +37,12 @@ pub trait travel_to_case_site {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`travel_to_case_site:travel_to_case_site_then`] to run a callback after the reducer completes.
-    fn travel_to_case_site(&self, character_id: u64,
-case_site_id: CaseSiteId,
-) -> __sdk::Result<()> {
-        self.travel_to_case_site_then(character_id, case_site_id,  |_, _| {})
+    fn travel_to_case_site(
+        &self,
+        character_id: u64,
+        case_site_id: CaseSiteId,
+    ) -> __sdk::Result<()> {
+        self.travel_to_case_site_then(character_id, case_site_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `travel_to_case_site` to run as soon as possible,
@@ -57,11 +54,13 @@ case_site_id: CaseSiteId,
     fn travel_to_case_site_then(
         &self,
         character_id: u64,
-case_site_id: CaseSiteId,
+        case_site_id: CaseSiteId,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -69,13 +68,20 @@ impl travel_to_case_site for super::RemoteReducers {
     fn travel_to_case_site_then(
         &self,
         character_id: u64,
-case_site_id: CaseSiteId,
+        case_site_id: CaseSiteId,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(TravelToCaseSiteArgs { character_id, case_site_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            TravelToCaseSiteArgs {
+                character_id,
+                case_site_id,
+            },
+            callback,
+        )
     }
 }
-

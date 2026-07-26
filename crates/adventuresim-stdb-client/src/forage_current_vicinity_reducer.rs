@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::forage_environment_attestation_type::ForageEnvironmentAttestation;
 
@@ -16,7 +11,7 @@ use super::forage_environment_attestation_type::ForageEnvironmentAttestation;
 pub(super) struct ForageCurrentVicinityArgs {
     pub character_id: u64,
     pub request_id: String,
-    pub target_item_ids: Vec::<String>,
+    pub source_ids: Vec<String>,
     pub requested_minutes: u64,
     pub attestation: ForageEnvironmentAttestation,
 }
@@ -26,11 +21,11 @@ impl From<ForageCurrentVicinityArgs> for super::Reducer {
         Self::ForageCurrentVicinity {
             character_id: args.character_id,
             request_id: args.request_id,
-            target_item_ids: args.target_item_ids,
+            source_ids: args.source_ids,
             requested_minutes: args.requested_minutes,
             attestation: args.attestation,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for ForageCurrentVicinityArgs {
@@ -48,13 +43,22 @@ pub trait forage_current_vicinity {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`forage_current_vicinity:forage_current_vicinity_then`] to run a callback after the reducer completes.
-    fn forage_current_vicinity(&self, character_id: u64,
-request_id: String,
-target_item_ids: Vec::<String>,
-requested_minutes: u64,
-attestation: ForageEnvironmentAttestation,
-) -> __sdk::Result<()> {
-        self.forage_current_vicinity_then(character_id, request_id, target_item_ids, requested_minutes, attestation,  |_, _| {})
+    fn forage_current_vicinity(
+        &self,
+        character_id: u64,
+        request_id: String,
+        source_ids: Vec<String>,
+        requested_minutes: u64,
+        attestation: ForageEnvironmentAttestation,
+    ) -> __sdk::Result<()> {
+        self.forage_current_vicinity_then(
+            character_id,
+            request_id,
+            source_ids,
+            requested_minutes,
+            attestation,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `forage_current_vicinity` to run as soon as possible,
@@ -66,14 +70,16 @@ attestation: ForageEnvironmentAttestation,
     fn forage_current_vicinity_then(
         &self,
         character_id: u64,
-request_id: String,
-target_item_ids: Vec::<String>,
-requested_minutes: u64,
-attestation: ForageEnvironmentAttestation,
+        request_id: String,
+        source_ids: Vec<String>,
+        requested_minutes: u64,
+        attestation: ForageEnvironmentAttestation,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -81,16 +87,26 @@ impl forage_current_vicinity for super::RemoteReducers {
     fn forage_current_vicinity_then(
         &self,
         character_id: u64,
-request_id: String,
-target_item_ids: Vec::<String>,
-requested_minutes: u64,
-attestation: ForageEnvironmentAttestation,
+        request_id: String,
+        source_ids: Vec<String>,
+        requested_minutes: u64,
+        attestation: ForageEnvironmentAttestation,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ForageCurrentVicinityArgs { character_id, request_id, target_item_ids, requested_minutes, attestation,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            ForageCurrentVicinityArgs {
+                character_id,
+                request_id,
+                source_ids,
+                requested_minutes,
+                attestation,
+            },
+            callback,
+        )
     }
 }
-

@@ -302,6 +302,7 @@ pub fn validate_documents(
                     "requirements",
                     "practice_allowed",
                     "practice_reward_interval_minutes",
+                    "privileges",
                 ],
                 source,
                 &at,
@@ -339,6 +340,12 @@ pub fn validate_documents(
                 return Err(format!(
                     "{source}: {at}.practice_reward_interval_minutes must be zero when practice is forbidden"
                 ));
+            }
+            if let Some(privileges) = rank.get("privileges") {
+                let privileges = privileges
+                    .as_array()
+                    .ok_or_else(|| format!("{source}: {at}.privileges must be an array"))?;
+                validate_privileges(privileges, source, &format!("{at}.privileges"))?;
             }
         }
         let activity = object(
@@ -406,11 +413,7 @@ pub fn validate_documents(
                 "{source}: activity training weights total {total}, expected 1"
             ));
         }
-        for privilege in array(org, source, "privileges")? {
-            if !matches!(privilege.as_str(), Some("bear_arms" | "wear_armor")) {
-                return Err(format!("{source}: unknown privilege {privilege}"));
-            }
-        }
+        validate_privileges(array(org, source, "privileges")?, source, "privileges")?;
     }
     let policies = policy
         .as_array()
@@ -440,6 +443,26 @@ pub fn validate_documents(
     Ok(())
 }
 
+fn validate_privileges(values: &[Value], source: &str, path: &str) -> Result<(), String> {
+    let privileges = unique_strings(values, source, path)?;
+    for privilege in privileges {
+        if !matches!(
+            privilege.as_str(),
+            "bear_arms"
+                | "wear_armor"
+                | "forage_high_game"
+                | "forage_low_game"
+                | "forage_fish"
+                | "forage_plants"
+        ) {
+            return Err(format!(
+                "{source}: {path} contains unknown privilege {privilege:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,7 +482,8 @@ mod tests {
                 "description": "A member.",
                 "requirements": [],
                 "practice_allowed": true,
-                "practice_reward_interval_minutes": 480
+                "practice_reward_interval_minutes": 480,
+                "privileges": []
             }],
             "activity": {
                 "training": [{"kind": "fixed_skill", "skill": "cooking", "weight": 1.0}],
@@ -530,6 +554,33 @@ mod tests {
             validate(valid_organization(), policy)
                 .unwrap_err()
                 .contains("must be a boolean")
+        );
+    }
+
+    #[test]
+    fn validates_unknown_and_duplicate_privileges_at_both_levels() {
+        let mut duplicate_org = valid_organization();
+        duplicate_org["privileges"] = json!(["forage_fish", "forage_fish"]);
+        assert!(
+            validate(duplicate_org, json!([]))
+                .unwrap_err()
+                .contains("duplicate")
+        );
+
+        let mut unknown_rank = valid_organization();
+        unknown_rank["ranks"][0]["privileges"] = json!(["royal_hunt"]);
+        assert!(
+            validate(unknown_rank, json!([]))
+                .unwrap_err()
+                .contains("unknown privilege")
+        );
+
+        let mut duplicate_rank = valid_organization();
+        duplicate_rank["ranks"][0]["privileges"] = json!(["forage_high_game", "forage_high_game"]);
+        assert!(
+            validate(duplicate_rank, json!([]))
+                .unwrap_err()
+                .contains("duplicate")
         );
     }
 }

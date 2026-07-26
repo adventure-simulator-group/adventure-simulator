@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::backend_npc_intervention_candidate_type::BackendNpcInterventionCandidate;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_npc_intervention_candidates`.
 ///
@@ -30,13 +25,19 @@ pub struct BackendNpcInterventionCandidatesTableHandle<'ctx> {
 pub trait BackendNpcInterventionCandidatesTableAccess {
     #[allow(non_snake_case)]
     /// Obtain a [`BackendNpcInterventionCandidatesTableHandle`], which mediates access to the table `backend_npc_intervention_candidates`.
-    fn backend_npc_intervention_candidates(&self) -> BackendNpcInterventionCandidatesTableHandle<'_>;
+    fn backend_npc_intervention_candidates(
+        &self,
+    ) -> BackendNpcInterventionCandidatesTableHandle<'_>;
 }
 
 impl BackendNpcInterventionCandidatesTableAccess for super::RemoteTables {
-    fn backend_npc_intervention_candidates(&self) -> BackendNpcInterventionCandidatesTableHandle<'_> {
+    fn backend_npc_intervention_candidates(
+        &self,
+    ) -> BackendNpcInterventionCandidatesTableHandle<'_> {
         BackendNpcInterventionCandidatesTableHandle {
-            imp: self.imp.get_table::<BackendNpcInterventionCandidate>("backend_npc_intervention_candidates"),
+            imp: self.imp.get_table::<BackendNpcInterventionCandidate>(
+                "backend_npc_intervention_candidates",
+            ),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +50,12 @@ impl<'ctx> __sdk::Table for BackendNpcInterventionCandidatesTableHandle<'ctx> {
     type Row = BackendNpcInterventionCandidate;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = BackendNpcInterventionCandidate> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = BackendNpcInterventionCandidate> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BackendNpcInterventionCandidatesInsertCallbackId;
 
@@ -81,8 +86,9 @@ impl<'ctx> __sdk::Table for BackendNpcInterventionCandidatesTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<BackendNpcInterventionCandidate>("backend_npc_intervention_candidates");
+    let _table = client_cache.get_or_make_table::<BackendNpcInterventionCandidate>(
+        "backend_npc_intervention_candidates",
+    );
 }
 
 #[doc(hidden)]
@@ -93,23 +99,28 @@ pub(super) fn parse_table_update(
         __sdk::InternalError::failed_parse(
             "TableUpdate<BackendNpcInterventionCandidate>",
             "TableUpdate",
-        ).with_cause(e).into()
+        )
+        .with_cause(e)
+        .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `BackendNpcInterventionCandidate`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait backend_npc_intervention_candidatesQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `BackendNpcInterventionCandidate`.
-            fn backend_npc_intervention_candidates(&self) -> __sdk::__query_builder::Table<BackendNpcInterventionCandidate>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BackendNpcInterventionCandidate`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait backend_npc_intervention_candidatesQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BackendNpcInterventionCandidate`.
+    fn backend_npc_intervention_candidates(
+        &self,
+    ) -> __sdk::__query_builder::Table<BackendNpcInterventionCandidate>;
+}
 
-        impl backend_npc_intervention_candidatesQueryTableAccess for __sdk::QueryTableAccessor {
-            fn backend_npc_intervention_candidates(&self) -> __sdk::__query_builder::Table<BackendNpcInterventionCandidate> {
-                __sdk::__query_builder::Table::new("backend_npc_intervention_candidates")
-            }
-        }
-
+impl backend_npc_intervention_candidatesQueryTableAccess for __sdk::QueryTableAccessor {
+    fn backend_npc_intervention_candidates(
+        &self,
+    ) -> __sdk::__query_builder::Table<BackendNpcInterventionCandidate> {
+        __sdk::__query_builder::Table::new("backend_npc_intervention_candidates")
+    }
+}

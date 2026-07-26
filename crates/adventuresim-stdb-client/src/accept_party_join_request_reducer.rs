@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<AcceptPartyJoinRequestArgs> for super::Reducer {
         Self::AcceptPartyJoinRequest {
             leader_id: args.leader_id,
             request_id: args.request_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for AcceptPartyJoinRequestArgs {
@@ -41,10 +35,8 @@ pub trait accept_party_join_request {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`accept_party_join_request:accept_party_join_request_then`] to run a callback after the reducer completes.
-    fn accept_party_join_request(&self, leader_id: u64,
-request_id: u64,
-) -> __sdk::Result<()> {
-        self.accept_party_join_request_then(leader_id, request_id,  |_, _| {})
+    fn accept_party_join_request(&self, leader_id: u64, request_id: u64) -> __sdk::Result<()> {
+        self.accept_party_join_request_then(leader_id, request_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `accept_party_join_request` to run as soon as possible,
@@ -56,11 +48,13 @@ request_id: u64,
     fn accept_party_join_request_then(
         &self,
         leader_id: u64,
-request_id: u64,
+        request_id: u64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -68,13 +62,20 @@ impl accept_party_join_request for super::RemoteReducers {
     fn accept_party_join_request_then(
         &self,
         leader_id: u64,
-request_id: u64,
+        request_id: u64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(AcceptPartyJoinRequestArgs { leader_id, request_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            AcceptPartyJoinRequestArgs {
+                leader_id,
+                request_id,
+            },
+            callback,
+        )
     }
 }
-

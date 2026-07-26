@@ -2,17 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_site_id_type::CaseSiteId;
 use super::incident_id_type::IncidentId;
-use super::incident_source_id_type::IncidentSourceId;
 use super::incident_kind_type::IncidentKind;
+use super::incident_source_id_type::IncidentSourceId;
 use super::incident_status_type::IncidentStatus;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -31,11 +26,9 @@ pub struct StrategicIncident {
     pub created_at_minute: u64,
 }
 
-
 impl __sdk::InModule for StrategicIncident {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `StrategicIncident`.
 ///
@@ -69,7 +62,6 @@ impl __sdk::__query_builder::HasCols for StrategicIncident {
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
             hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
             created_at_minute: __sdk::__query_builder::Col::new(table_name, "created_at_minute"),
-
         }
     }
 }
@@ -94,10 +86,8 @@ impl __sdk::__query_builder::HasIxCols for StrategicIncident {
             id_key: __sdk::__query_builder::IxCol::new(table_name, "id_key"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
             source_id: __sdk::__query_builder::IxCol::new(table_name, "source_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for StrategicIncident {}
-

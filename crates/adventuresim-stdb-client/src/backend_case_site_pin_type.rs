@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -32,11 +26,9 @@ pub struct BackendCaseSitePin {
     pub combat_available: bool,
 }
 
-
 impl __sdk::InModule for BackendCaseSitePin {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendCaseSitePin`.
 ///
@@ -68,13 +60,19 @@ impl __sdk::__query_builder::HasCols for BackendCaseSitePin {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
-            origin_settlement_id: __sdk::__query_builder::Col::new(table_name, "origin_settlement_id"),
+            origin_settlement_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "origin_settlement_id",
+            ),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             description: __sdk::__query_builder::Col::new(table_name, "description"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
-            coordinates_are_geographic: __sdk::__query_builder::Col::new(table_name, "coordinates_are_geographic"),
+            coordinates_are_geographic: __sdk::__query_builder::Col::new(
+                table_name,
+                "coordinates_are_geographic",
+            ),
             distance_m: __sdk::__query_builder::Col::new(table_name, "distance_m"),
             knowledge_stage: __sdk::__query_builder::Col::new(table_name, "knowledge_stage"),
             tracked: __sdk::__query_builder::Col::new(table_name, "tracked"),
@@ -82,8 +80,6 @@ impl __sdk::__query_builder::HasCols for BackendCaseSitePin {
             generated_case: __sdk::__query_builder::Col::new(table_name, "generated_case"),
             case_resolved: __sdk::__query_builder::Col::new(table_name, "case_resolved"),
             combat_available: __sdk::__query_builder::Col::new(table_name, "combat_available"),
-
         }
     }
 }
-

@@ -72,6 +72,8 @@ pub struct OrganizationRank {
     pub requirements: Vec<Requirement>,
     pub practice_allowed: bool,
     pub practice_reward_interval_minutes: u32,
+    #[serde(default)]
+    pub privileges: Vec<Privilege>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -120,11 +122,15 @@ pub enum ActivityReward {
     Virtue,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Privilege {
     BearArms,
     WearArmor,
+    ForageHighGame,
+    ForageLowGame,
+    ForageFish,
+    ForagePlants,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -155,6 +161,15 @@ impl OrganizationDefinition {
 
     pub fn has_privilege(&self, privilege: Privilege) -> bool {
         self.privileges.contains(&privilege)
+    }
+
+    /// Organization privileges are inherited by every rank; rank privileges
+    /// are additive.
+    pub fn has_privilege_at_rank(&self, rank_id: &str, privilege: Privilege) -> bool {
+        self.has_privilege(privilege)
+            || self
+                .rank(rank_id)
+                .is_some_and(|rank| rank.privileges.contains(&privilege))
     }
 
     pub fn rank(&self, rank_id: &str) -> Option<&OrganizationRank> {
@@ -224,5 +239,22 @@ mod tests {
         let rank = definition.rank("hearer").unwrap();
         assert!(rank.practice_allowed);
         assert_eq!(rank.practice_reward_interval_minutes, 480);
+    }
+
+    #[test]
+    fn ranger_common_licenses_are_inherited_and_high_game_is_master_only() {
+        for id in [
+            "wardens_harz",
+            "keepers_solling",
+            "company_green_staff_thuringia",
+        ] {
+            let definition = organization(id).unwrap();
+            let first = &definition.ranks[0];
+            assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForageLowGame));
+            assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForageFish));
+            assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForagePlants));
+            assert!(!definition.has_privilege_at_rank(&first.id, Privilege::ForageHighGame));
+            assert!(definition.has_privilege_at_rank("master", Privilege::ForageHighGame));
+        }
     }
 }

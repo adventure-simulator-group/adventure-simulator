@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -30,11 +24,9 @@ pub struct InvestigationWitnessReferral {
     pub granted_at: u64,
 }
 
-
 impl __sdk::InModule for InvestigationWitnessReferral {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `InvestigationWitnessReferral`.
 ///
@@ -66,17 +58,31 @@ impl __sdk::__query_builder::HasCols for InvestigationWitnessReferral {
             canonical_case_id: __sdk::__query_builder::Col::new(table_name, "canonical_case_id"),
             public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
             witness_npc_id: __sdk::__query_builder::Col::new(table_name, "witness_npc_id"),
-            expected_settlement_id: __sdk::__query_builder::Col::new(table_name, "expected_settlement_id"),
-            expected_location_id: __sdk::__query_builder::Col::new(table_name, "expected_location_id"),
+            expected_settlement_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "expected_settlement_id",
+            ),
+            expected_location_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "expected_location_id",
+            ),
             grant_kind: __sdk::__query_builder::Col::new(table_name, "grant_kind"),
             source_receipt_id: __sdk::__query_builder::Col::new(table_name, "source_receipt_id"),
             source_witness_id: __sdk::__query_builder::Col::new(table_name, "source_witness_id"),
-            source_witness_npc_id: __sdk::__query_builder::Col::new(table_name, "source_witness_npc_id"),
-            source_testimony_index: __sdk::__query_builder::Col::new(table_name, "source_testimony_index"),
-            source_proposition_id: __sdk::__query_builder::Col::new(table_name, "source_proposition_id"),
+            source_witness_npc_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "source_witness_npc_id",
+            ),
+            source_testimony_index: __sdk::__query_builder::Col::new(
+                table_name,
+                "source_testimony_index",
+            ),
+            source_proposition_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "source_proposition_id",
+            ),
             catalog_revision: __sdk::__query_builder::Col::new(table_name, "catalog_revision"),
             granted_at: __sdk::__query_builder::Col::new(table_name, "granted_at"),
-
         }
     }
 }
@@ -96,11 +102,12 @@ impl __sdk::__query_builder::HasIxCols for InvestigationWitnessReferral {
         InvestigationWitnessReferralIxCols {
             canonical_case_id: __sdk::__query_builder::IxCol::new(table_name, "canonical_case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
-
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationWitnessReferral {}
-

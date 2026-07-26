@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_site_id_type::CaseSiteId;
 use super::hostile_resolution_kind_type::HostileResolutionKind;
@@ -25,15 +20,13 @@ pub struct MissionOutcomeCandidate {
     pub objective_id: String,
     pub resolution: HostileResolutionKind,
     pub weight: u32,
-    pub capture_subject_id: Option::<String>,
-    pub capture_custody_version: Option::<u32>,
+    pub capture_subject_id: Option<String>,
+    pub capture_custody_version: Option<u32>,
 }
-
 
 impl __sdk::InModule for MissionOutcomeCandidate {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `MissionOutcomeCandidate`.
 ///
@@ -49,8 +42,8 @@ pub struct MissionOutcomeCandidateCols {
     pub objective_id: __sdk::__query_builder::Col<MissionOutcomeCandidate, String>,
     pub resolution: __sdk::__query_builder::Col<MissionOutcomeCandidate, HostileResolutionKind>,
     pub weight: __sdk::__query_builder::Col<MissionOutcomeCandidate, u32>,
-    pub capture_subject_id: __sdk::__query_builder::Col<MissionOutcomeCandidate, Option::<String>>,
-    pub capture_custody_version: __sdk::__query_builder::Col<MissionOutcomeCandidate, Option::<u32>>,
+    pub capture_subject_id: __sdk::__query_builder::Col<MissionOutcomeCandidate, Option<String>>,
+    pub capture_custody_version: __sdk::__query_builder::Col<MissionOutcomeCandidate, Option<u32>>,
 }
 
 impl __sdk::__query_builder::HasCols for MissionOutcomeCandidate {
@@ -68,8 +61,10 @@ impl __sdk::__query_builder::HasCols for MissionOutcomeCandidate {
             resolution: __sdk::__query_builder::Col::new(table_name, "resolution"),
             weight: __sdk::__query_builder::Col::new(table_name, "weight"),
             capture_subject_id: __sdk::__query_builder::Col::new(table_name, "capture_subject_id"),
-            capture_custody_version: __sdk::__query_builder::Col::new(table_name, "capture_custody_version"),
-
+            capture_custody_version: __sdk::__query_builder::Col::new(
+                table_name,
+                "capture_custody_version",
+            ),
         }
     }
 }
@@ -88,10 +83,8 @@ impl __sdk::__query_builder::HasIxCols for MissionOutcomeCandidate {
         MissionOutcomeCandidateIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             mission_id: __sdk::__query_builder::IxCol::new(table_name, "mission_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for MissionOutcomeCandidate {}
-

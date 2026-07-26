@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::autoresolve_report_type::AutoresolveReport;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `autoresolve_report`.
 ///
@@ -36,7 +31,9 @@ pub trait AutoresolveReportTableAccess {
 impl AutoresolveReportTableAccess for super::RemoteTables {
     fn autoresolve_report(&self) -> AutoresolveReportTableHandle<'_> {
         AutoresolveReportTableHandle {
-            imp: self.imp.get_table::<AutoresolveReport>("autoresolve_report"),
+            imp: self
+                .imp
+                .get_table::<AutoresolveReport>("autoresolve_report"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for AutoresolveReportTableHandle<'ctx> {
     type Row = AutoresolveReport;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = AutoresolveReport> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = AutoresolveReport> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = AutoresolveReportInsertCallbackId;
 
@@ -96,39 +97,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for AutoresolveReportTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `battle_id` unique index on the table `autoresolve_report`,
-        /// which allows point queries on the field of the same name
-        /// via the [`AutoresolveReportBattleIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.autoresolve_report().battle_id().find(...)`.
-        pub struct AutoresolveReportBattleIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<AutoresolveReport, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `battle_id` unique index on the table `autoresolve_report`,
+/// which allows point queries on the field of the same name
+/// via the [`AutoresolveReportBattleIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.autoresolve_report().battle_id().find(...)`.
+pub struct AutoresolveReportBattleIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<AutoresolveReport, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> AutoresolveReportTableHandle<'ctx> {
-            /// Get a handle on the `battle_id` unique index on the table `autoresolve_report`.
-            pub fn battle_id(&self) -> AutoresolveReportBattleIdUnique<'ctx> {
-                AutoresolveReportBattleIdUnique {
-                    imp: self.imp.get_unique_constraint::<String>("battle_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> AutoresolveReportTableHandle<'ctx> {
+    /// Get a handle on the `battle_id` unique index on the table `autoresolve_report`.
+    pub fn battle_id(&self) -> AutoresolveReportBattleIdUnique<'ctx> {
+        AutoresolveReportBattleIdUnique {
+            imp: self.imp.get_unique_constraint::<String>("battle_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> AutoresolveReportBattleIdUnique<'ctx> {
-            /// Find the subscribed row whose `battle_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<AutoresolveReport> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> AutoresolveReportBattleIdUnique<'ctx> {
+    /// Find the subscribed row whose `battle_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<AutoresolveReport> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<AutoresolveReport>("autoresolve_report");
     _table.add_unique_constraint::<String>("battle_id", |row| &row.battle_id);
 }
@@ -138,26 +138,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<AutoresolveReport>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<AutoresolveReport>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<AutoresolveReport>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `AutoresolveReport`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait autoresolve_reportQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `AutoresolveReport`.
-            fn autoresolve_report(&self) -> __sdk::__query_builder::Table<AutoresolveReport>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `AutoresolveReport`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait autoresolve_reportQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `AutoresolveReport`.
+    fn autoresolve_report(&self) -> __sdk::__query_builder::Table<AutoresolveReport>;
+}
 
-        impl autoresolve_reportQueryTableAccess for __sdk::QueryTableAccessor {
-            fn autoresolve_report(&self) -> __sdk::__query_builder::Table<AutoresolveReport> {
-                __sdk::__query_builder::Table::new("autoresolve_report")
-            }
-        }
-
+impl autoresolve_reportQueryTableAccess for __sdk::QueryTableAccessor {
+    fn autoresolve_report(&self) -> __sdk::__query_builder::Table<AutoresolveReport> {
+        __sdk::__query_builder::Table::new("autoresolve_report")
+    }
+}

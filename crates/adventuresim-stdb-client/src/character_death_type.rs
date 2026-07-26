@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::death_cause_type::DeathCause;
 use super::death_source_type::DeathSource;
@@ -18,15 +13,13 @@ pub struct CharacterDeath {
     pub character_id: u64,
     pub cause: DeathCause,
     pub source: DeathSource,
-    pub source_id: Option::<String>,
+    pub source_id: Option<String>,
     pub strategic_minute: u64,
 }
-
 
 impl __sdk::InModule for CharacterDeath {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CharacterDeath`.
 ///
@@ -35,7 +28,7 @@ pub struct CharacterDeathCols {
     pub character_id: __sdk::__query_builder::Col<CharacterDeath, u64>,
     pub cause: __sdk::__query_builder::Col<CharacterDeath, DeathCause>,
     pub source: __sdk::__query_builder::Col<CharacterDeath, DeathSource>,
-    pub source_id: __sdk::__query_builder::Col<CharacterDeath, Option::<String>>,
+    pub source_id: __sdk::__query_builder::Col<CharacterDeath, Option<String>>,
     pub strategic_minute: __sdk::__query_builder::Col<CharacterDeath, u64>,
 }
 
@@ -48,7 +41,6 @@ impl __sdk::__query_builder::HasCols for CharacterDeath {
             source: __sdk::__query_builder::Col::new(table_name, "source"),
             source_id: __sdk::__query_builder::Col::new(table_name, "source_id"),
             strategic_minute: __sdk::__query_builder::Col::new(table_name, "strategic_minute"),
-
         }
     }
 }
@@ -65,10 +57,8 @@ impl __sdk::__query_builder::HasIxCols for CharacterDeath {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterDeathIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterDeath {}
-

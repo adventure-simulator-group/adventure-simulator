@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,8 +12,8 @@ pub struct Character {
     pub xp: u32,
     pub level: u32,
     pub gold: u32,
-    pub current_settlement_id: Option::<String>,
-    pub party_id: Option::<String>,
+    pub current_settlement_id: Option<String>,
+    pub party_id: Option<String>,
     pub server: __sdk::Identity,
     pub in_server: bool,
     pub temporary: bool,
@@ -27,11 +21,9 @@ pub struct Character {
     pub alive: bool,
 }
 
-
 impl __sdk::InModule for Character {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `Character`.
 ///
@@ -42,8 +34,8 @@ pub struct CharacterCols {
     pub xp: __sdk::__query_builder::Col<Character, u32>,
     pub level: __sdk::__query_builder::Col<Character, u32>,
     pub gold: __sdk::__query_builder::Col<Character, u32>,
-    pub current_settlement_id: __sdk::__query_builder::Col<Character, Option::<String>>,
-    pub party_id: __sdk::__query_builder::Col<Character, Option::<String>>,
+    pub current_settlement_id: __sdk::__query_builder::Col<Character, Option<String>>,
+    pub party_id: __sdk::__query_builder::Col<Character, Option<String>>,
     pub server: __sdk::__query_builder::Col<Character, __sdk::Identity>,
     pub in_server: __sdk::__query_builder::Col<Character, bool>,
     pub temporary: __sdk::__query_builder::Col<Character, bool>,
@@ -60,14 +52,16 @@ impl __sdk::__query_builder::HasCols for Character {
             xp: __sdk::__query_builder::Col::new(table_name, "xp"),
             level: __sdk::__query_builder::Col::new(table_name, "level"),
             gold: __sdk::__query_builder::Col::new(table_name, "gold"),
-            current_settlement_id: __sdk::__query_builder::Col::new(table_name, "current_settlement_id"),
+            current_settlement_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "current_settlement_id",
+            ),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             server: __sdk::__query_builder::Col::new(table_name, "server"),
             in_server: __sdk::__query_builder::Col::new(table_name, "in_server"),
             temporary: __sdk::__query_builder::Col::new(table_name, "temporary"),
             age_years: __sdk::__query_builder::Col::new(table_name, "age_years"),
             alive: __sdk::__query_builder::Col::new(table_name, "alive"),
-
         }
     }
 }
@@ -86,10 +80,8 @@ impl __sdk::__query_builder::HasIxCols for Character {
         CharacterIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             server: __sdk::__query_builder::IxCol::new(table_name, "server"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for Character {}
-

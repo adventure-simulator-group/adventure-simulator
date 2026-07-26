@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::tactical_mission_resolution_type::TacticalMissionResolution;
 
@@ -23,8 +18,8 @@ impl From<EndTacticalServerArgs> for super::Reducer {
         Self::EndTacticalServer {
             resolution: args.resolution,
             reported_xp_gained: args.reported_xp_gained,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for EndTacticalServerArgs {
@@ -42,10 +37,12 @@ pub trait end_tactical_server {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`end_tactical_server:end_tactical_server_then`] to run a callback after the reducer completes.
-    fn end_tactical_server(&self, resolution: TacticalMissionResolution,
-reported_xp_gained: i32,
-) -> __sdk::Result<()> {
-        self.end_tactical_server_then(resolution, reported_xp_gained,  |_, _| {})
+    fn end_tactical_server(
+        &self,
+        resolution: TacticalMissionResolution,
+        reported_xp_gained: i32,
+    ) -> __sdk::Result<()> {
+        self.end_tactical_server_then(resolution, reported_xp_gained, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `end_tactical_server` to run as soon as possible,
@@ -57,11 +54,13 @@ reported_xp_gained: i32,
     fn end_tactical_server_then(
         &self,
         resolution: TacticalMissionResolution,
-reported_xp_gained: i32,
+        reported_xp_gained: i32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -69,13 +68,20 @@ impl end_tactical_server for super::RemoteReducers {
     fn end_tactical_server_then(
         &self,
         resolution: TacticalMissionResolution,
-reported_xp_gained: i32,
+        reported_xp_gained: i32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(EndTacticalServerArgs { resolution, reported_xp_gained,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            EndTacticalServerArgs {
+                resolution,
+                reported_xp_gained,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,16 +13,14 @@ pub struct BackendPhysiologyAdministration {
     pub profile_version: u16,
     pub route: String,
     pub amount_milliunits: u32,
-    pub region: Option::<String>,
+    pub region: Option<String>,
     pub administered_at: u64,
-    pub stopped_at: Option::<u64>,
+    pub stopped_at: Option<u64>,
 }
-
 
 impl __sdk::InModule for BackendPhysiologyAdministration {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendPhysiologyAdministration`.
 ///
@@ -40,9 +32,9 @@ pub struct BackendPhysiologyAdministrationCols {
     pub profile_version: __sdk::__query_builder::Col<BackendPhysiologyAdministration, u16>,
     pub route: __sdk::__query_builder::Col<BackendPhysiologyAdministration, String>,
     pub amount_milliunits: __sdk::__query_builder::Col<BackendPhysiologyAdministration, u32>,
-    pub region: __sdk::__query_builder::Col<BackendPhysiologyAdministration, Option::<String>>,
+    pub region: __sdk::__query_builder::Col<BackendPhysiologyAdministration, Option<String>>,
     pub administered_at: __sdk::__query_builder::Col<BackendPhysiologyAdministration, u64>,
-    pub stopped_at: __sdk::__query_builder::Col<BackendPhysiologyAdministration, Option::<u64>>,
+    pub stopped_at: __sdk::__query_builder::Col<BackendPhysiologyAdministration, Option<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendPhysiologyAdministration {
@@ -58,8 +50,6 @@ impl __sdk::__query_builder::HasCols for BackendPhysiologyAdministration {
             region: __sdk::__query_builder::Col::new(table_name, "region"),
             administered_at: __sdk::__query_builder::Col::new(table_name, "administered_at"),
             stopped_at: __sdk::__query_builder::Col::new(table_name, "stopped_at"),
-
         }
     }
 }
-

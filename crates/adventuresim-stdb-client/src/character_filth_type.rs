@@ -2,15 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::filth_substance_type::FilthSubstance;
 use super::filth_origin_type::FilthOrigin;
+use super::filth_substance_type::FilthSubstance;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -23,11 +18,9 @@ pub struct CharacterFilth {
     pub deposited_at: u64,
 }
 
-
 impl __sdk::InModule for CharacterFilth {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CharacterFilth`.
 ///
@@ -51,7 +44,6 @@ impl __sdk::__query_builder::HasCols for CharacterFilth {
             origin: __sdk::__query_builder::Col::new(table_name, "origin"),
             amount: __sdk::__query_builder::Col::new(table_name, "amount"),
             deposited_at: __sdk::__query_builder::Col::new(table_name, "deposited_at"),
-
         }
     }
 }
@@ -70,10 +62,8 @@ impl __sdk::__query_builder::HasIxCols for CharacterFilth {
         CharacterFilthIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterFilth {}
-

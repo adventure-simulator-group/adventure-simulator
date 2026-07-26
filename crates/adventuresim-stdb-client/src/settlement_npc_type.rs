@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::npc_age_band_type::NpcAgeBand;
 use super::npc_sex_type::NpcSex;
@@ -34,11 +29,9 @@ pub struct SettlementNpc {
     pub conversation_id: String,
 }
 
-
 impl __sdk::InModule for SettlementNpc {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `SettlementNpc`.
 ///
@@ -84,7 +77,6 @@ impl __sdk::__query_builder::HasCols for SettlementNpc {
             local_role: __sdk::__query_builder::Col::new(table_name, "local_role"),
             service_id: __sdk::__query_builder::Col::new(table_name, "service_id"),
             conversation_id: __sdk::__query_builder::Col::new(table_name, "conversation_id"),
-
         }
     }
 }
@@ -101,12 +93,13 @@ impl __sdk::__query_builder::HasIxCols for SettlementNpc {
     type IxCols = SettlementNpcIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         SettlementNpcIxCols {
-            home_settlement_id: __sdk::__query_builder::IxCol::new(table_name, "home_settlement_id"),
+            home_settlement_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "home_settlement_id",
+            ),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for SettlementNpc {}
-

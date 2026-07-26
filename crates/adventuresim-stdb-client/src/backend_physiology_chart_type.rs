@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::backend_physiology_differential_type::BackendPhysiologyDifferential;
 
@@ -20,22 +15,20 @@ pub struct BackendPhysiologyChart {
     pub observed_at: u64,
     pub physiology_band: u8,
     pub observation_minutes: u64,
-    pub sanguine_bps: Vec::<i16>,
-    pub phlegmatic_bps: Vec::<i16>,
-    pub choleric_bps: Vec::<i16>,
-    pub melancholic_bps: Vec::<i16>,
-    pub possible_diseases: Vec::<BackendPhysiologyDifferential>,
-    pub known_interventions: Vec::<String>,
+    pub sanguine_bps: Vec<i16>,
+    pub phlegmatic_bps: Vec<i16>,
+    pub choleric_bps: Vec<i16>,
+    pub melancholic_bps: Vec<i16>,
+    pub possible_diseases: Vec<BackendPhysiologyDifferential>,
+    pub known_interventions: Vec<String>,
     pub confidence_bps: u16,
-    pub gap_from: Option::<u64>,
-    pub gap_to: Option::<u64>,
+    pub gap_from: Option<u64>,
+    pub gap_to: Option<u64>,
 }
-
 
 impl __sdk::InModule for BackendPhysiologyChart {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendPhysiologyChart`.
 ///
@@ -47,15 +40,16 @@ pub struct BackendPhysiologyChartCols {
     pub observed_at: __sdk::__query_builder::Col<BackendPhysiologyChart, u64>,
     pub physiology_band: __sdk::__query_builder::Col<BackendPhysiologyChart, u8>,
     pub observation_minutes: __sdk::__query_builder::Col<BackendPhysiologyChart, u64>,
-    pub sanguine_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec::<i16>>,
-    pub phlegmatic_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec::<i16>>,
-    pub choleric_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec::<i16>>,
-    pub melancholic_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec::<i16>>,
-    pub possible_diseases: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec::<BackendPhysiologyDifferential>>,
-    pub known_interventions: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec::<String>>,
+    pub sanguine_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec<i16>>,
+    pub phlegmatic_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec<i16>>,
+    pub choleric_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec<i16>>,
+    pub melancholic_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec<i16>>,
+    pub possible_diseases:
+        __sdk::__query_builder::Col<BackendPhysiologyChart, Vec<BackendPhysiologyDifferential>>,
+    pub known_interventions: __sdk::__query_builder::Col<BackendPhysiologyChart, Vec<String>>,
     pub confidence_bps: __sdk::__query_builder::Col<BackendPhysiologyChart, u16>,
-    pub gap_from: __sdk::__query_builder::Col<BackendPhysiologyChart, Option::<u64>>,
-    pub gap_to: __sdk::__query_builder::Col<BackendPhysiologyChart, Option::<u64>>,
+    pub gap_from: __sdk::__query_builder::Col<BackendPhysiologyChart, Option<u64>>,
+    pub gap_to: __sdk::__query_builder::Col<BackendPhysiologyChart, Option<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendPhysiologyChart {
@@ -67,18 +61,22 @@ impl __sdk::__query_builder::HasCols for BackendPhysiologyChart {
             patient_id: __sdk::__query_builder::Col::new(table_name, "patient_id"),
             observed_at: __sdk::__query_builder::Col::new(table_name, "observed_at"),
             physiology_band: __sdk::__query_builder::Col::new(table_name, "physiology_band"),
-            observation_minutes: __sdk::__query_builder::Col::new(table_name, "observation_minutes"),
+            observation_minutes: __sdk::__query_builder::Col::new(
+                table_name,
+                "observation_minutes",
+            ),
             sanguine_bps: __sdk::__query_builder::Col::new(table_name, "sanguine_bps"),
             phlegmatic_bps: __sdk::__query_builder::Col::new(table_name, "phlegmatic_bps"),
             choleric_bps: __sdk::__query_builder::Col::new(table_name, "choleric_bps"),
             melancholic_bps: __sdk::__query_builder::Col::new(table_name, "melancholic_bps"),
             possible_diseases: __sdk::__query_builder::Col::new(table_name, "possible_diseases"),
-            known_interventions: __sdk::__query_builder::Col::new(table_name, "known_interventions"),
+            known_interventions: __sdk::__query_builder::Col::new(
+                table_name,
+                "known_interventions",
+            ),
             confidence_bps: __sdk::__query_builder::Col::new(table_name, "confidence_bps"),
             gap_from: __sdk::__query_builder::Col::new(table_name, "gap_from"),
             gap_to: __sdk::__query_builder::Col::new(table_name, "gap_to"),
-
         }
     }
 }
-

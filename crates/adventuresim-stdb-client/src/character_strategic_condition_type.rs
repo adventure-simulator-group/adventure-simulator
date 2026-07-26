@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -32,11 +26,9 @@ pub struct CharacterStrategicCondition {
     pub status: String,
 }
 
-
 impl __sdk::InModule for CharacterStrategicCondition {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CharacterStrategicCondition`.
 ///
@@ -82,7 +74,6 @@ impl __sdk::__query_builder::HasCols for CharacterStrategicCondition {
             incapacitation: __sdk::__query_builder::Col::new(table_name, "incapacitation"),
             check_multiplier: __sdk::__query_builder::Col::new(table_name, "check_multiplier"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
-
         }
     }
 }
@@ -99,10 +90,8 @@ impl __sdk::__query_builder::HasIxCols for CharacterStrategicCondition {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterStrategicConditionIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterStrategicCondition {}
-

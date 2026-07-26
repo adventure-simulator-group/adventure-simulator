@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<AutoresolveMissionArgs> for super::Reducer {
         Self::AutoresolveMission {
             character_id: args.character_id,
             mission_id: args.mission_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for AutoresolveMissionArgs {
@@ -41,10 +35,8 @@ pub trait autoresolve_mission {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`autoresolve_mission:autoresolve_mission_then`] to run a callback after the reducer completes.
-    fn autoresolve_mission(&self, character_id: u64,
-mission_id: String,
-) -> __sdk::Result<()> {
-        self.autoresolve_mission_then(character_id, mission_id,  |_, _| {})
+    fn autoresolve_mission(&self, character_id: u64, mission_id: String) -> __sdk::Result<()> {
+        self.autoresolve_mission_then(character_id, mission_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `autoresolve_mission` to run as soon as possible,
@@ -56,11 +48,13 @@ mission_id: String,
     fn autoresolve_mission_then(
         &self,
         character_id: u64,
-mission_id: String,
+        mission_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -68,13 +62,20 @@ impl autoresolve_mission for super::RemoteReducers {
     fn autoresolve_mission_then(
         &self,
         character_id: u64,
-mission_id: String,
+        mission_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(AutoresolveMissionArgs { character_id, mission_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            AutoresolveMissionArgs {
+                character_id,
+                mission_id,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,17 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::prosperity_tier_type::ProsperityTier;
 use super::settlement_service_type::SettlementService;
-use super::stock_category_type::StockCategory;
 use super::settlement_stock_type::SettlementStock;
+use super::stock_category_type::StockCategory;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,13 +15,11 @@ pub struct SettlementEconomyProfile {
     pub rules_version: u32,
     pub prosperity_score: u16,
     pub prosperity_tier: ProsperityTier,
-    pub services: Vec::<SettlementService>,
-    pub specializations: Vec::<StockCategory>,
-    pub stock: Vec::<SettlementStock>,
+    pub services: Vec<SettlementService>,
+    pub specializations: Vec<StockCategory>,
+    pub stock: Vec<SettlementStock>,
 }
-
 
 impl __sdk::InModule for SettlementEconomyProfile {
     type Module = super::RemoteModule;
 }
-

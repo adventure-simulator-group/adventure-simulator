@@ -372,13 +372,35 @@ pub fn effective_presented_organization(ctx: &ReducerContext, character_id: u64)
         .then_some(presentation.organization_id)
 }
 
-/// Remove a stale or locally unrecognized presentation, then apply equipment law.
+fn globally_current_presented_organization(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Option<String> {
+    let presentation = ctx
+        .db
+        .organization_presentation()
+        .character_id()
+        .find(character_id)?;
+    let membership = membership(ctx, character_id, &presentation.organization_id)?;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)?
+        .minutes;
+    membership_is_current(&membership, minute).then_some(presentation.organization_id)
+}
+
+/// Remove a stale presentation, then apply locally recognized equipment law.
+/// Merely leaving a recognizing settlement does not discard the persisted
+/// profession, because global privileges (including forage licenses) still use
+/// it.
 pub fn reconcile_presentation(
     ctx: &ReducerContext,
     character_id: u64,
 ) -> Result<Option<String>, String> {
     let effective = effective_presented_organization(ctx, character_id);
-    if effective.is_none()
+    if globally_current_presented_organization(ctx, character_id).is_none()
         && ctx
             .db
             .organization_presentation()
@@ -417,6 +439,45 @@ pub fn presented_privilege(
         && active_membership(ctx, character_id, &presentation.organization_id).is_ok()
 }
 
+fn current_membership_grants(
+    definition: &OrganizationDefinition,
+    membership: &OrganizationMembership,
+    minute: u64,
+    privilege: Privilege,
+) -> bool {
+    membership_is_current(membership, minute)
+        && definition.has_privilege_at_rank(&membership.rank_id, privilege)
+}
+
+/// Global presented privileges deliberately ignore current settlement and
+/// local recognition. Presentation, active dues-current membership, and rank
+/// remain authoritative.
+pub fn global_presented_privilege(
+    ctx: &ReducerContext,
+    character_id: u64,
+    privilege: Privilege,
+) -> bool {
+    let Some(organization_id) = globally_current_presented_organization(ctx, character_id) else {
+        return false;
+    };
+    let Some(definition) = organization(&organization_id) else {
+        return false;
+    };
+    let Some(membership) = membership(ctx, character_id, &organization_id) else {
+        return false;
+    };
+    let Some(minute) = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map(|row| row.minutes)
+    else {
+        return false;
+    };
+    current_membership_grants(definition, &membership, minute, privilege)
+}
+
 pub fn require_activity_membership(
     ctx: &ReducerContext,
     character_id: u64,
@@ -439,5 +500,63 @@ pub fn increment_activity_accrual(
             .saturating_add(apprenticeship);
         row.practice_minutes_accrued = row.practice_minutes_accrued.saturating_add(practice);
         ctx.db.organization_membership().id().update(row);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn membership_at(rank_id: &str, status: &str, paid_through: u64) -> OrganizationMembership {
+        OrganizationMembership {
+            id: 1,
+            character_id: 7,
+            organization_id: "wardens_harz".into(),
+            rank_id: rank_id.into(),
+            joined_minute: 0,
+            dues_paid_through_minute: paid_through,
+            status: status.into(),
+            apprenticeship_minutes_accrued: 0,
+            practice_minutes_accrued: 0,
+        }
+    }
+
+    #[test]
+    fn global_license_requires_current_membership_and_right_rank() {
+        let definition = organization("wardens_harz").unwrap();
+        let warden = membership_at("warden", MEMBERSHIP_ACTIVE, 100);
+        assert!(current_membership_grants(
+            definition,
+            &warden,
+            100,
+            Privilege::ForagePlants
+        ));
+        assert!(!current_membership_grants(
+            definition,
+            &warden,
+            100,
+            Privilege::ForageHighGame
+        ));
+        let master = membership_at("master", MEMBERSHIP_ACTIVE, 100);
+        assert!(current_membership_grants(
+            definition,
+            &master,
+            100,
+            Privilege::ForageHighGame
+        ));
+        let lapsed = membership_at("master", MEMBERSHIP_ACTIVE, 99);
+        assert!(!current_membership_grants(
+            definition,
+            &lapsed,
+            100,
+            Privilege::ForageHighGame
+        ));
+        let suspended = membership_at("master", MEMBERSHIP_SUSPENDED, 100);
+        assert!(!current_membership_grants(
+            definition,
+            &suspended,
+            100,
+            Privilege::ForageHighGame
+        ));
     }
 }

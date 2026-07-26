@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,11 +12,9 @@ pub struct CharacterStats {
     pub focus: f32,
 }
 
-
 impl __sdk::InModule for CharacterStats {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CharacterStats`.
 ///
@@ -40,7 +32,6 @@ impl __sdk::__query_builder::HasCols for CharacterStats {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             calories_used: __sdk::__query_builder::Col::new(table_name, "calories_used"),
             focus: __sdk::__query_builder::Col::new(table_name, "focus"),
-
         }
     }
 }
@@ -57,10 +48,8 @@ impl __sdk::__query_builder::HasIxCols for CharacterStats {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterStatsIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterStats {}
-

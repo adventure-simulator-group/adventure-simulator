@@ -35,4 +35,6 @@ In our setting, there is ostensibly a vast underground network of caves, crypts,
 Personal foraging trains only the Plains, Forest, and Hills leaf skills in the
 normalized mixture of the character's current 1 km vicinity. The Terrain
 heading remains a presentation aggregate and is never awarded or stored.
-Cultivated ground affects legality, not the biome mixture.
+Cultivated ground affects legality, not the biome mixture. High Game, Low Game,
+Fish, Harmful Beasts, and Plants divide one selected search-time budget; source
+availability follows the local habitat rather than selecting another vicinity.

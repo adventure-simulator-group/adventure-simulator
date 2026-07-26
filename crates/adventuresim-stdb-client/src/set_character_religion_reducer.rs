@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<SetCharacterReligionArgs> for super::Reducer {
         Self::SetCharacterReligion {
             character_id: args.character_id,
             religion_id: args.religion_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for SetCharacterReligionArgs {
@@ -41,10 +35,8 @@ pub trait set_character_religion {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`set_character_religion:set_character_religion_then`] to run a callback after the reducer completes.
-    fn set_character_religion(&self, character_id: u64,
-religion_id: String,
-) -> __sdk::Result<()> {
-        self.set_character_religion_then(character_id, religion_id,  |_, _| {})
+    fn set_character_religion(&self, character_id: u64, religion_id: String) -> __sdk::Result<()> {
+        self.set_character_religion_then(character_id, religion_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `set_character_religion` to run as soon as possible,
@@ -56,11 +48,13 @@ religion_id: String,
     fn set_character_religion_then(
         &self,
         character_id: u64,
-religion_id: String,
+        religion_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -68,13 +62,20 @@ impl set_character_religion for super::RemoteReducers {
     fn set_character_religion_then(
         &self,
         character_id: u64,
-religion_id: String,
+        religion_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SetCharacterReligionArgs { character_id, religion_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            SetCharacterReligionArgs {
+                character_id,
+                religion_id,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,16 +2,11 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::journey_route_leg_type::JourneyRouteLeg;
 use super::journey_route_point_type::JourneyRoutePoint;
 use super::journey_terrain_span_type::JourneyTerrainSpan;
-use super::journey_route_leg_type::JourneyRouteLeg;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -21,16 +16,14 @@ pub struct PartyJourneyRoute {
     pub package_digest: String,
     pub distance_m: u64,
     pub minutes: u64,
-    pub points: Vec::<JourneyRoutePoint>,
-    pub spans: Vec::<JourneyTerrainSpan>,
-    pub return_route: Option::<JourneyRouteLeg>,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
+    pub return_route: Option<JourneyRouteLeg>,
 }
-
 
 impl __sdk::InModule for PartyJourneyRoute {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `PartyJourneyRoute`.
 ///
@@ -41,9 +34,9 @@ pub struct PartyJourneyRouteCols {
     pub package_digest: __sdk::__query_builder::Col<PartyJourneyRoute, String>,
     pub distance_m: __sdk::__query_builder::Col<PartyJourneyRoute, u64>,
     pub minutes: __sdk::__query_builder::Col<PartyJourneyRoute, u64>,
-    pub points: __sdk::__query_builder::Col<PartyJourneyRoute, Vec::<JourneyRoutePoint>>,
-    pub spans: __sdk::__query_builder::Col<PartyJourneyRoute, Vec::<JourneyTerrainSpan>>,
-    pub return_route: __sdk::__query_builder::Col<PartyJourneyRoute, Option::<JourneyRouteLeg>>,
+    pub points: __sdk::__query_builder::Col<PartyJourneyRoute, Vec<JourneyRoutePoint>>,
+    pub spans: __sdk::__query_builder::Col<PartyJourneyRoute, Vec<JourneyTerrainSpan>>,
+    pub return_route: __sdk::__query_builder::Col<PartyJourneyRoute, Option<JourneyRouteLeg>>,
 }
 
 impl __sdk::__query_builder::HasCols for PartyJourneyRoute {
@@ -58,7 +51,6 @@ impl __sdk::__query_builder::HasCols for PartyJourneyRoute {
             points: __sdk::__query_builder::Col::new(table_name, "points"),
             spans: __sdk::__query_builder::Col::new(table_name, "spans"),
             return_route: __sdk::__query_builder::Col::new(table_name, "return_route"),
-
         }
     }
 }
@@ -77,10 +69,8 @@ impl __sdk::__query_builder::HasIxCols for PartyJourneyRoute {
         PartyJourneyRouteIxCols {
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PartyJourneyRoute {}
-

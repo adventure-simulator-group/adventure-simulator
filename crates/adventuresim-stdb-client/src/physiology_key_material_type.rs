@@ -2,27 +2,19 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PhysiologyKeyMaterial {
     pub id: u8,
     pub version: u16,
-    pub key: Vec::<u8>,
+    pub key: Vec<u8>,
 }
-
 
 impl __sdk::InModule for PhysiologyKeyMaterial {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `PhysiologyKeyMaterial`.
 ///
@@ -30,7 +22,7 @@ impl __sdk::InModule for PhysiologyKeyMaterial {
 pub struct PhysiologyKeyMaterialCols {
     pub id: __sdk::__query_builder::Col<PhysiologyKeyMaterial, u8>,
     pub version: __sdk::__query_builder::Col<PhysiologyKeyMaterial, u16>,
-    pub key: __sdk::__query_builder::Col<PhysiologyKeyMaterial, Vec::<u8>>,
+    pub key: __sdk::__query_builder::Col<PhysiologyKeyMaterial, Vec<u8>>,
 }
 
 impl __sdk::__query_builder::HasCols for PhysiologyKeyMaterial {
@@ -40,7 +32,6 @@ impl __sdk::__query_builder::HasCols for PhysiologyKeyMaterial {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             version: __sdk::__query_builder::Col::new(table_name, "version"),
             key: __sdk::__query_builder::Col::new(table_name, "key"),
-
         }
     }
 }
@@ -57,10 +48,8 @@ impl __sdk::__query_builder::HasIxCols for PhysiologyKeyMaterial {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PhysiologyKeyMaterialIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PhysiologyKeyMaterial {}
-

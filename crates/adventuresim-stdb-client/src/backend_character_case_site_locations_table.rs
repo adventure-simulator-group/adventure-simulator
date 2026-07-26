@@ -2,14 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::backend_character_case_site_location_type::BackendCharacterCaseSiteLocation;
 use super::case_site_id_type::CaseSiteId;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_character_case_site_locations`.
 ///
@@ -31,13 +26,19 @@ pub struct BackendCharacterCaseSiteLocationsTableHandle<'ctx> {
 pub trait BackendCharacterCaseSiteLocationsTableAccess {
     #[allow(non_snake_case)]
     /// Obtain a [`BackendCharacterCaseSiteLocationsTableHandle`], which mediates access to the table `backend_character_case_site_locations`.
-    fn backend_character_case_site_locations(&self) -> BackendCharacterCaseSiteLocationsTableHandle<'_>;
+    fn backend_character_case_site_locations(
+        &self,
+    ) -> BackendCharacterCaseSiteLocationsTableHandle<'_>;
 }
 
 impl BackendCharacterCaseSiteLocationsTableAccess for super::RemoteTables {
-    fn backend_character_case_site_locations(&self) -> BackendCharacterCaseSiteLocationsTableHandle<'_> {
+    fn backend_character_case_site_locations(
+        &self,
+    ) -> BackendCharacterCaseSiteLocationsTableHandle<'_> {
         BackendCharacterCaseSiteLocationsTableHandle {
-            imp: self.imp.get_table::<BackendCharacterCaseSiteLocation>("backend_character_case_site_locations"),
+            imp: self.imp.get_table::<BackendCharacterCaseSiteLocation>(
+                "backend_character_case_site_locations",
+            ),
             ctx: std::marker::PhantomData,
         }
     }
@@ -50,8 +51,12 @@ impl<'ctx> __sdk::Table for BackendCharacterCaseSiteLocationsTableHandle<'ctx> {
     type Row = BackendCharacterCaseSiteLocation;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = BackendCharacterCaseSiteLocation> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = BackendCharacterCaseSiteLocation> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BackendCharacterCaseSiteLocationsInsertCallbackId;
 
@@ -82,8 +87,9 @@ impl<'ctx> __sdk::Table for BackendCharacterCaseSiteLocationsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<BackendCharacterCaseSiteLocation>("backend_character_case_site_locations");
+    let _table = client_cache.get_or_make_table::<BackendCharacterCaseSiteLocation>(
+        "backend_character_case_site_locations",
+    );
 }
 
 #[doc(hidden)]
@@ -94,23 +100,28 @@ pub(super) fn parse_table_update(
         __sdk::InternalError::failed_parse(
             "TableUpdate<BackendCharacterCaseSiteLocation>",
             "TableUpdate",
-        ).with_cause(e).into()
+        )
+        .with_cause(e)
+        .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `BackendCharacterCaseSiteLocation`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait backend_character_case_site_locationsQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `BackendCharacterCaseSiteLocation`.
-            fn backend_character_case_site_locations(&self) -> __sdk::__query_builder::Table<BackendCharacterCaseSiteLocation>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BackendCharacterCaseSiteLocation`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait backend_character_case_site_locationsQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BackendCharacterCaseSiteLocation`.
+    fn backend_character_case_site_locations(
+        &self,
+    ) -> __sdk::__query_builder::Table<BackendCharacterCaseSiteLocation>;
+}
 
-        impl backend_character_case_site_locationsQueryTableAccess for __sdk::QueryTableAccessor {
-            fn backend_character_case_site_locations(&self) -> __sdk::__query_builder::Table<BackendCharacterCaseSiteLocation> {
-                __sdk::__query_builder::Table::new("backend_character_case_site_locations")
-            }
-        }
-
+impl backend_character_case_site_locationsQueryTableAccess for __sdk::QueryTableAccessor {
+    fn backend_character_case_site_locations(
+        &self,
+    ) -> __sdk::__query_builder::Table<BackendCharacterCaseSiteLocation> {
+        __sdk::__query_builder::Table::new("backend_character_case_site_locations")
+    }
+}

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -17,14 +11,12 @@ pub struct CharacterCondition {
     pub body_weight_kg: f32,
     pub current_blood_ml: f32,
     pub maximum_blood_ml: f32,
-    pub religion_id: Option::<String>,
+    pub religion_id: Option<String>,
 }
-
 
 impl __sdk::InModule for CharacterCondition {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CharacterCondition`.
 ///
@@ -34,7 +26,7 @@ pub struct CharacterConditionCols {
     pub body_weight_kg: __sdk::__query_builder::Col<CharacterCondition, f32>,
     pub current_blood_ml: __sdk::__query_builder::Col<CharacterCondition, f32>,
     pub maximum_blood_ml: __sdk::__query_builder::Col<CharacterCondition, f32>,
-    pub religion_id: __sdk::__query_builder::Col<CharacterCondition, Option::<String>>,
+    pub religion_id: __sdk::__query_builder::Col<CharacterCondition, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterCondition {
@@ -46,7 +38,6 @@ impl __sdk::__query_builder::HasCols for CharacterCondition {
             current_blood_ml: __sdk::__query_builder::Col::new(table_name, "current_blood_ml"),
             maximum_blood_ml: __sdk::__query_builder::Col::new(table_name, "maximum_blood_ml"),
             religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
-
         }
     }
 }
@@ -63,10 +54,8 @@ impl __sdk::__query_builder::HasIxCols for CharacterCondition {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterConditionIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterCondition {}
-

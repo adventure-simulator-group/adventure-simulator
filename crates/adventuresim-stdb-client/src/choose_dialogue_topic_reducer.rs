@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -30,8 +24,8 @@ impl From<ChooseDialogueTopicArgs> for super::Reducer {
             action_id: args.action_id,
             expected_revision: args.expected_revision,
             catalog_revision: args.catalog_revision,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for ChooseDialogueTopicArgs {
@@ -49,14 +43,24 @@ pub trait choose_dialogue_topic {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`choose_dialogue_topic:choose_dialogue_topic_then`] to run a callback after the reducer completes.
-    fn choose_dialogue_topic(&self, character_id: u64,
-session_id: String,
-topic_id: String,
-action_id: String,
-expected_revision: u64,
-catalog_revision: String,
-) -> __sdk::Result<()> {
-        self.choose_dialogue_topic_then(character_id, session_id, topic_id, action_id, expected_revision, catalog_revision,  |_, _| {})
+    fn choose_dialogue_topic(
+        &self,
+        character_id: u64,
+        session_id: String,
+        topic_id: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
+    ) -> __sdk::Result<()> {
+        self.choose_dialogue_topic_then(
+            character_id,
+            session_id,
+            topic_id,
+            action_id,
+            expected_revision,
+            catalog_revision,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `choose_dialogue_topic` to run as soon as possible,
@@ -68,15 +72,17 @@ catalog_revision: String,
     fn choose_dialogue_topic_then(
         &self,
         character_id: u64,
-session_id: String,
-topic_id: String,
-action_id: String,
-expected_revision: u64,
-catalog_revision: String,
+        session_id: String,
+        topic_id: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -84,17 +90,28 @@ impl choose_dialogue_topic for super::RemoteReducers {
     fn choose_dialogue_topic_then(
         &self,
         character_id: u64,
-session_id: String,
-topic_id: String,
-action_id: String,
-expected_revision: u64,
-catalog_revision: String,
+        session_id: String,
+        topic_id: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ChooseDialogueTopicArgs { character_id, session_id, topic_id, action_id, expected_revision, catalog_revision,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            ChooseDialogueTopicArgs {
+                character_id,
+                session_id,
+                topic_id,
+                action_id,
+                expected_revision,
+                catalog_revision,
+            },
+            callback,
+        )
     }
 }
-

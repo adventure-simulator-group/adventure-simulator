@@ -2,15 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::item_slot_type::ItemSlot;
 use super::item_kind_type::ItemKind;
+use super::item_slot_type::ItemSlot;
 use super::weapon_skill_distribution_type::WeaponSkillDistribution;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -37,7 +32,7 @@ pub struct Item {
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
-    pub base_value: Option::<u32>,
+    pub base_value: Option<u32>,
     pub nutrition_kcal: f32,
     pub water_capacity_ml: u32,
     pub alcohol_serving_ml: u32,
@@ -55,11 +50,9 @@ pub struct Item {
     pub handling_sensitivity: f32,
 }
 
-
 impl __sdk::InModule for Item {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `Item`.
 ///
@@ -86,7 +79,7 @@ pub struct ItemCols {
     pub blunt: __sdk::__query_builder::Col<Item, bool>,
     pub slash: __sdk::__query_builder::Col<Item, bool>,
     pub pierce: __sdk::__query_builder::Col<Item, bool>,
-    pub base_value: __sdk::__query_builder::Col<Item, Option::<u32>>,
+    pub base_value: __sdk::__query_builder::Col<Item, Option<u32>>,
     pub nutrition_kcal: __sdk::__query_builder::Col<Item, f32>,
     pub water_capacity_ml: __sdk::__query_builder::Col<Item, u32>,
     pub alcohol_serving_ml: __sdk::__query_builder::Col<Item, u32>,
@@ -133,19 +126,39 @@ impl __sdk::__query_builder::HasCols for Item {
             nutrition_kcal: __sdk::__query_builder::Col::new(table_name, "nutrition_kcal"),
             water_capacity_ml: __sdk::__query_builder::Col::new(table_name, "water_capacity_ml"),
             alcohol_serving_ml: __sdk::__query_builder::Col::new(table_name, "alcohol_serving_ml"),
-            alcohol_abv_basis_points: __sdk::__query_builder::Col::new(table_name, "alcohol_abv_basis_points"),
-            alcohol_net_hydration_ml: __sdk::__query_builder::Col::new(table_name, "alcohol_net_hydration_ml"),
-            alcohol_disinfectant_effectiveness: __sdk::__query_builder::Col::new(table_name, "alcohol_disinfectant_effectiveness"),
-            alcohol_disinfectant_focused: __sdk::__query_builder::Col::new(table_name, "alcohol_disinfectant_focused"),
+            alcohol_abv_basis_points: __sdk::__query_builder::Col::new(
+                table_name,
+                "alcohol_abv_basis_points",
+            ),
+            alcohol_net_hydration_ml: __sdk::__query_builder::Col::new(
+                table_name,
+                "alcohol_net_hydration_ml",
+            ),
+            alcohol_disinfectant_effectiveness: __sdk::__query_builder::Col::new(
+                table_name,
+                "alcohol_disinfectant_effectiveness",
+            ),
+            alcohol_disinfectant_focused: __sdk::__query_builder::Col::new(
+                table_name,
+                "alcohol_disinfectant_focused",
+            ),
             alcohol_potable: __sdk::__query_builder::Col::new(table_name, "alcohol_potable"),
             quality: __sdk::__query_builder::Col::new(table_name, "quality"),
             durability_yield: __sdk::__query_builder::Col::new(table_name, "durability_yield"),
-            durability_fracture: __sdk::__query_builder::Col::new(table_name, "durability_fracture"),
+            durability_fracture: __sdk::__query_builder::Col::new(
+                table_name,
+                "durability_fracture",
+            ),
             durability_wear: __sdk::__query_builder::Col::new(table_name, "durability_wear"),
-            durability_failure_share: __sdk::__query_builder::Col::new(table_name, "durability_failure_share"),
+            durability_failure_share: __sdk::__query_builder::Col::new(
+                table_name,
+                "durability_failure_share",
+            ),
             edge_sensitivity: __sdk::__query_builder::Col::new(table_name, "edge_sensitivity"),
-            handling_sensitivity: __sdk::__query_builder::Col::new(table_name, "handling_sensitivity"),
-
+            handling_sensitivity: __sdk::__query_builder::Col::new(
+                table_name,
+                "handling_sensitivity",
+            ),
         }
     }
 }
@@ -162,10 +175,8 @@ impl __sdk::__query_builder::HasIxCols for Item {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ItemIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for Item {}
-

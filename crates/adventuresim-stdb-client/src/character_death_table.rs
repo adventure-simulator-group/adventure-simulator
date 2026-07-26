@@ -2,15 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::character_death_type::CharacterDeath;
 use super::death_cause_type::DeathCause;
 use super::death_source_type::DeathSource;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_death`.
 ///
@@ -51,8 +46,12 @@ impl<'ctx> __sdk::Table for CharacterDeathTableHandle<'ctx> {
     type Row = CharacterDeath;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = CharacterDeath> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = CharacterDeath> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = CharacterDeathInsertCallbackId;
 
@@ -98,39 +97,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for CharacterDeathTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `character_id` unique index on the table `character_death`,
-        /// which allows point queries on the field of the same name
-        /// via the [`CharacterDeathCharacterIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.character_death().character_id().find(...)`.
-        pub struct CharacterDeathCharacterIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<CharacterDeath, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `character_id` unique index on the table `character_death`,
+/// which allows point queries on the field of the same name
+/// via the [`CharacterDeathCharacterIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.character_death().character_id().find(...)`.
+pub struct CharacterDeathCharacterIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<CharacterDeath, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> CharacterDeathTableHandle<'ctx> {
-            /// Get a handle on the `character_id` unique index on the table `character_death`.
-            pub fn character_id(&self) -> CharacterDeathCharacterIdUnique<'ctx> {
-                CharacterDeathCharacterIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("character_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> CharacterDeathTableHandle<'ctx> {
+    /// Get a handle on the `character_id` unique index on the table `character_death`.
+    pub fn character_id(&self) -> CharacterDeathCharacterIdUnique<'ctx> {
+        CharacterDeathCharacterIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("character_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> CharacterDeathCharacterIdUnique<'ctx> {
-            /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<CharacterDeath> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> CharacterDeathCharacterIdUnique<'ctx> {
+    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<CharacterDeath> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<CharacterDeath>("character_death");
     _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
@@ -140,26 +138,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<CharacterDeath>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<CharacterDeath>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<CharacterDeath>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `CharacterDeath`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait character_deathQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `CharacterDeath`.
-            fn character_death(&self) -> __sdk::__query_builder::Table<CharacterDeath>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `CharacterDeath`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait character_deathQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `CharacterDeath`.
+    fn character_death(&self) -> __sdk::__query_builder::Table<CharacterDeath>;
+}
 
-        impl character_deathQueryTableAccess for __sdk::QueryTableAccessor {
-            fn character_death(&self) -> __sdk::__query_builder::Table<CharacterDeath> {
-                __sdk::__query_builder::Table::new("character_death")
-            }
-        }
-
+impl character_deathQueryTableAccess for __sdk::QueryTableAccessor {
+    fn character_death(&self) -> __sdk::__query_builder::Table<CharacterDeath> {
+        __sdk::__query_builder::Table::new("character_death")
+    }
+}
