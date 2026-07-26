@@ -18,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-pub const SCHEMA: u32 = 4;
+pub const SCHEMA: u32 = 5;
 pub const CHUNK_SIDE: u16 = 256;
 pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PACK_BYTES: usize = 2 * 1024 * 1024 * 1024;
@@ -80,6 +80,9 @@ pub struct Cell {
     pub surface: Surface,
     /// Roads over water are valid bridges/ferries/fords.
     pub crossing: bool,
+    /// Whether the canonical EPSG:3035 1 km square is cultivated.
+    /// This uses a spare bit in the existing flags byte.
+    pub cultivated: bool,
     /// Copernicus TCD canopy cover, retained independently of routing classes.
     pub canopy_percent: u8,
     /// Area share whose native neighbours form slopes steeper than 15 degrees.
@@ -169,6 +172,12 @@ pub struct Manifest {
     pub road_geometry_sha256: String,
     pub wetland_source_sha256: String,
     pub wetland_cells: u64,
+    pub cultivation_grid_crs: String,
+    pub cultivation_grid_resolution_m: u16,
+    pub cultivation_rules_version: u16,
+    pub cultivation_source_sha256: String,
+    pub cultivated_square_count: u64,
+    pub cultivated_native_cells: u64,
     pub entries: Vec<Entry>,
     pub package_sha256: String,
 }
@@ -308,6 +317,12 @@ impl TerrainPack {
     pub const fn wetland_cells(&self) -> u64 {
         self.manifest.wetland_cells
     }
+    pub fn cultivation_source_sha256(&self) -> &str {
+        &self.manifest.cultivation_source_sha256
+    }
+    pub const fn cultivated_square_count(&self) -> u64 {
+        self.manifest.cultivated_square_count
+    }
 
     pub fn digest(&self) -> &str {
         &self.manifest.package_sha256
@@ -392,9 +407,12 @@ impl TerrainPack {
         if decoded.len() != expected || hex_sha(&decoded) != entry.decoded_sha256 {
             return Err(Error::Validation("chunk is corrupt or truncated".into()));
         }
-        if decoded.chunks_exact(CELL_BYTES).any(|bytes| bytes[2] > 5) {
+        if decoded
+            .chunks_exact(CELL_BYTES)
+            .any(|bytes| bytes[2] > 5 || bytes[3] & !0b111 != 0)
+        {
             return Err(Error::Validation(
-                "chunk contains an unknown surface discriminant".into(),
+                "chunk contains an unknown surface or flag discriminant".into(),
             ));
         }
         let cells: Arc<[Cell]> = decoded
@@ -412,6 +430,7 @@ impl TerrainPack {
                 },
                 crossing: bytes[3] & 1 != 0,
                 hilly_fraction_percent: if bytes[3] & 2 != 0 { 100 } else { 0 },
+                cultivated: bytes[3] & 4 != 0,
                 canopy_percent: bytes[4],
             })
             .collect::<Vec<_>>()
@@ -606,6 +625,7 @@ impl TerrainPack {
                             elevation_m: 0,
                             surface: Surface::Water,
                             crossing: false,
+                            cultivated: false,
                             canopy_percent: 0,
                             hilly_fraction_percent: 0,
                         }),
@@ -652,6 +672,7 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             elevation_m: road.elevation_m,
             surface: Surface::Road,
             crossing: cells.iter().any(|cell| cell.crossing),
+            cultivated: cells.iter().any(|cell| cell.cultivated),
             canopy_percent: cells
                 .iter()
                 .map(|cell| u64::from(cell.canopy_percent))
@@ -674,6 +695,7 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             elevation_m: 0,
             surface: Surface::Water,
             crossing: false,
+            cultivated: false,
             canopy_percent: 0,
             hilly_fraction_percent: 0,
         };
@@ -707,6 +729,7 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             / passable.len() as i64) as i16,
         surface,
         crossing: passable.iter().any(|cell| cell.crossing),
+        cultivated: passable.iter().any(|cell| cell.cultivated),
         canopy_percent: (passable
             .iter()
             .map(|cell| u64::from(cell.canopy_percent))
@@ -796,7 +819,13 @@ fn validate_manifest(manifest: &Manifest) -> Result<()> {
     }
     if !valid_digest(&manifest.road_geometry_sha256)
         || !valid_digest(&manifest.wetland_source_sha256)
+        || !valid_digest(&manifest.cultivation_source_sha256)
         || manifest.wetland_cells > 100_000
+        || manifest.cultivation_grid_crs != "EPSG:3035"
+        || manifest.cultivation_grid_resolution_m != 1_000
+        || manifest.cultivation_rules_version == 0
+        || manifest.cultivated_square_count > 5_000_000
+        || manifest.cultivated_native_cells > 1_000_000_000
     {
         return Err(Error::Validation("invalid terrain feature identity".into()));
     }
@@ -1690,6 +1719,12 @@ mod tests {
             road_geometry_sha256: hex_sha(b"roads"),
             wetland_source_sha256: hex_sha(b"wetlands"),
             wetland_cells: 0,
+            cultivation_grid_crs: "EPSG:3035".into(),
+            cultivation_grid_resolution_m: 1_000,
+            cultivation_rules_version: 1,
+            cultivation_source_sha256: hex_sha(b"cultivation"),
+            cultivated_square_count: 0,
+            cultivated_native_cells: 0,
             entries: vec![Entry {
                 south: 50,
                 west: 10,

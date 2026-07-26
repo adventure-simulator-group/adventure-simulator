@@ -44,16 +44,28 @@ def write_fixture(root: Path, blocked: bool = False) -> None:
     terrain_digest = runtime.bytes_sha256(terrain_pack)
     terrain_package = "2" * 64
     map_manifest = {
-        "schema": 4,
+        "schema": 5,
         "year": 1544,
         "tiles": {"format": "avif", "content_sha256": runtime.bytes_sha256(tile_pack)},
         "terrain_package_sha256": terrain_package,
+        "cultivation": {
+            "grid_crs": "EPSG:3035",
+            "grid_resolution_m": 1000,
+            "rules_version": 1,
+            "source_sha256": "3" * 64,
+            "square_count": 7,
+        },
     }
     terrain_manifest = {
-        "schema": 4,
+        "schema": 5,
         "purpose": "final",
         "content_sha256": terrain_digest,
         "package_sha256": terrain_package,
+        "cultivation_grid_crs": "EPSG:3035",
+        "cultivation_grid_resolution_m": 1000,
+        "cultivation_rules_version": 1,
+        "cultivation_source_sha256": "3" * 64,
+        "cultivated_square_count": 7,
     }
     (map_dir / "strategic-map-v1.json").write_text(json.dumps(map_manifest), encoding="utf-8")
     (map_dir / "strategic-map-tiles-v1.pack").write_bytes(tile_pack)

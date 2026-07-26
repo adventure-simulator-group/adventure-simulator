@@ -2702,9 +2702,9 @@ async fn render_party_personal(
         }
         None => 0.0,
     };
-    let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
+    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", character_id)
         .await
-        .map_or(0.0, |notoriety| notoriety.value);
+        .map_or(0.0, |virtue| virtue.value);
     // Authoritative personality is private. Ordinary pages render only
     // observer-specific beliefs through the dedicated social route.
     let personality: Option<CharacterPersonality> = None;
@@ -2766,7 +2766,7 @@ async fn render_party_personal(
             combat_profile,
             activity_preview,
             religious_demand.as_ref(),
-            notoriety,
+            virtue,
             personality.as_ref(),
             &medical,
             can_examine,
@@ -3706,9 +3706,9 @@ async fn render_party_stats(
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
-    let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
+    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", character_id)
         .await
-        .map_or(0.0, |notoriety| notoriety.value);
+        .map_or(0.0, |virtue| virtue.value);
     let personality: Option<CharacterPersonality> = None;
     let medical = medical_presentation(&state, active_character.id, character_id).await;
     let injuries = state
@@ -3748,7 +3748,7 @@ async fn render_party_stats(
             religion.as_deref(),
             active_party.as_ref(),
             selected_party.as_ref(),
-            notoriety,
+            virtue,
             personality.as_ref(),
             &medical,
             can_examine,

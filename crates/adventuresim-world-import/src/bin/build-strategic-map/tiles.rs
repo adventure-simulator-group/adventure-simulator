@@ -343,6 +343,8 @@ struct Palette {
     forest_deep: [u8; 4],
     inferred_road: [u8; 4],
     hilly_open: [u8; 4],
+    cultivated: [u8; 4],
+    cultivated_edge: [u8; 4],
 }
 
 const PAPER: Palette = Palette {
@@ -359,6 +361,8 @@ const PAPER: Palette = Palette {
     forest_deep: [49, 94, 55, 155],
     inferred_road: [118, 91, 61, 145],
     hilly_open: [191, 159, 115, 180],
+    cultivated: [184, 159, 91, 72],
+    cultivated_edge: [116, 91, 48, 118],
 };
 
 pub(super) fn build(
@@ -557,6 +561,21 @@ fn render_with_forest_field(
         origin,
         palette,
     )?;
+    // Cultivation is painted from the same exact final-pack squares used by
+    // legality. Wetlands, water, and roads remain visually above it.
+    for polygon in &package.cultivated {
+        stroke_and_fill_source_polygon(
+            &mut pixmap,
+            polygon,
+            package.bounds,
+            scale,
+            origin,
+            logical_bounds,
+            Some(palette.cultivated),
+            Some((palette.cultivated_edge, 0.42)),
+            false,
+        );
+    }
     for polygon in &package.wetlands {
         stroke_and_fill_source_polygon(
             &mut pixmap,
@@ -1175,6 +1194,7 @@ mod tests {
             routing_roads: Vec::new(),
             water: Vec::new(),
             wetlands: Vec::new(),
+            cultivated: Vec::new(),
             elevation: ElevationLayer {
                 source: layer_source(),
                 cells: vec![ElevationCell {
@@ -1451,6 +1471,24 @@ mod tests {
         let tile = render(&donut_fixture(), 64, TILE_GUTTER, 1.0, 0, 0, PAPER).unwrap();
         assert_eq!(pixel(&tile, 24, 24), PAPER.water);
         assert_eq!(pixel(&tile, 34, 34), PAPER.land);
+    }
+
+    #[test]
+    fn selected_cultivation_square_changes_the_rendered_map_layer() {
+        let plain = flat_fixture();
+        let plain_tile = render(&plain, 64, TILE_GUTTER, 1.0, 0, 0, PAPER).unwrap();
+        let mut cultivated = plain;
+        cultivated.cultivated = vec![super::super::WaterPolygon {
+            rings: vec![vec![
+                Point([10.0, 750.0]),
+                Point([20.0, 750.0]),
+                Point([20.0, 760.0]),
+                Point([10.0, 760.0]),
+                Point([10.0, 750.0]),
+            ]],
+        }];
+        let cultivated_tile = render(&cultivated, 64, TILE_GUTTER, 1.0, 0, 0, PAPER).unwrap();
+        assert_ne!(pixel(&plain_tile, 14, 44), pixel(&cultivated_tile, 14, 44));
     }
 
     #[test]
