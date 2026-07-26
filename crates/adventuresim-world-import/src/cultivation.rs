@@ -10,10 +10,12 @@ use std::{
     collections::{BTreeMap, BTreeSet, BinaryHeap},
 };
 
-pub const CULTIVATION_RULES_VERSION: u16 = 1;
+pub const CULTIVATION_RULES_VERSION: u16 = 2;
 pub const MAX_CULTIVATION_CANDIDATES: usize = 5_000_000;
 const DISTANCE_BUCKET_M: i64 = 10_000;
 const MAX_DISTANCE_SEGMENT_REFERENCES: usize = 20_000_000;
+const MAX_INTERIOR_CAPACITY_SHORTFALL_KM2: u32 = 2;
+const MAX_INTERIOR_CAPACITY_SHORTFALL_PERCENT: u32 = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MetricSegment {
@@ -157,13 +159,19 @@ pub struct HydeCropQuota {
     /// Raw 1544-interpolated HYDE cropland area. It is deliberately not a
     /// settlement-profile percentage.
     pub crop_km2: f64,
+    /// Whether the playable bounds clip this source cell. Canonical one-
+    /// kilometre squares cannot exactly tessellate an arbitrary geographic
+    /// boundary, so only clipped edge cells may saturate at their usable
+    /// square capacity.
+    pub boundary_clipped: bool,
 }
 
-/// Require at least three quarters of the explicitly sampled square to be dry,
-/// non-wetland, passable land. Center-point classification is insufficient at
-/// coasts and wetland boundaries.
-pub fn square_is_usable(dry_passable_samples: u16, total_samples: u16) -> bool {
-    total_samples > 0 && u32::from(dry_passable_samples) * 4 >= u32::from(total_samples) * 3
+/// Require at least three quarters of the explicitly sampled square to be
+/// non-water passable land. HYDE's historical cropland is authoritative over
+/// Jung potential-natural wetland, but mapped water remains ineligible.
+/// Center-point classification is insufficient at coasts and water boundaries.
+pub fn square_is_usable(non_water_samples: u16, total_samples: u16) -> bool {
+    total_samples > 0 && u32::from(non_water_samples) * 4 >= u32::from(total_samples) * 3
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -171,6 +179,7 @@ pub struct CultivationAllocation {
     pub cells: BTreeSet<CultivationCell>,
     pub rounded_quotas: BTreeMap<(i16, i16), u32>,
     pub residual_km2: f64,
+    pub capacity_limited_km2: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -265,7 +274,7 @@ pub fn allocate(
     if candidates.is_empty() || candidates.len() > MAX_CULTIVATION_CANDIDATES {
         return Err("cultivation candidate grid is empty or exceeds its bound".into());
     }
-    let (rounded_quotas, residual_km2) = round_quotas(quotas)?;
+    let (mut rounded_quotas, residual_km2) = round_quotas(quotas)?;
     let by_cell = candidates
         .iter()
         .enumerate()
@@ -281,11 +290,27 @@ pub fn allocate(
             *counts.entry(candidate.hyde_cell).or_default() += 1;
             counts
         });
-    for (&cell, &quota) in &rounded_quotas {
-        if quota > usable_by_quota.get(&cell).copied().unwrap_or(0) {
+    let boundary_clipped = quotas
+        .iter()
+        .map(|quota| (quota.cell, quota.boundary_clipped))
+        .collect::<BTreeMap<_, _>>();
+    let mut capacity_limited_km2 = 0u32;
+    for (&cell, quota) in &mut rounded_quotas {
+        let usable = usable_by_quota.get(&cell).copied().unwrap_or(0);
+        if *quota > usable {
+            let shortfall = *quota - usable;
+            let within_interior_tolerance = shortfall <= MAX_INTERIOR_CAPACITY_SHORTFALL_KM2
+                && u64::from(shortfall) * 100
+                    <= u64::from(*quota) * u64::from(MAX_INTERIOR_CAPACITY_SHORTFALL_PERCENT);
+            if boundary_clipped.get(&cell).copied().unwrap_or(false) || within_interior_tolerance {
+                capacity_limited_km2 = capacity_limited_km2
+                    .checked_add(shortfall)
+                    .ok_or("cultivation capacity loss overflow")?;
+                *quota = usable;
+                continue;
+            }
             return Err(format!(
-                "HYDE cell {cell:?} requests {quota} cultivated km2 but has only {} usable canonical squares",
-                usable_by_quota.get(&cell).copied().unwrap_or(0)
+                "HYDE cell {cell:?} requests {quota} cultivated km2 but has only {usable} usable canonical squares",
             ));
         }
     }
@@ -434,6 +459,7 @@ pub fn allocate(
         cells: selected,
         rounded_quotas,
         residual_km2,
+        capacity_limited_km2,
     })
 }
 
@@ -481,10 +507,12 @@ mod tests {
                 HydeCropQuota {
                     cell: (0, 0),
                     crop_km2: 2.4,
+                    boundary_clipped: false,
                 },
                 HydeCropQuota {
                     cell: (0, 1),
                     crop_km2: 1.6,
+                    boundary_clipped: false,
                 },
             ],
         )
@@ -515,11 +543,136 @@ mod tests {
                 &candidates,
                 &[HydeCropQuota {
                     cell: (0, 0),
-                    crop_km2: 1.0
+                    crop_km2: 1.0,
+                    boundary_clipped: false,
                 }]
             )
             .unwrap_err()
             .contains("usable")
+        );
+    }
+
+    #[test]
+    fn clipped_boundary_quota_saturates_at_usable_square_capacity() {
+        let candidates = [
+            CultivationCandidate {
+                cell: CultivationCell { column: 0, row: 0 },
+                hyde_cell: (0, 0),
+                usable_land: true,
+                settlement_distance_m: 0,
+                road_distance_m: 0,
+                water_distance_m: 500,
+                slope_permille: 0,
+                relief_m: 0,
+                canopy_percent: 0,
+            },
+            CultivationCandidate {
+                cell: CultivationCell { column: 1, row: 0 },
+                hyde_cell: (0, 0),
+                usable_land: false,
+                settlement_distance_m: 0,
+                road_distance_m: 0,
+                water_distance_m: 500,
+                slope_permille: 0,
+                relief_m: 0,
+                canopy_percent: 0,
+            },
+        ];
+        let result = allocate(
+            &candidates,
+            &[HydeCropQuota {
+                cell: (0, 0),
+                crop_km2: 4.0,
+                boundary_clipped: true,
+            }],
+        )
+        .unwrap();
+        assert_eq!(result.cells.len(), 1);
+        assert_eq!(result.rounded_quotas[&(0, 0)], 1);
+        assert_eq!(result.capacity_limited_km2, 3);
+    }
+
+    #[test]
+    fn clipped_boundary_quota_may_saturate_to_zero() {
+        let candidates = [CultivationCandidate {
+            cell: CultivationCell { column: 0, row: 0 },
+            hyde_cell: (0, 0),
+            usable_land: false,
+            settlement_distance_m: 0,
+            road_distance_m: 0,
+            water_distance_m: 500,
+            slope_permille: 0,
+            relief_m: 0,
+            canopy_percent: 0,
+        }];
+        let result = allocate(
+            &candidates,
+            &[HydeCropQuota {
+                cell: (0, 0),
+                crop_km2: 2.0,
+                boundary_clipped: true,
+            }],
+        )
+        .unwrap();
+        assert!(result.cells.is_empty());
+        assert_eq!(result.rounded_quotas[&(0, 0)], 0);
+        assert_eq!(result.capacity_limited_km2, 2);
+    }
+
+    #[test]
+    fn small_interior_grid_capacity_shortfall_is_bounded() {
+        let candidates = (0..47)
+            .map(|column| CultivationCandidate {
+                cell: CultivationCell { column, row: 0 },
+                hyde_cell: (0, 0),
+                usable_land: true,
+                settlement_distance_m: 0,
+                road_distance_m: 0,
+                water_distance_m: 500,
+                slope_permille: 0,
+                relief_m: 0,
+                canopy_percent: 0,
+            })
+            .collect::<Vec<_>>();
+        let result = allocate(
+            &candidates,
+            &[HydeCropQuota {
+                cell: (0, 0),
+                crop_km2: 49.0,
+                boundary_clipped: false,
+            }],
+        )
+        .unwrap();
+        assert_eq!(result.cells.len(), 47);
+        assert_eq!(result.capacity_limited_km2, 2);
+    }
+
+    #[test]
+    fn larger_interior_capacity_shortfall_remains_an_error() {
+        let candidates = (0..46)
+            .map(|column| CultivationCandidate {
+                cell: CultivationCell { column, row: 0 },
+                hyde_cell: (0, 0),
+                usable_land: true,
+                settlement_distance_m: 0,
+                road_distance_m: 0,
+                water_distance_m: 500,
+                slope_permille: 0,
+                relief_m: 0,
+                canopy_percent: 0,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            allocate(
+                &candidates,
+                &[HydeCropQuota {
+                    cell: (0, 0),
+                    crop_km2: 49.0,
+                    boundary_clipped: false,
+                }],
+            )
+            .unwrap_err()
+            .contains("usable canonical squares")
         );
     }
 
@@ -547,7 +700,7 @@ mod tests {
     }
 
     #[test]
-    fn coastal_and_wetland_boundaries_require_three_quarters_dry_coverage() {
+    fn coastal_boundaries_require_three_quarters_non_water_coverage() {
         assert!(square_is_usable(12, 16));
         assert!(!square_is_usable(11, 16));
         assert!(!square_is_usable(0, 16));
