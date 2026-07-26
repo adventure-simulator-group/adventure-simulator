@@ -1,7 +1,10 @@
 (() => {
   const setup = { "pan-fry": 5, stew: 12, roast: 7, bake: 15 };
+  const fullAmount = 1_000_000;
+  const amountStep = 250_000;
 
   const formatNumber = (value) => Number(value).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  const formatAmount = (value) => formatNumber(value / fullAmount);
 
   function refreshInventory(element) {
     window.strategicInventoryBrowser?.refresh?.(element);
@@ -17,7 +20,7 @@
     button.dataset.defaultTransferMode = "one";
     button.dataset.transferMode = "one";
     button.dataset.count = String(count);
-    button.dataset.labelOne = `Return one ${name} to inventory`;
+    button.dataset.labelOne = `Return 0.25 ${name} to inventory`;
     button.dataset.labelTarget = `Return ${name} to inventory`;
     button.dataset.labelAll = `Return all ${name} to inventory`;
     button.title = button.dataset.labelOne;
@@ -37,7 +40,7 @@
 
       const submit = form.querySelector("[data-cook-submit]");
       const ids = form.querySelector("[data-cooking-ids]");
-      const quantities = form.querySelector("[data-cooking-quantities]");
+      const amounts = form.querySelector("[data-cooking-amounts]");
       const empty = form.querySelector("[data-cooking-pot-empty]");
       const potBrowser = form.querySelector('[data-inventory-browser="cooking-pot-left"]');
       const potBody = potBrowser?.querySelector("tbody");
@@ -48,12 +51,15 @@
         const method = form.querySelector("[data-cooking-method]:checked");
         const values = [...staged.values()].filter((value) => value.quantity > 0);
         ids.value = values.map((value) => value.id).join(",");
-        quantities.value = values.map((value) => value.quantity).join(",");
+        amounts.value = values.map((value) => value.quantity).join(",");
         if (empty) empty.hidden = values.length > 0;
 
         let reason = "Transfer at least one ingredient to the pot";
         if (method && values.length) {
-          const mass = values.reduce((sum, value) => sum + value.mass * value.quantity, 0);
+          const mass = values.reduce(
+            (sum, value) => sum + value.mass * value.quantity / value.available,
+            0,
+          );
           const slowest = Math.max(...values.map((value) => value.safety));
           const batch = Math.ceil(Math.sqrt(Math.max(0, mass - 0.5)) * 8);
           const duration = setup[method.value] + slowest + batch;
@@ -70,11 +76,11 @@
         count.dataset.base ||= String(entry.available);
         if (entry.quantity === 0) {
           delete count.dataset.tradeDraftChange;
-          count.textContent = String(entry.available);
+          count.textContent = formatAmount(entry.available);
           entry.sourceRow.classList.remove("party-trade-changed");
         } else {
           count.dataset.tradeDraftChange = String(-entry.quantity);
-          count.innerHTML = `${entry.available} <span class="trade-delta negative">-${entry.quantity}</span>`;
+          count.innerHTML = `${formatAmount(entry.available)} <span class="trade-delta negative">-${formatAmount(entry.quantity)}</span>`;
           entry.sourceRow.classList.add("party-trade-changed");
         }
         const stage = entry.sourceRow.querySelector("[data-cooking-stage]");
@@ -112,19 +118,21 @@
         row.dataset.inventoryQuantity = String(entry.quantity);
         const count = row.querySelector(".inventory-count");
         if (count) {
-          count.textContent = String(entry.quantity);
+          count.textContent = formatAmount(entry.quantity);
           count.dataset.base = String(entry.quantity);
           delete count.dataset.tradeDraftChange;
         }
         const weight = row.querySelector(".inventory-weight");
         if (weight) {
-          weight.textContent = formatNumber(entry.mass * entry.quantity);
-          weight.dataset.sortValue = String(entry.mass * entry.quantity);
+          const stagedMass = entry.mass * entry.quantity / entry.available;
+          weight.textContent = formatNumber(stagedMass);
+          weight.dataset.sortValue = String(stagedMass);
         }
         const value = row.querySelector(".inventory-gold");
         if (value) {
-          value.textContent = formatNumber(entry.value * entry.quantity);
-          value.dataset.sortValue = String(entry.value * entry.quantity);
+          const stagedValue = entry.value * entry.quantity / entry.available;
+          value.textContent = formatNumber(stagedValue);
+          value.dataset.sortValue = String(stagedValue);
         }
         const unstage = row.querySelector("[data-cooking-unstage]");
         if (unstage) unstage.dataset.count = String(entry.quantity);
@@ -157,7 +165,7 @@
           };
           entry.quantity = stage.dataset.transferMode === "all"
             ? entry.available
-            : Math.min(entry.available, entry.quantity + 1);
+            : Math.min(entry.available, entry.quantity + amountStep);
           staged.set(id, entry);
           redraw(entry);
           return;
@@ -168,7 +176,9 @@
           event.preventDefault();
           const entry = staged.get(unstage.dataset.cookingUnstage);
           if (!entry) return;
-          entry.quantity = unstage.dataset.transferMode === "all" ? 0 : Math.max(0, entry.quantity - 1);
+          entry.quantity = unstage.dataset.transferMode === "all"
+            ? 0
+            : Math.max(0, entry.quantity - amountStep);
           if (entry.quantity === 0) staged.delete(entry.id);
           redraw(entry);
         }

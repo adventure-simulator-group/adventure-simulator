@@ -176,13 +176,13 @@ use crate::spacetimedb::{
     CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
     CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
     CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, CharacterVirtue,
-    ContractPresentation, ContractPresentationStatus, FoodLot, InventoryItem,
+    ContractPresentation, ContractPresentationStatus, FoodLot, InventoryItem, InventoryItemAmount,
     InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
-    LimbRegion, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, PartyJourneyRoute,
-    PartyMember, PartyRecruitmentRole, PartyStake, RecruitmentOffer, RecruitmentOfferStatus,
-    RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile, ScheduleAllocation,
-    Settlement, SettlementAlias, SettlementDescription, SettlementSmith, SocialAddress,
-    SocialBelief, StrategicEncounter, TravelEdge,
+    LimbRegion, Party, PartyInventoryItem, PartyItemAmount, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, RecruitmentOffer,
+    RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementSmith, SocialAddress, SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -3055,6 +3055,11 @@ async fn render_party_personal(
         .query::<FoodLot>("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
+    let inventory_amounts = state
+        .db
+        .query::<InventoryItemAmount>("SELECT * FROM inventory_item_amount")
+        .await
+        .unwrap_or_default();
     let item_definitions = state
         .db
         .query::<ItemDefinition>("SELECT * FROM item")
@@ -3104,6 +3109,7 @@ async fn render_party_personal(
             &filth,
             building.cooking(),
             &active_inventory,
+            &inventory_amounts,
             &food_lots,
             &item_definitions,
             dialog,
@@ -3119,7 +3125,7 @@ async fn render_party_personal(
 struct CookFoodForm {
     method: String,
     inventory_item_ids: String,
-    quantities: String,
+    amounts_milliunits: String,
 }
 
 async fn cook_food(
@@ -3147,8 +3153,8 @@ async fn cook_food(
         Ok(value) => value,
         Err(_) => return (StatusCode::BAD_REQUEST, "Invalid ingredient selection").into_response(),
     };
-    let quantities = match form
-        .quantities
+    let amounts_milliunits = match form
+        .amounts_milliunits
         .split(',')
         .filter(|value| !value.is_empty())
         .map(str::parse::<u32>)
@@ -3156,7 +3162,7 @@ async fn cook_food(
     {
         Ok(value) => value,
         Err(_) => {
-            return (StatusCode::BAD_REQUEST, "Invalid ingredient quantities").into_response();
+            return (StatusCode::BAD_REQUEST, "Invalid ingredient amounts").into_response();
         }
     };
     let method = match form.method.as_str() {
@@ -3170,7 +3176,12 @@ async fn cook_food(
         .db
         .call(
             "cook_food",
-            &[json!(character_id), method, json!(ids), json!(quantities)],
+            &[
+                json!(character_id),
+                method,
+                json!(ids),
+                json!(amounts_milliunits),
+            ],
         )
         .await
     {
@@ -6527,7 +6538,7 @@ pub(crate) async fn soap_rest_preview(
     members: &[Character],
     party_id: Option<&str>,
 ) -> SoapRestPreview {
-    let (filth, personal, shared, definitions, personalities) = tokio::join!(
+    let (filth, personal, shared, personal_amounts, party_amounts, definitions, personalities) = tokio::join!(
         state
             .db
             .query::<CharacterFilth>("SELECT * FROM character_filth"),
@@ -6537,6 +6548,12 @@ pub(crate) async fn soap_rest_preview(
         state
             .db
             .query::<PartyInventoryItem>("SELECT * FROM party_inventory_item"),
+        state
+            .db
+            .query::<InventoryItemAmount>("SELECT * FROM inventory_item_amount"),
+        state
+            .db
+            .query::<PartyItemAmount>("SELECT * FROM party_item_amount"),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
         state
             .db
@@ -6544,11 +6561,15 @@ pub(crate) async fn soap_rest_preview(
     );
     let personal = personal.unwrap_or_default();
     let shared = shared.unwrap_or_default();
+    let personal_amounts = personal_amounts.unwrap_or_default();
+    let party_amounts = party_amounts.unwrap_or_default();
     let mut preview = calculate_soap_rest_preview(
         members,
         &filth.unwrap_or_default(),
         &personal,
         &shared,
+        &personal_amounts,
+        &party_amounts,
         party_id,
     );
     calculate_rest_supply_availability(
@@ -6556,6 +6577,8 @@ pub(crate) async fn soap_rest_preview(
         members,
         &personal,
         &shared,
+        &personal_amounts,
+        &party_amounts,
         &definitions.unwrap_or_default(),
         &personalities.unwrap_or_default(),
         party_id,
@@ -6568,6 +6591,8 @@ fn calculate_rest_supply_availability(
     members: &[Character],
     personal: &[InventoryItem],
     shared: &[PartyInventoryItem],
+    personal_amounts: &[InventoryItemAmount],
+    party_amounts: &[PartyItemAmount],
     definitions: &[ItemDefinition],
     personalities: &[CharacterPersonality],
     party_id: Option<&str>,
@@ -6600,32 +6625,55 @@ fn calculate_rest_supply_availability(
     let personal_soap = personal
         .iter()
         .filter(|stack| living_ids.contains(&stack.character_id) && stack.item_id == SOAP_ITEM_ID)
-        .map(|stack| stack.qty)
+        .map(|stack| {
+            personal_amounts
+                .iter()
+                .find(|state| state.inventory_item_id == stack.id)
+                .map_or(0, |state| {
+                    state.remaining_milliunits
+                        / (1_000_000 / u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY))
+                })
+        })
         .sum::<u32>();
     let shared_soap = party_id.map_or(0, |party_id| {
         shared
             .iter()
             .filter(|stack| stack.party_id == party_id && stack.item_id == SOAP_ITEM_ID)
-            .map(|stack| stack.quantity)
+            .map(|stack| {
+                party_amounts
+                    .iter()
+                    .find(|state| state.party_inventory_item_id == stack.id)
+                    .map_or(0, |state| {
+                        state.remaining_milliunits
+                            / (1_000_000
+                                / u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY))
+                    })
+            })
             .sum::<u32>()
     });
     preview.available_units = personal_soap.saturating_add(shared_soap);
 
     let personal_alcohol = personal.iter().any(|stack| {
         living_ids.contains(&stack.character_id)
-            && stack.qty > 0
+            && personal_amounts
+                .iter()
+                .any(|state| state.inventory_item_id == stack.id && state.remaining_milliunits > 0)
             && alcoholic_ids.contains(stack.item_id.as_str())
     });
     let personal_drink = personal.iter().any(|stack| {
         living_ids.contains(&stack.character_id)
             && !is_temperate(stack.character_id)
-            && stack.qty > 0
+            && personal_amounts
+                .iter()
+                .any(|state| state.inventory_item_id == stack.id && state.remaining_milliunits > 0)
             && alcoholic_ids.contains(stack.item_id.as_str())
     });
     let shared_alcohol = party_id.is_some_and(|party_id| {
         shared.iter().any(|stack| {
             stack.party_id == party_id
-                && stack.quantity > 0
+                && party_amounts.iter().any(|state| {
+                    state.party_inventory_item_id == stack.id && state.remaining_milliunits > 0
+                })
                 && alcoholic_ids.contains(stack.item_id.as_str())
         })
     });
@@ -6642,6 +6690,8 @@ fn calculate_soap_rest_preview(
     filth: &[CharacterFilth],
     personal: &[InventoryItem],
     shared: &[PartyInventoryItem],
+    personal_amounts: &[InventoryItemAmount],
+    party_amounts: &[PartyItemAmount],
     party_id: Option<&str>,
 ) -> SoapRestPreview {
     const SOAP_ITEM_ID: &str = "soft_soap";
@@ -6653,11 +6703,20 @@ fn calculate_soap_rest_preview(
             .filter(|deposit| deposit.character_id == member.id)
             .map(|deposit| u32::from(deposit.amount))
             .sum::<u32>();
-        let needed = amount.div_ceil(u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY));
+        let needed = amount;
         let available = personal
             .iter()
             .filter(|stack| stack.character_id == member.id && stack.item_id == SOAP_ITEM_ID)
-            .map(|stack| stack.qty)
+            .map(|stack| {
+                personal_amounts
+                    .iter()
+                    .find(|state| state.inventory_item_id == stack.id)
+                    .map_or(0, |state| {
+                        state.remaining_milliunits
+                            / (1_000_000
+                                / u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY))
+                    })
+            })
             .sum::<u32>();
         let used = needed.min(available);
         personal_units = personal_units.saturating_add(used);
@@ -6667,7 +6726,16 @@ fn calculate_soap_rest_preview(
         shared
             .iter()
             .filter(|stack| stack.party_id == party_id && stack.item_id == SOAP_ITEM_ID)
-            .map(|stack| stack.quantity)
+            .map(|stack| {
+                party_amounts
+                    .iter()
+                    .find(|state| state.party_inventory_item_id == stack.id)
+                    .map_or(0, |state| {
+                        state.remaining_milliunits
+                            / (1_000_000
+                                / u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY))
+                    })
+            })
             .sum()
     });
     let shared_units = need_after_personal.min(shared_available);
@@ -6690,8 +6758,8 @@ mod rest_form_tests {
     };
     use crate::spacetimedb::{
         Character, CharacterFilth, CharacterPersonality, Conscience, Conviction, Drive,
-        FilthOrigin, FilthSubstance, Hygiene, InventoryItem, ItemDefinition, Nerve, Outlook,
-        PartyInventoryItem, SelfRegard, Sociability, Temperance,
+        FilthOrigin, FilthSubstance, Hygiene, InventoryItem, InventoryItemAmount, ItemDefinition,
+        Nerve, Outlook, PartyInventoryItem, PartyItemAmount, SelfRegard, Sociability, Temperance,
     };
     use crate::templates::settlement::SoapRestPreview;
 
@@ -6762,22 +6830,46 @@ mod rest_form_tests {
             item_id: "soft_soap".into(),
             qty: 1,
         }];
-        let shared = [PartyInventoryItem {
-            id: 1,
-            party_id: "party".into(),
-            item_id: "soft_soap".into(),
-            quantity: 2,
+        let shared = [
+            PartyInventoryItem {
+                id: 2,
+                party_id: "party".into(),
+                item_id: "soft_soap".into(),
+                quantity: 1,
+            },
+            PartyInventoryItem {
+                id: 3,
+                party_id: "party".into(),
+                item_id: "soft_soap".into(),
+                quantity: 1,
+            },
+        ];
+        let personal_amounts = [InventoryItemAmount {
+            inventory_item_id: 1,
+            remaining_milliunits: 1_000_000,
         }];
+        let party_amounts = [
+            PartyItemAmount {
+                party_inventory_item_id: 2,
+                remaining_milliunits: 1_000_000,
+            },
+            PartyItemAmount {
+                party_inventory_item_id: 3,
+                remaining_milliunits: 1_000_000,
+            },
+        ];
         let preview = calculate_soap_rest_preview(
             &[member(1), member(2)],
             &filth,
             &personal,
             &shared,
+            &personal_amounts,
+            &party_amounts,
             Some("party"),
         );
-        assert_eq!(preview.personal_units, 1);
-        assert_eq!(preview.shared_units, 2);
-        assert_eq!(preview.total_units, 3);
+        assert_eq!(preview.personal_units, 25);
+        assert_eq!(preview.shared_units, 31);
+        assert_eq!(preview.total_units, 56);
     }
 
     #[test]
@@ -6803,17 +6895,29 @@ mod rest_form_tests {
             alcohol_potable: true,
             ..ItemDefinition::default()
         };
+        let amounts = [
+            InventoryItemAmount {
+                inventory_item_id: 1,
+                remaining_milliunits: 1_000_000,
+            },
+            InventoryItemAmount {
+                inventory_item_id: 2,
+                remaining_milliunits: 1_000_000,
+            },
+        ];
         let mut preview = SoapRestPreview::default();
         calculate_rest_supply_availability(
             &mut preview,
             &[member(1)],
             &supplies,
             &[],
+            &amounts,
+            &[],
             &[alcohol.clone()],
             &[personality(1, Temperance::Temperate)],
             Some("party"),
         );
-        assert_eq!(preview.available_units, 1);
+        assert_eq!(preview.available_units, 25);
         assert!(preview.alcohol_available);
         assert!(!preview.alcohol_will_be_consumed);
 
@@ -6821,6 +6925,8 @@ mod rest_form_tests {
             &mut preview,
             &[member(1)],
             &supplies,
+            &[],
+            &amounts,
             &[],
             &[alcohol],
             &[personality(1, Temperance::Neutral)],

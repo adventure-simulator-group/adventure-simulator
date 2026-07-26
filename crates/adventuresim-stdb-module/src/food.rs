@@ -1,4 +1,4 @@
-//! Authoritative non-fungible food lots and immediate free-form cooking.
+//! Authoritative measured food lots and immediate free-form cooking.
 
 use adventuresim_core::{
     disease::{self, DiseaseId},
@@ -11,7 +11,7 @@ use crate::{
     character::{character, character_attributes, character_limbs, character_skills},
     condition::{character_needs, initialize_character_condition},
     disease::{InfectionEpisodeRow, infection_episode},
-    inventory_item,
+    inventory_item, inventory_item_amount, party_item_amount,
     strategic::{party_authority, party_inventory_item},
     time::character_time,
 };
@@ -523,10 +523,10 @@ pub fn preview_cooking(
     character_id: u64,
     method: CookingMethod,
     inventory_ids: &[u64],
-    quantities: &[u32],
+    amounts_milliunits: &[u32],
 ) -> Result<u32, String> {
     if inventory_ids.is_empty()
-        || inventory_ids.len() != quantities.len()
+        || inventory_ids.len() != amounts_milliunits.len()
         || inventory_ids.len() > 32
     {
         return Err("Select between one and 32 food lots".into());
@@ -537,8 +537,8 @@ pub fn preview_cooking(
     let mut seen = std::collections::BTreeSet::new();
     let mut safety = Vec::new();
     let mut mass = 0.0;
-    for (&id, &quantity) in inventory_ids.iter().zip(quantities) {
-        if quantity == 0 || !seen.insert(id) {
+    for (&id, &amount) in inventory_ids.iter().zip(amounts_milliunits) {
+        if amount == 0 || !seen.insert(id) {
             return Err("Food lot selections must be unique and positive".into());
         }
         let inventory = ctx
@@ -547,8 +547,9 @@ pub fn preview_cooking(
             .id()
             .find(id)
             .ok_or("Ingredient inventory row not found")?;
-        if inventory.character_id != character_id || quantity > inventory.quantity {
-            return Err("Ingredient is not available in that quantity".into());
+        let available = crate::inventory_amount::personal_amount(ctx, id).unwrap_or(0);
+        if inventory.character_id != character_id || amount > available {
+            return Err("Ingredient is not available in that amount".into());
         }
         if !food::is_cookable_ingredient(&inventory.item_id) {
             return Err("A cooked meal cannot be cooked again".into());
@@ -557,7 +558,7 @@ pub fn preview_cooking(
         safety.push(
             food::definition(&inventory.item_id).map_or(5, |definition| definition.cooking_minutes),
         );
-        mass += lot.mass_kg * quantity as f32 / inventory.quantity as f32;
+        mass += lot.mass_kg * amount as f32 / available as f32;
     }
     food::cooking_duration_minutes_for_check(
         method.core(),
@@ -656,11 +657,31 @@ fn consume_food_amount(
     needs.food_balance_kcal += wanted;
     ctx.db.character_needs().character_id().update(needs);
     if ratio >= 0.999_999 {
+        ctx.db
+            .inventory_item_amount()
+            .inventory_item_id()
+            .delete(inventory.id);
         ctx.db.inventory_item().id().delete(inventory.id);
         delete_personal_food_lot(ctx, inventory.id);
     } else {
-        retain_lot_fraction(&mut lot, 1.0 - ratio);
+        let retained = 1.0 - ratio;
+        let state = ctx
+            .db
+            .inventory_item_amount()
+            .inventory_item_id()
+            .find(inventory.id)
+            .ok_or("Food amount state is missing")?;
+        retain_lot_fraction(&mut lot, retained);
         ctx.db.food_lot().id().update(lot);
+        ctx.db
+            .inventory_item_amount()
+            .inventory_item_id()
+            .update(crate::InventoryItemAmount {
+                inventory_item_id: inventory.id,
+                remaining_milliunits: ((state.remaining_milliunits as f32) * retained)
+                    .floor()
+                    .max(1.0) as u32,
+            });
     }
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(wanted)
@@ -720,12 +741,31 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
             needs.food_balance_kcal = (needs.food_balance_kcal + wanted).min(0.0);
             ctx.db.character_needs().character_id().update(needs);
             if ratio >= 0.999_999 {
+                ctx.db
+                    .party_item_amount()
+                    .party_inventory_item_id()
+                    .delete(inventory.id);
                 ctx.db.party_inventory_item().id().delete(inventory.id);
                 ctx.db.food_contamination().food_lot_id().delete(lot.id);
                 ctx.db.food_lot().id().delete(lot.id);
             } else {
-                retain_lot_fraction(&mut lot, 1.0 - ratio);
+                let retained = 1.0 - ratio;
+                let state = ctx
+                    .db
+                    .party_item_amount()
+                    .party_inventory_item_id()
+                    .find(inventory.id)
+                    .ok_or("Party food amount state is missing")?;
+                retain_lot_fraction(&mut lot, retained);
                 ctx.db.food_lot().id().update(lot);
+                ctx.db.party_item_amount().party_inventory_item_id().update(
+                    crate::PartyItemAmount {
+                        party_inventory_item_id: inventory.id,
+                        remaining_milliunits: ((state.remaining_milliunits as f32) * retained)
+                            .floor()
+                            .max(1.0) as u32,
+                    },
+                );
             }
         }
     }
@@ -790,14 +830,20 @@ pub fn cook_food(
     character_id: u64,
     method: CookingMethod,
     inventory_item_ids: Vec<u64>,
-    quantities: Vec<u32>,
+    amounts_milliunits: Vec<u32>,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
     let actor = crate::character::require_living_character(ctx, character_id)?;
     if actor.in_server {
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
-    let duration = preview_cooking(ctx, character_id, method, &inventory_item_ids, &quantities)?;
+    let duration = preview_cooking(
+        ctx,
+        character_id,
+        method,
+        &inventory_item_ids,
+        &amounts_milliunits,
+    )?;
     let cooking_check = cooking_check(ctx, character_id)?;
     initialize_character_condition(ctx, character_id)?;
     let needs = ctx
@@ -807,7 +853,13 @@ pub fn cook_food(
         .find(character_id)
         .ok_or("Character needs not found")?;
     if method == CookingMethod::Stew {
-        let required = 500.0 + quantities.iter().map(|q| *q as f32).sum::<f32>() * 100.0;
+        let required = 500.0
+            + amounts_milliunits
+                .iter()
+                .map(|amount| *amount as f32)
+                .sum::<f32>()
+                / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
+                * 100.0;
         let pooled = actor
             .party_id
             .as_deref()
@@ -838,11 +890,12 @@ pub fn cook_food(
     let mut value = 0.0;
     let mut growth = Vec::new();
     let mut loads = Vec::new();
-    for (&id, &quantity) in inventory_item_ids.iter().zip(&quantities) {
-        let inventory = ctx.db.inventory_item().id().find(id).unwrap();
+    for (&id, &amount) in inventory_item_ids.iter().zip(&amounts_milliunits) {
         let lot = lot_for_inventory(ctx, id)?;
         let (cont, current) = contamination(ctx, &lot, minute)?;
-        let ratio = quantity as f32 / inventory.quantity as f32;
+        let available = crate::inventory_amount::personal_amount(ctx, id)
+            .ok_or("Ingredient amount state is missing")?;
+        let ratio = amount as f32 / available as f32;
         name_parts.push(lot.display_name.clone());
         ingredients.extend(lot.ingredient_item_ids.clone());
         ingredient_quantities.extend(
@@ -858,7 +911,13 @@ pub fn cook_food(
     }
     // Ingredient and water mutation begins only after the wait completed.
     if method == CookingMethod::Stew {
-        let required = 500.0 + quantities.iter().map(|q| *q as f32).sum::<f32>() * 100.0;
+        let required = 500.0
+            + amounts_milliunits
+                .iter()
+                .map(|amount| *amount as f32)
+                .sum::<f32>()
+                / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
+                * 100.0;
         if let Some(party_id) = actor.party_id.as_deref()
             && let Some(mut party) = ctx.db.party_authority().id().find(party_id.to_string())
         {
@@ -871,19 +930,29 @@ pub fn cook_food(
         }
         ctx.db.character_needs().character_id().update(needs);
     }
-    for (&id, &quantity) in inventory_item_ids.iter().zip(&quantities) {
-        let mut inv = ctx.db.inventory_item().id().find(id).unwrap();
+    for (&id, &amount) in inventory_item_ids.iter().zip(&amounts_milliunits) {
         let lot = lot_for_inventory(ctx, id)?;
-        if quantity == inv.quantity {
+        let available = crate::inventory_amount::personal_amount(ctx, id)
+            .ok_or("Ingredient amount state is missing")?;
+        if amount == available {
+            ctx.db
+                .inventory_item_amount()
+                .inventory_item_id()
+                .delete(id);
             ctx.db.inventory_item().id().delete(id);
             delete_personal_food_lot(ctx, id);
         } else {
-            let ratio = quantity as f32 / inv.quantity as f32;
-            inv.quantity -= quantity;
-            ctx.db.inventory_item().id().update(inv);
+            let ratio = amount as f32 / available as f32;
             let mut remaining = lot;
             retain_lot_fraction(&mut remaining, 1.0 - ratio);
             ctx.db.food_lot().id().update(remaining);
+            ctx.db
+                .inventory_item_amount()
+                .inventory_item_id()
+                .update(crate::InventoryItemAmount {
+                    inventory_item_id: id,
+                    remaining_milliunits: available - amount,
+                });
         }
     }
     let output = ctx.db.inventory_item().insert(crate::InventoryItem {
@@ -892,6 +961,7 @@ pub fn cook_food(
         item_id: "cooked_meal".into(),
         quantity: 1,
     });
+    crate::inventory_amount::initialize_personal(ctx, output.id);
     name_parts.sort();
     name_parts.dedup();
     let display = format!("{} {}", method.name(), name_parts.join(", "));

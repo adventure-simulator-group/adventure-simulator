@@ -269,7 +269,10 @@ pub fn sort_wash_priorities(priorities: &mut [WashPriority]) {
     });
 }
 
-/// Plans a stable, personal-first wash. Every used soap unit is consumed whole.
+/// Plans a stable, personal-first wash in cleansing-capacity points.
+///
+/// One full soap unit supplies [`SOAP_CLEANSING_CAPACITY`] points. Keeping the
+/// plan in points lets persistence consume only the fraction actually needed.
 pub fn plan_wash(deposits: &[Deposit], stacks: &[WashStack], has_cut: bool) -> WashPlan {
     let total: u32 = deposits.iter().map(|d| u32::from(d.amount)).sum();
     if total == 0 {
@@ -278,7 +281,7 @@ pub fn plan_wash(deposits: &[Deposit], stacks: &[WashStack], has_cut: bool) -> W
             cleaned_deposits: vec![],
         };
     }
-    let needed = total.div_ceil(u32::from(SOAP_CLEANSING_CAPACITY));
+    let needed = total;
     let mut ordered_stacks = stacks.to_vec();
     ordered_stacks.sort_by_key(|s| (s.key.source, s.key.id));
     let mut remaining_units = needed;
@@ -294,7 +297,7 @@ pub fn plan_wash(deposits: &[Deposit], stacks: &[WashStack], has_cut: bool) -> W
         }
     }
     let units: u32 = soap_stacks.iter().map(|(_, q)| *q).sum();
-    let mut capacity = units * u32::from(SOAP_CLEANSING_CAPACITY);
+    let mut capacity = units;
     let mut ordered = deposits.to_vec();
     ordered.sort_by_key(|d| (cleaning_rank(d, has_cut), d.deposited_at, d.id));
     let mut cleaned_deposits = Vec::new();
@@ -326,10 +329,10 @@ mod tests {
             diseases: vec![],
         }
     }
-    fn stack(source: SoapSource, id: u64, quantity: u32) -> WashStack {
+    fn stack(source: SoapSource, id: u64, full_units: u32) -> WashStack {
         WashStack {
             key: SoapStackId { source, id },
-            quantity,
+            quantity: full_units * u32::from(SOAP_CLEANSING_CAPACITY),
         }
     }
 
@@ -351,7 +354,7 @@ mod tests {
                         source: SoapSource::Personal,
                         id: 3
                     },
-                    1
+                    25
                 ),
                 (
                     SoapStackId {
@@ -399,14 +402,14 @@ mod tests {
                         source: SoapSource::Personal,
                         id: 7
                     },
-                    1
+                    25
                 ),
                 (
                     SoapStackId {
                         source: SoapSource::Party,
                         id: 7
                     },
-                    1
+                    15
                 ),
             ]
         );

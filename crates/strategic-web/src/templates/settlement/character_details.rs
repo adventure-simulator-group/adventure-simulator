@@ -17,8 +17,9 @@ use super::{
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills,
-    CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem, ItemDefinition,
-    LimbInjury, OrganizationMembership, OrganizationPresentation, Party, RetainedProjectile,
+    CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem,
+    InventoryItemAmount, ItemDefinition, LimbInjury, OrganizationMembership,
+    OrganizationPresentation, Party, RetainedProjectile,
 };
 use crate::templates::{decorative_game_icon, religion_icon, sidebar_section};
 
@@ -196,6 +197,7 @@ pub fn party_personal_page(
     filth: &[crate::spacetimedb::CharacterFilth],
     cooking: bool,
     inventory: &[InventoryItem],
+    inventory_amounts: &[InventoryItemAmount],
     food_lots: &[FoodLot],
     item_definitions: &[ItemDefinition],
     character_action_dialog: Option<Markup>,
@@ -248,7 +250,14 @@ pub fn party_personal_page(
     let after = html! {
         (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
         @if cooking_open {
-            (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
+            (cooking_activity_dialog(
+                location,
+                active_character,
+                inventory,
+                inventory_amounts,
+                food_lots,
+                item_definitions,
+            ))
         } @else if let Some(dialog) = foraging_dialog {
             (dialog)
         } @else {

@@ -15,8 +15,8 @@ use super::{
 };
 use crate::spacetimedb::{
     Character, CharacterCondition, CharacterEquip, CharacterLimbs, CharacterStats, FoodLot,
-    InventoryItem, InventoryQuantityTarget, ItemDefinition, ItemSlot, PartyInventoryItem,
-    Settlement,
+    InventoryItem, InventoryItemAmount, InventoryQuantityTarget, ItemDefinition, ItemSlot,
+    PartyInventoryItem, Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
@@ -273,6 +273,7 @@ pub(super) fn cooking_activity_dialog(
     location: &LocationView,
     active_character: &Character,
     inventory: &[InventoryItem],
+    inventory_amounts: &[InventoryItemAmount],
     food_lots: &[FoodLot],
     item_definitions: &[ItemDefinition],
 ) -> Markup {
@@ -335,7 +336,7 @@ pub(super) fn cooking_activity_dialog(
                 form id="cooking-submit-form" class="cooking-submit-form" method="post"
                     action=(&cook_action) {
                     input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
-                    input type="hidden" name="quantities" value="" data-cooking-quantities;
+                    input type="hidden" name="amounts_milliunits" value="" data-cooking-amounts;
                     div class="party-offer cooking-actions" {
                         a class="btn btn-secondary party-offer-cancel" href=(&close_href) { "Cancel" }
                         button type="submit" class="btn btn-primary" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
@@ -355,6 +356,10 @@ pub(super) fn cooking_activity_dialog(
                                 @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                                 @let unit_mass = food_lot.map_or_else(|| definition.map_or(0.0, |definition| definition.weight), |lot| lot.mass_kg / item.qty.max(1) as f32);
                                 @let value = food_lot.map_or_else(|| item_value(definition), |lot| weight_display(lot.total_value));
+                                @let amount = inventory_amounts.iter()
+                                    .find(|state| state.inventory_item_id == item.id)
+                                    .map_or(0, |state| state.remaining_milliunits);
+                                @let display_amount = amount as f32 / 1_000_000.0;
                                 tr class="trade-inventory-row trade-row-player" data-cooking-source=(item.id) data-item-key=(&item.item_id) {
                                     td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                     td class="inventory-item-name" {
@@ -364,19 +369,19 @@ pub(super) fn cooking_activity_dialog(
                                                 @let safety = adventuresim_core::food::definition(&item.item_id).map_or(5, |food| food.cooking_minutes);
                                                 button type="button" class="trade-transfer trade-transfer-left"
                                                     data-cooking-stage=(item.id) data-cooking-name=(&display_name)
-                                                    data-count=(item.qty) data-mass=(format!("{unit_mass:.4}")) data-safety=(safety)
+                                                    data-count=(amount) data-mass=(format!("{unit_mass:.4}")) data-safety=(safety)
                                                     data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
-                                                    data-label-one=(format!("Add one {display_name} to the pot"))
+                                                    data-label-one=(format!("Add 0.25 {display_name} to the pot"))
                                                     data-label-target=(format!("Add {display_name} to the pot"))
                                                     data-label-all=(format!("Add all {display_name} to the pot"))
-                                                    aria-label=(format!("Add one {display_name} to the pot"))
-                                                    title=(format!("Add one {display_name} to the pot")) { (transfer_glyph(1)) }
+                                                    aria-label=(format!("Add 0.25 {display_name} to the pot"))
+                                                    title=(format!("Add 0.25 {display_name} to the pot")) { (transfer_glyph(1)) }
                                             } @else {
                                                 (disabled_transfer_button("left", "Only food ingredients can be added to the pot"))
                                             }
                                         }
                                     }
-                                    td class="inventory-count" { (item.qty) }
+                                    td class="inventory-count" { (weight_display(display_amount)) }
                                     td class="inventory-weight" { (weight_display(unit_mass)) }
                                     td class="inventory-gold" { (value) }
                                 }

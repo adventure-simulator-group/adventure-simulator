@@ -45,6 +45,15 @@ Minimal SpacetimeDB implementation for Adventure Simulator.
 - **Strategic Layer**: SpacetimeDB for character progression, inventory, parties, missions
 - **Tactical Layer**: Bevy/Lightyear game servers for real-time combat (in-memory state only)
 
+The accepted architecture and initial rollout for fractional consumables are specified in
+[`MEASURED_INVENTORY.md`](MEASURED_INVENTORY.md). It keeps object `quantity`
+alongside optional integer measured state on quantity-one rows, with
+definition capabilities controlling legality and checked effective mass/value.
+Production food, alcohol, and soft-soap rows now use definition-relative
+milliunit state. The stable measured-object/profile schema, container tare, and
+integer replacement of floating food-lot fields remain rollout work identified
+by that document.
+
 Native strategic balance experiments are described in
 [`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md). They reuse pure
 authoritative progression functions from `adventuresim-core` and do not create

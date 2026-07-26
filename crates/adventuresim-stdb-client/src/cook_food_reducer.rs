@@ -12,7 +12,7 @@ pub(super) struct CookFoodArgs {
     pub character_id: u64,
     pub method: CookingMethod,
     pub inventory_item_ids: Vec<u64>,
-    pub quantities: Vec<u32>,
+    pub amounts_milliunits: Vec<u32>,
 }
 
 impl From<CookFoodArgs> for super::Reducer {
@@ -21,7 +21,7 @@ impl From<CookFoodArgs> for super::Reducer {
             character_id: args.character_id,
             method: args.method,
             inventory_item_ids: args.inventory_item_ids,
-            quantities: args.quantities,
+            amounts_milliunits: args.amounts_milliunits,
         }
     }
 }
@@ -46,13 +46,13 @@ pub trait cook_food {
         character_id: u64,
         method: CookingMethod,
         inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
+        amounts_milliunits: Vec<u32>,
     ) -> __sdk::Result<()> {
         self.cook_food_then(
             character_id,
             method,
             inventory_item_ids,
-            quantities,
+            amounts_milliunits,
             |_, _| {},
         )
     }
@@ -68,7 +68,7 @@ pub trait cook_food {
         character_id: u64,
         method: CookingMethod,
         inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
+        amounts_milliunits: Vec<u32>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -84,7 +84,7 @@ impl cook_food for super::RemoteReducers {
         character_id: u64,
         method: CookingMethod,
         inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
+        amounts_milliunits: Vec<u32>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -97,7 +97,7 @@ impl cook_food for super::RemoteReducers {
                 character_id,
                 method,
                 inventory_item_ids,
-                quantities,
+                amounts_milliunits,
             },
             callback,
         )

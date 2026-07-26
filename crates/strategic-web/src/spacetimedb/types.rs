@@ -1020,6 +1020,18 @@ pub struct InventoryItem {
     pub qty: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryItemAmount {
+    pub inventory_item_id: u64,
+    pub remaining_milliunits: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyItemAmount {
+    pub party_inventory_item_id: u64,
+    pub remaining_milliunits: u32,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FoodPreparation {
     Raw,

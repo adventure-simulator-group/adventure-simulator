@@ -916,9 +916,16 @@ pub fn treat_limb(
         return Err("Applying a splint requires one splint".into());
     }
     let soap_applicable = matches!(procedure.as_str(), "bandage" | "stitch" | "extract");
-    if use_soap
-        && (!soap_applicable || item_quantity(ctx, actor_id, crate::filth::SOAP_ITEM_ID) == 0)
-    {
+    let soap_available = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((actor_id, crate::filth::SOAP_ITEM_ID))
+        .any(|row| {
+            crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0)
+                >= crate::filth::SOAP_MILLIUNITS_PER_CLEANSING_POINT
+        });
+    if use_soap && (!soap_applicable || !soap_available) {
         return Err("The selected procedure cannot use an available unit of soap".into());
     }
     let duration = duration_minutes(&procedure, skill, dc);
@@ -931,7 +938,17 @@ pub fn treat_limb(
         .then(|| crate::alcohol::best_disinfectant(ctx, actor_id))
         .flatten();
     if use_soap {
-        consume_one(ctx, actor_id, crate::filth::SOAP_ITEM_ID)?;
+        let soap = ctx
+            .db
+            .inventory_item()
+            .character_and_item_id()
+            .filter((actor_id, crate::filth::SOAP_ITEM_ID))
+            .find(|row| {
+                crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0)
+                    >= crate::filth::SOAP_MILLIUNITS_PER_CLEANSING_POINT
+            })
+            .ok_or("Selected soap is no longer available")?;
+        crate::filth::consume_personal_soap_points(ctx, soap.id, 1)?;
     }
     if let Some((inventory_id, _, _)) = selected_alcohol.as_ref() {
         crate::alcohol::consume_inventory_row(ctx, *inventory_id)?;

@@ -55,10 +55,18 @@ pub struct SoapRestPreview {
 
 fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
     let soap_tooltip = if preview.total_units > 0 {
+        let format_soap = |points: u32| {
+            let units = points as f32 / adventuresim_core::filth::SOAP_CLEANSING_CAPACITY as f32;
+            format!("{units:.2}")
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+                .to_string()
+        };
         let source = if preview.personal_units > 0 && preview.shared_units > 0 {
             format!(
                 " ({} personal, {} shared)",
-                preview.personal_units, preview.shared_units
+                format_soap(preview.personal_units),
+                format_soap(preview.shared_units)
             )
         } else if preview.shared_units > 0 {
             " (shared)".to_string()
@@ -67,7 +75,8 @@ fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
         };
         format!(
             "Washing before rest will use {} soft soap{}. Soap is also a surgical supply.",
-            preview.total_units, source
+            format_soap(preview.total_units),
+            source
         )
     } else if preview.available_units > 0 {
         "Soft soap is available, but none is needed for washing before this rest. Soap is also a surgical supply."
