@@ -16,6 +16,8 @@ pub enum MeasurementKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MeasurementProfile {
+    /// For a measured row, adapters supply the measured object's immutable
+    /// kind snapshot here rather than re-reading the current item definition.
     pub kind: MeasurementKind,
     /// Standard immutable basis copied to an object when ordinary stock opens.
     pub standard_basis: MeasurementBasis,

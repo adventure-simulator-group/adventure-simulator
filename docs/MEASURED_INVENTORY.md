@@ -107,6 +107,8 @@ MeasurementProfile {
 MeasuredObject {
     id: u64,                         // stable across every custody transfer
     item_id: String,
+    kind: MeasurementKind,           // immutable snapshot, not a live definition lookup
+    unit: MeasurementUnit,           // immutable interpretation of remaining_amount
     capacity: u64,                   // immutable initial amount, greater than zero
     full_contents_mass_mg: u64,      // immutable per-object basis
     full_contents_value_subunits: u64,
@@ -143,11 +145,12 @@ linked by `item_id`; their existence is independently validated against the
 measurement profile.
 
 The definition profile supplies the standard immutable basis for ordinary
-goods. Opening a sealed unit creates a stable `MeasuredObject` and copies that
-basis. A recipe or other transformation instead creates a derived object whose
-integer capacity, contents mass, contents value, and family metadata are
-calculated from its actual inputs. The evaluator uses the object's basis, never
-the current item definition, whenever measured state exists. Thus two
+goods. Opening a sealed unit creates a stable `MeasuredObject` and copies its
+kind, unit, and numeric basis. A recipe or other transformation instead creates
+a derived object whose kind, unit, integer capacity, contents mass, contents
+value, and family metadata are calculated from its actual inputs. The evaluator
+uses the object's snapshots, never the current item definition, whenever
+measured state exists. Thus two
 `cooked_meal` objects may share an item ID while retaining different masses,
 values, nutrition, provenance, preparation, age, and contamination identity.
 Definition edits cannot retroactively alter existing lots.
@@ -178,9 +181,10 @@ display occur only at the API/UI boundary.
   profile and unit.
 - A discrete definition has no measurement profile and cannot acquire measured
   state.
-- Every measured object validates against the profile's kind/unit, but its
-  immutable basis may differ from the standard basis for an authorized derived
-  lot.
+- A newly created measured object validates its snapshotted kind/unit against
+  the creating definition or recipe. Later evaluation uses those snapshots;
+  its immutable basis may differ from the standard basis for an authorized
+  derived lot.
 
 Seed validation rejects the whole definition before inventory mutation. These
 are authoring errors, not values to clamp.
