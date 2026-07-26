@@ -46,6 +46,9 @@ family, with the specific eligible organization selected deterministically
 from the tab's private seed. Candidate state remains untrusted browser
 coordinates until confirmation authoritatively regenerates and atomically
 persists the selected character.
+Confirmed characters accumulate in a browser-scoped roster and can be switched
+from the strategic header; Character select returns to the life-stage flow to
+create another.
 
 [^6]: Even at 4x speed, which most computers can barely handle simulating, you're still spending most of your time watching your characters travel or rest.
 

@@ -193,7 +193,12 @@ materializes its strategic rows, and records an idempotency claim. The candidate
 generator contains no tactical tick state. Candidate previews use the same
 portrait and character-sheet panels as persisted party members, with gameplay
 activity controls omitted until a candidate is chosen. `/characters` remains
-the persisted character switcher.
+the full-page persisted character switcher. Confirming or selecting a character
+also remembers its ID in a bounded, browser-scoped roster cookie. Strategic
+headers resolve only those remembered, non-temporary rows into the portrait
+dropdown; selecting one changes the current-character cookie, while **Character
+select** returns directly to `/characters/candidates` to create another. Both
+cookies remain local selectors rather than authentication or ownership proof.
 Non-loopback binding requires the clearly named insecure-development opt-in.
 `strategic-web` owns a single generated-client WebSocket subscription to the
 mutable tables that invalidate strategic UI fragments and fans those database

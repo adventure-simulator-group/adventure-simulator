@@ -32,7 +32,7 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
             h2 class="page-title" { "Select your adventurer" }
             @if characters.is_empty() {
                 div class="center-welcome" {
-                    p { "No persisted adventurers are available." }
+                    p { "No adventurers have been created in this browser yet." }
                 }
             } @else {
                 div class="character-select-grid" {
@@ -63,6 +63,9 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
                     }
                 }
             }
+            a href="/characters/candidates" class="btn btn-primary candidate-play-action" {
+                "Create another adventurer"
+            }
         }
 
         aside class="right-sidebar" {
@@ -75,9 +78,44 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
     entry_layout("Select Adventurer", content)
 }
 
+pub fn character_switcher_options(
+    characters: &[Character],
+    current_character_id: Option<u64>,
+) -> Markup {
+    html! {
+        div class="character-switcher-options" {
+            @if characters.is_empty() {
+                p class="character-switcher-empty" { "No remembered adventurers." }
+            } @else {
+                @for character in characters {
+                    @let current = current_character_id == Some(character.id);
+                    form action=(format!("/characters/{}/select", character.id))
+                        method="post" data-hard-navigation {
+                        button type="submit"
+                            class=(if current { "character-switcher-option is-current" } else { "character-switcher-option" })
+                            aria-current=(if current { "true" } else { "false" }) {
+                            span class="character-switcher-option-portrait" aria-hidden="true" {
+                                (character.name.chars().next().unwrap_or('?'))
+                            }
+                            span class="character-switcher-option-copy" {
+                                strong { (&character.name) }
+                                small {
+                                    @if current { "Currently playing" }
+                                    @else if character.alive { "Play this character" }
+                                    @else { "View this character" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::characters_list_page;
+    use super::{character_switcher_options, characters_list_page};
     use crate::spacetimedb::Character;
 
     #[test]
@@ -104,6 +142,34 @@ mod tests {
         assert!(markup.contains("View Fallen Adventurer"));
         assert!(!markup.contains("Play as Fallen Adventurer"));
         assert!(!markup.contains(">Continue<"));
+    }
+
+    #[test]
+    fn switcher_lists_remembered_characters_before_creation_link() {
+        let character = |id, name: &str| Character {
+            id,
+            name: name.into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("riverdale".into()),
+            current_case_site_id: None,
+            party_id: Some(format!("solo-{id}")),
+            age_years: 22,
+            alive: true,
+            temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
+        };
+        let markup =
+            character_switcher_options(&[character(7, "Ada"), character(9, "Beatrix")], Some(9))
+                .into_string();
+        assert!(markup.contains("Ada"));
+        assert!(markup.contains("Beatrix"));
+        assert!(markup.contains("action=\"/characters/7/select\""));
+        assert!(markup.contains("data-hard-navigation"));
+        assert_eq!(markup.matches("aria-current=\"true\"").count(), 1);
+        assert!(markup.contains("Currently playing"));
     }
 }
 

@@ -70,6 +70,12 @@ private random seed stored for the browser tab, but nothing is stored on the
 server until a candidate is confirmed. Age is intended to carry further
 tradeoffs later; those tradeoffs are deliberately not specified yet.
 
+Players may create multiple characters in the same browser. The strategic
+header's portrait menu lists the browser's remembered non-temporary characters,
+marks the current one, and switches between them. **Character select** returns
+to the life-stage step so another character can be created. This prototype
+roster is browser-scoped and is not an account or authentication boundary.
+
 ## Mortal
 
 Character personality includes an immutable Temperance axis. **Temperate** and
