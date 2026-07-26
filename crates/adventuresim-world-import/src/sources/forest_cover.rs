@@ -22,8 +22,8 @@ use crate::{
 const NODATA: u8 = 255;
 const MANIFEST_FILENAME: &str = "forest-cover-manifest.json";
 const PIXELS_PER_DEGREE: u32 = 1_000;
-#[cfg(feature = "strategic-map-renderer")]
-pub const PREPARED_FOREST_FORMAT: &str = "adventuresim-copernicus-forest-2018-v1";
+pub const PREPARED_FOREST_FORMAT_V1: &str = "adventuresim-copernicus-forest-2018-v1";
+pub const PREPARED_FOREST_FORMAT_V2: &str = "adventuresim-copernicus-forest-2018-v2";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +35,8 @@ struct PreparedManifest {
 enum PreparedFormat {
     #[serde(rename = "adventuresim-copernicus-forest-2018-v1")]
     CopernicusForest2018V1,
+    #[serde(rename = "adventuresim-copernicus-forest-2018-v2")]
+    CopernicusForest2018V2,
 }
 
 pub(crate) fn enrich(
@@ -125,17 +127,21 @@ pub(crate) fn enrich(
 fn read_manifest(directory: &Path) -> Result<()> {
     let path = require(directory, MANIFEST_FILENAME)?;
     let bytes = fs::read(&path)?;
-    validate_prepared_forest_manifest(&bytes, &path)
+    validate_prepared_forest_manifest(&bytes, &path).map(|_| ())
 }
 
-pub fn validate_prepared_forest_manifest(bytes: &[u8], path: &Path) -> Result<()> {
+/// Accept only the two reviewed preparation markers. Both use the same strict
+/// 1000x1000 UInt8 EPSG:4326 raster contract; v2 identifies the externally
+/// inventoried pinned-release component.
+pub fn validate_prepared_forest_manifest(bytes: &[u8], path: &Path) -> Result<&'static str> {
     let manifest: PreparedManifest =
         serde_json::from_slice(bytes).map_err(|source| Error::JsonSource {
             path: path.into(),
             source,
         })?;
     match manifest.format {
-        PreparedFormat::CopernicusForest2018V1 => Ok(()),
+        PreparedFormat::CopernicusForest2018V1 => Ok(PREPARED_FOREST_FORMAT_V1),
+        PreparedFormat::CopernicusForest2018V2 => Ok(PREPARED_FOREST_FORMAT_V2),
     }
 }
 
@@ -435,7 +441,7 @@ mod tests {
         tags::Tag,
     };
 
-    use super::{ByteRaster, DegreeTile, PreparedManifest, forest_cover};
+    use super::{ByteRaster, DegreeTile, forest_cover};
 
     fn prepared_geotiff(scale: f64, north: f64, raster_type: u16, epsg: u16) -> Cursor<Vec<u8>> {
         let mut bytes = Cursor::new(Vec::new());
@@ -515,15 +521,33 @@ mod tests {
 
     #[test]
     fn manifest_identifies_the_exact_preparation_contract() {
+        let path = std::path::Path::new("forest-cover-manifest.json");
+        for (marker, expected) in [
+            (
+                br#"{"format":"adventuresim-copernicus-forest-2018-v1"}"#.as_slice(),
+                "adventuresim-copernicus-forest-2018-v1",
+            ),
+            (
+                br#"{"format":"adventuresim-copernicus-forest-2018-v2"}"#.as_slice(),
+                "adventuresim-copernicus-forest-2018-v2",
+            ),
+        ] {
+            assert_eq!(
+                super::validate_prepared_forest_manifest(marker, path).unwrap(),
+                expected
+            );
+        }
         assert!(
-            serde_json::from_str::<PreparedManifest>(
-                r#"{"format":"adventuresim-copernicus-forest-2018-v1"}"#
+            super::validate_prepared_forest_manifest(
+                br#"{"format":"adventuresim-copernicus-forest-2018-v3"}"#,
+                path
             )
-            .is_ok()
+            .is_err()
         );
         assert!(
-            serde_json::from_str::<PreparedManifest>(
-                r#"{"format":"adventuresim-copernicus-forest-2018-v2"}"#
+            super::validate_prepared_forest_manifest(
+                br#"{"format":"adventuresim-copernicus-forest-2018-v2","extra":true}"#,
+                path
             )
             .is_err()
         );

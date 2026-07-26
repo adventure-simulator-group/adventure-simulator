@@ -242,12 +242,12 @@ build-strategic-map: compile-world
 normalise-viabundus: compile-world
 
 # Download the pinned compiled runtime when absent, then load it without rebuilding.
-load-world server=spacetime_url: spacetime-version-check init-world-runtime
-    @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ spacetime_module }}
+load-world server=spacetime_url database=spacetime_module: spacetime-version-check init-world-runtime
+    @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ database }}
 
 # Compatibility name for the former Viabundus-only loader.
-load-viabundus-world server=spacetime_url: spacetime-version-check init-world-runtime
-    @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ spacetime_module }}
+load-viabundus-world server=spacetime_url database=spacetime_module: spacetime-version-check init-world-runtime
+    @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ database }}
 
 # Build the tactical server and spawner
 build-tactical: verify-db-client

@@ -38,7 +38,7 @@ struct Args {
     forest_cover_dir: PathBuf,
     #[arg(long, default_value = "target/world-data-sources/raw/jung-pnv")]
     potential_vegetation_dir: PathBuf,
-    #[arg(long, default_value = "target/world-data-sources/raw/hyde-3-5")]
+    #[arg(long, default_value = "target/world-data-sources/raw/hyde35-land-use")]
     hyde_dir: PathBuf,
     #[arg(long, default_value = "target/world-1544.json")]
     compiled_world: PathBuf,
@@ -1200,6 +1200,16 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn cli_defaults_to_the_initialized_hyde_directory() {
+        let args = Args::try_parse_from(["build-strategic-map"]).unwrap();
+
+        assert_eq!(
+            args.hyde_dir,
+            PathBuf::from("target/world-data-sources/raw/hyde35-land-use")
+        );
+    }
 
     fn fixture() -> PathBuf {
         let root = std::env::temp_dir().join(format!(

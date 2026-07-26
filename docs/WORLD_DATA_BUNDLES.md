@@ -71,7 +71,11 @@ non-developer archives and must not be published as the developer release.
 The Viabundus component includes only the five audited CSVs consumed by the
 importer plus its official source sidecar. The sidecar may describe additional
 supplementary CSVs in the upstream release; those files are intentionally not
-copied into the bundle.
+copied into the bundle. A full strategic-map rebuild also consumes the
+supplementary `water-1500.csv`. After installing the source bundle, run
+`python scripts/init_viabundus.py --force` to replace the bundle's importer-only
+Viabundus directory with the complete upstream CSV set before running
+`just build-strategic-map`.
 
 The policy is explicit and fail-closed for every current compiler input:
 Viabundus, HYDE 3.5, GLO-30, Copernicus forest, Jung PNV, EU-Trees4F,
@@ -178,6 +182,11 @@ is never overwritten implicitly; `just replace-world-runtime` retains replaced
 files below `target/world-runtime-backups/`. A previously pinned runtime that is
 still byte-for-byte intact is recognized as downloaded output and upgraded
 automatically, with the prior files retained by the same backup mechanism.
+The optional second argument selects the published database while retaining
+`spacetime_module` as the default, for example
+`just load-world http://127.0.0.1:24610 adventuresim-dev-example` for an
+isolated strategic profile. The `load-viabundus-world` compatibility alias
+accepts the same arguments.
 
 Release maintainers build and publish it after `just build-strategic-map`:
 

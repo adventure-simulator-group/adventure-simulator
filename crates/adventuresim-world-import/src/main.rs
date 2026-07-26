@@ -271,7 +271,9 @@ fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<(
                 index + 1,
                 batch.len()
             );
-            call_reducer(args, reducer, &[Value::Array(batch)])?;
+            execute_batch_adaptively(&batch, &mut |rows| {
+                call_reducer(args, reducer, &[Value::Array(rows.to_vec())])
+            })?;
         }
         println!("Loaded {total} {label}.");
     }
@@ -348,6 +350,31 @@ fn serialize_batches<T>(
         batches.push(batch);
     }
     Ok(batches)
+}
+
+fn execute_batch_adaptively<T, E>(
+    rows: &[T],
+    execute: &mut impl FnMut(&[T]) -> std::result::Result<(), E>,
+) -> std::result::Result<(), E> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    match execute(rows) {
+        Ok(()) => Ok(()),
+        Err(error) if rows.len() == 1 => Err(error),
+        Err(_) => {
+            let midpoint = rows.len() / 2;
+            eprintln!(
+                "Reducer call for {} rows failed; retrying as batches of {} and {} rows.",
+                rows.len(),
+                midpoint,
+                rows.len() - midpoint
+            );
+            execute_batch_adaptively(&rows[..midpoint], execute)?;
+            execute_batch_adaptively(&rows[midpoint..], execute)
+        }
+    }
 }
 
 fn normalize_variant_keys(value: Value) -> Value {
@@ -1193,8 +1220,8 @@ mod tests {
 
     use super::{
         Args, MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement,
-        encode_settlement_description, encode_travel_edge, manifest_audit_markdown,
-        serialize_batches,
+        encode_settlement_description, encode_travel_edge, execute_batch_adaptively,
+        manifest_audit_markdown, serialize_batches,
     };
 
     #[test]
@@ -1656,6 +1683,83 @@ mod tests {
         })
         .unwrap_err();
         assert!(error.to_string().contains("UTF-16 code units"));
+    }
+
+    #[test]
+    fn adaptive_batch_execution_preserves_the_ordinary_success_path() {
+        let rows = [1, 2, 3, 4];
+        let mut calls = Vec::new();
+
+        execute_batch_adaptively(&rows, &mut |batch| {
+            calls.push(batch.to_vec());
+            Ok::<_, &'static str>(())
+        })
+        .unwrap();
+
+        assert_eq!(calls, vec![vec![1, 2, 3, 4]]);
+    }
+
+    #[test]
+    fn adaptive_batch_execution_bisects_failures_in_source_order() {
+        let rows = [1, 2, 3, 4];
+        let mut calls = Vec::new();
+        let mut completed = Vec::new();
+
+        execute_batch_adaptively(&rows, &mut |batch| {
+            calls.push(batch.to_vec());
+            if batch.len() > 1 {
+                Err("batch too large")
+            } else {
+                completed.push(batch[0]);
+                Ok(())
+            }
+        })
+        .unwrap();
+
+        assert_eq!(
+            calls,
+            vec![
+                vec![1, 2, 3, 4],
+                vec![1, 2],
+                vec![1],
+                vec![2],
+                vec![3, 4],
+                vec![3],
+                vec![4],
+            ]
+        );
+        assert_eq!(completed, rows);
+    }
+
+    #[test]
+    fn adaptive_batch_execution_propagates_the_exact_single_row_failure() {
+        let rows = [1, 2, 3, 4];
+        let mut calls = Vec::new();
+
+        let error = execute_batch_adaptively(&rows, &mut |batch| {
+            calls.push(batch.to_vec());
+            if batch.len() > 1 {
+                Err("batch too large")
+            } else if batch[0] == 3 {
+                Err("row 3 failed exactly")
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "row 3 failed exactly");
+        assert_eq!(
+            calls,
+            vec![
+                vec![1, 2, 3, 4],
+                vec![1, 2],
+                vec![1],
+                vec![2],
+                vec![3, 4],
+                vec![3],
+            ]
+        );
     }
 
     #[test]
