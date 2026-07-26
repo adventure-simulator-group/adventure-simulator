@@ -68,7 +68,9 @@ resolves turns and effects from the embedded catalog.
 Investigation dialogue uses generic facts and effects rather than per-case
 content IDs. A local-problem referral records the character-owned safe rumor
 receipt immediately when the tavern/overview conversation starts, without
-accepting a contract. Referral turns name a known contact or describe them,
+accepting a contract. Its observer-safe presentation is persisted once in the
+dialogue transcript immediately after the authored greeting. Referral turns
+name a known contact or describe them,
 give their occupation/relationship and expected location, and retain explicit
 uncertainty. Truthfulness, private motives, hidden causes, and undiscovered
 evidence never participate in topic eligibility.
