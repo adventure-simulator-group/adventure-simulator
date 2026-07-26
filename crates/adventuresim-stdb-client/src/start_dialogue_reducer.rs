@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -30,8 +24,8 @@ impl From<StartDialogueArgs> for super::Reducer {
             npc_actor_id: args.npc_actor_id,
             location_id: args.location_id,
             catalog_revision: args.catalog_revision,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for StartDialogueArgs {
@@ -49,14 +43,24 @@ pub trait start_dialogue {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`start_dialogue:start_dialogue_then`] to run a callback after the reducer completes.
-    fn start_dialogue(&self, character_id: u64,
-session_id: String,
-conversation_id: String,
-npc_actor_id: String,
-location_id: String,
-catalog_revision: String,
-) -> __sdk::Result<()> {
-        self.start_dialogue_then(character_id, session_id, conversation_id, npc_actor_id, location_id, catalog_revision,  |_, _| {})
+    fn start_dialogue(
+        &self,
+        character_id: u64,
+        session_id: String,
+        conversation_id: String,
+        npc_actor_id: String,
+        location_id: String,
+        catalog_revision: String,
+    ) -> __sdk::Result<()> {
+        self.start_dialogue_then(
+            character_id,
+            session_id,
+            conversation_id,
+            npc_actor_id,
+            location_id,
+            catalog_revision,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `start_dialogue` to run as soon as possible,
@@ -68,15 +72,17 @@ catalog_revision: String,
     fn start_dialogue_then(
         &self,
         character_id: u64,
-session_id: String,
-conversation_id: String,
-npc_actor_id: String,
-location_id: String,
-catalog_revision: String,
+        session_id: String,
+        conversation_id: String,
+        npc_actor_id: String,
+        location_id: String,
+        catalog_revision: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -84,17 +90,28 @@ impl start_dialogue for super::RemoteReducers {
     fn start_dialogue_then(
         &self,
         character_id: u64,
-session_id: String,
-conversation_id: String,
-npc_actor_id: String,
-location_id: String,
-catalog_revision: String,
+        session_id: String,
+        conversation_id: String,
+        npc_actor_id: String,
+        location_id: String,
+        catalog_revision: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(StartDialogueArgs { character_id, session_id, conversation_id, npc_actor_id, location_id, catalog_revision,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            StartDialogueArgs {
+                character_id,
+                session_id,
+                conversation_id,
+                npc_actor_id,
+                location_id,
+                catalog_revision,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,17 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::soil_depth_type::SoilDepth;
 use super::available_water_capacity_type::AvailableWaterCapacity;
-use super::topsoil_organic_carbon_type::TopsoilOrganicCarbon;
+use super::soil_depth_type::SoilDepth;
 use super::stone_content_percent_type::StoneContentPercent;
+use super::topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -23,8 +18,6 @@ pub struct OtherNonTexturedSoil {
     pub stones: StoneContentPercent,
 }
 
-
 impl __sdk::InModule for OtherNonTexturedSoil {
     type Module = super::RemoteModule;
 }
-

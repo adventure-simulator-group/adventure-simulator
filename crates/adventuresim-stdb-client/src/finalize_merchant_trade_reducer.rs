@@ -2,23 +2,17 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct FinalizeMerchantTradeArgs {
     pub character_id: u64,
     pub settlement_id: String,
-    pub buy_item_ids: Vec::<String>,
-    pub buy_quantities: Vec::<u32>,
-    pub sell_inventory_ids: Vec::<u64>,
-    pub sell_quantities: Vec::<u32>,
+    pub buy_item_ids: Vec<String>,
+    pub buy_quantities: Vec<u32>,
+    pub sell_inventory_ids: Vec<u64>,
+    pub sell_quantities: Vec<u32>,
     pub party_scope: bool,
 }
 
@@ -32,8 +26,8 @@ impl From<FinalizeMerchantTradeArgs> for super::Reducer {
             sell_inventory_ids: args.sell_inventory_ids,
             sell_quantities: args.sell_quantities,
             party_scope: args.party_scope,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for FinalizeMerchantTradeArgs {
@@ -51,15 +45,26 @@ pub trait finalize_merchant_trade {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`finalize_merchant_trade:finalize_merchant_trade_then`] to run a callback after the reducer completes.
-    fn finalize_merchant_trade(&self, character_id: u64,
-settlement_id: String,
-buy_item_ids: Vec::<String>,
-buy_quantities: Vec::<u32>,
-sell_inventory_ids: Vec::<u64>,
-sell_quantities: Vec::<u32>,
-party_scope: bool,
-) -> __sdk::Result<()> {
-        self.finalize_merchant_trade_then(character_id, settlement_id, buy_item_ids, buy_quantities, sell_inventory_ids, sell_quantities, party_scope,  |_, _| {})
+    fn finalize_merchant_trade(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+        party_scope: bool,
+    ) -> __sdk::Result<()> {
+        self.finalize_merchant_trade_then(
+            character_id,
+            settlement_id,
+            buy_item_ids,
+            buy_quantities,
+            sell_inventory_ids,
+            sell_quantities,
+            party_scope,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `finalize_merchant_trade` to run as soon as possible,
@@ -71,16 +76,18 @@ party_scope: bool,
     fn finalize_merchant_trade_then(
         &self,
         character_id: u64,
-settlement_id: String,
-buy_item_ids: Vec::<String>,
-buy_quantities: Vec::<u32>,
-sell_inventory_ids: Vec::<u64>,
-sell_quantities: Vec::<u32>,
-party_scope: bool,
+        settlement_id: String,
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+        party_scope: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -88,18 +95,30 @@ impl finalize_merchant_trade for super::RemoteReducers {
     fn finalize_merchant_trade_then(
         &self,
         character_id: u64,
-settlement_id: String,
-buy_item_ids: Vec::<String>,
-buy_quantities: Vec::<u32>,
-sell_inventory_ids: Vec::<u64>,
-sell_quantities: Vec::<u32>,
-party_scope: bool,
+        settlement_id: String,
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+        party_scope: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(FinalizeMerchantTradeArgs { character_id, settlement_id, buy_item_ids, buy_quantities, sell_inventory_ids, sell_quantities, party_scope,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            FinalizeMerchantTradeArgs {
+                character_id,
+                settlement_id,
+                buy_item_ids,
+                buy_quantities,
+                sell_inventory_ids,
+                sell_quantities,
+                party_scope,
+            },
+            callback,
+        )
     }
 }
-

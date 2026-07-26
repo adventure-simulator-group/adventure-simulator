@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::recruitment_requirements_type::RecruitmentRequirements;
 
@@ -27,8 +22,8 @@ impl From<SaveRecruitmentRoleArgs> for super::Reducer {
             name: args.name,
             requirements: args.requirements,
             weapon_precision: args.weapon_precision,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for SaveRecruitmentRoleArgs {
@@ -46,12 +41,14 @@ pub trait save_recruitment_role {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`save_recruitment_role:save_recruitment_role_then`] to run a callback after the reducer completes.
-    fn save_recruitment_role(&self, owner_id: u64,
-name: String,
-requirements: RecruitmentRequirements,
-weapon_precision: f32,
-) -> __sdk::Result<()> {
-        self.save_recruitment_role_then(owner_id, name, requirements, weapon_precision,  |_, _| {})
+    fn save_recruitment_role(
+        &self,
+        owner_id: u64,
+        name: String,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+    ) -> __sdk::Result<()> {
+        self.save_recruitment_role_then(owner_id, name, requirements, weapon_precision, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `save_recruitment_role` to run as soon as possible,
@@ -63,13 +60,15 @@ weapon_precision: f32,
     fn save_recruitment_role_then(
         &self,
         owner_id: u64,
-name: String,
-requirements: RecruitmentRequirements,
-weapon_precision: f32,
+        name: String,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -77,15 +76,24 @@ impl save_recruitment_role for super::RemoteReducers {
     fn save_recruitment_role_then(
         &self,
         owner_id: u64,
-name: String,
-requirements: RecruitmentRequirements,
-weapon_precision: f32,
+        name: String,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SaveRecruitmentRoleArgs { owner_id, name, requirements, weapon_precision,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            SaveRecruitmentRoleArgs {
+                owner_id,
+                name,
+                requirements,
+                weapon_precision,
+            },
+            callback,
+        )
     }
 }
-

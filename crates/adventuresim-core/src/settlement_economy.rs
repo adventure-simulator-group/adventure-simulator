@@ -198,7 +198,7 @@ pub fn item_stock_category(id: &str, kind: CatalogKind) -> Option<Stock> {
         },
         CatalogKind::Food => match id {
             "oat_grain" | "rye_bread" | "travel_ration" => Stock::Grain,
-            "raw_venison" | "raw_fowl" => Stock::Meat,
+            "raw_venison" | "raw_fowl" | "raw_fish" | "raw_beast_meat" => Stock::Meat,
             "garlic" | "sage" | "wild_mushrooms" => Stock::Herbs,
             _ => Stock::GeneralGoods,
         },

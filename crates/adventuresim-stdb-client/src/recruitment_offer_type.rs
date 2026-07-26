@@ -2,16 +2,11 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::recruitment_offer_id_type::RecruitmentOfferId;
-use super::recruitment_source_id_type::RecruitmentSourceId;
 use super::recruitment_offer_status_type::RecruitmentOfferStatus;
+use super::recruitment_source_id_type::RecruitmentSourceId;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -29,11 +24,9 @@ pub struct RecruitmentOffer {
     pub expires_at_minute: u64,
 }
 
-
 impl __sdk::InModule for RecruitmentOffer {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `RecruitmentOffer`.
 ///
@@ -59,7 +52,10 @@ impl __sdk::__query_builder::HasCols for RecruitmentOffer {
             id_key: __sdk::__query_builder::Col::new(table_name, "id_key"),
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             source_id: __sdk::__query_builder::Col::new(table_name, "source_id"),
-            recruiting_party_id: __sdk::__query_builder::Col::new(table_name, "recruiting_party_id"),
+            recruiting_party_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "recruiting_party_id",
+            ),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             settlement_npc_id: __sdk::__query_builder::Col::new(table_name, "settlement_npc_id"),
             location_id: __sdk::__query_builder::Col::new(table_name, "location_id"),
@@ -67,7 +63,6 @@ impl __sdk::__query_builder::HasCols for RecruitmentOffer {
             status: __sdk::__query_builder::Col::new(table_name, "status"),
             created_at_minute: __sdk::__query_builder::Col::new(table_name, "created_at_minute"),
             expires_at_minute: __sdk::__query_builder::Col::new(table_name, "expires_at_minute"),
-
         }
     }
 }
@@ -88,14 +83,15 @@ impl __sdk::__query_builder::HasIxCols for RecruitmentOffer {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         RecruitmentOfferIxCols {
             id_key: __sdk::__query_builder::IxCol::new(table_name, "id_key"),
-            recruiting_party_id: __sdk::__query_builder::IxCol::new(table_name, "recruiting_party_id"),
+            recruiting_party_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "recruiting_party_id",
+            ),
             settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
             settlement_npc_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_npc_id"),
             source_id: __sdk::__query_builder::IxCol::new(table_name, "source_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for RecruitmentOffer {}
-

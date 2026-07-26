@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<TravelToSettlementArgs> for super::Reducer {
         Self::TravelToSettlement {
             character_id: args.character_id,
             settlement_id: args.settlement_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for TravelToSettlementArgs {
@@ -41,10 +35,8 @@ pub trait travel_to_settlement {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`travel_to_settlement:travel_to_settlement_then`] to run a callback after the reducer completes.
-    fn travel_to_settlement(&self, character_id: u64,
-settlement_id: String,
-) -> __sdk::Result<()> {
-        self.travel_to_settlement_then(character_id, settlement_id,  |_, _| {})
+    fn travel_to_settlement(&self, character_id: u64, settlement_id: String) -> __sdk::Result<()> {
+        self.travel_to_settlement_then(character_id, settlement_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `travel_to_settlement` to run as soon as possible,
@@ -56,11 +48,13 @@ settlement_id: String,
     fn travel_to_settlement_then(
         &self,
         character_id: u64,
-settlement_id: String,
+        settlement_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -68,13 +62,20 @@ impl travel_to_settlement for super::RemoteReducers {
     fn travel_to_settlement_then(
         &self,
         character_id: u64,
-settlement_id: String,
+        settlement_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(TravelToSettlementArgs { character_id, settlement_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            TravelToSettlementArgs {
+                character_id,
+                settlement_id,
+            },
+            callback,
+        )
     }
 }
-

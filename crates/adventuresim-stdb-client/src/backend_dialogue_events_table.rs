@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::backend_dialogue_event_type::BackendDialogueEvent;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_dialogue_events`.
 ///
@@ -36,7 +31,9 @@ pub trait BackendDialogueEventsTableAccess {
 impl BackendDialogueEventsTableAccess for super::RemoteTables {
     fn backend_dialogue_events(&self) -> BackendDialogueEventsTableHandle<'_> {
         BackendDialogueEventsTableHandle {
-            imp: self.imp.get_table::<BackendDialogueEvent>("backend_dialogue_events"),
+            imp: self
+                .imp
+                .get_table::<BackendDialogueEvent>("backend_dialogue_events"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for BackendDialogueEventsTableHandle<'ctx> {
     type Row = BackendDialogueEvent;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = BackendDialogueEvent> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = BackendDialogueEvent> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BackendDialogueEventsInsertCallbackId;
 
@@ -81,8 +82,7 @@ impl<'ctx> __sdk::Table for BackendDialogueEventsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<BackendDialogueEvent>("backend_dialogue_events");
+    let _table = client_cache.get_or_make_table::<BackendDialogueEvent>("backend_dialogue_events");
 }
 
 #[doc(hidden)]
@@ -90,26 +90,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<BackendDialogueEvent>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<BackendDialogueEvent>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<BackendDialogueEvent>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `BackendDialogueEvent`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait backend_dialogue_eventsQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `BackendDialogueEvent`.
-            fn backend_dialogue_events(&self) -> __sdk::__query_builder::Table<BackendDialogueEvent>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BackendDialogueEvent`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait backend_dialogue_eventsQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BackendDialogueEvent`.
+    fn backend_dialogue_events(&self) -> __sdk::__query_builder::Table<BackendDialogueEvent>;
+}
 
-        impl backend_dialogue_eventsQueryTableAccess for __sdk::QueryTableAccessor {
-            fn backend_dialogue_events(&self) -> __sdk::__query_builder::Table<BackendDialogueEvent> {
-                __sdk::__query_builder::Table::new("backend_dialogue_events")
-            }
-        }
-
+impl backend_dialogue_eventsQueryTableAccess for __sdk::QueryTableAccessor {
+    fn backend_dialogue_events(&self) -> __sdk::__query_builder::Table<BackendDialogueEvent> {
+        __sdk::__query_builder::Table::new("backend_dialogue_events")
+    }
+}

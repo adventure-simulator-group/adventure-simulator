@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::character_time_type::CharacterTime;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_time`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for CharacterTimeTableHandle<'ctx> {
     type Row = CharacterTime;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = CharacterTime> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = CharacterTime> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = CharacterTimeInsertCallbackId;
 
@@ -96,39 +95,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for CharacterTimeTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `character_id` unique index on the table `character_time`,
-        /// which allows point queries on the field of the same name
-        /// via the [`CharacterTimeCharacterIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.character_time().character_id().find(...)`.
-        pub struct CharacterTimeCharacterIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<CharacterTime, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `character_id` unique index on the table `character_time`,
+/// which allows point queries on the field of the same name
+/// via the [`CharacterTimeCharacterIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.character_time().character_id().find(...)`.
+pub struct CharacterTimeCharacterIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<CharacterTime, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> CharacterTimeTableHandle<'ctx> {
-            /// Get a handle on the `character_id` unique index on the table `character_time`.
-            pub fn character_id(&self) -> CharacterTimeCharacterIdUnique<'ctx> {
-                CharacterTimeCharacterIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("character_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> CharacterTimeTableHandle<'ctx> {
+    /// Get a handle on the `character_id` unique index on the table `character_time`.
+    pub fn character_id(&self) -> CharacterTimeCharacterIdUnique<'ctx> {
+        CharacterTimeCharacterIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("character_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> CharacterTimeCharacterIdUnique<'ctx> {
-            /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<CharacterTime> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> CharacterTimeCharacterIdUnique<'ctx> {
+    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<CharacterTime> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<CharacterTime>("character_time");
     _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
@@ -138,26 +136,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<CharacterTime>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<CharacterTime>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<CharacterTime>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `CharacterTime`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait character_timeQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `CharacterTime`.
-            fn character_time(&self) -> __sdk::__query_builder::Table<CharacterTime>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `CharacterTime`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait character_timeQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `CharacterTime`.
+    fn character_time(&self) -> __sdk::__query_builder::Table<CharacterTime>;
+}
 
-        impl character_timeQueryTableAccess for __sdk::QueryTableAccessor {
-            fn character_time(&self) -> __sdk::__query_builder::Table<CharacterTime> {
-                __sdk::__query_builder::Table::new("character_time")
-            }
-        }
-
+impl character_timeQueryTableAccess for __sdk::QueryTableAccessor {
+    fn character_time(&self) -> __sdk::__query_builder::Table<CharacterTime> {
+        __sdk::__query_builder::Table::new("character_time")
+    }
+}

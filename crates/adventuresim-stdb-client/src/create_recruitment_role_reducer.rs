@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::recruitment_requirements_type::RecruitmentRequirements;
 
@@ -31,8 +26,8 @@ impl From<CreateRecruitmentRoleArgs> for super::Reducer {
             requirements: args.requirements,
             weapon_precision: args.weapon_precision,
             save_role: args.save_role,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for CreateRecruitmentRoleArgs {
@@ -50,14 +45,24 @@ pub trait create_recruitment_role {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`create_recruitment_role:create_recruitment_role_then`] to run a callback after the reducer completes.
-    fn create_recruitment_role(&self, leader_id: u64,
-name: String,
-quantity: u32,
-requirements: RecruitmentRequirements,
-weapon_precision: f32,
-save_role: bool,
-) -> __sdk::Result<()> {
-        self.create_recruitment_role_then(leader_id, name, quantity, requirements, weapon_precision, save_role,  |_, _| {})
+    fn create_recruitment_role(
+        &self,
+        leader_id: u64,
+        name: String,
+        quantity: u32,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+        save_role: bool,
+    ) -> __sdk::Result<()> {
+        self.create_recruitment_role_then(
+            leader_id,
+            name,
+            quantity,
+            requirements,
+            weapon_precision,
+            save_role,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `create_recruitment_role` to run as soon as possible,
@@ -69,15 +74,17 @@ save_role: bool,
     fn create_recruitment_role_then(
         &self,
         leader_id: u64,
-name: String,
-quantity: u32,
-requirements: RecruitmentRequirements,
-weapon_precision: f32,
-save_role: bool,
+        name: String,
+        quantity: u32,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+        save_role: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -85,17 +92,28 @@ impl create_recruitment_role for super::RemoteReducers {
     fn create_recruitment_role_then(
         &self,
         leader_id: u64,
-name: String,
-quantity: u32,
-requirements: RecruitmentRequirements,
-weapon_precision: f32,
-save_role: bool,
+        name: String,
+        quantity: u32,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+        save_role: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(CreateRecruitmentRoleArgs { leader_id, name, quantity, requirements, weapon_precision, save_role,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            CreateRecruitmentRoleArgs {
+                leader_id,
+                name,
+                quantity,
+                requirements,
+                weapon_precision,
+                save_role,
+            },
+            callback,
+        )
     }
 }
-

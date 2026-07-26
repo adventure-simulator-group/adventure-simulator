@@ -1984,6 +1984,52 @@ body.character-action-dialog-open { overflow: hidden; }
   .cooking-stage { min-height: 22rem; border-inline: 0; border-block: 1px solid var(--border-light); }
 }
 
+.forage-dialog fieldset {
+  display: grid;
+  gap: .4rem;
+  margin: .65rem 0;
+}
+.forage-source-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: .65rem;
+  align-items: center;
+  padding: .55rem .65rem;
+  border: 1px solid var(--border-color);
+  background: var(--building-interactive);
+  cursor: pointer;
+}
+.forage-source-copy {
+  display: grid;
+  gap: .1rem;
+}
+.forage-source-copy > span {
+  color: var(--text-muted);
+  font-size: .72rem;
+}
+.forage-source-status {
+  font-size: .68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.forage-source-unlicensed {
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--border-color));
+  color: var(--danger);
+}
+.forage-source-unlicensed .forage-source-copy > span,
+.forage-source-unlicensed input {
+  color: var(--danger);
+  accent-color: var(--danger);
+}
+.forage-source-unavailable {
+  cursor: not-allowed;
+  opacity: .55;
+}
+.forage-source-row:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+
 .rest-consumable-indicators {
   display: flex;
   justify-content: center;

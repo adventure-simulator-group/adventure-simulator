@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct CreateNamedCharacterArgs {
 
 impl From<CreateNamedCharacterArgs> for super::Reducer {
     fn from(args: CreateNamedCharacterArgs) -> Self {
-        Self::CreateNamedCharacter {
-            name: args.name,
-}
-}
+        Self::CreateNamedCharacter { name: args.name }
+    }
 }
 
 impl __sdk::InModule for CreateNamedCharacterArgs {
@@ -39,9 +31,8 @@ pub trait create_named_character {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`create_named_character:create_named_character_then`] to run a callback after the reducer completes.
-    fn create_named_character(&self, name: String,
-) -> __sdk::Result<()> {
-        self.create_named_character_then(name,  |_, _| {})
+    fn create_named_character(&self, name: String) -> __sdk::Result<()> {
+        self.create_named_character_then(name, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `create_named_character` to run as soon as possible,
@@ -54,9 +45,11 @@ pub trait create_named_character {
         &self,
         name: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -65,11 +58,13 @@ impl create_named_character for super::RemoteReducers {
         &self,
         name: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(CreateNamedCharacterArgs { name,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(CreateNamedCharacterArgs { name }, callback)
     }
 }
-

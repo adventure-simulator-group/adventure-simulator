@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -44,8 +38,8 @@ impl From<StageInvestigationLeadArgs> for super::Reducer {
             longitude_e_7: args.longitude_e_7,
             conflict_group: args.conflict_group,
             correction_of_lead_id: args.correction_of_lead_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for StageInvestigationLeadArgs {
@@ -63,21 +57,38 @@ pub trait stage_investigation_lead {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`stage_investigation_lead:stage_investigation_lead_then`] to run a callback after the reducer completes.
-    fn stage_investigation_lead(&self, character_id: u64,
-receipt_id: String,
-public_case_id: String,
-summary: String,
-safe_source_label: String,
-confidence_bps: u16,
-destination_stage: String,
-directions: String,
-exact_location_id: String,
-latitude_e_7: i32,
-longitude_e_7: i32,
-conflict_group: String,
-correction_of_lead_id: String,
-) -> __sdk::Result<()> {
-        self.stage_investigation_lead_then(character_id, receipt_id, public_case_id, summary, safe_source_label, confidence_bps, destination_stage, directions, exact_location_id, latitude_e_7, longitude_e_7, conflict_group, correction_of_lead_id,  |_, _| {})
+    fn stage_investigation_lead(
+        &self,
+        character_id: u64,
+        receipt_id: String,
+        public_case_id: String,
+        summary: String,
+        safe_source_label: String,
+        confidence_bps: u16,
+        destination_stage: String,
+        directions: String,
+        exact_location_id: String,
+        latitude_e_7: i32,
+        longitude_e_7: i32,
+        conflict_group: String,
+        correction_of_lead_id: String,
+    ) -> __sdk::Result<()> {
+        self.stage_investigation_lead_then(
+            character_id,
+            receipt_id,
+            public_case_id,
+            summary,
+            safe_source_label,
+            confidence_bps,
+            destination_stage,
+            directions,
+            exact_location_id,
+            latitude_e_7,
+            longitude_e_7,
+            conflict_group,
+            correction_of_lead_id,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `stage_investigation_lead` to run as soon as possible,
@@ -89,22 +100,24 @@ correction_of_lead_id: String,
     fn stage_investigation_lead_then(
         &self,
         character_id: u64,
-receipt_id: String,
-public_case_id: String,
-summary: String,
-safe_source_label: String,
-confidence_bps: u16,
-destination_stage: String,
-directions: String,
-exact_location_id: String,
-latitude_e_7: i32,
-longitude_e_7: i32,
-conflict_group: String,
-correction_of_lead_id: String,
+        receipt_id: String,
+        public_case_id: String,
+        summary: String,
+        safe_source_label: String,
+        confidence_bps: u16,
+        destination_stage: String,
+        directions: String,
+        exact_location_id: String,
+        latitude_e_7: i32,
+        longitude_e_7: i32,
+        conflict_group: String,
+        correction_of_lead_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -112,24 +125,42 @@ impl stage_investigation_lead for super::RemoteReducers {
     fn stage_investigation_lead_then(
         &self,
         character_id: u64,
-receipt_id: String,
-public_case_id: String,
-summary: String,
-safe_source_label: String,
-confidence_bps: u16,
-destination_stage: String,
-directions: String,
-exact_location_id: String,
-latitude_e_7: i32,
-longitude_e_7: i32,
-conflict_group: String,
-correction_of_lead_id: String,
+        receipt_id: String,
+        public_case_id: String,
+        summary: String,
+        safe_source_label: String,
+        confidence_bps: u16,
+        destination_stage: String,
+        directions: String,
+        exact_location_id: String,
+        latitude_e_7: i32,
+        longitude_e_7: i32,
+        conflict_group: String,
+        correction_of_lead_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(StageInvestigationLeadArgs { character_id, receipt_id, public_case_id, summary, safe_source_label, confidence_bps, destination_stage, directions, exact_location_id, latitude_e_7, longitude_e_7, conflict_group, correction_of_lead_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            StageInvestigationLeadArgs {
+                character_id,
+                receipt_id,
+                public_case_id,
+                summary,
+                safe_source_label,
+                confidence_bps,
+                destination_stage,
+                directions,
+                exact_location_id,
+                latitude_e_7,
+                longitude_e_7,
+                conflict_group,
+                correction_of_lead_id,
+            },
+            callback,
+        )
     }
 }
-

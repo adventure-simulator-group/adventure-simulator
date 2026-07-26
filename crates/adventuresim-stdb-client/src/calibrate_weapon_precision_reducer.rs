@@ -2,23 +2,16 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct CalibrateWeaponPrecisionArgs {
-    }
+pub(super) struct CalibrateWeaponPrecisionArgs {}
 
 impl From<CalibrateWeaponPrecisionArgs> for super::Reducer {
     fn from(args: CalibrateWeaponPrecisionArgs) -> Self {
         Self::CalibrateWeaponPrecision
-}
+    }
 }
 
 impl __sdk::InModule for CalibrateWeaponPrecisionArgs {
@@ -36,8 +29,8 @@ pub trait calibrate_weapon_precision {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`calibrate_weapon_precision:calibrate_weapon_precision_then`] to run a callback after the reducer completes.
-    fn calibrate_weapon_precision(&self, ) -> __sdk::Result<()> {
-        self.calibrate_weapon_precision_then( |_, _| {})
+    fn calibrate_weapon_precision(&self) -> __sdk::Result<()> {
+        self.calibrate_weapon_precision_then(|_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `calibrate_weapon_precision` to run as soon as possible,
@@ -48,22 +41,26 @@ pub trait calibrate_weapon_precision {
     ///  and its status can be observed with the `callback`.
     fn calibrate_weapon_precision_then(
         &self,
-        
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl calibrate_weapon_precision for super::RemoteReducers {
     fn calibrate_weapon_precision_then(
         &self,
-        
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(CalibrateWeaponPrecisionArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(CalibrateWeaponPrecisionArgs {}, callback)
     }
 }
-

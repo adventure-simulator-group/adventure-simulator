@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -28,8 +22,8 @@ impl From<SeedStandaloneTacticalMissionArgs> for super::Reducer {
             mission_id: args.mission_id,
             scene_key: args.scene_key,
             required_enemy_kills: args.required_enemy_kills,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for SeedStandaloneTacticalMissionArgs {
@@ -47,13 +41,22 @@ pub trait seed_standalone_tactical_mission {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`seed_standalone_tactical_mission:seed_standalone_tactical_mission_then`] to run a callback after the reducer completes.
-    fn seed_standalone_tactical_mission(&self, bootstrap_token: String,
-character_id: u64,
-mission_id: String,
-scene_key: String,
-required_enemy_kills: u32,
-) -> __sdk::Result<()> {
-        self.seed_standalone_tactical_mission_then(bootstrap_token, character_id, mission_id, scene_key, required_enemy_kills,  |_, _| {})
+    fn seed_standalone_tactical_mission(
+        &self,
+        bootstrap_token: String,
+        character_id: u64,
+        mission_id: String,
+        scene_key: String,
+        required_enemy_kills: u32,
+    ) -> __sdk::Result<()> {
+        self.seed_standalone_tactical_mission_then(
+            bootstrap_token,
+            character_id,
+            mission_id,
+            scene_key,
+            required_enemy_kills,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `seed_standalone_tactical_mission` to run as soon as possible,
@@ -65,14 +68,16 @@ required_enemy_kills: u32,
     fn seed_standalone_tactical_mission_then(
         &self,
         bootstrap_token: String,
-character_id: u64,
-mission_id: String,
-scene_key: String,
-required_enemy_kills: u32,
+        character_id: u64,
+        mission_id: String,
+        scene_key: String,
+        required_enemy_kills: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -80,16 +85,26 @@ impl seed_standalone_tactical_mission for super::RemoteReducers {
     fn seed_standalone_tactical_mission_then(
         &self,
         bootstrap_token: String,
-character_id: u64,
-mission_id: String,
-scene_key: String,
-required_enemy_kills: u32,
+        character_id: u64,
+        mission_id: String,
+        scene_key: String,
+        required_enemy_kills: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SeedStandaloneTacticalMissionArgs { bootstrap_token, character_id, mission_id, scene_key, required_enemy_kills,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            SeedStandaloneTacticalMissionArgs {
+                bootstrap_token,
+                character_id,
+                mission_id,
+                scene_key,
+                required_enemy_kills,
+            },
+            callback,
+        )
     }
 }
-

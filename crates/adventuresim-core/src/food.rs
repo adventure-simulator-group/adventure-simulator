@@ -188,6 +188,26 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         cooking_minutes: 22,
     },
     FoodDefinition {
+        id: "raw_fish",
+        name: "Raw fish",
+        class: FoodClass::RawMeat,
+        kcal_per_unit: 520.0,
+        mass_kg_per_unit: 0.45,
+        value_per_unit: 1.5,
+        growth_per_hour: 0.115,
+        cooking_minutes: 16,
+    },
+    FoodDefinition {
+        id: "raw_beast_meat",
+        name: "Raw beast meat",
+        class: FoodClass::RawMeat,
+        kcal_per_unit: 680.0,
+        mass_kg_per_unit: 0.50,
+        value_per_unit: 1.0,
+        growth_per_hour: 0.105,
+        cooking_minutes: 24,
+    },
+    FoodDefinition {
         id: "cooked_meal",
         name: "Cooked meal",
         class: FoodClass::MixedMeal,
@@ -430,6 +450,19 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn forage_meats_have_complete_raw_food_definitions() {
+        for id in ["raw_venison", "raw_fowl", "raw_fish", "raw_beast_meat"] {
+            let food = definition(id).unwrap();
+            assert_eq!(food.class, FoodClass::RawMeat);
+            assert!(food.kcal_per_unit > 0.0);
+            assert!(food.mass_kg_per_unit > 0.0);
+            assert!(food.value_per_unit > 0.0);
+            assert!(food.growth_per_hour > 0.0);
+            assert!(food.cooking_minutes > 0);
+        }
     }
 
     #[test]

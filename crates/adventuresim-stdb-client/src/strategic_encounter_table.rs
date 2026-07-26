@@ -2,14 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-use super::strategic_encounter_type::StrategicEncounter;
 use super::strategic_encounter_loss_type::StrategicEncounterLoss;
+use super::strategic_encounter_type::StrategicEncounter;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `strategic_encounter`.
 ///
@@ -37,7 +32,9 @@ pub trait StrategicEncounterTableAccess {
 impl StrategicEncounterTableAccess for super::RemoteTables {
     fn strategic_encounter(&self) -> StrategicEncounterTableHandle<'_> {
         StrategicEncounterTableHandle {
-            imp: self.imp.get_table::<StrategicEncounter>("strategic_encounter"),
+            imp: self
+                .imp
+                .get_table::<StrategicEncounter>("strategic_encounter"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -50,8 +47,12 @@ impl<'ctx> __sdk::Table for StrategicEncounterTableHandle<'ctx> {
     type Row = StrategicEncounter;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = StrategicEncounter> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = StrategicEncounter> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = StrategicEncounterInsertCallbackId;
 
@@ -97,39 +98,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for StrategicEncounterTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `party_id` unique index on the table `strategic_encounter`,
-        /// which allows point queries on the field of the same name
-        /// via the [`StrategicEncounterPartyIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.strategic_encounter().party_id().find(...)`.
-        pub struct StrategicEncounterPartyIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<StrategicEncounter, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `party_id` unique index on the table `strategic_encounter`,
+/// which allows point queries on the field of the same name
+/// via the [`StrategicEncounterPartyIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.strategic_encounter().party_id().find(...)`.
+pub struct StrategicEncounterPartyIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<StrategicEncounter, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> StrategicEncounterTableHandle<'ctx> {
-            /// Get a handle on the `party_id` unique index on the table `strategic_encounter`.
-            pub fn party_id(&self) -> StrategicEncounterPartyIdUnique<'ctx> {
-                StrategicEncounterPartyIdUnique {
-                    imp: self.imp.get_unique_constraint::<String>("party_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> StrategicEncounterTableHandle<'ctx> {
+    /// Get a handle on the `party_id` unique index on the table `strategic_encounter`.
+    pub fn party_id(&self) -> StrategicEncounterPartyIdUnique<'ctx> {
+        StrategicEncounterPartyIdUnique {
+            imp: self.imp.get_unique_constraint::<String>("party_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> StrategicEncounterPartyIdUnique<'ctx> {
-            /// Find the subscribed row whose `party_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<StrategicEncounter> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> StrategicEncounterPartyIdUnique<'ctx> {
+    /// Find the subscribed row whose `party_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<StrategicEncounter> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<StrategicEncounter>("strategic_encounter");
     _table.add_unique_constraint::<String>("party_id", |row| &row.party_id);
 }
@@ -139,26 +139,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<StrategicEncounter>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<StrategicEncounter>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<StrategicEncounter>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `StrategicEncounter`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait strategic_encounterQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `StrategicEncounter`.
-            fn strategic_encounter(&self) -> __sdk::__query_builder::Table<StrategicEncounter>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `StrategicEncounter`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait strategic_encounterQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `StrategicEncounter`.
+    fn strategic_encounter(&self) -> __sdk::__query_builder::Table<StrategicEncounter>;
+}
 
-        impl strategic_encounterQueryTableAccess for __sdk::QueryTableAccessor {
-            fn strategic_encounter(&self) -> __sdk::__query_builder::Table<StrategicEncounter> {
-                __sdk::__query_builder::Table::new("strategic_encounter")
-            }
-        }
-
+impl strategic_encounterQueryTableAccess for __sdk::QueryTableAccessor {
+    fn strategic_encounter(&self) -> __sdk::__query_builder::Table<StrategicEncounter> {
+        __sdk::__query_builder::Table::new("strategic_encounter")
+    }
+}

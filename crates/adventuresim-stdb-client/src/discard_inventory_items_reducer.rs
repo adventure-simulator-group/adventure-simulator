@@ -2,20 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DiscardInventoryItemsArgs {
     pub character_id: u64,
-    pub inventory_item_ids: Vec::<u64>,
-    pub quantities: Vec::<u32>,
+    pub inventory_item_ids: Vec<u64>,
+    pub quantities: Vec<u32>,
 }
 
 impl From<DiscardInventoryItemsArgs> for super::Reducer {
@@ -24,8 +18,8 @@ impl From<DiscardInventoryItemsArgs> for super::Reducer {
             character_id: args.character_id,
             inventory_item_ids: args.inventory_item_ids,
             quantities: args.quantities,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for DiscardInventoryItemsArgs {
@@ -43,11 +37,13 @@ pub trait discard_inventory_items {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`discard_inventory_items:discard_inventory_items_then`] to run a callback after the reducer completes.
-    fn discard_inventory_items(&self, character_id: u64,
-inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
-) -> __sdk::Result<()> {
-        self.discard_inventory_items_then(character_id, inventory_item_ids, quantities,  |_, _| {})
+    fn discard_inventory_items(
+        &self,
+        character_id: u64,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    ) -> __sdk::Result<()> {
+        self.discard_inventory_items_then(character_id, inventory_item_ids, quantities, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `discard_inventory_items` to run as soon as possible,
@@ -59,12 +55,14 @@ quantities: Vec::<u32>,
     fn discard_inventory_items_then(
         &self,
         character_id: u64,
-inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -72,14 +70,22 @@ impl discard_inventory_items for super::RemoteReducers {
     fn discard_inventory_items_then(
         &self,
         character_id: u64,
-inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DiscardInventoryItemsArgs { character_id, inventory_item_ids, quantities,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            DiscardInventoryItemsArgs {
+                character_id,
+                inventory_item_ids,
+                quantities,
+            },
+            callback,
+        )
     }
 }
-

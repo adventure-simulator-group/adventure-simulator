@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,11 +14,9 @@ pub struct PartyJoinRequest {
     pub meets_requirements: bool,
 }
 
-
 impl __sdk::InModule for PartyJoinRequest {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `PartyJoinRequest`.
 ///
@@ -43,10 +35,12 @@ impl __sdk::__query_builder::HasCols for PartyJoinRequest {
         PartyJoinRequestCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
-            recruitment_role_id: __sdk::__query_builder::Col::new(table_name, "recruitment_role_id"),
+            recruitment_role_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "recruitment_role_id",
+            ),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             meets_requirements: __sdk::__query_builder::Col::new(table_name, "meets_requirements"),
-
         }
     }
 }
@@ -68,11 +62,12 @@ impl __sdk::__query_builder::HasIxCols for PartyJoinRequest {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-            recruitment_role_id: __sdk::__query_builder::IxCol::new(table_name, "recruitment_role_id"),
-
+            recruitment_role_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "recruitment_role_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PartyJoinRequest {}
-

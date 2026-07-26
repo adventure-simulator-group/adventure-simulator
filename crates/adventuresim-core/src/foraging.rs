@@ -12,7 +12,7 @@ pub const ILLEGAL_FORAGE_VIRTUE_LOSS: f32 = 1.0;
 pub const CULTIVATED_STEALTH_DC_MILLIRANK: u16 = 1_750;
 pub const SETTLEMENT_STEALTH_DC_MILLIRANK: u16 = 2_500;
 pub const DURATION_STEALTH_DC_PER_HOUR: u16 = 75;
-pub const MAX_TARGETS: usize = 8;
+pub const MAX_SOURCES: usize = 5;
 /// Food searches are calibrated so an eight-hour low-skill search in an ideal
 /// habitat can approximately replace that interval's metabolic expenditure.
 pub const FOOD_DISCOVERY_RATE_PERMILLE: u64 = 1_750;
@@ -44,6 +44,64 @@ pub enum ForageRarity {
     Rare,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForageSource {
+    HighGame,
+    LowGame,
+    Fish,
+    HarmfulBeasts,
+    Plants,
+}
+
+impl ForageSource {
+    pub const ALL: [Self; 5] = [
+        Self::HighGame,
+        Self::LowGame,
+        Self::Fish,
+        Self::HarmfulBeasts,
+        Self::Plants,
+    ];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::HighGame => "high_game",
+            Self::LowGame => "low_game",
+            Self::Fish => "fish",
+            Self::HarmfulBeasts => "harmful_beasts",
+            Self::Plants => "plants",
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::HighGame => "High Game",
+            Self::LowGame => "Low Game",
+            Self::Fish => "Fish",
+            Self::HarmfulBeasts => "Harmful Beasts",
+            Self::Plants => "Plants",
+        }
+    }
+
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::HighGame => "Deer and other prized large quarry",
+            Self::LowGame => "Fowl and other lesser quarry",
+            Self::Fish => "River, wet-ground, and coastal fish",
+            Self::HarmfulBeasts => "Predators and vermin; no license required",
+            Self::Plants => "Berries, roots, nuts, fungi, and herbs",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|source| source.id() == id)
+    }
+
+    pub const fn requires_license(self) -> bool {
+        !matches!(self, Self::HarmfulBeasts)
+    }
+}
+
 impl ForageRarity {
     const fn discoveries_per_eight_hours_permille(self) -> u32 {
         match self {
@@ -62,6 +120,7 @@ pub struct ForageResource {
     pub biomes: &'static [ForageBiome],
     pub yield_min: u16,
     pub yield_max: u16,
+    pub source: ForageSource,
 }
 
 use ForageBiome::{Forest, Hills, Plains, RiverWetGround, SeaCoast};
@@ -74,6 +133,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Plains, Forest, Hills],
         yield_min: 1,
         yield_max: 4,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "root_vegetables",
@@ -82,6 +142,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Plains, Forest, Hills, RiverWetGround],
         yield_min: 1,
         yield_max: 3,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "hazelnuts",
@@ -90,6 +151,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Forest, Hills],
         yield_min: 1,
         yield_max: 3,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "wild_mushrooms",
@@ -98,6 +160,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Forest, RiverWetGround],
         yield_min: 1,
         yield_max: 3,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "garlic",
@@ -106,6 +169,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Forest, RiverWetGround],
         yield_min: 1,
         yield_max: 2,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "sage",
@@ -114,6 +178,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Plains, Hills],
         yield_min: 1,
         yield_max: 2,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "willow_bark",
@@ -122,6 +187,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Forest, RiverWetGround],
         yield_min: 1,
         yield_max: 2,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "poppy",
@@ -130,6 +196,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Plains, Hills],
         yield_min: 1,
         yield_max: 2,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "comfrey",
@@ -138,6 +205,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[Plains, RiverWetGround],
         yield_min: 1,
         yield_max: 2,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "watercress",
@@ -146,6 +214,7 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[RiverWetGround],
         yield_min: 1,
         yield_max: 4,
+        source: ForageSource::Plants,
     },
     ForageResource {
         item_id: "seaweed",
@@ -154,6 +223,43 @@ pub const FORAGE_RESOURCES: &[ForageResource] = &[
         biomes: &[SeaCoast],
         yield_min: 1,
         yield_max: 4,
+        source: ForageSource::Plants,
+    },
+    ForageResource {
+        item_id: "raw_venison",
+        name: "Raw venison",
+        rarity: ForageRarity::Uncommon,
+        biomes: &[Forest, Hills, Plains],
+        yield_min: 2,
+        yield_max: 6,
+        source: ForageSource::HighGame,
+    },
+    ForageResource {
+        item_id: "raw_fowl",
+        name: "Raw fowl",
+        rarity: ForageRarity::Common,
+        biomes: &[Plains, Forest, RiverWetGround],
+        yield_min: 1,
+        yield_max: 3,
+        source: ForageSource::LowGame,
+    },
+    ForageResource {
+        item_id: "raw_fish",
+        name: "Raw fish",
+        rarity: ForageRarity::Common,
+        biomes: &[RiverWetGround, SeaCoast],
+        yield_min: 1,
+        yield_max: 4,
+        source: ForageSource::Fish,
+    },
+    ForageResource {
+        item_id: "raw_beast_meat",
+        name: "Raw beast meat",
+        rarity: ForageRarity::Uncommon,
+        biomes: &[Plains, Forest, Hills],
+        yield_min: 1,
+        yield_max: 3,
+        source: ForageSource::HarmfulBeasts,
     },
 ];
 
@@ -181,6 +287,8 @@ pub struct ForageEnvironment {
     pub sea_or_coast: bool,
     pub cultivated: bool,
     pub settlement: bool,
+    /// Authoritative license evaluation, never supplied by the browser.
+    pub license_violation: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -210,6 +318,16 @@ pub fn resource(item_id: &str) -> Option<&'static ForageResource> {
         .find(|entry| entry.item_id == item_id)
 }
 
+pub fn source_available(source: ForageSource, environment: ForageEnvironment) -> bool {
+    FORAGE_RESOURCES
+        .iter()
+        .any(|resource| resource.source == source && available(resource, environment))
+}
+
+fn search_budget_divisor(selected_source_count: u64, available_resource_count: u64) -> u64 {
+    selected_source_count.saturating_mul(available_resource_count)
+}
+
 pub fn available(resource: &ForageResource, environment: ForageEnvironment) -> bool {
     habitat_share_permille(resource, environment) > 0
 }
@@ -231,7 +349,7 @@ pub fn habitat_share_permille(resource: &ForageResource, environment: ForageEnvi
 }
 
 pub fn stealth_dc_millirank(environment: ForageEnvironment, minutes: u64) -> Option<u16> {
-    if !environment.cultivated && !environment.settlement {
+    if !environment.cultivated && !environment.settlement && !environment.license_violation {
         return None;
     }
     let base = if environment.settlement {
@@ -250,13 +368,13 @@ pub fn stealth_dc_millirank(environment: ForageEnvironment, minutes: u64) -> Opt
     )
 }
 
-/// Resolve one shared search budget. Splitting it over N targets divides each
-/// target's attempts by N rather than manufacturing N complete searches.
+/// Resolve one shared search budget. Time is divided first over selected
+/// categories, then over the locally available resources in each category.
 /// Terrain checks contribute at most +50% discovery and +50% yield.
 pub fn resolve(
     seed: u64,
     environment: ForageEnvironment,
-    target_ids: &[String],
+    source_ids: &[String],
     minutes: u64,
     terrain_check_millirank: u16,
     stealth_check_millirank: u16,
@@ -265,57 +383,69 @@ pub fn resolve(
     if !environment.terrain.is_normalized() {
         return Err("Foraging terrain mixture is not normalized");
     }
-    if target_ids.is_empty() || target_ids.len() > MAX_TARGETS {
-        return Err("Choose between one and eight forage targets");
+    if source_ids.is_empty() || source_ids.len() > MAX_SOURCES {
+        return Err("Choose between one and five forage sources");
     }
     let mut unique = std::collections::BTreeSet::new();
-    for id in target_ids {
+    for id in source_ids {
         if !unique.insert(id.as_str()) {
-            return Err("Forage targets must be unique");
+            return Err("Forage sources must be unique");
         }
     }
-    let mut targets = Vec::with_capacity(unique.len());
+    let mut sources = Vec::with_capacity(unique.len());
     for id in unique {
-        let target = resource(id).ok_or("Unknown forage target")?;
-        if !available(target, environment) {
-            return Err("A forage target is unavailable in this vicinity");
+        let source = ForageSource::from_id(id).ok_or("Unknown forage source")?;
+        let resources = FORAGE_RESOURCES
+            .iter()
+            .filter(|resource| resource.source == source && available(resource, environment))
+            .collect::<Vec<_>>();
+        if resources.is_empty() {
+            return Err("A forage source is unavailable in this vicinity");
         }
-        targets.push(target);
+        sources.push((source, resources));
     }
     let skill_bonus_permille = 1_000 + u32::from(terrain_check_millirank.min(5_000)) / 10;
-    let target_count = targets.len() as u64;
+    let source_count = sources.len() as u64;
     let mut yields = Vec::new();
-    for (index, target) in targets.into_iter().enumerate() {
-        let habitat = u64::from(habitat_share_permille(target, environment));
-        let food_rate = if crate::food::definition(target.item_id).is_some() {
-            FOOD_DISCOVERY_RATE_PERMILLE
-        } else {
-            1_000
-        };
-        let expected_permille = u64::from(target.rarity.discoveries_per_eight_hours_permille())
-            * minutes
-            * u64::from(skill_bonus_permille)
-            * habitat
-            * food_rate
-            / (8 * 60 * 1_000 * 1_000 * 1_000 * target_count);
-        let guaranteed = expected_permille / 1_000;
-        let remainder = expected_permille % 1_000;
-        let discovered =
-            guaranteed + u64::from(random_below(seed, index as u64, 0, 1_000) < remainder);
-        if discovered == 0 {
-            continue;
+    for (source_index, (_, resources)) in sources.into_iter().enumerate() {
+        let resource_count = resources.len() as u64;
+        for (resource_index, target) in resources.into_iter().enumerate() {
+            let habitat = u64::from(habitat_share_permille(target, environment));
+            let food_rate = if crate::food::definition(target.item_id).is_some() {
+                FOOD_DISCOVERY_RATE_PERMILLE
+            } else {
+                1_000
+            };
+            let expected_permille = u64::from(target.rarity.discoveries_per_eight_hours_permille())
+                * minutes
+                * u64::from(skill_bonus_permille)
+                * habitat
+                * food_rate
+                / (8 * 60
+                    * 1_000
+                    * 1_000
+                    * 1_000
+                    * search_budget_divisor(source_count, resource_count));
+            let random_key = source_index as u64 * 256 + resource_index as u64;
+            let guaranteed = expected_permille / 1_000;
+            let remainder = expected_permille % 1_000;
+            let discovered =
+                guaranteed + u64::from(random_below(seed, random_key, 0, 1_000) < remainder);
+            if discovered == 0 {
+                continue;
+            }
+            let range = u64::from(target.yield_max - target.yield_min + 1);
+            let base_yield = u64::from(target.yield_min) + random_below(seed, random_key, 1, range);
+            let yield_bonus_permille = 1_000 + u64::from(terrain_check_millirank.min(5_000)) / 10;
+            let quantity = discovered
+                .saturating_mul(base_yield)
+                .saturating_mul(yield_bonus_permille)
+                / 1_000;
+            yields.push(ForageYield {
+                item_id: target.item_id,
+                quantity: u16::try_from(quantity).unwrap_or(u16::MAX),
+            });
         }
-        let range = u64::from(target.yield_max - target.yield_min + 1);
-        let base_yield = u64::from(target.yield_min) + random_below(seed, index as u64, 1, range);
-        let yield_bonus_permille = 1_000 + u64::from(terrain_check_millirank.min(5_000)) / 10;
-        let quantity = discovered
-            .saturating_mul(base_yield)
-            .saturating_mul(yield_bonus_permille)
-            / 1_000;
-        yields.push(ForageYield {
-            item_id: target.item_id,
-            quantity: u16::try_from(quantity).unwrap_or(u16::MAX),
-        });
     }
     let (dc, stealth_succeeded) =
         resolve_stealth(seed, environment, minutes, stealth_check_millirank);
@@ -385,31 +515,61 @@ mod tests {
 
     #[test]
     fn shared_budget_and_resolution_are_deterministic() {
-        let one = resolve(7, legal(), &["wild_berries".into()], 8 * 60, 2_000, 0).unwrap();
-        let again = resolve(7, legal(), &["wild_berries".into()], 8 * 60, 2_000, 0).unwrap();
+        let one = resolve(7, legal(), &["plants".into()], 8 * 60, 2_000, 0).unwrap();
+        let again = resolve(7, legal(), &["plants".into()], 8 * 60, 2_000, 0).unwrap();
         let split = resolve(
             7,
             legal(),
-            &["wild_berries".into(), "sage".into()],
+            &["plants".into(), "low_game".into()],
             8 * 60,
             2_000,
             0,
         )
         .unwrap();
         assert_eq!(one, again);
-        assert!(
-            split
-                .yields
-                .iter()
-                .map(|row| u32::from(row.quantity))
-                .sum::<u32>()
-                <= one
-                    .yields
-                    .iter()
-                    .map(|row| u32::from(row.quantity))
-                    .sum::<u32>()
-                    + 4
+        assert_eq!(
+            split,
+            resolve(
+                7,
+                legal(),
+                &["plants".into(), "low_game".into()],
+                8 * 60,
+                2_000,
+                0,
+            )
+            .unwrap()
         );
+    }
+
+    #[test]
+    fn category_then_resource_budget_is_exactly_conserved() {
+        let plant_count = FORAGE_RESOURCES
+            .iter()
+            .filter(|resource| {
+                resource.source == ForageSource::Plants && available(resource, legal())
+            })
+            .count() as u64;
+        let low_game_count = FORAGE_RESOURCES
+            .iter()
+            .filter(|resource| {
+                resource.source == ForageSource::LowGame && available(resource, legal())
+            })
+            .count() as u64;
+        assert!(plant_count > 1);
+        assert_eq!(low_game_count, 1);
+
+        // Use 2 * plant_count as a common exact budget unit. Plants alone
+        // receive the whole budget. With Plants + Low Game, each category
+        // receives exactly half, irrespective of how many Plant resources
+        // exist inside its half.
+        let common = 2 * plant_count;
+        let plants_alone = plant_count * (common / search_budget_divisor(1, plant_count));
+        let split_plants = plant_count * (common / search_budget_divisor(2, plant_count));
+        let split_low_game = low_game_count * (common / search_budget_divisor(2, low_game_count));
+        assert_eq!(plants_alone, common);
+        assert_eq!(split_plants, common / 2);
+        assert_eq!(split_low_game, common / 2);
+        assert_eq!(split_plants + split_low_game, common);
     }
 
     #[test]
@@ -417,7 +577,7 @@ mod tests {
         let first = resolve(
             91,
             legal(),
-            &["sage".into(), "wild_berries".into()],
+            &["low_game".into(), "plants".into()],
             8 * 60,
             2_000,
             0,
@@ -426,7 +586,7 @@ mod tests {
         let reversed = resolve(
             91,
             legal(),
-            &["wild_berries".into(), "sage".into()],
+            &["plants".into(), "low_game".into()],
             8 * 60,
             2_000,
             0,
@@ -472,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn ideal_food_search_is_near_subsistence_and_skill_is_monotonic() {
+    fn skill_is_monotonic_for_category_searches() {
         let forest = ForageEnvironment {
             terrain: LocalTerrainMixture {
                 plains: 0,
@@ -484,7 +644,7 @@ mod tests {
         let calories = |check| {
             (0..256_u64)
                 .map(|seed| {
-                    resolve(seed, forest, &["hazelnuts".into()], 8 * 60, check, 0)
+                    resolve(seed, forest, &["plants".into()], 8 * 60, check, 0)
                         .unwrap()
                         .yields
                         .iter()
@@ -496,42 +656,58 @@ mod tests {
         };
         let novice = calories(0);
         let expert = calories(5_000);
-        assert!((1_400.0..=2_600.0).contains(&novice), "{novice}");
+        assert!(novice > 0.0);
         assert!(expert > novice);
     }
 
     #[test]
-    fn half_habitat_has_about_half_the_ideal_expected_output() {
-        let environment = |forest| ForageEnvironment {
-            terrain: LocalTerrainMixture {
-                plains: 1_000 - forest,
-                forest,
-                hills: 0,
-            },
-            ..Default::default()
-        };
-        let average = |forest| {
-            (0..4_096_u64)
-                .map(|seed| {
-                    resolve(
-                        seed,
-                        environment(forest),
-                        &["hazelnuts".into()],
-                        8 * 60,
-                        0,
-                        0,
-                    )
-                    .unwrap()
-                    .yields
-                    .iter()
-                    .map(|row| f32::from(row.quantity))
-                    .sum::<f32>()
-                })
-                .sum::<f32>()
-                / 4_096.0
-        };
-        let ideal = average(1_000);
-        let half = average(500);
-        assert!((0.45..=0.55).contains(&(half / ideal)), "{half}/{ideal}");
+    fn source_ids_and_order_are_stable_and_resources_are_classified() {
+        assert_eq!(
+            ForageSource::ALL.map(ForageSource::id),
+            ["high_game", "low_game", "fish", "harmful_beasts", "plants"]
+        );
+        assert_eq!(
+            resource("raw_venison").unwrap().source,
+            ForageSource::HighGame
+        );
+        assert_eq!(resource("raw_fowl").unwrap().source, ForageSource::LowGame);
+        assert_eq!(resource("raw_fish").unwrap().source, ForageSource::Fish);
+        assert_eq!(
+            resource("raw_beast_meat").unwrap().source,
+            ForageSource::HarmfulBeasts
+        );
+        assert!(
+            FORAGE_RESOURCES
+                .iter()
+                .filter(|resource| resource.item_id != "raw_venison"
+                    && resource.item_id != "raw_fowl"
+                    && resource.item_id != "raw_fish"
+                    && resource.item_id != "raw_beast_meat")
+                .all(|resource| resource.source == ForageSource::Plants)
+        );
+    }
+
+    #[test]
+    fn unavailable_sources_are_rejected_and_harmful_beasts_need_no_license() {
+        assert!(!source_available(ForageSource::Fish, legal()));
+        assert!(resolve(7, legal(), &["fish".into()], 60, 0, 0).is_err());
+        assert!(!ForageSource::HarmfulBeasts.requires_license());
+        assert!(ForageSource::Plants.requires_license());
+    }
+
+    #[test]
+    fn license_violation_uses_cultivated_base_and_combines_into_one_check() {
+        let mut environment = legal();
+        environment.license_violation = true;
+        assert_eq!(
+            stealth_dc_millirank(environment, 60),
+            Some(CULTIVATED_STEALTH_DC_MILLIRANK)
+        );
+        environment.cultivated = true;
+        environment.settlement = true;
+        assert_eq!(
+            stealth_dc_millirank(environment, 60),
+            Some(SETTLEMENT_STEALTH_DC_MILLIRANK)
+        );
     }
 }

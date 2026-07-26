@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -21,11 +15,9 @@ pub struct SettlementOutbreak {
     pub intensity: f32,
 }
 
-
 impl __sdk::InModule for SettlementOutbreak {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `SettlementOutbreak`.
 ///
@@ -49,7 +41,6 @@ impl __sdk::__query_builder::HasCols for SettlementOutbreak {
             start_minute: __sdk::__query_builder::Col::new(table_name, "start_minute"),
             end_minute: __sdk::__query_builder::Col::new(table_name, "end_minute"),
             intensity: __sdk::__query_builder::Col::new(table_name, "intensity"),
-
         }
     }
 }
@@ -68,10 +59,8 @@ impl __sdk::__query_builder::HasIxCols for SettlementOutbreak {
         SettlementOutbreakIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for SettlementOutbreak {}
-

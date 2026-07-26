@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -29,11 +23,9 @@ pub struct InvestigationSafeLeadReceipt {
     pub consumed_by: String,
 }
 
-
 impl __sdk::InModule for InvestigationSafeLeadReceipt {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `InvestigationSafeLeadReceipt`.
 ///
@@ -71,9 +63,11 @@ impl __sdk::__query_builder::HasCols for InvestigationSafeLeadReceipt {
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             conflict_group: __sdk::__query_builder::Col::new(table_name, "conflict_group"),
-            correction_of_lead_id: __sdk::__query_builder::Col::new(table_name, "correction_of_lead_id"),
+            correction_of_lead_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "correction_of_lead_id",
+            ),
             consumed_by: __sdk::__query_builder::Col::new(table_name, "consumed_by"),
-
         }
     }
 }
@@ -91,11 +85,12 @@ impl __sdk::__query_builder::HasIxCols for InvestigationSafeLeadReceipt {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InvestigationSafeLeadReceiptIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
-
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationSafeLeadReceipt {}
-

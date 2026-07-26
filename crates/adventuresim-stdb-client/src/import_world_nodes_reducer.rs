@@ -2,27 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::world_node_import_type::WorldNodeImport;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ImportWorldNodesArgs {
-    pub nodes: Vec::<WorldNodeImport>,
+    pub nodes: Vec<WorldNodeImport>,
 }
 
 impl From<ImportWorldNodesArgs> for super::Reducer {
     fn from(args: ImportWorldNodesArgs) -> Self {
-        Self::ImportWorldNodes {
-            nodes: args.nodes,
-}
-}
+        Self::ImportWorldNodes { nodes: args.nodes }
+    }
 }
 
 impl __sdk::InModule for ImportWorldNodesArgs {
@@ -40,9 +33,8 @@ pub trait import_world_nodes {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`import_world_nodes:import_world_nodes_then`] to run a callback after the reducer completes.
-    fn import_world_nodes(&self, nodes: Vec::<WorldNodeImport>,
-) -> __sdk::Result<()> {
-        self.import_world_nodes_then(nodes,  |_, _| {})
+    fn import_world_nodes(&self, nodes: Vec<WorldNodeImport>) -> __sdk::Result<()> {
+        self.import_world_nodes_then(nodes, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `import_world_nodes` to run as soon as possible,
@@ -53,24 +45,28 @@ pub trait import_world_nodes {
     ///  and its status can be observed with the `callback`.
     fn import_world_nodes_then(
         &self,
-        nodes: Vec::<WorldNodeImport>,
+        nodes: Vec<WorldNodeImport>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl import_world_nodes for super::RemoteReducers {
     fn import_world_nodes_then(
         &self,
-        nodes: Vec::<WorldNodeImport>,
+        nodes: Vec<WorldNodeImport>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ImportWorldNodesArgs { nodes,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(ImportWorldNodesArgs { nodes }, callback)
     }
 }
-

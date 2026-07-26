@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::flowing_water_access_type::FlowingWaterAccess;
 use super::inland_water_access_type::InlandWaterAccess;
@@ -16,13 +11,11 @@ use super::marine_water_access_type::MarineWaterAccess;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct SettlementHydrology {
-    pub flowing: Option::<FlowingWaterAccess>,
-    pub inland: Option::<InlandWaterAccess>,
-    pub marine: Option::<MarineWaterAccess>,
+    pub flowing: Option<FlowingWaterAccess>,
+    pub inland: Option<InlandWaterAccess>,
+    pub marine: Option<MarineWaterAccess>,
 }
-
 
 impl __sdk::InModule for SettlementHydrology {
     type Module = super::RemoteModule;
 }
-

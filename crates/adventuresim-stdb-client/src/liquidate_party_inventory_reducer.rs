@@ -2,21 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct LiquidatePartyInventoryArgs {
     pub character_id: u64,
     pub settlement_id: String,
-    pub party_inventory_item_ids: Vec::<u64>,
-    pub quantities: Vec::<u32>,
+    pub party_inventory_item_ids: Vec<u64>,
+    pub quantities: Vec<u32>,
 }
 
 impl From<LiquidatePartyInventoryArgs> for super::Reducer {
@@ -26,8 +20,8 @@ impl From<LiquidatePartyInventoryArgs> for super::Reducer {
             settlement_id: args.settlement_id,
             party_inventory_item_ids: args.party_inventory_item_ids,
             quantities: args.quantities,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for LiquidatePartyInventoryArgs {
@@ -45,12 +39,20 @@ pub trait liquidate_party_inventory {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`liquidate_party_inventory:liquidate_party_inventory_then`] to run a callback after the reducer completes.
-    fn liquidate_party_inventory(&self, character_id: u64,
-settlement_id: String,
-party_inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
-) -> __sdk::Result<()> {
-        self.liquidate_party_inventory_then(character_id, settlement_id, party_inventory_item_ids, quantities,  |_, _| {})
+    fn liquidate_party_inventory(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+        party_inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    ) -> __sdk::Result<()> {
+        self.liquidate_party_inventory_then(
+            character_id,
+            settlement_id,
+            party_inventory_item_ids,
+            quantities,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `liquidate_party_inventory` to run as soon as possible,
@@ -62,13 +64,15 @@ quantities: Vec::<u32>,
     fn liquidate_party_inventory_then(
         &self,
         character_id: u64,
-settlement_id: String,
-party_inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
+        settlement_id: String,
+        party_inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -76,15 +80,24 @@ impl liquidate_party_inventory for super::RemoteReducers {
     fn liquidate_party_inventory_then(
         &self,
         character_id: u64,
-settlement_id: String,
-party_inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
+        settlement_id: String,
+        party_inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(LiquidatePartyInventoryArgs { character_id, settlement_id, party_inventory_item_ids, quantities,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            LiquidatePartyInventoryArgs {
+                character_id,
+                settlement_id,
+                party_inventory_item_ids,
+                quantities,
+            },
+            callback,
+        )
     }
 }
-

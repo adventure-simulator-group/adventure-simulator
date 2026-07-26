@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -26,11 +20,9 @@ pub struct InvestigationSafeClaimReceipt {
     pub consumed_by: String,
 }
 
-
 impl __sdk::InModule for InvestigationSafeClaimReceipt {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `InvestigationSafeClaimReceipt`.
 ///
@@ -62,9 +54,11 @@ impl __sdk::__query_builder::HasCols for InvestigationSafeClaimReceipt {
             safe_source_label: __sdk::__query_builder::Col::new(table_name, "safe_source_label"),
             confidence_bps: __sdk::__query_builder::Col::new(table_name, "confidence_bps"),
             conflict_group: __sdk::__query_builder::Col::new(table_name, "conflict_group"),
-            correction_of_belief_id: __sdk::__query_builder::Col::new(table_name, "correction_of_belief_id"),
+            correction_of_belief_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "correction_of_belief_id",
+            ),
             consumed_by: __sdk::__query_builder::Col::new(table_name, "consumed_by"),
-
         }
     }
 }
@@ -82,11 +76,12 @@ impl __sdk::__query_builder::HasIxCols for InvestigationSafeClaimReceipt {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InvestigationSafeClaimReceiptIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
-
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationSafeClaimReceipt {}
-

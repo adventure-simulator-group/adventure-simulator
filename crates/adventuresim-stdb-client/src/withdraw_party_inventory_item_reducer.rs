@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -24,8 +18,8 @@ impl From<WithdrawPartyInventoryItemArgs> for super::Reducer {
             character_id: args.character_id,
             party_inventory_item_id: args.party_inventory_item_id,
             quantity: args.quantity,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for WithdrawPartyInventoryItemArgs {
@@ -43,11 +37,18 @@ pub trait withdraw_party_inventory_item {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`withdraw_party_inventory_item:withdraw_party_inventory_item_then`] to run a callback after the reducer completes.
-    fn withdraw_party_inventory_item(&self, character_id: u64,
-party_inventory_item_id: u64,
-quantity: u32,
-) -> __sdk::Result<()> {
-        self.withdraw_party_inventory_item_then(character_id, party_inventory_item_id, quantity,  |_, _| {})
+    fn withdraw_party_inventory_item(
+        &self,
+        character_id: u64,
+        party_inventory_item_id: u64,
+        quantity: u32,
+    ) -> __sdk::Result<()> {
+        self.withdraw_party_inventory_item_then(
+            character_id,
+            party_inventory_item_id,
+            quantity,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `withdraw_party_inventory_item` to run as soon as possible,
@@ -59,12 +60,14 @@ quantity: u32,
     fn withdraw_party_inventory_item_then(
         &self,
         character_id: u64,
-party_inventory_item_id: u64,
-quantity: u32,
+        party_inventory_item_id: u64,
+        quantity: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -72,14 +75,22 @@ impl withdraw_party_inventory_item for super::RemoteReducers {
     fn withdraw_party_inventory_item_then(
         &self,
         character_id: u64,
-party_inventory_item_id: u64,
-quantity: u32,
+        party_inventory_item_id: u64,
+        quantity: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(WithdrawPartyInventoryItemArgs { character_id, party_inventory_item_id, quantity,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            WithdrawPartyInventoryItemArgs {
+                character_id,
+                party_inventory_item_id,
+                quantity,
+            },
+            callback,
+        )
     }
 }
-

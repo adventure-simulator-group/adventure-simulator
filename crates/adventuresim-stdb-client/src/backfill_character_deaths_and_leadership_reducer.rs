@@ -2,23 +2,16 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct BackfillCharacterDeathsAndLeadershipArgs {
-    }
+pub(super) struct BackfillCharacterDeathsAndLeadershipArgs {}
 
 impl From<BackfillCharacterDeathsAndLeadershipArgs> for super::Reducer {
     fn from(args: BackfillCharacterDeathsAndLeadershipArgs) -> Self {
         Self::BackfillCharacterDeathsAndLeadership
-}
+    }
 }
 
 impl __sdk::InModule for BackfillCharacterDeathsAndLeadershipArgs {
@@ -36,8 +29,8 @@ pub trait backfill_character_deaths_and_leadership {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`backfill_character_deaths_and_leadership:backfill_character_deaths_and_leadership_then`] to run a callback after the reducer completes.
-    fn backfill_character_deaths_and_leadership(&self, ) -> __sdk::Result<()> {
-        self.backfill_character_deaths_and_leadership_then( |_, _| {})
+    fn backfill_character_deaths_and_leadership(&self) -> __sdk::Result<()> {
+        self.backfill_character_deaths_and_leadership_then(|_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `backfill_character_deaths_and_leadership` to run as soon as possible,
@@ -48,22 +41,26 @@ pub trait backfill_character_deaths_and_leadership {
     ///  and its status can be observed with the `callback`.
     fn backfill_character_deaths_and_leadership_then(
         &self,
-        
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl backfill_character_deaths_and_leadership for super::RemoteReducers {
     fn backfill_character_deaths_and_leadership_then(
         &self,
-        
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(BackfillCharacterDeathsAndLeadershipArgs {  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(BackfillCharacterDeathsAndLeadershipArgs {}, callback)
     }
 }
-

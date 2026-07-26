@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::recruitment_requirements_type::RecruitmentRequirements;
 
@@ -21,11 +16,9 @@ pub struct SavedRecruitmentRole {
     pub weapon_precision: f32,
 }
 
-
 impl __sdk::InModule for SavedRecruitmentRole {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `SavedRecruitmentRole`.
 ///
@@ -47,7 +40,6 @@ impl __sdk::__query_builder::HasCols for SavedRecruitmentRole {
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             requirements: __sdk::__query_builder::Col::new(table_name, "requirements"),
             weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
-
         }
     }
 }
@@ -65,11 +57,12 @@ impl __sdk::__query_builder::HasIxCols for SavedRecruitmentRole {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         SavedRecruitmentRoleIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
-
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for SavedRecruitmentRole {}
-

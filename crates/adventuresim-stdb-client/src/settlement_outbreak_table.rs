@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::settlement_outbreak_type::SettlementOutbreak;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `settlement_outbreak`.
 ///
@@ -36,7 +31,9 @@ pub trait SettlementOutbreakTableAccess {
 impl SettlementOutbreakTableAccess for super::RemoteTables {
     fn settlement_outbreak(&self) -> SettlementOutbreakTableHandle<'_> {
         SettlementOutbreakTableHandle {
-            imp: self.imp.get_table::<SettlementOutbreak>("settlement_outbreak"),
+            imp: self
+                .imp
+                .get_table::<SettlementOutbreak>("settlement_outbreak"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for SettlementOutbreakTableHandle<'ctx> {
     type Row = SettlementOutbreak;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = SettlementOutbreak> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = SettlementOutbreak> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = SettlementOutbreakInsertCallbackId;
 
@@ -96,39 +97,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for SettlementOutbreakTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `id` unique index on the table `settlement_outbreak`,
-        /// which allows point queries on the field of the same name
-        /// via the [`SettlementOutbreakIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.settlement_outbreak().id().find(...)`.
-        pub struct SettlementOutbreakIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<SettlementOutbreak, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `id` unique index on the table `settlement_outbreak`,
+/// which allows point queries on the field of the same name
+/// via the [`SettlementOutbreakIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.settlement_outbreak().id().find(...)`.
+pub struct SettlementOutbreakIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<SettlementOutbreak, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> SettlementOutbreakTableHandle<'ctx> {
-            /// Get a handle on the `id` unique index on the table `settlement_outbreak`.
-            pub fn id(&self) -> SettlementOutbreakIdUnique<'ctx> {
-                SettlementOutbreakIdUnique {
-                    imp: self.imp.get_unique_constraint::<String>("id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> SettlementOutbreakTableHandle<'ctx> {
+    /// Get a handle on the `id` unique index on the table `settlement_outbreak`.
+    pub fn id(&self) -> SettlementOutbreakIdUnique<'ctx> {
+        SettlementOutbreakIdUnique {
+            imp: self.imp.get_unique_constraint::<String>("id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> SettlementOutbreakIdUnique<'ctx> {
-            /// Find the subscribed row whose `id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<SettlementOutbreak> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> SettlementOutbreakIdUnique<'ctx> {
+    /// Find the subscribed row whose `id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<SettlementOutbreak> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<SettlementOutbreak>("settlement_outbreak");
     _table.add_unique_constraint::<String>("id", |row| &row.id);
 }
@@ -138,26 +138,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<SettlementOutbreak>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<SettlementOutbreak>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<SettlementOutbreak>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `SettlementOutbreak`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait settlement_outbreakQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `SettlementOutbreak`.
-            fn settlement_outbreak(&self) -> __sdk::__query_builder::Table<SettlementOutbreak>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `SettlementOutbreak`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait settlement_outbreakQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `SettlementOutbreak`.
+    fn settlement_outbreak(&self) -> __sdk::__query_builder::Table<SettlementOutbreak>;
+}
 
-        impl settlement_outbreakQueryTableAccess for __sdk::QueryTableAccessor {
-            fn settlement_outbreak(&self) -> __sdk::__query_builder::Table<SettlementOutbreak> {
-                __sdk::__query_builder::Table::new("settlement_outbreak")
-            }
-        }
-
+impl settlement_outbreakQueryTableAccess for __sdk::QueryTableAccessor {
+    fn settlement_outbreak(&self) -> __sdk::__query_builder::Table<SettlementOutbreak> {
+        __sdk::__query_builder::Table::new("settlement_outbreak")
+    }
+}

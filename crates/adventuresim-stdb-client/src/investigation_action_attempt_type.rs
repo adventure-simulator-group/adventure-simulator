@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -26,11 +20,9 @@ pub struct InvestigationActionAttempt {
     pub private_resolution_json: String,
 }
 
-
 impl __sdk::InModule for InvestigationActionAttempt {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `InvestigationActionAttempt`.
 ///
@@ -62,9 +54,14 @@ impl __sdk::__query_builder::HasCols for InvestigationActionAttempt {
             completed_at: __sdk::__query_builder::Col::new(table_name, "completed_at"),
             duration_minutes: __sdk::__query_builder::Col::new(table_name, "duration_minutes"),
             success: __sdk::__query_builder::Col::new(table_name, "success"),
-            resulting_uncertainty_bps: __sdk::__query_builder::Col::new(table_name, "resulting_uncertainty_bps"),
-            private_resolution_json: __sdk::__query_builder::Col::new(table_name, "private_resolution_json"),
-
+            resulting_uncertainty_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "resulting_uncertainty_bps",
+            ),
+            private_resolution_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "private_resolution_json",
+            ),
         }
     }
 }
@@ -83,10 +80,8 @@ impl __sdk::__query_builder::HasIxCols for InvestigationActionAttempt {
         InvestigationActionAttemptIxCols {
             capability_id: __sdk::__query_builder::IxCol::new(table_name, "capability_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationActionAttempt {}
-

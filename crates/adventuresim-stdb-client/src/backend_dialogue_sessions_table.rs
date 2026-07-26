@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::backend_dialogue_session_type::BackendDialogueSession;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_dialogue_sessions`.
 ///
@@ -36,7 +31,9 @@ pub trait BackendDialogueSessionsTableAccess {
 impl BackendDialogueSessionsTableAccess for super::RemoteTables {
     fn backend_dialogue_sessions(&self) -> BackendDialogueSessionsTableHandle<'_> {
         BackendDialogueSessionsTableHandle {
-            imp: self.imp.get_table::<BackendDialogueSession>("backend_dialogue_sessions"),
+            imp: self
+                .imp
+                .get_table::<BackendDialogueSession>("backend_dialogue_sessions"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for BackendDialogueSessionsTableHandle<'ctx> {
     type Row = BackendDialogueSession;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = BackendDialogueSession> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = BackendDialogueSession> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BackendDialogueSessionsInsertCallbackId;
 
@@ -81,8 +82,8 @@ impl<'ctx> __sdk::Table for BackendDialogueSessionsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<BackendDialogueSession>("backend_dialogue_sessions");
+    let _table =
+        client_cache.get_or_make_table::<BackendDialogueSession>("backend_dialogue_sessions");
 }
 
 #[doc(hidden)]
@@ -90,26 +91,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<BackendDialogueSession>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<BackendDialogueSession>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<BackendDialogueSession>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `BackendDialogueSession`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait backend_dialogue_sessionsQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `BackendDialogueSession`.
-            fn backend_dialogue_sessions(&self) -> __sdk::__query_builder::Table<BackendDialogueSession>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BackendDialogueSession`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait backend_dialogue_sessionsQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BackendDialogueSession`.
+    fn backend_dialogue_sessions(&self) -> __sdk::__query_builder::Table<BackendDialogueSession>;
+}
 
-        impl backend_dialogue_sessionsQueryTableAccess for __sdk::QueryTableAccessor {
-            fn backend_dialogue_sessions(&self) -> __sdk::__query_builder::Table<BackendDialogueSession> {
-                __sdk::__query_builder::Table::new("backend_dialogue_sessions")
-            }
-        }
-
+impl backend_dialogue_sessionsQueryTableAccess for __sdk::QueryTableAccessor {
+    fn backend_dialogue_sessions(&self) -> __sdk::__query_builder::Table<BackendDialogueSession> {
+        __sdk::__query_builder::Table::new("backend_dialogue_sessions")
+    }
+}

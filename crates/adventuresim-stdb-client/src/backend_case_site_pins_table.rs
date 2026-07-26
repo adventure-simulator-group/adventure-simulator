@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::backend_case_site_pin_type::BackendCaseSitePin;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_case_site_pins`.
 ///
@@ -36,7 +31,9 @@ pub trait BackendCaseSitePinsTableAccess {
 impl BackendCaseSitePinsTableAccess for super::RemoteTables {
     fn backend_case_site_pins(&self) -> BackendCaseSitePinsTableHandle<'_> {
         BackendCaseSitePinsTableHandle {
-            imp: self.imp.get_table::<BackendCaseSitePin>("backend_case_site_pins"),
+            imp: self
+                .imp
+                .get_table::<BackendCaseSitePin>("backend_case_site_pins"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for BackendCaseSitePinsTableHandle<'ctx> {
     type Row = BackendCaseSitePin;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = BackendCaseSitePin> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = BackendCaseSitePin> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BackendCaseSitePinsInsertCallbackId;
 
@@ -81,8 +82,7 @@ impl<'ctx> __sdk::Table for BackendCaseSitePinsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<BackendCaseSitePin>("backend_case_site_pins");
+    let _table = client_cache.get_or_make_table::<BackendCaseSitePin>("backend_case_site_pins");
 }
 
 #[doc(hidden)]
@@ -90,26 +90,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<BackendCaseSitePin>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<BackendCaseSitePin>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<BackendCaseSitePin>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `BackendCaseSitePin`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait backend_case_site_pinsQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `BackendCaseSitePin`.
-            fn backend_case_site_pins(&self) -> __sdk::__query_builder::Table<BackendCaseSitePin>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BackendCaseSitePin`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait backend_case_site_pinsQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BackendCaseSitePin`.
+    fn backend_case_site_pins(&self) -> __sdk::__query_builder::Table<BackendCaseSitePin>;
+}
 
-        impl backend_case_site_pinsQueryTableAccess for __sdk::QueryTableAccessor {
-            fn backend_case_site_pins(&self) -> __sdk::__query_builder::Table<BackendCaseSitePin> {
-                __sdk::__query_builder::Table::new("backend_case_site_pins")
-            }
-        }
-
+impl backend_case_site_pinsQueryTableAccess for __sdk::QueryTableAccessor {
+    fn backend_case_site_pins(&self) -> __sdk::__query_builder::Table<BackendCaseSitePin> {
+        __sdk::__query_builder::Table::new("backend_case_site_pins")
+    }
+}

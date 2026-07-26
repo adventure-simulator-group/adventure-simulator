@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<AcceptContractArgs> for super::Reducer {
         Self::AcceptContract {
             character_id: args.character_id,
             contract_id: args.contract_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for AcceptContractArgs {
@@ -41,10 +35,8 @@ pub trait accept_contract {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`accept_contract:accept_contract_then`] to run a callback after the reducer completes.
-    fn accept_contract(&self, character_id: u64,
-contract_id: String,
-) -> __sdk::Result<()> {
-        self.accept_contract_then(character_id, contract_id,  |_, _| {})
+    fn accept_contract(&self, character_id: u64, contract_id: String) -> __sdk::Result<()> {
+        self.accept_contract_then(character_id, contract_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `accept_contract` to run as soon as possible,
@@ -56,11 +48,13 @@ contract_id: String,
     fn accept_contract_then(
         &self,
         character_id: u64,
-contract_id: String,
+        contract_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -68,13 +62,20 @@ impl accept_contract for super::RemoteReducers {
     fn accept_contract_then(
         &self,
         character_id: u64,
-contract_id: String,
+        contract_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(AcceptContractArgs { character_id, contract_id,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            AcceptContractArgs {
+                character_id,
+                contract_id,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -24,11 +18,9 @@ pub struct PhysicalEvidenceInspectionAttempt {
     pub attempted_at: u64,
 }
 
-
 impl __sdk::InModule for PhysicalEvidenceInspectionAttempt {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `PhysicalEvidenceInspectionAttempt`.
 ///
@@ -41,7 +33,8 @@ pub struct PhysicalEvidenceInspectionAttemptCols {
     pub stat_label: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, String>,
     pub passed: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, bool>,
     pub narration: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, String>,
-    pub bestiary_results_json: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, String>,
+    pub bestiary_results_json:
+        __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, String>,
     pub attempted_at: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, u64>,
 }
 
@@ -56,9 +49,11 @@ impl __sdk::__query_builder::HasCols for PhysicalEvidenceInspectionAttempt {
             stat_label: __sdk::__query_builder::Col::new(table_name, "stat_label"),
             passed: __sdk::__query_builder::Col::new(table_name, "passed"),
             narration: __sdk::__query_builder::Col::new(table_name, "narration"),
-            bestiary_results_json: __sdk::__query_builder::Col::new(table_name, "bestiary_results_json"),
+            bestiary_results_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "bestiary_results_json",
+            ),
             attempted_at: __sdk::__query_builder::Col::new(table_name, "attempted_at"),
-
         }
     }
 }
@@ -78,11 +73,12 @@ impl __sdk::__query_builder::HasIxCols for PhysicalEvidenceInspectionAttempt {
         PhysicalEvidenceInspectionAttemptIxCols {
             evidence_id: __sdk::__query_builder::IxCol::new(table_name, "evidence_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
-
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PhysicalEvidenceInspectionAttempt {}
-

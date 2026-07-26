@@ -2,21 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct FinalizePartyOfferArgs {
-    pub from_character_ids: Vec::<u64>,
-    pub to_character_ids: Vec::<u64>,
-    pub inventory_item_ids: Vec::<u64>,
-    pub quantities: Vec::<u32>,
+    pub from_character_ids: Vec<u64>,
+    pub to_character_ids: Vec<u64>,
+    pub inventory_item_ids: Vec<u64>,
+    pub quantities: Vec<u32>,
 }
 
 impl From<FinalizePartyOfferArgs> for super::Reducer {
@@ -26,8 +20,8 @@ impl From<FinalizePartyOfferArgs> for super::Reducer {
             to_character_ids: args.to_character_ids,
             inventory_item_ids: args.inventory_item_ids,
             quantities: args.quantities,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for FinalizePartyOfferArgs {
@@ -45,12 +39,20 @@ pub trait finalize_party_offer {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`finalize_party_offer:finalize_party_offer_then`] to run a callback after the reducer completes.
-    fn finalize_party_offer(&self, from_character_ids: Vec::<u64>,
-to_character_ids: Vec::<u64>,
-inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
-) -> __sdk::Result<()> {
-        self.finalize_party_offer_then(from_character_ids, to_character_ids, inventory_item_ids, quantities,  |_, _| {})
+    fn finalize_party_offer(
+        &self,
+        from_character_ids: Vec<u64>,
+        to_character_ids: Vec<u64>,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    ) -> __sdk::Result<()> {
+        self.finalize_party_offer_then(
+            from_character_ids,
+            to_character_ids,
+            inventory_item_ids,
+            quantities,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `finalize_party_offer` to run as soon as possible,
@@ -61,30 +63,41 @@ quantities: Vec::<u32>,
     ///  and its status can be observed with the `callback`.
     fn finalize_party_offer_then(
         &self,
-        from_character_ids: Vec::<u64>,
-to_character_ids: Vec::<u64>,
-inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
+        from_character_ids: Vec<u64>,
+        to_character_ids: Vec<u64>,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl finalize_party_offer for super::RemoteReducers {
     fn finalize_party_offer_then(
         &self,
-        from_character_ids: Vec::<u64>,
-to_character_ids: Vec::<u64>,
-inventory_item_ids: Vec::<u64>,
-quantities: Vec::<u32>,
+        from_character_ids: Vec<u64>,
+        to_character_ids: Vec<u64>,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(FinalizePartyOfferArgs { from_character_ids, to_character_ids, inventory_item_ids, quantities,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            FinalizePartyOfferArgs {
+                from_character_ids,
+                to_character_ids,
+                inventory_item_ids,
+                quantities,
+            },
+            callback,
+        )
     }
 }
-

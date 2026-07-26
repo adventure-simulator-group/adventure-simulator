@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,8 +14,8 @@ impl From<SynchronizeCharacterTimeArgs> for super::Reducer {
     fn from(args: SynchronizeCharacterTimeArgs) -> Self {
         Self::SynchronizeCharacterTime {
             character_id: args.character_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for SynchronizeCharacterTimeArgs {
@@ -39,9 +33,8 @@ pub trait synchronize_character_time {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`synchronize_character_time:synchronize_character_time_then`] to run a callback after the reducer completes.
-    fn synchronize_character_time(&self, character_id: u64,
-) -> __sdk::Result<()> {
-        self.synchronize_character_time_then(character_id,  |_, _| {})
+    fn synchronize_character_time(&self, character_id: u64) -> __sdk::Result<()> {
+        self.synchronize_character_time_then(character_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `synchronize_character_time` to run as soon as possible,
@@ -54,9 +47,11 @@ pub trait synchronize_character_time {
         &self,
         character_id: u64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -65,11 +60,13 @@ impl synchronize_character_time for super::RemoteReducers {
         &self,
         character_id: u64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SynchronizeCharacterTimeArgs { character_id,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(SynchronizeCharacterTimeArgs { character_id }, callback)
     }
 }
-

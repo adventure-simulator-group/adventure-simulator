@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,8 +14,8 @@ impl From<FinishWorldDataImportArgs> for super::Reducer {
     fn from(args: FinishWorldDataImportArgs) -> Self {
         Self::FinishWorldDataImport {
             artifact_id: args.artifact_id,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for FinishWorldDataImportArgs {
@@ -39,9 +33,8 @@ pub trait finish_world_data_import {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`finish_world_data_import:finish_world_data_import_then`] to run a callback after the reducer completes.
-    fn finish_world_data_import(&self, artifact_id: String,
-) -> __sdk::Result<()> {
-        self.finish_world_data_import_then(artifact_id,  |_, _| {})
+    fn finish_world_data_import(&self, artifact_id: String) -> __sdk::Result<()> {
+        self.finish_world_data_import_then(artifact_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `finish_world_data_import` to run as soon as possible,
@@ -54,9 +47,11 @@ pub trait finish_world_data_import {
         &self,
         artifact_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -65,11 +60,13 @@ impl finish_world_data_import for super::RemoteReducers {
         &self,
         artifact_id: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(FinishWorldDataImportArgs { artifact_id,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(FinishWorldDataImportArgs { artifact_id }, callback)
     }
 }
-

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -21,13 +15,13 @@ pub struct ForageAttemptAuthority {
     pub completed_at: u64,
     pub requested_minutes: u64,
     pub elapsed_minutes: u64,
-    pub target_item_ids: Vec::<String>,
-    pub yielded_item_ids: Vec::<String>,
-    pub yielded_quantities: Vec::<u16>,
+    pub source_ids: Vec<String>,
+    pub yielded_item_ids: Vec<String>,
+    pub yielded_quantities: Vec<u16>,
     pub interrupted: bool,
     pub illegal: bool,
-    pub stealth_dc_millirank: Option::<u16>,
-    pub stealth_succeeded: Option::<bool>,
+    pub stealth_dc_millirank: Option<u16>,
+    pub stealth_succeeded: Option<bool>,
     pub virtue_lost: f32,
     pub context_kind: String,
     pub context_id: String,
@@ -36,11 +30,9 @@ pub struct ForageAttemptAuthority {
     pub cultivated: bool,
 }
 
-
 impl __sdk::InModule for ForageAttemptAuthority {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `ForageAttemptAuthority`.
 ///
@@ -54,13 +46,13 @@ pub struct ForageAttemptAuthorityCols {
     pub completed_at: __sdk::__query_builder::Col<ForageAttemptAuthority, u64>,
     pub requested_minutes: __sdk::__query_builder::Col<ForageAttemptAuthority, u64>,
     pub elapsed_minutes: __sdk::__query_builder::Col<ForageAttemptAuthority, u64>,
-    pub target_item_ids: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec::<String>>,
-    pub yielded_item_ids: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec::<String>>,
-    pub yielded_quantities: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec::<u16>>,
+    pub source_ids: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec<String>>,
+    pub yielded_item_ids: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec<String>>,
+    pub yielded_quantities: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec<u16>>,
     pub interrupted: __sdk::__query_builder::Col<ForageAttemptAuthority, bool>,
     pub illegal: __sdk::__query_builder::Col<ForageAttemptAuthority, bool>,
-    pub stealth_dc_millirank: __sdk::__query_builder::Col<ForageAttemptAuthority, Option::<u16>>,
-    pub stealth_succeeded: __sdk::__query_builder::Col<ForageAttemptAuthority, Option::<bool>>,
+    pub stealth_dc_millirank: __sdk::__query_builder::Col<ForageAttemptAuthority, Option<u16>>,
+    pub stealth_succeeded: __sdk::__query_builder::Col<ForageAttemptAuthority, Option<bool>>,
     pub virtue_lost: __sdk::__query_builder::Col<ForageAttemptAuthority, f32>,
     pub context_kind: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
     pub context_id: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
@@ -81,12 +73,15 @@ impl __sdk::__query_builder::HasCols for ForageAttemptAuthority {
             completed_at: __sdk::__query_builder::Col::new(table_name, "completed_at"),
             requested_minutes: __sdk::__query_builder::Col::new(table_name, "requested_minutes"),
             elapsed_minutes: __sdk::__query_builder::Col::new(table_name, "elapsed_minutes"),
-            target_item_ids: __sdk::__query_builder::Col::new(table_name, "target_item_ids"),
+            source_ids: __sdk::__query_builder::Col::new(table_name, "source_ids"),
             yielded_item_ids: __sdk::__query_builder::Col::new(table_name, "yielded_item_ids"),
             yielded_quantities: __sdk::__query_builder::Col::new(table_name, "yielded_quantities"),
             interrupted: __sdk::__query_builder::Col::new(table_name, "interrupted"),
             illegal: __sdk::__query_builder::Col::new(table_name, "illegal"),
-            stealth_dc_millirank: __sdk::__query_builder::Col::new(table_name, "stealth_dc_millirank"),
+            stealth_dc_millirank: __sdk::__query_builder::Col::new(
+                table_name,
+                "stealth_dc_millirank",
+            ),
             stealth_succeeded: __sdk::__query_builder::Col::new(table_name, "stealth_succeeded"),
             virtue_lost: __sdk::__query_builder::Col::new(table_name, "virtue_lost"),
             context_kind: __sdk::__query_builder::Col::new(table_name, "context_kind"),
@@ -94,7 +89,6 @@ impl __sdk::__query_builder::HasCols for ForageAttemptAuthority {
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             cultivated: __sdk::__query_builder::Col::new(table_name, "cultivated"),
-
         }
     }
 }
@@ -113,10 +107,8 @@ impl __sdk::__query_builder::HasIxCols for ForageAttemptAuthority {
         ForageAttemptAuthorityIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for ForageAttemptAuthority {}
-

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -27,11 +21,9 @@ pub struct BackendInvestigationJournalEntry {
     pub recorded_at: u64,
 }
 
-
 impl __sdk::InModule for BackendInvestigationJournalEntry {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendInvestigationJournalEntry`.
 ///
@@ -47,7 +39,8 @@ pub struct BackendInvestigationJournalEntryCols {
     pub contradiction_group: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
     pub corrected_by: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
     pub supersedes: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
-    pub bestiary_results_json: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
+    pub bestiary_results_json:
+        __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
     pub recorded_at: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, u64>,
 }
 
@@ -62,13 +55,17 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationJournalEntry {
             summary: __sdk::__query_builder::Col::new(table_name, "summary"),
             source_label: __sdk::__query_builder::Col::new(table_name, "source_label"),
             confidence_bps: __sdk::__query_builder::Col::new(table_name, "confidence_bps"),
-            contradiction_group: __sdk::__query_builder::Col::new(table_name, "contradiction_group"),
+            contradiction_group: __sdk::__query_builder::Col::new(
+                table_name,
+                "contradiction_group",
+            ),
             corrected_by: __sdk::__query_builder::Col::new(table_name, "corrected_by"),
             supersedes: __sdk::__query_builder::Col::new(table_name, "supersedes"),
-            bestiary_results_json: __sdk::__query_builder::Col::new(table_name, "bestiary_results_json"),
+            bestiary_results_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "bestiary_results_json",
+            ),
             recorded_at: __sdk::__query_builder::Col::new(table_name, "recorded_at"),
-
         }
     }
 }
-

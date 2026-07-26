@@ -2,16 +2,11 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::item_type::Item;
-use super::item_slot_type::ItemSlot;
 use super::item_condition_type::ItemCondition;
+use super::item_slot_type::ItemSlot;
+use super::item_type::Item;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,12 +14,10 @@ pub struct ConnectedPlayerItem {
     pub inventory_item_id: u64,
     pub quantity: u32,
     pub item: Item,
-    pub equipped: Option::<ItemSlot>,
-    pub condition: Option::<ItemCondition>,
+    pub equipped: Option<ItemSlot>,
+    pub condition: Option<ItemCondition>,
 }
-
 
 impl __sdk::InModule for ConnectedPlayerItem {
     type Module = super::RemoteModule;
 }
-

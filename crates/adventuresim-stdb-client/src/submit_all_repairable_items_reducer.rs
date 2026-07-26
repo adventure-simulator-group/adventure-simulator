@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -24,8 +18,8 @@ impl From<SubmitAllRepairableItemsArgs> for super::Reducer {
             character_id: args.character_id,
             settlement_id: args.settlement_id,
             service: args.service,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for SubmitAllRepairableItemsArgs {
@@ -43,11 +37,13 @@ pub trait submit_all_repairable_items {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`submit_all_repairable_items:submit_all_repairable_items_then`] to run a callback after the reducer completes.
-    fn submit_all_repairable_items(&self, character_id: u64,
-settlement_id: String,
-service: String,
-) -> __sdk::Result<()> {
-        self.submit_all_repairable_items_then(character_id, settlement_id, service,  |_, _| {})
+    fn submit_all_repairable_items(
+        &self,
+        character_id: u64,
+        settlement_id: String,
+        service: String,
+    ) -> __sdk::Result<()> {
+        self.submit_all_repairable_items_then(character_id, settlement_id, service, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `submit_all_repairable_items` to run as soon as possible,
@@ -59,12 +55,14 @@ service: String,
     fn submit_all_repairable_items_then(
         &self,
         character_id: u64,
-settlement_id: String,
-service: String,
+        settlement_id: String,
+        service: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -72,14 +70,22 @@ impl submit_all_repairable_items for super::RemoteReducers {
     fn submit_all_repairable_items_then(
         &self,
         character_id: u64,
-settlement_id: String,
-service: String,
+        settlement_id: String,
+        service: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SubmitAllRepairableItemsArgs { character_id, settlement_id, service,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            SubmitAllRepairableItemsArgs {
+                character_id,
+                settlement_id,
+                service,
+            },
+            callback,
+        )
     }
 }
-

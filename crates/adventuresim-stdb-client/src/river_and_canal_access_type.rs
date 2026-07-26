@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::river_access_type::RiverAccess;
 use super::water_distance_meters_type::WaterDistanceMeters;
@@ -20,8 +15,6 @@ pub struct RiverAndCanalAccess {
     pub canal_navigable: bool,
 }
 
-
 impl __sdk::InModule for RiverAndCanalAccess {
     type Module = super::RemoteModule;
 }
-

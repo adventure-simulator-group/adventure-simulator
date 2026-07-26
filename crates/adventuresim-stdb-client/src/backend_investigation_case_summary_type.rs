@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,11 +14,9 @@ pub struct BackendInvestigationCaseSummary {
     pub latest_update_at: u64,
 }
 
-
 impl __sdk::InModule for BackendInvestigationCaseSummary {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendInvestigationCaseSummary`.
 ///
@@ -46,8 +38,6 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationCaseSummary {
             title: __sdk::__query_builder::Col::new(table_name, "title"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
             latest_update_at: __sdk::__query_builder::Col::new(table_name, "latest_update_at"),
-
         }
     }
 }
-

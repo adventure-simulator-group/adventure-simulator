@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -26,8 +20,8 @@ impl From<SetInventoryQuantityTargetArgs> for super::Reducer {
             party_scope: args.party_scope,
             item_id: args.item_id,
             quantity: args.quantity,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for SetInventoryQuantityTargetArgs {
@@ -45,12 +39,20 @@ pub trait set_inventory_quantity_target {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`set_inventory_quantity_target:set_inventory_quantity_target_then`] to run a callback after the reducer completes.
-    fn set_inventory_quantity_target(&self, character_id: u64,
-party_scope: bool,
-item_id: String,
-quantity: u32,
-) -> __sdk::Result<()> {
-        self.set_inventory_quantity_target_then(character_id, party_scope, item_id, quantity,  |_, _| {})
+    fn set_inventory_quantity_target(
+        &self,
+        character_id: u64,
+        party_scope: bool,
+        item_id: String,
+        quantity: u32,
+    ) -> __sdk::Result<()> {
+        self.set_inventory_quantity_target_then(
+            character_id,
+            party_scope,
+            item_id,
+            quantity,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `set_inventory_quantity_target` to run as soon as possible,
@@ -62,13 +64,15 @@ quantity: u32,
     fn set_inventory_quantity_target_then(
         &self,
         character_id: u64,
-party_scope: bool,
-item_id: String,
-quantity: u32,
+        party_scope: bool,
+        item_id: String,
+        quantity: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -76,15 +80,24 @@ impl set_inventory_quantity_target for super::RemoteReducers {
     fn set_inventory_quantity_target_then(
         &self,
         character_id: u64,
-party_scope: bool,
-item_id: String,
-quantity: u32,
+        party_scope: bool,
+        item_id: String,
+        quantity: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SetInventoryQuantityTargetArgs { character_id, party_scope, item_id, quantity,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            SetInventoryQuantityTargetArgs {
+                character_id,
+                party_scope,
+                item_id,
+                quantity,
+            },
+            callback,
+        )
     }
 }
-

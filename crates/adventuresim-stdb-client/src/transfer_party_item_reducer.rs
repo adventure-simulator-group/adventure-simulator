@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -26,8 +20,8 @@ impl From<TransferPartyItemArgs> for super::Reducer {
             to_character_id: args.to_character_id,
             inventory_item_id: args.inventory_item_id,
             quantity: args.quantity,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for TransferPartyItemArgs {
@@ -45,12 +39,20 @@ pub trait transfer_party_item {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`transfer_party_item:transfer_party_item_then`] to run a callback after the reducer completes.
-    fn transfer_party_item(&self, from_character_id: u64,
-to_character_id: u64,
-inventory_item_id: u64,
-quantity: u32,
-) -> __sdk::Result<()> {
-        self.transfer_party_item_then(from_character_id, to_character_id, inventory_item_id, quantity,  |_, _| {})
+    fn transfer_party_item(
+        &self,
+        from_character_id: u64,
+        to_character_id: u64,
+        inventory_item_id: u64,
+        quantity: u32,
+    ) -> __sdk::Result<()> {
+        self.transfer_party_item_then(
+            from_character_id,
+            to_character_id,
+            inventory_item_id,
+            quantity,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `transfer_party_item` to run as soon as possible,
@@ -62,13 +64,15 @@ quantity: u32,
     fn transfer_party_item_then(
         &self,
         from_character_id: u64,
-to_character_id: u64,
-inventory_item_id: u64,
-quantity: u32,
+        to_character_id: u64,
+        inventory_item_id: u64,
+        quantity: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -76,15 +80,24 @@ impl transfer_party_item for super::RemoteReducers {
     fn transfer_party_item_then(
         &self,
         from_character_id: u64,
-to_character_id: u64,
-inventory_item_id: u64,
-quantity: u32,
+        to_character_id: u64,
+        inventory_item_id: u64,
+        quantity: u32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(TransferPartyItemArgs { from_character_id, to_character_id, inventory_item_id, quantity,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            TransferPartyItemArgs {
+                from_character_id,
+                to_character_id,
+                inventory_item_id,
+                quantity,
+            },
+            callback,
+        )
     }
 }
-

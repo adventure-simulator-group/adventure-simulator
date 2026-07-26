@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::party_action_request_type::PartyActionRequest;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `party_action_request`.
 ///
@@ -36,7 +31,9 @@ pub trait PartyActionRequestTableAccess {
 impl PartyActionRequestTableAccess for super::RemoteTables {
     fn party_action_request(&self) -> PartyActionRequestTableHandle<'_> {
         PartyActionRequestTableHandle {
-            imp: self.imp.get_table::<PartyActionRequest>("party_action_request"),
+            imp: self
+                .imp
+                .get_table::<PartyActionRequest>("party_action_request"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for PartyActionRequestTableHandle<'ctx> {
     type Row = PartyActionRequest;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = PartyActionRequest> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PartyActionRequest> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = PartyActionRequestInsertCallbackId;
 
@@ -81,8 +82,7 @@ impl<'ctx> __sdk::Table for PartyActionRequestTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<PartyActionRequest>("party_action_request");
+    let _table = client_cache.get_or_make_table::<PartyActionRequest>("party_action_request");
 }
 
 #[doc(hidden)]
@@ -90,26 +90,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<PartyActionRequest>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<PartyActionRequest>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<PartyActionRequest>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `PartyActionRequest`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait party_action_requestQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `PartyActionRequest`.
-            fn party_action_request(&self) -> __sdk::__query_builder::Table<PartyActionRequest>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PartyActionRequest`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait party_action_requestQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PartyActionRequest`.
+    fn party_action_request(&self) -> __sdk::__query_builder::Table<PartyActionRequest>;
+}
 
-        impl party_action_requestQueryTableAccess for __sdk::QueryTableAccessor {
-            fn party_action_request(&self) -> __sdk::__query_builder::Table<PartyActionRequest> {
-                __sdk::__query_builder::Table::new("party_action_request")
-            }
-        }
-
+impl party_action_requestQueryTableAccess for __sdk::QueryTableAccessor {
+    fn party_action_request(&self) -> __sdk::__query_builder::Table<PartyActionRequest> {
+        __sdk::__query_builder::Table::new("party_action_request")
+    }
+}

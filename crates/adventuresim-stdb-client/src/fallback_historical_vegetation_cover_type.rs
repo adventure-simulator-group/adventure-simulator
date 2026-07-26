@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::historical_woodland_type::HistoricalWoodland;
 
@@ -21,12 +16,8 @@ pub enum FallbackHistoricalVegetationCover {
     Grassland,
 
     Sparse,
-
 }
-
-
 
 impl __sdk::InModule for FallbackHistoricalVegetationCover {
     type Module = super::RemoteModule;
 }
-

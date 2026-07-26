@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::simulation_run_type::SimulationRun;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `simulation_run`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for SimulationRunTableHandle<'ctx> {
     type Row = SimulationRun;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = SimulationRun> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = SimulationRun> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = SimulationRunInsertCallbackId;
 
@@ -96,69 +95,68 @@ impl<'ctx> __sdk::TableWithPrimaryKey for SimulationRunTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `id` unique index on the table `simulation_run`,
-        /// which allows point queries on the field of the same name
-        /// via the [`SimulationRunIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.simulation_run().id().find(...)`.
-        pub struct SimulationRunIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<SimulationRun, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `id` unique index on the table `simulation_run`,
+/// which allows point queries on the field of the same name
+/// via the [`SimulationRunIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.simulation_run().id().find(...)`.
+pub struct SimulationRunIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<SimulationRun, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> SimulationRunTableHandle<'ctx> {
-            /// Get a handle on the `id` unique index on the table `simulation_run`.
-            pub fn id(&self) -> SimulationRunIdUnique<'ctx> {
-                SimulationRunIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> SimulationRunTableHandle<'ctx> {
+    /// Get a handle on the `id` unique index on the table `simulation_run`.
+    pub fn id(&self) -> SimulationRunIdUnique<'ctx> {
+        SimulationRunIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> SimulationRunIdUnique<'ctx> {
-            /// Find the subscribed row whose `id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<SimulationRun> {
-                self.imp.find(col_val)
-            }
-        }
-        
-        /// Access to the `nonce` unique index on the table `simulation_run`,
-        /// which allows point queries on the field of the same name
-        /// via the [`SimulationRunNonceUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.simulation_run().nonce().find(...)`.
-        pub struct SimulationRunNonceUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<SimulationRun, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+impl<'ctx> SimulationRunIdUnique<'ctx> {
+    /// Find the subscribed row whose `id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<SimulationRun> {
+        self.imp.find(col_val)
+    }
+}
 
-        impl<'ctx> SimulationRunTableHandle<'ctx> {
-            /// Get a handle on the `nonce` unique index on the table `simulation_run`.
-            pub fn nonce(&self) -> SimulationRunNonceUnique<'ctx> {
-                SimulationRunNonceUnique {
-                    imp: self.imp.get_unique_constraint::<String>("nonce"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
-        }
+/// Access to the `nonce` unique index on the table `simulation_run`,
+/// which allows point queries on the field of the same name
+/// via the [`SimulationRunNonceUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.simulation_run().nonce().find(...)`.
+pub struct SimulationRunNonceUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<SimulationRun, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> SimulationRunNonceUnique<'ctx> {
-            /// Find the subscribed row whose `nonce` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<SimulationRun> {
-                self.imp.find(col_val)
-            }
+impl<'ctx> SimulationRunTableHandle<'ctx> {
+    /// Get a handle on the `nonce` unique index on the table `simulation_run`.
+    pub fn nonce(&self) -> SimulationRunNonceUnique<'ctx> {
+        SimulationRunNonceUnique {
+            imp: self.imp.get_unique_constraint::<String>("nonce"),
+            phantom: std::marker::PhantomData,
         }
-        
+    }
+}
+
+impl<'ctx> SimulationRunNonceUnique<'ctx> {
+    /// Find the subscribed row whose `nonce` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<SimulationRun> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<SimulationRun>("simulation_run");
     _table.add_unique_constraint::<u64>("id", |row| &row.id);
     _table.add_unique_constraint::<String>("nonce", |row| &row.nonce);
@@ -169,26 +167,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<SimulationRun>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<SimulationRun>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<SimulationRun>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `SimulationRun`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait simulation_runQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `SimulationRun`.
-            fn simulation_run(&self) -> __sdk::__query_builder::Table<SimulationRun>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `SimulationRun`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait simulation_runQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `SimulationRun`.
+    fn simulation_run(&self) -> __sdk::__query_builder::Table<SimulationRun>;
+}
 
-        impl simulation_runQueryTableAccess for __sdk::QueryTableAccessor {
-            fn simulation_run(&self) -> __sdk::__query_builder::Table<SimulationRun> {
-                __sdk::__query_builder::Table::new("simulation_run")
-            }
-        }
-
+impl simulation_runQueryTableAccess for __sdk::QueryTableAccessor {
+    fn simulation_run(&self) -> __sdk::__query_builder::Table<SimulationRun> {
+        __sdk::__query_builder::Table::new("simulation_run")
+    }
+}

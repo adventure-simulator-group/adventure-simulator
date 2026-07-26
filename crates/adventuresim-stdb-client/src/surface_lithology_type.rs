@@ -2,18 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::unconsolidated_deposit_type::UnconsolidatedDeposit;
-use super::sedimentary_rock_type::SedimentaryRock;
 use super::igneous_rock_type::IgneousRock;
 use super::metamorphic_rock_type::MetamorphicRock;
 use super::mixed_lithology_type::MixedLithology;
+use super::sedimentary_rock_type::SedimentaryRock;
+use super::unconsolidated_deposit_type::UnconsolidatedDeposit;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -27,12 +22,8 @@ pub enum SurfaceLithology {
     Metamorphic(MetamorphicRock),
 
     Mixed(MixedLithology),
-
 }
-
-
 
 impl __sdk::InModule for SurfaceLithology {
     type Module = super::RemoteModule;
 }
-

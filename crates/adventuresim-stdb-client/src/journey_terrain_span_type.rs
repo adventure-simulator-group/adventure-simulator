@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::journey_terrain_kind_type::JourneyTerrainKind;
 use super::journey_terrain_weights_type::JourneyTerrainWeights;
@@ -23,8 +18,6 @@ pub struct JourneyTerrainSpan {
     pub duration_minutes: u64,
 }
 
-
 impl __sdk::InModule for JourneyTerrainSpan {
     type Module = super::RemoteModule;
 }
-

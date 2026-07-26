@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -30,11 +24,9 @@ pub struct BackendInvestigationAction {
     pub unavailable_reason: String,
 }
 
-
 impl __sdk::InModule for BackendInvestigationAction {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BackendInvestigationAction`.
 ///
@@ -66,18 +58,34 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationAction {
             method: __sdk::__query_builder::Col::new(table_name, "method"),
             expected_version: __sdk::__query_builder::Col::new(table_name, "expected_version"),
             summary: __sdk::__query_builder::Col::new(table_name, "summary"),
-            known_prerequisites: __sdk::__query_builder::Col::new(table_name, "known_prerequisites"),
-            duration_min_minutes: __sdk::__query_builder::Col::new(table_name, "duration_min_minutes"),
-            duration_max_minutes: __sdk::__query_builder::Col::new(table_name, "duration_max_minutes"),
+            known_prerequisites: __sdk::__query_builder::Col::new(
+                table_name,
+                "known_prerequisites",
+            ),
+            duration_min_minutes: __sdk::__query_builder::Col::new(
+                table_name,
+                "duration_min_minutes",
+            ),
+            duration_max_minutes: __sdk::__query_builder::Col::new(
+                table_name,
+                "duration_max_minutes",
+            ),
             uncertainty_bps: __sdk::__query_builder::Col::new(table_name, "uncertainty_bps"),
-            skill_contributions: __sdk::__query_builder::Col::new(table_name, "skill_contributions"),
+            skill_contributions: __sdk::__query_builder::Col::new(
+                table_name,
+                "skill_contributions",
+            ),
             weather_available: __sdk::__query_builder::Col::new(table_name, "weather_available"),
-            required_case_site_id: __sdk::__query_builder::Col::new(table_name, "required_case_site_id"),
+            required_case_site_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "required_case_site_id",
+            ),
             available: __sdk::__query_builder::Col::new(table_name, "available"),
-            can_travel_to_required_site: __sdk::__query_builder::Col::new(table_name, "can_travel_to_required_site"),
+            can_travel_to_required_site: __sdk::__query_builder::Col::new(
+                table_name,
+                "can_travel_to_required_site",
+            ),
             unavailable_reason: __sdk::__query_builder::Col::new(table_name, "unavailable_reason"),
-
         }
     }
 }
-

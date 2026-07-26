@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,11 +12,9 @@ pub struct PartyJourneyEncounterAuthority {
     pub next_roll: u64,
 }
 
-
 impl __sdk::InModule for PartyJourneyEncounterAuthority {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `PartyJourneyEncounterAuthority`.
 ///
@@ -40,7 +32,6 @@ impl __sdk::__query_builder::HasCols for PartyJourneyEncounterAuthority {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             seed: __sdk::__query_builder::Col::new(table_name, "seed"),
             next_roll: __sdk::__query_builder::Col::new(table_name, "next_roll"),
-
         }
     }
 }
@@ -57,10 +48,8 @@ impl __sdk::__query_builder::HasIxCols for PartyJourneyEncounterAuthority {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyJourneyEncounterAuthorityIxCols {
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PartyJourneyEncounterAuthority {}
-

@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::item_condition_type::ItemCondition;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `item_condition`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for ItemConditionTableHandle<'ctx> {
     type Row = ItemCondition;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = ItemCondition> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ItemCondition> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = ItemConditionInsertCallbackId;
 
@@ -96,39 +95,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ItemConditionTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `inventory_item_id` unique index on the table `item_condition`,
-        /// which allows point queries on the field of the same name
-        /// via the [`ItemConditionInventoryItemIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.item_condition().inventory_item_id().find(...)`.
-        pub struct ItemConditionInventoryItemIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<ItemCondition, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `inventory_item_id` unique index on the table `item_condition`,
+/// which allows point queries on the field of the same name
+/// via the [`ItemConditionInventoryItemIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.item_condition().inventory_item_id().find(...)`.
+pub struct ItemConditionInventoryItemIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<ItemCondition, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> ItemConditionTableHandle<'ctx> {
-            /// Get a handle on the `inventory_item_id` unique index on the table `item_condition`.
-            pub fn inventory_item_id(&self) -> ItemConditionInventoryItemIdUnique<'ctx> {
-                ItemConditionInventoryItemIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("inventory_item_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> ItemConditionTableHandle<'ctx> {
+    /// Get a handle on the `inventory_item_id` unique index on the table `item_condition`.
+    pub fn inventory_item_id(&self) -> ItemConditionInventoryItemIdUnique<'ctx> {
+        ItemConditionInventoryItemIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("inventory_item_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> ItemConditionInventoryItemIdUnique<'ctx> {
-            /// Find the subscribed row whose `inventory_item_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<ItemCondition> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> ItemConditionInventoryItemIdUnique<'ctx> {
+    /// Find the subscribed row whose `inventory_item_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<ItemCondition> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<ItemCondition>("item_condition");
     _table.add_unique_constraint::<u64>("inventory_item_id", |row| &row.inventory_item_id);
 }
@@ -138,26 +136,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<ItemCondition>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<ItemCondition>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<ItemCondition>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `ItemCondition`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait item_conditionQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `ItemCondition`.
-            fn item_condition(&self) -> __sdk::__query_builder::Table<ItemCondition>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `ItemCondition`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait item_conditionQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `ItemCondition`.
+    fn item_condition(&self) -> __sdk::__query_builder::Table<ItemCondition>;
+}
 
-        impl item_conditionQueryTableAccess for __sdk::QueryTableAccessor {
-            fn item_condition(&self) -> __sdk::__query_builder::Table<ItemCondition> {
-                __sdk::__query_builder::Table::new("item_condition")
-            }
-        }
-
+impl item_conditionQueryTableAccess for __sdk::QueryTableAccessor {
+    fn item_condition(&self) -> __sdk::__query_builder::Table<ItemCondition> {
+        __sdk::__query_builder::Table::new("item_condition")
+    }
+}

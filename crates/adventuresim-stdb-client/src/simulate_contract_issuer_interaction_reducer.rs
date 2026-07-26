@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::contract_interaction_stage_type::ContractInteractionStage;
 
@@ -25,8 +20,8 @@ impl From<SimulateContractIssuerInteractionArgs> for super::Reducer {
             character_id: args.character_id,
             contract_id: args.contract_id,
             stage: args.stage,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for SimulateContractIssuerInteractionArgs {
@@ -44,11 +39,13 @@ pub trait simulate_contract_issuer_interaction {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`simulate_contract_issuer_interaction:simulate_contract_issuer_interaction_then`] to run a callback after the reducer completes.
-    fn simulate_contract_issuer_interaction(&self, character_id: u64,
-contract_id: String,
-stage: ContractInteractionStage,
-) -> __sdk::Result<()> {
-        self.simulate_contract_issuer_interaction_then(character_id, contract_id, stage,  |_, _| {})
+    fn simulate_contract_issuer_interaction(
+        &self,
+        character_id: u64,
+        contract_id: String,
+        stage: ContractInteractionStage,
+    ) -> __sdk::Result<()> {
+        self.simulate_contract_issuer_interaction_then(character_id, contract_id, stage, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `simulate_contract_issuer_interaction` to run as soon as possible,
@@ -60,12 +57,14 @@ stage: ContractInteractionStage,
     fn simulate_contract_issuer_interaction_then(
         &self,
         character_id: u64,
-contract_id: String,
-stage: ContractInteractionStage,
+        contract_id: String,
+        stage: ContractInteractionStage,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -73,14 +72,22 @@ impl simulate_contract_issuer_interaction for super::RemoteReducers {
     fn simulate_contract_issuer_interaction_then(
         &self,
         character_id: u64,
-contract_id: String,
-stage: ContractInteractionStage,
+        contract_id: String,
+        stage: ContractInteractionStage,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(SimulateContractIssuerInteractionArgs { character_id, contract_id, stage,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            SimulateContractIssuerInteractionArgs {
+                character_id,
+                contract_id,
+                stage,
+            },
+            callback,
+        )
     }
 }
-

@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::settlement_alias_type::SettlementAlias;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `settlement_alias`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for SettlementAliasTableHandle<'ctx> {
     type Row = SettlementAlias;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = SettlementAlias> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = SettlementAlias> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = SettlementAliasInsertCallbackId;
 
@@ -96,39 +95,38 @@ impl<'ctx> __sdk::TableWithPrimaryKey for SettlementAliasTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `id` unique index on the table `settlement_alias`,
-        /// which allows point queries on the field of the same name
-        /// via the [`SettlementAliasIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.settlement_alias().id().find(...)`.
-        pub struct SettlementAliasIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<SettlementAlias, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `id` unique index on the table `settlement_alias`,
+/// which allows point queries on the field of the same name
+/// via the [`SettlementAliasIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.settlement_alias().id().find(...)`.
+pub struct SettlementAliasIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<SettlementAlias, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> SettlementAliasTableHandle<'ctx> {
-            /// Get a handle on the `id` unique index on the table `settlement_alias`.
-            pub fn id(&self) -> SettlementAliasIdUnique<'ctx> {
-                SettlementAliasIdUnique {
-                    imp: self.imp.get_unique_constraint::<String>("id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> SettlementAliasTableHandle<'ctx> {
+    /// Get a handle on the `id` unique index on the table `settlement_alias`.
+    pub fn id(&self) -> SettlementAliasIdUnique<'ctx> {
+        SettlementAliasIdUnique {
+            imp: self.imp.get_unique_constraint::<String>("id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> SettlementAliasIdUnique<'ctx> {
-            /// Find the subscribed row whose `id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<SettlementAlias> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> SettlementAliasIdUnique<'ctx> {
+    /// Find the subscribed row whose `id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<SettlementAlias> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<SettlementAlias>("settlement_alias");
     _table.add_unique_constraint::<String>("id", |row| &row.id);
 }
@@ -138,26 +136,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<SettlementAlias>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<SettlementAlias>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<SettlementAlias>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `SettlementAlias`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait settlement_aliasQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `SettlementAlias`.
-            fn settlement_alias(&self) -> __sdk::__query_builder::Table<SettlementAlias>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `SettlementAlias`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait settlement_aliasQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `SettlementAlias`.
+    fn settlement_alias(&self) -> __sdk::__query_builder::Table<SettlementAlias>;
+}
 
-        impl settlement_aliasQueryTableAccess for __sdk::QueryTableAccessor {
-            fn settlement_alias(&self) -> __sdk::__query_builder::Table<SettlementAlias> {
-                __sdk::__query_builder::Table::new("settlement_alias")
-            }
-        }
-
+impl settlement_aliasQueryTableAccess for __sdk::QueryTableAccessor {
+    fn settlement_alias(&self) -> __sdk::__query_builder::Table<SettlementAlias> {
+        __sdk::__query_builder::Table::new("settlement_alias")
+    }
+}

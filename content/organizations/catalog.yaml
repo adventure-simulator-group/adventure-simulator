@@ -1549,6 +1549,23 @@
                                            ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  120
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "description":  "A master warden entrusted with the prince's high game.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "terrain_forest",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+                                             "forage_high_game"
+                                         ]
                       }
                   ],
         "activity":  {
@@ -1571,7 +1588,10 @@
                          "reward":  "gold"
                      },
         "privileges":  [
-                           "bear_arms"
+                           "bear_arms",
+                           "forage_low_game",
+                           "forage_fish",
+                           "forage_plants"
                        ]
     },
     {
@@ -1604,6 +1624,23 @@
                                            ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "description":  "A master keeper entrusted with the prince's high game.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "terrain_forest",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+                                             "forage_high_game"
+                                         ]
                       }
                   ],
         "activity":  {
@@ -1626,7 +1663,10 @@
                          "reward":  "gold"
                      },
         "privileges":  [
-                           "bear_arms"
+                           "bear_arms",
+                           "forage_low_game",
+                           "forage_fish",
+                           "forage_plants"
                        ]
     },
     {
@@ -1659,6 +1699,23 @@
                                            ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "description":  "A master forester entrusted with the prince's high game.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "terrain_hills",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+                                             "forage_high_game"
+                                         ]
                       }
                   ],
         "activity":  {
@@ -1681,7 +1738,10 @@
                          "reward":  "gold"
                      },
         "privileges":  [
-                           "bear_arms"
+                           "bear_arms",
+                           "forage_low_game",
+                           "forage_fish",
+                           "forage_plants"
                        ]
     },
     {

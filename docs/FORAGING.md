@@ -16,8 +16,10 @@ trusted cultivated boolean.
 
 ## Resolution
 
-The year-round resource catalog is in
-`adventuresim_core::foraging::FORAGE_RESOURCES`. Seasonality is explicitly
+The dialog exposes exactly five stable source categories, in order: High Game,
+Low Game, Fish, Harmful Beasts, and Plants. The year-round resource catalog is
+in `adventuresim_core::foraging::FORAGE_RESOURCES`; every resource belongs to
+one category. Seasonality is explicitly
 deferred until a strategic season model exists. Processed charcoal, vinegar,
 oatmeal, and rosewater and non-plant honey are not forage targets.
 
@@ -31,7 +33,10 @@ Wet-ground and coast attestations count as complete matching microhabitats.
 Food alone receives a 1.75× subsistence calibration: an eight-hour low-skill
 search for the best food in an ideal habitat averages roughly the 2,000 kcal
 spent during that interval. Medicinal rarity is unchanged.
-Targets are canonicalized before resolution. The reducer chooses and privately
+Sources are canonicalized before resolution. One search budget is divided
+first among selected categories and then among the locally available resources
+inside each category. Adding more plant resources therefore cannot manufacture
+more search time. The reducer chooses and privately
 persists unpredictable entropy; once that seed is chosen, replay from the
 private authority is deterministic. A completed search may find nothing.
 
@@ -50,8 +55,17 @@ hours, and routes rejected above-cap training into mastery enjoyment.
 
 ## Legality
 
-Foraging is illegal at a settlement or in a cultivated square. A completed
-illegal search makes one deterministic Stealth check. Cultivated ground starts
+Foraging is illegal at a settlement or in a cultivated square. High Game, Low
+Game, Fish, and Plants also require a license granted by the character's
+currently presented, active, dues-current profession; Harmful Beasts requires
+none. Ranger and forester organizations grant the common licenses at every
+rank, while High Game is reserved to Master rank. Licenses are global for now
+and deliberately ignore local recognition and political boundaries.
+
+Unlicensed sources remain selectable as poaching. A completed illegal search
+makes one deterministic Stealth check, even when several selected sources are
+unlicensed or settlement/cultivated illegality also applies. Cultivated ground
+and otherwise-legal wilderness poaching start
 at DC 1.75; settlement exposure starts at DC 2.50; the worse base applies, plus
 0.075 per hour after the first, capped at 4.50. Failure subtracts exactly 1.0
 from `CharacterVirtue`; success avoids the loss. This never changes notoriety.
@@ -59,6 +73,7 @@ An interrupted search creates no partial yield. If illegal work consumed any
 time, it still makes exactly one exposure check using the actual elapsed
 duration and applies the same Virtue consequence on failure.
 
-The reducer retains one private replay authority row per character. The
+The reducer accepts stable category IDs rather than item IDs and retains those
+selected source IDs in one private replay authority row per character. The
 gateway-only projection omits seed, coordinates, context, DC, roll, and direct
 Virtue state, and exposes only the exact opaque request's player-safe result.

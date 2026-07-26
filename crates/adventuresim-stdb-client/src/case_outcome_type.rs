@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_resolution_status_type::CaseResolutionStatus;
 
@@ -17,17 +12,15 @@ pub struct CaseOutcome {
     pub case_id: String,
     pub party_id: String,
     pub status: CaseResolutionStatus,
-    pub winning_path_index: Option::<u16>,
+    pub winning_path_index: Option<u16>,
     pub resolved_at_minute: u64,
     pub selected_finale_id: String,
     pub finale_executed: bool,
 }
 
-
 impl __sdk::InModule for CaseOutcome {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CaseOutcome`.
 ///
@@ -36,7 +29,7 @@ pub struct CaseOutcomeCols {
     pub case_id: __sdk::__query_builder::Col<CaseOutcome, String>,
     pub party_id: __sdk::__query_builder::Col<CaseOutcome, String>,
     pub status: __sdk::__query_builder::Col<CaseOutcome, CaseResolutionStatus>,
-    pub winning_path_index: __sdk::__query_builder::Col<CaseOutcome, Option::<u16>>,
+    pub winning_path_index: __sdk::__query_builder::Col<CaseOutcome, Option<u16>>,
     pub resolved_at_minute: __sdk::__query_builder::Col<CaseOutcome, u64>,
     pub selected_finale_id: __sdk::__query_builder::Col<CaseOutcome, String>,
     pub finale_executed: __sdk::__query_builder::Col<CaseOutcome, bool>,
@@ -53,7 +46,6 @@ impl __sdk::__query_builder::HasCols for CaseOutcome {
             resolved_at_minute: __sdk::__query_builder::Col::new(table_name, "resolved_at_minute"),
             selected_finale_id: __sdk::__query_builder::Col::new(table_name, "selected_finale_id"),
             finale_executed: __sdk::__query_builder::Col::new(table_name, "finale_executed"),
-
         }
     }
 }
@@ -70,10 +62,8 @@ impl __sdk::__query_builder::HasIxCols for CaseOutcome {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CaseOutcomeIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CaseOutcome {}
-

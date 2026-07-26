@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -21,11 +15,9 @@ pub struct InvestigationSharingReceipt {
     pub shared_at: u64,
 }
 
-
 impl __sdk::InModule for InvestigationSharingReceipt {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `InvestigationSharingReceipt`.
 ///
@@ -47,9 +39,11 @@ impl __sdk::__query_builder::HasCols for InvestigationSharingReceipt {
             sender_id: __sdk::__query_builder::Col::new(table_name, "sender_id"),
             recipient_id: __sdk::__query_builder::Col::new(table_name, "recipient_id"),
             source_record_id: __sdk::__query_builder::Col::new(table_name, "source_record_id"),
-            payload_fingerprint: __sdk::__query_builder::Col::new(table_name, "payload_fingerprint"),
+            payload_fingerprint: __sdk::__query_builder::Col::new(
+                table_name,
+                "payload_fingerprint",
+            ),
             shared_at: __sdk::__query_builder::Col::new(table_name, "shared_at"),
-
         }
     }
 }
@@ -66,10 +60,8 @@ impl __sdk::__query_builder::HasIxCols for InvestigationSharingReceipt {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InvestigationSharingReceiptIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationSharingReceipt {}
-

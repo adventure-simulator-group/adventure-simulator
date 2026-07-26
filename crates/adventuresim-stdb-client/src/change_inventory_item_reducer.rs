@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -24,8 +18,8 @@ impl From<ChangeInventoryItemArgs> for super::Reducer {
             character_id: args.character_id,
             item_id: args.item_id,
             by_quantity: args.by_quantity,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for ChangeInventoryItemArgs {
@@ -43,11 +37,13 @@ pub trait change_inventory_item {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`change_inventory_item:change_inventory_item_then`] to run a callback after the reducer completes.
-    fn change_inventory_item(&self, character_id: u64,
-item_id: String,
-by_quantity: i32,
-) -> __sdk::Result<()> {
-        self.change_inventory_item_then(character_id, item_id, by_quantity,  |_, _| {})
+    fn change_inventory_item(
+        &self,
+        character_id: u64,
+        item_id: String,
+        by_quantity: i32,
+    ) -> __sdk::Result<()> {
+        self.change_inventory_item_then(character_id, item_id, by_quantity, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `change_inventory_item` to run as soon as possible,
@@ -59,12 +55,14 @@ by_quantity: i32,
     fn change_inventory_item_then(
         &self,
         character_id: u64,
-item_id: String,
-by_quantity: i32,
+        item_id: String,
+        by_quantity: i32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -72,14 +70,22 @@ impl change_inventory_item for super::RemoteReducers {
     fn change_inventory_item_then(
         &self,
         character_id: u64,
-item_id: String,
-by_quantity: i32,
+        item_id: String,
+        by_quantity: i32,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(ChangeInventoryItemArgs { character_id, item_id, by_quantity,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            ChangeInventoryItemArgs {
+                character_id,
+                item_id,
+                by_quantity,
+            },
+            callback,
+        )
     }
 }
-

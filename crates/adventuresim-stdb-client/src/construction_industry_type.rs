@@ -2,15 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::production_scale_type::ProductionScale;
 use super::construction_commodity_type::ConstructionCommodity;
+use super::production_scale_type::ProductionScale;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,8 +14,6 @@ pub struct ConstructionIndustry {
     pub scale: ProductionScale,
 }
 
-
 impl __sdk::InModule for ConstructionIndustry {
     type Module = super::RemoteModule;
 }
-

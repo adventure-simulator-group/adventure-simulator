@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -24,8 +18,8 @@ impl From<RestAtSettlementHoursArgs> for super::Reducer {
             character_id: args.character_id,
             requested_minutes: args.requested_minutes,
             at_inn: args.at_inn,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for RestAtSettlementHoursArgs {
@@ -43,11 +37,13 @@ pub trait rest_at_settlement_hours {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`rest_at_settlement_hours:rest_at_settlement_hours_then`] to run a callback after the reducer completes.
-    fn rest_at_settlement_hours(&self, character_id: u64,
-requested_minutes: u64,
-at_inn: bool,
-) -> __sdk::Result<()> {
-        self.rest_at_settlement_hours_then(character_id, requested_minutes, at_inn,  |_, _| {})
+    fn rest_at_settlement_hours(
+        &self,
+        character_id: u64,
+        requested_minutes: u64,
+        at_inn: bool,
+    ) -> __sdk::Result<()> {
+        self.rest_at_settlement_hours_then(character_id, requested_minutes, at_inn, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `rest_at_settlement_hours` to run as soon as possible,
@@ -59,12 +55,14 @@ at_inn: bool,
     fn rest_at_settlement_hours_then(
         &self,
         character_id: u64,
-requested_minutes: u64,
-at_inn: bool,
+        requested_minutes: u64,
+        at_inn: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -72,14 +70,22 @@ impl rest_at_settlement_hours for super::RemoteReducers {
     fn rest_at_settlement_hours_then(
         &self,
         character_id: u64,
-requested_minutes: u64,
-at_inn: bool,
+        requested_minutes: u64,
+        at_inn: bool,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(RestAtSettlementHoursArgs { character_id, requested_minutes, at_inn,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            RestAtSettlementHoursArgs {
+                character_id,
+                requested_minutes,
+                at_inn,
+            },
+            callback,
+        )
     }
 }
-
