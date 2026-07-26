@@ -101,21 +101,38 @@ MeasurementProfile {
     item_id: String,                 // primary key; FK-equivalent to Item
     kind: MeasurementKind,          // Depletable | Containerized | BulkLot
     unit: MeasurementUnit,          // Milligram | Millilitre | ...
-    capacity: u64,                  // amount when full, greater than zero
-    full_contents_mass_mg: u64,
+    standard_basis: MeasurementBasis,
+}
+
+MeasuredObject {
+    id: u64,                         // stable across every custody transfer
+    item_id: String,
+    capacity: u64,                   // immutable initial amount, greater than zero
+    full_contents_mass_mg: u64,      // immutable per-object basis
     full_contents_value_subunits: u64,
     tare_mass_mg: u64,
     tare_value_subunits: u64,
 }
 
+FoodMeasuredObject {
+    measured_object_id: u64,         // primary key; optional family capability
+    initial_nutrition: IntegerNutrition,
+    ingredient_provenance: Vec<IntegerIngredientShare>,
+    preparation: Preparation,
+    created_at: u64,
+    contamination_anchor: u64,
+}
+
 PersonalMeasuredState {
-    inventory_item_id: u64,         // primary key, owns exactly one personal row
-    remaining_amount: u64,          // inclusive range 0..=capacity
+    inventory_item_id: u64,          // primary key, current custody row
+    measured_object_id: u64,         // unique stable object
+    remaining_amount: u64,           // mutable, inclusive 0..=object.capacity
 }
 
 PartyMeasuredState {
-    party_inventory_item_id: u64,   // primary key, owns exactly one party row
-    remaining_amount: u64,          // inclusive range 0..=capacity
+    party_inventory_item_id: u64,    // primary key, current custody row
+    measured_object_id: u64,         // unique stable object
+    remaining_amount: u64,           // mutable, inclusive 0..=object.capacity
 }
 ```
 
@@ -124,6 +141,25 @@ columns remain ordinary scalar columns so reducers and operational queries can
 inspect them directly. Food, alcohol, and soap profiles remain separate tables
 linked by `item_id`; their existence is independently validated against the
 measurement profile.
+
+The definition profile supplies the standard immutable basis for ordinary
+goods. Opening a sealed unit creates a stable `MeasuredObject` and copies that
+basis. A recipe or other transformation instead creates a derived object whose
+integer capacity, contents mass, contents value, and family metadata are
+calculated from its actual inputs. The evaluator uses the object's basis, never
+the current item definition, whenever measured state exists. Thus two
+`cooked_meal` objects may share an item ID while retaining different masses,
+values, nutrition, provenance, preparation, age, and contamination identity.
+Definition edits cannot retroactively alter existing lots.
+
+`remaining_amount` is current mutable state. Object `capacity` and its
+full/initial conserved fields are the immutable denominator and basis. A
+consumption computes the new total from the new amount, then records the
+difference between the old and new totals; it must not repeatedly scale the
+already-rounded remainder. The transition to zero assigns every final integer
+residual to that last consumption. Integer nutrition and provenance use the
+same initial-basis/difference rule, so rounding dust cannot be duplicated or
+stranded.
 
 Definitions use one canonical fixed unit per profile. Initial units are
 milligrams for mass-like solids, millilitres for volume-like liquids,
@@ -142,6 +178,9 @@ display occur only at the API/UI boundary.
   profile and unit.
 - A discrete definition has no measurement profile and cannot acquire measured
   state.
+- Every measured object validates against the profile's kind/unit, but its
+  immutable basis may differ from the standard basis for an authorized derived
+  lot.
 
 Seed validation rejects the whole definition before inventory mutation. These
 are authoring errors, not values to clamp.
@@ -151,21 +190,26 @@ are authoring errors, not values to clamp.
 The same rules apply to `InventoryItem` and `PartyInventoryItem`:
 
 1. `quantity` is positive. Zero-quantity rows do not persist.
-2. No measured-state row means a full, unopened row. It may have any positive
-   quantity allowed by the inventory limit.
+2. For Depletable and Containerized definitions, no measured-state row means a
+   full, unopened row. It may have any positive quantity allowed by the
+   inventory limit. BulkLot never uses this representation: even a full bulk
+   lot is quantity one with measured state and an object basis.
 3. A measured-state row requires a measurement profile and `quantity == 1`.
-4. `0 <= remaining_amount <= capacity`; reducers reject values outside it.
+4. It references exactly one stable measured object of the same item ID and
+   `0 <= remaining_amount <= object.capacity`; reducers reject mismatches.
 5. A partial row is `0 < remaining_amount < capacity`.
 6. An opened, still-full row may be represented by `remaining_amount ==
    capacity` when opened identity matters. It does not merge with sealed stock.
 7. A depletable/bulk row reaching zero is deleted atomically with its measured
    state. A containerized row reaching zero remains as the empty container with
    amount zero. Discarding or consuming that container explicitly deletes both.
-8. A measured state has exactly the same owner as its parent by construction:
-   it stores only the parent row ID. Orphan state and state pointing across
-   personal/party tables are invalid.
-9. Deleting a parent deletes its state in the same reducer. No reducer may
-   publish an intermediate orphan.
+8. Exactly one personal or party custody-state row references a measured object.
+   The referenced inventory row is the object's current owner; duplicate
+   custody, cross-owner references, missing objects, and object/state orphans
+   are invalid.
+9. Deleting a parent and its state also deletes its measured object and family
+   metadata unless the same atomic reducer rekeys custody during transfer. No
+   reducer may publish an intermediate orphan.
 
 The absence of measured state is the final schema's representation of unopened
 full stacks, not a transitional fallback for legacy data.
@@ -173,22 +217,29 @@ full stacks, not a transitional fallback for legacy data.
 ### Opening, splitting, transferring, and combining
 
 - Opening one unit from an unopened stack decrements that stack. If it was the
-  last unit, the row may be reused. The opened unit becomes a quantity-one row
-  with state at `capacity`. This happens before the first consumption.
+  last unit, the row may be reused. The opened unit becomes a quantity-one row,
+  receives a stable measured-object ID with a copy of the standard basis, and
+  gets state at `capacity`. This happens before the first consumption. BulkLot
+  acquisition creates this object/state immediately, including at full
+  capacity; homogeneous sealed goods use Depletable or Containerized semantics,
+  not BulkLot, until opened.
 - Reducers preflight definition, ownership, bounds, row limits, and all checked
   arithmetic before mutation.
 - A complete partial personal row transfers as one indivisible custody unit to
-  a new party row, or vice versa. Parent and measured state move atomically;
-  amount, definition, and container identity do not change.
+  a new party row, or vice versa. The reducer atomically deletes the old
+  custody-state link and creates the new link to the same measured-object ID;
+  amount, immutable basis, family metadata, and container/lot identity do not
+  change.
 - Quantity transfer of unopened stock retains current stack behavior.
 - "Transfer part of this partial row" means pouring and is deferred. The first
   rollout transfers the complete row only.
 - Unopened rows merge by the existing stack compatibility rules.
 - Partial depletable/bulk rows may combine only through an explicit reducer,
   with the same item definition, unit, relevant food/preparation/provenance and
-  contamination profile, and total amount at most capacity. The reducer keeps
-  the lowest parent row ID, adds exact conserved integer fields, and deletes
-  the other parent/state atomically.
+  contamination profile and compatible immutable bases, and total amount at
+  most the surviving object's capacity. The reducer keeps the lowest measured
+  object ID, adds exact conserved integer fields, and deletes the other parent,
+  state, object, and metadata atomically.
 - Containerized rows do not combine merely because their contents match.
   Pouring between vessels is deferred.
 - If multiple eligible rows exist, selection is stable: requested owner scope,
@@ -198,6 +249,8 @@ full stacks, not a transitional fallback for legacy data.
 
 ## Effective mass and value
 
+For unopened stock these values come from the definition's standard basis. For
+every measured singleton they come from its immutable measured-object basis.
 Let:
 
 - `C` be positive full capacity;
@@ -228,7 +281,10 @@ invalid bound or overflow rejects the command before mutation; authoritative
 code must not saturate, wrap, or use floats. Aggregators use checked integer
 addition and fail the whole operation on overflow.
 
-Flooring is canonical and monotonic. For any partition of one amount, the sum
+Flooring is canonical and monotonic. Reducers compute the consumed delta as
+`effective(old_amount) - effective(new_amount)`, so each transition uses the
+immutable basis and the final transition receives every residual. For any
+partition of one amount, the sum
 of independently floored contents values cannot exceed the unsplit value.
 Combining restores at most the canonical value of the combined amount.
 Intrinsic conserved value is distinct from a merchant quote.
@@ -246,16 +302,36 @@ The safe initial policy is:
 - unopened stacks may still transact an integer quantity of full units;
 - a measured singleton is quoted once from its canonical effective contents
   value plus recoverable tare value;
-- player-to-merchant proceeds round down once at the complete-line aggregate;
-- merchant-to-player prices round up once at the complete-line aggregate;
+- all rows/quantities in one authoritative line are first summed into one
+  checked integer intrinsic line value;
+- every authoritative modifier, including merchant margin, tax, language,
+  reputation, and local-problem effects, is a positive integer rational
+  (`numerator / denominator`) or a basis-point value converted to that form;
+- reducers cross-cancel factors with greatest-common-divisor reduction, compose
+  the remaining numerators and denominators with checked `u128` arithmetic,
+  apply that one composed ratio to the aggregate intrinsic line value, and
+  round exactly once;
+- player-to-merchant proceeds use one floor after the complete-line aggregate;
+- merchant-to-player prices use one ceil after the complete-line aggregate;
 - party stake credit, liquidation, surrender valuation, and trade all call the
   same effective-value function;
 - no quote is computed for artificial child portions, and splitting is never
   an accepted way to obtain multiple independently rounded payouts.
 
+A zero factor numerator or denominator, a zero configured basis-point
+denominator, an intrinsic-line sum overflow, a composition/product overflow,
+or a rounded result outside `u64` rejects the entire command before mutation.
+An intrinsically zero line may quote zero only when every factor is valid.
+There are no saturating or floating fallbacks.
+
+The reusable prototype API `checked_aggregate_price` implements this
+aggregate-then-compose rule independently of production merchant policy. The
+production pricing migration is explicitly out of scope here.
+
 Later arbitrary pouring/sales must carry a deterministic residual/remainder
-ledger or allocate the line's remainder to one stable child. Repeated split,
-sale, and recombine sequences must never increase total currency plus intrinsic
+ledger or allocate the line's remainder to one stable child. Such a child is
+never quoted independently merely because it was split. Repeated split, sale,
+and recombine sequences must never increase total currency plus intrinsic
 inventory value.
 
 ## Item-family semantics
@@ -358,9 +434,11 @@ the family profile and clamp only in the UI; reducers independently reject
 invalid input. The initial UI offers complete-row transfer/sale and bounded
 consumption, not pouring/mixing.
 
-Public personal and party projections add the measurement profile fields needed
-for display and optional measured state. Mutation APIs accept inventory row IDs
-plus integer amount where consumption supports it. Generated
+Public personal and party projections add the standard profile plus stable
+measured-object ID, immutable object basis/family display fields, and current
+measured state where applicable. Mutation APIs accept inventory row IDs plus
+integer amount where consumption supports it; object IDs are returned for
+identity but clients cannot reassign custody directly. Generated
 `adventuresim-stdb-client` bindings, strategic-web view models, tactical
 snapshots, simulator actions, and reducer call sites must update in the same
 schema commit. No bindings are generated for this architecture/prototype-only
@@ -368,35 +446,52 @@ change because no public table changed.
 
 ## Rollout plan
 
-1. Introduce currency subunits and shared checked mass/value arithmetic. Convert
-   definition constants that participate in conservation.
-2. Add measurement-profile and separate personal/party state tables; update all
-   read projections and generated bindings in one clean-schema change.
-3. Reset and reseed the isolated development database. Convert alcohol and soap
-   definitions and reducers; keep complete-row transfer/trade.
-4. Replace floating conserved `food_lot` fields with integer state and route
-   cooking, eating, contamination dose inputs, and merchant quotes through it.
-5. Update loot, targets, party stakes, liquidation, surrender, automation,
-   strategic simulation, tactical handoff, and every encumbrance path.
-6. Ship measured UI display, amount controls, previews, accessibility labels,
-   and stable live-refresh behavior.
+1. Preparatory currency subunits, pure checked mass/value/pricing helpers, and
+   definition constants may land before measured rows can be created.
+2. Add the profile, stable object/basis, family metadata, and personal/party
+   custody-state schemas behind per-family creation gates. Merely publishing
+   these tables must not make a reducer able to create partial rows.
+3. Cut over one family at a time. Before enabling that family's gate, the same
+   clean-schema deployment must atomically update every effective mass/value
+   consumer, read projection/API, mutation reducer, generated binding,
+   strategic simulator action, tactical handoff, and relevant UI/automation.
+   This includes loot, targets, party stakes, liquidation, surrender,
+   encumbrance, trade, and transfers wherever that family can appear. Consumer
+   parity is a prerequisite, not later cleanup.
+4. Reset and reseed the isolated development database as part of each enabled
+   family cutover. Convert alcohol and soap definitions/reducers while retaining
+   complete-row transfer/trade.
+5. Enable food only when floating conserved `food_lot` fields have been replaced
+   by measured objects with integer derived bases and all cooking, eating,
+   contamination-dose inputs, merchant quotes, projections, and bindings use
+   them.
+6. Ship each family's measured UI display, amount controls, previews,
+   accessibility labels, and stable live-refresh behavior with its gate.
 
 There is intentionally no live-data migration. Deployment of the schema change
 requires an isolated database reset/reseed and regenerated client bindings.
+No production state may contain a measured or partial row while any reachable
+consumer for that family still assumes `base weight/value * quantity`.
 
 ## Verification requirements
 
 - Profile validation: zero capacity, incompatible tare, invalid family/unit,
   and full-unit overflow.
 - Row validation for both owner types: zero quantity, state on discrete item,
-  non-singleton measured state, amount over capacity, orphan state.
+  non-singleton measured state, unmeasured/multi-quantity BulkLot, amount over
+  object capacity, missing/duplicate object custody, and orphan state.
 - Full, partial, opened-full, and empty mass/value examples for depletable,
   bulk, and containerized profiles.
+- Derived recipe lots with the same item ID but different immutable bases,
+  nutrition/provenance, and effective totals.
 - Monotonicity over the complete amount range and checked aggregation overflow.
 - Opening a stack, complete partial transfer in both directions, deterministic
   selection, compatible combine, zero deletion, and empty-container retention.
 - Property tests that partition/recombine preserves conserved amount and cannot
   increase intrinsic value; trade sequence tests that cannot create currency.
+- Pricing tests for factor cancellation/composition, aggregate floor/ceil,
+  aggregate-versus-split quotes, invalid zero factors, and every overflow
+  boundary.
 - Family tests for alcohol dose/hydration/disinfection/reserves, food
   nutrition/recipe/leftover/spoilage identity, and soap cleansing/surgery
   previews.
