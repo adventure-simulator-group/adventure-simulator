@@ -246,6 +246,7 @@ dependencies = [
  "netcdf-reader",
  "proj4rs",
  "rayon",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
