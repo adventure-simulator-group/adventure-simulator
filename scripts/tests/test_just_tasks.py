@@ -11,6 +11,21 @@ import utils.generate_certificates as certificates
 
 
 class JustTaskTests(unittest.TestCase):
+    def test_load_world_preserves_default_database_and_accepts_isolated_database(self):
+        justfile = (Path(__file__).resolve().parents[2] / "justfile").read_text(encoding="utf-8")
+        self.assertIn(
+            "load-world server=spacetime_url database=spacetime_module:",
+            justfile,
+        )
+        self.assertIn(
+            "load-viabundus-world server=spacetime_url database=spacetime_module:",
+            justfile,
+        )
+        load_recipe = justfile.split("load-world server=", 1)[1].split(
+            "# Compatibility name", 1
+        )[0]
+        self.assertIn("--database {{ database }}", load_recipe)
+
     def test_web_environment_uses_absolute_cross_platform_paths(self):
         environment = just_tasks.web_environment()
 

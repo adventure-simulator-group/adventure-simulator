@@ -246,6 +246,7 @@ just compile-world      # Build base terrain, then compile the 1544 world
 just build-strategic-map # Build base, world, and final map/terrain artifacts
 just normalise-viabundus # Compatibility alias for compile-world
 just load-world         # Load it into a published local SpacetimeDB module
+just load-world http://127.0.0.1:24610 adventuresim-dev-example # Load an isolated profile database
 ```
 
 `just test` runs the strategic browser tests and the native Rust test suites,
@@ -321,6 +322,10 @@ importer and is intentionally ignored by Git. `just init-world-data` installs
 the reviewed Viabundus component together with HYDE and the other
 source-separated inputs. Its component inventory records the source URLs,
 sizes, and SHA-256 checksums, including `viabundus/.viabundus-source.json`.
+The bundle intentionally installs only the five importer CSVs. A strategic-map
+rebuild additionally requires the upstream supplementary `water-1500.csv`;
+after bundle installation, run `python scripts/init_viabundus.py --force` to
+install the complete Viabundus CSV set before `just build-strategic-map`.
 
 Most developers do not need these compiler inputs at all: `just load-world`
 automatically installs the separately pinned compiled runtime bundle and loads
@@ -361,7 +366,8 @@ from the canonical strategic database and map geometry is not persisted in
 SpacetimeDB. Run this command whenever the initialized Viabundus release or map
 package schema changes. The elevation and forest directories default to
 `target/world-data-sources/raw/elevation/` and
-`target/world-data-sources/raw/forest-cover/`; use the generator's explicit
+`target/world-data-sources/raw/forest-cover/`, and HYDE defaults to
+`target/world-data-sources/raw/hyde35-land-use/`; use the generator's explicit
 directory flags when regenerating from another reviewed installation.
 
 The offline compiler lives in `adventuresim-world-import` behind its opt-in

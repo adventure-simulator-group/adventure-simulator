@@ -5,9 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use adventuresim_world_import::{
-    PREPARED_FOREST_FORMAT, read_prepared_forest_raster, validate_prepared_forest_manifest,
-};
+use adventuresim_world_import::{read_prepared_forest_raster, validate_prepared_forest_manifest};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tiff::decoder::{Decoder, DecodingResult};
@@ -284,7 +282,7 @@ fn load_forest(
 ) -> Result<ForestLayer, Box<dyn std::error::Error>> {
     let manifest_path = directory.join("forest-cover-manifest.json");
     let manifest_bytes = fs::read(&manifest_path)?;
-    validate_prepared_forest_manifest(&manifest_bytes, &manifest_path)?;
+    let prepared_format = validate_prepared_forest_manifest(&manifest_bytes, &manifest_path)?;
     let mut densities = source_files(directory, "TCD_", ".tif")?;
     densities.sort();
     let mut coverage = Vec::new();
@@ -329,16 +327,24 @@ fn load_forest(
     Ok(ForestLayer {
         source: LayerSource {
             name: "Copernicus HRL Forests 2018".into(),
-            version: PREPARED_FOREST_FORMAT.into(),
+            version: prepared_format.into(),
             url: "https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a".into(),
             license: "Copernicus full, free, and open data policy".into(),
             file_count: identities.len(),
             files_sha256: identities,
-            verification_status: "partial-coverage-release-blocked".into(),
+            verification_status: forest_verification_status(prepared_format).into(),
         },
         coverage,
         regions,
     })
+}
+
+fn forest_verification_status(format: &str) -> &'static str {
+    if format == adventuresim_world_import::PREPARED_FOREST_FORMAT_V2 {
+        "exact-pinned-bundle-inventory;upstream-reacquisition-not-byte-reproducible"
+    } else {
+        "release-blocked-local-v1;upstream-reacquisition-not-byte-reproducible"
+    }
 }
 
 fn append_forest_regions(
@@ -487,6 +493,18 @@ mod tests {
         );
         assert!(elevation_tile("almost-a-dem.tif").is_none());
         assert!(forest_tile("TCD_53_9.tif").is_none());
+    }
+
+    #[test]
+    fn forest_verification_metadata_distinguishes_v1_and_v2() {
+        assert_eq!(
+            forest_verification_status(adventuresim_world_import::PREPARED_FOREST_FORMAT_V2),
+            "exact-pinned-bundle-inventory;upstream-reacquisition-not-byte-reproducible"
+        );
+        assert_eq!(
+            forest_verification_status(adventuresim_world_import::PREPARED_FOREST_FORMAT_V1),
+            "release-blocked-local-v1;upstream-reacquisition-not-byte-reproducible"
+        );
     }
 
     #[test]
