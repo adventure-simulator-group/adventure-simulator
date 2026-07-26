@@ -763,8 +763,14 @@ fn apply_training(
                 // waking two-thirds of actual elapsed settlement time.
                 let exposure = elapsed as f32 / 60.0 * (2.0 / 3.0);
                 for (language, coefficient) in [
-                    (OralLanguage::EastCentral, settlement.languages.east_central_bp),
-                    (OralLanguage::WestCentral, settlement.languages.west_central_bp),
+                    (
+                        OralLanguage::EastCentral,
+                        settlement.languages.east_central_bp,
+                    ),
+                    (
+                        OralLanguage::WestCentral,
+                        settlement.languages.west_central_bp,
+                    ),
                     (OralLanguage::Low, settlement.languages.low_bp),
                 ] {
                     excess += adventuresim_core::skill::apply_language_training(

@@ -12926,12 +12926,7 @@ fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement
             )
             .excess_effective_hours;
             ctx.db.character_skills().character_id().update(skills);
-            crate::condition::record_mastery_training_morale(
-                ctx,
-                id,
-                movement_minutes,
-                excess,
-            );
+            crate::condition::record_mastery_training_morale(ctx, id, movement_minutes, excess);
         }
     }
 }
