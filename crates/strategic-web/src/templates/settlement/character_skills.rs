@@ -419,7 +419,7 @@ fn skills_table(
                     (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, intelligence, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
                     (religion_skill_rows(skills, intelligence, head_health, schedule, training_religion))
                     (bestiary_skill_rows(skills, intelligence, head_health, schedule.is_some()))
-                    (language_skill_rows(skills, schedule.is_some()))
+                    (language_skill_rows(skills, instinct, intelligence, schedule.is_some()))
                     (combat_skill_rows(skills, instinct, arm_agility, leg_agility, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, all_agility, (upper_health + lower_health) * 0.5, schedule.is_some(), None)) }
                     (terrain_skill_rows(skills, intelligence, schedule.is_some()))
@@ -538,7 +538,12 @@ fn terrain_skill_rows(skills: &CharacterSkills, aptitude: f32, schedule_context:
     }
 }
 
-fn language_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
+fn language_skill_rows(
+    skills: &CharacterSkills,
+    oral_aptitude: f32,
+    written_aptitude: f32,
+    schedule_context: bool,
+) -> Markup {
     use adventuresim_world_schema::{OralLanguage, WrittenLanguage};
     let oral_effective = OralLanguage::ALL
         .into_iter()
@@ -561,16 +566,16 @@ fn language_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Mark
             @if effective.is_finite() && effective > 0.0 {
                 tr class=(format!("party-skill-row language-primary-row language-{kind}")) {
                     th scope="row" class="party-skill-name party-skill-icon-cell" { span class=(format!("language-monogram language-{kind}")) title=(format!("{family} languages")) aria-hidden="true" { (if kind=="oral" {"O"} else {"W"}) } span class="sr-only" { (family) } }
-                    td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours across {family} languages"),skill_rail_bar_options())) }
+                    td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let aptitude=if kind=="oral" {oral_aptitude} else {written_aptitude}; @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar(rank,rank.min(aptitude.clamp(0.0,5.0)),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours across {family} languages; rank capped at {aptitude:.1} by aptitude"),skill_rail_bar_options())) }
                     td class="religion-expand-cell" { button type="button" class="religion-expand-button" data-language-expand=(kind) aria-expanded="false" aria-label=(format!("Expand {family} languages")) { span class="religion-expand-chevron" aria-hidden="true" { "›" } } }
                 }
                 @if kind=="oral" { @for language in OralLanguage::ALL { @let descriptor=language.descriptor(); @let effective=skills.oral_languages.effective(language);
                     @if effective.is_finite() && effective > 0.0 {
-                        tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.oral_languages.direct(language).max(0.0); (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                        tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.oral_languages.direct(language).max(0.0); @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar(rank,rank.min(oral_aptitude.clamp(0.0,5.0)),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours; rank capped at {oral_aptitude:.1} by Instinct"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
                     }
                 }} @else { @for language in WrittenLanguage::ALL { @let descriptor=language.descriptor(); @let effective=skills.written_languages.effective(language);
                     @if effective.is_finite() && effective > 0.0 {
-                        tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.written_languages.direct(language).max(0.0); (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                        tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.written_languages.direct(language).max(0.0); @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar(rank,rank.min(written_aptitude.clamp(0.0,5.0)),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours; rank capped at {written_aptitude:.1} by Intelligence"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
                     }
                 }}
             }
@@ -1668,7 +1673,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let rendered = language_skill_rows(&skills, false).into_string();
+        let rendered = language_skill_rows(&skills, 5.0, 5.0, false).into_string();
         assert!(rendered.contains("Expand Oral languages"));
         assert!(rendered.contains("Expand Written languages"));
         assert!(rendered.contains("language-oral language-blackletter"));
@@ -1692,7 +1697,8 @@ mod tests {
 
     #[test]
     fn language_families_are_hidden_without_effective_hours() {
-        let rendered = language_skill_rows(&CharacterSkills::default(), false).into_string();
+        let rendered =
+            language_skill_rows(&CharacterSkills::default(), 5.0, 5.0, false).into_string();
         assert!(!rendered.contains("Expand Oral languages"));
         assert!(!rendered.contains("Expand Written languages"));
         assert!(!rendered.contains("data-language-detail"));

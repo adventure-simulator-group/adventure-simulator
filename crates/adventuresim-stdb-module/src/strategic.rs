@@ -12913,8 +12913,25 @@ fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement
     let gains = adventuresim_world_schema::party_oral_training_gains(&snapshot, interval_hours);
     for (id, language, hours) in gains {
         if let Some(mut skills) = ctx.db.character_skills().character_id().find(id) {
-            skills.oral_languages.add_direct(language, hours);
+            let instinct = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(id)
+                .map_or(0.0, |attributes| attributes.instinct);
+            let excess = adventuresim_core::skill::apply_language_training(
+                skills.oral_languages.direct_mut(language),
+                hours,
+                instinct,
+            )
+            .excess_effective_hours;
             ctx.db.character_skills().character_id().update(skills);
+            crate::condition::record_mastery_training_morale(
+                ctx,
+                id,
+                movement_minutes,
+                excess,
+            );
         }
     }
 }

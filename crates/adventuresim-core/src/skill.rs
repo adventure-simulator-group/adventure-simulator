@@ -115,7 +115,10 @@ pub enum Skill {
 
 #[cfg(test)]
 mod tests {
-    use super::{PlayerSkills, Skill, apply_direct_training, aptitude_training_multiplier};
+    use super::{
+        PlayerSkills, Skill, apply_direct_training, apply_language_training,
+        aptitude_training_multiplier,
+    };
     use crate::{
         body::{BodyPart, BodySide, LimbWeights, PlayerBody},
         prelude::{LimbAttribute, PlayerAttributes, SimpleAttribute},
@@ -304,6 +307,15 @@ mod tests {
         );
         assert_eq!(stored, 0.0);
     }
+
+    #[test]
+    fn language_training_uses_aptitude_speed_and_partial_cap_crossing() {
+        let mut hours = 2_999.5;
+        let gain = apply_language_training(&mut hours, 1.0, 3.0);
+        assert_eq!(hours, 3_000.0);
+        assert_eq!(gain.accepted_effective_hours, 0.5);
+        assert_eq!(gain.excess_effective_hours, 0.75);
+    }
 }
 
 impl Skill {
@@ -462,6 +474,36 @@ pub fn aptitude_training_multiplier(attribute: f32) -> f32 {
 pub struct TrainingGain {
     pub accepted_effective_hours: f32,
     pub excess_effective_hours: f32,
+}
+
+/// Apply direct language study on the shared 1,000-effective-hours-per-rank
+/// scale. Callers supply Instinct for oral languages and Intelligence for
+/// written languages.
+pub fn apply_language_training(
+    stored_effective_hours: &mut f32,
+    real_hours: f32,
+    aptitude: f32,
+) -> TrainingGain {
+    if !real_hours.is_finite() || real_hours <= 0.0 {
+        return TrainingGain::default();
+    }
+    let aptitude = if aptitude.is_finite() {
+        aptitude.clamp(0.0, MAX_CHECK)
+    } else {
+        0.0
+    };
+    let gain = real_hours * aptitude_training_multiplier(aptitude);
+    let current = if stored_effective_hours.is_finite() {
+        (*stored_effective_hours).max(0.0)
+    } else {
+        0.0
+    };
+    let accepted = gain.min((aptitude * 1_000.0 - current).max(0.0));
+    *stored_effective_hours = current + accepted;
+    TrainingGain {
+        accepted_effective_hours: accepted,
+        excess_effective_hours: gain - accepted,
+    }
 }
 
 /// Apply positive direct training without destroying hours which are latent

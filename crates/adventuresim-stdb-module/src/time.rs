@@ -669,6 +669,27 @@ fn activity_training_profile(
     )
 }
 
+fn apply_oral_language_training(
+    ctx: &ReducerContext,
+    character_id: u64,
+    languages: &mut adventuresim_world_schema::OralLanguageHours,
+    language: OralLanguage,
+    real_hours: f32,
+) -> f32 {
+    let instinct = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(0.0, |attributes| attributes.instinct);
+    adventuresim_core::skill::apply_language_training(
+        languages.direct_mut(language),
+        real_hours,
+        instinct,
+    )
+    .excess_effective_hours
+}
+
 fn apply_training(
     ctx: &ReducerContext,
     character_id: u64,
@@ -741,18 +762,18 @@ fn apply_training(
                 // Ordinary life supplies bounded ambient exposure during the
                 // waking two-thirds of actual elapsed settlement time.
                 let exposure = elapsed as f32 / 60.0 * (2.0 / 3.0);
-                skills.oral_languages.add_direct(
-                    OralLanguage::EastCentral,
-                    exposure * f32::from(settlement.languages.east_central_bp) / 10_000.0,
-                );
-                skills.oral_languages.add_direct(
-                    OralLanguage::WestCentral,
-                    exposure * f32::from(settlement.languages.west_central_bp) / 10_000.0,
-                );
-                skills.oral_languages.add_direct(
-                    OralLanguage::Low,
-                    exposure * f32::from(settlement.languages.low_bp) / 10_000.0,
-                );
+                for (language, coefficient) in [
+                    (OralLanguage::EastCentral, settlement.languages.east_central_bp),
+                    (OralLanguage::WestCentral, settlement.languages.west_central_bp),
+                    (OralLanguage::Low, settlement.languages.low_bp),
+                ] {
+                    excess += adventuresim_core::skill::apply_language_training(
+                        skills.oral_languages.direct_mut(language),
+                        exposure * f32::from(coefficient) / 10_000.0,
+                        attributes.instinct,
+                    )
+                    .excess_effective_hours;
+                }
             }
         }
     }
@@ -1562,10 +1583,14 @@ fn rest_for_minutes(
             activities,
         );
         if let Some((_, language, coefficient)) = conversation_choice {
-            skills.oral_languages.add_direct(
+            let excess = apply_oral_language_training(
+                ctx,
+                character_id,
+                &mut skills.oral_languages,
                 language,
                 training_elapsed as f32 / 60.0 * (2.0 / 3.0) * coefficient,
             );
+            crate::condition::record_mastery_training_morale(ctx, character_id, 0, excess);
         }
         ctx.db.character_skills().character_id().update(skills);
         let risks = apply_activity_outcomes(
@@ -1996,10 +2021,14 @@ pub fn rest_at_camp(
                 activities,
             );
             if let Some((language, coefficient)) = language_choices.get(&member_id) {
-                skills.oral_languages.add_direct(
+                let excess = apply_oral_language_training(
+                    ctx,
+                    member_id,
+                    &mut skills.oral_languages,
                     *language,
                     downtime as f32 / 60.0 * (2.0 / 3.0) * coefficient,
                 );
+                crate::condition::record_mastery_training_morale(ctx, member_id, 0, excess);
             }
             ctx.db.character_skills().character_id().update(skills);
             crate::condition::apply_settlement_leisure_condition(
