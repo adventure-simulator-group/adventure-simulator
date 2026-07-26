@@ -4,13 +4,15 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::belief_axis_type::BeliefAxis;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct SocialBelief {
     pub id: String,
     pub observer_id: u64,
     pub subject_id: u64,
-    pub axis: String,
+    pub axis: BeliefAxis,
     pub perceived_value: i8,
     pub confidence: f32,
     pub observed_at_minute: u64,
@@ -27,7 +29,7 @@ pub struct SocialBeliefCols {
     pub id: __sdk::__query_builder::Col<SocialBelief, String>,
     pub observer_id: __sdk::__query_builder::Col<SocialBelief, u64>,
     pub subject_id: __sdk::__query_builder::Col<SocialBelief, u64>,
-    pub axis: __sdk::__query_builder::Col<SocialBelief, String>,
+    pub axis: __sdk::__query_builder::Col<SocialBelief, BeliefAxis>,
     pub perceived_value: __sdk::__query_builder::Col<SocialBelief, i8>,
     pub confidence: __sdk::__query_builder::Col<SocialBelief, f32>,
     pub observed_at_minute: __sdk::__query_builder::Col<SocialBelief, u64>,

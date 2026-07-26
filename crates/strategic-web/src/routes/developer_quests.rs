@@ -99,7 +99,8 @@ async fn active_context(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .map_or(0, |time| time.minutes);
     let literal = sql_string_literal(&settlement_id);
-    let npc_sql = format!("SELECT * FROM settlement_npc WHERE home_settlement_id = {literal}");
+    let npc_sql =
+        format!("SELECT * FROM backend_settlement_npcs WHERE home_settlement_id = {literal}");
     let presence_sql =
         format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {literal}");
     let (npcs, presences) = tokio::join!(

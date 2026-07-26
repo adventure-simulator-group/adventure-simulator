@@ -1,11 +1,11 @@
 //! Persistent strategic settlement population and authoritative observable presences.
-use crate::strategic::settlement;
+use crate::strategic::{settlement, strategic_gateway_authority__view};
 use adventuresim_core::settlement_population::{
     self as population, AgeBand, GenerationInput, LocationContext, PresenceBridge, Profession,
     Schedule,
 };
 use serde::{Deserialize, Serialize};
-use spacetimedb::{ReducerContext, SpacetimeType, Table, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, SpacetimeType)]
@@ -20,17 +20,28 @@ pub enum NpcSex {
     Female,
     Male,
 }
+#[derive(Clone, Copy, Debug, SpacetimeType)]
+pub enum NpcPresentation {
+    Masculine,
+    Ambiguous,
+    Feminine,
+}
 
 #[derive(Clone, Debug)]
-#[table(accessor = settlement_npc, public)]
+#[table(accessor = settlement_npc)]
 pub struct SettlementNpc {
     #[primary_key]
     pub id: String,
+    /// Numeric bounded traversal key for the fail-closed gateway view.
+    #[index(btree)]
+    pub projection_id: u64,
     #[index(btree)]
     pub home_settlement_id: String,
     pub name: String,
     pub age_band: NpcAgeBand,
+    /// Private demographic truth used by generated quest predicates.
     pub sex: NpcSex,
+    pub presentation: NpcPresentation,
     pub height: String,
     pub build: String,
     pub hair: String,
@@ -43,6 +54,24 @@ pub struct SettlementNpc {
     pub local_role: String,
     pub service_id: String,
     pub conversation_id: String,
+}
+
+#[view(accessor = backend_settlement_npcs, public)]
+pub fn backend_settlement_npcs(ctx: &ViewContext) -> Vec<SettlementNpc> {
+    let trusted = ctx
+        .db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|authority| authority.identity == ctx.sender());
+    if !trusted {
+        return Vec::new();
+    }
+    ctx.db
+        .settlement_npc()
+        .projection_id()
+        .filter(0u64..)
+        .collect()
 }
 
 /// Public presence contains only directly observable scheduling and location facts.
@@ -150,6 +179,19 @@ fn npc_name(seed: &str, sex: NpcSex) -> String {
     )
 }
 
+fn npc_presentation(id: &str, sex: NpcSex) -> NpcPresentation {
+    match (
+        sex,
+        population::stable_hash(&format!("{id}:presentation")) % 100,
+    ) {
+        (_, 0..=3) => NpcPresentation::Ambiguous,
+        (NpcSex::Female, 4) => NpcPresentation::Masculine,
+        (NpcSex::Male, 4) => NpcPresentation::Feminine,
+        (NpcSex::Female, _) => NpcPresentation::Feminine,
+        (NpcSex::Male, _) => NpcPresentation::Masculine,
+    }
+}
+
 fn insert_npc(
     ctx: &ReducerContext,
     settlement_id: &str,
@@ -201,10 +243,12 @@ fn insert_npc(
     );
     ctx.db.settlement_npc().insert(SettlementNpc {
         id: id.clone(),
+        projection_id: population::stable_hash(&id),
         home_settlement_id: settlement_id.into(),
         name: npc_name(&id, sex),
         age_band,
         sex,
+        presentation: npc_presentation(&id, sex),
         height: profile.height.clone(),
         build: profile.build.clone(),
         hair: profile.hair.clone(),
@@ -398,5 +442,24 @@ mod tests {
         assert_eq!(value, serde_json::from_str(&json).unwrap());
         assert_eq!(json, serde_json::to_string(&value).unwrap());
         assert_eq!(value.profile.decisions.len(), 7);
+    }
+
+    #[test]
+    fn presentation_is_correlated_with_but_does_not_encode_private_sex() {
+        let mut female_cross_or_ambiguous = 0;
+        let mut male_cross_or_ambiguous = 0;
+        for index in 0..2_000 {
+            let id = format!("npc:test:{index}");
+            female_cross_or_ambiguous += usize::from(!matches!(
+                npc_presentation(&id, NpcSex::Female),
+                NpcPresentation::Feminine
+            ));
+            male_cross_or_ambiguous += usize::from(!matches!(
+                npc_presentation(&id, NpcSex::Male),
+                NpcPresentation::Masculine
+            ));
+        }
+        assert!((40..160).contains(&female_cross_or_ambiguous));
+        assert!((40..160).contains(&male_cross_or_ambiguous));
     }
 }

@@ -10,7 +10,7 @@ use crate::{
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 31;
+pub const SKILL_COUNT: usize = 29;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -40,11 +40,9 @@ pub struct SkillHours {
     pub throw: f32,
     pub will: f32,
     pub insight: f32,
-    pub self_awareness: f32,
-    pub humor: f32,
+    pub charm: f32,
     pub command: f32,
     pub deception: f32,
-    pub seduction: f32,
     pub physiology: f32,
     pub cooking: f32,
     pub religion: ReligionHours,
@@ -76,11 +74,9 @@ impl SkillHours {
             self.throw,
             self.will,
             self.insight,
-            self.self_awareness,
-            self.humor,
+            self.charm,
             self.command,
             self.deception,
-            self.seduction,
             self.physiology,
             self.cooking,
             self.religion.total_direct(),
@@ -115,7 +111,7 @@ impl SkillHours {
 pub struct DailySchedule {
     /// Structured combat practice, including weapon drills, will, and balance.
     pub combat_training_minutes: u16,
-    /// Social recreation which trains Humor at the activity rate.
+    /// Social recreation which trains Charm at the activity rate.
     pub carousing_minutes: u16,
     /// Supervised work in an unlocked profession.
     pub apprenticeship_minutes: u16,
@@ -339,8 +335,8 @@ pub fn apply_schedule_training(
     };
     let increment = |minutes| training_hours_increment(elapsed_minutes, minutes);
     award(
-        &mut skills.humor,
-        Skill::Humor,
+        &mut skills.charm,
+        Skill::Charm,
         increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE,
     );
     award(
@@ -513,7 +509,7 @@ mod tests {
             + skills.will
             + skills.balance;
         assert!((combat_total - 6.0).abs() < 0.001);
-        assert!((skills.humor - 1.0).abs() < 0.001);
+        assert!((skills.charm - 1.0).abs() < 0.001);
         assert_eq!(skills.physiology, 0.0);
         assert_eq!(skills.anatomy, 0.0);
         assert_eq!(skills.knife, 0.0);

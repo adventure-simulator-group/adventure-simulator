@@ -10,12 +10,14 @@ use super::{entry_layout, item_display_name, item_type_icon, panel, sidebar_sect
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterPersonality,
-    CharacterSkills, Conscience, Conviction, Drive, Hygiene, Nerve, OrganizationMembership,
-    OrganizationPresentation, Outlook, SelfRegard, Sociability, Temperance,
+    CharacterSkills, Conscience, Conviction, Courtship, Drive, Hygiene, Inclination, Mirth, Nerve,
+    OrganizationMembership, OrganizationPresentation, Outlook, Presentation, SelfKnowledge,
+    SelfRegard, Sex, Sociability, Temperance, Transparency,
 };
 use adventuresim_core::skill::Skill;
 use adventuresim_core::starting_character::{
-    StartingAgeTier, StartingCharacterSpec, StartingPersonalityTrait, StartingSlot,
+    StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
+    StartingPresentation, StartingSex, StartingSlot,
 };
 use adventuresim_core::strategic_schedule::CombatTrainingProfile;
 
@@ -425,11 +427,9 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             throw_hours: spec.skills.throw,
             will_hours: spec.skills.will,
             insight_hours: spec.skills.insight,
-            self_awareness_hours: spec.skills.self_awareness,
-            humor_hours: spec.skills.humor,
+            charm_hours: spec.skills.charm,
             command_hours: spec.skills.command,
             deception_hours: spec.skills.deception,
-            seduction_hours: spec.skills.seduction,
             physiology_hours: spec.skills.physiology,
             cooking_hours: spec.skills.cooking,
             religion_hours: spec.skills.religion,
@@ -677,6 +677,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
 fn candidate_personality(spec: &StartingCharacterSpec) -> CharacterPersonality {
     let mut personality = CharacterPersonality {
         character_id: spec.id,
+        projection_character_id: spec.id,
         nerve: Nerve::Neutral,
         drive: Drive::Neutral,
         outlook: Outlook::Neutral,
@@ -686,6 +687,25 @@ fn candidate_personality(spec: &StartingCharacterSpec) -> CharacterPersonality {
         conviction: Conviction::Neutral,
         hygiene: Hygiene::Neutral,
         temperance: Temperance::Neutral,
+        mirth: Mirth::Neutral,
+        courtship: Courtship::Neutral,
+        transparency: Transparency::Neutral,
+        self_knowledge: SelfKnowledge::Neutral,
+        sex: match spec.personality.sex {
+            StartingSex::Female => Sex::Female,
+            StartingSex::Male => Sex::Male,
+        },
+        presentation: match spec.personality.presentation {
+            StartingPresentation::Masculine => Presentation::Masculine,
+            StartingPresentation::Ambiguous => Presentation::Ambiguous,
+            StartingPresentation::Feminine => Presentation::Feminine,
+        },
+        inclination: match spec.personality.inclination {
+            StartingInclination::Men => Inclination::Men,
+            StartingInclination::Either => Inclination::Either,
+            StartingInclination::Women => Inclination::Women,
+            StartingInclination::Neither => Inclination::Neither,
+        },
     };
     for personality_trait in &spec.personality.traits {
         match personality_trait {
@@ -712,6 +732,18 @@ fn candidate_personality(spec: &StartingCharacterSpec) -> CharacterPersonality {
             StartingPersonalityTrait::Cleanly => personality.hygiene = Hygiene::Cleanly,
             StartingPersonalityTrait::Temperate => personality.temperance = Temperance::Temperate,
             StartingPersonalityTrait::Drunkard => personality.temperance = Temperance::Drunkard,
+            StartingPersonalityTrait::Merry => personality.mirth = Mirth::Merry,
+            StartingPersonalityTrait::Grave => personality.mirth = Mirth::Grave,
+            StartingPersonalityTrait::Amorous => personality.courtship = Courtship::Amorous,
+            StartingPersonalityTrait::Proper => personality.courtship = Courtship::Proper,
+            StartingPersonalityTrait::Open => personality.transparency = Transparency::Open,
+            StartingPersonalityTrait::Guarded => personality.transparency = Transparency::Guarded,
+            StartingPersonalityTrait::Introspective => {
+                personality.self_knowledge = SelfKnowledge::Introspective
+            }
+            StartingPersonalityTrait::SelfDeceiving => {
+                personality.self_knowledge = SelfKnowledge::SelfDeceiving
+            }
         }
     }
     personality
@@ -726,13 +758,13 @@ mod creation_tests {
     #[test]
     fn initial_roster_has_preview_but_no_dialog_or_customization() {
         let candidates = roster(
-            2,
+            adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Young,
         )
         .unwrap();
         let markup = character_candidates_page(
-            2,
+            adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Young,
             &candidates,
@@ -757,13 +789,13 @@ mod creation_tests {
     #[test]
     fn explicit_selection_shows_an_inline_play_action() {
         let candidates = roster(
-            2,
+            adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Adult,
         )
         .unwrap();
         let markup = character_candidates_page(
-            2,
+            adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Adult,
             &candidates,
@@ -788,13 +820,13 @@ mod creation_tests {
     #[test]
     fn candidate_inventory_opens_from_the_portrait_without_listing_the_package_on_profile() {
         let candidates = roster(
-            2,
+            adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Adult,
         )
         .unwrap();
         let markup = character_candidates_page(
-            2,
+            adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Adult,
             &candidates,
@@ -814,7 +846,7 @@ mod creation_tests {
     #[test]
     fn preview_capabilities_use_equipped_items_and_professional_skill_values() {
         let mut young = roster(
-            2,
+            adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Young,
         )
@@ -829,7 +861,7 @@ mod creation_tests {
         assert!(!preview.capability.ranged);
 
         let adult = roster(
-            2,
+            adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Adult,
         )
@@ -847,7 +879,14 @@ mod creation_tests {
     fn preview_membership_dues_use_the_same_initial_interval_semantics() {
         let candidates = [StartingAgeTier::Adult, StartingAgeTier::Old]
             .into_iter()
-            .flat_map(|tier| roster(2, "00112233445566778899aabbccddeeff", tier).unwrap());
+            .flat_map(|tier| {
+                roster(
+                    adventuresim_core::starting_character::GENERATOR_VERSION,
+                    "00112233445566778899aabbccddeeff",
+                    tier,
+                )
+                .unwrap()
+            });
         let candidate = candidates
             .into_iter()
             .find(|candidate| {

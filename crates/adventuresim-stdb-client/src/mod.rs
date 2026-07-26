@@ -34,6 +34,7 @@ pub mod backend_character_affinities_table;
 pub mod backend_character_case_site_location_type;
 pub mod backend_character_case_site_locations_table;
 pub mod backend_character_familiarities_table;
+pub mod backend_character_personalities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_contract_type;
 pub mod backend_contracts_table;
@@ -78,6 +79,7 @@ pub mod backend_physiology_administrations_table;
 pub mod backend_physiology_chart_type;
 pub mod backend_physiology_charts_table;
 pub mod backend_physiology_differential_type;
+pub mod backend_settlement_npcs_table;
 pub mod backend_social_addresses_table;
 pub mod backend_social_beliefs_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
@@ -91,6 +93,7 @@ pub mod battle_participant_type;
 pub mod battle_result_table;
 pub mod battle_result_type;
 pub mod begin_world_data_import_reducer;
+pub mod belief_axis_type;
 pub mod bestiary_hours_type;
 pub mod blood_exposure_checkpoint_type;
 pub mod bootstrap_development_world_reducer;
@@ -138,7 +141,6 @@ pub mod character_needs_table;
 pub mod character_needs_type;
 pub mod character_notoriety_table;
 pub mod character_notoriety_type;
-pub mod character_personality_table;
 pub mod character_personality_type;
 pub mod character_skills_table;
 pub mod character_skills_type;
@@ -175,6 +177,7 @@ pub mod contract_type;
 pub mod conviction_type;
 pub mod cook_food_reducer;
 pub mod cooking_method_type;
+pub mod courtship_type;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
 pub mod create_named_character_with_id_reducer;
@@ -281,6 +284,7 @@ pub mod incident_id_type;
 pub mod incident_kind_type;
 pub mod incident_source_id_type;
 pub mod incident_status_type;
+pub mod inclination_type;
 pub mod industry_evidence_type;
 pub mod infection_episode_row_type;
 pub mod inferred_geologic_setting_type;
@@ -366,6 +370,7 @@ pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
 pub mod mineral_soil_type;
 pub mod mining_industry_type;
+pub mod mirth_type;
 pub mod mission_approach_capability_type;
 pub mod mission_attempt_status_type;
 pub mod mission_authority_type;
@@ -381,6 +386,7 @@ pub mod npc_adventuring_party_authority_type;
 pub mod npc_age_band_type;
 pub mod npc_case_intervention_type;
 pub mod npc_intervention_strategy_override_type;
+pub mod npc_presentation_type;
 pub mod npc_sex_type;
 pub mod objective_continuity_guard_type;
 pub mod objective_continuity_kind_type;
@@ -442,6 +448,7 @@ pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
 pub mod present_organization_reducer;
+pub mod presentation_type;
 pub mod production_scale_type;
 pub mod profile_fact_provenance_type;
 pub mod projectile_kind_type;
@@ -518,6 +525,7 @@ pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
 pub mod seed_simulation_world_reducer;
 pub mod seed_standalone_tactical_mission_reducer;
+pub mod self_knowledge_type;
 pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
 pub mod set_automatic_social_chat_reducer;
@@ -541,7 +549,6 @@ pub mod settlement_language_profile_type;
 pub mod settlement_npc_presence_table;
 pub mod settlement_npc_presence_type;
 pub mod settlement_npc_seed_explanation_type;
-pub mod settlement_npc_table;
 pub mod settlement_npc_type;
 pub mod settlement_outbreak_table;
 pub mod settlement_outbreak_type;
@@ -552,6 +559,7 @@ pub mod settlement_smith_type;
 pub mod settlement_stock_type;
 pub mod settlement_table;
 pub mod settlement_type;
+pub mod sex_type;
 pub mod share_investigation_belief_reducer;
 pub mod share_investigation_lead_reducer;
 pub mod simulate_contract_issuer_interaction_reducer;
@@ -606,6 +614,7 @@ pub mod temperance_type;
 pub mod topsoil_organic_carbon_type;
 pub mod track_case_site_reducer;
 pub mod transfer_party_item_reducer;
+pub mod transparency_type;
 pub mod travel_edge_load_type;
 pub mod travel_edge_provenance_type;
 pub mod travel_edge_table;
@@ -670,6 +679,7 @@ pub use backend_character_affinities_table::*;
 pub use backend_character_case_site_location_type::BackendCharacterCaseSiteLocation;
 pub use backend_character_case_site_locations_table::*;
 pub use backend_character_familiarities_table::*;
+pub use backend_character_personalities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_contract_type::BackendContract;
 pub use backend_contracts_table::*;
@@ -714,6 +724,7 @@ pub use backend_physiology_administrations_table::*;
 pub use backend_physiology_chart_type::BackendPhysiologyChart;
 pub use backend_physiology_charts_table::*;
 pub use backend_physiology_differential_type::BackendPhysiologyDifferential;
+pub use backend_settlement_npcs_table::*;
 pub use backend_social_addresses_table::*;
 pub use backend_social_beliefs_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
@@ -727,6 +738,7 @@ pub use battle_participant_type::BattleParticipant;
 pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
 pub use begin_world_data_import_reducer::begin_world_data_import;
+pub use belief_axis_type::BeliefAxis;
 pub use bestiary_hours_type::BestiaryHours;
 pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
@@ -774,7 +786,6 @@ pub use character_needs_table::*;
 pub use character_needs_type::CharacterNeeds;
 pub use character_notoriety_table::*;
 pub use character_notoriety_type::CharacterNotoriety;
-pub use character_personality_table::*;
 pub use character_personality_type::CharacterPersonality;
 pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
@@ -811,6 +822,7 @@ pub use contract_type::Contract;
 pub use conviction_type::Conviction;
 pub use cook_food_reducer::cook_food;
 pub use cooking_method_type::CookingMethod;
+pub use courtship_type::Courtship;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
 pub use create_named_character_with_id_reducer::create_named_character_with_id;
@@ -917,6 +929,7 @@ pub use incident_id_type::IncidentId;
 pub use incident_kind_type::IncidentKind;
 pub use incident_source_id_type::IncidentSourceId;
 pub use incident_status_type::IncidentStatus;
+pub use inclination_type::Inclination;
 pub use industry_evidence_type::IndustryEvidence;
 pub use infection_episode_row_type::InfectionEpisodeRow;
 pub use inferred_geologic_setting_type::InferredGeologicSetting;
@@ -1002,6 +1015,7 @@ pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
 pub use mineral_soil_type::MineralSoil;
 pub use mining_industry_type::MiningIndustry;
+pub use mirth_type::Mirth;
 pub use mission_approach_capability_type::MissionApproachCapability;
 pub use mission_attempt_status_type::MissionAttemptStatus;
 pub use mission_authority_type::MissionAuthority;
@@ -1017,6 +1031,7 @@ pub use npc_adventuring_party_authority_type::NpcAdventuringPartyAuthority;
 pub use npc_age_band_type::NpcAgeBand;
 pub use npc_case_intervention_type::NpcCaseIntervention;
 pub use npc_intervention_strategy_override_type::NpcInterventionStrategyOverride;
+pub use npc_presentation_type::NpcPresentation;
 pub use npc_sex_type::NpcSex;
 pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
 pub use objective_continuity_kind_type::ObjectiveContinuityKind;
@@ -1078,6 +1093,7 @@ pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
 pub use present_organization_reducer::present_organization;
+pub use presentation_type::Presentation;
 pub use production_scale_type::ProductionScale;
 pub use profile_fact_provenance_type::ProfileFactProvenance;
 pub use projectile_kind_type::ProjectileKind;
@@ -1154,6 +1170,7 @@ pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
 pub use seed_simulation_world_reducer::seed_simulation_world;
 pub use seed_standalone_tactical_mission_reducer::seed_standalone_tactical_mission;
+pub use self_knowledge_type::SelfKnowledge;
 pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_automatic_social_chat_reducer::set_automatic_social_chat;
@@ -1177,7 +1194,6 @@ pub use settlement_language_profile_type::SettlementLanguageProfile;
 pub use settlement_npc_presence_table::*;
 pub use settlement_npc_presence_type::SettlementNpcPresence;
 pub use settlement_npc_seed_explanation_type::SettlementNpcSeedExplanation;
-pub use settlement_npc_table::*;
 pub use settlement_npc_type::SettlementNpc;
 pub use settlement_outbreak_table::*;
 pub use settlement_outbreak_type::SettlementOutbreak;
@@ -1188,6 +1204,7 @@ pub use settlement_smith_type::SettlementSmith;
 pub use settlement_stock_type::SettlementStock;
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
+pub use sex_type::Sex;
 pub use share_investigation_belief_reducer::share_investigation_belief;
 pub use share_investigation_lead_reducer::share_investigation_lead;
 pub use simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction;
@@ -1242,6 +1259,7 @@ pub use temperance_type::Temperance;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use track_case_site_reducer::track_case_site;
 pub use transfer_party_item_reducer::transfer_party_item;
+pub use transparency_type::Transparency;
 pub use travel_edge_load_type::TravelEdgeLoad;
 pub use travel_edge_provenance_type::TravelEdgeProvenance;
 pub use travel_edge_table::*;
@@ -3167,6 +3185,7 @@ pub struct DbUpdate {
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
     backend_character_case_site_locations: __sdk::TableUpdate<BackendCharacterCaseSiteLocation>,
     backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
+    backend_character_personalities: __sdk::TableUpdate<CharacterPersonality>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_contracts: __sdk::TableUpdate<BackendContract>,
     backend_dialogue_events: __sdk::TableUpdate<BackendDialogueEvent>,
@@ -3189,6 +3208,7 @@ pub struct DbUpdate {
     backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
     backend_physiology_administrations: __sdk::TableUpdate<BackendPhysiologyAdministration>,
     backend_physiology_charts: __sdk::TableUpdate<BackendPhysiologyChart>,
+    backend_settlement_npcs: __sdk::TableUpdate<SettlementNpc>,
     backend_social_addresses: __sdk::TableUpdate<SocialAddress>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
@@ -3206,7 +3226,6 @@ pub struct DbUpdate {
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
     character_needs: __sdk::TableUpdate<CharacterNeeds>,
     character_notoriety: __sdk::TableUpdate<CharacterNotoriety>,
-    character_personality: __sdk::TableUpdate<CharacterPersonality>,
     character_skills: __sdk::TableUpdate<CharacterSkills>,
     character_stats: __sdk::TableUpdate<CharacterStats>,
     character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
@@ -3247,7 +3266,6 @@ pub struct DbUpdate {
     settlement: __sdk::TableUpdate<Settlement>,
     settlement_alias: __sdk::TableUpdate<SettlementAlias>,
     settlement_description: __sdk::TableUpdate<SettlementDescription>,
-    settlement_npc: __sdk::TableUpdate<SettlementNpc>,
     settlement_npc_presence: __sdk::TableUpdate<SettlementNpcPresence>,
     settlement_outbreak: __sdk::TableUpdate<SettlementOutbreak>,
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
@@ -3300,6 +3318,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_character_familiarities" => {
                     db_update.backend_character_familiarities.append(
                         backend_character_familiarities_table::parse_table_update(table_update)?,
+                    )
+                }
+                "backend_character_personalities" => {
+                    db_update.backend_character_personalities.append(
+                        backend_character_personalities_table::parse_table_update(table_update)?,
                     )
                 }
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(
@@ -3390,6 +3413,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_physiology_charts" => db_update.backend_physiology_charts.append(
                     backend_physiology_charts_table::parse_table_update(table_update)?,
                 ),
+                "backend_settlement_npcs" => db_update.backend_settlement_npcs.append(
+                    backend_settlement_npcs_table::parse_table_update(table_update)?,
+                ),
                 "backend_social_addresses" => db_update.backend_social_addresses.append(
                     backend_social_addresses_table::parse_table_update(table_update)?,
                 ),
@@ -3441,9 +3467,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_notoriety" => db_update
                     .character_notoriety
                     .append(character_notoriety_table::parse_table_update(table_update)?),
-                "character_personality" => db_update.character_personality.append(
-                    character_personality_table::parse_table_update(table_update)?,
-                ),
                 "character_skills" => db_update
                     .character_skills
                     .append(character_skills_table::parse_table_update(table_update)?),
@@ -3564,9 +3587,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "settlement_description" => db_update.settlement_description.append(
                     settlement_description_table::parse_table_update(table_update)?,
                 ),
-                "settlement_npc" => db_update
-                    .settlement_npc
-                    .append(settlement_npc_table::parse_table_update(table_update)?),
                 "settlement_npc_presence" => db_update.settlement_npc_presence.append(
                     settlement_npc_presence_table::parse_table_update(table_update)?,
                 ),
@@ -3711,12 +3731,6 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<CharacterNotoriety>(
                 "character_notoriety",
                 &self.character_notoriety,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_personality = cache
-            .apply_diff_to_table::<CharacterPersonality>(
-                "character_personality",
-                &self.character_personality,
             )
             .with_updates_by_pk(|row| &row.character_id);
         diff.character_skills = cache
@@ -3869,9 +3883,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.settlement_description,
             )
             .with_updates_by_pk(|row| &row.id);
-        diff.settlement_npc = cache
-            .apply_diff_to_table::<SettlementNpc>("settlement_npc", &self.settlement_npc)
-            .with_updates_by_pk(|row| &row.id);
         diff.settlement_npc_presence = cache
             .apply_diff_to_table::<SettlementNpcPresence>(
                 "settlement_npc_presence",
@@ -3950,6 +3961,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>(
             "backend_character_familiarities",
             &self.backend_character_familiarities,
+        );
+        diff.backend_character_personalities = cache.apply_diff_to_table::<CharacterPersonality>(
+            "backend_character_personalities",
+            &self.backend_character_personalities,
         );
         diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
             "backend_committed_cuts",
@@ -4048,6 +4063,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_physiology_charts",
             &self.backend_physiology_charts,
         );
+        diff.backend_settlement_npcs = cache.apply_diff_to_table::<SettlementNpc>(
+            "backend_settlement_npcs",
+            &self.backend_settlement_npcs,
+        );
         diff.backend_social_addresses = cache.apply_diff_to_table::<SocialAddress>(
             "backend_social_addresses",
             &self.backend_social_addresses,
@@ -4105,6 +4124,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_familiarities" => db_update
                     .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_personalities" => db_update
+                    .backend_character_personalities
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
@@ -4172,6 +4194,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_physiology_charts" => db_update
                     .backend_physiology_charts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_settlement_npcs" => db_update
+                    .backend_settlement_npcs
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_social_addresses" => db_update
                     .backend_social_addresses
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -4222,9 +4247,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_notoriety" => db_update
                     .character_notoriety
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_personality" => db_update
-                    .character_personality
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_skills" => db_update
                     .character_skills
@@ -4345,9 +4367,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_description" => db_update
                     .settlement_description
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_npc" => db_update
-                    .settlement_npc
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_npc_presence" => db_update
                     .settlement_npc_presence
@@ -4428,6 +4447,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_character_familiarities" => db_update
                     .backend_character_familiarities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_personalities" => db_update
+                    .backend_character_personalities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4494,6 +4516,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_physiology_charts" => db_update
                     .backend_physiology_charts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_settlement_npcs" => db_update
+                    .backend_settlement_npcs
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_social_addresses" => db_update
                     .backend_social_addresses
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4544,9 +4569,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_notoriety" => db_update
                     .character_notoriety
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_personality" => db_update
-                    .character_personality
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_skills" => db_update
                     .character_skills
@@ -4668,9 +4690,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_npc" => db_update
-                    .settlement_npc
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "settlement_npc_presence" => db_update
                     .settlement_npc_presence
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4737,6 +4756,7 @@ pub struct AppliedDiff<'r> {
     backend_character_case_site_locations:
         __sdk::TableAppliedDiff<'r, BackendCharacterCaseSiteLocation>,
     backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
+    backend_character_personalities: __sdk::TableAppliedDiff<'r, CharacterPersonality>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
     backend_dialogue_events: __sdk::TableAppliedDiff<'r, BackendDialogueEvent>,
@@ -4764,6 +4784,7 @@ pub struct AppliedDiff<'r> {
     backend_physiology_administrations:
         __sdk::TableAppliedDiff<'r, BackendPhysiologyAdministration>,
     backend_physiology_charts: __sdk::TableAppliedDiff<'r, BackendPhysiologyChart>,
+    backend_settlement_npcs: __sdk::TableAppliedDiff<'r, SettlementNpc>,
     backend_social_addresses: __sdk::TableAppliedDiff<'r, SocialAddress>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
@@ -4781,7 +4802,6 @@ pub struct AppliedDiff<'r> {
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
     character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
     character_notoriety: __sdk::TableAppliedDiff<'r, CharacterNotoriety>,
-    character_personality: __sdk::TableAppliedDiff<'r, CharacterPersonality>,
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
     character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
     character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
@@ -4822,7 +4842,6 @@ pub struct AppliedDiff<'r> {
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
     settlement_description: __sdk::TableAppliedDiff<'r, SettlementDescription>,
-    settlement_npc: __sdk::TableAppliedDiff<'r, SettlementNpc>,
     settlement_npc_presence: __sdk::TableAppliedDiff<'r, SettlementNpcPresence>,
     settlement_outbreak: __sdk::TableAppliedDiff<'r, SettlementOutbreak>,
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
@@ -4888,6 +4907,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
             "backend_character_familiarities",
             &self.backend_character_familiarities,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterPersonality>(
+            "backend_character_personalities",
+            &self.backend_character_personalities,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CommittedCut>(
@@ -5000,6 +5024,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_physiology_charts,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<SettlementNpc>(
+            "backend_settlement_npcs",
+            &self.backend_settlement_npcs,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<SocialAddress>(
             "backend_social_addresses",
             &self.backend_social_addresses,
@@ -5079,11 +5108,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterNotoriety>(
             "character_notoriety",
             &self.character_notoriety,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterPersonality>(
-            "character_personality",
-            &self.character_personality,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterSkills>(
@@ -5260,11 +5284,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SettlementDescription>(
             "settlement_description",
             &self.settlement_description,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SettlementNpc>(
-            "settlement_npc",
-            &self.settlement_npc,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SettlementNpcPresence>(
@@ -5993,6 +6012,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_character_affinities_table::register_table(client_cache);
         backend_character_case_site_locations_table::register_table(client_cache);
         backend_character_familiarities_table::register_table(client_cache);
+        backend_character_personalities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_contracts_table::register_table(client_cache);
         backend_dialogue_events_table::register_table(client_cache);
@@ -6015,6 +6035,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_physical_evidence_inspections_table::register_table(client_cache);
         backend_physiology_administrations_table::register_table(client_cache);
         backend_physiology_charts_table::register_table(client_cache);
+        backend_settlement_npcs_table::register_table(client_cache);
         backend_social_addresses_table::register_table(client_cache);
         backend_social_beliefs_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
@@ -6032,7 +6053,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_morale_source_table::register_table(client_cache);
         character_needs_table::register_table(client_cache);
         character_notoriety_table::register_table(client_cache);
-        character_personality_table::register_table(client_cache);
         character_skills_table::register_table(client_cache);
         character_stats_table::register_table(client_cache);
         character_strategic_condition_table::register_table(client_cache);
@@ -6073,7 +6093,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_table::register_table(client_cache);
         settlement_alias_table::register_table(client_cache);
         settlement_description_table::register_table(client_cache);
-        settlement_npc_table::register_table(client_cache);
         settlement_npc_presence_table::register_table(client_cache);
         settlement_outbreak_table::register_table(client_cache);
         settlement_smith_table::register_table(client_cache);
@@ -6098,6 +6117,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_character_affinities",
         "backend_character_case_site_locations",
         "backend_character_familiarities",
+        "backend_character_personalities",
         "backend_committed_cuts",
         "backend_contracts",
         "backend_dialogue_events",
@@ -6120,6 +6140,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_physical_evidence_inspections",
         "backend_physiology_administrations",
         "backend_physiology_charts",
+        "backend_settlement_npcs",
         "backend_social_addresses",
         "backend_social_beliefs",
         "battle_loot_item",
@@ -6137,7 +6158,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_morale_source",
         "character_needs",
         "character_notoriety",
-        "character_personality",
         "character_skills",
         "character_stats",
         "character_strategic_condition",
@@ -6178,7 +6198,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement",
         "settlement_alias",
         "settlement_description",
-        "settlement_npc",
         "settlement_npc_presence",
         "settlement_outbreak",
         "settlement_smith",

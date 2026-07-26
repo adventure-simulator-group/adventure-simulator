@@ -24,21 +24,15 @@ pub enum Skill {
     /// Mental. Intuitive. Reading another character's motives and temperament.
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = false)]
     Insight,
-    /// Mental. Intuitive. Recognizing one's own motives and temperament.
-    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = false)]
-    SelfAwareness,
-    /// Mental. Intuitive. Relieving tension through levity.
-    #[assoc(max_hours = 12000.0, kind = SkillKind::Mental, is_trained = false)]
-    Humor,
+    /// Mental. Intuitive. Relieving tension through levity or attraction.
+    #[assoc(max_hours = 15000.0, kind = SkillKind::Mental, is_trained = false)]
+    Charm,
     /// Mental. Intuitive. Rallying and coordinating others.
     #[assoc(max_hours = 20000.0, kind = SkillKind::Mental, is_trained = false)]
     Command,
     /// Mental. Intuitive. Sustaining a plausible false impression.
     #[assoc(max_hours = 15000.0, kind = SkillKind::Mental, is_trained = false)]
     Deception,
-    /// Mental. Intuitive. Reading and expressing romantic interest.
-    #[assoc(max_hours = 15000.0, kind = SkillKind::Mental, is_trained = false)]
-    Seduction,
     /// Mental. Trained. Party health recovery bonus. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Physiology,
@@ -186,7 +180,7 @@ mod tests {
 
     #[test]
     fn skill_and_aptitude_labels_are_canonical() {
-        assert_eq!(Skill::SelfAwareness.label(), "Self-awareness");
+        assert_eq!(Skill::Charm.label(), "Charm");
         assert_eq!(
             Skill::Anatomy.governing_aptitude_kind().label(),
             "Intelligence"
@@ -269,7 +263,7 @@ mod tests {
         assert_eq!(Skill::Dodge.governing_aptitude(&attributes), 3.0);
         assert_eq!(Skill::Stealth.governing_aptitude(&attributes), 2.5);
         assert_eq!(Skill::Deception.governing_aptitude(&attributes), 4.0);
-        assert_eq!(Skill::SelfAwareness.governing_aptitude(&attributes), 4.0);
+        assert_eq!(Skill::Charm.governing_aptitude(&attributes), 4.0);
         assert_eq!(Skill::Physiology.governing_aptitude(&attributes), 2.0);
     }
 
@@ -452,11 +446,9 @@ impl Skill {
         match self {
             Self::Will => "Will",
             Self::Insight => "Insight",
-            Self::SelfAwareness => "Self-awareness",
-            Self::Humor => "Humor",
+            Self::Charm => "Charm",
             Self::Command => "Command",
             Self::Deception => "Deception",
-            Self::Seduction => "Seduction",
             Self::Physiology => "Physiology",
             Self::Cooking => "Cooking",
             Self::Religion => "Religion",
@@ -536,13 +528,9 @@ impl Skill {
 
     pub const fn governing_aptitude_kind(self) -> GoverningAptitude {
         match self {
-            Self::Will
-            | Self::Insight
-            | Self::SelfAwareness
-            | Self::Humor
-            | Self::Command
-            | Self::Deception
-            | Self::Seduction => GoverningAptitude::Instinct,
+            Self::Will | Self::Insight | Self::Charm | Self::Command | Self::Deception => {
+                GoverningAptitude::Instinct
+            }
             Self::Physiology
             | Self::Anatomy
             | Self::Cooking

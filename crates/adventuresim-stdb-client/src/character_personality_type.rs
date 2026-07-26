@@ -6,18 +6,26 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::conscience_type::Conscience;
 use super::conviction_type::Conviction;
+use super::courtship_type::Courtship;
 use super::drive_type::Drive;
 use super::hygiene_type::Hygiene;
+use super::inclination_type::Inclination;
+use super::mirth_type::Mirth;
 use super::nerve_type::Nerve;
 use super::outlook_type::Outlook;
+use super::presentation_type::Presentation;
+use super::self_knowledge_type::SelfKnowledge;
 use super::self_regard_type::SelfRegard;
+use super::sex_type::Sex;
 use super::sociability_type::Sociability;
 use super::temperance_type::Temperance;
+use super::transparency_type::Transparency;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CharacterPersonality {
     pub character_id: u64,
+    pub projection_character_id: u64,
     pub nerve: Nerve,
     pub drive: Drive,
     pub outlook: Outlook,
@@ -27,6 +35,13 @@ pub struct CharacterPersonality {
     pub conviction: Conviction,
     pub hygiene: Hygiene,
     pub temperance: Temperance,
+    pub mirth: Mirth,
+    pub courtship: Courtship,
+    pub transparency: Transparency,
+    pub self_knowledge: SelfKnowledge,
+    pub sex: Sex,
+    pub presentation: Presentation,
+    pub inclination: Inclination,
 }
 
 impl __sdk::InModule for CharacterPersonality {
@@ -38,6 +53,7 @@ impl __sdk::InModule for CharacterPersonality {
 /// Provides typed access to columns for query building.
 pub struct CharacterPersonalityCols {
     pub character_id: __sdk::__query_builder::Col<CharacterPersonality, u64>,
+    pub projection_character_id: __sdk::__query_builder::Col<CharacterPersonality, u64>,
     pub nerve: __sdk::__query_builder::Col<CharacterPersonality, Nerve>,
     pub drive: __sdk::__query_builder::Col<CharacterPersonality, Drive>,
     pub outlook: __sdk::__query_builder::Col<CharacterPersonality, Outlook>,
@@ -47,6 +63,13 @@ pub struct CharacterPersonalityCols {
     pub conviction: __sdk::__query_builder::Col<CharacterPersonality, Conviction>,
     pub hygiene: __sdk::__query_builder::Col<CharacterPersonality, Hygiene>,
     pub temperance: __sdk::__query_builder::Col<CharacterPersonality, Temperance>,
+    pub mirth: __sdk::__query_builder::Col<CharacterPersonality, Mirth>,
+    pub courtship: __sdk::__query_builder::Col<CharacterPersonality, Courtship>,
+    pub transparency: __sdk::__query_builder::Col<CharacterPersonality, Transparency>,
+    pub self_knowledge: __sdk::__query_builder::Col<CharacterPersonality, SelfKnowledge>,
+    pub sex: __sdk::__query_builder::Col<CharacterPersonality, Sex>,
+    pub presentation: __sdk::__query_builder::Col<CharacterPersonality, Presentation>,
+    pub inclination: __sdk::__query_builder::Col<CharacterPersonality, Inclination>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterPersonality {
@@ -54,6 +77,10 @@ impl __sdk::__query_builder::HasCols for CharacterPersonality {
     fn cols(table_name: &'static str) -> Self::Cols {
         CharacterPersonalityCols {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            projection_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "projection_character_id",
+            ),
             nerve: __sdk::__query_builder::Col::new(table_name, "nerve"),
             drive: __sdk::__query_builder::Col::new(table_name, "drive"),
             outlook: __sdk::__query_builder::Col::new(table_name, "outlook"),
@@ -63,6 +90,13 @@ impl __sdk::__query_builder::HasCols for CharacterPersonality {
             conviction: __sdk::__query_builder::Col::new(table_name, "conviction"),
             hygiene: __sdk::__query_builder::Col::new(table_name, "hygiene"),
             temperance: __sdk::__query_builder::Col::new(table_name, "temperance"),
+            mirth: __sdk::__query_builder::Col::new(table_name, "mirth"),
+            courtship: __sdk::__query_builder::Col::new(table_name, "courtship"),
+            transparency: __sdk::__query_builder::Col::new(table_name, "transparency"),
+            self_knowledge: __sdk::__query_builder::Col::new(table_name, "self_knowledge"),
+            sex: __sdk::__query_builder::Col::new(table_name, "sex"),
+            presentation: __sdk::__query_builder::Col::new(table_name, "presentation"),
+            inclination: __sdk::__query_builder::Col::new(table_name, "inclination"),
         }
     }
 }
@@ -72,6 +106,7 @@ impl __sdk::__query_builder::HasCols for CharacterPersonality {
 /// Provides typed access to indexed columns for query building.
 pub struct CharacterPersonalityIxCols {
     pub character_id: __sdk::__query_builder::IxCol<CharacterPersonality, u64>,
+    pub projection_character_id: __sdk::__query_builder::IxCol<CharacterPersonality, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for CharacterPersonality {
@@ -79,6 +114,10 @@ impl __sdk::__query_builder::HasIxCols for CharacterPersonality {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterPersonalityIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+            projection_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "projection_character_id",
+            ),
         }
     }
 }

@@ -745,8 +745,9 @@ fn personality_tags(
     personality: &crate::spacetimedb::CharacterPersonality,
 ) -> Vec<(&'static str, &'static str)> {
     use crate::spacetimedb::{
-        Conscience::*, Conviction::*, Drive::*, Hygiene::*, Nerve::*, Outlook::*, SelfRegard::*,
-        Sociability::*, Temperance::*,
+        Conscience::*, Conviction::*, Courtship::*, Drive::*, Hygiene::*, Inclination::*, Mirth::*,
+        Nerve::*, Outlook::*, Presentation::*, SelfKnowledge::*, SelfRegard::*, Sociability::*,
+        Temperance::*, Transparency::*,
     };
     let mut tags = Vec::new();
     match personality.nerve {
@@ -822,6 +823,67 @@ fn personality_tags(
         )),
         _ => {}
     }
+    match personality.mirth {
+        Merry => tags.push((
+            "Merry",
+            "Charm through humor lands best with Merry or Neutral company.",
+        )),
+        Grave => tags.push(("Grave", "Resists humor used to lighten a serious concern.")),
+        _ => {}
+    }
+    match personality.courtship {
+        Amorous => tags.push(("Amorous", "Responds strongly to compatible flirtation.")),
+        Proper => tags.push(("Proper", "Strongly resists flirtation.")),
+        _ => {}
+    }
+    match personality.transparency {
+        Open => tags.push((
+            "Open",
+            "Involuntarily reveals temperament; discovery trains Insight.",
+        )),
+        Guarded => tags.push((
+            "Guarded",
+            "Involuntarily conceals temperament; discovery trains Deception.",
+        )),
+        _ => {}
+    }
+    match personality.self_knowledge {
+        Introspective => tags.push(("Introspective", "Usually reads their own motives clearly.")),
+        SelfDeceiving => tags.push(("Self-deceiving", "Habitually obscures their own motives.")),
+        _ => {}
+    }
+    tags.push(match personality.presentation {
+        Masculine => (
+            "Masculine",
+            "Masculine presentation; normally apparent on contact.",
+        ),
+        Ambiguous => (
+            "Ambiguous",
+            "Ambiguous presentation; compatible with an Either inclination.",
+        ),
+        Feminine => (
+            "Feminine",
+            "Feminine presentation; normally apparent on contact.",
+        ),
+    });
+    tags.push(match personality.inclination {
+        Men => (
+            "Inclined toward men",
+            "Romantic interest favors masculine presentation.",
+        ),
+        Either => (
+            "Inclined either way",
+            "Romantic interest accepts any presentation.",
+        ),
+        Women => (
+            "Inclined toward women",
+            "Romantic interest favors feminine presentation.",
+        ),
+        Neither => (
+            "Inclined toward neither",
+            "No gender-directed romantic interest.",
+        ),
+    });
     tags
 }
 
@@ -831,7 +893,7 @@ mod personality_tests {
     use crate::spacetimedb::*;
 
     #[test]
-    fn neutral_axes_are_omitted_from_bio_tags() {
+    fn neutral_behavioral_axes_are_omitted_but_demographics_remain_visible_to_owner() {
         let personality = CharacterPersonality {
             character_id: 1,
             nerve: Nerve::Brave,
@@ -843,16 +905,17 @@ mod personality_tests {
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
             temperance: Temperance::Neutral,
+            ..CharacterPersonality::neutral(1)
         };
         let tags = personality_tags(&personality);
         assert_eq!(
             tags.iter().map(|tag| tag.0).collect::<Vec<_>>(),
-            ["Brave", "Cruel"]
+            ["Brave", "Cruel", "Masculine", "Inclined toward women"]
         );
     }
 
     #[test]
-    fn every_visible_tag_explains_its_numeric_morale_effect() {
+    fn every_visible_tag_has_an_accessible_explanation() {
         let profiles = [
             CharacterPersonality {
                 character_id: 1,
@@ -865,6 +928,7 @@ mod personality_tests {
                 conviction: Conviction::Zealous,
                 hygiene: Hygiene::Cleanly,
                 temperance: Temperance::Temperate,
+                ..CharacterPersonality::neutral(1)
             },
             CharacterPersonality {
                 character_id: 2,
@@ -877,6 +941,7 @@ mod personality_tests {
                 conviction: Conviction::Irreverent,
                 hygiene: Hygiene::Slovenly,
                 temperance: Temperance::Drunkard,
+                ..CharacterPersonality::neutral(2)
             },
             CharacterPersonality {
                 character_id: 3,
@@ -889,17 +954,13 @@ mod personality_tests {
                 conviction: Conviction::Neutral,
                 hygiene: Hygiene::Neutral,
                 temperance: Temperance::Neutral,
+                ..CharacterPersonality::neutral(3)
             },
         ];
 
         for profile in &profiles {
             for (tag, description) in personality_tags(profile) {
-                assert!(
-                    description
-                        .chars()
-                        .any(|character| character.is_ascii_digit()),
-                    "{tag} tooltip lacks a numeric morale effect: {description}"
-                );
+                assert!(!description.is_empty(), "{tag} tooltip is empty");
             }
         }
     }

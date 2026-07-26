@@ -50,7 +50,12 @@ Food quality and disease will become additional named sources when those systems
 
 # Personality reactions
 
-Personality is stored as nine immutable, mutually-exclusive axes. Neutral axes are not shown in the UI: **Brave/Fearful**, **Ambitious/Content**, **Sanguine/Brooding**, **Gregarious/Solitary**, **Compassionate/Callous/Cruel**, **Proud/Humble**, **Zealous/Irreverent**, **Slovenly/Cleanly**, and **Temperate/Drunkard**. Conscience is present but has no morale hook until outcomes can carry durable moral context.
+Personality stores thirteen immutable behavioral axes. The existing nine are
+joined by **Merry/Grave**, **Amorous/Proper**, **Open/Guarded**, and
+**Introspective/Self-deceiving**. Generated profiles still activate exactly
+two to four non-neutral behavioral axes. Presentation and Inclination are
+always assigned and do not count toward sparsity. Conscience is present but
+has no morale hook until outcomes carry durable moral context.
 
 Alcohol preference is evaluated for every absolute nightly rest opportunity:
 the sleep window begins at 18:00 and continues through 08:00, so a rest that
@@ -68,7 +73,7 @@ alcohol morale source at that evening's absolute 18:00 timestamp; nightly
 bonuses and penalties therefore age correctly and never accumulate as an
 unbounded series. This is preference, not physiological dependence.
 
-Carousing remains a social leisure activity and Charisma-training allocation.
+Carousing remains a social leisure activity and Charm-training allocation.
 Its existing schedule effect is not interpreted as an additional inventory-
 backed alcohol reward; the nightly alcohol event is the only alcohol-specific
 morale source.

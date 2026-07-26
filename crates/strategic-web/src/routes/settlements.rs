@@ -1853,8 +1853,12 @@ async fn travel_provision_forecast_for_minutes(
             }
         }
         let time = query_single::<CharacterTime>(state, "character_time", traveler.id).await;
-        let personality =
-            query_single::<CharacterPersonality>(state, "character_personality", traveler.id).await;
+        let personality = query_single::<CharacterPersonality>(
+            state,
+            "backend_character_personalities",
+            traveler.id,
+        )
+        .await;
         if time.is_some() {
             let history = state
                 .db
@@ -4777,8 +4781,9 @@ async fn merchant_provider_id(
     location_id: &str,
 ) -> Option<String> {
     let settlement_literal = sql_string_literal(settlement_id);
-    let providers_sql =
-        format!("SELECT * FROM settlement_npc WHERE home_settlement_id = {settlement_literal}");
+    let providers_sql = format!(
+        "SELECT * FROM backend_settlement_npcs WHERE home_settlement_id = {settlement_literal}"
+    );
     let presences_sql =
         format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {settlement_literal}");
     let (providers, presences) = tokio::join!(
@@ -5243,15 +5248,9 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ("Throw", before.throw_hours, after.throw_hours),
         ("Will", before.will_hours, after.will_hours),
         ("Insight", before.insight_hours, after.insight_hours),
-        (
-            "Self-awareness",
-            before.self_awareness_hours,
-            after.self_awareness_hours,
-        ),
-        ("Humor", before.humor_hours, after.humor_hours),
+        ("Charm", before.charm_hours, after.charm_hours),
         ("Command", before.command_hours, after.command_hours),
         ("Deception", before.deception_hours, after.deception_hours),
-        ("Seduction", before.seduction_hours, after.seduction_hours),
         (
             "Physiology",
             before.physiology_hours,
@@ -6557,7 +6556,7 @@ pub(crate) async fn soap_rest_preview(
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
         state
             .db
-            .query::<CharacterPersonality>("SELECT * FROM character_personality"),
+            .query::<CharacterPersonality>("SELECT * FROM backend_character_personalities"),
     );
     let personal = personal.unwrap_or_default();
     let shared = shared.unwrap_or_default();
@@ -6801,6 +6800,7 @@ mod rest_form_tests {
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
             temperance,
+            ..CharacterPersonality::neutral(character_id)
         }
     }
 

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::organization::{Requirement, StartingProfession, TrainingTarget, catalog};
 use crate::skill::Skill;
 
-pub const GENERATOR_VERSION: u16 = 2;
+pub const GENERATOR_VERSION: u16 = 3;
 pub const YOUNG_ROSTER_SIZE: u8 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,11 +96,9 @@ pub struct StartingSkills {
     pub throw: f32,
     pub will: f32,
     pub insight: f32,
-    pub self_awareness: f32,
-    pub humor: f32,
+    pub charm: f32,
     pub command: f32,
     pub deception: f32,
-    pub seduction: f32,
     pub physiology: f32,
     pub bestiary: BestiaryHours,
     pub anatomy: f32,
@@ -146,11 +144,43 @@ pub enum StartingPersonalityTrait {
     Cleanly,
     Temperate,
     Drunkard,
+    Merry,
+    Grave,
+    Amorous,
+    Proper,
+    Open,
+    Guarded,
+    Introspective,
+    SelfDeceiving,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StartingSex {
+    Female,
+    Male,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StartingPresentation {
+    Masculine,
+    Ambiguous,
+    Feminine,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StartingInclination {
+    Men,
+    Either,
+    Women,
+    Neither,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartingPersonality {
     pub traits: Vec<StartingPersonalityTrait>,
+    pub sex: StartingSex,
+    pub presentation: StartingPresentation,
+    pub inclination: StartingInclination,
 }
 
 pub fn personality_description(personality: &StartingPersonality) -> String {
@@ -177,6 +207,14 @@ pub fn personality_description(personality: &StartingPersonality) -> String {
             StartingPersonalityTrait::Cleanly => "cleanly",
             StartingPersonalityTrait::Temperate => "temperate",
             StartingPersonalityTrait::Drunkard => "a drunkard",
+            StartingPersonalityTrait::Merry => "merry",
+            StartingPersonalityTrait::Grave => "grave",
+            StartingPersonalityTrait::Amorous => "amorous",
+            StartingPersonalityTrait::Proper => "proper",
+            StartingPersonalityTrait::Open => "open",
+            StartingPersonalityTrait::Guarded => "guarded",
+            StartingPersonalityTrait::Introspective => "introspective",
+            StartingPersonalityTrait::SelfDeceiving => "self-deceiving",
         })
         .collect();
     match names.as_slice() {
@@ -249,7 +287,7 @@ fn tier_hash(domain: &str, seed: &str, age_tier: StartingAgeTier, slot: u8) -> u
 
 fn hash(domain: &str, seed: &str, slot: u8) -> u64 {
     let mut value = 0xcbf29ce484222325_u64;
-    for byte in b"adventuresim.starting-character.v2"
+    for byte in b"adventuresim.starting-character.v3"
         .iter()
         .chain(domain.as_bytes())
         .chain(seed.as_bytes())
@@ -281,14 +319,17 @@ pub fn generate(
     slot: u8,
 ) -> Result<StartingCharacterSpec, &'static str> {
     validate_request(version, seed, age_tier, slot)?;
+    let sex = generated_sex(seed, age_tier, slot);
     let first = choose(
         "first-name",
         seed,
         slot,
-        &[
-            "Adela", "Anselm", "Beatrix", "Conrad", "Elsbeth", "Florian", "Greta", "Hugo", "Lina",
-            "Matthias", "Oda", "Ruprecht",
-        ],
+        match sex {
+            StartingSex::Female => &["Adela", "Beatrix", "Elsbeth", "Greta", "Lina", "Oda"],
+            StartingSex::Male => &[
+                "Anselm", "Conrad", "Florian", "Hugo", "Matthias", "Ruprecht",
+            ],
+        },
     );
     let byname = choose(
         "byname",
@@ -307,12 +348,9 @@ pub fn generate(
             "Winter",
         ],
     );
-    use StartingPersonalityTrait as Trait;
-    let (background, personality, weapon, weapon_slot, armor, primary, defense, currency_base) =
-        match slot {
+    let (background, weapon, weapon_slot, armor, primary, defense, currency_base) = match slot {
             0 => (
                 "Militia runner",
-                vec![Trait::Brave, Trait::Gregarious],
                 "katzbalger",
                 StartingSlot::RightHand,
                 "arming_doublet",
@@ -322,7 +360,6 @@ pub fn generate(
             ),
             1 => (
                 "Woodland hunter",
-                vec![Trait::Solitary, Trait::Sanguine],
                 "longbow",
                 StartingSlot::RightHand,
                 "quilted_sleeve",
@@ -332,7 +369,6 @@ pub fn generate(
             ),
             2 => (
                 "Caravan guard",
-                vec![Trait::Content, Trait::Compassionate],
                 "hunting_spear",
                 StartingSlot::RightHand,
                 "padded_chausses",
@@ -342,7 +378,6 @@ pub fn generate(
             ),
             3 => (
                 "Town watch apprentice",
-                vec![Trait::Ambitious, Trait::Proud],
                 "light_crossbow",
                 StartingSlot::RightHand,
                 "arming_cap",
@@ -352,7 +387,6 @@ pub fn generate(
             ),
             _ => (
                 "Camp follower turned scout",
-                vec![Trait::Sanguine, Trait::Humble],
                 "bauernwehr",
                 StartingSlot::RightHand,
                 "padded_skirt",
@@ -377,11 +411,9 @@ pub fn generate(
         throw: 250.0,
         will: 700.0,
         insight: 500.0,
-        self_awareness: 500.0,
-        humor: 400.0,
+        charm: 400.0,
         command: 250.0,
         deception: 300.0,
-        seduction: 250.0,
         physiology: 250.0,
         bestiary: BestiaryHours::default(),
         anatomy: 250.0,
@@ -444,9 +476,7 @@ pub fn generate(
         name: format!("{first} {byname}"),
         age_years: age_tier.age_years(),
         background: background.into(),
-        personality: StartingPersonality {
-            traits: personality,
-        },
+        personality: generated_personality(seed, age_tier, slot),
         attributes: StartingAttributes {
             endurance: variation("endurance"),
             immunity: variation("immunity"),
@@ -471,6 +501,95 @@ pub fn generate(
         apply_professional_start(&mut spec, seed, slot)?;
     }
     Ok(spec)
+}
+
+fn generated_sex(seed: &str, tier: StartingAgeTier, slot: u8) -> StartingSex {
+    if tier_hash("sex", seed, tier, slot) % 2 == 0 {
+        StartingSex::Female
+    } else {
+        StartingSex::Male
+    }
+}
+
+fn personality_with_demographics(
+    traits: Vec<StartingPersonalityTrait>,
+    seed: &str,
+    tier: StartingAgeTier,
+    slot: u8,
+) -> StartingPersonality {
+    let sex = generated_sex(seed, tier, slot);
+    let presentation = match (sex, tier_hash("presentation", seed, tier, slot) % 100) {
+        (_, 0..=3) => StartingPresentation::Ambiguous,
+        (StartingSex::Female, 4) => StartingPresentation::Masculine,
+        (StartingSex::Male, 4) => StartingPresentation::Feminine,
+        (StartingSex::Female, _) => StartingPresentation::Feminine,
+        (StartingSex::Male, _) => StartingPresentation::Masculine,
+    };
+    let inclination = match tier_hash("inclination", seed, tier, slot) % 100 {
+        0 => StartingInclination::Neither,
+        1..=4 => StartingInclination::Either,
+        5..=9 => match sex {
+            StartingSex::Female => StartingInclination::Women,
+            StartingSex::Male => StartingInclination::Men,
+        },
+        _ => match sex {
+            StartingSex::Female => StartingInclination::Men,
+            StartingSex::Male => StartingInclination::Women,
+        },
+    };
+    StartingPersonality {
+        traits,
+        sex,
+        presentation,
+        inclination,
+    }
+}
+
+fn generated_personality(
+    seed: &str,
+    tier: StartingAgeTier,
+    slot: u8,
+) -> StartingPersonality {
+    use StartingPersonalityTrait as Trait;
+    let axes: &[&[Trait]] = &[
+        &[Trait::Brave, Trait::Fearful],
+        &[Trait::Ambitious, Trait::Content],
+        &[Trait::Sanguine, Trait::Brooding],
+        &[Trait::Gregarious, Trait::Solitary],
+        &[Trait::Compassionate, Trait::Callous, Trait::Cruel],
+        &[Trait::Proud, Trait::Humble],
+        &[Trait::Zealous, Trait::Irreverent],
+        &[Trait::Slovenly, Trait::Cleanly],
+        &[Trait::Temperate, Trait::Drunkard],
+        &[Trait::Merry, Trait::Grave],
+        &[Trait::Amorous, Trait::Proper],
+        &[Trait::Open, Trait::Guarded],
+        &[Trait::Introspective, Trait::SelfDeceiving],
+    ];
+    let mut order: Vec<_> = (0..axes.len()).collect();
+    order.sort_by_key(|axis| {
+        tier_hash(
+            &format!("personality-axis-{axis}"),
+            seed,
+            tier,
+            slot,
+        )
+    });
+    let count = 2 + (tier_hash("personality-count", seed, tier, slot) % 3) as usize;
+    let traits = order
+        .into_iter()
+        .take(count)
+        .map(|axis| {
+            let values = axes[axis];
+            values[(tier_hash(
+                &format!("personality-value-{axis}"),
+                seed,
+                tier,
+                slot,
+            ) % values.len() as u64) as usize]
+        })
+        .collect();
+    personality_with_demographics(traits, seed, tier, slot)
 }
 
 fn set_religion_hours(
@@ -499,11 +618,9 @@ fn set_fixed_skill(
     match skill {
         "will" => skills.will = hours,
         "insight" => skills.insight = hours,
-        "self_awareness" => skills.self_awareness = hours,
-        "humor" => skills.humor = hours,
+        "charm" => skills.charm = hours,
         "command" => skills.command = hours,
         "deception" => skills.deception = hours,
-        "seduction" => skills.seduction = hours,
         "physiology" => skills.physiology = hours,
         "cooking" => skills.cooking = hours,
         "anatomy" => skills.anatomy = hours,
@@ -535,11 +652,9 @@ fn fixed_skill_hours(skills: &StartingSkills, skill: &str) -> Option<(Skill, f32
     Some(match skill {
         "will" => (Skill::Will, skills.will),
         "insight" => (Skill::Insight, skills.insight),
-        "self_awareness" => (Skill::SelfAwareness, skills.self_awareness),
-        "humor" => (Skill::Humor, skills.humor),
+        "charm" => (Skill::Charm, skills.charm),
         "command" => (Skill::Command, skills.command),
         "deception" => (Skill::Deception, skills.deception),
-        "seduction" => (Skill::Seduction, skills.seduction),
         "physiology" => (Skill::Physiology, skills.physiology),
         "cooking" => (Skill::Cooking, skills.cooking),
         "anatomy" => (Skill::Anatomy, skills.anatomy),
@@ -985,7 +1100,7 @@ fn professional_personality(
     if tier == StartingAgeTier::Old {
         traits.push(veteran);
     }
-    StartingPersonality { traits }
+    personality_with_demographics(traits, seed, tier, slot)
 }
 
 fn apply_professional_start(
@@ -1212,14 +1327,14 @@ mod tests {
     const SEED: &str = "00112233445566778899aabbccddeeff";
     #[test]
     fn fixture_is_stable() {
-        let c = generate(2, SEED, StartingAgeTier::Young, 0).unwrap();
+        let c = generate(GENERATOR_VERSION, SEED, StartingAgeTier::Young, 0).unwrap();
         assert!(!c.name.is_empty());
         assert_eq!(c.age_years, 16);
         assert_eq!(c.age_tier, StartingAgeTier::Young);
     }
     #[test]
     fn roster_is_viable_and_diverse() {
-        let r = roster(2, SEED, StartingAgeTier::Young).unwrap();
+        let r = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Young).unwrap();
         assert_eq!(r.len(), 5);
         assert!(r.iter().all(|c| {
             c.age_years == 16
@@ -1233,7 +1348,7 @@ mod tests {
     }
     #[test]
     fn ranged_candidates_have_ammunition_and_personality_copy_is_derived() {
-        let roster = roster(2, SEED, StartingAgeTier::Young).unwrap();
+        let roster = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Young).unwrap();
         for candidate in &roster {
             let ranged = candidate
                 .inventory
@@ -1254,10 +1369,10 @@ mod tests {
     }
     #[test]
     fn tier_matrix_has_fixed_ages_and_profession_families() {
-        let young = roster(2, SEED, StartingAgeTier::Young).unwrap();
+        let young = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Young).unwrap();
         assert!(young.iter().all(|candidate| candidate.profession.is_none()));
         for (tier, age) in [(StartingAgeTier::Adult, 22), (StartingAgeTier::Old, 40)] {
-            let roster = roster(2, SEED, tier).unwrap();
+            let roster = roster(GENERATOR_VERSION, SEED, tier).unwrap();
             assert_eq!(roster.len(), 10);
             assert_eq!(
                 roster
@@ -1270,8 +1385,8 @@ mod tests {
                 candidate.age_years == age && candidate.organization.is_some()
             }));
         }
-        let adult = roster(2, SEED, StartingAgeTier::Adult).unwrap();
-        let old = roster(2, SEED, StartingAgeTier::Old).unwrap();
+        let adult = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Adult).unwrap();
+        let old = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Old).unwrap();
         assert!(adult.iter().zip(&old).all(|(adult, old)| {
             adult.id != old.id
                 && adult.organization.as_ref().unwrap().rank_id
@@ -1279,7 +1394,7 @@ mod tests {
         }));
         assert_eq!(
             adult,
-            roster(2, SEED, StartingAgeTier::Adult).unwrap(),
+            roster(GENERATOR_VERSION, SEED, StartingAgeTier::Adult).unwrap(),
             "the same authoritative coordinates must regenerate exactly"
         );
         assert!(adult.iter().all(|candidate| {
@@ -1360,7 +1475,7 @@ mod tests {
             assert!(old.personality.traits.len() > adult.personality.traits.len());
         }
         let alternate = roster(
-            2,
+            GENERATOR_VERSION,
             "ffeeddccbbaa99887766554433221100",
             StartingAgeTier::Adult,
         )
@@ -1394,14 +1509,49 @@ mod tests {
 
     #[test]
     fn unknown_fixed_training_skill_fails_closed() {
-        let mut skills = generate(2, SEED, StartingAgeTier::Young, 0).unwrap().skills;
+        let mut skills =
+            generate(GENERATOR_VERSION, SEED, StartingAgeTier::Young, 0)
+                .unwrap()
+                .skills;
         assert!(set_fixed_skill(&mut skills, "future_unknown_skill", 100.0).is_err());
     }
     #[test]
     fn rejects_untrusted_coordinates() {
         assert!(generate(1, SEED, StartingAgeTier::Young, 0).is_err());
-        assert!(generate(2, "ABC", StartingAgeTier::Young, 0).is_err());
-        assert!(generate(2, SEED, StartingAgeTier::Young, 5).is_err());
-        assert!(generate(2, SEED, StartingAgeTier::Adult, 10).is_err());
+        assert!(generate(GENERATOR_VERSION, "ABC", StartingAgeTier::Young, 0).is_err());
+        assert!(generate(GENERATOR_VERSION, SEED, StartingAgeTier::Young, 5).is_err());
+        assert!(generate(GENERATOR_VERSION, SEED, StartingAgeTier::Adult, 10).is_err());
+    }
+
+    #[test]
+    fn demographics_are_weighted_and_names_match_sex() {
+        let mut same = 0;
+        let mut either = 0;
+        let mut neither = 0;
+        let mut ambiguous = 0;
+        for n in 0..2_000 {
+            let c = generate(
+                GENERATOR_VERSION,
+                &format!("{n:032x}"),
+                StartingAgeTier::Young,
+                (n % 5) as u8,
+            )
+            .unwrap();
+            assert!((2..=4).contains(&c.personality.traits.len()));
+            ambiguous += usize::from(
+                c.personality.presentation == StartingPresentation::Ambiguous,
+            );
+            either += usize::from(c.personality.inclination == StartingInclination::Either);
+            neither += usize::from(c.personality.inclination == StartingInclination::Neither);
+            same += usize::from(matches!(
+                (c.personality.sex, c.personality.inclination),
+                (StartingSex::Female, StartingInclination::Women)
+                    | (StartingSex::Male, StartingInclination::Men)
+            ));
+        }
+        assert!((40..140).contains(&ambiguous));
+        assert!((40..140).contains(&either));
+        assert!((5..50).contains(&neither));
+        assert!((50..170).contains(&same));
     }
 }

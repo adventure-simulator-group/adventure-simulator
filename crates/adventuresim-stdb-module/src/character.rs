@@ -1,5 +1,6 @@
 use adventuresim_core::starting_character::{
-    StartingAgeTier, StartingCharacterSpec, StartingPersonalityTrait, StartingSlot,
+    StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
+    StartingPresentation, StartingSex, StartingSlot,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -268,11 +269,9 @@ pub struct CharacterSkills {
     pub throw_hours: f32,
     pub will_hours: f32,
     pub insight_hours: f32,
-    pub self_awareness_hours: f32,
-    pub humor_hours: f32,
+    pub charm_hours: f32,
     pub command_hours: f32,
     pub deception_hours: f32,
-    pub seduction_hours: f32,
     pub physiology_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
@@ -1253,11 +1252,9 @@ fn insert_character_with_origin(
         throw_hours: generated_skills.map_or(1000.0, |s| s.throw),
         will_hours: generated_skills.map_or(1000.0, |s| s.will),
         insight_hours: generated_skills.map_or(1000.0, |s| s.insight),
-        self_awareness_hours: generated_skills.map_or(1000.0, |s| s.self_awareness),
-        humor_hours: generated_skills.map_or(1000.0, |s| s.humor),
+        charm_hours: generated_skills.map_or(1000.0, |s| s.charm),
         command_hours: generated_skills.map_or(1000.0, |s| s.command),
         deception_hours: generated_skills.map_or(1000.0, |s| s.deception),
-        seduction_hours: generated_skills.map_or(1000.0, |s| s.seduction),
         physiology_hours: generated_skills.map_or(1000.0, |s| s.physiology),
         cooking_hours: generated_skills.map_or(0.0, |s| s.cooking),
         religion_hours: generated_skills
@@ -1330,8 +1327,8 @@ fn insert_character_with_origin(
         let mut personality = crate::personality::CharacterPersonality::neutral(id);
         for personality_trait in &starting.expect("checked above").personality.traits {
             use crate::personality::{
-                Conscience, Conviction, Drive, Hygiene, Nerve, Outlook, SelfRegard, Sociability,
-                Temperance,
+                Conscience, Conviction, Courtship, Drive, Hygiene, Mirth, Nerve, Outlook,
+                SelfKnowledge, SelfRegard, Sociability, Temperance, Transparency,
             };
             match personality_trait {
                 StartingPersonalityTrait::Brave => personality.nerve = Nerve::Brave,
@@ -1363,8 +1360,37 @@ fn insert_character_with_origin(
                     personality.temperance = Temperance::Temperate
                 }
                 StartingPersonalityTrait::Drunkard => personality.temperance = Temperance::Drunkard,
+                StartingPersonalityTrait::Merry => personality.mirth = Mirth::Merry,
+                StartingPersonalityTrait::Grave => personality.mirth = Mirth::Grave,
+                StartingPersonalityTrait::Amorous => personality.courtship = Courtship::Amorous,
+                StartingPersonalityTrait::Proper => personality.courtship = Courtship::Proper,
+                StartingPersonalityTrait::Open => personality.transparency = Transparency::Open,
+                StartingPersonalityTrait::Guarded => {
+                    personality.transparency = Transparency::Guarded
+                }
+                StartingPersonalityTrait::Introspective => {
+                    personality.self_knowledge = SelfKnowledge::Introspective
+                }
+                StartingPersonalityTrait::SelfDeceiving => {
+                    personality.self_knowledge = SelfKnowledge::SelfDeceiving
+                }
             }
         }
+        personality.sex = match starting.expect("checked above").personality.sex {
+            StartingSex::Female => crate::personality::Sex::Female,
+            StartingSex::Male => crate::personality::Sex::Male,
+        };
+        personality.presentation = match starting.expect("checked above").personality.presentation {
+            StartingPresentation::Masculine => crate::personality::Presentation::Masculine,
+            StartingPresentation::Ambiguous => crate::personality::Presentation::Ambiguous,
+            StartingPresentation::Feminine => crate::personality::Presentation::Feminine,
+        };
+        personality.inclination = match starting.expect("checked above").personality.inclination {
+            StartingInclination::Men => crate::personality::Inclination::Men,
+            StartingInclination::Either => crate::personality::Inclination::Either,
+            StartingInclination::Women => crate::personality::Inclination::Women,
+            StartingInclination::Neither => crate::personality::Inclination::Neither,
+        };
         ctx.db.character_personality().insert(personality);
     } else {
         crate::personality::initialize_personality(ctx, id, npc);

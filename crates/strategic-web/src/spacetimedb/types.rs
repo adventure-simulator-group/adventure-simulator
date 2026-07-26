@@ -343,10 +343,43 @@ personality_axis!(Temperance {
     Temperate,
     Drunkard
 });
+personality_axis!(Mirth {
+    Neutral,
+    Merry,
+    Grave
+});
+personality_axis!(Courtship {
+    Neutral,
+    Amorous,
+    Proper
+});
+personality_axis!(Transparency {
+    Neutral,
+    Open,
+    Guarded
+});
+personality_axis!(SelfKnowledge {
+    Neutral,
+    Introspective,
+    SelfDeceiving
+});
+personality_axis!(Inclination {
+    Men,
+    Either,
+    Women,
+    Neither
+});
+personality_axis!(Presentation {
+    Masculine,
+    Ambiguous,
+    Feminine
+});
+personality_axis!(Sex { Female, Male });
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterPersonality {
     pub character_id: u64,
+    pub projection_character_id: u64,
     pub nerve: Nerve,
     pub drive: Drive,
     pub outlook: Outlook,
@@ -356,6 +389,39 @@ pub struct CharacterPersonality {
     pub conviction: Conviction,
     pub hygiene: Hygiene,
     pub temperance: Temperance,
+    pub mirth: Mirth,
+    pub courtship: Courtship,
+    pub transparency: Transparency,
+    pub self_knowledge: SelfKnowledge,
+    pub sex: Sex,
+    pub presentation: Presentation,
+    pub inclination: Inclination,
+}
+
+#[cfg(test)]
+impl CharacterPersonality {
+    pub fn neutral(character_id: u64) -> Self {
+        Self {
+            character_id,
+            projection_character_id: character_id,
+            nerve: Nerve::Neutral,
+            drive: Drive::Neutral,
+            outlook: Outlook::Neutral,
+            sociability: Sociability::Neutral,
+            conscience: Conscience::Neutral,
+            self_regard: SelfRegard::Neutral,
+            conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
+            temperance: Temperance::Neutral,
+            mirth: Mirth::Neutral,
+            courtship: Courtship::Neutral,
+            transparency: Transparency::Neutral,
+            self_knowledge: SelfKnowledge::Neutral,
+            sex: Sex::Male,
+            presentation: Presentation::Masculine,
+            inclination: Inclination::Women,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1384,11 +1450,9 @@ pub struct CharacterSkills {
     pub throw_hours: f32,
     pub will_hours: f32,
     pub insight_hours: f32,
-    pub self_awareness_hours: f32,
-    pub humor_hours: f32,
+    pub charm_hours: f32,
     pub command_hours: f32,
     pub deception_hours: f32,
-    pub seduction_hours: f32,
     pub physiology_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
@@ -1658,10 +1722,52 @@ pub struct SocialBelief {
     pub id: String,
     pub observer_id: u64,
     pub subject_id: u64,
-    pub axis: String,
+    pub axis: BeliefAxis,
     pub perceived_value: i8,
     pub confidence: f32,
     pub observed_at_minute: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum BeliefAxis {
+    Nerve,
+    Drive,
+    Outlook,
+    Sociability,
+    Conscience,
+    SelfRegard,
+    Conviction,
+    Hygiene,
+    Temperance,
+    Mirth,
+    Courtship,
+    Transparency,
+    SelfKnowledge,
+    Inclination,
+    Presentation,
+}
+
+impl BeliefAxis {
+    pub const fn core(self) -> adventuresim_core::social::PersonalityAxis {
+        use adventuresim_core::social::PersonalityAxis as Core;
+        match self {
+            Self::Nerve => Core::Nerve,
+            Self::Drive => Core::Drive,
+            Self::Outlook => Core::Outlook,
+            Self::Sociability => Core::Sociability,
+            Self::Conscience => Core::Conscience,
+            Self::SelfRegard => Core::SelfRegard,
+            Self::Conviction => Core::Conviction,
+            Self::Hygiene => Core::Hygiene,
+            Self::Temperance => Core::Temperance,
+            Self::Mirth => Core::Mirth,
+            Self::Courtship => Core::Courtship,
+            Self::Transparency => Core::Transparency,
+            Self::SelfKnowledge => Core::SelfKnowledge,
+            Self::Inclination => Core::Inclination,
+            Self::Presentation => Core::Presentation,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

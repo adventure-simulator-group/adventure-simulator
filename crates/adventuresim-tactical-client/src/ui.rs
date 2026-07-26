@@ -365,11 +365,9 @@ fn update_skills_ui(
             Skill::Throw => format!("{:.2}", skills.throw_hours),
             Skill::Will => format!("{:.2}", skills.will_hours),
             Skill::Insight => format!("{:.2}", skills.insight_hours),
-            Skill::SelfAwareness => format!("{:.2}", skills.self_awareness_hours),
-            Skill::Humor => format!("{:.2}", skills.humor_hours),
+            Skill::Charm => format!("{:.2}", skills.charm_hours),
             Skill::Command => format!("{:.2}", skills.command_hours),
             Skill::Deception => format!("{:.2}", skills.deception_hours),
-            Skill::Seduction => format!("{:.2}", skills.seduction_hours),
             Skill::Physiology => format!("{:.2}", skills.physiology_hours),
             // Cooking is strategic-only and is not carried in tactical snapshots.
             Skill::Cooking => "0.00".to_owned(),

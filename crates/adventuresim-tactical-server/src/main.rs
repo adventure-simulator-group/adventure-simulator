@@ -231,11 +231,9 @@ fn spawn_connected_player(
         throw_hours: player.skills.throw_hours,
         will_hours: player.skills.will_hours,
         insight_hours: player.skills.insight_hours,
-        self_awareness_hours: player.skills.self_awareness_hours,
-        humor_hours: player.skills.humor_hours,
+        charm_hours: player.skills.charm_hours,
         command_hours: player.skills.command_hours,
         deception_hours: player.skills.deception_hours,
-        seduction_hours: player.skills.seduction_hours,
         physiology_hours: player.skills.physiology_hours,
         religion_hours: {
             let religion = &player.skills.religion_hours;

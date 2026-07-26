@@ -463,8 +463,11 @@ just web-isolated-strategic social-demo 23100
 Select **Social Demo**, open **Greta the Guard**, and press the raised Social
 icon beside the Morale meter.
 The fixture includes defeat and injury penalties, established Familiarity,
-positive Affinity, and one deliberately incorrect perceived sensitivity so the
-privacy boundary and outcome rules are visible. The bootstrap capability is
+positive Affinity, exact multi-valued observer beliefs, presentation, and one
+deliberately incorrect perceived sensitivity. The Social rail shows Insight,
+Charm, Command, and Deception; Lighten Mood and Flirt are distinct Charm
+approaches, and repeated supported observations demonstrate the
+Transparency-controlled Insight/Deception training split. The bootstrap capability is
 compiled only for the isolated workflow; there is no standalone public fixture
 reducer. Schema changes are destructive in this pre-launch workflow, so rerun
 the isolated profile to recreate its database.

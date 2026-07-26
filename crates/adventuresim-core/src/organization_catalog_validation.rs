@@ -4,11 +4,9 @@ use std::collections::BTreeSet;
 const SKILLS: &[&str] = &[
     "will",
     "insight",
-    "self_awareness",
-    "humor",
+    "charm",
     "command",
     "deception",
-    "seduction",
     "physiology",
     "cooking",
     "religion",

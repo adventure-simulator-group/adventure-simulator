@@ -124,10 +124,9 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "social" => "conversation",
         "insight" => "awareness",
         "self-awareness" => "inner-self",
-        "humor" => "juggler",
+        "charm" => "rose",
         "command" => "crown",
         "deception" => "conversation",
-        "seduction" => "rose",
         "physiology" => "caduceus",
         "cooking" => "meal",
         "faith" => "holy-symbol",
@@ -300,10 +299,9 @@ mod icon_tests {
             ("social", "conversation"),
             ("insight", "awareness"),
             ("self-awareness", "inner-self"),
-            ("humor", "juggler"),
+            ("charm", "rose"),
             ("command", "crown"),
             ("deception", "conversation"),
-            ("seduction", "rose"),
             ("physiology", "caduceus"),
         ] {
             assert_eq!(stat_game_icon_name(key), expected);

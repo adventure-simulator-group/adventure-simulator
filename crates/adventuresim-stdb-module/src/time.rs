@@ -593,11 +593,9 @@ fn apply_training(
         throw: skills.throw_hours,
         will: skills.will_hours,
         insight: skills.insight_hours,
-        self_awareness: skills.self_awareness_hours,
-        humor: skills.humor_hours,
+        charm: skills.charm_hours,
         command: skills.command_hours,
         deception: skills.deception_hours,
-        seduction: skills.seduction_hours,
         physiology: skills.physiology_hours,
         cooking: skills.cooking_hours,
         religion: skills.religion_hours,
@@ -700,11 +698,9 @@ fn apply_training(
     skills.throw_hours = hours.throw;
     skills.will_hours = hours.will;
     skills.insight_hours = hours.insight;
-    skills.self_awareness_hours = hours.self_awareness;
-    skills.humor_hours = hours.humor;
+    skills.charm_hours = hours.charm;
     skills.command_hours = hours.command;
     skills.deception_hours = hours.deception;
-    skills.seduction_hours = hours.seduction;
     skills.physiology_hours = hours.physiology;
     skills.cooking_hours = hours.cooking;
     skills.religion_hours = hours.religion;
@@ -754,13 +750,9 @@ fn apply_organization_training(
             TrainingTarget::FixedSkill { skill } => match skill.as_str() {
                 "will" => award_direct(Skill::Will, &mut hours.will, award),
                 "insight" => award_direct(Skill::Insight, &mut hours.insight, award),
-                "self_awareness" => {
-                    award_direct(Skill::SelfAwareness, &mut hours.self_awareness, award)
-                }
-                "humor" => award_direct(Skill::Humor, &mut hours.humor, award),
+                "charm" => award_direct(Skill::Charm, &mut hours.charm, award),
                 "command" => award_direct(Skill::Command, &mut hours.command, award),
                 "deception" => award_direct(Skill::Deception, &mut hours.deception, award),
-                "seduction" => award_direct(Skill::Seduction, &mut hours.seduction, award),
                 "physiology" => award_direct(Skill::Physiology, &mut hours.physiology, award),
                 "cooking" => award_direct(Skill::Cooking, &mut hours.cooking, award),
                 "anatomy" => award_direct(Skill::Anatomy, &mut hours.anatomy, award),

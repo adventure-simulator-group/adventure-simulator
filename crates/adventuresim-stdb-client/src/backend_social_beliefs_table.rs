@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::belief_axis_type::BeliefAxis;
 use super::social_belief_type::SocialBelief;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

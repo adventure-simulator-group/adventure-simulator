@@ -88,8 +88,8 @@ leaves. It does not add to their final checks.
 
 ### Instinct
 Your ability to make snap judgements without thinking. Instinct governs
-learning and mastery for Will, Insight, Self-awareness, Humor, Command,
-Deception, and Seduction. It does not add to their final checks.
+learning and mastery for Will, Insight, Charm, Command, and Deception. It does
+not add to their final checks.
 
 0. Unconscious
 1. Takes a couple seconds to respond if you ask them a question
@@ -121,7 +121,7 @@ skill rank supplies the check itself.
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs. They are not increased via an abstract XP/leveling system, and very little of their value comes from using them during tactical play. Instead they are trained through activities in the character's off-screen settlement-downtime schedule. Individual skill-study allocations are not available.
 
-Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Physiology, Anatomy, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
+Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Charm, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Physiology, Anatomy, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
 
 Selecting an explicit activity icon previews and performs one continuous one-to-24-hour interval using the same training and outcome rules. Its preview is based on the chosen duration; Prayer/Meditation and Carousing are nonlinear, so increasing their duration has diminishing Morale returns. Immediate activity never includes implicit Leisure or modifies the recurring allocation.
 
@@ -255,7 +255,7 @@ There's no persuasion system or anything for the MVP, this is primarily a
 [morale](morale.md) and relationship system. All current Social leaves are
 governed by Instinct.
 
-Insight reads others, Self-awareness reads oneself, Humor relieves tension, Command rallies and coordinates, Deception sustains false impressions, and Seduction handles romantic interest. Party Command is led by the strongest individual check. Additional members receive a saturating coordination benefit, then contribute half of their deviation from a 2.5 baseline. Checks above 2.5 help and checks below 2.5 burden the party's social leadership. The result is capped from 0 to 5; adding arbitrarily many low-Command members cannot manufacture a high result. Character sheets summarize these six skills with an expandable Social meta-skill whose rank is their average.
+Insight reads others and oneself, Charm powers both humor and compatible flirtation, Command rallies and coordinates, and Deception sustains false impressions. Party Command is led by the strongest individual check. Additional members receive a saturating coordination benefit, then contribute half of their deviation from a 2.5 baseline. Checks above 2.5 help and checks below 2.5 burden the party's social leadership. The result is capped from 0 to 5; adding arbitrarily many low-Command members cannot manufacture a high result. Character sheets summarize these four skills with an expandable Social meta-skill whose rank is their average.
 
 0. Autistic
 1. Cold and aloof
