@@ -14,6 +14,18 @@ and privileges such as bearing arms, wearing armor, or licensed foraging.
 Organization-level privileges are inherited at every rank; rank-level
 privileges are additive.
 
+An organization may also declare explicit `starting_role` metadata: one of the
+ten authored start profession families plus distinct adult and old rank IDs.
+Presence of this block makes an organization eligible for deterministic
+first-character sampling. The catalog validator rejects unknown families,
+missing ranks, identical adult/old mappings, chapterless eligibility, and a
+full catalog that leaves any profession family uncovered. This metadata is
+never inferred from an organization's name, service, requirements, or skills;
+the catalog-only test organization is therefore not eligible.
+For settlement-scoped recognition, at least one playable chapter must also be
+recognized. Admission and selected starting-rank professions of faith must
+agree; conflicting authored faith requirements are rejected.
+
 Requirements and training targets are tagged data. No code path decides that an
 organization is a guild because it teaches Smithing, or a church because it
 requires a religion. Mixed requirements are intentional and supported.

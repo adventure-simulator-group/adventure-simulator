@@ -193,7 +193,12 @@ materializes its strategic rows, and records an idempotency claim. The candidate
 generator contains no tactical tick state. Candidate previews use the same
 portrait and character-sheet panels as persisted party members, with gameplay
 activity controls omitted until a candidate is chosen. `/characters` remains
-the persisted character switcher.
+the full-page persisted character switcher. Confirming or selecting a character
+also remembers its ID in a bounded, browser-scoped roster cookie. Strategic
+headers resolve only those remembered, non-temporary rows into the portrait
+dropdown; selecting one changes the current-character cookie, while **Character
+select** returns directly to `/characters/candidates` to create another. Both
+cookies remain local selectors rather than authentication or ownership proof.
 Non-loopback binding requires the clearly named insecure-development opt-in.
 `strategic-web` owns a single generated-client WebSocket subscription to the
 mutable tables that invalidate strategic UI fragments and fans those database
@@ -409,6 +414,22 @@ authority validates those edges within one observer and case, synchronizes the
 co-located party's strategic clocks, then uses the leader/party minute for
 light, evidence age, and recorded outcomes. Custody and hostile-resolution
 effects are committed only by their owning strategic adapters.
+
+### First-character authority
+
+First-character generation is a versioned strategic authority boundary. The
+age tier (`young`, `adult`, or `old`) is part of the GET, POST, reducer claim,
+and generated-ID coordinates alongside the private session seed and slot.
+Professional previews are regenerated from the organization catalog and the
+same package is persisted on confirmation; the browser never submits trusted
+attributes, skills, inventory, religion, or membership rows. Creation inserts
+the character, skill and equipment package, current organization membership,
+presentation, dues, and required professed religion in one reducer
+transaction. Tactical state is not involved.
+The public confirmation reducer is restricted to the registered strategic
+gateway. Membership timestamps are anchored to the character's initialized
+strategic minute, including the first paid dues interval, rather than assuming
+that a new character always starts at minute zero.
 
 ### Strategic tables
 

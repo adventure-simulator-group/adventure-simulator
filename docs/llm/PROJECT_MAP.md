@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1290)
+## Files (1292)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -673,6 +673,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/spawn_developer_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/stage_investigation_lead_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/start_dialogue_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/starting_age_tier_coordinate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/starting_character_claim_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/starting_character_claim_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/stock_category_type.rs` — Generated SpacetimeDB data type.
@@ -913,6 +914,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/building-state.js` — Repository support file.
 - `crates/strategic-web/static/character-action-dialog.js` — Repository support file.
 - `crates/strategic-web/static/character-candidates.js` — Repository support file.
+- `crates/strategic-web/static/character-switcher.js` — Repository support file.
 - `crates/strategic-web/static/chat-resize.js` — Repository support file.
 - `crates/strategic-web/static/cooking.js` — Repository support file.
 - `crates/strategic-web/static/css/base.css` — Browser UI styling.

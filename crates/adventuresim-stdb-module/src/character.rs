@@ -1,5 +1,5 @@
 use adventuresim_core::starting_character::{
-    StartingCharacterSpec, StartingPersonalityTrait, StartingSlot,
+    StartingAgeTier, StartingCharacterSpec, StartingPersonalityTrait, StartingSlot,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -53,6 +53,24 @@ pub struct Character {
 }
 
 /// Durable receipt for an idempotent first-character confirmation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum StartingAgeTierCoordinate {
+    Young,
+    Adult,
+    Old,
+}
+
+impl StartingAgeTierCoordinate {
+    fn core(self) -> StartingAgeTier {
+        match self {
+            Self::Young => StartingAgeTier::Young,
+            Self::Adult => StartingAgeTier::Adult,
+            Self::Old => StartingAgeTier::Old,
+        }
+    }
+}
+
+/// Durable receipt for an idempotent first-character confirmation.
 #[derive(Clone, Debug)]
 #[table(accessor = starting_character_claim, public)]
 pub struct StartingCharacterClaim {
@@ -62,6 +80,7 @@ pub struct StartingCharacterClaim {
     pub character_id: u64,
     pub generator_version: u16,
     pub seed: String,
+    pub age_tier: StartingAgeTierCoordinate,
     pub slot: u8,
 }
 
@@ -660,11 +679,16 @@ pub fn create_starting_character(
     ctx: &ReducerContext,
     generator_version: u16,
     seed: String,
+    age_tier: StartingAgeTierCoordinate,
     slot: u8,
 ) -> Result<(), String> {
-    let spec = adventuresim_core::starting_character::generate(generator_version, &seed, slot)
-        .map_err(str::to_owned)?;
-    let request_key = format!("{generator_version}:{seed}:{slot}");
+    crate::strategic::require_strategic_gateway(ctx)?;
+    let coordinate = age_tier;
+    let age_tier = coordinate.core();
+    let spec =
+        adventuresim_core::starting_character::generate(generator_version, &seed, age_tier, slot)
+            .map_err(str::to_owned)?;
+    let request_key = format!("{generator_version}:{seed}:{}:{slot}", age_tier.as_str());
     if let Some(claim) = ctx
         .db
         .starting_character_claim()
@@ -693,6 +717,7 @@ pub fn create_starting_character(
             character_id: spec.id,
             generator_version,
             seed,
+            age_tier: coordinate,
             slot,
         });
     Ok(())
@@ -1073,6 +1098,13 @@ fn insert_starting_character(
     insert_character_with_origin(ctx, spec.name.clone(), spec.id, false, false, Some(spec))
 }
 
+fn initial_membership_minutes(now: u64, dues_interval_days: Option<u32>) -> (u64, u64) {
+    let paid_through = dues_interval_days.map_or(u64::MAX, |days| {
+        now.saturating_add(u64::from(days) * adventuresim_core::strategic_time::MINUTES_PER_DAY)
+    });
+    (now, paid_through)
+}
+
 pub(crate) fn set_character_languages_for_settlement(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1151,7 +1183,36 @@ fn insert_character_with_origin(
     let mut settlements = settlements;
     settlements.sort_by(|left, right| left.id.cmp(&right.id));
     let selector = starting.map_or_else(|| ctx.random::<u64>(), |spec| spec.settlement_selector);
-    let start_settlement = &settlements[selector as usize % settlements.len()];
+    let start_settlement = if let Some(starting_organization) =
+        starting.and_then(|spec| spec.organization.as_ref())
+    {
+        let organization =
+            adventuresim_core::organization::organization(&starting_organization.organization_id)
+                .ok_or("Starting organization is not in the catalog")?;
+        let eligible = settlements
+            .iter()
+            .filter(|settlement| {
+                organization.has_chapter(&settlement.id)
+                    && organization.recognition.includes(&settlement.id)
+            })
+            .collect::<Vec<_>>();
+        if eligible.is_empty() {
+            // Small development worlds do not load the researched Viabundus
+            // settlements referenced by the organization catalog. Keep the
+            // professional package intact and place the character
+            // deterministically in the loaded world; a complete world still
+            // prefers a recognized chapter settlement below.
+            log::warn!(
+                "No loaded settlement hosts starting organization {}; using a loaded settlement",
+                organization.id
+            );
+            &settlements[selector as usize % settlements.len()]
+        } else {
+            eligible[selector as usize % eligible.len()]
+        }
+    } else {
+        &settlements[selector as usize % settlements.len()]
+    };
 
     let character = ctx.db.character().insert(Character {
         id,
@@ -1188,21 +1249,21 @@ fn insert_character_with_origin(
         block_hours: generated_skills.map_or(1000.0, |s| s.block),
         bow_hours: generated_skills.map_or(1000.0, |s| s.bow),
         crossbow_hours: generated_skills.map_or(1000.0, |s| s.crossbow),
-        firearm_hours: 1000.0,
+        firearm_hours: generated_skills.map_or(1000.0, |s| s.firearm),
         throw_hours: generated_skills.map_or(1000.0, |s| s.throw),
         will_hours: generated_skills.map_or(1000.0, |s| s.will),
         insight_hours: generated_skills.map_or(1000.0, |s| s.insight),
-        self_awareness_hours: 1000.0,
-        humor_hours: 1000.0,
+        self_awareness_hours: generated_skills.map_or(1000.0, |s| s.self_awareness),
+        humor_hours: generated_skills.map_or(1000.0, |s| s.humor),
         command_hours: generated_skills.map_or(1000.0, |s| s.command),
-        deception_hours: 1000.0,
-        seduction_hours: 1000.0,
+        deception_hours: generated_skills.map_or(1000.0, |s| s.deception),
+        seduction_hours: generated_skills.map_or(1000.0, |s| s.seduction),
         physiology_hours: generated_skills.map_or(1000.0, |s| s.physiology),
         cooking_hours: generated_skills.map_or(0.0, |s| s.cooking),
-        religion_hours: adventuresim_world_schema::ReligionHours {
-            roman_catholic: 1000.0,
-            ..Default::default()
-        },
+        religion_hours: generated_skills
+            .map_or_else(adventuresim_world_schema::ReligionHours::default, |s| {
+                s.religion
+            }),
         bestiary_hours: generated_skills.map_or(
             adventuresim_world_schema::BestiaryHours {
                 beast: 1000.0,
@@ -1215,13 +1276,13 @@ fn insert_character_with_origin(
         written_languages,
         stealth_hours: generated_skills.map_or(1000.0, |s| s.stealth),
         balance_hours: generated_skills.map_or(1000.0, |s| s.balance),
-        terrain_plains_hours: 0.0,
-        terrain_forest_hours: 0.0,
-        terrain_hills_hours: 0.0,
-        terrain_urban_hours: 0.0,
+        terrain_plains_hours: generated_skills.map_or(0.0, |s| s.terrain_plains),
+        terrain_forest_hours: generated_skills.map_or(0.0, |s| s.terrain_forest),
+        terrain_hills_hours: generated_skills.map_or(0.0, |s| s.terrain_hills),
+        terrain_urban_hours: generated_skills.map_or(0.0, |s| s.terrain_urban),
         anatomy_hours: generated_skills.map_or(1000.0, |s| s.anatomy),
-        tailoring_hours: 1000.0,
-        smithing_hours: 1000.0,
+        tailoring_hours: generated_skills.map_or(1000.0, |s| s.tailoring),
+        smithing_hours: generated_skills.map_or(1000.0, |s| s.smithing),
     });
     crate::time::initialize_character_time(ctx, id)?;
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
@@ -1357,8 +1418,59 @@ fn insert_character_with_origin(
     }
 
     crate::strategic::create_solo_party_for_character(ctx, character.id)?;
+    if let Some(starting_organization) = starting.and_then(|spec| spec.organization.as_ref()) {
+        let definition =
+            adventuresim_core::organization::organization(&starting_organization.organization_id)
+                .ok_or("Starting organization is not in the catalog")?;
+        if definition.rank(&starting_organization.rank_id).is_none() {
+            return Err("Starting rank is not in the organization catalog".into());
+        }
+        let now = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character.id)
+            .ok_or("Starting character time was not initialized")?
+            .minutes;
+        let (joined_minute, paid_through) = initial_membership_minutes(
+            now,
+            definition.dues.as_ref().map(|dues| dues.interval_days),
+        );
+        ctx.db
+            .organization_membership()
+            .insert(crate::organization::OrganizationMembership {
+                id: 0,
+                character_id: character.id,
+                organization_id: starting_organization.organization_id.clone(),
+                rank_id: starting_organization.rank_id.clone(),
+                joined_minute,
+                dues_paid_through_minute: paid_through,
+                status: crate::organization::MEMBERSHIP_ACTIVE.into(),
+                apprenticeship_minutes_accrued: 0,
+                practice_minutes_accrued: 0,
+            });
+        ctx.db
+            .organization_presentation()
+            .insert(crate::organization::OrganizationPresentation {
+                character_id: character.id,
+                organization_id: starting_organization.organization_id.clone(),
+            });
+    }
     crate::capability::refresh_character_capability(ctx, character.id)?;
     crate::condition::initialize_character_condition(ctx, character.id)?;
+    if let Some(religion_id) = starting.and_then(|spec| spec.religion_id.as_ref()) {
+        let mut condition = ctx
+            .db
+            .character_condition()
+            .character_id()
+            .find(character.id)
+            .ok_or("Starting character condition was not initialized")?;
+        condition.religion_id = Some(religion_id.clone());
+        ctx.db
+            .character_condition()
+            .character_id()
+            .update(condition);
+    }
     crate::condition::refresh_character_strategic_condition(ctx, character.id)?;
     crate::equipment_law::enforce_equipment_compliance(ctx, character.id)?;
 
@@ -1492,4 +1604,34 @@ pub fn add_and_equip_item(
     // item is present, avoiding partial creation when its initial settlement
     // restricts arms or armor.
     equip_item_internal(ctx, character_id, id, destination, false)
+}
+
+#[cfg(test)]
+mod starting_character_boundary_tests {
+    use super::initial_membership_minutes;
+
+    #[test]
+    fn membership_period_is_anchored_to_current_character_time() {
+        assert_eq!(initial_membership_minutes(9_000, None), (9_000, u64::MAX));
+        assert_eq!(
+            initial_membership_minutes(9_000, Some(30)),
+            (
+                9_000,
+                9_000 + 30 * adventuresim_core::strategic_time::MINUTES_PER_DAY
+            )
+        );
+    }
+
+    #[test]
+    fn public_starting_character_reducer_requires_the_gateway() {
+        let source = include_str!("character.rs");
+        let reducer = source
+            .split("pub fn create_starting_character")
+            .nth(1)
+            .unwrap()
+            .split("#[reducer]")
+            .next()
+            .unwrap();
+        assert!(reducer.contains("require_strategic_gateway(ctx)?"));
+    }
 }

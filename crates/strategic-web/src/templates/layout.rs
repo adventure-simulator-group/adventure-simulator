@@ -167,9 +167,9 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=journal-tab-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=multi-character-switcher-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=identity-controls-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -185,6 +185,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/strategic-navigation.js?v=soft-navigation-1" defer {}
                     script src="/static/strategic-mutations.js?v=single-transaction-1" defer {}
+                    script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
                     script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog" defer {}
@@ -677,9 +678,10 @@ fn character_switcher(name: &str) -> Markup {
                 }
             }
             div class="character-switcher-menu" {
-                form action="/characters/switch" method="post" {
-                    button type="submit" class="btn btn-small" { "Character select" }
+                div data-character-switcher-options data-character-switcher-url="/characters/menu" {
+                    p class="character-switcher-empty" { "Loading adventurers…" }
                 }
+                a href="/characters/candidates" class="btn btn-small" { "Character select" }
             }
         }
     }
@@ -989,7 +991,9 @@ mod tests {
         assert!(markup.contains("Character menu for Ada"));
         assert!(markup.contains("character-switcher-portrait"));
         assert!(markup.contains("Character select"));
-        assert!(markup.contains("action=\"/characters/switch\""));
+        assert!(markup.contains("href=\"/characters/candidates\""));
+        assert!(markup.contains("data-character-switcher-options"));
+        assert!(markup.contains("data-character-switcher-url=\"/characters/menu\""));
         assert!(!markup.contains("Party: "));
         assert!(!markup.contains("data-current-quest"));
         assert!(!markup.contains("current-quest.js"));

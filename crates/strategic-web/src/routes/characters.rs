@@ -8,15 +8,16 @@ use axum::{
     routing::{get, post},
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, set_character_cookie};
 use crate::spacetimedb::{Character, CharacterStrategicCondition};
 use crate::templates::character::{
-    character_candidates_bootstrap_page, character_candidates_page, characters_list_page,
+    character_candidates_bootstrap_page, character_candidates_page, character_switcher_options,
+    characters_list_page,
 };
-use adventuresim_core::starting_character::{GENERATOR_VERSION, generate, roster};
+use adventuresim_core::starting_character::{GENERATOR_VERSION, StartingAgeTier, generate, roster};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -26,6 +27,7 @@ pub fn routes() -> Router<AppState> {
             get(candidate_roster).post(confirm_candidate),
         )
         .route("/characters/new", get(redirect_to_candidates))
+        .route("/characters/menu", get(character_menu))
         .route("/characters/{id}/select", post(select_character))
         .route("/api/characters/{id}/condition", get(character_condition))
         .route("/characters/switch", post(switch_character))
@@ -35,7 +37,16 @@ pub fn routes() -> Router<AppState> {
 struct CandidateQuery {
     version: Option<u16>,
     seed: Option<String>,
+    age: Option<StartingAgeTier>,
     selected: Option<u8>,
+    view: Option<CandidateView>,
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum CandidateView {
+    Profile,
+    Inventory,
 }
 
 async fn character_condition(
@@ -77,6 +88,7 @@ async fn character_condition(
 struct ConfirmCandidateForm {
     version: u16,
     seed: String,
+    age: StartingAgeTier,
     slot: u8,
 }
 
@@ -85,32 +97,50 @@ async fn redirect_to_candidates() -> Response {
 }
 
 async fn list_characters(State(state): State<AppState>, session: Session) -> Response {
-    let characters: Vec<Character> = if let Some(characters) = state.live.cached_characters() {
-        characters
-    } else {
-        match state.db.query("SELECT * FROM character").await {
-            Ok(characters) => characters,
-            Err(error) => {
-                tracing::error!(%error, "failed to list characters");
-                return (
-                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                    "Strategic data is unavailable",
-                )
-                    .into_response();
-            }
-        }
-    };
-
+    let characters = remembered_characters(&state, &session).await;
     Html(characters_list_page(&characters, session.character_id_u64()).into_string())
         .into_response()
 }
 
+async fn character_menu(State(state): State<AppState>, session: Session) -> Response {
+    let characters = remembered_characters(&state, &session).await;
+    Html(character_switcher_options(&characters, session.character_id_u64()).into_string())
+        .into_response()
+}
+
+async fn remembered_characters(state: &AppState, session: &Session) -> Vec<Character> {
+    let ids = session.character_ids();
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let characters: Vec<Character> = if let Some(characters) = state.live.cached_characters() {
+        characters
+    } else {
+        match state.db.query::<Character>("SELECT * FROM character").await {
+            Ok(characters) => characters,
+            Err(error) => {
+                tracing::error!(%error, "failed to list characters");
+                return Vec::new();
+            }
+        }
+    };
+    ids.into_iter()
+        .filter_map(|id| {
+            characters
+                .iter()
+                .find(|character| character.id == id && !character.temporary)
+                .cloned()
+        })
+        .collect()
+}
+
 async fn candidate_roster(Query(query): Query<CandidateQuery>) -> Response {
-    let (Some(version), Some(seed)) = (query.version, query.seed.as_deref()) else {
+    let (Some(version), Some(seed), Some(age)) = (query.version, query.seed.as_deref(), query.age)
+    else {
         return Html(character_candidates_bootstrap_page(GENERATOR_VERSION).into_string())
             .into_response();
     };
-    let candidates = match roster(version, seed) {
+    let candidates = match roster(version, seed, age) {
         Ok(candidates) => candidates,
         Err(_) => {
             return Html(character_candidates_bootstrap_page(GENERATOR_VERSION).into_string())
@@ -118,15 +148,26 @@ async fn candidate_roster(Query(query): Query<CandidateQuery>) -> Response {
         }
     };
     let selected = query.selected.filter(|slot| *slot < candidates.len() as u8);
-    Html(character_candidates_page(version, seed, &candidates, selected).into_string())
-        .into_response()
+    Html(
+        character_candidates_page(
+            version,
+            seed,
+            age,
+            &candidates,
+            selected,
+            query.view == Some(CandidateView::Inventory),
+        )
+        .into_string(),
+    )
+    .into_response()
 }
 
 async fn confirm_candidate(
     State(state): State<AppState>,
+    session: Session,
     Form(form): Form<ConfirmCandidateForm>,
 ) -> Response {
-    let spec = match generate(form.version, &form.seed, form.slot) {
+    let spec = match generate(form.version, &form.seed, form.age, form.slot) {
         Ok(spec) => spec,
         Err(error) => return (axum::http::StatusCode::BAD_REQUEST, error).into_response(),
     };
@@ -134,7 +175,12 @@ async fn confirm_candidate(
         .db
         .call(
             "create_starting_character",
-            &[json!(form.version), json!(form.seed), json!(form.slot)],
+            &[
+                json!(form.version),
+                json!(form.seed),
+                starting_age_tier_argument(form.age),
+                json!(form.slot),
+            ],
         )
         .await
     {
@@ -145,12 +191,21 @@ async fn confirm_candidate(
         )
             .into_response();
     }
-    set_character_cookie(&spec.id.to_string(), "/")
+    set_character_cookie(spec.id, &session.character_ids(), "/")
 }
 
-async fn select_character(State(state): State<AppState>, Path(id): Path<u64>) -> Response {
+async fn select_character(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    session: Session,
+) -> Response {
     match super::data::character(&state, id).await {
-        Ok(Some(_)) => set_character_cookie(&id.to_string(), "/"),
+        Ok(Some(character)) if !character.temporary && session.character_ids().contains(&id) => {
+            set_character_cookie(id, &session.character_ids(), "/")
+        }
+        Ok(Some(_)) => {
+            (axum::http::StatusCode::FORBIDDEN, "Character not available").into_response()
+        }
         Ok(None) => (axum::http::StatusCode::NOT_FOUND, "Character not found").into_response(),
         Err(_) => (
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
@@ -161,5 +216,34 @@ async fn select_character(State(state): State<AppState>, Path(id): Path<u64>) ->
 }
 
 async fn switch_character() -> Response {
-    clear_character_cookie("/characters")
+    clear_character_cookie("/characters/candidates")
+}
+
+fn starting_age_tier_argument(age: StartingAgeTier) -> Value {
+    match age {
+        StartingAgeTier::Young => json!({ "young": {} }),
+        StartingAgeTier::Adult => json!({ "adult": {} }),
+        StartingAgeTier::Old => json!({ "old": {} }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn starting_age_tiers_use_spacetime_sum_encoding() {
+        assert_eq!(
+            starting_age_tier_argument(StartingAgeTier::Young),
+            json!({ "young": {} })
+        );
+        assert_eq!(
+            starting_age_tier_argument(StartingAgeTier::Adult),
+            json!({ "adult": {} })
+        );
+        assert_eq!(
+            starting_age_tier_argument(StartingAgeTier::Old),
+            json!({ "old": {} })
+        );
+    }
 }

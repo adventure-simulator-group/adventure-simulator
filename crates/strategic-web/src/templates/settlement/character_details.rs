@@ -470,8 +470,8 @@ fn character_bio_rail(
                         } }
                     }
                 }
-                @if can_renounce {
-                    div class="character-identity-controls" {
+                div class="character-identity-controls" {
+                    @if can_renounce {
                         (religion_identity_button(character, religion_id, location_path))
                         @if let Some(settlement_id) = character.current_settlement_id.as_deref() {
                             (organization_identity_picker(
@@ -483,10 +483,67 @@ fn character_bio_rail(
                                 organization_minute,
                             ))
                         }
+                    } @else {
+                        (religion_identity_display(religion_id))
+                        (organization_identity_display(
+                            organization_memberships,
+                            organization_presentation,
+                        ))
                     }
                 }
             }
         }))
+    }
+}
+
+fn religion_identity_display(religion_id: Option<&str>) -> Markup {
+    let name = religion_name(religion_id);
+    let class = if religion_id.is_some() {
+        "identity-control religion-identity-control is-readonly"
+    } else {
+        "identity-control religion-identity-control is-empty is-readonly"
+    };
+    html! {
+        div class=(class) {
+            (religion_icon(name, religion_id, true))
+            span class="religion-control-copy" {
+                span class="religion-control-name" { (name) }
+            }
+        }
+    }
+}
+
+fn organization_identity_display(
+    memberships: &[OrganizationMembership],
+    presentation: Option<&OrganizationPresentation>,
+) -> Markup {
+    let selected = presentation.and_then(|presentation| {
+        let membership = memberships.iter().find(|membership| {
+            membership.status == "active"
+                && membership.organization_id == presentation.organization_id
+        })?;
+        let definition = organization(&membership.organization_id)?;
+        let rank = definition.rank(&membership.rank_id)?;
+        Some((definition, rank))
+    });
+    let class = if selected.is_some() {
+        "identity-control organization-identity-control is-readonly"
+    } else {
+        "identity-control organization-identity-control is-empty is-readonly"
+    };
+    html! {
+        div class=(class) {
+            @if let Some((definition, rank)) = selected {
+                (organization_crest(definition))
+                (organization_identity_copy(
+                    definition.name.as_str(),
+                    &profession_name(definition, rank),
+                ))
+            } @else {
+                (empty_organization_crest())
+                (organization_identity_copy("No organization", "No Profession"))
+            }
+        }
     }
 }
 

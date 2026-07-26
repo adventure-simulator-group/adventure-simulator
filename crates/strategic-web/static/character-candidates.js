@@ -38,7 +38,13 @@
       try {
         const version = Number(bootstrap.dataset.generatorVersion);
         const value = loadOrCreate(windowObject.sessionStorage, windowObject.crypto, version);
-        windowObject.location.replace(`/characters/candidates?version=${value.version}&seed=${value.seed}`);
+        const ageLinks = document.querySelectorAll("[data-candidate-age]");
+        ageLinks.forEach((link) => {
+          link.href = `/characters/candidates?version=${value.version}&seed=${value.seed}&age=${link.dataset.candidateAge}`;
+        });
+        if (ageLinks.length === 0) {
+          windowObject.location.replace(`/characters/candidates?version=${value.version}&seed=${value.seed}`);
+        }
       } catch (_) {
         bootstrap.outerHTML = '<p class="form-error" role="alert">This browser cannot securely prepare candidates.</p>';
       }

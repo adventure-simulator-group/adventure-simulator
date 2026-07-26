@@ -576,6 +576,7 @@ pub mod soil_water_regime_type;
 pub mod spawn_developer_quest_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
+pub mod starting_age_tier_coordinate_type;
 pub mod starting_character_claim_table;
 pub mod starting_character_claim_type;
 pub mod stock_category_type;
@@ -1211,6 +1212,7 @@ pub use soil_water_regime_type::SoilWaterRegime;
 pub use spawn_developer_quest_reducer::spawn_developer_quest;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
+pub use starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
 pub use starting_character_claim_table::*;
 pub use starting_character_claim_type::StartingCharacterClaim;
 pub use stock_category_type::StockCategory;
@@ -1414,6 +1416,7 @@ pub enum Reducer {
     CreateStartingCharacter {
         generator_version: u16,
         seed: String,
+        age_tier: StartingAgeTierCoordinate,
         slot: u8,
     },
     CreateTacticalServerForRequest {
@@ -2279,10 +2282,12 @@ Reducer::CancelMissionRequest{
             Reducer::CreateStartingCharacter{
                 generator_version,
                 seed,
+                age_tier,
                 slot,
 }             => __sats::bsatn::to_vec(&create_starting_character_reducer::CreateStartingCharacterArgs {
                 generator_version: generator_version.clone(),
                 seed: seed.clone(),
+                age_tier: age_tier.clone(),
                 slot: slot.clone(),
 }),
             Reducer::CreateTacticalServerForRequest{
