@@ -62,6 +62,11 @@
   }
   if (typeof document === "undefined") return;
 
+  let lifecycle;
+  const mount = () => {
+  lifecycle?.abort();
+  lifecycle = new AbortController();
+  const { signal } = lifecycle;
   const chat = document.querySelector("[data-local-chat-subject][data-dialogue-catalog-revision]");
   if (!chat) return;
   const messages = chat.querySelector(".settlement-chat-messages");
@@ -213,7 +218,7 @@
     return true;
   };
 
-  input?.addEventListener("input", refreshCompletion);
+  input?.addEventListener("input", refreshCompletion, { signal });
   input?.addEventListener("keydown", (event) => {
     if (event.key === "Tab" && input.dataset.dialogueSuggestion) {
       event.preventDefault();
@@ -225,14 +230,14 @@
       event.preventDefault();
       event.stopImmediatePropagation();
     }
-  }, true);
+  }, { capture: true, signal });
   send?.addEventListener("click", (event) => {
     if (!submitTypedAction()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-  }, true);
-  document.addEventListener("click", (event) => { const topic = event.target.closest("[data-dialogue-topic]"); if (!topic || event.target.closest(".dialogue-source-link")) return; event.preventDefault(); chooseTopic({ sessionId: topic.dataset.dialogueSession, topicId: topic.dataset.dialogueTopic, revision: Number(topic.dataset.dialogueRevision), selectionGeneration: Number(topic.dataset.dialogueGeneration), npcId: topic.dataset.dialogueNpc }); });
-  document.addEventListener("submit", (event) => { const form = event.target.closest("[data-dialogue-prompt]"); if (!form) return; event.preventDefault(); const submitter = event.submitter; const choices = submitter?.name === "choice" ? [submitter.value] : Array.from(new FormData(form).getAll("choice"), String); answerPrompt(choices); });
+  }, { capture: true, signal });
+  document.addEventListener("click", (event) => { const topic = event.target.closest("[data-dialogue-topic]"); if (!topic || event.target.closest(".dialogue-source-link")) return; event.preventDefault(); chooseTopic({ sessionId: topic.dataset.dialogueSession, topicId: topic.dataset.dialogueTopic, revision: Number(topic.dataset.dialogueRevision), selectionGeneration: Number(topic.dataset.dialogueGeneration), npcId: topic.dataset.dialogueNpc }); }, { signal });
+  document.addEventListener("submit", (event) => { const form = event.target.closest("[data-dialogue-prompt]"); if (!form) return; event.preventDefault(); const submitter = event.submitter; const choices = submitter?.name === "choice" ? [submitter.value] : Array.from(new FormData(form).getAll("choice"), String); answerPrompt(choices); }, { signal });
   const begin = () => {
     if (!chat.dataset.localChatSubject) return;
     const generation = selectionGeneration;
@@ -288,4 +293,8 @@
     selectNpc(people[defaultIndex], buttons[defaultIndex]);
   };
   loadPeople().catch((error) => window.reportStrategicError(error, "load settlement NPCs"));
+  };
+  mount();
+  document.addEventListener("strategic-page-mounted", mount);
+  document.addEventListener("strategic-page-unmounting", () => lifecycle?.abort());
 })();

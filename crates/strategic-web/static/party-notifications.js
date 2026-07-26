@@ -1,5 +1,5 @@
 (() => {
-  const baseTitle = document.title.replace(/^\(\d+\)\s*/, "");
+  let baseTitle = document.title.replace(/^\(\d+\)\s*/, "");
 
   const gameIcon = (name) => {
     const icon = document.createElement("span");
@@ -116,6 +116,10 @@
     window.setTimeout(() => notice.remove(), 3000);
   }
   document.addEventListener("strategic-live-update", refreshPartyNotifications);
+  document.addEventListener("strategic-page-mounted", () => {
+    baseTitle = document.title.replace(/^\(\d+\)\s*/, "");
+    refreshPartyNotifications();
+  });
   document.addEventListener("strategic-live-regions-refreshed", (event) => {
     if (event.detail?.regions?.includes("party-portraits")) refreshPartyNotifications();
   });

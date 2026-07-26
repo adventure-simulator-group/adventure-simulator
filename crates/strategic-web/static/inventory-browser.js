@@ -616,5 +616,9 @@
   const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, mountAll, refresh, syncPanelWidth };
   global.strategicInventoryBrowser = api;
   if (typeof module !== "undefined") module.exports = api;
-  if (global.document) { global.addEventListener("DOMContentLoaded", () => mountAll()); global.addEventListener("popstate", () => mountAll()); }
+  if (global.document) {
+    global.addEventListener("DOMContentLoaded", () => mountAll());
+    global.addEventListener("popstate", () => mountAll());
+    global.document.addEventListener("strategic-page-mounted", () => mountAll());
+  }
 })(typeof window === "undefined" ? globalThis : window);

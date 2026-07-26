@@ -46,9 +46,8 @@
     }
   };
 
-  const abortAll = () => {
-    if (leavingPage) return;
-    leavingPage = true;
+  const abortAll = ({ permanent = false } = {}) => {
+    if (permanent) leavingPage = true;
     active.forEach((controller) => controller.abort());
     active.clear();
   };
@@ -74,6 +73,11 @@
     return result;
   };
 
-  document.addEventListener("strategic-navigation-start", abortAll);
-  window.addEventListener("pagehide", abortAll, { once: true });
+  document.addEventListener("strategic-page-unmounting", () => abortAll());
+  document.addEventListener("strategic-page-mounted", () => {
+    leavingPage = false;
+    initialQueue = Promise.resolve();
+    window.strategicApplyReturnNavigation();
+  });
+  window.addEventListener("pagehide", () => abortAll({ permanent: true }), { once: true });
 })();

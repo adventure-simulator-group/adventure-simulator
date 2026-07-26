@@ -168,6 +168,16 @@
     window.clearTimeout(refreshTimer);
     dirtyRetry.reset();
   });
+  document.addEventListener("strategic-page-unmounting", () => {
+    navigating = true;
+    generation += 1;
+    window.clearTimeout(refreshTimer);
+    dirtyRetry.reset();
+  });
+  document.addEventListener("strategic-page-mounted", () => {
+    navigating = false;
+    generation += 1;
+  });
 
   document.addEventListener("strategic-live-update", scheduleRefresh);
   document.addEventListener("strategic-live-refresh-requested", scheduleRefresh);

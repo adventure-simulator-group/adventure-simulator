@@ -1,6 +1,11 @@
 (() => {
   "use strict";
 
+  let lifecycle;
+  const mount = () => {
+  lifecycle?.abort();
+  lifecycle = new AbortController();
+  const { signal } = lifecycle;
   const strip = document.querySelector("[data-evidence-strip]");
   if (!strip) return;
   const stage = document.querySelector("[data-evidence-description]");
@@ -211,7 +216,7 @@
     } catch (error) {
       window.reportStrategicError(error, "inspect physical evidence");
     }
-  });
+  }, { signal });
 
   // Physical evidence has clickable inspection topics rather than free-form
   // speech. Keep the ordinary chat composer visibly unavailable.
@@ -221,4 +226,8 @@
   }
   if (send) send.disabled = true;
   load().catch((error) => window.reportStrategicError(error, "load physical evidence"));
+  };
+  mount();
+  document.addEventListener("strategic-page-mounted", mount);
+  document.addEventListener("strategic-page-unmounting", () => lifecycle?.abort());
 })();

@@ -378,6 +378,7 @@
   }
 
   mountSchedules();
+  document.addEventListener('strategic-page-mounted', () => mountSchedules());
   document.addEventListener('strategic-live-regions-refreshed', (event) => {
     if (!event.detail?.regions || event.detail.regions.includes('left-sidebar')) mountSchedules();
   });

@@ -323,6 +323,10 @@
 
   window.queueStrategicInitialLoad(loadRecruitment).catch((error) => window.reportStrategicError(error, "party recruitment"));
   document.addEventListener("strategic-live-update", () => loadRecruitment().catch((error) => window.reportStrategicError(error, "party recruitment")));
+  document.addEventListener("strategic-page-mounted", () => {
+    recruitmentSignature = "";
+    loadRecruitment().catch((error) => window.reportStrategicError(error, "party recruitment"));
+  });
   document.addEventListener("strategic-live-regions-refreshed", () => {
     recruitmentSignature = "";
     loadRecruitment().catch((error) => window.reportStrategicError(error, "party recruitment"));

@@ -534,5 +534,6 @@
   };
 
   initializeTravelPlanner();
+  document.addEventListener("strategic-page-mounted", initializeTravelPlanner);
   document.addEventListener("strategic-live-regions-refreshed", (event) => { if (event.detail?.regions?.includes("right-sidebar")) initializeTravelPlanner(); });
 })();

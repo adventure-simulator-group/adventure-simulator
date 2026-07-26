@@ -21,7 +21,7 @@
     if (kind === "camp") return location.pathname === "/camp";
     if (!kind || !id) return location.pathname === "/characters";
     const encoded = encodeURIComponent(id);
-    if (kind === "quest") return location.pathname.startsWith(`/locations/quest/${encoded}`);
+    if (kind === "case_site") return location.pathname.startsWith(`/locations/case-site/${encoded}`);
     return location.pathname.startsWith(`/locations/settlement/${encoded}`)
       || location.pathname.startsWith(`/settlements/${encoded}`);
   };
@@ -74,6 +74,10 @@
     if (destination.origin === location.origin && destination.href !== location.href) {
       beginNavigation();
     }
+  });
+  document.addEventListener("strategic-page-mounted", () => {
+    navigating = false;
+    synchronizationPending = false;
   });
 
   new MutationObserver(() => {

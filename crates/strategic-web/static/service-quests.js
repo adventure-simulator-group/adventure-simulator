@@ -9,11 +9,12 @@ if (typeof module !== "undefined") module.exports = { serviceQuestTabState };
 
 (() => {
   if (typeof document === "undefined") return;
-  const services = document.querySelector("[data-settlement-id]");
-  if (!services) return;
-  const settlementId = services.dataset.settlementId;
-  const chat = document.querySelector("[data-service-quest-id]");
-  const refreshServiceQuests = () => window.strategicBackgroundFetch(
+  const refreshServiceQuests = () => {
+    const services = document.querySelector("#strategic-page [data-settlement-id]");
+    if (!services) return Promise.resolve();
+    const settlementId = services.dataset.settlementId;
+    const chat = document.querySelector("#strategic-page [data-service-quest-id]");
+    return window.strategicBackgroundFetch(
     "service-quests", `/api/settlements/${encodeURIComponent(settlementId)}/service-quests`,
     { headers: { Accept: "application/json" } },
   ).then((response) => (response.ok ? response.json() : { quests: [], recruitment: [] }))
@@ -64,6 +65,8 @@ if (typeof module !== "undefined") module.exports = { serviceQuestTabState };
         right.prepend(section);
       }
     }).catch((error) => window.reportStrategicError(error, "service quests"));
+  };
   window.queueStrategicInitialLoad(refreshServiceQuests);
   document.addEventListener("strategic-live-update", refreshServiceQuests);
+  document.addEventListener("strategic-page-mounted", refreshServiceQuests);
 })();

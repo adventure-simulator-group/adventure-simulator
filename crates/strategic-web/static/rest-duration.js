@@ -222,6 +222,7 @@
 
   window.strategicRestDuration = { isDirty, mountAll };
   mountAll();
+  document.addEventListener("strategic-page-mounted", () => mountAll());
   document.addEventListener("strategic-time-ready", (event) => {
     mountAll();
     syncTime(document, event.detail.characterMinutes);
