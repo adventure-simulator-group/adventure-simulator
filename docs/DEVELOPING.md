@@ -450,6 +450,11 @@ pinned approximately 60 MiB runtime archive when its files are absent, then
 sends `target/world-1544.json` in bounded batches to a published local module.
 The same archive installs the AVIF map and final terrain-routing package, so a
 fresh checkout does not need the 26 GiB source bundle or a geospatial rebuild.
+World loading persists canonical map and settlement facts only; it deliberately
+does not pre-generate settlement populations, services, quests, incidents, or
+recruitment. The first player-facing visit to a settlement materializes that
+settlement's derived activity and service state, so complete `just load-world`
+before serving the browser rather than competing with normal gameplay queries.
 Run it after
 `just publish-reset`, without `_seed-world`, when using the historical world.
 Interrupted loads can be resumed without recompiling by loading the identical
