@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate docs/llm/PROJECT_MAP.md from the repository file tree."""
+"""Generate wiki/reference/llm/project-map.md from the repository file tree."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "docs" / "llm" / "PROJECT_MAP.md"
+OUTPUT = ROOT / "wiki" / "reference" / "llm" / "project-map.md"
 EXCLUDED_PARTS = {
     ".git", "target", "node_modules", ".direnv", "book", "__pycache__", "downloads",
 }
@@ -104,7 +104,7 @@ def render() -> str:
         "## How to use this map",
         "",
         "Start with `AGENTS.md`, then read the root README and the relevant architecture,",
-        "development, or wiki document before changing a subsystem.",
+        "development, or other wiki document before changing a subsystem.",
         "",
         f"## Files ({len(files)})",
         "",

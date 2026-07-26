@@ -213,10 +213,10 @@ pub struct Item {
 
 /// A static item definition used to seed the strategic item table.
 ///
-/// The values use the combat quantities documented in `wiki/tactical/Combat.md`.
+/// The values use the combat quantities documented in `wiki/tactical/combat.md`.
 /// `base_value` is a relative gameplay price, not a claim about a historical
 /// market price; the historical basis and gameplay inferences are recorded in
-/// `docs/EQUIPMENT.md`.
+/// `wiki/reference/equipment.md`.
 #[derive(Clone, Copy, Debug)]
 struct EquipmentDefinition {
     id: &'static str,
@@ -345,7 +345,7 @@ const fn shield(id: &'static str, weight: f32, base_value: u32, block: f32) -> E
 
 // Common civilian, militia, professional, elite, and older-serviceable arms.
 // Ranged reach is the current autoresolver range in metres; melee reach is in
-// metres. Weapon precision and penetration follow the Combat.md calibration.
+// metres. Weapon precision and penetration follow the combat.md calibration.
 const WEAPONS: &[EquipmentDefinition] = &[
     weapon(
         "club", 1.2, 1, 0.5, 0.1, 0.7, 0.7, false, true, false, false, false,

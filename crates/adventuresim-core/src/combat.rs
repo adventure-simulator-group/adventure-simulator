@@ -479,7 +479,7 @@ fn calculate_damage_from_force(
 }
 
 /// Convert physical damage energy into the strategic 0-1 body-part health
-/// scale. The calibration follows Combat.md: roughly 20 J to an unarmored arm
+/// scale. The calibration follows combat.md: roughly 20 J to an unarmored arm
 /// is disabling, while larger body regions absorb proportionally more energy.
 pub fn health_damage_from_attack(result: AttackResult, part: BodyPart) -> f32 {
     let AttackResult::ToDefender {

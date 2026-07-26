@@ -5,7 +5,7 @@
 //! - WASD movement with a capsule character
 //! - Camera follow system
 //! - Ground plane and skybox
-//! - Ready for Lightyear networking integration
+//! - Uses the shared Aeronet/Replicon WebSocket netcode
 
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
