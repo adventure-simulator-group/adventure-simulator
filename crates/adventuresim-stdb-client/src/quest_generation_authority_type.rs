@@ -67,6 +67,7 @@ pub struct QuestGenerationAuthorityIxCols {
     pub case_id: __sdk::__query_builder::IxCol<QuestGenerationAuthority, String>,
     pub public_case_id: __sdk::__query_builder::IxCol<QuestGenerationAuthority, String>,
     pub seed: __sdk::__query_builder::IxCol<QuestGenerationAuthority, u64>,
+    pub settlement_id: __sdk::__query_builder::IxCol<QuestGenerationAuthority, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for QuestGenerationAuthority {
@@ -76,6 +77,7 @@ impl __sdk::__query_builder::HasIxCols for QuestGenerationAuthority {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             public_case_id: __sdk::__query_builder::IxCol::new(table_name, "public_case_id"),
             seed: __sdk::__query_builder::IxCol::new(table_name, "seed"),
+            settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
         }
     }
 }

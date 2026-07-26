@@ -2005,21 +2005,25 @@ mod healing_tests {
 
     #[test]
     fn generated_activity_is_contract_free_and_counted_by_open_case_authority() {
-        let source = include_str!("strategic.rs");
+        let source = include_str!("strategic.rs").replace('\r', "");
         let generation = source
-            .split("fn generate_quest_for_settlement")
-            .nth(1)
+            .rsplit("fn generate_quest_for_settlement")
+            .next()
             .and_then(|tail| tail.split("#[reducer]").next())
             .expect("generated quest materialization");
         assert!(!generation.contains("contract_authority().insert"));
         assert!(!generation.contains("Contract {"));
         let activity = source
-            .split("fn ensure_settlement_activity_inner")
-            .nth(1)
+            .rsplit("fn ensure_settlement_activity_inner")
+            .next()
             .and_then(|tail| tail.split("fn ensure_npc_recruiting_parties").next())
             .expect("settlement activity");
         assert!(activity.contains("active_generated_cases"));
         assert!(activity.contains("quest_generation_authority()"));
+        assert!(activity.contains(".settlement_id()"));
+        assert!(activity.contains(".filter(&settlement_id.to_string())"));
+        assert!(!activity.contains("quest_generation_authority()\n            .iter()"));
+        assert!(activity.contains("validated.context.settlement_id != settlement_id"));
         assert!(activity.contains("CaseResolutionStatus::Open"));
         let resolution = source
             .split("pub(crate) fn ingest_case_outcome_fact")
@@ -2027,6 +2031,56 @@ mod healing_tests {
             .and_then(|tail| tail.split("fn select_case_finale").next())
             .expect("case resolution");
         assert!(resolution.contains("ensure_settlement_activity_inner"));
+    }
+
+    #[test]
+    fn world_import_persists_settlement_facts_without_activating_gameplay() {
+        let source = include_str!("strategic.rs").replace('\r', "");
+        let authority = source
+            .split("pub struct QuestGenerationAuthority")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) struct ValidatedQuestGenerationAuthority")
+                    .next()
+            })
+            .expect("quest generation authority schema");
+        assert!(authority.contains("#[index(btree)]\n    pub settlement_id: String"));
+
+        let import = source
+            .rsplit("pub fn import_settlements")
+            .next()
+            .and_then(|tail| tail.split("fn validate_travel_edge_endpoints").next())
+            .expect("settlement import reducer");
+        for forbidden in [
+            "ensure_settlement_activity_inner",
+            "ensure_settlement_smith",
+            "ensure_settlement_herbalist",
+            "ensure_settlement_population",
+        ] {
+            assert!(
+                !import.contains(forbidden),
+                "world import must not {forbidden}"
+            );
+        }
+
+        let activity = source
+            .split("fn ensure_settlement_activity_inner")
+            .nth(1)
+            .and_then(|tail| tail.split("fn ensure_npc_recruiting_parties").next())
+            .expect("settlement activity");
+        assert!(activity.contains("ensure_settlement_smith"));
+        assert!(activity.contains("ensure_settlement_herbalist"));
+
+        for consumer in [
+            "fn generate_quest_for_settlement",
+            "pub fn spawn_developer_quest",
+        ] {
+            let body = source
+                .rsplit(consumer)
+                .next()
+                .expect("quest ordinal consumer");
+            assert!(body.contains("validated.context.settlement_id == settlement_id"));
+        }
     }
 
     #[test]
@@ -2752,15 +2806,11 @@ pub fn import_settlements(
             source_node_id: Some(settlement.source_node_id),
             sources: settlement.sources,
         };
-        let settlement_id = row.id.clone();
         if ctx.db.settlement().id().find(&row.id).is_some() {
             ctx.db.settlement().id().update(row);
         } else {
             ctx.db.settlement().insert(row);
         }
-        ensure_settlement_activity_inner(ctx, &settlement_id)?;
-        crate::repair::ensure_settlement_smith(ctx, &settlement_id);
-        crate::disease::ensure_settlement_herbalist(ctx, &settlement_id);
     }
     Ok(())
 }
@@ -3239,6 +3289,7 @@ pub struct QuestGenerationAuthority {
     pub case_id: String,
     #[index(btree)]
     pub public_case_id: String,
+    #[index(btree)]
     pub settlement_id: String,
     pub settlement_name: String,
     #[index(btree)]
@@ -17793,6 +17844,10 @@ fn ensure_settlement_activity_inner(
     ctx: &ReducerContext,
     settlement_id: &str,
 ) -> Result<(), String> {
+    // World import writes only canonical settlement facts. These derived
+    // service rows are instead materialized when settlement activity is used.
+    crate::repair::ensure_settlement_smith(ctx, settlement_id);
+    crate::disease::ensure_settlement_herbalist(ctx, settlement_id);
     crate::settlement_population::ensure_settlement_population(ctx, settlement_id)?;
     let official_minute = crate::time::refresh_clock(ctx)?;
     for mut contract in ctx
@@ -17835,27 +17890,29 @@ fn ensure_settlement_activity_inner(
                 && tracked_quests.contains(&quest.id))
         })
         .count();
-    let active_generated_cases =
-        ctx.db
-            .quest_generation_authority()
-            .iter()
-            .try_fold(0usize, |count, authority| {
-                let validated = validate_quest_generation_authority(&authority)?;
-                Ok::<_, String>(
-                    count
-                        + usize::from(
-                            validated.context.settlement_id == settlement_id
-                                && ctx
-                                    .db
-                                    .case_authority()
-                                    .id()
-                                    .find(&authority.case_id)
-                                    .is_some_and(|case| {
-                                        case.resolution_status == CaseResolutionStatus::Open
-                                    }),
-                        ),
-                )
-            })?;
+    let active_generated_cases = ctx
+        .db
+        .quest_generation_authority()
+        .settlement_id()
+        .filter(&settlement_id.to_string())
+        .try_fold(0usize, |count, authority| {
+            let validated = validate_quest_generation_authority(&authority)?;
+            if validated.context.settlement_id != settlement_id {
+                return Ok(count);
+            }
+            Ok::<_, String>(
+                count
+                    + usize::from(
+                        ctx.db
+                            .case_authority()
+                            .id()
+                            .find(&authority.case_id)
+                            .is_some_and(|case| {
+                                case.resolution_status == CaseResolutionStatus::Open
+                            }),
+                    ),
+            )
+        })?;
     let active = active_contracts.saturating_add(active_generated_cases);
     for _ in active..settlement_activity_target(settlement_id) {
         generate_quest_for_settlement(ctx, settlement_id)?;
@@ -18110,7 +18167,8 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     let ordinal = ctx
         .db
         .quest_generation_authority()
-        .iter()
+        .settlement_id()
+        .filter(&settlement_id.to_string())
         .try_fold(0u16, |count, row| {
             let validated = validate_quest_generation_authority(&row)?;
             Ok::<_, String>(count + u16::from(validated.context.settlement_id == settlement_id))
@@ -18370,7 +18428,8 @@ pub fn spawn_developer_quest(
     let ordinal = ctx
         .db
         .quest_generation_authority()
-        .iter()
+        .settlement_id()
+        .filter(&settlement_id.to_string())
         .try_fold(0u16, |count, row| {
             let validated = validate_quest_generation_authority(&row)?;
             Ok::<_, String>(count + u16::from(validated.context.settlement_id == settlement_id))

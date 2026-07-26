@@ -314,12 +314,15 @@ pub(crate) fn ensure_npc_case_interventions(
     let mut authorities = ctx
         .db
         .quest_generation_authority()
-        .iter()
-        .filter(|authority| authority.settlement_id == settlement_id)
+        .settlement_id()
+        .filter(&settlement_id.to_string())
         .collect::<Vec<_>>();
     authorities.sort_by(|left, right| left.case_id.cmp(&right.case_id));
     for authority in authorities {
         let validated = validate_quest_generation_authority(&authority)?;
+        if validated.context.settlement_id != settlement_id {
+            continue;
+        }
         let Some(case) = ctx.db.case_authority().id().find(&authority.case_id) else {
             continue;
         };
@@ -927,6 +930,22 @@ mod tests {
         assert!(!reducer.contains("apply_outcome("));
         assert!(!reducer.contains("resolve_generated_case("));
         assert!(source.contains("let decision = decide_after_supported_approach("));
+    }
+
+    #[test]
+    fn npc_interventions_use_the_settlement_authority_index() {
+        let source = include_str!("npc_adventurer.rs").replace('\r', "");
+        let activity = source
+            .split("pub(crate) fn ensure_npc_case_interventions")
+            .nth(1)
+            .and_then(|tail| tail.split("fn ensure_npc_adventuring_party").next())
+            .expect("NPC intervention activity");
+        assert!(activity.contains("quest_generation_authority()"));
+        assert!(activity.contains(".settlement_id()"));
+        assert!(activity.contains(".filter(&settlement_id.to_string())"));
+        assert!(!activity.contains("quest_generation_authority()\n        .iter()"));
+        assert!(activity.contains("validate_quest_generation_authority"));
+        assert!(activity.contains("validated.context.settlement_id != settlement_id"));
     }
 
     #[test]
