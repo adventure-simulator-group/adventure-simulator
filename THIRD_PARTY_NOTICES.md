@@ -72,5 +72,5 @@ from Font Awesome Free 7.3.1 by Fonticons, Inc. They are licensed under
 
 Generated strategic map tiles and terrain packs include a cultivated-land
 classification derived from HYDE 3.5 c9 historical cropland-area data. See
-`docs/HISTORICAL_LAND_USE.md` and the source release metadata for provenance
+`wiki/reference/historical-land-use.md` and the source release metadata for provenance
 and applicable terms.

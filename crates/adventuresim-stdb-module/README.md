@@ -1,114 +1,64 @@
-# strategic-stdb-module
+# adventuresim-stdb-module
 
-Minimal SpacetimeDB module for Adventure Simulator's strategic layer.
+The SpacetimeDB module owns Adventure Simulator's persistent strategic state and
+authoritative strategic mutations.
 
-## What This Stores
+## Persistence boundary
 
-**ONLY strategic (meta-game) state:**
+The module stores durable facts such as characters, parties, progression,
+schedules, injuries, needs, inventory, equipment, currency, journeys,
+organizations, cases, investigations, contracts, mission authority, final
+battle results, finalized loot, and compiled world records.
 
-- ✅ Character progression (XP, level)
-- ✅ Persistent inventory
-- ✅ Party membership
-- ✅ Mission tracking
-- ✅ Quest progress
+It does not store tactical positions, enemies, physics, attacks, temporary
+health, per-tick damage, or other live combat state. Those values exist only in
+the headless tactical server.
 
-**NOT tactical (gameplay) state:**
+See the repository [architecture reference](../../wiki/reference/architecture.md)
+for the complete boundary.
 
-- ❌ HP (current/max)
-- ❌ Alive/dead status
-- ❌ Enemy positions
-- ❌ Player positions
-- ❌ Tactical tick-by-tick damage/combat state (strategic autoresolve stores final wounds, spent ammunition, and a diagnostic report rather than live combat state)
-- ❌ Loot drops
+## Content and authority
 
-Tactical state lives in the `tactical-server` game state and is discarded when missions end.
+Generated cases retain private catalog revision, deterministic context,
+canonical manifest, and replay information. Materialization creates the linked
+local problem, investigation graph, objectives, custody, sites, hostiles, and
+finales atomically. See
+[Quest generation and investigation](../../wiki/reference/quest-generation-and-investigation.md)
+and [Quest authority](../../wiki/reference/quest-authority.md).
 
-## Tables (9)
+Player-facing callers act through `strategic-web`, which owns the registered
+strategic-gateway identity. Browsers do not connect to this module directly.
+The current local gateway does not yet provide a complete
+player-identity-to-character ownership model.
 
-1. `player` - SpacetimeDB identity → character mapping
-2. `character` - Character progression (XP, level)
-3. `inventory_item` - Persistent items
-4. `party` - Party groups
-5. `party_member` - Party membership
-6. private `mission_authority` - Tactical-to-strategic mission binding
-7. private `case_authority` / `case_outcome_fact` - Objective authority and idempotent facts
-8. private `contract_authority` - Offered, accepted, reportable, and paid agreements
-9. private `case_custody` - Unique versioned asset and subject custody
+## Tactical completion
 
-Generated cases also use private `quest_generation_authority` for the catalog
-revision, deterministic context snapshot, canonical manifest, and replay
-trace. Materialization atomically creates the linked symptom, investigation
-graph, objectives, custody, hostiles, and finales. See
-[`docs/QUEST_GENERATION.md`](../../docs/QUEST_GENERATION.md).
+Mission requests bind a party, scene, one-use tactical-server claim, and private
+strategic mission authority. The registered tactical child keeps live
+simulation state in memory and calls `end_tactical_server` with its terminal
+resolution.
 
-## Key Reducers
+The module then validates that server and mission, selects only a compatible
+private strategic outcome, and commits durable consequences idempotently.
+Tactical code does not choose a case objective, capture subject, contract
+state, loot entitlement, or reward.
 
-- `upsert_character(id, name)` - Create/update character
-- `create_party(id, name, leader_id)` - Create party
-- `join_party(party_id, character_id)` - Join party
-- `request_tactical_server(character_id, mission_id)` - Request a bound mission
-- `autoresolve_mission(character_id, mission_id)` - Commit a trusted strategic battle result
-- `accept_contract(character_id, contract_id)` - Accept an existing case's contract
-- `abandon_contract(character_id, contract_id)` - Withdraw without deleting the case
-- `report_contract(character_id, contract_id)` - Report a resolved case and pay exactly once
+## Development
 
-## Publishing
-
-Use the repository-pinned SpacetimeDB CLI 2.6.1. The pre-launch upgrade from
-1.x is a deliberate reset/reseed and does not preserve existing database data.
-After that reset, use plain publishing for normal updates; reset publishing
-always deletes data and must not be used once player data needs preservation.
+Use the repository-pinned SpacetimeDB CLI and root `justfile` recipes:
 
 ```bash
-# Start SpacetimeDB
-spacetime start
-
-# Publish module
-cd crates/strategic-server/strategic-stdb-module
-spacetime publish strategic-stdb-module
-
-# Start the server-rendered strategic UI from the workspace root
+just build-strategic
+just publish
 just web
 ```
 
-## Usage
+Canonical reset recipes intentionally refuse to delete data. Use an explicitly
+isolated profile for disposable schema work:
 
-The strategic web UI demonstrates:
-
-1. Creating a character (gets starter items)
-2. Creating a party
-3. Starting a mission (allocates port, records mission)
-4. Committing mission results (applies XP and items to party members)
-
-The tactical server calls `commit_mission` when the mission ends:
-
-```rust
-// Tactical server computes results in memory
-let xp_gained = enemies_killed * 25;
-let items = vec![("lubeck_mark", 10), ("health_potion", 2)];
-let items_json = serde_json::to_string(&items)?;
-
-// Commit to SpacetimeDB
-spacetimedb_http_call(
-    "http://localhost:3000",
-    "strategic-stdb-module",
-    "commit_mission",
-    &[mission_id, success, xp_gained, items_json]
-)?;
+```bash
+just web-isolated-strategic module-dev 23100
 ```
 
-## Architecture
-
-```
-Browser HTML UI
-    │ WebSocket
-    ▼
-SpacetimeDB (strategic-stdb-module)
-    ▲
-    │ commit_mission(xp, items)
-    │
-Tactical Server (in-memory game state)
-```
-
-Tactical gameplay (HP, damage, positions) happens entirely in the tactical server's memory.
-Only the final results (XP, items) are persisted to SpacetimeDB.
+The full local workflow is documented in
+[Development workflow](../../wiki/reference/developing.md).
