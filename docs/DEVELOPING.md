@@ -469,7 +469,11 @@ bisection in source order; authentication, authorization, transport, and
 reducer-validation failures are reported once without replaying their batches.
 The token is neither printed nor written to disk. Import ownership remains
 the authenticated login identity for begin, every batch, and finish, and the
-existing finalization validation remains authoritative.
+existing finalization validation remains authoritative. Starting the first
+import also removes the local smoke-test settlements (Riverdale, Ironforge,
+and Willowmere), their renderer-only route nodes and edge, and their directly
+derived NPC and smith rows. Placeholder settlement data therefore never mixes
+with an imported historical world.
 The same archive installs the AVIF map and final terrain-routing package, so a
 fresh checkout does not need the 26 GiB source bundle or a geospatial rebuild.
 World loading persists canonical map and settlement facts only; it deliberately

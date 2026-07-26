@@ -42,8 +42,10 @@ use crate::{
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{local_problem_receipt, local_problem_rumor_delivery},
-    repair::item_condition,
-    settlement_population::{settlement_npc, settlement_npc_presence},
+    repair::{item_condition, settlement_smith},
+    settlement_population::{
+        settlement_npc, settlement_npc_presence, settlement_npc_seed_explanation,
+    },
     tactical::{
         tactical_server_authority, tactical_server_claim, tactical_server_request_authority,
     },
@@ -61,6 +63,11 @@ const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 const COMPILED_DEV_BOOTSTRAP_TOKEN: Option<&str> = option_env!("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN");
+const RIVERDALE_RENDERER_DEMO_NODE: u64 = u64::MAX - 2;
+const IRONFORGE_RENDERER_DEMO_NODE: u64 = u64::MAX - 1;
+const RENDERER_DEMO_EDGE: u64 = u64::MAX;
+const PLACEHOLDER_SETTLEMENT_IDS: [&str; 3] = ["riverdale", "ironforge", "willowmere"];
+
 fn parse_threat(enemy_type: &str) -> Result<adventuresim_core::bestiary::ThreatId, String> {
     enemy_type
         .parse()
@@ -2629,6 +2636,70 @@ pub struct WorldDataImport {
     pub completed: bool,
 }
 
+fn discard_placeholder_settlement_data(ctx: &ReducerContext) {
+    for settlement_id in PLACEHOLDER_SETTLEMENT_IDS {
+        for alias in ctx
+            .db
+            .settlement_alias()
+            .settlement_id()
+            .filter(settlement_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.settlement_alias().id().delete(&alias.id);
+        }
+        for description in ctx
+            .db
+            .settlement_description()
+            .settlement_id()
+            .filter(settlement_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.settlement_description().id().delete(&description.id);
+        }
+        for presence in ctx
+            .db
+            .settlement_npc_presence()
+            .settlement_id()
+            .filter(settlement_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db
+                .settlement_npc_presence()
+                .npc_id()
+                .delete(&presence.npc_id);
+        }
+        for npc in ctx
+            .db
+            .settlement_npc()
+            .home_settlement_id()
+            .filter(settlement_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db
+                .settlement_npc_seed_explanation()
+                .npc_id()
+                .delete(&npc.id);
+            ctx.db.settlement_npc().id().delete(&npc.id);
+        }
+        let settlement_id = settlement_id.to_string();
+        ctx.db
+            .settlement_smith()
+            .settlement_id()
+            .delete(&settlement_id);
+        ctx.db.settlement().id().delete(&settlement_id);
+    }
+
+    ctx.db.travel_edge().id().delete(RENDERER_DEMO_EDGE);
+    ctx.db
+        .world_node()
+        .id()
+        .delete(RIVERDALE_RENDERER_DEMO_NODE);
+    ctx.db
+        .world_node()
+        .id()
+        .delete(IRONFORGE_RENDERER_DEMO_NODE);
+}
+
 /// Start a world import. This must be called before sending any import batch.
 /// The first caller becomes the owner of this import session; in production the
 /// deployment operator must claim it before the database is opened to players.
@@ -2679,6 +2750,7 @@ pub fn begin_world_data_import(
             import.schema_version, import.artifact_id
         )),
         None => {
+            discard_placeholder_settlement_data(ctx);
             ctx.db.world_data_import().insert(WorldDataImport {
                 id: 0,
                 owner: ctx.sender(),
@@ -18166,14 +18238,11 @@ pub fn seed_standalone_tactical_mission(
 }
 
 pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
-    const RIVERDALE_NODE: u64 = u64::MAX - 2;
-    const IRONFORGE_NODE: u64 = u64::MAX - 1;
-    const DEMO_EDGE: u64 = u64::MAX;
     const DEMO_SOURCES: &str = "- **Adventure Simulator renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
 
     for (id, latitude, longitude) in [
-        (RIVERDALE_NODE, 53.50, 10.00),
-        (IRONFORGE_NODE, 53.62, 10.20),
+        (RIVERDALE_RENDERER_DEMO_NODE, 53.50, 10.00),
+        (IRONFORGE_RENDERER_DEMO_NODE, 53.62, 10.20),
     ] {
         if ctx.db.world_node().id().find(id).is_none() {
             ctx.db.world_node().insert(WorldNode {
@@ -18189,11 +18258,11 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             });
         }
     }
-    if ctx.db.travel_edge().id().find(DEMO_EDGE).is_none() {
+    if ctx.db.travel_edge().id().find(RENDERER_DEMO_EDGE).is_none() {
         ctx.db.travel_edge().insert(TravelEdge {
-            id: DEMO_EDGE,
-            from_node_id: RIVERDALE_NODE,
-            to_node_id: IRONFORGE_NODE,
+            id: RENDERER_DEMO_EDGE,
+            from_node_id: RIVERDALE_RENDERER_DEMO_NODE,
+            to_node_id: IRONFORGE_RENDERER_DEMO_NODE,
             route: TravelRoute::Land(LandRoute {
                 bridge: None,
                 water_crossings: vec![],
@@ -18215,7 +18284,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             "Riverdale",
             10.00,
             53.50,
-            Some(RIVERDALE_NODE),
+            Some(RIVERDALE_RENDERER_DEMO_NODE),
             3,
             "hills",
             SettlementReligiousStatus::Established {
@@ -18227,7 +18296,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             "Ironforge",
             10.20,
             53.62,
-            Some(IRONFORGE_NODE),
+            Some(IRONFORGE_RENDERER_DEMO_NODE),
             4,
             "desert",
             SettlementReligiousStatus::Established {
