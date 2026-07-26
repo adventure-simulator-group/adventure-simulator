@@ -459,7 +459,7 @@ changing Affinity or Familiarity. Strategic relationship state
 never contains tactical positions, HP, damage ticks, or enemies.
 
 This is a pre-launch clean schema change. Development databases must be
-recreated/reseeded; there is intentionally no Charisma compatibility field,
+recreated/reseeded; there are intentionally no Charisma or Precision compatibility fields,
 migration, dual-read path, or preservation of disposable characters.
 
 ### Key Reducers

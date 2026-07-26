@@ -77,7 +77,8 @@ Ranged attacks use the same attack-minus-defense exchange, armor coverage,
 penetration, padding, and critical-hit rules as melee attacks. The attacker's
 Bow, Crossbow, Firearm, or Throw distribution supplies the weapon check, both
 arms contribute to aiming, and the weapon's projectile energy replaces muscular striking force. Focus adds the character's
-Precision to both melee and ranged accuracy; Agility remains the reflex term.
+Weapon accuracy and future input precision affect attacks; neither is a
+character attribute. Agility governs physical-skill learning and mastery.
 
 An alert defender may dodge a projectile or interpose a shield using the normal
 Dodge and Block checks. An unaware defender has no active defense. A missed

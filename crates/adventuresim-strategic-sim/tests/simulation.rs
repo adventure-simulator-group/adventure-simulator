@@ -145,24 +145,6 @@ fn generated_profiles_exclude_raiding_and_custom_raiding_is_rejected() {
 }
 
 #[test]
-fn dedicated_precision_changes_thievery_outcome() {
-    let mut low = generate_profile(31, 0);
-    low.schedule = adventuresim_core::strategic_schedule::DailySchedule {
-        thievery: 720,
-        ..Default::default()
-    };
-    low.preferred_activity = ActivityPreference::Thievery;
-    low.initial_skills.stealth = 0.0;
-    low.attributes.precision = 0.5;
-    let mut high = low.clone();
-    high.agent_id = 1;
-    high.attributes.precision = 5.0;
-    let report = run_profiles(config(31, 2, 30), vec![low, high]).unwrap();
-    assert!(report.metrics[1].wealth > report.metrics[0].wealth);
-    assert!(report.metrics[1].notoriety < report.metrics[0].notoriety);
-}
-
-#[test]
 fn extreme_skill_hours_and_oversized_report_vectors_are_rejected() {
     let mut profile = generate_profile(1, 0);
     profile.initial_skills.sword = MAX_INITIAL_SKILL_HOURS + 1.0;

@@ -530,11 +530,18 @@ fn profession_tier_for(
         .character_id()
         .find(character_id)
         .ok_or("Character skills not found")?;
+    let attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character attributes not found")?;
     let profession = adventuresim_core::profession::profession_for_service(service_id)
         .ok_or("Unknown profession service")?;
     Ok(adventuresim_core::profession::profession_tier(
         profession,
         |skill| profession_training_hours(&skills, &apprenticeship, skill),
+        |skill| skill.governing_aptitude(&attributes),
     ))
 }
 
@@ -668,8 +675,15 @@ fn apply_training(
     skills: &mut CharacterSkills,
     schedule: &ScheduleAllocation,
     elapsed: u64,
+    mastery_elapsed: u64,
     activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
 ) {
+    let attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .expect("character attributes must exist while training");
     let mut hours = SkillHours {
         polearm: skills.polearm_hours,
         axe: skills.axe_hours,
@@ -699,7 +713,13 @@ fn apply_training(
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
-    apply_schedule_training(&mut hours, core_schedule(schedule), elapsed, activities);
+    let mut excess = apply_schedule_training(
+        &mut hours,
+        core_schedule(schedule),
+        elapsed,
+        activities,
+        &attributes,
+    );
     let prayer_religion = ctx
         .db
         .character_condition()
@@ -708,11 +728,12 @@ fn apply_training(
         .and_then(|condition| condition.religion_id)
         .as_deref()
         .and_then(OfficialReligion::from_id);
-    apply_religion_training(
+    excess += apply_religion_training(
         &mut hours.religion,
         elapsed,
         prayer_religion,
         schedule.prayer_minutes,
+        &attributes,
     );
     if let Some(character) = ctx.db.character().id().find(character_id) {
         if let Some(settlement_id) = character.current_settlement_id {
@@ -804,7 +825,13 @@ fn apply_training(
             .and_then(OfficialReligion::from_id)
         {
             let trained = elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(minutes) / 60.0;
-            hours.religion.add_direct(religion, trained);
+            excess += adventuresim_core::skill::apply_direct_training(
+                Skill::Religion,
+                hours.religion.direct_mut(religion),
+                trained,
+                &attributes,
+            )
+            .excess_effective_hours;
         }
     }
     skills.polearm_hours = hours.polearm;
@@ -834,6 +861,7 @@ fn apply_training(
     skills.balance_hours = hours.balance;
     skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
+    crate::condition::record_mastery_training_morale(ctx, character_id, mastery_elapsed, excess);
 }
 
 pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
@@ -1158,6 +1186,7 @@ pub fn perform_immediate_activity(
         &mut skills,
         &effective_schedule,
         MINUTES_PER_DAY,
+        u64::from(effective_minutes),
         profile,
     );
     ctx.db.character_skills().character_id().update(skills);
@@ -1473,13 +1502,20 @@ fn rest_for_minutes(
         .character_skills()
         .character_id()
         .find(character_id)
-        .map(|skills| {
-            (
-                Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8,
-                Skill::Tailoring
-                    .training_rank(skills.tailoring_hours)
+        .and_then(|skills| {
+            let attributes = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(character_id)?;
+            Some((
+                Skill::Smithing
+                    .capped_training_rank(skills.smithing_hours, &attributes)
                     .floor() as u8,
-            )
+                Skill::Tailoring
+                    .capped_training_rank(skills.tailoring_hours, &attributes)
+                    .floor() as u8,
+            ))
         })
         .unwrap_or((0, 0));
     let maintenance_elapsed = crate::repair::field_repair(
@@ -1521,6 +1557,7 @@ fn rest_for_minutes(
             character_id,
             &mut skills,
             &schedule.downtime,
+            training_elapsed,
             training_elapsed,
             activities,
         );
@@ -1724,7 +1761,15 @@ fn advance_personal_camp_time(
             .find(member_id)
             .ok_or("Character skill record not found")?;
         let activities = activity_training_profile(ctx, member_id)?;
-        apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
+        apply_training(
+            ctx,
+            member_id,
+            &mut skills,
+            &allowed,
+            downtime,
+            downtime,
+            activities,
+        );
         ctx.db.character_skills().character_id().update(skills);
         crate::condition::apply_settlement_leisure_condition(
             ctx,
@@ -1892,6 +1937,12 @@ pub fn rest_at_camp(
         crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, member_elapsed)?;
         crate::food::clear_stomach_fullness(ctx, member_id);
         let convalescing = convalescing.min(member_elapsed);
+        let attributes = ctx
+            .db
+            .character_attributes()
+            .character_id()
+            .find(member_id)
+            .ok_or("Character attributes not found")?;
         let (smithing_skill, tailoring_skill) = ctx
             .db
             .character_skills()
@@ -1899,9 +1950,11 @@ pub fn rest_at_camp(
             .find(member_id)
             .map(|skills| {
                 (
-                    Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8,
+                    Skill::Smithing
+                        .capped_training_rank(skills.smithing_hours, &attributes)
+                        .floor() as u8,
                     Skill::Tailoring
-                        .training_rank(skills.tailoring_hours)
+                        .capped_training_rank(skills.tailoring_hours, &attributes)
                         .floor() as u8,
                 )
             })
@@ -1933,7 +1986,15 @@ pub fn rest_at_camp(
                 .find(member_id)
                 .ok_or("Character skill record not found")?;
             let activities = activity_training_profile(ctx, member_id)?;
-            apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
+            apply_training(
+                ctx,
+                member_id,
+                &mut skills,
+                &allowed,
+                downtime,
+                downtime,
+                activities,
+            );
             if let Some((language, coefficient)) = language_choices.get(&member_id) {
                 skills.oral_languages.add_direct(
                     *language,
@@ -2085,6 +2146,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         character_id,
         &mut skills,
         &schedule.downtime,
+        training_elapsed,
         training_elapsed,
         activities,
     );
@@ -2299,11 +2361,12 @@ mod tests {
                     ..Default::default()
                 },
             },
+            &adventuresim_core::stub::StubAttributes,
         );
-        assert!((hours.sword - 0.1875).abs() < f32::EPSILON);
-        assert!((hours.dodge - 0.1875).abs() < f32::EPSILON);
-        assert!((hours.balance - 0.1875).abs() < f32::EPSILON);
-        assert!((hours.will - 4.1875).abs() < f32::EPSILON);
+        assert!((hours.sword - 0.046875).abs() < f32::EPSILON);
+        assert!((hours.dodge - 0.046875).abs() < f32::EPSILON);
+        assert!((hours.balance - 0.046875).abs() < f32::EPSILON);
+        assert!((hours.will - 1.046875).abs() < f32::EPSILON);
         assert_eq!(allocation.allocated_minutes(), 630);
     }
 

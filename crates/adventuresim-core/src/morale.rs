@@ -22,6 +22,55 @@ pub const MAX_RELIGIOUS_NEGLECT_MORALE: f32 = 8.0;
 pub const RELIGIOUS_NEGLECT_COMMAND_RELIEF: f32 = 1.6;
 /// Losing this fraction of maximum blood volume fully incapacitates a character.
 pub const BLOOD_LOSS_INCAPACITATION_FRACTION: f32 = 0.30;
+/// Shared upper bound for enjoyment from training already-mastered skills.
+pub const MASTERY_ENJOYMENT_LIMIT: f32 = 4.0;
+/// Excess effective hours needed to traverse one e-fold of the mastery curve.
+pub const MASTERY_ENJOYMENT_EFOLD_HOURS: f32 = 40.0;
+
+/// Advance shared mastery enjoyment through one constant-rate interval.
+///
+/// Saturation and decay are solved together, making the result invariant to
+/// splitting an interval into synchronization chunks.
+pub fn mastery_enjoyment_after_interval(
+    starting_morale: f32,
+    excess_effective_hours: f32,
+    elapsed_minutes: u64,
+    duration_minutes: u64,
+) -> f32 {
+    let starting = if starting_morale.is_finite() {
+        starting_morale.clamp(0.0, MASTERY_ENJOYMENT_LIMIT)
+    } else {
+        0.0
+    };
+    let excess = if excess_effective_hours.is_finite() {
+        excess_effective_hours.max(0.0)
+    } else {
+        0.0
+    };
+    if elapsed_minutes == 0 || duration_minutes == 0 {
+        return MASTERY_ENJOYMENT_LIMIT
+            - (MASTERY_ENJOYMENT_LIMIT - starting)
+                * (-excess / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
+    }
+    let elapsed = elapsed_minutes as f32;
+    let saturation_rate = excess / elapsed / MASTERY_ENJOYMENT_EFOLD_HOURS;
+    let decay_rate = 1.0 / duration_minutes as f32;
+    if saturation_rate <= f32::EPSILON {
+        return starting * (-decay_rate * elapsed).exp();
+    }
+    let combined_rate = saturation_rate + decay_rate;
+    let equilibrium = MASTERY_ENJOYMENT_LIMIT * saturation_rate / combined_rate;
+    (equilibrium + (starting - equilibrium) * (-combined_rate * elapsed).exp())
+        .clamp(0.0, MASTERY_ENJOYMENT_LIMIT)
+}
+
+pub fn mastery_enjoyment_decay(age_minutes: u64, duration_minutes: u64) -> f32 {
+    if duration_minutes == 0 || age_minutes >= duration_minutes {
+        0.0
+    } else {
+        (-(age_minutes as f32) / duration_minutes as f32).exp()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncapacitationStatus {
@@ -291,5 +340,20 @@ mod tests {
         assert_eq!(thirst_incapacitation(1.0, 4_000.0), 0.0);
         assert!((hunger_incapacitation(-18_000.0, 6_000.0) - 1.0).abs() < 0.0001);
         assert!((thirst_incapacitation(-4_000.0, 4_000.0) - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn mastery_enjoyment_is_bounded_positive_and_chunk_invariant() {
+        let duration = 7 * 24 * 60;
+        let combined = mastery_enjoyment_after_interval(0.0, 80.0, 1_440, duration);
+        let first = mastery_enjoyment_after_interval(0.0, 40.0, 720, duration);
+        let chunked = mastery_enjoyment_after_interval(first, 40.0, 720, duration);
+        assert!((combined - chunked).abs() < 0.0001);
+        assert!(combined > 0.0 && combined < MASTERY_ENJOYMENT_LIMIT);
+        assert!(mastery_enjoyment_after_interval(0.0, 0.01, 1_440, duration) > 0.0);
+        assert!(
+            mastery_enjoyment_after_interval(0.0, 10_000.0, 1_440, duration)
+                <= MASTERY_ENJOYMENT_LIMIT
+        );
     }
 }

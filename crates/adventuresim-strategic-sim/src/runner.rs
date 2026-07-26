@@ -97,6 +97,7 @@ impl StrategicBackend for NativeSettlementBackend {
             state.profile.schedule,
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+            &state.profile.attributes,
         );
         let checks = Checks {
             attrs: &state.profile.attributes,
@@ -437,7 +438,6 @@ fn quantize_canonical_floats(report: &mut SimulationReport) {
         a.endurance = q32(a.endurance);
         a.immunity = q32(a.immunity);
         a.gut = q32(a.gut);
-        a.precision = q32(a.precision);
         a.intelligence = q32(a.intelligence);
         a.instinct = q32(a.instinct);
         a.eyesight = q32(a.eyesight);
@@ -689,7 +689,6 @@ fn validate_profile(p: &AgentProfile) -> Result<(), String> {
         a.endurance,
         a.immunity,
         a.gut,
-        a.precision,
         a.intelligence,
         a.instinct,
         a.eyesight,
@@ -829,14 +828,6 @@ impl PlayerAttributes for crate::Attributes {
             SimpleAttribute::Eyesight => self.eyesight,
             SimpleAttribute::Hearing => self.hearing,
         }
-    }
-
-    fn raw_precision(&self) -> f32 {
-        self.precision
-    }
-
-    fn has_dedicated_precision(&self) -> bool {
-        true
     }
 }
 

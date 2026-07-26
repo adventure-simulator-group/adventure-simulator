@@ -285,7 +285,6 @@ fn spawn_connected_player(
         endurance: player.attrs.endurance,
         immunity: player.attrs.immunity,
         gut: player.attrs.gut,
-        precision: player.attrs.precision,
         intelligence: player.attrs.intelligence,
         instinct: player.attrs.instinct,
         eyesight: player.attrs.eyesight,

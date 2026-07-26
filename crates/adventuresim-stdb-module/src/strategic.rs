@@ -110,7 +110,6 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Result<Comba
         endurance: rating,
         immunity: rating,
         gut: rating,
-        precision: rating + profile.precision_bonus,
         intelligence: rating * 0.7,
         instinct: rating,
         eyesight: rating,
@@ -12843,15 +12842,50 @@ fn train_party_terrain_movement(
     let exposure = terrain_training_exposure(&route.spans, start, end);
     for member_id in living_party_member_ids(ctx, party_id) {
         if let Some(mut skills) = ctx.db.character_skills().character_id().find(member_id) {
-            skills.terrain_plains_hours = (skills.terrain_plains_hours + exposure[0])
-                .clamp(0.0, Skill::TerrainPlains.max_hours());
-            skills.terrain_forest_hours = (skills.terrain_forest_hours + exposure[1])
-                .clamp(0.0, Skill::TerrainForest.max_hours());
-            skills.terrain_hills_hours = (skills.terrain_hills_hours + exposure[2])
-                .clamp(0.0, Skill::TerrainHills.max_hours());
-            skills.terrain_urban_hours = (skills.terrain_urban_hours + exposure[3])
-                .clamp(0.0, Skill::TerrainUrban.max_hours());
+            let attributes = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(member_id)
+                .ok_or("Character attributes not found")?;
+            let mut excess = 0.0;
+            for (stored, skill, real_hours) in [
+                (
+                    &mut skills.terrain_plains_hours,
+                    Skill::TerrainPlains,
+                    exposure[0],
+                ),
+                (
+                    &mut skills.terrain_forest_hours,
+                    Skill::TerrainForest,
+                    exposure[1],
+                ),
+                (
+                    &mut skills.terrain_hills_hours,
+                    Skill::TerrainHills,
+                    exposure[2],
+                ),
+                (
+                    &mut skills.terrain_urban_hours,
+                    Skill::TerrainUrban,
+                    exposure[3],
+                ),
+            ] {
+                excess += adventuresim_core::skill::apply_direct_training(
+                    skill,
+                    stored,
+                    real_hours,
+                    &attributes,
+                )
+                .excess_effective_hours;
+            }
             ctx.db.character_skills().character_id().update(skills);
+            crate::condition::record_mastery_training_morale(
+                ctx,
+                member_id,
+                movement_minutes,
+                excess,
+            );
         }
     }
     Ok(())
@@ -13421,10 +13455,9 @@ fn whole_party_sneak_score(ctx: &ReducerContext, member_ids: &[u64]) -> u16 {
                 .character_attributes()
                 .character_id()
                 .find(*member_id)?;
-            let training =
-                adventuresim_core::prelude::Skill::Stealth.training_rank(skills.stealth_hours);
-            let agility = (attributes.left_arm_agility + attributes.right_arm_agility) * 0.5;
-            Some((training.min(agility).max(0.0) * 100.0).round() as u16)
+            let training = adventuresim_core::prelude::Skill::Stealth
+                .capped_training_rank(skills.stealth_hours, &attributes);
+            Some((training.max(0.0) * 100.0).round() as u16)
         })
         .min()
         .unwrap_or(0)

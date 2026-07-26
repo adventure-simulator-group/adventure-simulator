@@ -16,7 +16,6 @@ pub struct CombatAttributes {
     pub endurance: f32,
     pub immunity: f32,
     pub gut: f32,
-    pub precision: f32,
     pub intelligence: f32,
     pub instinct: f32,
     pub eyesight: f32,
@@ -56,14 +55,6 @@ impl PlayerAttributes for CombatAttributes {
             SimpleAttribute::Eyesight => self.eyesight,
             SimpleAttribute::Hearing => self.hearing,
         }
-    }
-
-    fn raw_precision(&self) -> f32 {
-        self.precision
-    }
-
-    fn has_dedicated_precision(&self) -> bool {
-        true
     }
 }
 
@@ -1488,7 +1479,6 @@ mod tests {
         let mut fighter = Combatant::new(id);
         fighter.attributes = CombatAttributes {
             endurance: 3.0,
-            precision: skill,
             intelligence: 2.0,
             instinct: 3.0,
             left_arm_strength: skill,
@@ -1716,11 +1706,11 @@ mod tests {
     }
 
     #[test]
-    fn precision_does_not_increase_block_defense() {
-        let mut low_precision = fighter(1, 3.0, false);
-        let mut high_precision = low_precision.clone();
-        low_precision.attributes.precision = 0.0;
-        high_precision.attributes.precision = 5.0;
+    fn agility_does_not_add_to_block_defense_below_the_mastery_cap() {
+        let low_agility = fighter(1, 3.0, false);
+        let mut high_agility = low_agility.clone();
+        high_agility.attributes.left_arm_agility = 5.0;
+        high_agility.attributes.right_arm_agility = 5.0;
 
         let block = |combatant: &Combatant| {
             combatant.skills.skill_check_by_parts(
@@ -1732,7 +1722,7 @@ mod tests {
                 LimbWeights::all_equal(),
             )
         };
-        assert_eq!(block(&low_precision), block(&high_precision));
+        assert_eq!(block(&low_agility), block(&high_agility));
     }
 
     #[test]

@@ -351,7 +351,6 @@ fn live_attributes(character_id: u64, profile: &AgentProfile) -> CharacterAttrib
         endurance: a.endurance,
         immunity: a.immunity,
         gut: a.gut,
-        precision: a.precision,
         intelligence: a.intelligence,
         instinct: a.instinct,
         eyesight: a.eyesight,

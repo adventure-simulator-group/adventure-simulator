@@ -421,6 +421,9 @@ impl WrittenLanguageHours {
             })
     }
     pub fn effective(self, l: WrittenLanguage) -> f32 {
+        if self.direct(l) <= 0.0 {
+            return 0.0;
+        }
         WrittenLanguage::ALL
             .into_iter()
             .map(|s| self.direct(s).max(0.0) * l.correlation(s))

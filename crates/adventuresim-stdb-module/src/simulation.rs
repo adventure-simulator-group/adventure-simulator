@@ -232,7 +232,6 @@ pub fn configure_simulation_character(
         attributes.endurance,
         attributes.immunity,
         attributes.gut,
-        attributes.precision,
         attributes.intelligence,
         attributes.instinct,
         attributes.eyesight,

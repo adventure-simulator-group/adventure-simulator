@@ -886,13 +886,31 @@ pub fn cook_food(
         anchor_minute: out_minute,
     });
     if let Some(mut skills) = ctx.db.character_skills().character_id().find(character_id) {
-        skills.cooking_hours += duration as f32 / 60.0;
+        let attributes = ctx
+            .db
+            .character_attributes()
+            .character_id()
+            .find(character_id)
+            .ok_or("Character attributes not found")?;
+        let gain = adventuresim_core::skill::apply_direct_training(
+            adventuresim_core::skill::Skill::Cooking,
+            &mut skills.cooking_hours,
+            duration as f32 / 60.0,
+            &attributes,
+        );
         ctx.db.character_skills().character_id().update(skills);
+        crate::condition::record_mastery_training_morale(
+            ctx,
+            character_id,
+            u64::from(duration),
+            gain.excess_effective_hours,
+        );
     }
     consume_food_amount(ctx, character_id, output.id, f32::MAX, true)?;
     // A full character consumes zero calories, so the helper may return before
     // its mutation refresh. The retained output mass must still be persisted.
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())
 }
 

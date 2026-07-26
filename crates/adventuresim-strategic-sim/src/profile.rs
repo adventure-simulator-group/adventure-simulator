@@ -11,7 +11,6 @@ pub struct Attributes {
     pub endurance: f32,
     pub immunity: f32,
     pub gut: f32,
-    pub precision: f32,
     pub intelligence: f32,
     pub instinct: f32,
     pub eyesight: f32,
@@ -217,7 +216,6 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         endurance: bounded((physique + resilience) * 0.5, 0.35, &mut rng),
         immunity: bounded(resilience, 0.45, &mut rng),
         gut: bounded(resilience, 0.5, &mut rng),
-        precision: bounded(coordination, 0.4, &mut rng),
         intelligence: bounded(cognition, 0.4, &mut rng),
         instinct: bounded((cognition + coordination) * 0.5, 0.4, &mut rng),
         eyesight: bounded(coordination, 0.6, &mut rng),
@@ -471,7 +469,8 @@ fn generated_personality(rng: &mut StableRng) -> Personality {
 pub fn derive_build(p: &Personality, a: &Attributes) -> AgentBuild {
     let arm_strength = (a.left_arm_strength + a.right_arm_strength) * 0.5;
     let frontline_viable = a.endurance >= 3.0 && arm_strength >= 3.0;
-    let ranged_viable = a.precision >= 2.4 && a.eyesight >= 2.4;
+    let arm_agility = (a.left_arm_agility + a.right_arm_agility) * 0.5;
+    let ranged_viable = arm_agility >= 2.4 && a.eyesight >= 2.4;
     let (role, rationale) = if p.drive == Drive::Content {
         (
             BuildRole::Civilian,
@@ -554,7 +553,6 @@ mod tests {
             endurance,
             immunity: 3.0,
             gut: 3.0,
-            precision: 3.0,
             intelligence: 3.0,
             instinct: 3.0,
             eyesight: 3.0,

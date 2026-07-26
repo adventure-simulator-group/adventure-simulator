@@ -57,9 +57,8 @@ pub(crate) fn character_stats_panel(
             &[],
         ))
         (party_skills_rail(
-            &format!("{}'s skills", character.name), skills, limbs, None, None, None,
-            false, 0.0, None, CombatTrainingProfile::default(),
-            CharacterSheetActions::default(),
+            &format!("{}'s skills", character.name), attributes, skills, limbs, None, None, None,
+            false, 0.0, None, CombatTrainingProfile::default(), CharacterSheetActions::default(),
         ))
         (physiology_dialog(medical, "physiology-chart-dialog", &character.name))
     }
@@ -137,6 +136,7 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
             ))
             (party_skills_rail(
                 view.skills_title,
+                view.attributes,
                 view.skills,
                 view.limbs,
                 view.schedule,
