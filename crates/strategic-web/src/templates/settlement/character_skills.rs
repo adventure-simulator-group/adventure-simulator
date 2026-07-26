@@ -1,6 +1,6 @@
 use adventuresim_core::{
     activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
-    prelude::Skill,
+    prelude::{PlayerSkills, Skill},
     skill::aptitude_training_multiplier,
     strategic_schedule::{
         BASELINE_FATIGUE_PER_DAY, CombatTrainingProfile, DailySchedule,
@@ -37,6 +37,7 @@ struct ProfessionActivityPreview {
     apprenticeship_accrued: u64,
     practice_accrued: u64,
     practice_threshold: u64,
+    practice_weight: u64,
     practice_reward: &'static str,
     tier_label: &'static str,
 }
@@ -61,7 +62,16 @@ impl ProfessionActivityPreview {
             ),
             _ => return [0.0, 0.0],
         };
-        let after = accrued.saturating_add(u64::from(minutes) * PROFESSION_ACCRUAL_SCALE);
+        let weight = if allocation_name == "profession_practice_minutes" {
+            self.practice_weight
+        } else {
+            1
+        };
+        let after = accrued.saturating_add(
+            u64::from(minutes)
+                .saturating_mul(PROFESSION_ACCRUAL_SCALE)
+                .saturating_mul(weight),
+        );
         let delta = (after / threshold).saturating_sub(accrued / threshold) as f32 * sign;
         if reward == "virtue" {
             [0.0, delta]
@@ -183,9 +193,9 @@ impl ActivityPreviewRates {
                 }
             };
             let tier = adventuresim_core::profession::profession_tier(definition, hours, aptitude);
-            let practice_threshold = match tier {
-                adventuresim_core::profession::ProfessionTier::Master => 2 * 60 * MINUTES_PER_DAY,
-                _ => 8 * 60 * MINUTES_PER_DAY,
+            let practice_weight = match tier {
+                adventuresim_core::profession::ProfessionTier::Master => 2,
+                _ => 1,
             };
             let practice_reward = match definition.practice_reward {
                 adventuresim_core::profession::PracticeReward::Gold => "gold",
@@ -213,7 +223,8 @@ impl ActivityPreviewRates {
                         .collect(),
                     apprenticeship_accrued: row.apprenticeship_minutes_accrued,
                     practice_accrued: row.practice_minutes_accrued,
-                    practice_threshold,
+                    practice_threshold: 60 * MINUTES_PER_DAY,
+                    practice_weight,
                     practice_reward,
                     tier_label: tier.title(definition.religious),
                 },
@@ -404,26 +415,26 @@ fn skills_table(
                     th scope="col" aria-label="Skill details" {}
                 } }
                 tbody {
-                    @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, instinct, head_health, schedule.is_some(), None)) }
+                    @if skills.will_hours > 0.0 { (party_skill_row(skills, "Will", "will", Skill::Will, instinct, head_health, schedule.is_some(), None)) }
                     (social_skill_rows(skills, instinct, head_health, schedule))
                     @if skills.physiology_hours > 0.0 {
                         (party_skill_row(
+                            skills,
                             "Physiology",
                             "physiology",
                             Skill::Physiology,
-                            skills.physiology_hours,
                             intelligence,
                             head_health,
                             schedule.is_some(),
                             None,
                         ))
                     }
-                    (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, intelligence, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
+                    (party_skill_row(skills, "Cooking", "cooking", Skill::Cooking, intelligence, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
                     (religion_skill_rows(skills, intelligence, head_health, schedule, training_religion))
                     (bestiary_skill_rows(skills, intelligence, head_health, schedule.is_some()))
                     (language_skill_rows(skills, instinct, intelligence, schedule.is_some()))
                     (combat_skill_rows(skills, instinct, arm_agility, leg_agility, head_health, upper_health, lower_health, schedule, combat_profile))
-                    @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, all_agility, (upper_health + lower_health) * 0.5, schedule.is_some(), None)) }
+                    @if skills.stealth_hours > 0.0 { (party_skill_row(skills, "Stealth", "stealth", Skill::Stealth, all_agility, (upper_health + lower_health) * 0.5, schedule.is_some(), None)) }
                     (terrain_skill_rows(
                         skills,
                         intelligence,
@@ -434,9 +445,9 @@ fn skills_table(
                             open: actions.foraging_open,
                         }),
                     ))
-                    @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, intelligence, head_health, schedule.is_some(), None)) }
-                    @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, arm_agility, upper_health, schedule.is_some(), None)) }
-                    @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, arm_agility, upper_health, schedule.is_some(), None)) }
+                    @if skills.anatomy_hours > 0.0 { (party_skill_row(skills, "Anatomy", "surgeon", Skill::Anatomy, intelligence, head_health, schedule.is_some(), None)) }
+                    @if skills.tailoring_hours > 0.0 { (party_skill_row(skills, "Tailoring", "sewing-needle", Skill::Tailoring, arm_agility, upper_health, schedule.is_some(), None)) }
+                    @if skills.smithing_hours > 0.0 { (party_skill_row(skills, "Smithing", "smithing", Skill::Smithing, arm_agility, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
                         @let preview = activity_preview.unwrap_or_default();
                         tr class="schedule-divider" { td colspan="9" {} }
@@ -474,7 +485,7 @@ fn skills_table(
                             @if let Some(profession) = preview.profession.get(service_id) {
                                 @if profession.tier_label != "apprentice" && profession.tier_label != "novice" {
                                     @let religious = service_id == "religion";
-                                    (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, immediate_actions, ActivityEffectRates::default(), None, Some(profession), 1.0, if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; teachers earn faster than clerics." } else { "Practice an enrolled profession independently. Journeymen earn one coin per eight hours; masters earn one per two hours." }))
+                                    (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, immediate_actions, ActivityEffectRates::default(), None, Some(profession), 1.0, if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; teachers earn faster than clerics." } else { "Practice an enrolled profession independently. Journeymen earn one coin per hour; masters earn two per hour." }))
                                 }
                             }
                         }
@@ -523,12 +534,22 @@ fn terrain_skill_rows(
     ];
     let rank = entries
         .iter()
-        .map(|entry| entry.2.capped_rank_for_aptitude(entry.3, aptitude))
+        .map(|entry| {
+            entry.2.capped_rank_for_aptitude(
+                CharacterSkillHours(skills).effective_skill_hours(entry.2),
+                aptitude,
+            )
+        })
         .sum::<f32>()
         / 4.0;
     let average_hours = entries
         .iter()
         .map(|entry| finite_hours(entry.3))
+        .sum::<f32>()
+        / 4.0;
+    let average_effective_hours = entries
+        .iter()
+        .map(|entry| CharacterSkillHours(skills).effective_skill_hours(entry.2))
         .sum::<f32>()
         / 4.0;
     html! {
@@ -548,7 +569,7 @@ fn terrain_skill_rows(
                         "Terrain",
                         "Intelligence",
                         average_hours,
-                        average_hours,
+                        average_effective_hours,
                     ),
                     skill_rail_bar_options(),
                 ))
@@ -559,15 +580,16 @@ fn terrain_skill_rows(
                 }
             }
         }
-        @for (name, icon, skill, hours) in entries {
+        @for (name, icon, skill, _hours) in entries {
             tr class="party-skill-row terrain-detail-row" data-terrain-detail hidden {
                 th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                     (stat_icon(name, "terrain", icon, false))
                 }
                 td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
-                    @let uncapped = skill.training_rank(hours);
-                    @let sub_rank = skill.capped_rank_for_aptitude(hours, aptitude);
-                    (skill_rank_bar_with_tooltip(uncapped, sub_rank, &SkillTooltip::direct(skill, hours), skill_rail_bar_options()))
+                    @let effective_hours = CharacterSkillHours(skills).effective_skill_hours(skill);
+                    @let uncapped = skill.training_rank(effective_hours);
+                    @let sub_rank = skill.capped_rank_for_aptitude(effective_hours, aptitude);
+                    (skill_rank_bar_with_tooltip(uncapped, sub_rank, &SkillTooltip::ordinary(skills, skill), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
             }
@@ -982,20 +1004,20 @@ fn combat_skill_rows(
 ) -> Markup {
     let weights = profile.weights();
     html! {
-        (combat_meta_group("Melee", "crossed-swords", schedule, &[
+        (combat_meta_group(skills, "Melee", "crossed-swords", schedule, &[
             ("Polearm", "spear-hook", Skill::Polearm, skills.polearm_hours, arm_agility, upper_health, weights[0]),
             ("Axe", "battle-axe", Skill::Axe, skills.axe_hours, arm_agility, upper_health, weights[1]),
             ("Bludgeon", "flanged-mace", Skill::Bludgeon, skills.bludgeon_hours, arm_agility, upper_health, weights[2]),
             ("Sword", "sword", Skill::Sword, skills.sword_hours, arm_agility, upper_health, weights[3]),
             ("Knife", "bowie-knife", Skill::Knife, skills.knife_hours, arm_agility, upper_health, weights[4]),
         ]))
-        (combat_meta_group("Ranged", "archery-target", schedule, &[
+        (combat_meta_group(skills, "Ranged", "archery-target", schedule, &[
             ("Bow", "bow-arrow", Skill::Bow, skills.bow_hours, arm_agility, upper_health, weights[5]),
             ("Crossbow", "crossbow", Skill::Crossbow, skills.crossbow_hours, arm_agility, upper_health, weights[6]),
             ("Firearm", "musket", Skill::Firearm, skills.firearm_hours, arm_agility, upper_health, weights[7]),
             ("Throw", "throwing-ball", Skill::Throw, skills.throw_hours, arm_agility, upper_health, weights[8]),
         ]))
-        (combat_meta_group("Defense", "shield", schedule, &[
+        (combat_meta_group(skills, "Defense", "shield", schedule, &[
             ("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, leg_agility, lower_health, weights[9]),
             ("Block", "block", Skill::Block, skills.block_hours, arm_agility, upper_health, weights[10]),
             ("Balance", "balance", Skill::Balance, skills.balance_hours, leg_agility, lower_health, weights[11]),
@@ -1005,6 +1027,7 @@ fn combat_skill_rows(
 }
 
 fn combat_meta_group(
+    skills: &CharacterSkills,
     name: &str,
     icon: &str,
     schedule: Option<&CharacterTrainingSchedule>,
@@ -1013,17 +1036,32 @@ fn combat_meta_group(
     let relevant: Vec<_> = entries.iter().filter(|entry| entry.6 > 0.0).collect();
     let rank = relevant
         .iter()
-        .map(|entry| entry.2.capped_rank_for_aptitude(entry.3, entry.4))
+        .map(|entry| {
+            entry.2.capped_rank_for_aptitude(
+                CharacterSkillHours(skills).effective_skill_hours(entry.2),
+                entry.4,
+            )
+        })
         .sum::<f32>()
         / relevant.len().max(1) as f32;
     let effective_rank = relevant
         .iter()
-        .map(|entry| entry.2.capped_rank_for_aptitude(entry.3, entry.4) * entry.5.clamp(0.0, 1.0))
+        .map(|entry| {
+            entry.2.capped_rank_for_aptitude(
+                CharacterSkillHours(skills).effective_skill_hours(entry.2),
+                entry.4,
+            ) * entry.5.clamp(0.0, 1.0)
+        })
         .sum::<f32>()
         / relevant.len().max(1) as f32;
     let average_hours = relevant
         .iter()
         .map(|entry| finite_hours(entry.3))
+        .sum::<f32>()
+        / relevant.len().max(1) as f32;
+    let average_effective_hours = relevant
+        .iter()
+        .map(|entry| CharacterSkillHours(skills).effective_skill_hours(entry.2))
         .sum::<f32>()
         / relevant.len().max(1) as f32;
     let governed_by = if relevant
@@ -1043,7 +1081,12 @@ fn combat_meta_group(
                 (skill_rank_bar_with_tooltip(
                     rank,
                     effective_rank,
-                    &SkillTooltip::aggregate(name, governed_by, average_hours, average_hours),
+                    &SkillTooltip::aggregate(
+                        name,
+                        governed_by,
+                        average_hours,
+                        average_effective_hours,
+                    ),
                     skill_rail_bar_options(),
                 ))
             }
@@ -1054,7 +1097,7 @@ fn combat_meta_group(
                 }
             }
         }
-        @for &(leaf_name, leaf_icon, skill, hours, aptitude, health, weight) in entries {
+        @for &(leaf_name, leaf_icon, skill, _hours, aptitude, health, weight) in entries {
             tr class="party-skill-row combat-detail-row" data-combat-detail=(name.to_ascii_lowercase()) data-combat-weight=(weight) hidden {
                 th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                     span title=[(skill == Skill::Knife).then_some("Knife means short weapons: knives, daggers, and short blades.")] {
@@ -1062,9 +1105,10 @@ fn combat_meta_group(
                     }
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
-                    @let uncapped = skill.training_rank(hours);
-                    @let sub_rank = skill.capped_rank_for_aptitude(hours, aptitude);
-                    (skill_rank_bar_with_tooltip(uncapped, sub_rank * health.clamp(0.0, 1.0), &SkillTooltip::direct(skill, hours), skill_rail_bar_options()))
+                    @let effective_hours = CharacterSkillHours(skills).effective_skill_hours(skill);
+                    @let uncapped = skill.training_rank(effective_hours);
+                    @let sub_rank = skill.capped_rank_for_aptitude(effective_hours, aptitude);
+                    (skill_rank_bar_with_tooltip(uncapped, sub_rank * health.clamp(0.0, 1.0), &SkillTooltip::ordinary(skills, skill), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
             }
@@ -1088,17 +1132,19 @@ fn schedule_header_icon(icon: &str, label: &str) -> Markup {
 }
 
 fn party_skill_row(
+    skills: &CharacterSkills,
     name: &str,
     icon: &str,
     skill: Skill,
-    hours: f32,
     aptitude: f32,
     health: f32,
     schedule_context: bool,
     action: Option<SkillAction<'_>>,
 ) -> Markup {
-    let uncapped_rank = skill.training_rank(hours);
-    let rank = skill.capped_rank_for_aptitude(hours, aptitude);
+    let view = CharacterSkillHours(skills);
+    let effective_hours = view.effective_skill_hours(skill);
+    let uncapped_rank = skill.training_rank(effective_hours);
+    let rank = skill.capped_rank_for_aptitude(effective_hours, aptitude);
     let effective_rank = rank * health.clamp(0.0, 1.0);
     html! {
         tr class="party-skill-row" {
@@ -1113,7 +1159,7 @@ fn party_skill_row(
                 (skill_rank_bar_with_tooltip(
                     uncapped_rank,
                     effective_rank,
-                    &SkillTooltip::direct(skill, hours),
+                    &SkillTooltip::ordinary(skills, skill),
                     skill_rail_bar_options(),
                 ))
             }
@@ -1174,6 +1220,20 @@ impl SkillTooltip {
         )
     }
 
+    fn ordinary(skills: &CharacterSkills, skill: Skill) -> Self {
+        let view = CharacterSkillHours(skills);
+        Self::new(
+            skill.label(),
+            skill.governing_aptitude_kind().label(),
+            view.skill_hours_trained(skill),
+            view.effective_skill_hours(skill),
+            skill
+                .ordinary_correlations()
+                .iter()
+                .map(|(source, rate)| (source.label(), *rate)),
+        )
+    }
+
     fn aggregate(
         name: impl Into<String>,
         governed_by: impl Into<String>,
@@ -1191,8 +1251,12 @@ impl SkillTooltip {
 
     fn accessible_description(&self) -> String {
         let mut description = format!(
-            "{}\nGoverned by {}\n{:.1} effective hours trained\n{:.1} hours from correlated skills:",
-            self.name, self.governed_by, self.trained_hours, self.correlated_hours
+            "{}\nGoverned by {}\n{:.1} direct hours trained\n{:.1} effective hours trained\n{:.1} hours from correlated skills:",
+            self.name,
+            self.governed_by,
+            self.trained_hours,
+            self.trained_hours + self.correlated_hours,
+            self.correlated_hours
         );
         for correlation in &self.correlations {
             description.push_str(&format!(
@@ -1209,6 +1273,46 @@ fn finite_hours(hours: f32) -> f32 {
         hours.max(0.0)
     } else {
         0.0
+    }
+}
+
+struct CharacterSkillHours<'a>(&'a CharacterSkills);
+
+impl PlayerSkills for CharacterSkillHours<'_> {
+    fn skill_hours_trained(&self, skill: Skill) -> f32 {
+        let skills = self.0;
+        match skill {
+            Skill::Polearm => skills.polearm_hours,
+            Skill::Axe => skills.axe_hours,
+            Skill::Bludgeon => skills.bludgeon_hours,
+            Skill::Sword => skills.sword_hours,
+            Skill::Knife => skills.knife_hours,
+            Skill::Dodge => skills.dodge_hours,
+            Skill::Block => skills.block_hours,
+            Skill::Bow => skills.bow_hours,
+            Skill::Crossbow => skills.crossbow_hours,
+            Skill::Firearm => skills.firearm_hours,
+            Skill::Throw => skills.throw_hours,
+            Skill::Will => skills.will_hours,
+            Skill::Insight => skills.insight_hours,
+            Skill::SelfAwareness => skills.self_awareness_hours,
+            Skill::Humor => skills.humor_hours,
+            Skill::Command => skills.command_hours,
+            Skill::Deception => skills.deception_hours,
+            Skill::Seduction => skills.seduction_hours,
+            Skill::Physiology => skills.physiology_hours,
+            Skill::Cooking => skills.cooking_hours,
+            Skill::Stealth => skills.stealth_hours,
+            Skill::Balance => skills.balance_hours,
+            Skill::TerrainPlains => skills.terrain_plains_hours,
+            Skill::TerrainForest => skills.terrain_forest_hours,
+            Skill::TerrainHills => skills.terrain_hills_hours,
+            Skill::TerrainUrban => skills.terrain_urban_hours,
+            Skill::Anatomy => skills.anatomy_hours,
+            Skill::Tailoring => skills.tailoring_hours,
+            Skill::Smithing => skills.smithing_hours,
+            Skill::Religion | Skill::Bestiary => 0.0,
+        }
     }
 }
 
@@ -1957,6 +2061,61 @@ mod tests {
     }
 
     #[test]
+    fn cooking_and_knife_rows_render_projected_hours_without_losing_injury_caps() {
+        let skills = CharacterSkills {
+            cooking_hours: 100.0,
+            knife_hours: 1_000.0,
+            ..Default::default()
+        };
+        let cooking = party_skill_row(
+            &skills,
+            "Cooking",
+            "cooking",
+            Skill::Cooking,
+            5.0,
+            0.5,
+            false,
+            None,
+        )
+        .into_string();
+        assert!(cooking.contains("100.0 direct hours trained"));
+        assert!(cooking.contains("200.0 effective hours trained"));
+        assert!(cooking.contains("Knife | 15%"));
+        let cooking_rank = Skill::Cooking.training_rank(200.0) * 0.5;
+        assert!(cooking.contains(&format!("aria-valuenow=\"{cooking_rank:.1}\"")));
+
+        let combat = combat_skill_rows(
+            &skills,
+            5.0,
+            5.0,
+            5.0,
+            1.0,
+            0.5,
+            1.0,
+            None,
+            CombatTrainingProfile::default(),
+        )
+        .into_string();
+        assert!(combat.contains("1000.0 direct hours trained"));
+        assert!(combat.contains("1015.0 effective hours trained"));
+        assert!(combat.contains("Cooking | 15%"));
+    }
+
+    #[test]
+    fn terrain_rows_render_intuitive_cross_habitat_projection() {
+        let skills = CharacterSkills {
+            terrain_forest_hours: 1_000.0,
+            ..Default::default()
+        };
+        let rendered = terrain_skill_rows(&skills, 5.0, false, None).into_string();
+        assert!(rendered.contains("0.0 direct hours trained"));
+        assert!(rendered.contains("200.0 effective hours trained"));
+        assert!(rendered.contains("Forest | 20%"));
+        assert!(rendered.contains("1000.0 direct hours trained"));
+        assert!(rendered.contains("Plains | 20%"));
+    }
+
+    #[test]
     fn language_families_are_expandable_accessible_and_color_coded() {
         let skills = CharacterSkills {
             oral_languages: adventuresim_world_schema::OralLanguageHours {
@@ -1980,12 +2139,14 @@ mod tests {
         assert!(rendered.contains("Governed by Instinct"));
         assert!(rendered.contains("Governed by Intelligence"));
         assert!(rendered.contains("title=\"East-central — Ostmitteldeutsch\""));
-        assert!(rendered.contains("5000.0 effective hours trained"));
-        assert!(!rendered.contains("6000.0 effective hours trained"));
         let oral_tooltip = oral_language_family_tooltip(&skills);
         assert_eq!(oral_tooltip.trained_hours, 5_000.0);
         assert!(oral_tooltip.correlated_hours > 0.0);
         assert!(!oral_tooltip.correlations.is_empty());
+        assert!(rendered.contains(&format!(
+            "{:.1} effective hours trained",
+            oral_tooltip.trained_hours + oral_tooltip.correlated_hours
+        )));
         assert!(!rendered.contains("title=\"Latin — Latine\""));
         assert!(!rendered.contains("title=\"Romani — Romani\""));
         assert_eq!(rendered.matches("data-language-detail=\"oral\"").count(), 4);
@@ -2056,6 +2217,7 @@ mod tests {
             apprenticeship_accrued: 0,
             practice_accrued: 0,
             practice_threshold: 8 * 60 * PROFESSION_ACCRUAL_SCALE,
+            practice_weight: 1,
             practice_reward: "gold",
             tier_label: "apprentice",
         };
@@ -2120,7 +2282,8 @@ mod tests {
         );
         let smith = preview.profession.get("weapons").unwrap();
         assert_eq!(smith.tier_label, "journeyman");
-        assert_eq!(smith.practice_threshold, 8 * 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(smith.practice_threshold, 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(smith.practice_weight, 1);
         assert_eq!(
             smith.reward_delta("apprenticeship_minutes", 60),
             [-1.0, 0.0]
@@ -2138,10 +2301,11 @@ mod tests {
         );
         let smith = preview.profession.get("weapons").unwrap();
         assert_eq!(smith.tier_label, "master");
-        assert_eq!(smith.practice_threshold, 2 * 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(smith.practice_threshold, 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(smith.practice_weight, 2);
         assert_eq!(
             smith.reward_delta("profession_practice_minutes", 240),
-            [2.0, 0.0]
+            [8.0, 0.0]
         );
     }
 

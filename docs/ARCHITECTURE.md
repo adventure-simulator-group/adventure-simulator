@@ -468,9 +468,9 @@ migration, dual-read path, or preservation of disposable characters.
 |---------|-------------|
 | `upsert_character` | Create/update character (gives starter items) |
 | `add_item_to_inventory` | Add items |
-| `backfill_solo_parties` / `leave_party` / `disband_party` | Maintain the invariant that every character has a party |
+| `backfill_solo_parties` / `leave_party` / `disband_party` | Maintain the invariant that every character has a party; disbanding cannot discard a completed contract awaiting its shared reward |
 | `backfill_character_deaths_and_leadership` | Non-destructively supply legacy death records and normalize stale/missing standing votes |
-| internal `transition_character_to_dead` | Idempotently commit a durable death outcome and trigger leadership reevaluation |
+| internal `transition_character_to_dead` | Idempotently commit a durable death outcome and trigger leadership reevaluation; an all-dead party retains assets and tactical mission authority but retires camp, journey, strategic encounter, recruitment-role, vote, and pending-request state |
 | `create_recruitment_role` / `update_recruitment_role` / `delete_recruitment_role` | Create, resize, edit, and remove grouped party recruitment slots |
 | `save_recruitment_role` / `delete_saved_recruitment_role` | Manage reusable role presets |
 | `update_party_check_targets` | Configure non-filtering Physiology, Command, and Religion aggregate goals; surgical capability is an individual Anatomy/Knife/Tailoring composite |
@@ -481,9 +481,9 @@ migration, dual-read path, or preservation of disposable characters.
 | `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
 | `refresh_strategic_condition` | Recompute morale, pain, blood loss, fear, fatigue, readiness, and check effectiveness |
-| explicit rest reducers | Require the registered strategic gateway (or the owner of the target disposable simulation character), validate the physical rest location and one-year work bound, atomically plan washing, then advance rest and nightly alcohol chronology |
-| `set_character_religion` | Record church conversion or biography renunciation for religious relationships |
-| `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
+| explicit rest reducers | Require the registered strategic gateway (or the owner of the target disposable simulation character), validate the physical rest location and one-year work bound, preflight requested inn affordability, then apply healing and maintenance only to unallocated Leisure while advancing exposure and scheduled activity over the full safe elapsed interval |
+| `set_character_religion` | Authorize through the strategic gateway, then record church conversion or biography renunciation for religious relationships |
+| `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties, renewing expired offers in place only through the same exact party/leader/NPC/location predicate used by joining |
 | `start_mission` | Allocate port, record mission |
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |
 | `cancel_mission` | Cancel active mission |

@@ -26,6 +26,15 @@ reinterpreted against different content.
 
 A party leader may request one of an NPC company's open roles while both parties occupy the same location and the company's typed recruitment offer remains open and unexpired. The company and offer are generated independently from quests. Acceptance merges the applying party into the destination party: the destination leader retains command, the applying leader fills the selected role, and every other source member becomes an ordinary member. Source recruitment roles and pending applications close, while party-inventory items, reserve value, and each character's absolute stake transfer intact. Generated NPC leaders auto-approve these requests in local development so the complete merge flow can be previewed.
 
+An expired generated-company offer is renewed in place when its company,
+leader, and settlement presence remain valid. This keeps recurring settlement
+activity supplied without consuming a fresh NPC on every expiry cycle; a stale
+offer whose bindings no longer exist closes instead. Renewal and joining use
+the same authority check: party and living leader must be bound to the offer's
+settlement, the NPC must belong there, and the NPC's current presence must
+match the offer's exact advertised location. A closed invalid offer does not
+reserve its NPC against a valid replacement.
+
 Recruiting NPC companies are discovered at the inn rather than through quest ownership or a global party browser. Their service presentation reveals the company leader and each open role. Role links show exact recommendations on hover and are colored blue for unrestricted roles, green when a member of the viewer's party meets every recommendation, yellow when a member meets some, and red when no member meets any. Selecting a role replaces the side panels with its detailed recommendations, party context, and the request-to-join action.
 
 Standalone strategic encounter incidents are also independent from quests.
@@ -43,6 +52,21 @@ At the destination, the strategic page retains the normal chat placeholder, show
 An incapacitated party may withdraw from a quest location to a settlement to recover, but cannot undertake further combat or ordinary travel until its members are ready.
 
 Completing the objective does not immediately close the quest or pay its promised reward. The party must travel back to the issuing settlement and speak to the same service NPC. Before completion the returning NPC says they are still awaiting results; after completion they ask whether the party has **finished**, and following that linked response turns in the quest. After the server confirms success, an Info row states the exact gold added to the party inventory. The promised gold enters the shared party inventory and its value is divided equally among the current members' stakes, with any indivisible remainder entering the captain's reserve. Only then is the quest removed from the party tracker and replacement settlement activity generated.
+
+An active contract also constrains party lifecycle. A party cannot disband
+while a completed contract is ready to report, which prevents abandoning a
+claimable shared reward. If the final living member dies during an accepted or
+ready-to-report contract, strategic authority withdraws that contract and
+clears its case-site tracking while retaining the party record and pooled
+inventory. Already paid contracts remain historical records.
+
+If the final living member dies, the retained party and pooled assets cease all
+strategic travel: camp destination, private route and encounter entropy, public
+itinerary, strategic encounter, and pending party action, leadership, and join
+requests are cleared together with recruitment roles. Both general and
+role-specific join requests reject a party without a living leader. Active
+tactical mission and server-assignment authority is intentionally untouched so
+tactical outcome ownership is not rewritten by strategic cleanup.
 ## Diegetic discovery and navigation
 
 Quest problems are discovered through local rumors and NPC testimony, not

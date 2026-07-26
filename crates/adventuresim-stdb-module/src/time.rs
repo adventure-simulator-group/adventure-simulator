@@ -117,6 +117,8 @@ pub struct CharacterApprenticeship {
     pub religion_id: Option<String>,
     pub started_minute: u64,
     pub apprenticeship_minutes_accrued: u64,
+    /// Tier-weighted practice reward units. One journeyman minute contributes
+    /// one unit and one master minute contributes two, both at minute scale.
     pub practice_minutes_accrued: u64,
 }
 
@@ -1248,8 +1250,35 @@ pub fn perform_immediate_activity(
 
 const ACTIVITY_MINUTE_SCALE: u64 = MINUTES_PER_DAY;
 const APPRENTICE_COIN_INTERVAL: u64 = 8 * 60 * ACTIVITY_MINUTE_SCALE;
-const JOURNEYMAN_REWARD_INTERVAL: u64 = 8 * 60 * ACTIVITY_MINUTE_SCALE;
-const MASTER_REWARD_INTERVAL: u64 = 2 * 60 * ACTIVITY_MINUTE_SCALE;
+const PROFESSION_REWARD_UNIT_INTERVAL: u64 = 60 * ACTIVITY_MINUTE_SCALE;
+
+fn profession_reward_weight(
+    tier: adventuresim_core::profession::ProfessionTier,
+) -> Result<u64, &'static str> {
+    match tier {
+        adventuresim_core::profession::ProfessionTier::Apprentice => {
+            Err("Independent practice requires Journeyman rank (2)")
+        }
+        adventuresim_core::profession::ProfessionTier::Journeyman => Ok(1),
+        adventuresim_core::profession::ProfessionTier::Master => Ok(2),
+    }
+}
+
+fn accrued_profession_reward(
+    old_units: u64,
+    elapsed: u64,
+    allocated_minutes: u16,
+    tier: adventuresim_core::profession::ProfessionTier,
+) -> Result<(u64, u64), &'static str> {
+    let weight = profession_reward_weight(tier)?;
+    let added = elapsed
+        .saturating_mul(u64::from(allocated_minutes))
+        .saturating_mul(weight);
+    let new_units = old_units.saturating_add(added);
+    let reward =
+        new_units / PROFESSION_REWARD_UNIT_INTERVAL - old_units / PROFESSION_REWARD_UNIT_INTERVAL;
+    Ok((new_units, reward))
+}
 
 fn apply_profession_outcomes(
     ctx: &ReducerContext,
@@ -1281,21 +1310,15 @@ fn apply_profession_outcomes(
             .as_deref()
             .ok_or("Profession practice time requires a profession")?;
         let tier = profession_tier_for(ctx, character_id, service)?;
-        if tier == adventuresim_core::profession::ProfessionTier::Apprentice {
-            return Err("Independent practice requires Journeyman rank (2)".into());
-        }
         let mut row = apprenticeship_for_service(ctx, character_id, service)
             .ok_or("That profession has not been learned")?;
-        let old = row.practice_minutes_accrued;
-        row.practice_minutes_accrued = old.saturating_add(
-            elapsed.saturating_mul(u64::from(schedule.profession_practice_minutes)),
-        );
-        let interval = if tier == adventuresim_core::profession::ProfessionTier::Master {
-            MASTER_REWARD_INTERVAL
-        } else {
-            JOURNEYMAN_REWARD_INTERVAL
-        };
-        let reward = row.practice_minutes_accrued / interval - old / interval;
+        let (new_units, reward) = accrued_profession_reward(
+            row.practice_minutes_accrued,
+            elapsed,
+            schedule.profession_practice_minutes,
+            tier,
+        )?;
+        row.practice_minutes_accrued = new_units;
         let definition = adventuresim_core::profession::profession_for_service(service)
             .ok_or("Unknown profession service")?;
         match definition.practice_reward {
@@ -1493,25 +1516,52 @@ fn rest_for_minutes(
 
     validate_settlement_rest_minutes(requested_minutes)?;
 
-    let cost = inn_stay_cost(requested_minutes)?;
+    let requested_cost = inn_stay_cost(requested_minutes)?;
     if at_inn {
-        crate::item::consume_personal_currency(ctx, character_id, cost)
-            .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
+        if crate::item::personal_currency_total(ctx, character_id) < requested_cost {
+            return Err("Not enough coin to pay for the inn stay".into());
+        }
     }
 
     if explicit {
         crate::filth::wash_before_explicit_rest(ctx, character_id)?;
     }
 
-    let injury_limit =
-        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, true)?;
+    let schedule = ctx
+        .db
+        .character_training_schedule()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character training schedule not found".to_string())?;
+    let starting_minute = character_time.minutes;
+    let requested_recovery = adventuresim_core::strategic_schedule::restorative_leisure_minutes(
+        core_schedule(&schedule.downtime),
+        starting_minute,
+        requested_minutes,
+    );
+    let injury_limit = crate::surgery::preview_elapsed_for_injuries_with_rest_minutes(
+        ctx,
+        character_id,
+        requested_minutes,
+        requested_recovery,
+    )?;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let physiology_check = party_physiology_check(ctx, character_id)?;
-    let convalescing = convalescence_minutes(ctx, character_id, physiology_check).min(elapsed);
-    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
+    let recovery_elapsed = adventuresim_core::strategic_schedule::restorative_leisure_minutes(
+        core_schedule(&schedule.downtime),
+        starting_minute,
+        elapsed,
+    );
+    let convalescing =
+        convalescence_minutes(ctx, character_id, physiology_check).min(recovery_elapsed);
+    let settled = crate::surgery::settle_injuries_with_rest_minutes(
+        ctx,
+        character_id,
+        elapsed,
+        recovery_elapsed,
+    )?;
     let elapsed = settled.elapsed;
-    let starting_minute = character_time.minutes;
     character_time.minutes = character_time
         .minutes
         .checked_add(elapsed)
@@ -1520,6 +1570,11 @@ fn rest_for_minutes(
         .character_time()
         .character_id()
         .update(character_time);
+    if at_inn {
+        let elapsed_cost = inn_stay_cost(elapsed)?;
+        crate::item::consume_personal_currency(ctx, character_id, elapsed_cost)
+            .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
+    }
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
@@ -1555,33 +1610,15 @@ fn rest_for_minutes(
             ))
         })
         .unwrap_or((0, 0));
-    let maintenance_elapsed = crate::repair::field_repair(
+    let _maintenance_elapsed = crate::repair::field_repair(
         ctx,
         character_id,
         smithing_skill,
         tailoring_skill,
-        elapsed.saturating_sub(convalescing),
+        recovery_elapsed.saturating_sub(convalescing),
     );
-    let training_elapsed = elapsed
-        .saturating_sub(convalescing)
-        .saturating_sub(maintenance_elapsed);
-    let priority_rest_elapsed = elapsed.saturating_sub(training_elapsed);
-    if priority_rest_elapsed > 0 {
-        crate::condition::apply_settlement_leisure_condition(
-            ctx,
-            character_id,
-            DailySchedule::default(),
-            priority_rest_elapsed,
-            starting_minute.saturating_add(priority_rest_elapsed),
-        )?;
-    }
+    let training_elapsed = elapsed;
     if training_elapsed > 0 {
-        let schedule = ctx
-            .db
-            .character_training_schedule()
-            .character_id()
-            .find(character_id)
-            .ok_or_else(|| "Character training schedule not found".to_string())?;
         let mut skills = ctx
             .db
             .character_skills()
@@ -1623,11 +1660,11 @@ fn rest_for_minutes(
         crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     }
 
-    crate::condition::apply_rest_condition(ctx, character_id, elapsed)?;
+    crate::condition::apply_rest_condition(ctx, character_id, recovery_elapsed)?;
     crate::food::clear_stomach_fullness(ctx, character_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
-    if automatic_social && training_elapsed > 0 {
-        crate::social::apply_automatic_social_chats(ctx, character_id, training_elapsed)?;
+    if automatic_social && recovery_elapsed > 0 {
+        crate::social::apply_automatic_social_chats(ctx, character_id, recovery_elapsed)?;
     }
     Ok(training_elapsed)
 }
@@ -2063,6 +2100,10 @@ pub fn rest_at_camp(
         crate::social::apply_automatic_social_chats(ctx, member_id, downtime)?;
     }
     let living_after = crate::strategic::living_party_member_ids(ctx, &party_id);
+    if living_after.is_empty() {
+        crate::strategic::teardown_all_dead_strategic_party(ctx, &party_id)?;
+        return Ok(());
+    }
     let fatigue_after = party_fatigue_summary(ctx, &living_after)?;
     crate::strategic::record_party_camp_rest(
         ctx,
@@ -2278,6 +2319,7 @@ mod tests {
 
     #[test]
     fn inn_stay_cost_only_rounds_up_partial_days() {
+        assert_eq!(inn_stay_cost(0), Ok(0));
         assert_eq!(inn_stay_cost(MINUTES_PER_DAY), Ok(2));
         assert_eq!(inn_stay_cost(2 * MINUTES_PER_DAY), Ok(4));
         assert_eq!(inn_stay_cost(1), Ok(2));
@@ -2293,6 +2335,19 @@ mod tests {
             .and_then(|tail| tail.split("fn validate_settlement_rest_minutes").next())
             .expect("settlement rest implementation");
         assert_eq!(rest.matches("inn_stay_cost(requested_minutes)?").count(), 1);
+        assert_eq!(rest.matches("inn_stay_cost(elapsed)?").count(), 1);
+        assert!(
+            rest.find("personal_currency_total").unwrap()
+                < rest
+                    .find("preview_elapsed_for_injuries_with_rest_minutes")
+                    .unwrap()
+        );
+        assert!(
+            rest.find("inn_stay_cost(elapsed)?").unwrap()
+                < rest
+                    .find("crate::condition::apply_settlement_rest_elapsed_needs(")
+                    .unwrap()
+        );
         let needs = "crate::condition::apply_settlement_rest_elapsed_needs(";
         assert_eq!(rest.matches(needs).count(), 1);
         assert!(rest.find("settle_shared_party_time").unwrap() < rest.find(needs).unwrap());
@@ -2342,6 +2397,51 @@ mod tests {
                 .expect("non-downtime interval");
             assert!(!ordinary.contains("apply_automatic_social_chats"));
         }
+    }
+
+    #[test]
+    fn profession_practice_pays_a_livelihood_and_master_premium() {
+        assert!(APPRENTICE_COIN_INTERVAL > PROFESSION_REWARD_UNIT_INTERVAL);
+        assert_eq!(PROFESSION_REWARD_UNIT_INTERVAL, 60 * ACTIVITY_MINUTE_SCALE);
+        let ordinary_labor = adventuresim_core::activity::labor_gold(8.0, 2.0, 2.0);
+        let (_, journeyman_day) = accrued_profession_reward(
+            0,
+            8 * 60,
+            MINUTES_PER_DAY as u16,
+            adventuresim_core::profession::ProfessionTier::Journeyman,
+        )
+        .unwrap();
+        let (_, master_day) = accrued_profession_reward(
+            0,
+            8 * 60,
+            MINUTES_PER_DAY as u16,
+            adventuresim_core::profession::ProfessionTier::Master,
+        )
+        .unwrap();
+        assert_eq!(journeyman_day, u64::from(ordinary_labor));
+        assert!(master_day > journeyman_day);
+    }
+
+    #[test]
+    fn profession_reward_units_survive_tier_transitions_and_chunking() {
+        use adventuresim_core::profession::ProfessionTier::{Journeyman, Master};
+        let (after_journeyman, first_reward) =
+            accrued_profession_reward(0, 30, MINUTES_PER_DAY as u16, Journeyman).unwrap();
+        assert_eq!(first_reward, 0);
+        let (mixed_units, mixed_reward) =
+            accrued_profession_reward(after_journeyman, 45, MINUTES_PER_DAY as u16, Master)
+                .unwrap();
+        assert_eq!(mixed_reward, 2);
+
+        let (first_chunk, first_chunk_reward) =
+            accrued_profession_reward(0, 15, MINUTES_PER_DAY as u16, Master).unwrap();
+        let (chunked_units, second_chunk_reward) =
+            accrued_profession_reward(first_chunk, 30, MINUTES_PER_DAY as u16, Master).unwrap();
+        let (bulk_units, bulk_reward) =
+            accrued_profession_reward(0, 45, MINUTES_PER_DAY as u16, Master).unwrap();
+        assert_eq!(chunked_units, bulk_units);
+        assert_eq!(first_chunk_reward + second_chunk_reward, bulk_reward);
+        assert_eq!(mixed_units, 2 * PROFESSION_REWARD_UNIT_INTERVAL);
     }
 
     #[test]

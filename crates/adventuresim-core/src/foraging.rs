@@ -13,6 +13,9 @@ pub const CULTIVATED_STEALTH_DC_MILLIRANK: u16 = 1_750;
 pub const SETTLEMENT_STEALTH_DC_MILLIRANK: u16 = 2_500;
 pub const DURATION_STEALTH_DC_PER_HOUR: u16 = 75;
 pub const MAX_TARGETS: usize = 8;
+/// Food searches are calibrated so an eight-hour low-skill search in an ideal
+/// habitat can approximately replace that interval's metabolic expenditure.
+pub const FOOD_DISCOVERY_RATE_PERMILLE: u64 = 1_750;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -208,13 +211,23 @@ pub fn resource(item_id: &str) -> Option<&'static ForageResource> {
 }
 
 pub fn available(resource: &ForageResource, environment: ForageEnvironment) -> bool {
-    resource.biomes.iter().any(|biome| match biome {
-        Plains => environment.terrain.plains > 0,
-        Forest => environment.terrain.forest > 0,
-        Hills => environment.terrain.hills > 0,
-        RiverWetGround => environment.river_or_wet_ground,
-        SeaCoast => environment.sea_or_coast,
-    })
+    habitat_share_permille(resource, environment) > 0
+}
+
+pub fn habitat_share_permille(resource: &ForageResource, environment: ForageEnvironment) -> u16 {
+    resource
+        .biomes
+        .iter()
+        .map(|biome| match biome {
+            Plains => environment.terrain.plains,
+            Forest => environment.terrain.forest,
+            Hills => environment.terrain.hills,
+            RiverWetGround if environment.river_or_wet_ground => 1_000,
+            SeaCoast if environment.sea_or_coast => 1_000,
+            _ => 0,
+        })
+        .fold(0_u16, u16::saturating_add)
+        .min(1_000)
 }
 
 pub fn stealth_dc_millirank(environment: ForageEnvironment, minutes: u64) -> Option<u16> {
@@ -273,10 +286,18 @@ pub fn resolve(
     let target_count = targets.len() as u64;
     let mut yields = Vec::new();
     for (index, target) in targets.into_iter().enumerate() {
+        let habitat = u64::from(habitat_share_permille(target, environment));
+        let food_rate = if crate::food::definition(target.item_id).is_some() {
+            FOOD_DISCOVERY_RATE_PERMILLE
+        } else {
+            1_000
+        };
         let expected_permille = u64::from(target.rarity.discoveries_per_eight_hours_permille())
             * minutes
             * u64::from(skill_bonus_permille)
-            / (8 * 60 * 1_000 * target_count);
+            * habitat
+            * food_rate
+            / (8 * 60 * 1_000 * 1_000 * 1_000 * target_count);
         let guaranteed = expected_permille / 1_000;
         let remainder = expected_permille % 1_000;
         let discovered =
@@ -293,7 +314,7 @@ pub fn resolve(
             / 1_000;
         yields.push(ForageYield {
             item_id: target.item_id,
-            quantity: u16::try_from(quantity.max(1)).unwrap_or(u16::MAX),
+            quantity: u16::try_from(quantity).unwrap_or(u16::MAX),
         });
     }
     let (dc, stealth_succeeded) =
@@ -436,5 +457,81 @@ mod tests {
     fn training_is_conserved_across_leaf_skills() {
         let gains = training_hours(legal().terrain, 120);
         assert!((gains.iter().sum::<f32>() - 2.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn habitat_share_scales_mixed_biome_resources() {
+        assert_eq!(
+            habitat_share_permille(resource("hazelnuts").unwrap(), legal()),
+            500
+        );
+        assert_eq!(
+            habitat_share_permille(resource("wild_berries").unwrap(), legal()),
+            1_000
+        );
+    }
+
+    #[test]
+    fn ideal_food_search_is_near_subsistence_and_skill_is_monotonic() {
+        let forest = ForageEnvironment {
+            terrain: LocalTerrainMixture {
+                plains: 0,
+                forest: 1_000,
+                hills: 0,
+            },
+            ..Default::default()
+        };
+        let calories = |check| {
+            (0..256_u64)
+                .map(|seed| {
+                    resolve(seed, forest, &["hazelnuts".into()], 8 * 60, check, 0)
+                        .unwrap()
+                        .yields
+                        .iter()
+                        .map(|row| f32::from(row.quantity) * 630.0)
+                        .sum::<f32>()
+                })
+                .sum::<f32>()
+                / 256.0
+        };
+        let novice = calories(0);
+        let expert = calories(5_000);
+        assert!((1_400.0..=2_600.0).contains(&novice), "{novice}");
+        assert!(expert > novice);
+    }
+
+    #[test]
+    fn half_habitat_has_about_half_the_ideal_expected_output() {
+        let environment = |forest| ForageEnvironment {
+            terrain: LocalTerrainMixture {
+                plains: 1_000 - forest,
+                forest,
+                hills: 0,
+            },
+            ..Default::default()
+        };
+        let average = |forest| {
+            (0..4_096_u64)
+                .map(|seed| {
+                    resolve(
+                        seed,
+                        environment(forest),
+                        &["hazelnuts".into()],
+                        8 * 60,
+                        0,
+                        0,
+                    )
+                    .unwrap()
+                    .yields
+                    .iter()
+                    .map(|row| f32::from(row.quantity))
+                    .sum::<f32>()
+                })
+                .sum::<f32>()
+                / 4_096.0
+        };
+        let ideal = average(1_000);
+        let half = average(500);
+        assert!((0.45..=0.55).contains(&(half / ideal)), "{half}/{ideal}");
     }
 }

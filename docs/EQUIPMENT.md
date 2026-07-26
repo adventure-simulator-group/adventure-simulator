@@ -45,6 +45,11 @@ The catalog intentionally has more weapons than armor entries (26 weapons to
 useful, highly varied, and more likely than a complete suit to persist in an
 armory.
 
+Shield statistics preserve an actual handling tradeoff rather than making one
+catalog entry a strict upgrade. The round shield weighs 3.0 kg and provides 3.0
+block, while the heater shield weighs 3.5 kg and provides 3.5 block. A player
+therefore chooses between lower burden and greater protection.
+
 ## Representation and gameplay inference
 
 The current item schema has one armor item per existing body slot, with no

@@ -315,16 +315,19 @@ mod healing_tests {
         FinaleKind, FinaleStatus, HostileGroupAuthority, HostileGroupDisposition,
         HostileResolutionKind, IncidentStatus, LocalChatMessage, MissionApproachCapability,
         MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate, QuestGenerationAuthority,
-        RecruitmentOfferStatus, activity_incident_source_id, autoresolve_drop,
+        RecruitmentOffer, RecruitmentOfferBindingFields, RecruitmentOfferId,
+        RecruitmentOfferStatus, RecruitmentSourceId, activity_incident_source_id, autoresolve_drop,
         case_refs_have_exact_dialogue_provenance, generated_case_site_combat_eligible,
         generated_dialogue_action_matches, generated_dialogue_producer_recipient,
         generated_scene_key, generated_witness_visible_description, hostile_group_authority_row,
         hostile_resolution_for_objective, incident_group_matches, merchant_storefront,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
-        quest_generation_context_commitment, refreshed_recruitment_offer_status,
-        sample_mission_candidate, unique_default_merchant_provider,
-        validate_quest_generation_authority, validated_generated_dialogue_manifest,
+        quest_generation_context_commitment, recruitment_offer_binding_fields_are_live,
+        refreshed_recruitment_offer_status, renewed_recruitment_offer_expiry,
+        sample_mission_candidate, sanitized_encounter_body_weight,
+        unique_default_merchant_provider, validate_quest_generation_authority,
+        validated_generated_dialogue_manifest,
     };
     use adventuresim_core::encounter::EncounterArchetype;
     use std::collections::HashSet;
@@ -835,6 +838,193 @@ mod healing_tests {
             refreshed_recruitment_offer_status(RecruitmentOfferStatus::Open, 10, 20, false),
             RecruitmentOfferStatus::Closed
         );
+        assert_eq!(
+            refreshed_recruitment_offer_status(RecruitmentOfferStatus::Open, 20, 20, false),
+            RecruitmentOfferStatus::Closed
+        );
+        let first = renewed_recruitment_offer_expiry(20);
+        let second = renewed_recruitment_offer_expiry(first);
+        assert!(first > 20);
+        assert!(second > first);
+    }
+
+    #[test]
+    fn recruitment_offer_requires_every_authoritative_location_binding() {
+        let offer = RecruitmentOffer {
+            id_key: "offer".into(),
+            id: RecruitmentOfferId {
+                value: "offer".into(),
+            },
+            source_id: RecruitmentSourceId {
+                value: "source".into(),
+            },
+            recruiting_party_id: "party".into(),
+            settlement_id: "lubeck".into(),
+            settlement_npc_id: "npc".into(),
+            location_id: "inn".into(),
+            leader_id: 7,
+            status: RecruitmentOfferStatus::Open,
+            created_at_minute: 0,
+            expires_at_minute: 10,
+        };
+        let live = RecruitmentOfferBindingFields {
+            party_leader_id: 7,
+            party_settlement_id: Some("lubeck"),
+            leader_alive: true,
+            leader_party_id: Some("party"),
+            leader_settlement_id: Some("lubeck"),
+            npc_home_settlement_id: Some("lubeck"),
+            presence_settlement_id: Some("lubeck"),
+            presence_location_id: Some("inn"),
+            presence_is_current: true,
+        };
+        assert!(recruitment_offer_binding_fields_are_live(&offer, live));
+        for stale in [
+            RecruitmentOfferBindingFields {
+                party_settlement_id: Some("hamburg"),
+                ..live
+            },
+            RecruitmentOfferBindingFields {
+                leader_settlement_id: Some("hamburg"),
+                ..live
+            },
+            RecruitmentOfferBindingFields {
+                npc_home_settlement_id: Some("hamburg"),
+                ..live
+            },
+            RecruitmentOfferBindingFields {
+                presence_location_id: Some("market"),
+                ..live
+            },
+            RecruitmentOfferBindingFields {
+                leader_alive: false,
+                ..live
+            },
+            RecruitmentOfferBindingFields {
+                leader_party_id: Some("other-party"),
+                ..live
+            },
+            RecruitmentOfferBindingFields {
+                presence_is_current: false,
+                ..live
+            },
+        ] {
+            assert!(!recruitment_offer_binding_fields_are_live(&offer, stale));
+        }
+        let source = include_str!("strategic.rs");
+        assert_eq!(
+            source
+                .matches("recruitment_offer_bindings_are_live(ctx, &offer, now)")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn all_dead_party_teardown_clears_only_strategic_ghost_state() {
+        let source = include_str!("strategic.rs");
+        let teardown = source
+            .split("pub(crate) fn teardown_all_dead_strategic_party")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Lazily backfills").next())
+            .expect("all-dead teardown");
+        for required in [
+            "party.camp_destination = None",
+            "party.camp_remaining_minutes = 0",
+            "finish_party_journey(ctx, party_id)",
+            "strategic_encounter()",
+            "party_action_request_authority()",
+            "party_leader_vote()",
+            "party_join_request()",
+            "party_recruitment_role()",
+            "delete_recruitment_role_authority(ctx, role.id)",
+        ] {
+            assert!(teardown.contains(required), "missing {required}");
+        }
+        for preserved in [
+            "mission_authority()",
+            "tactical_server_authority()",
+            "party_inventory_item()",
+            "party_authority().id().delete",
+        ] {
+            assert!(!teardown.contains(preserved), "must preserve {preserved}");
+        }
+
+        let time = include_str!("time.rs");
+        let camp = time
+            .split("pub fn rest_at_camp")
+            .nth(1)
+            .and_then(|tail| tail.split("fn party_fatigue_summary").next())
+            .expect("camp rest reducer");
+        let empty = camp.find("if living_after.is_empty()").unwrap();
+        assert!(empty < camp.find("record_party_camp_rest").unwrap());
+        assert!(empty < camp.find("refresh_party_journey_forecast").unwrap());
+    }
+
+    #[test]
+    fn join_entry_points_reject_an_all_dead_target_before_creating_state() {
+        let source = include_str!("strategic.rs");
+        let guard = source
+            .split("fn require_living_recruitment_target")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("living recruitment target guard");
+        assert!(guard.contains("!leader.alive"));
+        assert!(guard.contains("living_party_member_ids"));
+
+        let specific = source
+            .split("pub fn request_to_join_party")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("specific join request");
+        assert!(
+            specific.find("require_living_recruitment_target").unwrap()
+                < specific.find("party_join_request().insert").unwrap()
+        );
+
+        let general = source
+            .split("pub fn request_general_party_join")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("general join request");
+        assert!(
+            general.find("require_living_recruitment_target").unwrap()
+                < general.find(".insert(PartyRecruitmentRole").unwrap()
+        );
+    }
+
+    #[test]
+    fn contract_and_religion_lifecycle_guards_are_explicit() {
+        let strategic = include_str!("strategic.rs");
+        let disband = strategic
+            .split("pub fn disband_party")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("disband reducer");
+        assert!(disband.contains("ContractStatus::ReadyToReport"));
+        let normalize = strategic
+            .split("fn normalize_and_elect_party_leader")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("leadership normalization");
+        assert!(normalize.contains("ContractStatus::Accepted | ContractStatus::ReadyToReport"));
+        assert!(!normalize.contains("ContractStatus::Paid"));
+
+        let condition = include_str!("condition.rs");
+        let religion = condition
+            .split("pub fn set_character_religion")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("religion reducer");
+        assert!(religion.contains("require_strategic_character_authority"));
+    }
+
+    #[test]
+    fn encounter_body_weight_is_authoritative_but_sanitized() {
+        assert_eq!(sanitized_encounter_body_weight(55.0), 55.0);
+        assert_eq!(sanitized_encounter_body_weight(300.0), 300.0);
+        assert_eq!(sanitized_encounter_body_weight(0.0), 70.0);
+        assert_eq!(sanitized_encounter_body_weight(f32::NAN), 70.0);
     }
 
     #[test]
@@ -8265,6 +8455,94 @@ fn put_leader_vote(ctx: &ReducerContext, party_id: &str, voter_id: u64, candidat
     }
 }
 
+/// Retire only strategic party state that can otherwise keep an all-dead
+/// company travelling or accepting input. Tactical mission/server authority
+/// and pooled party assets intentionally remain untouched.
+pub(crate) fn teardown_all_dead_strategic_party(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<(), String> {
+    if !living_party_member_ids(ctx, party_id).is_empty() {
+        return Err("Cannot retire strategic state for a party with living members".into());
+    }
+    let party_key = party_id.to_string();
+    let mut party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_key)
+        .ok_or("Party not found")?;
+    party.camp_destination = None;
+    party.camp_remaining_minutes = 0;
+    ctx.db.party_authority().id().update(party);
+
+    finish_party_journey(ctx, party_id);
+    if ctx
+        .db
+        .strategic_encounter()
+        .party_id()
+        .find(&party_key)
+        .is_some()
+    {
+        ctx.db.strategic_encounter().party_id().delete(&party_key);
+    }
+    for row in ctx
+        .db
+        .party_action_request_authority()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_action_request_authority().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .party_leader_vote()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_leader_vote().id().delete(&row.id);
+    }
+    let member_ids: HashSet<_> = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(party_id)
+        .map(|member| member.character_id)
+        .collect();
+    for role in ctx
+        .db
+        .party_recruitment_role()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        delete_recruitment_role_authority(ctx, role.id);
+    }
+    for row in ctx
+        .db
+        .party_join_request()
+        .iter()
+        .filter(|request| {
+            request.party_id == party_id || member_ids.contains(&request.character_id)
+        })
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_join_request().id().delete(row.id);
+    }
+    if let Some(mut offer) = ctx
+        .db
+        .recruitment_offer()
+        .recruiting_party_id()
+        .find(&party_key)
+    {
+        offer.status = RecruitmentOfferStatus::Closed;
+        ctx.db.recruitment_offer().id_key().update(offer);
+    }
+    Ok(())
+}
+
 /// Lazily backfills standing votes and discards stale legacy succession rows.
 /// This is intentionally safe to call after every membership or life-state
 /// transition, preserving non-destructive compatibility with existing parties.
@@ -8279,6 +8557,22 @@ pub(crate) fn normalize_and_elect_party_leader(
         .find(&party_id.to_string())
         .ok_or("Party not found")?;
     let living = living_party_member_ids(ctx, party_id);
+    if living.is_empty() {
+        if let Some(contract_id) = party.active_contract_id.take()
+            && let Some(mut contract) = ctx.db.contract_authority().id().find(&contract_id)
+            && matches!(
+                contract.status,
+                ContractStatus::Accepted | ContractStatus::ReadyToReport
+            )
+        {
+            contract.status = ContractStatus::Withdrawn;
+            ctx.db.contract_authority().id().update(contract);
+        }
+        party.current_case_site_id = None;
+        ctx.db.party_authority().id().update(party);
+        teardown_all_dead_strategic_party(ctx, party_id)?;
+        return Ok(());
+    }
     let living_set: std::collections::HashSet<_> = living.iter().copied().collect();
     for vote in ctx
         .db
@@ -8804,6 +9098,11 @@ pub fn delete_recruitment_role(
     if role.party_id != party_id {
         return Err("Cannot delete another party's role".into());
     }
+    delete_recruitment_role_authority(ctx, role_id);
+    Ok(())
+}
+
+fn delete_recruitment_role_authority(ctx: &ReducerContext, role_id: u64) {
     for request in ctx
         .db
         .party_join_request()
@@ -8825,7 +9124,6 @@ pub fn delete_recruitment_role(
         ctx.db.party_member().id().update(member);
     }
     ctx.db.party_recruitment_role().id().delete(role_id);
-    Ok(())
 }
 
 #[reducer]
@@ -8983,6 +9281,74 @@ fn role_requirements(
     requirements
 }
 
+#[derive(Clone, Copy)]
+struct RecruitmentOfferBindingFields<'a> {
+    party_leader_id: u64,
+    party_settlement_id: Option<&'a str>,
+    leader_alive: bool,
+    leader_party_id: Option<&'a str>,
+    leader_settlement_id: Option<&'a str>,
+    npc_home_settlement_id: Option<&'a str>,
+    presence_settlement_id: Option<&'a str>,
+    presence_location_id: Option<&'a str>,
+    presence_is_current: bool,
+}
+
+fn recruitment_offer_binding_fields_are_live(
+    offer: &RecruitmentOffer,
+    fields: RecruitmentOfferBindingFields<'_>,
+) -> bool {
+    offer.leader_id == fields.party_leader_id
+        && fields.leader_alive
+        && fields.leader_party_id == Some(offer.recruiting_party_id.as_str())
+        && fields.party_settlement_id == Some(offer.settlement_id.as_str())
+        && fields.leader_settlement_id == Some(offer.settlement_id.as_str())
+        && fields.npc_home_settlement_id == Some(offer.settlement_id.as_str())
+        && fields.presence_settlement_id == Some(offer.settlement_id.as_str())
+        && fields.presence_location_id == Some(offer.location_id.as_str())
+        && fields.presence_is_current
+}
+
+fn recruitment_offer_bindings_are_live(
+    ctx: &ReducerContext,
+    offer: &RecruitmentOffer,
+    now: u64,
+) -> bool {
+    let Some(party) = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&offer.recruiting_party_id)
+    else {
+        return false;
+    };
+    let Some(leader) = ctx.db.character().id().find(offer.leader_id) else {
+        return false;
+    };
+    let npc = ctx.db.settlement_npc().id().find(&offer.settlement_npc_id);
+    let presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&offer.settlement_npc_id);
+    recruitment_offer_binding_fields_are_live(
+        offer,
+        RecruitmentOfferBindingFields {
+            party_leader_id: party.leader_id,
+            party_settlement_id: party.current_settlement_id.as_deref(),
+            leader_alive: leader.alive,
+            leader_party_id: leader.party_id.as_deref(),
+            leader_settlement_id: leader.current_settlement_id.as_deref(),
+            npc_home_settlement_id: npc.as_ref().map(|row| row.home_settlement_id.as_str()),
+            presence_settlement_id: presence.as_ref().map(|row| row.settlement_id.as_str()),
+            presence_location_id: presence.as_ref().map(|row| row.location_id.as_str()),
+            presence_is_current: presence
+                .as_ref()
+                .is_some_and(|row| crate::settlement_population::npc_is_present(row, now)),
+        },
+    )
+}
+
 fn require_open_recruitment_offer(
     ctx: &ReducerContext,
     party: &Party,
@@ -9006,22 +9372,7 @@ fn require_open_recruitment_offer(
     if offer.status != RecruitmentOfferStatus::Open {
         return Err("This recruitment offer is no longer open".into());
     }
-    let npc = ctx.db.settlement_npc().id().find(&offer.settlement_npc_id);
-    let presence = ctx
-        .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&offer.settlement_npc_id);
-    let bindings_are_live = offer.leader_id == party.leader_id
-        && leader.party_id.as_deref() == Some(party.id.as_str())
-        && party.current_settlement_id.as_deref() == Some(offer.settlement_id.as_str())
-        && leader.current_settlement_id.as_deref() == Some(offer.settlement_id.as_str())
-        && npc.is_some_and(|npc| npc.home_settlement_id == offer.settlement_id)
-        && presence.is_some_and(|presence| {
-            presence.settlement_id == offer.settlement_id
-                && presence.location_id == offer.location_id
-                && crate::settlement_population::npc_is_present(&presence, now)
-        });
+    let bindings_are_live = recruitment_offer_bindings_are_live(ctx, &offer, now);
     let refreshed = refreshed_recruitment_offer_status(
         offer.status,
         now,
@@ -9029,8 +9380,13 @@ fn require_open_recruitment_offer(
         bindings_are_live,
     );
     if refreshed != RecruitmentOfferStatus::Open {
-        offer.status = refreshed;
-        ctx.db.recruitment_offer().id_key().update(offer);
+        // A valid generated offer remains Open-but-expired until settlement
+        // activity renews it in place. Persisting Expired here would strand
+        // its unique NPC/party identity and prevent that renewal.
+        if refreshed == RecruitmentOfferStatus::Closed {
+            offer.status = refreshed;
+            ctx.db.recruitment_offer().id_key().update(offer);
+        }
         return Err(if refreshed == RecruitmentOfferStatus::Expired {
             "This recruitment offer has expired".into()
         } else {
@@ -9048,13 +9404,29 @@ fn refreshed_recruitment_offer_status(
 ) -> RecruitmentOfferStatus {
     if current != RecruitmentOfferStatus::Open {
         current
-    } else if now >= expires_at {
-        RecruitmentOfferStatus::Expired
     } else if !bindings_are_live {
         RecruitmentOfferStatus::Closed
+    } else if now >= expires_at {
+        RecruitmentOfferStatus::Expired
     } else {
         RecruitmentOfferStatus::Open
     }
+}
+
+fn require_living_recruitment_target(ctx: &ReducerContext, party: &Party) -> Result<(), String> {
+    let leader = ctx
+        .db
+        .character()
+        .id()
+        .find(party.leader_id)
+        .ok_or("Recruiting party leader not found")?;
+    if !leader.alive
+        || leader.party_id.as_deref() != Some(party.id.as_str())
+        || !living_party_member_ids(ctx, &party.id).contains(&party.leader_id)
+    {
+        return Err("Cannot join a party without a living leader".into());
+    }
+    Ok(())
 }
 
 #[reducer]
@@ -9094,6 +9466,7 @@ pub fn request_to_join_party(
     if current_party_id == party_id {
         return Err("Cannot join your own party".into());
     }
+    require_living_recruitment_target(ctx, &party)?;
     require_open_recruitment_offer(ctx, &party)?;
     if !crate::simulation::same_simulation_scope(ctx, character_id, party.leader_id) {
         return Err("Simulation and ordinary parties cannot merge".into());
@@ -9133,6 +9506,13 @@ pub fn request_general_party_join(
     target_party_id: String,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, character_id)?;
+    let target_party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&target_party_id)
+        .ok_or("Party not found")?;
+    require_living_recruitment_target(ctx, &target_party)?;
     let role = ctx
         .db
         .party_recruitment_role()
@@ -11524,6 +11904,19 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
     if party.leader_id != leader_id {
         return Err("Only the party leader can disband the party".into());
     }
+    if party
+        .active_contract_id
+        .as_ref()
+        .is_some_and(|contract_id| {
+            ctx.db
+                .contract_authority()
+                .id()
+                .find(contract_id)
+                .is_some_and(|contract| contract.status == ContractStatus::ReadyToReport)
+        })
+    {
+        return Err("Report the completed contract before disbanding the party".into());
+    }
     if party.current_case_site_id.is_some() {
         return Err("Travel to a settlement before disbanding the party".into());
     }
@@ -13557,12 +13950,31 @@ fn party_encumbrance_remaining_basis_points(
             adventuresim_core::equipment::encumbrance_capacity_kg(adjusted_leg_strength)
         })
         .sum();
-    let body_burden = member_ids.len() as f32 * 70.0;
+    let body_burden: f32 = member_ids
+        .iter()
+        .map(|member_id| {
+            ctx.db
+                .character_condition()
+                .character_id()
+                .find(*member_id)
+                .map_or(70.0, |condition| {
+                    sanitized_encounter_body_weight(condition.body_weight_kg)
+                })
+        })
+        .sum();
     let remaining = adventuresim_core::equipment::encumbrance_remaining_multiplier(
         body_burden + personal_burden + party_burden,
         capacity,
     );
     (remaining.clamp(0.0, 1.0) * 10_000.0).round() as u32
+}
+
+fn sanitized_encounter_body_weight(weight_kg: f32) -> f32 {
+    if weight_kg.is_finite() && (20.0..=300.0).contains(&weight_kg) {
+        weight_kg
+    } else {
+        70.0
+    }
 }
 
 fn current_party_fatigue_percent(ctx: &ReducerContext, member_ids: &[u64]) -> u8 {
@@ -18055,7 +18467,14 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
     let now = crate::time::refresh_clock(ctx)?;
     for mut offer in ctx.db.recruitment_offer().iter().collect::<Vec<_>>() {
         if offer.status == RecruitmentOfferStatus::Open && now >= offer.expires_at_minute {
-            offer.status = RecruitmentOfferStatus::Expired;
+            if recruitment_offer_bindings_are_live(ctx, &offer, now) {
+                // Reuse the canonical offer identity instead of allowing
+                // historical rows to exhaust the finite NPC population.
+                offer.created_at_minute = now;
+                offer.expires_at_minute = renewed_recruitment_offer_expiry(now);
+            } else {
+                offer.status = RecruitmentOfferStatus::Closed;
+            }
             ctx.db.recruitment_offer().id_key().update(offer);
         }
     }
@@ -18072,6 +18491,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
             .recruitment_offer()
             .settlement_id()
             .filter(&settlement_id.to_string())
+            .filter(|offer| offer.status == RecruitmentOfferStatus::Open)
             .map(|offer| offer.settlement_npc_id)
             .collect();
         let Some((npc, presence)) = ctx
@@ -18159,6 +18579,10 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
         });
     }
     Ok(())
+}
+
+fn renewed_recruitment_offer_expiry(now: u64) -> u64 {
+    now.saturating_add(7 * 1_440)
 }
 
 fn generated_witness_visible_description(

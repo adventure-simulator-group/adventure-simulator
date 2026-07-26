@@ -94,7 +94,7 @@ Below zero, you aren't any *less* effective, per-se, but the body part can conti
 
 ## Current strategic implementation
 
-During recovery, the existing bounded party Physiology check supplies **1 percentage point plus 1 percentage point per Physiology point** of natural recovery per full game day, combined with the wound category's own rate. This modifier is applied to the authoritative cut, bruise, and splinted-fracture components rather than directly to `character_limbs`. A retained projectile multiplies every healing component on that limb by 0.6. Resting characters convalesce before they train.
+During recovery, the existing bounded party Physiology check supplies **1 percentage point plus 1 percentage point per Physiology point** of natural recovery per full game day, combined with the wound category's own rate. This modifier is applied to the authoritative cut, bruise, and splinted-fracture components rather than directly to `character_limbs`. A retained projectile multiplies every healing component on that limb by 0.6. Only unallocated Leisure minutes convalesce or restore blood; a fully scheduled day grants no passive healing. Bleeding and infection exposure still advance over the complete elapsed interval.
 
 Autoresolve calculates every hit through the shared melee and ranged exchanges and commits its body part, cut and blunt shares, and projectile kind. Strategic wounds are split per limb into cuts, bruising, and fracture severity. Fracture severity is a condition within blunt trauma and never adds a second copy of the hit's health damage. Cuts remain open after battle: they deteriorate at 2.5% health per day and drain blood in proportion to wound size until manually bandaged. Bandaging consumes one bandage and permanently stabilizes that wound; its health-bar segment changes from solid red to banded pink. Bruising heals without a procedure. A single blunt hit over 18% limb health creates fracture severity proportional to the excess. Untreated fractures are graphite grey, while splinted fractures use lighter grey bands so treatment state is not communicated by color alone.
 
@@ -130,7 +130,13 @@ Projectile extraction uses the Anatomy-and-Knife check; procedures above DC 1
 require a reusable surgery kit. Shallower projectiles remain removable without
 one.
 
-Characters also persist current and maximum blood volume. Maximum volume currently assumes a 70 kg body at 70 ml/kg. Autoresolve commits immediate blood loss alongside final body-part injuries, open cuts continue draining blood on every authoritative personal-time path, and settlement rest recovers 1% of maximum blood volume per day. Losing 30% of maximum blood volume contributes 100% strategic incapacitation.
+Characters also persist current and maximum blood volume. Maximum volume is
+derived at 70 ml/kg from the character's authoritative body weight, whose
+schema default is 70 kg. Autoresolve commits immediate blood loss alongside
+final body-part injuries, open cuts continue draining blood on every
+authoritative personal-time path, and restorative settlement Leisure recovers
+1% of maximum blood volume per day. Losing 30% of maximum blood volume
+contributes 100% strategic incapacitation.
 
 ```rs
 const ML_BLOOD_VOLUME_PER_KG_BODY_WEIGHT = 70

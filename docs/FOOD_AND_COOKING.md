@@ -64,6 +64,15 @@ mental, trained Cooking skill for the elapsed cooking time. A character can
 also apprentice as a cook through the inn's ordinary profession dialogue;
 apprenticeship and later independent practice follow the same progression and
 payment rules as the other non-religious settlement professions.
+
+The authoritative Cooking check includes the documented one-pass Knife
+transfer after direct Cooking study. Each rank removes 6% of setup and batch
+overhead, to a maximum 30%; ingredient safety time is never shortened. Useful
+calorie retention rises from 95% at rank zero to 99% at rank five, while meal
+quality scales derived market value from 95% to 110% of ingredient value.
+`cooked_meal` is a terminal preparation state and cannot be selected as an
+ingredient. This prevents repeated cooking from compounding the value or
+nutrition multiplier.
 # Foraged food
 
 Raw wild foods gathered through current-vicinity foraging enter personal

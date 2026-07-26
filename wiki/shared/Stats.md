@@ -127,6 +127,14 @@ Selecting an explicit activity icon previews and performs one continuous one-to-
 
 A character discovers a service profession by speaking with its NPC and following the linked profession and apprenticeship topics. Apprenticeship unlocks that profession's training activity, costs Gold, and produces no wage. Once every skill associated with the profession reaches rank 2, the character is a journeyman and may practice independently in cities for a small income. At rank 4 the character is a master and earns a good income, representing paid work and the instruction of apprentices. Religious professions use the tradition-neutral titles novice, cleric, and teacher for these same tiers; their practice earns Virtue instead of Gold. These records describe training and professional standing only: guild affiliations, membership conflicts, exclusivity, and settlement restrictions are not modeled.
 
+Independent practice pays one coin per hour at Journeyman rank and two per
+hour at Master rank. Apprentices instead pay one coin per eight hours.
+Professional practice accrues tier-weighted reward units against one common
+hourly threshold, so changing rank cannot retroactively revalue earlier work.
+Accrued partial intervals are retained, so splitting work across downtime
+advances does not change its reward. Religious practice keeps the cadence but
+awards Virtue rather than Gold.
+
 Skills with no invested training hours are omitted from the skill list. Joining a profession is stored separately from skill hours, so a newly enrolled apprentice can still reach their activity through the schedule; the skill appears after the activity first awards training. Shared skills likewise do not imply membership in every profession that teaches them.
 
 An ordinary day generates 600 fatigue-reservoir units before tiring activities. Leisure removes 100 units per hour, so six hours exactly offsets ordinary wakefulness. Labor adds another 50 units per hour. Leisure beyond six hours first removes activity fatigue, then fatigue carried into the interval; only the portion of the interval after the reservoir reaches zero earns morale, approaching 4 points per full qualifying day with a 200-unit diminishing-return scale. The schedule displays a one-day preview, but the server awards the result proportionally to the settlement-downtime time actually applied. Earned Leisure morale is kept as one refreshable source capped at 4 points, rather than being projected from the post-rest schedule or stacked into separate events. It decays at a fixed rate when no qualifying Leisure is occurring; qualifying Leisure refreshes it while adding the newly earned amount. This makes the result independent of whether downtime is applied all at once or through frequent synchronization. The compact schedule preview shows one Fatigue point per 100 reservoir units: Labor therefore shows `+0.5` per hour, while Leisure includes baseline and recovery so all visible Fatigue rows sum to the authoritative net change. Positive preview values remain green and negative values red, including negative Fatigue values that represent recovery.
@@ -165,6 +173,18 @@ target evaluates to zero until it has target-specific direct hours, regardless
 of correlated knowledge. Correlation is derived in one pass, never stored, and
 never produces mastery morale. Physiology, Anatomy, Religion and Bestiary
 leaves, and Written languages are trained; Oral languages are intuitive.
+
+Ordinary skill transfer uses a deliberately sparse symmetric matrix: Cooking
+and Knife transfer at 0.15; Sword and Knife, Dodge and Balance, and every pair
+of Terrain leaves transfer at 0.20. Only direct hours enter this one pass. A
+trained target receives at most as many transferred hours as it has direct
+hours: zero remains zero and an introductory lesson cannot unlock a lifetime
+of related experience all at once. Intuitive Terrain leaves do not use this
+direct-study cap. Skill rails show direct, correlated, and resulting effective
+hours separately in their tooltips. The meter's background extent is the
+uncapped rank projected from effective hours, including correlation; it is not
+a separate direct-hours layer. The brighter foreground remains the
+aptitude- and injury-limited effective check.
 
 ## Formula
 ```rs
@@ -216,7 +236,7 @@ fn skill_check(character, skill, limb_weights: LimbWeights):
 	return check
 ```
 
-Each skill is represented in the stats window with its stored, uncapped training rank behind its current effective rank. Hover text reports the stored effective hours and governing aptitude cap. Penalties such as encumbrance, armor, or injuries reduce only the current effective portion.
+Each skill is represented in the stats window with its uncapped rank projected from effective hours (direct plus correlated) behind its current aptitude- and injury-limited rank. Hover text reports the direct hours, correlated contribution, resulting effective hours, and governing aptitude. Penalties such as encumbrance, armor, or injuries reduce only the current effective portion.
 
 ## Mental
 ### Will (intuitive, 5000 hours)
@@ -400,6 +420,10 @@ Surgery is a procedure, not a skill. Projectile extraction averages the
 treating character's Anatomy and Knife checks; stitching averages Anatomy and
 Tailoring. Bandaging and splinting use Anatomy alone. Self-treatment applies
 the shared 2.5-point penalty after the applicable skills are combined.
+
+The recruitment rail's general Surgery coverage is the lower of the extraction
+and stitching checks. A specialist therefore cannot appear able to perform
+both procedures merely because their unrelated third skill is high.
 
 ### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
 

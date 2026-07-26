@@ -17,7 +17,10 @@ The burden includes body weight, carried water at 1 kg per litre, and every
 carried inventory row multiplied by its quantity. Equipped items are already
 inventory rows and count exactly once. Injury-adjusted capacity uses the
 average of left and right leg strength after multiplying each leg by its
-current health.
+current health. Party calculations use each living member's authoritative body
+weight from `character_condition`; invalid or missing legacy values use the
+70 kg schema default rather than silently treating every member as the same
+weight.
 
 Inventory rails split the summary into equal-width halves. The left half shows
 the exact burden and capacity to one decimal place with the exact penalty to
