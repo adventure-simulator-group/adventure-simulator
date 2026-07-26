@@ -1,4 +1,23 @@
 const strategicTradeUi = window.strategicTradeUi ||= { state: {} };
+const fauxDialogOpeners = new WeakMap();
+const fauxDialogIds = ["party-offer", "loot-transfer-offer", "pool-transfer-offer", "merchant-offer", "inventory-discard"];
+const fauxDialogSelector = fauxDialogIds.map((id) => `#${id}:not([hidden])`).join(", ");
+const fauxDialogFocusable = "button:not(:disabled), a[href], input:not([type='hidden']):not(:disabled), [tabindex]:not([tabindex='-1'])";
+function openFauxDialog(dialog, opener = document.activeElement) {
+  if (!dialog || !dialog.hidden) return;
+  if (opener?.focus) fauxDialogOpeners.set(dialog, opener);
+  dialog.hidden = false;
+  document.body.classList.add("faux-dialog-open");
+  (dialog.querySelector(fauxDialogFocusable) || dialog).focus();
+}
+function closeFauxDialog(dialog) {
+  if (!dialog) return;
+  dialog.hidden = true;
+  const opener = fauxDialogOpeners.get(dialog);
+  fauxDialogOpeners.delete(dialog);
+  if (!document.querySelector(fauxDialogSelector)) document.body.classList.remove("faux-dialog-open");
+  if (opener?.isConnected) opener.focus();
+}
 const refreshInventoryPanel = (element) => {
   if (!element) return;
   if (element === document) {
@@ -227,7 +246,8 @@ function updateMerchantOfferForm() {
     form.append(input);
   });
   const hasDraft = buys.size > 0 || sells.size > 0;
-  form.hidden = !hasDraft;
+  if (hasDraft) openFauxDialog(form);
+  else closeFauxDialog(form);
   form.querySelector("[type='submit']").disabled = !hasDraft;
 }
 
@@ -248,7 +268,7 @@ function resetTradeDraft(form) {
   if (discardTable) discardTable.hidden = true;
   if (discardEmpty) discardEmpty.hidden = false;
   form.querySelectorAll("input:not([name='return_to']):not([name='inventory_scope'])").forEach((input) => input.remove());
-  form.hidden = true;
+  closeFauxDialog(form);
   form.querySelector("[type='submit']").disabled = true;
   window.strategicInventoryBrowser?.refresh?.(document);
 }
@@ -273,7 +293,8 @@ function updateDiscardForm() {
   const staged = [...draft.values()].reduce((total, quantity) => total + quantity, 0);
   const confirmation = form.querySelector("[data-discard-confirmation]");
   if (confirmation) confirmation.textContent = `Permanently discard ${staged} staged item${staged === 1 ? "" : "s"}?`;
-  form.hidden = !hasDraft;
+  if (hasDraft) openFauxDialog(form);
+  else closeFauxDialog(form);
   form.querySelector("[type='submit']").disabled = !hasDraft;
   const table = document.querySelector("[data-discard-table]");
   const empty = document.querySelector("[data-discard-empty]");
@@ -374,7 +395,7 @@ document.addEventListener("click", (event) => {
   if (cancelLoot) {
     strategicTradeUi.state.lootTransferDraft = new Map();
     document.querySelectorAll("[data-loot-row]").forEach((row) => setTradeDraftCount(row, 0));
-    const form = cancelLoot.closest("form"); form.querySelectorAll("input").forEach((input) => input.remove()); form.hidden = true;
+    const form = cancelLoot.closest("form"); form.querySelectorAll("input").forEach((input) => input.remove()); closeFauxDialog(form);
     const prompt = form.querySelector("[data-loot-transfer-prompt]");
     if (prompt) prompt.textContent = "Apply staged loot to the party inventory?";
     document.dispatchEvent(new Event("strategic-live-refresh-requested"));
@@ -397,11 +418,11 @@ document.addEventListener("click", (event) => {
     const prompt = form.querySelector("[data-loot-transfer-prompt]");
     const total = [...draft.values()].reduce((sum, quantity) => sum + quantity, 0);
     if (prompt) prompt.textContent = `Apply ${total} staged item${total === 1 ? "" : "s"} to the party inventory?`;
-    form.hidden = false; form.querySelector('[type="submit"]').disabled = false;
+    openFauxDialog(form, lootStage); form.querySelector('[type="submit"]').disabled = false;
     return;
   }
   const cancelPool = clickTarget.closest("[data-cancel-pool]");
-  if (cancelPool) { strategicTradeUi.state.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); form.hidden=true; document.dispatchEvent(new Event("strategic-live-refresh-requested")); return; }
+  if (cancelPool) { strategicTradeUi.state.poolTransferDraft = new Map(); document.querySelectorAll("[data-pool-stage]").forEach((button) => setTradeDraftCount(button.closest("tr"), 0)); const form=cancelPool.closest("form"); form.querySelectorAll("input").forEach((input)=>input.remove()); closeFauxDialog(form); document.dispatchEvent(new Event("strategic-live-refresh-requested")); return; }
   const poolStage = clickTarget.closest("[data-pool-stage]");
   if (poolStage) {
     const form = document.querySelector("#pool-transfer-offer");
@@ -414,7 +435,7 @@ document.addEventListener("click", (event) => {
     if (!amount) return; draft.set(id,staged+amount); setTradeDraftCount(poolStage.closest("tr"),-(staged+amount));
     form.querySelectorAll("input").forEach((input)=>input.remove());
     for (const [name, values] of Object.entries({item_id:[...draft.keys()],quantity:[...draft.values()]})) { const input=document.createElement("input");input.type="hidden";input.name=name;input.value=values.join(",");form.append(input); }
-    form.hidden=false;form.querySelector('[type="submit"]').disabled=false;return;
+    openFauxDialog(form, poolStage);form.querySelector('[type="submit"]').disabled=false;return;
   }
   const cancelTrade = clickTarget.closest("[data-cancel-trade]");
   if (cancelTrade) {
@@ -578,11 +599,32 @@ document.addEventListener("click", (event) => {
   const fields = { from_character_ids: [], to_character_ids: [], inventory_item_ids: [], quantities: [] };
   draft.forEach((value, item) => { fields.from_character_ids.push(value.from); fields.to_character_ids.push(value.to); fields.inventory_item_ids.push(item); fields.quantities.push(value.quantity); });
   Object.entries(fields).forEach(([name, values]) => { const input = document.createElement("input"); input.type = "hidden"; input.name = name; input.value = values.join(","); form.append(input); });
-  form.hidden = false;
+  openFauxDialog(form, button);
   form.querySelector("[type='submit']").disabled = false;
 });
 
 document.addEventListener("keydown", (event) => {
+  const dialog = document.querySelector(fauxDialogSelector);
+  if (dialog && event.key === "Escape") {
+    event.preventDefault();
+    dialog.querySelector("[data-cancel-trade], [data-cancel-loot], [data-cancel-pool]")?.click();
+    return;
+  }
+  if (dialog && event.key === "Tab") {
+    const focusable = [...dialog.querySelectorAll(fauxDialogFocusable)];
+    if (!focusable.length) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+    const current = focusable.indexOf(document.activeElement);
+    const next = event.shiftKey
+      ? (current <= 0 ? focusable.length - 1 : current - 1)
+      : (current < 0 || current === focusable.length - 1 ? 0 : current + 1);
+    event.preventDefault();
+    focusable[next].focus();
+    return;
+  }
   const targetValue = event.target.closest?.("[data-target-value]");
   if (targetValue && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
@@ -651,4 +693,10 @@ document.addEventListener("strategic-page-mounted", () => {
   initializeProvisioningDraft();
   mountInventoryBulkControls();
   refreshInventoryPanel(document);
+});
+document.addEventListener("strategic-page-unmounting", () => {
+  document.body.classList.remove("faux-dialog-open");
+  document.querySelectorAll(fauxDialogIds.map((id) => `#${id}`).join(", ")).forEach((dialog) => {
+    fauxDialogOpeners.delete(dialog);
+  });
 });

@@ -327,17 +327,18 @@ pub(super) fn cooking_activity_dialog(
                         (cooking_method("roast", "Roast / skewer", "campfire", true, "", true))
                         (cooking_method("bake", "Bake", "bread", oven, "A portable oven is required", false))
                     }
-                    img class="cooking-stage-placeholder" src="/static/icons/game/campfire.svg"
-                        alt="Placeholder for the cooking vessel and fire";
-                    p class="text-muted small-copy" { "Cooking scene placeholder" }
+                    div class="cooking-hearth-scene" role="img"
+                        aria-label="A cooking vessel warming over a stone hearth" {
+                        span class="cooking-hearth-icon" aria-hidden="true" {}
+                    }
                 }
                 form id="cooking-submit-form" class="cooking-submit-form" method="post"
                     action=(&cook_action) {
                     input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
                     input type="hidden" name="quantities" value="" data-cooking-quantities;
                     div class="party-offer cooking-actions" {
-                        a class="party-offer-cancel" href=(&close_href) { "Cancel" }
-                        button type="submit" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
+                        a class="btn btn-secondary party-offer-cancel" href=(&close_href) { "Cancel" }
+                        button type="submit" class="btn btn-primary" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
                     }
                 }
             }
@@ -758,14 +759,21 @@ pub fn live_merchant_shop_page(
             "Sell everything",
         )
     };
+    let stocked_items = items
+        .iter()
+        .filter(|item| shop.stocks_at(settlement, item))
+        .collect::<Vec<_>>();
     let content = html! {
         aside class=(if matches!(shop, MerchantShop::Inn) { "left-sidebar smith-wares-column service-left-sidebar" } else { "left-sidebar smith-wares-column" }) {
         div class=(if matches!(shop, MerchantShop::Inn) { "service-left-stack" } else { "merchant-stock-stack" }) {
         div class=(if matches!(shop, MerchantShop::Inn) { "service-inventory-area" } else { "merchant-stock-area" }) {
         (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Existing preparations and ingredients" } else if matches!(shop, MerchantShop::Inn) { "Cooking supplies" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
+            @if stocked_items.is_empty() {
+                (empty_state("No stock is available here.", None, None))
+            } @else {
             (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, false, html! {
-                @for item in items.iter().filter(|item| shop.stocks_at(settlement, item)) {
+                @for item in stocked_items.iter().copied() {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let intervention = adventuresim_core::physiology::intervention_profile(&item.id, 1);
                     @let buy_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_buy_price(
@@ -781,6 +789,7 @@ pub fn live_merchant_shop_page(
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
             @if matches!(shop, MerchantShop::Herbalist) {
                 p class="small-copy text-muted" { "Pre-existing preparations are sold into personal inventory for versioned administration. Physiology does not craft them; #214 owns preparation." }
+            }
             }
             }
         }))

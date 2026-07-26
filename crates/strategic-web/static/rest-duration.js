@@ -219,10 +219,40 @@
   const syncTime = (root, minutes) => {
     root.querySelectorAll?.("[data-wake-time]").forEach((control) => states.get(control)?.syncTime(minutes));
   };
+  const mountRestSummary = (root = document) => {
+    const summary = root.querySelector?.("[data-rest-summary]");
+    if (!summary || summary.dataset.restSummaryMounted) return;
+    summary.dataset.restSummaryMounted = "true";
+    summary.focus();
+    summary.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        summary.querySelector(".rest-summary-close")?.click();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...summary.querySelectorAll("a[href], button:not(:disabled), [tabindex]:not([tabindex='-1'])")];
+      if (!focusable.length) {
+        event.preventDefault();
+        summary.focus();
+        return;
+      }
+      const current = focusable.indexOf(document.activeElement);
+      const next = event.shiftKey
+        ? (current <= 0 ? focusable.length - 1 : current - 1)
+        : (current < 0 || current === focusable.length - 1 ? 0 : current + 1);
+      event.preventDefault();
+      focusable[next].focus();
+    });
+  };
 
   window.strategicRestDuration = { isDirty, mountAll };
   mountAll();
-  document.addEventListener("strategic-page-mounted", () => mountAll());
+  mountRestSummary();
+  document.addEventListener("strategic-page-mounted", () => {
+    mountAll();
+    mountRestSummary();
+  });
   document.addEventListener("strategic-time-ready", (event) => {
     mountAll();
     syncTime(document, event.detail.characterMinutes);

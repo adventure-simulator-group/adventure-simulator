@@ -27,6 +27,7 @@ use serde_json::json;
 use std::collections::HashSet;
 
 const BUILDINGS: &[&str] = &[
+    "public-square",
     "residences",
     "keep",
     "map",
@@ -43,6 +44,8 @@ struct BuildingQuery {
     building: Option<String>,
     cook: Option<bool>,
     forage: Option<bool>,
+    forage_receipt: Option<String>,
+    forage_error: Option<String>,
     social_feedback: Option<String>,
 }
 
@@ -105,12 +108,12 @@ mod building_query_tests {
             "/locations/settlement/x/party/1?cook=true&building=inn"
         );
         let non_service = BuildingQuery {
-            building: Some("keep".into()),
+            building: Some("public-square".into()),
             ..Default::default()
         };
         assert_eq!(
             non_service.append_to("/locations/settlement/x/party/1".into()),
-            "/locations/settlement/x/party/1?building=keep"
+            "/locations/settlement/x/party/1?building=public-square"
         );
         let invalid = BuildingQuery {
             building: Some("../religion".into()),
@@ -1321,7 +1324,18 @@ async fn save_travel_configuration(
     }
 }
 
-async fn camp(State(state): State<AppState>, session: Session) -> Response {
+#[derive(Default, Deserialize)]
+struct CampQuery {
+    forage: Option<bool>,
+    forage_receipt: Option<String>,
+    forage_error: Option<String>,
+}
+
+async fn camp(
+    State(state): State<AppState>,
+    Query(query): Query<CampQuery>,
+    session: Session,
+) -> Response {
     let Some((character, _inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -1523,6 +1537,20 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     .flatten();
     let camp_destinations = camp_settlement_destinations(&state, &party, journey.as_ref()).await;
     let soap_preview = soap_rest_preview(&state, &party_members, Some(&party.id)).await;
+    let foraging_dialog = if query.forage.unwrap_or(false) {
+        Some(
+            crate::routes::foraging::activity_dialog(
+                &state,
+                &character,
+                "/camp",
+                query.forage_receipt.as_deref(),
+                query.forage_error.as_deref(),
+            )
+            .await,
+        )
+    } else {
+        None
+    };
     Html(
         camp_page(
             &party,
@@ -1539,6 +1567,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             planned_wake_minute,
             continue_block_reason,
             encounter.as_ref(),
+            foraging_dialog,
             Some(&character.name),
         )
         .into_string(),
@@ -2781,6 +2810,8 @@ async fn render_party_personal(
                 &active_character,
                 &location
                     .preserve_building(format!("{}/party/{character_id}", location.base_path(),)),
+                building.forage_receipt.as_deref(),
+                building.forage_error.as_deref(),
             )
             .await,
         )

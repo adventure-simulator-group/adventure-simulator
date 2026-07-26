@@ -64,6 +64,15 @@ test("settlement NPCs reuse the circular party portrait structure", () => {
   assert.match(source, /portrait\.append\(face, name\)/);
 });
 
+test("NPCs without initials use the neutral person silhouette without losing their accessible name", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../static/css/strategic.css"), "utf8");
+  assert.match(source, /npc\.initials \? "party-portrait-face" : "party-portrait-face npc-portrait-silhouette"/);
+  assert.match(source, /face\.setAttribute\("aria-hidden", "true"\)/);
+  assert.match(source, /button\.setAttribute\("aria-label", `Talk to \$\{npc\.name\}`\)/);
+  assert.doesNotMatch(source, /npc\.initials \|\| "\?"/);
+  assert.match(css, /\.npc-portrait-silhouette::before[\s\S]*person\.svg/);
+});
+
 test("late dialogue responses cannot replace the newly selected NPC", () => {
   assert.match(source, /const actor = chat\.dataset\.localChatSubject/);
   assert.match(source, /chat\.dataset\.localChatSubject === actor/);

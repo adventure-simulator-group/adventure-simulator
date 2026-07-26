@@ -40,6 +40,8 @@ test("page lifecycle resets permanent services and remounts idempotent modules",
   assert.match(read("character-action-dialog"), /const unmount = \(\) =>/);
   assert.match(read("character-action-dialog"), /strategic-page-mounted/);
   assert.match(read("character-action-dialog"), /\{ signal \}/);
+  assert.match(read("party-recruitment"), /strategic-page-unmounting/);
+  assert.match(read("party-recruitment"), /!overlay\.isConnected/);
   const resize = read("chat-resize");
   for (const token of [
     "--chat-height", "--chat-panel-height", "CHAT_BOTTOM_GAP",

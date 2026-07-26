@@ -119,8 +119,10 @@ pub fn journal_page(
                 nav class="journal-case-tabs" role="tablist" aria-label="Known quests" {
                     @for (index, case) in ordered_cases.iter().enumerate() {
                         button type="button"
+                            id=(format!("journal-case-tab-{index}"))
                             class=(if index == 0 { "journal-case-tab active" } else { "journal-case-tab" })
                             role="tab" aria-selected=(index == 0)
+                            tabindex=(if index == 0 { "0" } else { "-1" })
                             aria-controls=(format!("journal-case-panel-{index}"))
                             data-journal-case-select=(case.case_id.as_str()) {
                             span class="journal-case-title" { (&case.title) }
@@ -132,11 +134,8 @@ pub fn journal_page(
                 }
             }
         }
-        main class="center-content investigation-journal" data-investigation-journal {
-            h1 { "Journal" }
-            p class="text-muted" { "Select the journal tab from any strategic location." }
-        }
-        aside class="right-sidebar journal-case-log" data-journal-case-log {
+        main class="center-content investigation-journal journal-case-log"
+            data-investigation-journal data-journal-case-log {
             @if let Some(feedback) = feedback {
                 section class="strategic-notice journal-feedback" role="alert" { p { (feedback) } }
             }
@@ -146,6 +145,7 @@ pub fn journal_page(
             @for (index, case) in ordered_cases.iter().enumerate() {
                 section id=(format!("journal-case-panel-{index}"))
                     class="journal-case-panel" role="tabpanel"
+                    aria-labelledby=(format!("journal-case-tab-{index}"))
                     data-journal-case-panel=(case.case_id.as_str())
                     hidden[index != 0] {
                     header class="journal-log-header" {
@@ -167,6 +167,16 @@ pub fn journal_page(
                     }
                 }
             }
+        }
+        aside class="right-sidebar journal-context" data-journal-context {
+            (super::sidebar_section("Journal", html! {
+                @let open_count = ordered_cases.iter().filter(|case| case.status == "open").count();
+                dl class="location-stat-list journal-summary" {
+                    div { dt { "Known" } dd { (ordered_cases.len()) } }
+                    div { dt { "Open" } dd { (open_count) } }
+                    div { dt { "Closed" } dd { (ordered_cases.len().saturating_sub(open_count)) } }
+                }
+            }))
         }
     };
     super::journal_layout(content, Some(character_name))
@@ -251,6 +261,13 @@ mod tests {
             markup
                 .contains("class=\"journal-case-tab active\" role=\"tab\" aria-selected=\"true\"")
         );
+        assert!(markup.contains("id=\"journal-case-tab-0\""));
+        assert!(markup.contains("tabindex=\"0\" aria-controls=\"journal-case-panel-0\""));
+        assert!(markup.contains(
+            "id=\"journal-case-panel-0\" class=\"journal-case-panel\" role=\"tabpanel\" aria-labelledby=\"journal-case-tab-0\""
+        ));
+        assert!(markup.contains("data-journal-case-log"));
+        assert!(markup.contains("data-journal-context"));
         assert!(markup.contains("data-journal-case-panel=\"new-open\""));
     }
 

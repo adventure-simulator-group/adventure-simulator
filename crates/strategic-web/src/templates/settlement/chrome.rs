@@ -46,19 +46,46 @@ pub fn settlement_overview_page(
 ) -> Markup {
     let alias_labels = settlement_alias_labels(settlement, aliases);
     let historical_description = preferred_settlement_description(descriptions);
+    let population_tooltip = if settlement.population_estimate == 0 {
+        format!(
+            "No imported headcount is available\nSettlement class: {}",
+            population_description(settlement.population_level)
+        )
+    } else {
+        format!(
+            "Imported estimate: {} people\nSettlement class: {}",
+            format_number(settlement.population_estimate),
+            population_description(settlement.population_level),
+        )
+    };
+    let faith_labels = settlement
+        .religious_status
+        .represented_religions()
+        .iter()
+        .map(|religion| religion.label())
+        .collect::<Vec<_>>();
+    let faiths = joined_or_dash(&faith_labels);
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Settlement", html! {
                 div class="settlement-summary" {
                     dl class="location-stat-list" {
-                        div { dt { "Population" } dd { (format_population(settlement)) } }
-                        div { dt { "Size" } dd { (population_description(settlement.population_level)) } }
-                        div { dt { "Prosperity" } dd { (format!("{:?} ({}/1000)", settlement.economy.prosperity_tier, settlement.economy.prosperity_score)) } }
-                        div { dt { "Services" } dd { (settlement.economy.services.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
-                        div { dt { "Specialties" } dd { (settlement.economy.specializations.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
-                        div { dt { "Faiths" } dd { (settlement.religious_status.represented_religions().iter().map(|r| r.label()).collect::<Vec<_>>().join(", ")) } }
-                        div { dt { "Coordinates" } dd { (format!("{}, {}", settlement.coord_x as i32, settlement.coord_y as i32)) } }
-                        div { dt { "Languages" } dd { (format!(
+                        div tabindex="0"
+                            data-strategic-tooltip=(&population_tooltip) {
+                            dt { "Population" } dd { (format_population(settlement)) }
+                        }
+                        div tabindex="0"
+                            data-strategic-tooltip=(format!(
+                                "Prosperity score: {}/1000",
+                                settlement.economy.prosperity_score,
+                            )) {
+                            dt { "Prosperity" } dd { (format!("{:?}", settlement.economy.prosperity_tier)) }
+                        }
+                        div { dt { "Faiths" } dd { (&faiths) } }
+                        div data-developer-only { dt { "Services" } dd { (settlement.economy.services.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
+                        div data-developer-only { dt { "Specialties" } dd { (settlement.economy.specializations.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
+                        div data-developer-only { dt { "Coordinates" } dd { (format!("{:.6}, {:.6}", settlement.coord_x, settlement.coord_y)) } }
+                        div data-developer-only { dt { "Languages" } dd { (format!(
                             "East-central {:.1}% · West-central {:.1}% · Low {:.1}%",
                             f32::from(settlement.languages.east_central_bp) / 100.0,
                             f32::from(settlement.languages.west_central_bp) / 100.0,
@@ -67,15 +94,6 @@ pub fn settlement_overview_page(
                         @if !alias_labels.is_empty() {
                             div { dt { "Also known as" } dd { (alias_labels.join(", ")) } }
                         }
-                    }
-                }
-            }))
-            (sidebar_section("Places", html! {
-                nav aria-label="Settlement places" {
-                    (public_square_place_link(settlement, true))
-                    a href=(format!("/settlements/{}/places/residences", settlement.id)) { "Residences" }
-                    @if settlement_has_keep(&settlement.category) {
-                        a href=(format!("/settlements/{}/places/keep", settlement.id)) { "Keep" }
                     }
                 }
             }))
@@ -136,11 +154,19 @@ pub fn settlement_npc_location_page(
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Places", html! {
-                nav aria-label="Settlement places" {
+                nav class="settlement-places-nav" aria-label="Settlement places" {
                     (public_square_place_link(settlement, false))
-                    a href=(format!("/settlements/{}/places/residences", settlement.id)) { "Residences" }
+                    a href=(format!("/settlements/{}/places/residences", settlement.id))
+                        class=(if location_id == "residences" { "active" } else { "" })
+                        aria-current=(if location_id == "residences" { "page" } else { "false" }) {
+                        "Residences"
+                    }
                     @if settlement_has_keep(&settlement.category) {
-                        a href=(format!("/settlements/{}/places/keep", settlement.id)) { "Keep" }
+                        a href=(format!("/settlements/{}/places/keep", settlement.id))
+                            class=(if location_id == "keep" { "active" } else { "" })
+                            aria-current=(if location_id == "keep" { "page" } else { "false" }) {
+                            "Keep"
+                        }
                     }
                 }
             }))
@@ -184,6 +210,14 @@ fn settlement_alias_labels(settlement: &Settlement, aliases: &[SettlementAlias])
         labels.push(format!("and {} more", total - labels.len()));
     }
     labels
+}
+
+fn joined_or_dash(labels: &[&str]) -> String {
+    if labels.is_empty() {
+        "—".into()
+    } else {
+        labels.join(", ")
+    }
 }
 
 fn preferred_settlement_description(
@@ -612,6 +646,16 @@ mod tests {
     }
 
     #[test]
+    fn settlement_overview_treats_zero_population_as_missing_and_empty_faiths_as_unknown() {
+        let mut settlement = settlement();
+        settlement.population_estimate = 0;
+        let markup = settlement_overview_page(&settlement, &[], &[], None, &[], None).into_string();
+        assert!(markup.contains("No imported headcount is available"));
+        assert!(!markup.contains("Imported estimate: 0 people"));
+        assert_eq!(joined_or_dash(&[]), "—");
+    }
+
+    #[test]
     fn intentional_stages_have_distinct_semantics_and_no_prototype_copy() {
         for (kind, label) in [
             ("settlement", "At the settlement gates"),
@@ -631,6 +675,20 @@ mod tests {
             assert!(!markup.contains("visual-scene-emblem"));
             assert!(!markup.contains("/static/icons/game/"));
         }
+
+        let character = visual_stage("character", "Ada", "Character sheet").into_string();
+        assert!(character.contains("role=\"img\" aria-label=\"Ada. Character sheet\""));
+        let css = include_str!("../../../static/css/strategic.css");
+        let character_figure = css
+            .split(".service-visual-character .visual-scene-horizon {")
+            .nth(1)
+            .and_then(|tail| tail.split('}').next())
+            .expect("character stage needs a restrained silhouette");
+        assert!(character_figure.contains("/static/icons/game/person.svg"));
+        assert!(character_figure.contains("width: clamp(5rem, 22%, 8rem);"));
+        assert!(character_figure.contains("top: 8%;"));
+        assert!(character_figure.contains("clip-path: inset(0 0 22%);"));
+        assert!(!character_figure.contains("border-radius"));
     }
 
     #[test]
@@ -644,14 +702,12 @@ mod tests {
 
         let overview = settlement_overview_page(&settlement, &[], &[], None, &[], Some("Visitor"))
             .into_string();
-        let overview_places = overview
-            .split("aria-label=\"Settlement places\"")
-            .nth(1)
-            .and_then(|tail| tail.split("</nav>").next())
-            .expect("overview Places navigation");
-        assert!(overview_places.contains("href=\"/locations/settlement/viabundus-1\""));
-        assert!(overview_places.contains(&format!(">{}</a>", public_square.label)));
-        assert!(overview_places.contains("aria-current=\"page\""));
+        assert!(overview.contains("aria-label=\"Settlement services\""));
+        assert!(overview.contains("aria-label=\"Public square\""));
+        assert!(overview.contains("href=\"/locations/settlement/viabundus-1\""));
+        assert!(!overview.contains("aria-label=\"Settlement places\""));
+        assert!(overview.contains("data-strategic-tooltip=\"Imported estimate:"));
+        assert!(overview.contains("data-developer-only"));
 
         let character = Character {
             id: 1,
@@ -681,9 +737,17 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("</nav>").next())
             .expect("residence Places navigation");
+        assert!(residences.contains("class=\"settlement-places-nav\""));
         assert!(residence_places.contains("href=\"/locations/settlement/viabundus-1\""));
         assert!(residence_places.contains(&format!(">{}</a>", public_square.label)));
         assert!(residence_places.contains("aria-current=\"false\""));
+        assert!(residence_places.contains("class=\"active\" aria-current=\"page\">Residences</a>"));
+
+        let components = include_str!("../../../static/css/components.css");
+        assert!(components.contains(".settlement-places-nav {\n  display: grid;\n  gap: 0.3rem;"));
+        assert!(components.contains(
+            ".settlement-places-nav a:is(:hover, :focus-visible, .active, [aria-current=\"page\"])"
+        ));
     }
 
     #[test]

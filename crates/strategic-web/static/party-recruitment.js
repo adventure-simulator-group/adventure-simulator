@@ -11,11 +11,11 @@
     const response = await window.strategicBackgroundFetch("party-recruitment", "/party-recruitment/panel", {
       headers: { Accept: "text/html" },
     });
-    if (!response.ok) return;
+    if (!response.ok || generation !== refreshGeneration || !overlay.isConnected) return;
     const host = document.createElement("div");
     host.innerHTML = await response.text();
     const panel = host.firstElementChild;
-    if (!panel || generation !== refreshGeneration) return;
+    if (!panel || generation !== refreshGeneration || !overlay.isConnected) return;
     const nextSignature = panel.outerHTML;
     if (nextSignature === recruitmentSignature) return;
     recruitmentSignature = nextSignature;
@@ -326,6 +326,12 @@
   document.addEventListener("strategic-page-mounted", () => {
     recruitmentSignature = "";
     loadRecruitment().catch((error) => window.reportStrategicError(error, "party recruitment"));
+  });
+  document.addEventListener("strategic-page-unmounting", () => {
+    refreshGeneration += 1;
+    recruitmentSignature = "";
+    document.querySelector("[data-party-recruitment-panel]")?.remove();
+    document.querySelectorAll("[data-role-inspection-panel], [data-applicant-inspection-preview]").forEach((element) => element.remove());
   });
   document.addEventListener("strategic-live-regions-refreshed", () => {
     recruitmentSignature = "";

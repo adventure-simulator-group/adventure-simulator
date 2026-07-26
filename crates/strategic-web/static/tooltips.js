@@ -324,7 +324,6 @@
       hide(true);
     });
     documentRoot.addEventListener('click', (event) => {
-      if (Date.now() < suppressFocusUntil) return;
       const target = tooltipTarget(event.target);
       if (!target || event.detail === 0) return;
       if (pinnedTarget === target) {

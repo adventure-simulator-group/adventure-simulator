@@ -108,6 +108,27 @@ test("live sidebar replacement remeasures connected inventory rails", () => {
   assert.match(source, /if \(!hasVisibleBrowser\) grid\?\.style\.removeProperty/);
 });
 
+test("trade offer dialogs focus on open, contain focus, dismiss, and restore their opener", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
+  assert.match(source, /function openFauxDialog/);
+  assert.match(source, /function closeFauxDialog/);
+  assert.match(source, /fauxDialogOpeners/);
+  assert.match(source, /event\.key === "Escape"/);
+  assert.match(source, /event\.key === "Tab"/);
+  assert.match(source, /opener\?\.isConnected/);
+  for (const id of [
+    "party-offer", "loot-transfer-offer", "pool-transfer-offer", "merchant-offer", "inventory-discard",
+  ]) assert.match(source, new RegExp(`\"${id}\"`));
+  assert.match(source, /document\.body\.classList\.add\("faux-dialog-open"\)/);
+  assert.match(source, /document\.body\.classList\.remove\("faux-dialog-open"\)/);
+  assert.match(source, /strategic-page-unmounting/);
+  assert.doesNotMatch(source, /form\.hidden = !hasDraft/);
+  assert.doesNotMatch(
+    source,
+    /addEventListener\("submit"[\s\S]*?classList\.remove\("faux-dialog-open"\)/,
+  );
+});
+
 test("serialization preserves unrelated params and round trips bookmarks", () => {
   const state = { query: "axe", sort: "value", direction: "desc", columns: ["block"] };
   const search = serializePanelState("?tab=party", "merchant-left", state);

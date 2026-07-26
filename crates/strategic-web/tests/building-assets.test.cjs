@@ -5,8 +5,10 @@ const test = require("node:test");
 const zlib = require("node:zlib");
 
 const services = [
+  "public-square", "residences", "keep",
   "map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion",
 ];
+const nonServiceDestinations = ["public-square", "residences", "keep"];
 const buildingRoot = path.join(
   __dirname,
   "..",
@@ -130,19 +132,21 @@ test("all settlement building backgrounds are normalized tintable RGBA assets", 
       assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220]);
       assert.ok(visible > width * height * 0.08, `${label} has useful visible coverage`);
       assert.ok(visible < width * height * 0.65, `${label} retains transparent padding`);
-      const icon = decodeRgbaPng(facadeIconFiles[service]);
+      const icon = facadeIconFiles[service] && decodeRgbaPng(facadeIconFiles[service]);
       for (let y = 0; y < facadeIconPlacement.size; y += 1) {
-        const iconY = Math.min(
-          icon.height - 1,
-          Math.floor(((y + 0.5) * icon.height) / facadeIconPlacement.size),
-        );
         for (let x = 0; x < facadeIconPlacement.size; x += 1) {
-          const iconX = Math.min(
-            icon.width - 1,
-            Math.floor(((x + 0.5) * icon.width) / facadeIconPlacement.size),
-          );
-          const iconOffset = (iconY * icon.width + iconX) * 4;
-          if (icon.rgba[iconOffset + 3] < 192) continue;
+          if (icon) {
+            const iconY = Math.min(
+              icon.height - 1,
+              Math.floor(((y + 0.5) * icon.height) / facadeIconPlacement.size),
+            );
+            const iconX = Math.min(
+              icon.width - 1,
+              Math.floor(((x + 0.5) * icon.width) / facadeIconPlacement.size),
+            );
+            const iconOffset = (iconY * icon.width + iconX) * 4;
+            if (icon.rgba[iconOffset + 3] < 192) continue;
+          }
           const facadeX = facadeIconPlacement.left + x;
           const facadeY = facadeIconPlacement.top + y;
           const facadeOffset = (facadeY * width + facadeX) * 4;
@@ -158,11 +162,49 @@ test("all settlement building backgrounds are normalized tintable RGBA assets", 
   for (const tier of tiers) {
     const ordinaryTop = Math.min(
       ...services
-        .filter((service) => service !== "map" && service !== "religion")
+        .filter((service) => !["public-square", "residences", "keep", "map", "religion"].includes(service))
         .map((service) => silhouetteTops[tier][service]),
     );
     assert.ok(silhouetteTops[tier].map < ordinaryTop, `${tier} watchtower is taller than ordinary buildings`);
     assert.ok(silhouetteTops[tier].religion < ordinaryTop, `${tier} church is taller than ordinary buildings`);
+  }
+});
+
+test("non-service facades are distinct, tiered architectural silhouettes", () => {
+  const tops = Object.fromEntries(nonServiceDestinations.map((name) => [name, []]));
+  const signatures = new Set();
+  for (const [tierIndex, tier] of tiers.entries()) {
+    for (const destination of nonServiceDestinations) {
+      const { width, rgba } = decodeRgbaPng(
+        path.join(buildingRoot, tier, `${destination}.png`),
+      );
+      let top = 512;
+      let visible = 0;
+      for (let i = 0; i < rgba.length; i += 4) {
+        if (!rgba[i + 3]) continue;
+        top = Math.min(top, Math.floor(i / 4 / width));
+        visible += 1;
+      }
+      tops[destination].push(top);
+      signatures.add(`${tier}:${destination}:${top}:${visible}`);
+
+      const expectedFeature = {
+        "public-square": [120, 400],
+        residences: [[88, 365], [159, 335], [175, 320]][tierIndex],
+        keep: [256, 430],
+      }[destination];
+      const featureOffset = (expectedFeature[1] * width + expectedFeature[0]) * 4;
+      assert.equal(rgba[featureOffset], 24, `${tier}/${destination} retains its dark architectural opening`);
+      assert.equal(rgba[featureOffset + 3], 255, `${tier}/${destination} opening remains explicit`);
+    }
+  }
+  assert.equal(signatures.size, tiers.length * nonServiceDestinations.length);
+  for (const destination of nonServiceDestinations) {
+    assert.ok(
+      tops[destination][0] > tops[destination][1]
+        && tops[destination][1] > tops[destination][2],
+      `${destination} grows clearly from village to town to city`,
+    );
   }
 });
 
