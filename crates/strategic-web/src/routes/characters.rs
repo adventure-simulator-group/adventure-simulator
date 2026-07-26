@@ -8,7 +8,7 @@ use axum::{
     routing::{get, post},
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, set_character_cookie};
@@ -158,11 +158,7 @@ async fn confirm_candidate(
             &[
                 json!(form.version),
                 json!(form.seed),
-                json!(match form.age {
-                    StartingAgeTier::Young => "Young",
-                    StartingAgeTier::Adult => "Adult",
-                    StartingAgeTier::Old => "Old",
-                }),
+                starting_age_tier_argument(form.age),
                 json!(form.slot),
             ],
         )
@@ -192,4 +188,33 @@ async fn select_character(State(state): State<AppState>, Path(id): Path<u64>) ->
 
 async fn switch_character() -> Response {
     clear_character_cookie("/characters")
+}
+
+fn starting_age_tier_argument(age: StartingAgeTier) -> Value {
+    match age {
+        StartingAgeTier::Young => json!({ "young": {} }),
+        StartingAgeTier::Adult => json!({ "adult": {} }),
+        StartingAgeTier::Old => json!({ "old": {} }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn starting_age_tiers_use_spacetime_sum_encoding() {
+        assert_eq!(
+            starting_age_tier_argument(StartingAgeTier::Young),
+            json!({ "young": {} })
+        );
+        assert_eq!(
+            starting_age_tier_argument(StartingAgeTier::Adult),
+            json!({ "adult": {} })
+        );
+        assert_eq!(
+            starting_age_tier_argument(StartingAgeTier::Old),
+            json!({ "old": {} })
+        );
+    }
 }

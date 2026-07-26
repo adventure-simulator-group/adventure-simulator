@@ -1197,9 +1197,19 @@ fn insert_character_with_origin(
             })
             .collect::<Vec<_>>();
         if eligible.is_empty() {
-            return Err("No loaded settlement can host the starting organization".into());
+            // Small development worlds do not load the researched Viabundus
+            // settlements referenced by the organization catalog. Keep the
+            // professional package intact and place the character
+            // deterministically in the loaded world; a complete world still
+            // prefers a recognized chapter settlement below.
+            log::warn!(
+                "No loaded settlement hosts starting organization {}; using a loaded settlement",
+                organization.id
+            );
+            &settlements[selector as usize % settlements.len()]
+        } else {
+            eligible[selector as usize % eligible.len()]
         }
-        eligible[selector as usize % eligible.len()]
     } else {
         &settlements[selector as usize % settlements.len()]
     };
