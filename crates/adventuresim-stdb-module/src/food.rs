@@ -3,11 +3,12 @@
 use adventuresim_core::{
     disease::{self, DiseaseId},
     food,
+    prelude::{PlayerSkills, Skill},
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
-    character::{character, character_attributes, character_skills},
+    character::{character, character_attributes, character_limbs, character_skills},
     condition::{character_needs, initialize_character_condition},
     disease::{InfectionEpisodeRow, infection_episode},
     inventory_item,
@@ -492,6 +493,31 @@ fn equipment_reason(
     }
 }
 
+fn cooking_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
+    let attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character attributes not found")?;
+    let limbs = ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character limbs not found")?;
+    let skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character skills not found")?;
+    Ok(Skill::Cooking.capped_rank_for_aptitude(
+        skills.effective_skill_hours(Skill::Cooking),
+        Skill::Cooking.governing_aptitude(&attributes),
+    ) * limbs.head_health.clamp(0.0, 1.0))
+}
+
 pub fn preview_cooking(
     ctx: &ReducerContext,
     character_id: u64,
@@ -524,14 +550,22 @@ pub fn preview_cooking(
         if inventory.character_id != character_id || quantity > inventory.quantity {
             return Err("Ingredient is not available in that quantity".into());
         }
+        if !food::is_cookable_ingredient(&inventory.item_id) {
+            return Err("A cooked meal cannot be cooked again".into());
+        }
         let lot = lot_for_inventory(ctx, id)?;
         safety.push(
             food::definition(&inventory.item_id).map_or(5, |definition| definition.cooking_minutes),
         );
         mass += lot.mass_kg * quantity as f32 / inventory.quantity as f32;
     }
-    food::cooking_duration_minutes(method.core(), &safety, mass)
-        .ok_or("Cooking duration could not be calculated".into())
+    food::cooking_duration_minutes_for_check(
+        method.core(),
+        &safety,
+        mass,
+        cooking_check(ctx, character_id)?,
+    )
+    .ok_or("Cooking duration could not be calculated".into())
 }
 
 fn expose_to_dysentery(
@@ -764,6 +798,7 @@ pub fn cook_food(
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     let duration = preview_cooking(ctx, character_id, method, &inventory_item_ids, &quantities)?;
+    let cooking_check = cooking_check(ctx, character_id)?;
     initialize_character_condition(ctx, character_id)?;
     let needs = ctx
         .db
@@ -870,8 +905,8 @@ pub fn cook_food(
         ingredient_item_ids: ingredients,
         ingredient_quantities,
         mass_kg: mass,
-        nutrition_kcal: kcal * 0.97,
-        total_value: value,
+        nutrition_kcal: kcal * food::cooked_nutrition_retention(cooking_check),
+        total_value: value * food::cooked_quality_multiplier(cooking_check),
         created_at_minute: out_minute,
     });
     let weighted = if mass > 0.0 {
@@ -920,5 +955,17 @@ mod tests {
     #[test]
     fn method_mapping_is_stable() {
         assert_eq!(CookingMethod::Roast.core(), food::CookingMethod::Roast);
+    }
+
+    #[test]
+    fn authoritative_preview_rejects_cooked_output_as_an_ingredient() {
+        let source = include_str!("food.rs");
+        let preview = source
+            .split("pub fn preview_cooking")
+            .nth(1)
+            .and_then(|tail| tail.split("fn expose_to_dysentery").next())
+            .expect("preview cooking implementation");
+        assert!(preview.contains("food::is_cookable_ingredient(&inventory.item_id)"));
+        assert!(preview.contains("A cooked meal cannot be cooked again"));
     }
 }

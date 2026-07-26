@@ -2,13 +2,17 @@
 
 use adventuresim_core::{
     foraging::{self, ForageEnvironment, ILLEGAL_FORAGE_VIRTUE_LOSS, LocalTerrainMixture},
-    prelude::Skill,
+    prelude::*,
 };
 use sha2::{Digest, Sha256};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::{
-    character::{character, character_attributes, character_limbs, character_skills},
+    capability::StrategicEquipment,
+    character::{
+        character, character_attributes, character_equip, character_limbs, character_skills,
+        character_stats,
+    },
     investigation::{character_case_site_id, exact_case_site_for_observer},
     strategic::{
         party_authority, party_journey_authority, party_journey_route_authority,
@@ -276,23 +280,36 @@ fn acting_checks(
         .character_id()
         .find(character_id)
         .ok_or("Character skills not found")?;
-    let head = limbs.head_health.clamp(0.0, 1.0);
-    let mental = ((attributes.instinct + attributes.intelligence) * 0.5 * head).clamp(0.0, 5.0);
-    let terrain_training = Skill::TerrainPlains.training_rank(skills.terrain_plains_hours)
-        * f32::from(mixture.plains)
-        / 1_000.0
-        + Skill::TerrainForest.training_rank(skills.terrain_forest_hours)
-            * f32::from(mixture.forest)
-            / 1_000.0
-        + Skill::TerrainHills.training_rank(skills.terrain_hills_hours) * f32::from(mixture.hills)
-            / 1_000.0;
-    let arms = ((limbs.left_arm_health + limbs.right_arm_health) * 0.5).clamp(0.0, 1.0);
-    let agility =
-        ((attributes.left_arm_agility + attributes.right_arm_agility) * 0.5 * arms).clamp(0.0, 5.0);
-    let stealth_training = Skill::Stealth.training_rank(skills.stealth_hours);
+    let stats = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character stats not found")?;
+    let equip = ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character equipment not found")?;
+    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+    let check = |skill| {
+        skills.skill_check_by_parts(
+            skill,
+            &attributes,
+            &limbs,
+            &stats,
+            &equipment,
+            LimbWeights::all_equal(),
+        )
+    };
+    let terrain_training = check(Skill::TerrainPlains) * f32::from(mixture.plains) / 1_000.0
+        + check(Skill::TerrainForest) * f32::from(mixture.forest) / 1_000.0
+        + check(Skill::TerrainHills) * f32::from(mixture.hills) / 1_000.0;
+    let stealth_training = check(Skill::Stealth);
     Ok((
-        (((terrain_training + mental) * 0.5).clamp(0.0, 5.0) * 1_000.0).round() as u16,
-        (((stealth_training + agility) * 0.5).clamp(0.0, 5.0) * 1_000.0).round() as u16,
+        (terrain_training.clamp(0.0, 5.0) * 1_000.0).round() as u16,
+        (stealth_training.clamp(0.0, 5.0) * 1_000.0).round() as u16,
     ))
 }
 
@@ -375,13 +392,40 @@ pub fn forage_current_vicinity(
         && let Some(mut skills) = ctx.db.character_skills().character_id().find(character_id)
     {
         let gains = foraging::training_hours(environment.terrain, elapsed);
-        skills.terrain_plains_hours =
-            (skills.terrain_plains_hours + gains[0]).min(Skill::TerrainPlains.max_hours());
-        skills.terrain_forest_hours =
-            (skills.terrain_forest_hours + gains[1]).min(Skill::TerrainForest.max_hours());
-        skills.terrain_hills_hours =
-            (skills.terrain_hills_hours + gains[2]).min(Skill::TerrainHills.max_hours());
+        let attributes = ctx
+            .db
+            .character_attributes()
+            .character_id()
+            .find(character_id)
+            .ok_or("Character attributes not found")?;
+        let mut excess = 0.0;
+        for (stored, skill, real_hours) in [
+            (
+                &mut skills.terrain_plains_hours,
+                Skill::TerrainPlains,
+                gains[0],
+            ),
+            (
+                &mut skills.terrain_forest_hours,
+                Skill::TerrainForest,
+                gains[1],
+            ),
+            (
+                &mut skills.terrain_hills_hours,
+                Skill::TerrainHills,
+                gains[2],
+            ),
+        ] {
+            excess += adventuresim_core::skill::apply_direct_training(
+                skill,
+                stored,
+                real_hours,
+                &attributes,
+            )
+            .excess_effective_hours;
+        }
         ctx.db.character_skills().character_id().update(skills);
+        crate::condition::record_mastery_training_morale(ctx, character_id, elapsed, excess);
     }
     let interrupted = !completed || elapsed < requested_minutes;
     let mut resolution = (!interrupted).then_some(planned);

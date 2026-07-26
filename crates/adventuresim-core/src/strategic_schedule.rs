@@ -4,7 +4,10 @@ use crate::attribute::PlayerAttributes;
 use crate::equipment::WeaponSkillDistribution;
 use crate::profession::ProfessionId;
 use crate::skill::{Skill, apply_direct_training};
-use crate::{activity::*, strategic_time::training_hours_increment};
+use crate::{
+    activity::*,
+    strategic_time::{MINUTES_PER_DAY, training_hours_increment},
+};
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
@@ -135,6 +138,25 @@ impl DailySchedule {
         .map(u64::from)
         .sum()
     }
+}
+
+/// Deterministically projects the unallocated share of a repeating daily
+/// schedule onto an absolute interval. Cumulative integer arithmetic makes
+/// adjacent chunks telescope exactly without persisting a fractional remainder.
+pub fn restorative_leisure_minutes(
+    schedule: DailySchedule,
+    interval_start_minute: u64,
+    elapsed_minutes: u64,
+) -> u64 {
+    let leisure = MINUTES_PER_DAY.saturating_sub(schedule.allocated_minutes());
+    let cumulative = |minute: u64| {
+        minute
+            .saturating_mul(leisure)
+            .checked_div(MINUTES_PER_DAY)
+            .unwrap_or(0)
+    };
+    cumulative(interval_start_minute.saturating_add(elapsed_minutes))
+        .saturating_sub(cumulative(interval_start_minute))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -533,12 +555,34 @@ mod tests {
             + skills.block
             + skills.will
             + skills.balance;
-        assert!((combat_total - 6.0).abs() < 0.001);
+        // The dedicated combat budget is six hours; physician training adds
+        // its separately conserved one-sixth share to Knife.
+        assert!((combat_total - (6.0 + 1.0 / 3.0)).abs() < 0.001);
         assert!((skills.humor - 1.0).abs() < 0.001);
         assert!((skills.physiology - 1.0).abs() < 0.001);
         assert!((skills.anatomy - 1.0 / 3.0).abs() < 0.001);
         assert!((skills.knife - 1.0 / 3.0).abs() < 0.001);
         assert!((skills.tailoring - 1.0 / 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn restorative_leisure_is_proportional_and_chunk_invariant() {
+        let none = DailySchedule::default();
+        assert_eq!(restorative_leisure_minutes(none, 0, 1_440), 1_440);
+        let full = DailySchedule {
+            labor: 1_440,
+            ..Default::default()
+        };
+        assert_eq!(restorative_leisure_minutes(full, 0, 1_440), 0);
+        let half = DailySchedule {
+            labor: 720,
+            ..Default::default()
+        };
+        assert_eq!(restorative_leisure_minutes(half, 0, 1_440), 720);
+        let bulk = restorative_leisure_minutes(half, 17, 1_000);
+        let first = restorative_leisure_minutes(half, 17, 333);
+        let second = restorative_leisure_minutes(half, 350, 667);
+        assert_eq!(bulk, first + second);
     }
 
     #[test]

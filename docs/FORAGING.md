@@ -24,6 +24,13 @@ oatmeal, and rosewater and non-plant honey are not forage targets.
 Searches last 1–24 whole hours. Rarity supplies a price-independent base
 discovery rate. The acting character's local weighted Terrain check can add at
 most 50% to discovery and yield. Multiple targets divide one time budget.
+Discovery frequency scales with the fraction of local terrain matching the
+resource's habitat; a trace of forest no longer grants full forest output, but
+a successful find retains the resource's ordinary per-discovery yield.
+Wet-ground and coast attestations count as complete matching microhabitats.
+Food alone receives a 1.75× subsistence calibration: an eight-hour low-skill
+search for the best food in an ideal habitat averages roughly the 2,000 kcal
+spent during that interval. Medicinal rarity is unchanged.
 Targets are canonicalized before resolution. The reducer chooses and privately
 persists unpredictable entropy; once that seed is chosen, replay from the
 private authority is deterministic. A completed search may find nothing.
@@ -37,6 +44,9 @@ Actual elapsed time is clipped once at the existing injury/disease boundary.
 That elapsed time is conserved over concrete Plains, Forest, and Hills training
 according to the normalized local mixture. Terrain has no stored parent value,
 and settlement illegality does not turn training into Urban.
+Checks and training use the same aptitude-capped, injury-adjusted path as
+travel. Foraging never adds raw attributes to a check, never stores correlated
+hours, and routes rejected above-cap training into mastery enjoyment.
 
 ## Legality
 

@@ -1926,6 +1926,7 @@ pub fn set_character_religion(
     character_id: u64,
     religion_id: String,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     initialize_character_condition(ctx, character_id)?;
     let religion_id = religion_id.trim();

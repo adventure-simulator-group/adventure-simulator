@@ -625,8 +625,8 @@ const WEAPONS: &[EquipmentDefinition] = &[
 const SHIELDS: &[EquipmentDefinition] = &[
     shield("buckler", 1.0, 5, 1.5),
     shield("targe", 2.5, 8, 2.5),
-    shield("heater_shield", 3.0, 10, 3.0),
-    shield("round_shield", 3.5, 10, 3.0),
+    shield("round_shield", 3.0, 10, 3.0),
+    shield("heater_shield", 3.5, 12, 3.5),
     shield("pavise", 8.0, 20, 5.0),
 ];
 
@@ -1788,6 +1788,22 @@ mod tests {
                 _ => unreachable!("equipment catalog contains a non-equipment item"),
             }
         }
+    }
+
+    #[test]
+    fn round_and_heater_shields_have_a_weight_block_tradeoff() {
+        let round = SHIELDS
+            .iter()
+            .find(|item| item.id == "round_shield")
+            .unwrap();
+        let heater = SHIELDS
+            .iter()
+            .find(|item| item.id == "heater_shield")
+            .unwrap();
+        assert!(round.weight < heater.weight);
+        assert!(round.block < heater.block);
+        assert!(!(round.weight <= heater.weight && round.block >= heater.block));
+        assert!(!(heater.weight <= round.weight && heater.block >= round.block));
     }
 
     #[test]

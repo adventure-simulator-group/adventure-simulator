@@ -286,7 +286,7 @@ pub fn choose_automatic_social_action(
                 .total_cmp(&right_score)
                 .then_with(|| left.2.total_cmp(&right.2))
                 .then_with(|| left.1.total_cmp(&right.1))
-                .then_with(|| left.0.risk().total_cmp(&right.0.risk()))
+                .then_with(|| right.0.risk().total_cmp(&left.0.risk()))
         })
         .map(|(action, _, _)| action)
 }
@@ -609,6 +609,20 @@ mod tests {
                 [
                     (SocialActionKind::Flirt, 5.0, 2.0),
                     (SocialActionKind::Listen, 1.0, 0.0),
+                ],
+            ),
+            Some(SocialActionKind::Listen)
+        );
+    }
+
+    #[test]
+    fn automatic_action_exact_ties_prefer_lower_risk() {
+        assert_eq!(
+            choose_automatic_social_action(
+                SocialTopic::Defeat,
+                [
+                    (SocialActionKind::Rally, 3.0, 0.0),
+                    (SocialActionKind::Listen, 3.0, 0.0),
                 ],
             ),
             Some(SocialActionKind::Listen)

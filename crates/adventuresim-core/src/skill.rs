@@ -380,6 +380,70 @@ mod tests {
         assert_eq!(bulk_hours, chunked_hours);
         assert!((bulk_morale - chunked_morale).abs() < 0.0001);
     }
+
+    #[test]
+    fn ordinary_correlations_are_one_pass_and_direct_gated() {
+        struct Hours {
+            cooking: f32,
+            knife: f32,
+            sword: f32,
+        }
+        impl PlayerSkills for Hours {
+            fn skill_hours_trained(&self, skill: Skill) -> f32 {
+                match skill {
+                    Skill::Cooking => self.cooking,
+                    Skill::Knife => self.knife,
+                    Skill::Sword => self.sword,
+                    _ => 0.0,
+                }
+            }
+        }
+        let practiced = Hours {
+            cooking: 100.0,
+            knife: 1_000.0,
+            sword: 2_000.0,
+        };
+        assert_eq!(practiced.effective_skill_hours(Skill::Cooking), 200.0);
+        assert_eq!(practiced.effective_skill_hours(Skill::Sword), 2_200.0);
+        assert_eq!(practiced.effective_skill_hours(Skill::Knife), 1_415.0);
+        assert_eq!(
+            Hours {
+                cooking: 0.0,
+                ..practiced
+            }
+            .effective_skill_hours(Skill::Cooking),
+            0.0
+        );
+        let epsilon = Hours {
+            cooking: 0.01,
+            knife: 30_000.0,
+            sword: 0.0,
+        };
+        assert!((epsilon.effective_skill_hours(Skill::Cooking) - 0.02).abs() < f32::EPSILON);
+        let threshold = Hours {
+            cooking: 1_000.0,
+            knife: 2_000.0,
+            sword: 0.0,
+        };
+        assert_eq!(threshold.effective_skill_hours(Skill::Cooking), 1_300.0);
+    }
+
+    #[test]
+    fn terrain_and_defense_correlations_are_conservative() {
+        struct Hours;
+        impl PlayerSkills for Hours {
+            fn skill_hours_trained(&self, skill: Skill) -> f32 {
+                match skill {
+                    Skill::TerrainForest => 1_000.0,
+                    Skill::TerrainHills => 500.0,
+                    Skill::Balance => 2_000.0,
+                    _ => 0.0,
+                }
+            }
+        }
+        assert_eq!(Hours.effective_skill_hours(Skill::TerrainPlains), 300.0);
+        assert_eq!(Hours.effective_skill_hours(Skill::Dodge), 400.0);
+    }
 }
 
 impl Skill {
@@ -554,6 +618,39 @@ impl Skill {
                 | Skill::Smithing
         )
     }
+
+    /// Sparse, symmetric transfer relationships for ordinary skills. These
+    /// coefficients are projected from direct source hours in one pass.
+    pub const fn ordinary_correlations(self) -> &'static [(Skill, f32)] {
+        match self {
+            Self::Cooking => &[(Self::Knife, 0.15)],
+            Self::Knife => &[(Self::Cooking, 0.15), (Self::Sword, 0.20)],
+            Self::Sword => &[(Self::Knife, 0.20)],
+            Self::Dodge => &[(Self::Balance, 0.20)],
+            Self::Balance => &[(Self::Dodge, 0.20)],
+            Self::TerrainPlains => &[
+                (Self::TerrainForest, 0.20),
+                (Self::TerrainHills, 0.20),
+                (Self::TerrainUrban, 0.20),
+            ],
+            Self::TerrainForest => &[
+                (Self::TerrainPlains, 0.20),
+                (Self::TerrainHills, 0.20),
+                (Self::TerrainUrban, 0.20),
+            ],
+            Self::TerrainHills => &[
+                (Self::TerrainPlains, 0.20),
+                (Self::TerrainForest, 0.20),
+                (Self::TerrainUrban, 0.20),
+            ],
+            Self::TerrainUrban => &[
+                (Self::TerrainPlains, 0.20),
+                (Self::TerrainForest, 0.20),
+                (Self::TerrainHills, 0.20),
+            ],
+            _ => &[],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -662,6 +759,30 @@ pub enum SkillKind {
 pub trait PlayerSkills {
     fn skill_hours_trained(&self, skill: Skill) -> f32;
 
+    /// One nonrecursive transfer pass over direct skill hours. The projection
+    /// is never persisted and therefore cannot amplify itself.
+    fn effective_skill_hours(&self, skill: Skill) -> f32 {
+        let direct = self.skill_hours_trained(skill).max(0.0);
+        if skill.is_trained() && direct <= 0.0 {
+            return 0.0;
+        }
+        let transferred = skill
+            .ordinary_correlations()
+            .iter()
+            .map(|(source, coefficient)| self.skill_hours_trained(*source).max(0.0) * coefficient)
+            .sum::<f32>()
+            .max(0.0);
+        // A tiny direct investment must not unlock an arbitrarily large
+        // lifetime transfer into an ordinary trained skill. Intuitive skills
+        // remain able to benefit from related experience before direct study.
+        let transferred = if skill.is_trained() {
+            transferred.min(direct)
+        } else {
+            transferred
+        };
+        direct + transferred
+    }
+
     fn bestiary_hours_for(&self, _category: adventuresim_world_schema::BestiaryCategory) -> f32 {
         self.skill_hours_trained(Skill::Bestiary)
     }
@@ -675,7 +796,7 @@ pub trait PlayerSkills {
         equipment: &impl PlayerEquipment,
         weights: LimbWeights,
     ) -> f32 {
-        let hours_trained = self.skill_hours_trained(skill);
+        let hours_trained = self.effective_skill_hours(skill);
         let mut check = skill.capped_training_rank(hours_trained, attr);
         // Injury remains an explicit performance penalty. Aptitude itself is
         // healthy/raw and contributes nothing to the final check value.

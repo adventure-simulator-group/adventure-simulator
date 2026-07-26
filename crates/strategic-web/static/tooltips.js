@@ -81,11 +81,14 @@
       governedBy.textContent = `Governed by ${skill.governed_by}`;
       const trained = documentRoot.createElement('span');
       trained.className = 'strategic-skill-tooltip-line';
-      trained.textContent = `${Number(skill.trained_hours).toFixed(1)} effective hours trained`;
+      trained.textContent = `${Number(skill.trained_hours).toFixed(1)} direct hours trained`;
+      const effective = documentRoot.createElement('span');
+      effective.className = 'strategic-skill-tooltip-line';
+      effective.textContent = `${(Number(skill.trained_hours) + Number(skill.correlated_hours)).toFixed(1)} effective hours trained`;
       const correlated = documentRoot.createElement('span');
       correlated.className = 'strategic-skill-tooltip-line';
       correlated.textContent = `${Number(skill.correlated_hours).toFixed(1)} hours from correlated skills:`;
-      tooltip.append(title, governedBy, trained, correlated);
+      tooltip.append(title, governedBy, trained, effective, correlated);
 
       if (Array.isArray(skill.correlations) && skill.correlations.length) {
         const table = documentRoot.createElement('table');

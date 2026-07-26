@@ -335,7 +335,7 @@ pub fn evaluate_capabilities(
         anatomy,
         knife,
         tailoring,
-        surgery: (anatomy + knife + tailoring) / 3.0,
+        surgery: ((anatomy + knife) * 0.5).min((anatomy + tailoring) * 0.5),
         command: skills
             .skill_check_by_parts(
                 Skill::Command,
@@ -508,6 +508,16 @@ mod tests {
         let current = [2.0, 4.0, 3.0];
         assert!((aggregate_party_check(current) - (4.0 + 1.5 + 2.0 / 3.0)).abs() < 0.001);
         assert!((aggregate_party_contribution(&current, 5.0) - 7.0 / 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn surgery_coverage_requires_both_procedure_pairs() {
+        let coverage = |anatomy: f32, knife: f32, tailoring: f32| {
+            ((anatomy + knife) * 0.5).min((anatomy + tailoring) * 0.5)
+        };
+        assert_eq!(coverage(0.0, 5.0, 5.0), 2.5);
+        assert_eq!(coverage(5.0, 5.0, 0.0), 2.5);
+        assert_eq!(coverage(4.0, 4.0, 4.0), 4.0);
     }
 
     #[test]

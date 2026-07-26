@@ -331,6 +331,20 @@ pub fn preview_elapsed_for_injuries(
     requested: u64,
     allow_recovery: bool,
 ) -> Result<u64, String> {
+    preview_elapsed_for_injuries_with_rest_minutes(
+        ctx,
+        character_id,
+        requested,
+        if allow_recovery { requested } else { 0 },
+    )
+}
+
+pub fn preview_elapsed_for_injuries_with_rest_minutes(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    recovery_minutes: u64,
+) -> Result<u64, String> {
     crate::condition::apply_blood_loss(ctx, character_id, 0.0)?;
     let blood = ctx
         .db
@@ -359,11 +373,8 @@ pub fn preview_elapsed_for_injuries(
         blood,
         &cuts,
         requested,
-        if allow_recovery {
-            crate::condition::BLOOD_RECOVERY_FRACTION_PER_DAY
-        } else {
-            0.0
-        },
+        crate::condition::BLOOD_RECOVERY_FRACTION_PER_DAY * recovery_minutes.min(requested) as f32
+            / requested.max(1) as f32,
     )
     .elapsed)
 }
@@ -376,6 +387,20 @@ pub fn settle_injuries(
     character_id: u64,
     elapsed: u64,
     allow_healing: bool,
+) -> Result<InjurySettlement, String> {
+    settle_injuries_with_rest_minutes(
+        ctx,
+        character_id,
+        elapsed,
+        if allow_healing { elapsed } else { 0 },
+    )
+}
+
+pub fn settle_injuries_with_rest_minutes(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed: u64,
+    healing_minutes: u64,
 ) -> Result<InjurySettlement, String> {
     if elapsed == 0 {
         return Ok(InjurySettlement {
@@ -412,19 +437,17 @@ pub fn settle_injuries(
         starting_blood,
         &open_cuts,
         elapsed,
-        if allow_healing {
-            crate::condition::BLOOD_RECOVERY_FRACTION_PER_DAY
-        } else {
-            0.0
-        },
+        crate::condition::BLOOD_RECOVERY_FRACTION_PER_DAY * healing_minutes.min(elapsed) as f32
+            / elapsed.max(1) as f32,
     );
-    let days = interval.elapsed as f32 / MINUTES_PER_DAY as f32;
-    let physiology = if allow_healing {
+    let elapsed_days = interval.elapsed as f32 / MINUTES_PER_DAY as f32;
+    let healing_days = healing_minutes.min(interval.elapsed) as f32 / MINUTES_PER_DAY as f32;
+    let physiology = if healing_days > 0.0 {
         crate::time::party_physiology_check(ctx, character_id)?
     } else {
         0.0
     };
-    let natural = if allow_healing {
+    let natural = if healing_days > 0.0 {
         crate::time::health_recovered_per_day(physiology)
     } else {
         0.0
@@ -441,7 +464,7 @@ pub fn settle_injuries(
         } else {
             1.0
         };
-        if allow_healing {
+        if healing_days > 0.0 {
             let stitch_bonus = if injury.stitched {
                 injury.stitch_quality.max(0.0) * STITCH_HEALING_BONUS_PER_LEVEL
             } else {
@@ -449,23 +472,23 @@ pub fn settle_injuries(
             };
             if injury.bandaged {
                 injury.cut_damage = (injury.cut_damage
-                    - (natural + 0.01 + stitch_bonus) * projectile_term * days)
+                    - (natural + 0.01 + stitch_bonus) * projectile_term * healing_days)
                     .max(0.0);
-                exposure += (starting_cut + injury.cut_damage) * 0.5 * days;
+                exposure += (starting_cut + injury.cut_damage) * 0.5 * elapsed_days;
             }
             injury.bruise_damage = (injury.bruise_damage
-                - (natural + BRUISE_HEALING_PER_DAY) * projectile_term * days)
+                - (natural + BRUISE_HEALING_PER_DAY) * projectile_term * healing_days)
                 .max(0.0);
             if injury.splint_inventory_item_id.is_some() {
                 injury.fracture_damage = (injury.fracture_damage
-                    - (natural + FRACTURE_HEALING_PER_DAY) * projectile_term * days)
+                    - (natural + FRACTURE_HEALING_PER_DAY) * projectile_term * healing_days)
                     .max(0.0);
                 if injury.fracture_damage == 0.0 {
                     return_splint(ctx, injury)?;
                 }
             }
         } else if injury.bandaged {
-            exposure += injury.cut_damage * days;
+            exposure += injury.cut_damage * elapsed_days;
         }
         if injury.cut_damage > 0.0 || starting_cut > 0.0 {
             let protection = standing_infection_multiplier(

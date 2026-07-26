@@ -269,6 +269,49 @@ pub fn cooking_duration_minutes(
     setup.checked_add(slowest)?.checked_add(batch)
 }
 
+/// Expertise shortens setup and batch handling, never the ingredient safety
+/// interval. Rank five removes at most thirty percent of overhead.
+pub fn cooking_duration_minutes_for_check(
+    method: CookingMethod,
+    safety_minutes: &[u32],
+    total_mass_kg: f32,
+    cooking_check: f32,
+) -> Option<u32> {
+    let baseline = cooking_duration_minutes(method, safety_minutes, total_mass_kg)?;
+    let safety = safety_minutes.iter().copied().max()?;
+    let overhead = baseline.saturating_sub(safety);
+    let check = if cooking_check.is_finite() {
+        cooking_check.clamp(0.0, 5.0)
+    } else {
+        0.0
+    };
+    safety.checked_add((overhead as f32 * (1.0 - 0.06 * check)).ceil() as u32)
+}
+
+pub fn cooked_nutrition_retention(cooking_check: f32) -> f32 {
+    let check = if cooking_check.is_finite() {
+        cooking_check.clamp(0.0, 5.0)
+    } else {
+        0.0
+    };
+    0.95 + 0.008 * check
+}
+
+pub fn cooked_quality_multiplier(cooking_check: f32) -> f32 {
+    let check = if cooking_check.is_finite() {
+        cooking_check.clamp(0.0, 5.0)
+    } else {
+        0.0
+    };
+    0.95 + 0.03 * check
+}
+
+/// Cooked output is terminal preparation state. Allowing it back into the
+/// ingredient pipeline would repeatedly multiply retained value and nutrition.
+pub fn is_cookable_ingredient(item_id: &str) -> bool {
+    item_id != "cooked_meal"
+}
+
 pub fn travel_consumption(deficit_kcal: f32, available_kcal: f32) -> f32 {
     if !deficit_kcal.is_finite() || !available_kcal.is_finite() {
         return 0.0;
@@ -339,6 +382,30 @@ mod tests {
             cooking_duration_minutes(CookingMethod::Roast, &[5], 4.0)
                 > cooking_duration_minutes(CookingMethod::Roast, &[5], 0.5)
         );
+    }
+    #[test]
+    fn cooking_skill_only_reduces_overhead_and_bounds_quality() {
+        let safety = [22];
+        let novice =
+            cooking_duration_minutes_for_check(CookingMethod::Roast, &safety, 4.0, 0.0).unwrap();
+        let master =
+            cooking_duration_minutes_for_check(CookingMethod::Roast, &safety, 4.0, 5.0).unwrap();
+        assert!(master < novice);
+        assert!(master >= 22);
+        assert_eq!(cooked_nutrition_retention(-1.0), 0.95);
+        assert!((cooked_nutrition_retention(5.0) - 0.99).abs() < f32::EPSILON);
+        assert_eq!(cooked_quality_multiplier(f32::NAN), 0.95);
+        assert!((cooked_quality_multiplier(5.0) - 1.10).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn cooked_output_cannot_reenter_the_value_multiplier() {
+        assert!(is_cookable_ingredient("hazelnuts"));
+        assert!(!is_cookable_ingredient("cooked_meal"));
+        let ingredient_value = 100.0;
+        let once = ingredient_value * cooked_quality_multiplier(5.0);
+        assert_eq!(once, 110.0);
+        assert!(!is_cookable_ingredient("cooked_meal"));
     }
     #[test]
     fn travel_never_creates_surplus_but_meals_can() {
