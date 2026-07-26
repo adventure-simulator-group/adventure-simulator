@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct UpdatePartyCheckTargetsArgs {
     pub leader_id: u64,
-    pub medicine: f32,
+    pub physiology: f32,
     pub command: f32,
     pub religion: f32,
 }
@@ -17,7 +17,7 @@ impl From<UpdatePartyCheckTargetsArgs> for super::Reducer {
     fn from(args: UpdatePartyCheckTargetsArgs) -> Self {
         Self::UpdatePartyCheckTargets {
             leader_id: args.leader_id,
-            medicine: args.medicine,
+            physiology: args.physiology,
             command: args.command,
             religion: args.religion,
         }
@@ -42,11 +42,11 @@ pub trait update_party_check_targets {
     fn update_party_check_targets(
         &self,
         leader_id: u64,
-        medicine: f32,
+        physiology: f32,
         command: f32,
         religion: f32,
     ) -> __sdk::Result<()> {
-        self.update_party_check_targets_then(leader_id, medicine, command, religion, |_, _| {})
+        self.update_party_check_targets_then(leader_id, physiology, command, religion, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `update_party_check_targets` to run as soon as possible,
@@ -58,7 +58,7 @@ pub trait update_party_check_targets {
     fn update_party_check_targets_then(
         &self,
         leader_id: u64,
-        medicine: f32,
+        physiology: f32,
         command: f32,
         religion: f32,
 
@@ -74,7 +74,7 @@ impl update_party_check_targets for super::RemoteReducers {
     fn update_party_check_targets_then(
         &self,
         leader_id: u64,
-        medicine: f32,
+        physiology: f32,
         command: f32,
         religion: f32,
 
@@ -87,7 +87,7 @@ impl update_party_check_targets for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             UpdatePartyCheckTargetsArgs {
                 leader_id,
-                medicine,
+                physiology,
                 command,
                 religion,
             },

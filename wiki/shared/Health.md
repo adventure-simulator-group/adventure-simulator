@@ -47,65 +47,31 @@ lack durable character identities, so their blood is recorded with unknown sourc
 provenance.
 
 Characters do not innately know their diseases. Everyone can see compact,
-deduplicated outward symptoms. A completed examination can additionally find
-deterministic incidental complaints that obscure the underlying cause. Vitals and diagnoses appear only after a
-specific character spends 15 personal minutes examining a co-located patient;
-the patient spends the same interval. Examination knowledge belongs to that
-doctor and appears in a centered one-shot result. Closing it discards the
-result, so examinations never become medical history on the character sheet
-and do not administer treatment.
-An equipped medication course adds a public line beneath the symptoms stating that
-the patient is taking medication for its period-facing disease name. The line
-disappears when the episode resolves; it is treatment status, not medical
-history.
+deduplicated outward symptoms. A co-present observer instead accumulates a
+durable Physiology notebook containing quantized regional Humour readings,
+symptoms, known interventions, and explicit gaps for absence. Historical
+readings use the observer's capability at the time; later training does not
+rewrite them. Humours are intentionally lossy many-to-one projections of
+private functional meters, so neither a single reading nor a complete chart
+automatically diagnoses disease or recommends treatment.
 
-An examination within one point of a disease's stage-dependent difficulty
-produces a weighted differential of compatible period ailments. Meeting the
-difficulty confirms the disease. Repeating an unchanged
-examination does not reroll the deterministic findings or check. Party-aggregate
-Medicine does not grant medical knowledge.
+Prepared interventions are concrete inventory items with generic, versioned
+effect profiles. Administration records route, amount, optional body region,
+and start/stop history. Effects act on functional meters and never key off the
+patient's disease. Physiology owns observation, administration, and the existing
+wound-recovery bonus; it does not craft preparations. Crafting and chemistry
+remain follow-up systems (#214 and #215).
 
-At any settlement, the herbalist's **Feeling ill** dialogue option provides an
-NPC examination for a positive gold fee. Only the patient's personal clock
-advances by 15 minutes. Each herbalist has a stable Medicine rank from 2 through
-4 and therefore may fail to identify difficult illnesses. On success they say
-only the canonical disease name and recommended prepared medicine name; they do
-not disclose symptoms, findings, vitals, humour channels, differential, stage,
-contagion, infection identity, or their skill. Multiple confirmed active
-diseases produce deduplicated disease/medicine pairs. Player-doctor examinations
-remain free, time-only, and use their richer private one-shot presentation.
+Private disease curves, individual baseline, phenotype, and interventions are
+combined before terminal thresholds are checked. The exact earliest
+integer-minute crossing is used regardless of how an activity interval is
+chunked. See [the Physiology system](../../docs/PHYSIOLOGY.md) for the complete
+meter and Humour model.
 
-Body-region health is always perceptible, but its cause is not. A lay view uses
-only white for sound tissue, red for visible cut damage, light purple for blunt
-damage, and green for every other impairment. After a Medicine 2 character
-spends 15 personal minutes examining a co-located patient, the one-shot result
-replaces green on each affected region with the four period medical channels:
-pink Sanguine, blue Phlegmatic, yellow Choleric, and dark-purple Melancholic.
-The channels are a period vocabulary over modern internal physiology, derived
-per region from the infection episode rather than persisted as disease state.
-
-Episodes retain only identity/associations, contraction minute, and optional
-treatment minute. Severity and incidental findings are deterministically seeded
-from those associations. Pending examination results are transient action state,
-not additional disease state, and are deleted on dismissal. A Medicine 2
-character has an alchemy panel listing every preparation at or below their own
-Medicine rank; recipe access is intentionally independent of diagnosis and each
-recipe has its own treatment DC. Preparation consumes its explicit ingredients
-from either personal or shared inventory and advances only the apothecary's
-personal time. Herbalists sell ingredients and all eight pre-prepared courses,
-including Medicine 5 preparations that exceed their current personal skill
-because unlimited stock represents earlier or supplied inventory. Prepared
-courses cost strictly more than buying their ingredients for player crafting.
-Future foraging will provide another ingredient source.
-
-Medication is a normal transferable inventory item until the patient equips it.
-Medication uses an unbounded equipment list rather than body slots. Equipping
-consumes the course, records the episode's treatment timestamp, and continuously
-accelerates the remaining course while mitigating symptoms; it never instantly
-cures disease. Unequipping discards the course, and medication records are also
-removed automatically when their matching disease resolves. Immunity resists acquisition and attenuates severity; resolved episodes can
+Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease
-with the treating character's species-capped Surgery check reducing residual risk; blunt damage does not.
+with the treating character's relevant Anatomy-based procedure check reducing
+residual risk; blunt damage does not.
 
 Outbreak acquisition hashes each actual minute of presence. This keeps late
 arrival, departure and re-entry exact and makes one long stay identical to the
@@ -128,7 +94,7 @@ Below zero, you aren't any *less* effective, per-se, but the body part can conti
 
 ## Current strategic implementation
 
-During recovery, the existing bounded party Medicine check supplies **1 percentage point plus 1 percentage point per Medicine point** of natural recovery per full game day, combined with the wound category's own rate. This modifier is applied to the authoritative cut, bruise, and splinted-fracture components rather than directly to `character_limbs`. A retained projectile multiplies every healing component on that limb by 0.6. Resting characters convalesce before they train.
+During recovery, the existing bounded party Physiology check supplies **1 percentage point plus 1 percentage point per Physiology point** of natural recovery per full game day, combined with the wound category's own rate. This modifier is applied to the authoritative cut, bruise, and splinted-fracture components rather than directly to `character_limbs`. A retained projectile multiplies every healing component on that limb by 0.6. Resting characters convalesce before they train.
 
 Autoresolve calculates every hit through the shared melee and ranged exchanges and commits its body part, cut and blunt shares, and projectile kind. Strategic wounds are split per limb into cuts, bruising, and fracture severity. Fracture severity is a condition within blunt trauma and never adds a second copy of the hit's health damage. Cuts remain open after battle: they deteriorate at 2.5% health per day and drain blood in proportion to wound size until manually bandaged. Bandaging consumes one bandage and permanently stabilizes that wound; its health-bar segment changes from solid red to banded pink. Bruising heals without a procedure. A single blunt hit over 18% limb health creates fracture severity proportional to the excess. Untreated fractures are graphite grey, while splinted fractures use lighter grey bands so treatment state is not communicated by color alone.
 

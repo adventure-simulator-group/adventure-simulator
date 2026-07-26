@@ -569,7 +569,8 @@ fn expose_to_dysentery(
             character_id,
             disease_id: "dysentery".into(),
             contracted_at: minute,
-            treated_at: None,
+            ruleset_version: adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
+            phenotype_key_version: adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
         });
     }
     Ok(())

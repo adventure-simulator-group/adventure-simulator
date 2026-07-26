@@ -37,10 +37,10 @@ test("client renders only persisted authoritative views and enforces prompt boun
   assert.match(source, /choices\.length\s*<\s*prompt\.min_choices/);
 });
 
-test("private herbalist results retain medication focus without entering the catalog", () => {
-  assert.match(source, /view\.examination/);
-  assert.match(source, /data-dialogue-medication/);
-  assert.match(source, /data-herbalist-medication-name/);
+test("dialogue does not expose the removed diagnosis and medication examination flow", () => {
+  assert.doesNotMatch(source, /view\.examination/);
+  assert.doesNotMatch(source, /data-dialogue-medication/);
+  assert.doesNotMatch(source, /data-herbalist-medication-name/);
 });
 
 test("settlement NPC selection is accessible and actor-backed", () => {

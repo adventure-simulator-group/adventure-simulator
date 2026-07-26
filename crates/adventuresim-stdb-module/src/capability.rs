@@ -30,8 +30,8 @@ pub struct CharacterCapability {
     pub pierce: bool,
     pub athletics: f32,
     pub endurance: f32,
-    pub medicine: f32,
-    pub human_lore: f32,
+    pub physiology: f32,
+    pub anatomy: f32,
     pub knife: f32,
     pub tailoring: f32,
     pub surgery: f32,
@@ -59,8 +59,8 @@ impl From<(u64, CharacterCapabilities)> for CharacterCapability {
             pierce: false,
             athletics: value.athletics,
             endurance: value.endurance,
-            medicine: value.medicine,
-            human_lore: value.human_lore,
+            physiology: value.physiology,
+            anatomy: value.anatomy,
             knife: value.knife,
             tailoring: value.tailoring,
             surgery: value.surgery,
@@ -133,7 +133,15 @@ pub fn refresh_character_capability(
         // update invalidates the SSE UI, which otherwise refreshes the same
         // capability again and creates a feedback loop.
         if existing != row {
+            let old_band = existing.physiology.round().clamp(0.0, 5.0) as u8;
+            let new_band = row.physiology.round().clamp(0.0, 5.0) as u8;
+            if old_band != new_band {
+                crate::social::close_physiology_presence(ctx, character_id);
+            }
             ctx.db.character_capability().character_id().update(row);
+            if old_band != new_band {
+                crate::social::reset_familiarity_after_join(ctx, character_id);
+            }
         }
     } else {
         ctx.db.character_capability().insert(row);
@@ -235,13 +243,13 @@ impl PlayerSkills for CharacterSkills {
             Skill::Command => self.command_hours,
             Skill::Deception => self.deception_hours,
             Skill::Seduction => self.seduction_hours,
-            Skill::Medicine => self.medicine_hours,
+            Skill::Physiology => self.physiology_hours,
             Skill::Cooking => self.cooking_hours,
             // Generic recruitment/tactical summaries use the character's best-covered
             // tradition. Authoritative religious morale always selects a tradition.
             Skill::Religion => self.religion_hours.maximum_effective(),
             Skill::Bestiary => self.bestiary_hours.aggregate_effective(),
-            Skill::Surgery => self.surgery_hours,
+            Skill::Anatomy => self.anatomy_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains => self.terrain_plains_hours,
@@ -698,12 +706,12 @@ pub(crate) fn load_combatant(
             command_hours: skills.command_hours,
             deception_hours: skills.deception_hours,
             seduction_hours: skills.seduction_hours,
-            medicine_hours: skills.medicine_hours,
+            physiology_hours: skills.physiology_hours,
             religion_hours: skills.religion_hours.total_direct(),
             stealth_hours: skills.stealth_hours,
             balance_hours: skills.balance_hours,
             bestiary_hours: skills.bestiary_hours,
-            surgery_hours: skills.surgery_hours,
+            anatomy_hours: skills.anatomy_hours,
             tailoring_hours: skills.tailoring_hours,
             smithing_hours: skills.smithing_hours,
         },

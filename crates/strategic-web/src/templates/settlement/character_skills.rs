@@ -157,9 +157,8 @@ impl ActivityPreviewRates {
                 Skill::Command => skills.command_hours,
                 Skill::Smithing => skills.smithing_hours,
                 Skill::Tailoring => skills.tailoring_hours,
-                Skill::Medicine => skills.medicine_hours,
-                Skill::Bestiary => skills.bestiary_hours.direct(BestiaryCategory::Human),
-                Skill::Surgery => skills.surgery_hours,
+                Skill::Physiology => skills.physiology_hours,
+                Skill::Anatomy => skills.anatomy_hours,
                 Skill::Knife => skills.knife_hours,
                 Skill::Cooking => skills.cooking_hours,
                 Skill::Religion => row
@@ -210,18 +209,11 @@ impl ActivityPreviewRates {
 pub(crate) struct CharacterSheetActions<'a> {
     pub(super) cooking_href: Option<&'a str>,
     pub(super) cooking_open: bool,
-    pub(super) examination_action: Option<&'a str>,
-    pub(super) examination_open: bool,
 }
 
 #[derive(Clone, Copy)]
 pub(super) enum SkillAction<'a> {
     Get {
-        href: &'a str,
-        label: &'a str,
-        open: bool,
-    },
-    Post {
         href: &'a str,
         label: &'a str,
         open: bool,
@@ -232,45 +224,18 @@ pub(super) fn skill_action_icon(
     name: &str,
     icon: &str,
     action: SkillAction<'_>,
-    inside_form: bool,
+    _inside_form: bool,
 ) -> Markup {
-    let (href, label, open) = match action {
-        SkillAction::Get { href, label, open } | SkillAction::Post { href, label, open } => {
-            (href, label, open)
-        }
-    };
-    html! {
-        @match action {
-            SkillAction::Get { .. } => {
-                a class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
-                    href=(href) title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
-                    data-dialog-opener=(href) {
-                    span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
-                    @if open { span class="sr-only" { " (open)" } }
-                }
+    match action {
+        SkillAction::Get { href, label, open } => html! {
+            a class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
+                href=(href) title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
+                data-dialog-opener=(href) {
+                span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
+                @if open { span class="sr-only" { " (open)" } }
             }
-            SkillAction::Post { .. } => {
-                @if inside_form {
-                    button type="submit" class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
-                        formaction=(href) formmethod="post"
-                        title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
-                        data-dialog-opener=(href) {
-                        span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
-                        @if open { span class="sr-only" { " (open)" } }
-                    }
-                } @else {
-                    form method="post" action=(href) class="character-menu-button-form" {
-                        button type="submit" class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
-                            title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
-                            data-dialog-opener=(href) {
-                            span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
-                            @if open { span class="sr-only" { " (open)" } }
-                        }
-                    }
-                }
-            }
-        }
-        span class="sr-only" { (name) }
+            span class="sr-only" { (name) }
+        },
     }
 }
 
@@ -380,15 +345,25 @@ fn skills_table(
                 tbody {
                     @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some(), None)) }
                     (social_skill_rows(skills, head_health, schedule))
-                    @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some(), actions.examination_action.map(|href| SkillAction::Post { href, label: "Perform medical examination (15 minutes)", open: actions.examination_open }))) }
+                    @if skills.physiology_hours > 0.0 {
+                        (party_skill_row(
+                            "Physiology",
+                            "physiology",
+                            Skill::Physiology,
+                            skills.physiology_hours,
+                            head_health,
+                            schedule.is_some(),
+                            None,
+                        ))
+                    }
                     (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (bestiary_skill_rows(skills, head_health, schedule.is_some()))
-                    (surgery_skill_rows(skills, upper_health, schedule.is_some()))
                     (language_skill_rows(skills, schedule.is_some()))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some(), None)) }
                     (terrain_skill_rows(skills, schedule.is_some()))
+                    @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some(), None)) }
                     @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some(), None)) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
@@ -707,44 +682,6 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
                     td class="religion-expand-cell" {}
                 }
             }
-        }
-    }
-}
-
-fn surgery_skill_rows(
-    skills: &CharacterSkills,
-    upper_health: f32,
-    schedule_context: bool,
-) -> Markup {
-    let knife_transfer_percent = adventuresim_core::surgery::KNIFE_SURGERY_CORRELATION * 100.0;
-    let tailoring_transfer_percent =
-        adventuresim_core::surgery::TAILORING_SURGERY_CORRELATION * 100.0;
-    let effective_hours = adventuresim_core::surgery::effective_surgery_hours(
-        skills.surgery_hours,
-        skills.knife_hours,
-        skills.tailoring_hours,
-    );
-    if effective_hours <= 0.0 {
-        return html! {};
-    }
-    let rank = Skill::Surgery.training_rank(effective_hours);
-    html! {
-        tr class="party-skill-row surgery-skill-row" data-skill="surgery" {
-            th scope="row" class="party-skill-name party-skill-icon-cell" {
-                (stat_icon("Surgery", "skills", "surgeon", false))
-            }
-            td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
-                (skill_rank_bar(
-                    rank,
-                    rank * upper_health.clamp(0.0, 1.0),
-                    &format!(
-                        "{effective_hours:.1} effective hours; {:.1} directly trained hours; Knife transfers at {knife_transfer_percent:.0}% and Tailoring transfers at {tailoring_transfer_percent:.0}%",
-                        skills.surgery_hours.max(0.0),
-                    ),
-                    skill_rail_bar_options(),
-                ))
-            }
-            td class="religion-expand-cell" {}
         }
     }
 }
@@ -1434,14 +1371,13 @@ mod tests {
             command_hours: 0.0,
             deception_hours: 0.0,
             seduction_hours: 0.0,
-            medicine_hours: 0.0,
+            physiology_hours: 0.0,
             cooking_hours: 0.0,
             religion_hours: adventuresim_world_schema::ReligionHours {
                 roman_catholic: 1_000.0,
                 ..Default::default()
             },
             bestiary_hours: Default::default(),
-            surgery_hours: 0.0,
             oral_languages: Default::default(),
             written_languages: Default::default(),
             stealth_hours: 0.0,
@@ -1450,6 +1386,7 @@ mod tests {
             terrain_forest_hours: 0.0,
             terrain_hills_hours: 0.0,
             terrain_urban_hours: 0.0,
+            anatomy_hours: 0.0,
             tailoring_hours: 0.0,
             smithing_hours: 0.0,
         };
@@ -1689,9 +1626,10 @@ mod tests {
 
         let profession = ProfessionActivityPreview {
             training_rates: vec![
-                ("Medicine".into(), 0.5),
-                ("Human knowledge".into(), 1.0 / 6.0),
-                ("Surgery".into(), 1.0 / 3.0),
+                ("Physiology".into(), 0.5),
+                ("Anatomy".into(), 1.0 / 6.0),
+                ("Knife".into(), 1.0 / 6.0),
+                ("Tailoring".into(), 1.0 / 6.0),
             ],
             apprenticeship_accrued: 0,
             practice_accrued: 0,
@@ -1707,11 +1645,10 @@ mod tests {
         )
         .into_string();
         assert!(apprenticeship.contains(">+2.00h<"));
-        assert!(apprenticeship.contains("Medicine: +1.00h"));
-        assert!(apprenticeship.contains("Human knowledge: +0.33h"));
-        assert!(apprenticeship.contains("Surgery: +0.67h"));
-        assert!(!apprenticeship.contains("Knife:"));
-        assert!(!apprenticeship.contains("Tailoring:"));
+        assert!(apprenticeship.contains("Physiology: +1.00h"));
+        assert!(apprenticeship.contains("Anatomy: +0.33h"));
+        assert!(apprenticeship.contains("Knife: +0.33h"));
+        assert!(apprenticeship.contains("Tailoring: +0.33h"));
 
         let leisure = activity_training_cell("Leisure", "leisure_minutes", 480, None).into_string();
         assert!(leisure.contains(">—<"));
@@ -1933,58 +1870,5 @@ mod tests {
         assert!(css.contains(".bestiary-primary-row .stat-icon,"));
         assert!(css.contains("--stat-icon-color: var(--info);"));
         assert!(css.contains("cursor: help;"));
-    }
-
-    #[test]
-    fn surgery_is_a_single_leaf_row_with_direct_and_correlated_hours() {
-        let skills = CharacterSkills {
-            surgery_hours: 500.0,
-            knife_hours: 750.0,
-            tailoring_hours: 250.0,
-            ..Default::default()
-        };
-        let rendered = surgery_skill_rows(&skills, 1.0, false).into_string();
-        assert!(rendered.contains("data-skill=\"surgery\""));
-        assert!(rendered.contains("750.0 effective hours"));
-        assert!(rendered.contains("500.0 directly trained hours"));
-        let knife_percent = adventuresim_core::surgery::KNIFE_SURGERY_CORRELATION * 100.0;
-        let tailoring_percent = adventuresim_core::surgery::TAILORING_SURGERY_CORRELATION * 100.0;
-        assert!(rendered.contains(&format!(
-            "Knife transfers at {knife_percent:.0}% and Tailoring transfers at {tailoring_percent:.0}%"
-        )));
-        assert!(!rendered.contains("data-surgery-expand"));
-        assert!(!rendered.contains("data-surgery-detail"));
-    }
-
-    #[test]
-    fn surgery_row_uses_upper_body_health_for_its_injury_adjusted_rank() {
-        let skills = CharacterSkills {
-            surgery_hours: 5_000.0,
-            ..Default::default()
-        };
-        let impaired = skills_table(
-            "Skills",
-            &skills,
-            1.0,
-            0.25,
-            1.0,
-            None,
-            None,
-            false,
-            0.0,
-            None,
-            CombatTrainingProfile::default(),
-            false,
-            CharacterSheetActions::default(),
-        )
-        .into_string();
-        let rank = Skill::Surgery.training_rank(5_000.0);
-
-        let surgery = impaired.find("data-skill=\"surgery\"").unwrap();
-        let row_start = impaired[..surgery].rfind("<tr").unwrap();
-        let row_end = surgery + impaired[surgery..].find("</tr>").unwrap() + "</tr>".len();
-        let surgery_row = &impaired[row_start..row_end];
-        assert!(surgery_row.contains(&format!("aria-valuenow=\"{:.1}\"", rank * 0.25)));
-        assert!(surgery_row.contains("class=\"rank-damage\""));
     }
 }

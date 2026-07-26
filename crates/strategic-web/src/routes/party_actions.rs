@@ -53,7 +53,7 @@ pub(crate) enum PartyAction {
         mission_id: String,
     },
     UpdatePartyCheckTargets {
-        medicine: f32,
+        physiology: f32,
         command: f32,
         religion: f32,
     },
@@ -219,14 +219,14 @@ impl PartyAction {
                 vec![json!(actor_id), json!(mission_id)],
             ),
             Self::UpdatePartyCheckTargets {
-                medicine,
+                physiology,
                 command,
                 religion,
             } => (
                 "update_party_check_targets",
                 vec![
                     json!(actor_id),
-                    json!(medicine),
+                    json!(physiology),
                     json!(command),
                     json!(religion),
                 ],

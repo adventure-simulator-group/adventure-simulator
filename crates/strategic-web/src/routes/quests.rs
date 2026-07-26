@@ -1247,7 +1247,7 @@ mod quest_route_tests {
             camp_destination: None,
             camp_remaining_minutes: 0,
             pooled_water_ml: 0.0,
-            medicine_target: 0.0,
+            physiology_target: 0.0,
             command_target: 0.0,
             religion_target: 0.0,
         }

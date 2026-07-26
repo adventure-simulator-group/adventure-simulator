@@ -1,5 +1,6 @@
 //! Pure, versioned generation for the first-character candidate roster.
 
+use adventuresim_world_schema::BestiaryHours;
 use serde::{Deserialize, Serialize};
 
 pub const GENERATOR_VERSION: u16 = 1;
@@ -54,7 +55,9 @@ pub struct StartingSkills {
     pub will: f32,
     pub insight: f32,
     pub command: f32,
-    pub medicine: f32,
+    pub physiology: f32,
+    pub bestiary: BestiaryHours,
+    pub anatomy: f32,
     pub stealth: f32,
     pub balance: f32,
     pub cooking: f32,
@@ -290,7 +293,9 @@ pub fn generate(version: u16, seed: &str, slot: u8) -> Result<StartingCharacterS
         will: 700.0,
         insight: 500.0,
         command: 250.0,
-        medicine: 250.0,
+        physiology: 250.0,
+        bestiary: BestiaryHours::default(),
+        anatomy: 250.0,
         stealth: 450.0,
         balance: 600.0,
         cooking: 300.0,

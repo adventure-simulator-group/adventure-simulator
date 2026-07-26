@@ -115,7 +115,7 @@ Skills are divided into two categories: mental and physical. The former is gover
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs. They are not increased via an abstract XP/leveling system, and very little of their value comes from using them during tactical play. Instead they are trained through activities in the character's off-screen settlement-downtime schedule. Individual skill-study allocations are not available.
 
-Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Medicine, Human Bestiary knowledge, Surgery, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
+Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Physiology, Anatomy, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
 
 Selecting an explicit activity icon previews and performs one continuous one-to-24-hour interval using the same training and outcome rules. Its preview is based on the chosen duration; Prayer/Meditation and Carousing are nonlinear, so increasing their duration has diminishing Morale returns. Immediate activity never includes implicit Leisure or modifies the recurring allocation.
 
@@ -230,26 +230,29 @@ Insight reads others, Self-awareness reads oneself, Humor relieves tension, Comm
 4. Funny
 5. Professional bard
 
-### Medicine (trained, 10000 hours)
-Medicine governs what a particular character can discern about illness. Below
-an effective individual check of 2 no examination action appears, even for
-oneself. Everyone can perceive where the body feels impaired, but the lay
-health bars collapse non-cut and non-blunt causes into green. At 2, a physician
-can spend 15 minutes examining a co-located patient; the resulting one-shot
-view splits that green impairment per body region into the four humours. Each disease has a stage-dependent
-diagnosis difficulty (never below 2); meeting it reveals a period-facing
-diagnosis and permits a quoted gold-and-time treatment. Cuts and blunt trauma
-remain distinct without Medicine; all other sources, including burns, use the
-green lay category. Party Medicine still assists wound recovery, but party aggregation
-never grants medical visibility or diagnosis.
+### Physiology (trained, 10000 hours)
+Physiology governs what a particular character can discern about illness.
+Observation is passive while characters share a party and location; there is
+no separate examination action. The observer's individual capability band
+sets notebook cadence, symptom recognition, localization, confidence, and
+awareness of interventions. When capability crosses a band boundary, a new
+presence span begins so earlier notes retain the capability that produced
+them. Cuts and blunt trauma remain visible without Physiology; private meter
+causes are disclosed only through the deliberately many-to-one four-humour
+projection. The chart never names a disease or recommends a treatment.
 
-Medicine uses a bounded party-check equation. Individual checks are sorted strongest-first, the leader receives full weight, and successive contributors receive weights of `1/2`, `1/4`, `1/8`, and so on:
+Characters may explicitly administer a preparation they possess, choosing its
+amount and optional canonical body region through the preparation's supported
+route, or stop an active administration. These actions operate on generic,
+versioned physiology profiles rather than disease-keyed cures.
+
+Physiology uses a bounded party-check equation. Individual checks are sorted strongest-first, the leader receives full weight, and successive contributors receive weights of `1/2`, `1/4`, `1/8`, and so on:
 
 \[
 P = 5\left(1-\prod_{i=1}^{n}\left(1-\frac{x_i}{5}\right)^{(1/2)^{i-1}}\right)
 \]
 
-A solo character retains their exact individual check. The result never exceeds 5 and needs no final clamp. Because all supporting weights together equal the leader's weight, arbitrarily many equally skilled supporters can add at most the influence of one additional copy of the leader: Medicine 1 approaches 1.8, Medicine 2 approaches 3.2, Medicine 3 approaches 4.2, and Medicine 4 approaches 4.8.
+A solo character retains their exact individual check. The result never exceeds 5 and needs no final clamp. Because all supporting weights together equal the leader's weight, arbitrarily many equally skilled supporters can add at most the influence of one additional copy of the leader: Physiology 1 approaches 1.8, Physiology 2 approaches 3.2, Physiology 3 approaches 4.2, and Physiology 4 approaches 4.8.
 
 0. Provides no help to anyone injured
 1. Knows to disinfect wounds with alcohol

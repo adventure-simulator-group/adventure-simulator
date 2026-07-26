@@ -14,7 +14,7 @@
     if (!backwards && current === length - 1) return 0;
     return current + (backwards ? -1 : 1);
   };
-  const dialogOwnsBodyLock = (hasCharacterDialog, hasExamination) => hasCharacterDialog || hasExamination;
+  const dialogOwnsBodyLock = (hasCharacterDialog) => hasCharacterDialog;
   const openerIdentity = (opener) => opener?.dataset?.dialogOpener || opener?.getAttribute?.("aria-label") || null;
   const submitAutomaticChatToggle = (input) => {
     if (!input?.matches?.("[data-automatic-social-chat]") || !input.form?.requestSubmit) return false;
@@ -35,7 +35,7 @@
     if (opener) {
       sessionStorage.setItem(restoreKey, openerIdentity(opener));
     }
-    if (event.target.closest?.(".character-action-dialog-close, .character-action-backdrop, .medical-examination-close")) {
+    if (event.target.closest?.(".character-action-dialog-close, .character-action-backdrop")) {
       sessionStorage.setItem(`${restoreKey}-pending`, "true");
     }
   });
@@ -47,10 +47,6 @@
   const overlay = overlays[0];
   overlays.slice(1).forEach((extra) => { extra.hidden = true; });
   if (!overlay) {
-    if (dialogOwnsBodyLock(false, Boolean(document.querySelector("[data-medical-examination]")))) {
-      document.body.classList.add("character-action-dialog-open");
-      return;
-    }
     document.body.classList.remove("character-action-dialog-open");
     if (sessionStorage.getItem(`${restoreKey}-pending`) === "true") {
       sessionStorage.removeItem(`${restoreKey}-pending`);

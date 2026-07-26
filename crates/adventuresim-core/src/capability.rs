@@ -160,8 +160,8 @@ pub struct CharacterCapabilities {
     pub full_armor: bool,
     pub athletics: f32,
     pub endurance: f32,
-    pub medicine: f32,
-    pub human_lore: f32,
+    pub physiology: f32,
+    pub anatomy: f32,
     pub knife: f32,
     pub tailoring: f32,
     pub surgery: f32,
@@ -181,7 +181,7 @@ pub struct RoleRequirements {
     pub full_armor: bool,
     pub athletics: u8,
     pub endurance: u8,
-    pub medicine: u8,
+    pub physiology: u8,
     pub surgery: u8,
     pub command: u8,
     pub religion: u8,
@@ -199,7 +199,7 @@ impl CharacterCapabilities {
             && (!requirements.full_armor || self.full_armor)
             && rating(self.athletics) >= requirements.athletics
             && rating(self.endurance) >= requirements.endurance
-            && rating(self.medicine) >= requirements.medicine
+            && rating(self.physiology) >= requirements.physiology
             && rating(self.surgery) >= requirements.surgery
             && rating(self.command) >= requirements.command
             && rating(self.religion) >= requirements.religion
@@ -288,14 +288,16 @@ pub fn evaluate_capabilities(
         * equipment.armor_penalty(BodyPart::FULL_BODY)
         * encumbrance;
     let (quarter_armor, half_armor, three_quarter_armor, full_armor) = armor_tiers(equipment);
-    let human_lore = bestiary_knowledge_check(
-        skills.bestiary_hours_for(adventuresim_world_schema::BestiaryCategory::Human),
-        attributes.attr_by_parts(SimpleAttribute::Instinct, body),
-        attributes.attr_by_parts(SimpleAttribute::Intelligence, body),
-        essentials.focus_level(),
-        body.body_part_health(BodyPart::Head),
-    )
-    .clamp(0.0, 5.0);
+    let anatomy = skills
+        .skill_check_by_parts(
+            Skill::Anatomy,
+            attributes,
+            body,
+            essentials,
+            equipment,
+            LimbWeights::both_arms(),
+        )
+        .clamp(0.0, 5.0);
     let knife = skills
         .skill_check_by_parts(
             Skill::Knife,
@@ -316,17 +318,6 @@ pub fn evaluate_capabilities(
             LimbWeights::both_arms(),
         )
         .clamp(0.0, 5.0);
-    let surgery = skills
-        .skill_check_by_parts(
-            Skill::Surgery,
-            attributes,
-            body,
-            essentials,
-            equipment,
-            LimbWeights::both_arms(),
-        )
-        .clamp(0.0, 5.0);
-
     CharacterCapabilities {
         melee: equipment.weapon_is_melee(),
         ranged: equipment.weapon_is_ranged(),
@@ -339,9 +330,9 @@ pub fn evaluate_capabilities(
         full_armor,
         athletics: ((climb + swim) * 0.5).clamp(0.0, 5.0),
         endurance: endurance.clamp(0.0, 5.0),
-        medicine: skills
+        physiology: skills
             .skill_check_by_parts(
-                Skill::Medicine,
+                Skill::Physiology,
                 attributes,
                 body,
                 essentials,
@@ -349,10 +340,10 @@ pub fn evaluate_capabilities(
                 LimbWeights::all_equal(),
             )
             .clamp(0.0, 5.0),
-        human_lore,
+        anatomy,
         knife,
         tailoring,
-        surgery,
+        surgery: (anatomy + knife + tailoring) / 3.0,
         command: skills
             .skill_check_by_parts(
                 Skill::Command,
@@ -457,7 +448,7 @@ mod tests {
             weapon_precision: WEAPON_PRECISION_SWORD,
             quarter_armor: true,
             endurance: 2.49,
-            medicine: 3.5,
+            physiology: 3.5,
             ..Default::default()
         };
         assert!(capabilities.meets(RoleRequirements {
@@ -465,7 +456,7 @@ mod tests {
             weapon_precision: WEAPON_PRECISION_AXE,
             quarter_armor: true,
             endurance: 2,
-            medicine: 4,
+            physiology: 4,
             ..Default::default()
         }));
         assert!(!capabilities.meets(RoleRequirements {

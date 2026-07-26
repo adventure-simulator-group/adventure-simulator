@@ -236,7 +236,7 @@ fn spawn_connected_player(
         command_hours: player.skills.command_hours,
         deception_hours: player.skills.deception_hours,
         seduction_hours: player.skills.seduction_hours,
-        medicine_hours: player.skills.medicine_hours,
+        physiology_hours: player.skills.physiology_hours,
         religion_hours: {
             let religion = &player.skills.religion_hours;
             [
@@ -266,7 +266,7 @@ fn spawn_connected_player(
         bestiary_draconid_hours: player.skills.bestiary_hours.draconid,
         bestiary_construct_hours: player.skills.bestiary_hours.construct,
         bestiary_wildmen_hours: player.skills.bestiary_hours.wildmen,
-        surgery_hours: player.skills.surgery_hours,
+        anatomy_hours: player.skills.anatomy_hours,
         stealth_hours: player.skills.stealth_hours,
         balance_hours: player.skills.balance_hours,
         tailoring_hours: player.skills.tailoring_hours,

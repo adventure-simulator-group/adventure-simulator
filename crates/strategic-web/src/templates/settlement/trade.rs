@@ -10,8 +10,7 @@ use super::{
     rest::{RestSummary, SoapRestPreview, rest_default_minutes, rest_service_menu},
     social::{
         inventory_rail, merchant_offers_rail, npc_description_stage, npc_location_id,
-        npc_portrait_strip, player_chat_area, settlement_chat_area, settlement_chat_area_with_info,
-        settlement_npc_chat_area,
+        npc_portrait_strip, player_chat_area, settlement_chat_area, settlement_npc_chat_area,
     },
 };
 use crate::spacetimedb::{
@@ -132,115 +131,6 @@ impl MerchantShop {
     }
 }
 
-pub fn alchemy_page(
-    settlement: &Settlement,
-    character: &Character,
-    party_members: &[Character],
-    medicine: f32,
-    selected: &adventuresim_core::disease::MedicationRecipe,
-    inventory: &[InventoryItem],
-    pooled: &[PartyInventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
-    personal_targets: &[InventoryQuantityTarget],
-    party_targets: &[InventoryQuantityTarget],
-    party_scope: bool,
-) -> Markup {
-    let scope = if party_scope { "party" } else { "personal" };
-    let return_to = format!(
-        "/locations/settlement/{}/alchemy?recipe={}&scope={scope}",
-        settlement.id, selected.item_id
-    );
-    let herbalist_href = format!(
-        "/settlements/{}/herbalist?return_to={}",
-        settlement.id,
-        return_to
-            .replace('%', "%25")
-            .replace('?', "%3F")
-            .replace('&', "%26")
-            .replace('=', "%3D")
-    );
-    let recipes: Vec<_> = adventuresim_core::disease::MEDICATION_RECIPES
-        .iter()
-        .filter(|recipe| adventuresim_core::disease::can_prepare_medication(medicine, recipe))
-        .collect();
-    let content = html! {
-        aside class="left-sidebar alchemy-recipes" {
-            (sidebar_section("Preparations", html! {
-                nav class="alchemy-recipe-list" aria-label="Known medication recipes" {
-                    @for recipe in recipes {
-                        a class=[(recipe.item_id == selected.item_id).then_some("active")]
-                            href=(format!("/locations/settlement/{}/alchemy?recipe={}&scope={}", settlement.id, recipe.item_id, if party_scope { "party" } else { "personal" })) {
-                            strong { (recipe.name) }
-                            span { "Medicine " (recipe.medicine_dc) " · " (recipe.preparation_minutes) " minutes" }
-                        }
-                    }
-                }
-            }))
-        }
-        main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), Some(character.id), true))
-            (visual_stage("alchemy", "Alchemy", "A working table of herbs, vessels, and prepared medicines"))
-            a class="stage-context-link" href=(herbalist_href) {
-                "Return to the herbalist"
-            }
-            (settlement_chat_area_with_info("Alchemy", Some(character), &[format!("Selected recipe: {}", selected.name)]))
-            form method="post" action=(format!("/locations/settlement/{}/alchemy/craft", settlement.id)) class="alchemy-craft-form" {
-                input type="hidden" name="disease_id" value=(format!("{:?}", selected.disease_id).to_ascii_lowercase());
-                input type="hidden" name="party_scope" value=(party_scope);
-                button type="submit" class="btn btn-primary" {
-                    "Prepare " (selected.name) " · " (selected.preparation_minutes) " minutes"
-                }
-            }
-        }
-        aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
-            nav class="inventory-owner-tabs" aria-label="Ingredient inventory" {
-                a class=(if !party_scope { "inventory-owner-tab active" } else { "inventory-owner-tab" })
-                    href=(format!("/locations/settlement/{}/alchemy?recipe={}&scope=personal", settlement.id, selected.item_id)) { "Player" }
-                a class=(if party_scope { "inventory-owner-tab active" } else { "inventory-owner-tab" })
-                    href=(format!("/locations/settlement/{}/alchemy?recipe={}&scope=party", settlement.id, selected.item_id)) { "Party" }
-            }
-            (sidebar_section("Required ingredients", html! {
-                table class="trade-inventory-table" {
-                    (trade_inventory_table_header(false, None))
-                    tbody {
-                    @for ingredient in selected.ingredients {
-                        @let definition = items.iter().find(|item| item.id == ingredient.item_id);
-                        @let quantity = if party_scope {
-                            pooled.iter().filter(|item| item.item_id == ingredient.item_id).map(|item| item.quantity).sum()
-                        } else {
-                            inventory.iter().filter(|item| item.item_id == ingredient.item_id).map(|item| item.qty).sum()
-                        };
-                        @let target = target_quantity(if party_scope { party_targets } else { personal_targets }, ingredient.item_id);
-                        tr class="trade-inventory-row trade-row-player" data-inventory-quantity=(quantity) data-target=(target) {
-                            td class="inventory-item-type" { (item_type_icon(ingredient.item_id)) }
-                            td class="inventory-item-name" { (item_name_with_quality(ingredient.item_id, definition)) }
-                            td class="inventory-count" { (quantity_target_control(quantity, target, ingredient.item_id, party_scope)) }
-                            td class="inventory-weight" { (item_weight(definition)) }
-                            td class="inventory-gold" { (format!("need {}", ingredient.quantity)) }
-                        }
-                    }
-                    }
-                }
-                p class="small-copy text-muted" { "Targets can be raised here for future purchasing. Crafting consumes the listed quantities from the selected inventory." }
-            }))
-        }
-    };
-    settlement_layout_with_session(
-        "Alchemy",
-        &settlement.name,
-        &settlement.id,
-        &settlement.category,
-        "herbalist",
-        Some(&settlement.religion_id),
-        Some(&settlement.economy),
-        content,
-        Some(&character.name),
-    )
-}
-
-/// Settlement information and the next destinations on the imported road and
-/// ferry network.
-/// Market interface shown while settlement stock is unavailable.
 pub fn merchants_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
@@ -872,25 +762,25 @@ pub fn live_merchant_shop_page(
         aside class=(if matches!(shop, MerchantShop::Inn) { "left-sidebar smith-wares-column service-left-sidebar" } else { "left-sidebar smith-wares-column" }) {
         div class=(if matches!(shop, MerchantShop::Inn) { "service-left-stack" } else { "merchant-stock-stack" }) {
         div class=(if matches!(shop, MerchantShop::Inn) { "service-inventory-area" } else { "merchant-stock-area" }) {
-        (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else if matches!(shop, MerchantShop::Inn) { "Cooking supplies" } else { "Merchant stock" }, html! {
+        (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Existing preparations and ingredients" } else if matches!(shop, MerchantShop::Inn) { "Cooking supplies" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
             (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, false, html! {
                 @for item in items.iter().filter(|item| shop.stocks_at(settlement, item)) {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
-                    @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
-                    @let buy_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_buy_price(medication_recipe.map_or_else(
-                        || adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
-                        adventuresim_core::strategic_economy::herbalist_medication_price,
-                    ), trade_language), problem_buy_bps);
+                    @let intervention = adventuresim_core::physiology::intervention_profile(&item.id, 1);
+                    @let buy_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_buy_price(
+                        adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
+                        trade_language
+                    ), problem_buy_bps);
                     @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price((item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32, trade_language), -problem_sell_penalty_bps);
                     @let target = target_quantity(personal_targets, &item.id);
-                    @let display_name = medication_recipe.map_or_else(|| item_display_name(&item.id), |recipe| recipe.name.to_owned());
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-group-summary="catalog" data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    @let display_name = item_display_name(&item.id);
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-group-summary="catalog" data-intervention-profile-version=[intervention.map(|profile| profile.version)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
             @if matches!(shop, MerchantShop::Herbalist) {
-                p class="small-copy text-muted" { "Prepared courses are sold into your personal inventory as separate, equippable items. Party-inventory purchasing is unavailable here." }
+                p class="small-copy text-muted" { "Pre-existing preparations are sold into personal inventory for versioned administration. Physiology does not craft them; #214 owns preparation." }
             }
             }
         }))
@@ -1708,7 +1598,7 @@ mod tests {
         assert!(MerchantShop::Inn.stocks(&apple));
         assert!(MerchantShop::Inn.stocks(&pan));
         assert!(!MerchantShop::Inn.stocks(&medication));
-        assert_eq!(adventuresim_core::disease::MEDICATION_RECIPES.len(), 8);
+        assert!(!adventuresim_core::physiology::INTERVENTION_PROFILES.is_empty());
         let definition = crate::spacetimedb::ItemDefinition {
             id: "black_death_tonic".into(),
             kind: ItemKind::Medication,

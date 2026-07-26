@@ -151,18 +151,22 @@ const TAILORING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
     skill: Skill::Tailoring,
     weight: 1.0,
 }];
-const MEDICAL: &[ProfessionSkillWeight] = &[
+const PHYSIOLOGY: &[ProfessionSkillWeight] = &[
     ProfessionSkillWeight {
-        skill: Skill::Medicine,
+        skill: Skill::Physiology,
         weight: 0.5,
     },
     ProfessionSkillWeight {
-        skill: Skill::Bestiary,
+        skill: Skill::Anatomy,
         weight: 1.0 / 6.0,
     },
     ProfessionSkillWeight {
-        skill: Skill::Surgery,
-        weight: 1.0 / 3.0,
+        skill: Skill::Knife,
+        weight: 1.0 / 6.0,
+    },
+    ProfessionSkillWeight {
+        skill: Skill::Tailoring,
+        weight: 1.0 / 6.0,
     },
 ];
 const COOKING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
@@ -215,9 +219,9 @@ pub const PROFESSIONS: &[ProfessionDefinition] = &[
     ProfessionDefinition {
         id: ProfessionId::Herbalist,
         service_id: "herbalist",
-        label: "herbalist",
-        description: "Herbalists diagnose ailments, prepare remedies, and learn the treatment of wounds.",
-        skills: MEDICAL,
+        label: "physician",
+        description: "Physicians study changing bodily function, keep observation notebooks, administer existing preparations, and support wound recovery. Herbalists own remedy preparation.",
+        skills: PHYSIOLOGY,
         religious: false,
         practice_reward: PracticeReward::Gold,
     },
@@ -353,9 +357,9 @@ mod tests {
         let herbalist = profession_for_service("herbalist").unwrap();
         assert_eq!(
             profession_tier(herbalist, |skill| match skill {
-                Skill::Medicine => 20_000.0,
-                Skill::Bestiary => 0.0,
-                Skill::Surgery => 20_000.0,
+                Skill::Physiology => 20_000.0,
+                Skill::Anatomy => 0.0,
+                Skill::Knife | Skill::Tailoring => 20_000.0,
                 _ => unreachable!("unexpected medical skill: {skill:?}"),
             }),
             ProfessionTier::Apprentice

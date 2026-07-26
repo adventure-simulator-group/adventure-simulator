@@ -419,13 +419,13 @@ pub fn settle_injuries(
         },
     );
     let days = interval.elapsed as f32 / MINUTES_PER_DAY as f32;
-    let medicine = if allow_healing {
-        crate::time::party_medicine_check(ctx, character_id)?
+    let physiology = if allow_healing {
+        crate::time::party_physiology_check(ctx, character_id)?
     } else {
         0.0
     };
     let natural = if allow_healing {
-        crate::time::health_recovered_per_day(medicine)
+        crate::time::health_recovered_per_day(physiology)
     } else {
         0.0
     };
@@ -501,8 +501,12 @@ pub fn settle_injuries(
     })
 }
 
-pub fn convalescence_minutes(ctx: &ReducerContext, character_id: u64, medicine_check: f32) -> u64 {
-    let natural = crate::time::health_recovered_per_day(medicine_check);
+pub fn convalescence_minutes(
+    ctx: &ReducerContext,
+    character_id: u64,
+    physiology_check: f32,
+) -> u64 {
+    let natural = crate::time::health_recovered_per_day(physiology_check);
     let mut days = 0.0_f32;
     for limb in LimbRegion::ALL {
         let injury = injury_for(ctx, character_id, limb);
@@ -656,7 +660,12 @@ fn consume_one(ctx: &ReducerContext, character_id: u64, item_id: &str) -> Result
     Ok(())
 }
 
-fn procedure_check(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Result<f32, String> {
+fn procedure_check(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    patient_id: u64,
+    procedure: &str,
+) -> Result<f32, String> {
     let attributes = ctx
         .db
         .character_attributes()
@@ -689,52 +698,63 @@ fn procedure_check(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Resu
         .find(actor_id)
         .ok_or("Character stats not found")?;
     let equipment = crate::capability::StrategicEquipment::load(ctx, actor_id, &equip);
-    let surgery = skills.skill_check_by_parts(
-        Skill::Surgery,
-        &attributes,
-        &body,
-        &essentials,
-        &equipment,
-        LimbWeights::both_arms(),
-    );
-    let patient_category = patient_bestiary_category(ctx, patient_id)?;
-    let species_knowledge = adventuresim_core::capability::bestiary_knowledge_check(
-        skills.bestiary_hours.effective(patient_category),
-        attributes.instinct,
-        attributes.intelligence,
-        essentials.focus,
-        body.head_health,
-    );
+    let check = |skill| {
+        skills.skill_check_by_parts(
+            skill,
+            &attributes,
+            &body,
+            &essentials,
+            &equipment,
+            LimbWeights::both_arms(),
+        )
+    };
     Ok(adventuresim_core::surgery::procedure_skill(
-        surgery,
-        species_knowledge,
+        procedure,
+        check(Skill::Anatomy),
+        check(Skill::Knife),
+        check(Skill::Tailoring),
         actor_id == patient_id,
     ))
 }
 
-/// Resolve the anatomical knowledge category for a patient. Character species
-/// are not persisted yet, so every current patient is Human; future species
-/// storage has one boundary to replace instead of changing procedure math.
-fn patient_bestiary_category(
-    ctx: &ReducerContext,
-    patient_id: u64,
-) -> Result<adventuresim_world_schema::BestiaryCategory, String> {
-    ctx.db
-        .character()
-        .id()
-        .find(patient_id)
-        .ok_or_else(|| "Patient not found".to_string())?;
-    Ok(adventuresim_world_schema::BestiaryCategory::Human)
-}
-
 fn infection_control_check(ctx: &ReducerContext, actor_id: u64, surgical_skill: f32) -> f32 {
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(actor_id)
+        .map_or(0, |time| time.minutes);
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(actor_id)
+        .map_or(3.0, |attributes| attributes.immunity);
     let diseased_penalty = if ctx
         .db
         .infection_episode()
         .character_id()
         .filter(actor_id)
-        .any(|episode| episode.treated_at.is_none())
-    {
+        .any(|row| {
+            crate::disease::parse_id(&row.disease_id).is_ok_and(|disease_id| {
+                !matches!(
+                    adventuresim_core::disease::evaluate(
+                        adventuresim_core::disease::InfectionEpisode {
+                            id: row.id,
+                            character_id: row.character_id,
+                            disease_id,
+                            contracted_at: row.contracted_at,
+                            ruleset_version: row.ruleset_version,
+                            phenotype_key_version: row.phenotype_key_version,
+                        },
+                        now,
+                        immunity,
+                    )
+                    .stage,
+                    adventuresim_core::disease::DiseaseStage::Resolved
+                )
+            })
+        }) {
         1.0
     } else {
         0.0
@@ -828,7 +848,7 @@ pub fn treat_limb(
     crate::item::upsert_surgery_items(ctx);
     require_together(ctx, actor_id, patient_id)?;
     let limb = LimbRegion::parse(&limb_slug).ok_or("Unknown limb")?;
-    let skill = procedure_check(ctx, actor_id, patient_id)?;
+    let skill = procedure_check(ctx, actor_id, patient_id, &procedure)?;
     let mut injury = injury_for(ctx, patient_id, limb);
     let projectile = projectile_id.and_then(|id| ctx.db.retained_projectile().id().find(id));
     let dc = match procedure.as_str() {

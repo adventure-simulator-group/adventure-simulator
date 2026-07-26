@@ -73,6 +73,8 @@ struct BuildChoice {
 enum BuildFragment {
     Text { value: String },
     Topic { topic: String, label: String },
+    PeriodClaim { value: String },
+    AuthoritativeExplanation { reference: String, value: String },
     Runtime { slot: String },
 }
 #[derive(Deserialize)]
@@ -82,7 +84,6 @@ enum BuildEffect {
     AcceptContract { contract: String },
     ReportContract { contract: String },
     BeginApprenticeship { profession: String },
-    ExamineDisease,
     SetFlag { flag: String, value: bool },
     ReceiveReferredTestimony,
     InvestigationAction { action: String },

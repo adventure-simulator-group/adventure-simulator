@@ -5,10 +5,10 @@ use super::{
     context::LocationView,
     trade::filth_status_bar,
 };
-use crate::medical::MedicalPresentation;
+use crate::medical::{ChartGapPresentation, ChartReadingPresentation, MedicalPresentation};
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition, LimbInjury,
-    LimbRegion, ProjectileKind, RetainedProjectile,
+    Character, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition, InventoryItem,
+    ItemDefinition, LimbInjury, LimbRegion, ProjectileKind, RetainedProjectile,
 };
 use crate::templates::{
     decorative_game_icon, game_icon, item_display_name, sidebar_section, stat_icon_path,
@@ -42,8 +42,14 @@ fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
     adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
 }
 
-fn surgery_procedure_skill(checks: [f32; 2], self_treatment: bool) -> f32 {
-    adventuresim_core::surgery::procedure_skill(checks[0], checks[1], self_treatment)
+fn surgery_procedure_skill(procedure: &str, checks: [f32; 3], self_treatment: bool) -> f32 {
+    adventuresim_core::surgery::procedure_skill(
+        procedure,
+        checks[0],
+        checks[1],
+        checks[2],
+        self_treatment,
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -214,7 +220,7 @@ pub fn surgery_dialog(
     soaps: u32,
     alcohol_units: u32,
     selected_alcohol: Option<&str>,
-    procedure_checks: [f32; 2],
+    procedure_checks: [f32; 3],
 ) -> Markup {
     let action = location.preserve_building(format!(
         "{}/party/{}/surgery/{}/procedure",
@@ -231,7 +237,11 @@ pub fn surgery_dialog(
     let splinted = selected.is_some_and(|injury| injury.splint_inventory_item_id.is_some());
     let has_kit = surgery_kits > 0;
     let self_treatment = active_character.id == patient.id;
-    let procedure_skill = surgery_procedure_skill(procedure_checks, self_treatment);
+    let procedure_skill =
+        |procedure| surgery_procedure_skill(procedure, procedure_checks, self_treatment);
+    let anatomy_skill = procedure_skill("bandage");
+    let extraction_skill = procedure_skill("extract");
+    let stitching_skill = procedure_skill("stitch");
     let close_href = location.preserve_building(if self_treatment {
         format!("{}/party/{}", location.base_path(), patient.id)
     } else {
@@ -256,18 +266,18 @@ pub fn surgery_dialog(
                 div class="surgery-procedures" {
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
-                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", procedure_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            procedure_skill, None, if procedure_skill < projectile.extraction_dc { Some("Insufficient Surgery or Human knowledge") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true, selected_alcohol))
+                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", extraction_skill, projectile.extraction_dc), projectile.extraction_dc,
+                            extraction_skill, None, if extraction_skill < projectile.extraction_dc { Some("Insufficient Anatomy + Knife skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true, selected_alcohol))
                     }
-                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", procedure_skill, 0.0), 0.0,
-                        procedure_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true, selected_alcohol))
-                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", procedure_skill, 2.0), 2.0,
-                        procedure_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if procedure_skill < 2.0 { Some("Insufficient Surgery or Human knowledge") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true, selected_alcohol))
+                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", anatomy_skill, 0.0), 0.0,
+                        anatomy_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true, selected_alcohol))
+                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", stitching_skill, 2.0), 2.0,
+                        stitching_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if stitching_skill < 2.0 { Some("Insufficient Anatomy + Tailoring skill") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true, selected_alcohol))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", procedure_skill, 0.0), 0.0, procedure_skill, None, None, None, false, false, None))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", anatomy_skill, 0.0), 0.0, anatomy_skill, None, None, None, false, false, None))
                     } @else {
-                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", procedure_skill, 1.0), 1.0,
-                            procedure_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if procedure_skill < 1.0 { Some("Insufficient Surgery or Human knowledge") } else if splints == 0 { Some("No splints") } else { None }, None, false, false, None))
+                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", anatomy_skill, 1.0), 1.0,
+                            anatomy_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if anatomy_skill < 1.0 { Some("Insufficient Anatomy skill") } else if splints == 0 { Some("No splints") } else { None }, None, false, false, None))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
@@ -453,119 +463,738 @@ fn need_balance_meter(
     }
 }
 
-pub(super) fn medical_rail(
-    medical: &MedicalPresentation,
-    location_path: &str,
-    doctor_id: u64,
-    target_id: u64,
-    _allow_treatment: bool,
-) -> Markup {
-    html! {
-        (sidebar_section("Symptoms", html! {
-            @if medical.unavailable {p class="text-muted small-copy" {"Medical examination unavailable."}} @else if medical.symptoms.is_empty(){p class="text-muted small-copy" { "No visible symptoms." }}@else{p class="medical-symptoms" {(medical.symptoms.join(" · "))}}
-            @for medication in &medical.medications {
-                p class="medical-treatment-status" {
-                    "Taking medication for " (medication.disease_name) "."
-                    @if doctor_id == target_id {
-                        form method="post" action=(format!("{location_path}/party/{target_id}/medication/{}/unequip", medication.equipment_id)) {
-                            button type="submit" class="medical-medication-remove" aria-label=(format!("Stop medication for {}", medication.disease_name)) title="Stop taking this medication; the course will be discarded" { "×" }
-                        }
-                    }
-                }
-            }
-        }))
+fn physiology_series_paths(
+    readings: &[ChartReadingPresentation],
+    gaps: &[ChartGapPresentation],
+    region_index: usize,
+    humour_index: usize,
+) -> Vec<String> {
+    if readings.is_empty() {
+        return Vec::new();
+    }
+    let first_minute = readings.first().map_or(0, |reading| reading.minute);
+    let last_minute = readings
+        .last()
+        .map_or(first_minute, |reading| reading.minute);
+    let mut paths = vec![String::new()];
+
+    for (index, reading) in readings.iter().enumerate() {
+        let x = physiology_deviation_x(reading.humour_deviations_bps[region_index][humour_index]);
+        let y = physiology_time_y(reading.minute, first_minute, last_minute);
+        let begins_after_gap = index > 0
+            && gaps
+                .iter()
+                .any(|gap| gap.from < reading.minute && gap.to > readings[index - 1].minute);
+        if begins_after_gap {
+            paths.push(String::new());
+        }
+        let path = paths.last_mut().expect("at least one trend path");
+        if path.is_empty() {
+            path.push_str(&format!("M {x:.1},{y:.1} l 0.01,0 "));
+        } else {
+            path.push_str(&format!("L {x:.1},{y:.1} "));
+        }
+    }
+    paths
+}
+
+fn physiology_relative_day_label(minute: u64, today: u64) -> String {
+    let days_ago = today.saturating_sub(minute) / 1_440;
+    match days_ago {
+        0 => "Today".to_owned(),
+        1 => "1 day ago".to_owned(),
+        days => format!("{days} days ago"),
     }
 }
 
-pub(super) fn medical_examination_popup(
-    medical: &MedicalPresentation,
-    location: &LocationView,
-    target_id: u64,
-    limbs: Option<&CharacterLimbs>,
-    injuries: &[LimbInjury],
-    projectiles: &[RetainedProjectile],
-) -> Markup {
-    let Some(examination_id) = medical.examination_id else {
-        return html! {};
+fn physiology_time_y(minute: u64, first_minute: u64, last_minute: u64) -> f32 {
+    let duration = last_minute.saturating_sub(first_minute);
+    if duration == 0 {
+        50.0
+    } else {
+        4.0 + minute.saturating_sub(first_minute).min(duration) as f32 * 92.0 / duration as f32
+    }
+}
+
+fn physiology_deviation_x(value_bps: i16) -> f32 {
+    // The notebook is an observational instrument, not a full failure-range
+    // meter. Expand its common ±35% window so ordinary daily wobble and
+    // treatment response remain legible; accessible labels retain exact values.
+    22.0 + (value_bps as f32 / 3_500.0).clamp(-1.0, 1.0) * 18.0
+}
+
+fn physiology_reading_bar(label: &str, short: &str, tone: &str, value_bps: i16) -> Markup {
+    let percent = value_bps / 100;
+    let magnitude = percent.unsigned_abs().min(100);
+    let start = if percent < 0 {
+        50.0 - magnitude as f32 / 2.0
+    } else {
+        50.0
     };
-    let dismiss_url = location.preserve_building(format!(
-        "{}/party/{target_id}/examination/{examination_id}/dismiss",
-        location.base_path()
-    ));
     html! {
-        div class="medical-examination-overlay" role="dialog" aria-modal="true" aria-labelledby="medical-examination-title"
-            data-medical-examination
-            data-dismiss-url=(&dismiss_url) {
-            section class="medical-examination-popup" {
-                header class="medical-examination-heading" {
-                    div {
-                        h2 id="medical-examination-title" { "Examination findings" }
-                        @if let Some(examined_at) = medical.examined_at {
-                            p class="text-muted small-copy" { "Observed at personal minute " (examined_at) "." }
-                        }
-                    }
-                    form method="post" action=(&dismiss_url) {
-                        button type="submit" class="medical-examination-close" aria-label="Close examination findings" { "×" }
-                    }
-                }
-                @if medical.regional_humours.is_some() {
-                    div class="examination-region-bars" aria-label="Examined body regions" {
-                        h3 { "Body regions" }
-                        @let health = regional_health_values(limbs);
-                        @for (index, name) in ["Left arm", "Right arm", "Left leg", "Right leg", "Chest", "Stomach", "Head"].into_iter().enumerate() {
-                            @let reading = medical.regional_humours.map(|regions| regions[index]).unwrap_or_default();
-                            @if health[index] < 1.0 || reading.sanguine + reading.phlegmatic + reading.choleric + reading.melancholic > 0.0 {
-                                div class="examination-region-row" {
-                                    strong { (name) }
-                                    (regional_health_bar(name, health[index], medical, index, injuries, projectiles))
-                                }
-                            }
-                        }
-                    }
-                }
-                @if !medical.findings.is_empty() {
-                    h3 { "Observed signs" }
-                    p class="medical-symptoms" { (medical.findings.join(" · ")) }
-                }
-                @if !medical.possible_diagnoses.is_empty() {
-                    div class="medical-diagnoses" {
-                        h3 { "Possible ailments" }
-                        p class="small-copy" { "The findings do not permit a confident distinction." }
-                        ul { @for possibility in &medical.possible_diagnoses { li { (possibility) } } }
-                    }
-                }
-                @if !medical.diagnoses.is_empty() {
-                    div class="medical-diagnoses" {
-                        h3 { "Diagnosed conditions" }
-                        @for diagnosis in &medical.diagnoses {
-                            article {
-                                strong { (diagnosis.period_name) }
-                                span class="condition-stage" { " — " (diagnosis.stage) }
-                                p class="small-copy" { (diagnosis.contagion) }
-                            }
+        div class=(format!("physiology-reading-bar physiology-tone-{tone}")) {
+            span class="physiology-reading-bar-label" aria-hidden="true" { (short) }
+            span class="physiology-reading-track" role="meter"
+                aria-label=(format!("{label} deviation {percent:+}% from baseline"))
+                aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(percent) {
+                i aria-hidden="true" {}
+                span style=(format!(
+                    "--reading-start: {start:.1}%; --reading-width: {:.1}%",
+                    magnitude as f32 / 2.0
+                )) {}
+            }
+            output aria-hidden="true" { (format!("{percent:+}%")) }
+        }
+    }
+}
+
+fn physiology_likelihood(
+    candidate: &crate::medical::DiseaseLikelihoodPresentation,
+    tooltip_id: &str,
+) -> Markup {
+    let percent = candidate.likelihood_bps / 100;
+    let hue = candidate.likelihood_bps as f32 * 120.0 / 10_000.0;
+    html! {
+        li class="physiology-disease-likelihood"
+            style=(format!("--likelihood-hue: {hue:.1}deg"))
+            tabindex="0"
+            aria-describedby=(tooltip_id)
+            aria-label=(format!("{}: estimated likelihood {percent}%", candidate.label)) {
+            span { (candidate.label) }
+            aside id=(tooltip_id) class="physiology-disease-effects" role="tooltip" {
+                strong { "Typical humour pattern" }
+                @if candidate.typical_effects.is_empty() {
+                    span { "No characteristic pattern recorded." }
+                } @else {
+                    ul {
+                        @for effect in &candidate.typical_effects {
+                            li { (effect) }
                         }
                     }
                 }
-                @if medical.findings.is_empty() && medical.possible_diagnoses.is_empty() && medical.diagnoses.is_empty() {
-                    p class="text-muted" { "The examination did not reveal an identifiable internal cause." }
+                small aria-hidden="true" { (format!("Estimated likelihood: {percent}%")) }
+            }
+        }
+    }
+}
+
+fn physiology_reading_snapshot(
+    reading: &ChartReadingPresentation,
+    region_index: usize,
+    region_label: &str,
+    today: u64,
+) -> Markup {
+    let values = reading.humour_deviations_bps[region_index];
+    html! {
+        header {
+            div {
+                strong { (physiology_relative_day_label(reading.minute, today)) }
+                span class="physiology-region-chip" { (region_label) }
+            }
+            div class="physiology-confidence"
+                title=(format!("Observation confidence {}%", reading.confidence_bps / 100)) {
+                span aria-hidden="true" { "confidence" }
+                span class="physiology-confidence-track" role="meter"
+                    aria-label=(format!("Observation confidence {}%", reading.confidence_bps / 100))
+                    aria-valuemin="0" aria-valuemax="100"
+                    aria-valuenow=(reading.confidence_bps / 100) {
+                    i style=(format!("--confidence: {}%", reading.confidence_bps / 100)) {}
+                }
+            }
+        }
+        div class="physiology-reading-bars" {
+            (physiology_reading_bar("Sanguine", "S", "sanguine", values[0]))
+            (physiology_reading_bar("Phlegmatic", "P", "phlegmatic", values[1]))
+            (physiology_reading_bar("Choleric", "C", "choleric", values[2]))
+            (physiology_reading_bar("Melancholic", "M", "melancholic", values[3]))
+        }
+        @if !reading.known_interventions.is_empty() {
+            ul class="physiology-chip-list physiology-interventions" aria-label="Known preparations" {
+                @for intervention in &reading.known_interventions {
+                    li { span aria-hidden="true" { "+" } (intervention.replace('_', " ")) }
                 }
             }
         }
     }
 }
 
-fn regional_health_values(limbs: Option<&CharacterLimbs>) -> [f32; 7] {
-    limbs.map_or([1.0; 7], |limbs| {
-        [
-            limbs.left_arm_health,
-            limbs.right_arm_health,
-            limbs.left_leg_health,
-            limbs.right_leg_health,
-            limbs.chest_health,
-            limbs.stomach_health,
-            limbs.head_health,
-        ]
-    })
+fn physiology_reading_aria_label(
+    reading: &ChartReadingPresentation,
+    region_index: usize,
+    region_label: &str,
+    today: u64,
+) -> String {
+    let values = reading.humour_deviations_bps[region_index];
+    format!(
+        "{} {} observation: Sanguine {:+}%, Phlegmatic {:+}%, Choleric {:+}%, Melancholic {:+}% from baseline; confidence {}%. Hover, focus, or select for details.",
+        physiology_relative_day_label(reading.minute, today),
+        region_label,
+        values[0] / 100,
+        values[1] / 100,
+        values[2] / 100,
+        values[3] / 100,
+        reading.confidence_bps / 100,
+    )
+}
+
+#[cfg(any())]
+fn physiology_dialog_legacy(
+    medical: &MedicalPresentation,
+    dialog_id: &str,
+    patient_name: &str,
+) -> Markup {
+    html! {
+        dialog id=(dialog_id) class="physiology-dialog" data-physiology-dialog
+            aria-labelledby="physiology-dialog-title" {
+            div class="physiology-dialog-shell" {
+                header class="physiology-dialog-header" {
+                    div {
+                        span class="physiology-dialog-kicker" { "Physician notebook" }
+                        h2 id="physiology-dialog-title" { (patient_name) }
+                    }
+                    button type="button" class="physiology-dialog-close"
+                        aria-label="Close physician notebook" data-physiology-dialog-close { "×" }
+                }
+                div class="physiology-dialog-body" {
+                    @if medical.unavailable {
+                        p class="physiology-empty-state" { "Authorized Physiology chart unavailable." }
+                    } @else if medical.readings.is_empty() {
+                        p class="physiology-empty-state" { "No authorized shared-presence readings." }
+                    } @else {
+                        @let first_minute = medical.readings.first().map_or(0, |reading| reading.minute);
+                        @let last_minute = medical.readings.last().map_or(first_minute, |reading| reading.minute);
+                        section class="physiology-trend-panel" aria-labelledby="physiology-trend-title" {
+                            div class="physiology-section-heading" {
+                                div {
+                                    span class="physiology-eyebrow" { "Over time" }
+                                    h3 id="physiology-trend-title" { "Humour trend" }
+                                }
+                                ul class="physiology-trend-legend" aria-label="Humour colours" {
+                                    @for (name, short, tone) in [
+                                        ("Sanguine", "S", "sanguine"),
+                                        ("Phlegmatic", "P", "phlegmatic"),
+                                        ("Choleric", "C", "choleric"),
+                                        ("Melancholic", "M", "melancholic"),
+                                    ] {
+                                        li class=(format!("physiology-tone-{tone}")) {
+                                            i aria-hidden="true" {}
+                                            span class="sr-only" { (name) }
+                                            span aria-hidden="true" { (short) }
+                                        }
+                                    }
+                                }
+                            }
+                            ul class="physiology-trend-annotation-key" aria-label="Timeline annotations" {
+                                li { i class="physiology-event-key physiology-event-start" aria-hidden="true" {} "Medication start" }
+                                li { i class="physiology-event-key physiology-event-stop" aria-hidden="true" {} "Medication stop" }
+                                li { i class="physiology-gap-key" aria-hidden="true" {} "Not in party" }
+                            }
+                            figure class="physiology-trend-figure" {
+                                svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img"
+                                    aria-label="Quantized humour losses with medication events and party-presence gaps" {
+                                    defs {
+                                        pattern id=(format!("{dialog_id}-gap-pattern")) width="2" height="2"
+                                            patternUnits="userSpaceOnUse" patternTransform="rotate(35)" {
+                                            line x1="0" y1="0" x2="0" y2="2"
+                                                class="physiology-gap-hatch" {}
+                                        }
+                                    }
+                                    path class="physiology-trend-grid" d="M 0,5 H 100 M 0,22 H 100 M 0,39 H 100" {}
+                                    @for gap in &medical.gaps {
+                                        @let gap_start = gap.from.clamp(first_minute, last_minute);
+                                        @let gap_end = gap.to.clamp(first_minute, last_minute);
+                                        @if gap_end > gap_start {
+                                            @let gap_x = physiology_time_x(gap_start, first_minute, last_minute);
+                                            @let gap_width = physiology_time_x(gap_end, first_minute, last_minute) - gap_x;
+                                            g class="physiology-trend-gap" role="img"
+                                                aria-label=(format!(
+                                                    "Not in party from {} to {}",
+                                                    physiology_day_label(gap.from),
+                                                    physiology_day_label(gap.to),
+                                                )) {
+                                                title {
+                                                    "Not in party: "
+                                                    (physiology_day_label(gap.from))
+                                                    "–"
+                                                    (physiology_day_label(gap.to))
+                                                }
+                                                rect x=(format!("{gap_x:.2}")) y="4"
+                                                    width=(format!("{gap_width:.2}")) height="36"
+                                                    fill=(format!("url(#{dialog_id}-gap-pattern)")) {}
+                                            }
+                                        }
+                                    }
+                                    @for administration in &medical.administrations {
+                                        @if administration.administered_at >= first_minute && administration.administered_at <= last_minute {
+                                            @let event_x = physiology_time_x(administration.administered_at, first_minute, last_minute);
+                                            line class="physiology-treatment-event physiology-treatment-start"
+                                                x1=(format!("{event_x:.2}")) y1="4"
+                                                x2=(format!("{event_x:.2}")) y2="40"
+                                                role="img"
+                                                aria-label=(format!(
+                                                    "{} started {}",
+                                                    administration.preparation_id.replace('_', " "),
+                                                    physiology_day_label(administration.administered_at),
+                                                )) {
+                                                title {
+                                                    (administration.preparation_id.replace('_', " "))
+                                                    " started · "
+                                                    (physiology_day_label(administration.administered_at))
+                                                }
+                                            }
+                                        }
+                                        @if let Some(stopped_at) = administration.stopped_at {
+                                            @if stopped_at >= first_minute && stopped_at <= last_minute {
+                                                @let event_x = physiology_time_x(stopped_at, first_minute, last_minute);
+                                                line class="physiology-treatment-event physiology-treatment-stop"
+                                                    x1=(format!("{event_x:.2}")) y1="4"
+                                                    x2=(format!("{event_x:.2}")) y2="40"
+                                                    role="img"
+                                                    aria-label=(format!(
+                                                        "{} stopped {}",
+                                                        administration.preparation_id.replace('_', " "),
+                                                        physiology_day_label(stopped_at),
+                                                    )) {
+                                                    title {
+                                                        (administration.preparation_id.replace('_', " "))
+                                                        " stopped · "
+                                                        (physiology_day_label(stopped_at))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    @for (index, tone) in ["sanguine", "phlegmatic", "choleric", "melancholic"].into_iter().enumerate() {
+                                        @for path_data in physiology_series_paths(&medical.readings, &medical.gaps, index) {
+                                            path class=(format!("physiology-trend-line physiology-tone-{tone}"))
+                                                d=(path_data) {}
+                                        }
+                                    }
+                                    @for (reading_index, reading) in medical.readings.iter().enumerate() {
+                                        @let reading_x = physiology_time_x(reading.minute, first_minute, last_minute);
+                                        @let tooltip_id = format!("{dialog_id}-reading-{reading_index}");
+                                        g class="physiology-trend-point" {
+                                            rect class="physiology-trend-point-hit"
+                                                x=(format!("{:.2}", (reading_x - 0.3).clamp(0.0, 99.4)))
+                                                y="4" width="0.6" height="36"
+                                                tabindex="0" role="button"
+                                                aria-label=(physiology_reading_aria_label(reading))
+                                                aria-controls=(&tooltip_id) aria-expanded="false"
+                                                data-physiology-reading-point data-physiology-tooltip-id=(&tooltip_id) {}
+                                            line class="physiology-trend-point-guide"
+                                                x1=(format!("{reading_x:.2}")) y1="4"
+                                                x2=(format!("{reading_x:.2}")) y2="40" {}
+                                            @for (humour_index, tone) in ["sanguine", "phlegmatic", "choleric", "melancholic"].into_iter().enumerate() {
+                                                @let reading_y = physiology_humour_y(reading.humour_losses_bps[humour_index]);
+                                                line class=(format!("physiology-trend-point-mark physiology-tone-{tone}"))
+                                                    x1=(format!("{:.2}", reading_x - 0.35)) y1=(format!("{reading_y:.2}"))
+                                                    x2=(format!("{:.2}", reading_x + 0.35)) y2=(format!("{reading_y:.2}")) {}
+                                            }
+                                        }
+                                    }
+                                }
+                                figcaption {
+                                    span { (physiology_day_label(first_minute)) }
+                                    span { "Hover or focus a point for its observation" }
+                                    span { (physiology_day_label(last_minute)) }
+                                }
+                                @for (reading_index, reading) in medical.readings.iter().enumerate() {
+                                    @let reading_x = physiology_time_x(reading.minute, first_minute, last_minute);
+                                    article id=(format!("{dialog_id}-reading-{reading_index}"))
+                                        class="physiology-reading-tooltip"
+                                        style=(format!("--tooltip-x: {reading_x:.2}%"))
+                                        data-physiology-reading-tooltip hidden {
+                                        (physiology_reading_snapshot(reading))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    footer class="physiology-dialog-footer" {
+                        span { "Observed, quantized, and limited to shared presence." }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn physiology_dialog(
+    medical: &MedicalPresentation,
+    dialog_id: &str,
+    patient_name: &str,
+) -> Markup {
+    html! {
+        dialog id=(dialog_id) class="physiology-dialog" data-physiology-dialog
+            aria-labelledby="physiology-dialog-title" {
+            div class="physiology-dialog-shell" {
+                header class="physiology-dialog-header" {
+                    div {
+                        span class="physiology-dialog-kicker" { "Physician notebook" }
+                        h2 id="physiology-dialog-title" { (patient_name) }
+                    }
+                    button type="button" class="physiology-dialog-close"
+                        aria-label="Close physician notebook" data-physiology-dialog-close { "×" }
+                }
+                div class="physiology-dialog-body" {
+                    @if medical.unavailable {
+                        p class="physiology-empty-state" { "Authorized Physiology chart unavailable." }
+                    } @else if medical.readings.is_empty() {
+                        p class="physiology-empty-state" { "No authorized shared-presence readings." }
+                    } @else {
+                        @let first_minute = medical.readings.first().map_or(0, |reading| reading.minute);
+                        @let last_minute = medical.readings.last().map_or(first_minute, |reading| reading.minute);
+                        @let latest = medical.readings.last().expect("nonempty chart");
+                        section class="physiology-trend-panel" aria-labelledby="physiology-trend-title" {
+                            div class="physiology-section-heading" {
+                                div {
+                                    span class="physiology-eyebrow" { "Over time" }
+                                    h3 id="physiology-trend-title" { "Humours by region" }
+                                }
+                                ul class="physiology-trend-legend" aria-label="Humour colours" {
+                                    @for (name, short, tone) in [
+                                        ("Sanguine", "S", "sanguine"),
+                                        ("Phlegmatic", "P", "phlegmatic"),
+                                        ("Choleric", "C", "choleric"),
+                                        ("Melancholic", "M", "melancholic"),
+                                    ] {
+                                        li class=(format!("physiology-tone-{tone}")) {
+                                            i aria-hidden="true" {}
+                                            span class="sr-only" { (name) }
+                                            span aria-hidden="true" { (short) }
+                                        }
+                                    }
+                                }
+                            }
+                            div class="physiology-differential" {
+                                div {
+                                    strong { "Possible diseases" }
+                                    span { "Colour confidence improves with skill and observation." }
+                                }
+                                ul aria-label="Possible diseases ordered by estimated likelihood" {
+                                    @for (candidate_index, candidate) in latest.possible_diseases.iter().enumerate() {
+                                        @let tooltip_id = format!(
+                                            "{dialog_id}-disease-effects-{candidate_index}"
+                                        );
+                                        (physiology_likelihood(candidate, &tooltip_id))
+                                    }
+                                }
+                            }
+                            ul class="physiology-trend-annotation-key" aria-label="Timeline annotations" {
+                                li { i class="physiology-baseline-key" aria-hidden="true" {} "Healthy baseline" }
+                                li { i class="physiology-event-key physiology-event-start" aria-hidden="true" {} "Medication start" }
+                                li { i class="physiology-event-key physiology-event-stop" aria-hidden="true" {} "Medication stop" }
+                                li { i class="physiology-gap-key" aria-hidden="true" {} "Not in party" }
+                            }
+                            div class="physiology-region-charts" {
+                                aside class="physiology-timeline-labels"
+                                    aria-label="Observation timeline labels" {
+                                    span class="physiology-timeline-label physiology-timeline-boundary"
+                                        style="--time-y: 4%" {
+                                        strong { "Start" }
+                                        small {
+                                            (physiology_relative_day_label(first_minute, last_minute))
+                                        }
+                                    }
+                                    @for gap in &medical.gaps {
+                                        @let gap_start = gap.from.clamp(first_minute, last_minute);
+                                        @let gap_end = gap.to.clamp(first_minute, last_minute);
+                                        @if gap_end > gap_start {
+                                            @let gap_midpoint = gap_start + (gap_end - gap_start) / 2;
+                                            @let gap_y = physiology_time_y(
+                                                gap_midpoint,
+                                                first_minute,
+                                                last_minute,
+                                            );
+                                            span class="physiology-timeline-label physiology-gap-label"
+                                                style=(format!("--time-y: {gap_y:.2}%")) {
+                                                strong { "Not in party" }
+                                                small {
+                                                    (physiology_relative_day_label(gap.from, last_minute))
+                                                    "–"
+                                                    (physiology_relative_day_label(gap.to, last_minute))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    @for administration in &medical.administrations {
+                                        @if administration.administered_at >= first_minute && administration.administered_at <= last_minute {
+                                            @let event_y = physiology_time_y(
+                                                administration.administered_at,
+                                                first_minute,
+                                                last_minute,
+                                            );
+                                            span class="physiology-timeline-label physiology-start-label"
+                                                style=(format!("--time-y: {event_y:.2}%")) {
+                                                strong {
+                                                    (administration.preparation_id.replace('_', " "))
+                                                    " starts"
+                                                }
+                                                small {
+                                                    (physiology_relative_day_label(
+                                                        administration.administered_at,
+                                                        last_minute,
+                                                    ))
+                                                }
+                                            }
+                                        }
+                                        @if let Some(stopped_at) = administration.stopped_at {
+                                            @if stopped_at >= first_minute && stopped_at <= last_minute {
+                                                @let event_y = physiology_time_y(
+                                                    stopped_at,
+                                                    first_minute,
+                                                    last_minute,
+                                                );
+                                                span class="physiology-timeline-label physiology-stop-label"
+                                                    style=(format!("--time-y: {event_y:.2}%")) {
+                                                    strong {
+                                                        (administration.preparation_id.replace('_', " "))
+                                                        " stops"
+                                                    }
+                                                    small {
+                                                        (physiology_relative_day_label(
+                                                            stopped_at,
+                                                            last_minute,
+                                                        ))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    span class="physiology-timeline-label physiology-timeline-boundary"
+                                        style="--time-y: 96%" {
+                                        strong { "Today" }
+                                    }
+                                }
+                                @for gap in &medical.gaps {
+                                    @let gap_start = gap.from.clamp(first_minute, last_minute);
+                                    @let gap_end = gap.to.clamp(first_minute, last_minute);
+                                    @if gap_end > gap_start {
+                                        @let gap_y = physiology_time_y(gap_start, first_minute, last_minute);
+                                        @let gap_height = physiology_time_y(
+                                            gap_end,
+                                            first_minute,
+                                            last_minute,
+                                        ) - gap_y;
+                                        div class="physiology-shared-gap" role="img"
+                                            style=(format!(
+                                                "--gap-y: {gap_y:.2}%; --gap-height: {gap_height:.2}%"
+                                            ))
+                                            aria-label=(format!(
+                                                "Not in party from {} to {}",
+                                                physiology_relative_day_label(gap.from, last_minute),
+                                                physiology_relative_day_label(gap.to, last_minute),
+                                            )) {}
+                                    }
+                                }
+                                @for administration in &medical.administrations {
+                                    @if administration.administered_at >= first_minute && administration.administered_at <= last_minute {
+                                        @let event_y = physiology_time_y(
+                                            administration.administered_at,
+                                            first_minute,
+                                            last_minute,
+                                        );
+                                        div class="physiology-shared-event physiology-treatment-start"
+                                            style=(format!("--time-y: {event_y:.2}%"))
+                                            role="img"
+                                            aria-label=(format!(
+                                                "{} started {}",
+                                                administration.preparation_id.replace('_', " "),
+                                                physiology_relative_day_label(
+                                                    administration.administered_at,
+                                                    last_minute,
+                                                ),
+                                            )) {}
+                                    }
+                                    @if let Some(stopped_at) = administration.stopped_at {
+                                        @if stopped_at >= first_minute && stopped_at <= last_minute {
+                                            @let event_y = physiology_time_y(
+                                                stopped_at,
+                                                first_minute,
+                                                last_minute,
+                                            );
+                                            div class="physiology-shared-event physiology-treatment-stop"
+                                                style=(format!("--time-y: {event_y:.2}%"))
+                                                role="img"
+                                                aria-label=(format!(
+                                                    "{} stopped {}",
+                                                    administration.preparation_id.replace('_', " "),
+                                                    physiology_relative_day_label(
+                                                        stopped_at,
+                                                        last_minute,
+                                                    ),
+                                                )) {}
+                                        }
+                                    }
+                                }
+                                @for (region_index, region_label) in [
+                                    (6, "Head"), (4, "Chest"), (5, "Stomach"),
+                                    (0, "Left arm"), (1, "Right arm"),
+                                    (2, "Left leg"), (3, "Right leg"),
+                                ] {
+                                    @let hit_height = if medical.readings.len() > 1 {
+                                        (92.0 / (medical.readings.len() - 1) as f32 * 0.78).clamp(0.28, 2.4)
+                                    } else {
+                                        2.4
+                                    };
+                                    figure class="physiology-region-chart" {
+                                        h4 class="physiology-region-heading" { (region_label) }
+                                        svg viewBox="0 0 44 100" preserveAspectRatio="none" role="img"
+                                            aria-label=(format!(
+                                                "{region_label} humour deviations from healthy baseline over time"
+                                            )) {
+                                            line class="physiology-trend-baseline"
+                                                x1="22" y1="4" x2="22" y2="96" {}
+                                            @for (humour_index, tone) in [
+                                                "sanguine", "phlegmatic", "choleric", "melancholic",
+                                            ].into_iter().enumerate() {
+                                                @for path_data in physiology_series_paths(
+                                                    &medical.readings,
+                                                    &medical.gaps,
+                                                    region_index,
+                                                    humour_index,
+                                                ) {
+                                                    path class=(format!("physiology-trend-line physiology-tone-{tone}"))
+                                                        d=(path_data) {}
+                                                }
+                                            }
+                                            @for (reading_index, reading) in medical.readings.iter().enumerate() {
+                                                @let reading_y = physiology_time_y(reading.minute, first_minute, last_minute);
+                                                @let tooltip_id = format!("{dialog_id}-reading-{region_index}-{reading_index}");
+                                                g class="physiology-trend-point" {
+                                                    rect class="physiology-trend-point-hit"
+                                                        x="4"
+                                                        y=(format!("{:.2}", (reading_y - hit_height / 2.0).clamp(4.0, 96.0 - hit_height)))
+                                                        width="36" height=(format!("{hit_height:.2}"))
+                                                        tabindex="0" role="button"
+                                                        aria-label=(physiology_reading_aria_label(
+                                                            reading,
+                                                            region_index,
+                                                            region_label,
+                                                            last_minute,
+                                                        ))
+                                                        aria-controls=(&tooltip_id) aria-expanded="false"
+                                                        data-physiology-reading-point
+                                                        data-physiology-tooltip-id=(&tooltip_id) {}
+                                                    line class="physiology-trend-point-guide"
+                                                        x1="4" y1=(format!("{reading_y:.2}"))
+                                                        x2="40" y2=(format!("{reading_y:.2}")) {}
+                                                    @for (humour_index, tone) in [
+                                                        "sanguine", "phlegmatic", "choleric", "melancholic",
+                                                    ].into_iter().enumerate() {
+                                                        @let reading_x = physiology_deviation_x(
+                                                            reading.humour_deviations_bps[region_index][humour_index],
+                                                        );
+                                                        line class=(format!(
+                                                            "physiology-trend-point-mark physiology-tone-{tone}"
+                                                        ))
+                                                            x1=(format!("{reading_x:.2}"))
+                                                            y1=(format!("{:.2}", reading_y - 0.45))
+                                                            x2=(format!("{reading_x:.2}"))
+                                                            y2=(format!("{:.2}", reading_y + 0.45)) {}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        @for (reading_index, reading) in medical.readings.iter().enumerate() {
+                                            article id=(format!(
+                                                "{dialog_id}-reading-{region_index}-{reading_index}"
+                                            ))
+                                                class="physiology-reading-tooltip"
+                                                data-physiology-reading-tooltip hidden {
+                                                (physiology_reading_snapshot(
+                                                    reading,
+                                                    region_index,
+                                                    region_label,
+                                                    last_minute,
+                                                ))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    footer class="physiology-dialog-footer" {
+                        span {
+                            "Visible findings are folded into the four humours; deviations are observer estimates."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn physiology_controls(
+    medical: &MedicalPresentation,
+    action_base: &str,
+    inventory: &[InventoryItem],
+    definitions: &[ItemDefinition],
+) -> Markup {
+    let preparations = inventory
+        .iter()
+        .filter_map(|inventory| {
+            let definition = definitions
+                .iter()
+                .find(|item| item.id == inventory.item_id)?;
+            let profile =
+                adventuresim_core::physiology::intervention_profile(&inventory.item_id, 1)?;
+            (definition.kind == crate::spacetimedb::ItemKind::Medication)
+                .then_some((inventory, definition, profile))
+        })
+        .collect::<Vec<_>>();
+    html! {
+        (sidebar_section("Administer preparation", html! {
+            p class="small-copy" {
+                "Choose a prepared item, route, amount, and optional region. "
+                "This interface makes no diagnosis or recommendation."
+            }
+            @if preparations.is_empty() {
+                p class="text-muted small-copy" { "No prepared interventions in personal inventory." }
+            } @else {
+                @for (inventory, definition, profile) in preparations {
+                    form method="post" action=(format!("{action_base}/physiology/administer")) {
+                        input type="hidden" name="inventory_item_id" value=(inventory.id);
+                        input type="hidden" name="route"
+                            value=(format!("{:?}", profile.route).to_ascii_lowercase());
+                        label {
+                            (item_display_name(&definition.id))
+                            " amount"
+                            input type="number" name="amount_milliunits"
+                                min="1" max="8000" value="1000" required;
+                        }
+                        label {
+                            "Region"
+                            select name="region" {
+                                option value="" { "Whole body" }
+                                @for region in adventuresim_core::physiology::BodyRegion::ALL {
+                                    option value=(region.as_str()) {
+                                        (region.as_str().replace('_', " "))
+                                    }
+                                }
+                            }
+                        }
+                        button type="submit" class="btn btn-small" {
+                            "Administer by "
+                            (format!("{:?}", profile.route).to_ascii_lowercase())
+                        }
+                    }
+                }
+            }
+            @for administration in &medical.active_administrations {
+                form method="post"
+                    action=(format!("{action_base}/physiology/{}/stop", administration.id)) {
+                    span {
+                        (&administration.preparation_id)
+                        " — " (&administration.route)
+                        ", " (administration.amount_milliunits) " milliunits"
+                    }
+                    button type="submit" class="btn btn-small" { "Stop" }
+                }
+            }
+        }))
+    }
 }
 
 pub(super) fn party_attributes_rail(
@@ -573,6 +1202,7 @@ pub(super) fn party_attributes_rail(
     attributes: Option<&CharacterAttributes>,
     limbs: Option<&CharacterLimbs>,
     medical: &MedicalPresentation,
+    physiology_dialog_id: Option<&str>,
     surgery: Option<(&str, Option<&str>)>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
@@ -588,7 +1218,22 @@ pub(super) fn party_attributes_rail(
     let left_leg_health = limbs.map_or(1.0, |limbs| limbs.left_leg_health);
     let right_leg_health = limbs.map_or(1.0, |limbs| limbs.right_leg_health);
     html! {
-        (sidebar_section(title, html! {
+        div class="sidebar-section party-attributes-section" {
+            header class="party-attributes-heading" {
+                h3 class="sidebar-header" { (title) }
+                @if let Some(dialog_id) = physiology_dialog_id {
+                    button type="button"
+                        class="character-menu-button physiology-dialog-button physiology-attributes-button"
+                        title="Open physician notebook"
+                        aria-label="Open physician notebook"
+                        aria-haspopup="dialog"
+                        aria-controls=(dialog_id)
+                        aria-expanded="false"
+                        data-physiology-dialog-open=(dialog_id) {
+                        span class="physician-notebook-icon" aria-hidden="true" { "☤" }
+                    }
+                }
+            }
             div class="party-attributes-list" aria-label="Character attributes" {
                 (attribute_group("Head", "head", head_health, medical, 6, surgery, injuries, projectiles, &[
                     ("Intelligence", "intelligence", attributes.intelligence),
@@ -624,7 +1269,7 @@ pub(super) fn party_attributes_rail(
                     ]))
                 }
             }
-        }))
+        }
     }
 }
 
@@ -762,7 +1407,10 @@ fn regional_health_bar(
     let humour = medical.regional_humours.map(|values| values[region]);
     let values = humour.unwrap_or_default();
     let humour_total = if humour.is_some() {
-        values.sanguine + values.phlegmatic + values.choleric + values.melancholic
+        values.sanguine.abs()
+            + values.phlegmatic.abs()
+            + values.choleric.abs()
+            + values.melancholic.abs()
     } else {
         medical.concealed_other[region]
     };
@@ -776,28 +1424,28 @@ fn regional_health_bar(
     let segments = if humour.is_some() {
         vec![
             (
-                "Sanguine",
+                adventuresim_core::physiology::Humour::Sanguine,
                 "attribute-health-sanguine",
-                values.sanguine * scale,
+                values.sanguine.abs() * scale,
             ),
             (
-                "Phlegmatic",
+                adventuresim_core::physiology::Humour::Phlegmatic,
                 "attribute-health-phlegmatic",
-                values.phlegmatic * scale,
+                values.phlegmatic.abs() * scale,
             ),
             (
-                "Choleric",
+                adventuresim_core::physiology::Humour::Choleric,
                 "attribute-health-choleric",
-                values.choleric * scale,
+                values.choleric.abs() * scale,
             ),
             (
-                "Melancholic",
+                adventuresim_core::physiology::Humour::Melancholic,
                 "attribute-health-melancholic",
-                values.melancholic * scale,
+                values.melancholic.abs() * scale,
             ),
         ]
     } else {
-        vec![("Other impairment", "attribute-health-other", other)]
+        Vec::new()
     };
     let reading = if humour.is_some() {
         format!(
@@ -806,10 +1454,10 @@ fn regional_health_bar(
             cut * 100.0,
             blunt * 100.0,
             fracture * 100.0,
-            values.sanguine * scale * 100.0,
-            values.phlegmatic * scale * 100.0,
-            values.choleric * scale * 100.0,
-            values.melancholic * scale * 100.0,
+            values.sanguine.abs() * scale * 100.0,
+            values.phlegmatic.abs() * scale * 100.0,
+            values.choleric.abs() * scale * 100.0,
+            values.melancholic.abs() * scale * 100.0,
         )
     } else {
         format!(
@@ -831,9 +1479,24 @@ fn regional_health_bar(
             span class=(if splinted { "attribute-health-fracture splinted-fracture" } else { "attribute-health-fracture" })
                 title=(if splinted { "Splinted fracture" } else { "Fracture" })
                 style=(format!("width:{:.1}%", fracture * 100.0)) {}
-            @for (label, class, amount) in segments {
+            @if humour.is_none() && other > 0.0 {
+                span class="attribute-health-other" title="Other impairment"
+                    style=(format!("width:{:.1}%", other * 100.0)) {}
+            }
+            @for (humour, class, amount) in segments {
                 @if amount > 0.0 {
-                    span class=(class) title=(label) style=(format!("width:{:.1}%", amount * 100.0)) {}
+                    @let disclosure = adventuresim_core::physiology::humour_disclosure(humour);
+                    span class=(class)
+                        title=(&disclosure)
+                        data-strategic-tooltip=(&disclosure)
+                        tabindex="0"
+                        aria-label=(format!(
+                            "{}: {:.0}% of this region. {}",
+                            humour.public_name(),
+                            amount * 100.0,
+                            disclosure,
+                        ))
+                        style=(format!("width:{:.1}%", amount * 100.0)) {}
                 }
             }
             @for (projectile_index, projectile) in projectiles.iter().filter(|projectile| projectile.limb == limb).enumerate() {
@@ -882,11 +1545,6 @@ pub(super) fn stat_icon(label: &str, category: &str, icon: &str, decorative: boo
 mod tests {
     use super::*;
     use crate::spacetimedb::*;
-    use crate::templates::settlement::{
-        character_skills::{SkillAction, skill_action_icon},
-        chrome::party_portrait_overlay,
-        context::LocationKind,
-    };
 
     #[test]
     fn public_filth_serialization_and_template_expose_only_aggregate_origin() {
@@ -1075,14 +1733,21 @@ mod tests {
     }
 
     #[test]
-    fn surgery_preview_uses_the_same_species_cap_as_reducers() {
-        let checks = [5.0, 2.0];
-        assert_eq!(surgery_procedure_skill(checks, false), 2.0);
+    fn surgery_preview_uses_the_same_asymmetric_procedure_composition_as_reducers() {
+        let checks = [5.0, 5.0, 0.0];
+        let extraction = surgery_procedure_skill("extract", checks, false);
+        let stitching = surgery_procedure_skill("stitch", checks, false);
         assert_eq!(
-            surgery_procedure_skill(checks, false),
-            adventuresim_core::surgery::procedure_skill(5.0, 2.0, false)
+            extraction,
+            adventuresim_core::surgery::procedure_skill("extract", 5.0, 5.0, 0.0, false)
         );
-        assert_eq!(surgery_procedure_skill([5.0, 5.0], true), 2.5);
+        assert_eq!(
+            stitching,
+            adventuresim_core::surgery::procedure_skill("stitch", 5.0, 5.0, 0.0, false)
+        );
+        assert!(extraction >= 4.0);
+        assert!(stitching < 4.0);
+        assert_eq!(surgery_procedure_skill("extract", checks, true), 2.5);
     }
 
     #[test]
@@ -1138,15 +1803,16 @@ mod tests {
     }
 
     #[test]
-    fn low_medicine_medical_html_contains_no_hidden_payload() {
+    fn low_physiology_chart_html_contains_no_hidden_payload() {
         let presentation = crate::medical::MedicalPresentation {
             unavailable: false,
-            symptoms: vec!["coughing"],
-            diagnoses: Vec::new(),
             ..Default::default()
         };
-        let markup = medical_rail(&presentation, "/location", 1, 2, true).into_string();
-        assert!(markup.contains("coughing"));
+        let markup =
+            physiology_dialog(&presentation, "physiology-chart-dialog", "Patient").into_string();
+        assert!(markup.contains("No authorized shared-presence readings."));
+        assert!(markup.contains("data-physiology-dialog"));
+        assert!(markup.contains("aria-labelledby=\"physiology-dialog-title\""));
         assert!(!markup.contains("Examine"));
         assert!(!markup.contains("Visible injuries"));
         for forbidden in ["Vitals", "influenza", "infection_id", "disease", "humour-"] {
@@ -1155,116 +1821,119 @@ mod tests {
     }
 
     #[test]
-    fn active_medication_is_listed_beneath_symptoms() {
+    fn physician_notebook_uses_visual_readings_with_accessible_values() {
         let presentation = crate::medical::MedicalPresentation {
-            symptoms: vec!["coughing"],
-            medications: vec![crate::medical::MedicationPresentation {
-                equipment_id: 11,
-                disease_name: "Consumption",
+            readings: vec![
+                crate::medical::ChartReadingPresentation {
+                    minute: 1_440,
+                    physiology_band: 2,
+                    observation_minutes: 1_440,
+                    humour_deviations_bps: [[-1_200, 2_300, 3_400, 4_500]; 7],
+                    possible_diseases: vec![crate::medical::DiseaseLikelihoodPresentation {
+                        disease_id: "influenza".into(),
+                        label: "Catarrhal fever".into(),
+                        likelihood_bps: 7_500,
+                        typical_effects: vec!["▲ chest phlegm".into(), "▲ head phlegm".into()],
+                    }],
+                    known_interventions: vec!["oral_rehydration".into()],
+                    confidence_bps: 7_000,
+                },
+                crate::medical::ChartReadingPresentation {
+                    minute: 4_320,
+                    physiology_band: 2,
+                    observation_minutes: 4_320,
+                    humour_deviations_bps: [[-1_000, 2_100, 3_200, 4_300]; 7],
+                    possible_diseases: vec![crate::medical::DiseaseLikelihoodPresentation {
+                        disease_id: "influenza".into(),
+                        label: "Catarrhal fever".into(),
+                        likelihood_bps: 8_000,
+                        typical_effects: vec!["▲ chest phlegm".into(), "▲ head phlegm".into()],
+                    }],
+                    known_interventions: Vec::new(),
+                    confidence_bps: 7_000,
+                },
+            ],
+            gaps: vec![crate::medical::ChartGapPresentation {
+                from: 2_160,
+                to: 2_880,
+            }],
+            administrations: vec![crate::medical::AdministrationPresentation {
+                id: 1,
+                preparation_id: "oral_rehydration".into(),
+                route: "oral".into(),
+                amount_milliunits: 1_000,
+                region: None,
+                administered_at: 1_800,
+                stopped_at: Some(3_600),
             }],
             ..Default::default()
         };
-        let markup = medical_rail(&presentation, "/location", 1, 2, false).into_string();
-        let symptoms_at = markup.find("coughing").unwrap();
-        let medication_at = markup.find("Taking medication for Consumption.").unwrap();
-        assert!(medication_at > symptoms_at);
+        let markup =
+            physiology_dialog(&presentation, "physiology-chart-dialog", "Patient").into_string();
+        assert!(markup.contains("<svg"));
+        assert!(markup.contains("data-physiology-reading-point"));
+        assert!(markup.contains("data-physiology-reading-tooltip"));
+        assert_eq!(markup.matches("class=\"physiology-shared-gap\"").count(), 1);
+        assert_eq!(
+            markup
+                .matches("class=\"physiology-shared-event physiology-treatment-start\"")
+                .count(),
+            1
+        );
+        assert_eq!(
+            markup
+                .matches("class=\"physiology-shared-event physiology-treatment-stop\"")
+                .count(),
+            1
+        );
+        assert!(markup.contains("class=\"physiology-reading-bar"));
+        assert!(markup.contains("role=\"meter\""));
+        assert!(markup.contains("2 days ago"));
+        assert!(markup.contains("Today Head observation"));
+        assert!(!markup.contains("Day 1"));
+        assert!(!markup.contains("Minute 1440"));
+        assert!(!markup.contains("physiology-chart-readings"));
+        assert!(markup.contains("aria-label=\"Sanguine deviation -12% from baseline\""));
+        assert!(markup.contains("Catarrhal fever"));
+        assert!(markup.contains("role=\"tooltip\""));
+        assert!(markup.contains("▲ chest phlegm"));
+        assert!(markup.contains("tabindex=\"0\""));
+        assert!(markup.contains("aria-label=\"Catarrhal fever: estimated likelihood 80%\""));
+        assert!(
+            !markup.contains(
+                "aria-label=\"Catarrhal fever: estimated likelihood 80%. Typical effects"
+            )
+        );
+        assert!(markup.contains("Head humour deviations from healthy baseline over time"));
+        assert_eq!(
+            markup.matches("class=\"physiology-region-chart\"").count(),
+            7
+        );
+        let region_positions = [
+            "Head humour deviations",
+            "Chest humour deviations",
+            "Stomach humour deviations",
+            "Left arm humour deviations",
+            "Right arm humour deviations",
+            "Left leg humour deviations",
+            "Right leg humour deviations",
+        ]
+        .map(|needle| markup.find(needle).expect(needle));
+        assert!(region_positions.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(markup.contains(">Start<"));
+        assert!(markup.contains(">Today<"));
+        assert!(markup.contains(">Not in party<"));
+        assert!(!markup.contains("Day 1 → Day 3"));
+        assert!(!markup.contains("feverish"));
+        assert!(markup.contains("oral rehydration"));
+        assert!(!markup.contains("infection_id"));
     }
 
     #[test]
-    fn medicine_action_moves_from_portrait_to_the_skill_icon() {
-        let doctor = Character {
-            id: 1,
-            name: "Doctor".into(),
-            xp: 0,
-            level: 1,
-            gold: 100,
-            current_settlement_id: Some("willowmere".into()),
-            current_case_site_id: None,
-            party_id: Some("demo".into()),
-            age_years: 30,
-            alive: true,
-            temporary: false,
-            social_notification_count: 0,
-            automatic_social_chat_enabled: false,
-        };
-        let portrait = party_portrait_overlay(
-            &[doctor.clone()],
-            Some(&doctor),
-            "/locations/settlement/willowmere",
-            Some(1),
-            true,
-        )
-        .into_string();
-        assert!(!portrait.contains("/examine"));
-        assert!(!portrait.contains("party-medical-examine"));
-        assert!(portrait.contains("party-alchemy-action"));
-
-        let skill = skill_action_icon(
-            "Medicine",
-            "medicine",
-            SkillAction::Post {
-                href: "/place/party/1/examine",
-                label: "Perform medical examination (15 minutes)",
-                open: false,
-            },
-            false,
-        )
-        .into_string();
-        assert!(skill.contains("/place/party/1/examine"));
-        assert!(skill.contains("Perform medical examination (15 minutes)"));
-        assert!(skill.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
-    }
-
-    #[test]
-    fn pending_examination_is_a_one_shot_center_popup_not_sidebar_history() {
-        let presentation = crate::medical::MedicalPresentation {
-            findings: vec!["coughing".into(), "fatigued".into()],
-            examination_id: Some(44),
-            examined_at: Some(8_640),
-            regional_humours: Some(
-                [crate::medical::HumourVitals {
-                    sanguine: 0.9,
-                    phlegmatic: 0.6,
-                    choleric: 0.8,
-                    melancholic: 1.0,
-                }; 7],
-            ),
-            possible_diagnoses: vec!["Catarrhal fever", "Consumption"],
-            ..Default::default()
-        };
-        let sidebar = medical_rail(&presentation, "/location", 1, 2, true).into_string();
-        assert!(!sidebar.contains("Four humours"));
-        assert!(!sidebar.contains("Possible ailments"));
-        assert!(!sidebar.contains("Observed at personal minute"));
-
-        let location = LocationView {
-            kind: LocationKind::Quest,
-            id: "location".into(),
-            name: "Location".into(),
-            religion_id: None,
-            category: None,
-            active_building: Some("inn".into()),
-        };
-        let popup =
-            medical_examination_popup(&presentation, &location, 2, None, &[], &[]).into_string();
-        assert!(popup.contains("medical-examination-overlay"));
-        assert!(popup.contains("aria-modal=\"true\""));
-        assert!(popup.contains("Possible ailments"));
-        assert!(popup.contains("Body regions"));
-        assert!(popup.contains("attribute-health-phlegmatic"));
-        assert!(popup.contains("Catarrhal fever"));
-        assert!(popup.contains("Close examination findings"));
-        assert!(popup.contains('×'));
-        assert!(!popup.contains("This result is discarded"));
-        assert!(popup.contains("/examination/44/dismiss"));
-        assert!(popup.contains("?building=inn"));
-        assert!(popup.contains("data-medical-examination"));
-        let lifecycle = include_str!("../../../static/medical-examination.js");
-        assert!(lifecycle.contains("pagehide"));
-        assert!(lifecycle.contains("navigator.sendBeacon"));
-        assert!(lifecycle.contains("event.key !== \"Escape\""));
-        assert!(lifecycle.contains("restoreFocus"));
-        assert!(lifecycle.contains(".party-offer[role='dialog']"));
+    fn physiology_chart_formats_relative_days() {
+        assert_eq!(physiology_relative_day_label(0, 4_320), "3 days ago");
+        assert_eq!(physiology_relative_day_label(2_880, 4_320), "1 day ago");
+        assert_eq!(physiology_relative_day_label(4_320, 4_320), "Today");
     }
 
     #[test]

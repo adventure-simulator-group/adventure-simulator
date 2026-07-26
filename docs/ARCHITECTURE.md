@@ -299,57 +299,43 @@ party's active contract. See
 
 Disease belongs to the strategic layer and is evaluated against each patient's
 exact personal character minute. An infection episode persists only its stable
-identity, character and disease associations, `contracted_at`, and optional
-`treated_at`. Phase, severity, symptoms, diagnosis, impairment, and recovery are
-pure deterministic derivations in `adventuresim-core`; resolved and repeated
-episodes remain as history. Definitions use a numbered ruleset.
+identity, character association, and `contracted_at`. Private functional loss
+is derived as ten bounded meters. A server-secret keyed phenotype changes the
+relative involvement of those meters without changing population mean
+severity. Baselines, phenotype values, raw meters, infection rows, and disease
+identity never cross the browser boundary.
 
-Alchemy recipes are static ruleset data. Their ingredients remain ordinary
-personal or shared inventory rows. Crafting produces a transferable medication
-item; equipping consumes that item into an `equipped_medication` row and sets the
-matching episode's `treated_at` timestamp. This public row exposes only the
-course being taken, not undiagnosed infection history, and is removed on
-unequip or deterministic recovery cleanup.
+The public period model is four Humours: a fixed many-to-one weighted projection
+of private meters, optionally aggregated by seven body regions. Authorized
+observers receive bounded, derived, quantized notebook entries at a cadence fixed by
+their historical Physiology capability during each co-presence span. Party
+joins and reunions open spans at the minimum participant clock; departure and
+death close them by the same clock rule. Absence is represented by explicit
+gaps. Charts record only readings, outward symptoms, and known interventions;
+they do not diagnose or recommend treatment. Only causal boundaries persist;
+periodic private meter and public Humour snapshots do not.
 
-Every settlement persists a deterministic `settlement_herbalist` service row
-whose Medicine rank is always 2–4. NPC examinations are settlement-bound,
-charge personal gold, and advance only the patient's clock by 15 minutes. The
-medical-only time advance performs disease clipping and capability refresh but
-does not apply travel hunger, thirst, fatigue, or religious-observance effects.
-The private one-shot result contains only parallel canonical disease and
-medication names; it never reuses the richer player-doctor examination model.
-The trusted web route reads that narrow result through
-`backend_herbalist_examinations`, returns only name pairs to the authenticated
-patient's dialogue, and dismisses it. The patient's request and every result
-line render transiently in that browser and never enter durable party-scoped
-local chat. Prepared medication purchases use a separate herbalist reducer,
-remain forbidden to generic merchant trade, and create quantity-one personal
-inventory rows.
+Preparations are concrete inventory items backed by generic, versioned
+intervention profiles. Administration persists patient, preparation and profile
+version, route, amount, optional body region, start/stop times, and private
+sensitivity/adverse variation. Effects depend on that profile and history,
+never on a disease key. Physiology observes and administers these profiles but
+does not craft them; crafting and chemistry remain follow-up systems (#214 and
+#215).
 
-Every time advance inspects its whole interval. A terminal respiratory,
-circulatory, homeostatic, or neurologic failure clips travel, rest, training,
-and lazy catch-up at the exact boundary before using the shared idempotent death
-transition. Zero Endurance, Gut, Intelligence, or Instinct is impairment, not a
-direct death rule.
+Every time advance inspects the combined disease and intervention curve across
+its whole interval. An exact integer-minute terminal meter crossing clips
+travel, rest, training, and lazy catch-up at that boundary before using the
+shared idempotent death transition. The computation is caller-chunk invariant
+and uses a canonical meter tie-break. Zero Endurance, Gut, Intelligence, or
+Instinct is impairment, not a direct death rule.
 
-Outbreaks are public world facts. Infection episodes and committed-cut
-provenance are private strategic facts. Tactical code may commit final cut
-damage but never tactical positions, HP, enemies, or tick state. Strategic-web
-is the medical presentation boundary and gives templates only a viewer-sanitized
-model; raw medical rows are never browser payloads.
-
-  The `backend_infection_episodes`, `backend_committed_cuts`,
-`backend_medical_examinations`, and `backend_herbalist_examinations` views are narrow SSR integration surfaces, not
-browser APIs or subscriptions. Deployments keep
-the strategic SpacetimeDB endpoint on the server network; strategic-web applies
-the active character's Medicine gate before emitting HTML.
-
-The strategic web process is the trusted presentation and action boundary.
-Medical queries fail closed and visibly; medical action routes derive the acting
-character from the web session before invoking reducers. Public browser
-subscriptions never contain infection episodes, pending examination results, or
-disease notices.
-Public subscriptions never contain infection episodes or disease notices.
+Outbreaks are public world facts. Infection episodes, physiology meters,
+phenotypes, administration variation, and committed-cut provenance are private
+strategic facts. Gateway views expose only observer-safe chart projections.
+Tactical code may commit final cut damage but never tactical positions, HP,
+enemies, or tick state. Public browser subscriptions contain neither raw
+infection rows nor private physiology state.
 
 Tactical requests bind the requesting leader and authoritative party to a
 one-use request row. Dispatcher-created servers inherit that party binding, and
@@ -487,7 +473,7 @@ migration, dual-read path, or preservation of disposable characters.
 | internal `transition_character_to_dead` | Idempotently commit a durable death outcome and trigger leadership reevaluation |
 | `create_recruitment_role` / `update_recruitment_role` / `delete_recruitment_role` | Create, resize, edit, and remove grouped party recruitment slots |
 | `save_recruitment_role` / `delete_saved_recruitment_role` | Manage reusable role presets |
-| `update_party_check_targets` | Configure non-filtering Medicine, Command, and Religion aggregate goals; Surgery remains an individual trained capability |
+| `update_party_check_targets` | Configure non-filtering Physiology, Command, and Religion aggregate goals; surgical capability is an individual Anatomy/Knife/Tailoring composite |
 | `upgrade_manual_surgery` | Idempotently adopt legacy limb deficits into injury rows and upsert surgery item definitions |
 | `treat_limb` | Perform one individual bandage, stitch, splint, splint removal, or projectile extraction with participant-local time |
 | `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Role recruitment and atomic party merging; destination leadership remains intact while source members, pooled assets, and stakes transfer |

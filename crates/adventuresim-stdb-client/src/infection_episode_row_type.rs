@@ -11,7 +11,8 @@ pub struct InfectionEpisodeRow {
     pub character_id: u64,
     pub disease_id: String,
     pub contracted_at: u64,
-    pub treated_at: Option<u64>,
+    pub ruleset_version: u16,
+    pub phenotype_key_version: u16,
 }
 
 impl __sdk::InModule for InfectionEpisodeRow {
@@ -26,7 +27,8 @@ pub struct InfectionEpisodeRowCols {
     pub character_id: __sdk::__query_builder::Col<InfectionEpisodeRow, u64>,
     pub disease_id: __sdk::__query_builder::Col<InfectionEpisodeRow, String>,
     pub contracted_at: __sdk::__query_builder::Col<InfectionEpisodeRow, u64>,
-    pub treated_at: __sdk::__query_builder::Col<InfectionEpisodeRow, Option<u64>>,
+    pub ruleset_version: __sdk::__query_builder::Col<InfectionEpisodeRow, u16>,
+    pub phenotype_key_version: __sdk::__query_builder::Col<InfectionEpisodeRow, u16>,
 }
 
 impl __sdk::__query_builder::HasCols for InfectionEpisodeRow {
@@ -37,7 +39,11 @@ impl __sdk::__query_builder::HasCols for InfectionEpisodeRow {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             disease_id: __sdk::__query_builder::Col::new(table_name, "disease_id"),
             contracted_at: __sdk::__query_builder::Col::new(table_name, "contracted_at"),
-            treated_at: __sdk::__query_builder::Col::new(table_name, "treated_at"),
+            ruleset_version: __sdk::__query_builder::Col::new(table_name, "ruleset_version"),
+            phenotype_key_version: __sdk::__query_builder::Col::new(
+                table_name,
+                "phenotype_key_version",
+            ),
         }
     }
 }

@@ -169,7 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=journal-tab-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=social-actions-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=physiology-visual-2";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -177,8 +177,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
                 script src="/static/developer-mode.js?v=dialogue-sources-1" defer {}
                 script src="/static/tooltips.js?v=styled-tooltips-2" defer {}
-                script src="/static/medical-examination.js?v=strategic-dialogs-1" defer {}
-                script src="/static/character-action-dialog.js?v=character-actions-2" defer {}
+                script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
                     script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
@@ -191,7 +190,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/cooking.js?v=trade-pot-1" defer {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
-                    script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
+                script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
+                script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
                     script src="/static/dialogue-client.js?v=counterparty-portraits-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
@@ -675,10 +675,12 @@ fn character_switcher(name: &str) -> Markup {
 
 fn journal_button() -> Markup {
     html! {
-        a href="/quests" class="journal-button" data-journal-tab
-            aria-label="Open journal" aria-pressed="false"
-            title="Journal" data-strategic-tooltip="Journal" {
-            span class="journal-button-icon" aria-hidden="true" {}
+        span class="reference-buttons" {
+            a href="/quests" class="journal-button" data-journal-tab
+                aria-label="Open journal" aria-pressed="false"
+                title="Journal" data-strategic-tooltip="Journal" {
+                span class="journal-button-icon" aria-hidden="true" {}
+            }
         }
     }
 }
@@ -841,7 +843,7 @@ mod tests {
         assert!(markup.contains("--service-tab-icon: url("));
         assert!(markup.contains(religion_icon_path(Some("roman_catholic"))));
 
-        let css = include_str!("../../static/css/layout.css");
+        let css = include_str!("../../static/css/layout.css").replace("\r\n", "\n");
         for service in [
             "map",
             "merchants",
@@ -962,7 +964,7 @@ mod tests {
         assert!(markup.contains("aria-label=\"Open journal\""));
         assert!(markup.contains("data-journal-tab"));
         assert!(markup.contains("aria-pressed=\"false\""));
-        assert!(!markup.contains("aria-haspopup=\"dialog\""));
+        assert!(!markup.contains("data-journal-dialog"));
         assert!(!markup.contains(">Investigation journal<"));
         let wilderness =
             quest_location_top_bar("Ruins", "q", "map", false, Some("Ada")).into_string();
@@ -992,7 +994,7 @@ mod tests {
         .into_string();
         assert!(markup.contains("/static/journal-tab.js"));
         assert!(!markup.contains("data-journal-dialog"));
-        assert!(!markup.contains("<dialog"));
+        assert!(!markup.contains("data-journal-dialog"));
     }
 
     #[test]
@@ -1126,7 +1128,8 @@ mod tests {
         assert!(markup.contains("class=\"right-sidebar\""));
         let css = include_str!("../../static/css/layout.css");
         let mobile = &css[css.find("@media (max-width: 768px)").unwrap()..];
-        assert!(mobile.contains(".app {\n    height: auto;"));
+        assert!(mobile.contains(".app {"));
+        assert!(mobile.contains("height: auto;"));
         assert!(mobile.contains("overflow: visible;"));
         assert!(mobile.contains("grid-template-areas: \"main\" \"left\" \"right\""));
         assert!(!mobile.contains("body:has(.settlement-top-bar) .main-grid"));

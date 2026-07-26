@@ -96,11 +96,6 @@
     if (prompt.mode !== "YesNo") { const submit = document.createElement("button"); submit.type = "submit"; submit.className = "btn btn-small"; submit.textContent = "Answer"; group.append(submit); }
     form.append(group); messages.append(form);
   };
-  const renderExamination = (examination) => {
-    if (!examination) return;
-    const diagnoses = examination.diagnoses.length ? examination.diagnoses : [{ disease_name: examination.message, medication_name: "" }];
-    diagnoses.forEach((diagnosis) => { const row = document.createElement("div"); row.className = "chat-npc-message"; row.dataset.chatChannel = "local"; row.dataset.dialogueScripted = "true"; const timestamp = document.createElement("span"); timestamp.className = "chat-timestamp"; timestamp.textContent = "[--:--] "; const speaker = document.createElement("strong"); speaker.textContent = "Herbalist: "; row.append(timestamp, speaker, document.createTextNode(diagnosis.medication_name ? `You have ${diagnosis.disease_name}. I recommend ` : diagnosis.disease_name)); if (diagnosis.medication_name) { const medication = document.createElement("button"); medication.type = "button"; medication.className = "chat-quest-link"; medication.dataset.dialogueMedication = diagnosis.medication_name; medication.textContent = diagnosis.medication_name; row.append(medication, document.createTextNode(".")); } messages.append(row); });
-  };
   // Topics are exposed by highlighted phrases in dialogue, not by guessing
   // hidden topic labels in the free-text box.
   const activeCandidates = () => currentView?.open_prompt?.choices || [];
@@ -136,12 +131,13 @@
       row.append(timestamp, speaker);
       event.fragments.forEach(({ fragment, source }) => {
         if (fragment.kind === "text") { row.append(document.createTextNode(fragment.value)); const edit = sourceLink(source); if (edit) row.append(edit); }
+        else if (fragment.kind === "period_claim") { const claim = document.createElement("q"); claim.className = "dialogue-period-claim"; claim.textContent = fragment.value; row.append(claim); const edit = sourceLink(source); if (edit) row.append(edit); }
+        else if (fragment.kind === "authoritative_explanation") { const explanation = document.createElement("span"); explanation.className = "dialogue-authoritative-explanation"; explanation.dataset.reference = fragment.reference; explanation.textContent = fragment.value; row.append(explanation); const edit = sourceLink(source); if (edit) row.append(edit); }
         else if (fragment.kind === "topic") row.append(topicAnchor({ id: fragment.topic, label: fragment.label, source }, { ...binding, topicId: fragment.topic }));
       });
       messages.append(row);
     });
     renderPrompt(view.open_prompt);
-    renderExamination(view.examination);
     refreshCompletion();
     messages.scrollTop = messages.scrollHeight;
   };
@@ -236,7 +232,6 @@
     event.stopImmediatePropagation();
   }, true);
   document.addEventListener("click", (event) => { const topic = event.target.closest("[data-dialogue-topic]"); if (!topic || event.target.closest(".dialogue-source-link")) return; event.preventDefault(); chooseTopic({ sessionId: topic.dataset.dialogueSession, topicId: topic.dataset.dialogueTopic, revision: Number(topic.dataset.dialogueRevision), selectionGeneration: Number(topic.dataset.dialogueGeneration), npcId: topic.dataset.dialogueNpc }); });
-  document.addEventListener("click", (event) => { const medication = event.target.closest("[data-dialogue-medication]"); if (!medication) return; const rows = Array.from(document.querySelectorAll("[data-herbalist-medication-name]")); const row = rows.find((candidate) => candidate.dataset.herbalistMedicationName === medication.dataset.dialogueMedication); row?.scrollIntoView({ behavior: "smooth", block: "center" }); row?.querySelector("[data-merchant-buy]")?.focus(); });
   document.addEventListener("submit", (event) => { const form = event.target.closest("[data-dialogue-prompt]"); if (!form) return; event.preventDefault(); const submitter = event.submitter; const choices = submitter?.name === "choice" ? [submitter.value] : Array.from(new FormData(form).getAll("choice"), String); answerPrompt(choices); });
   const begin = () => {
     if (!chat.dataset.localChatSubject) return;

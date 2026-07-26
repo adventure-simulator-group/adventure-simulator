@@ -109,7 +109,7 @@ impl RecruitmentRoleForm {
             pierce: false,
             athletics: self.athletics,
             endurance: self.endurance,
-            medicine: 0,
+            physiology: 0,
             surgery: 0,
             command: 0,
             religion: 0,
@@ -124,7 +124,7 @@ impl RecruitmentRoleForm {
 
 #[derive(Deserialize)]
 struct PartyCheckTargetsForm {
-    medicine: f32,
+    physiology: f32,
     command: f32,
     religion: f32,
 }
@@ -139,7 +139,7 @@ async fn update_party_check_targets(
             &state,
             actor_id,
             PartyAction::UpdatePartyCheckTargets {
-                medicine: form.medicine,
+                physiology: form.physiology,
                 command: form.command,
                 religion: form.religion,
             },
@@ -437,9 +437,9 @@ async fn recruitment_panel_fragment(
             member_capabilities.push(capability);
         }
     }
-    let medicine: Vec<f32> = member_capabilities
+    let physiology: Vec<f32> = member_capabilities
         .iter()
-        .map(|value| value.medicine)
+        .map(|value| value.physiology)
         .collect();
     let command: Vec<f32> = member_capabilities
         .iter()
@@ -450,8 +450,8 @@ async fn recruitment_panel_fragment(
         .map(|value| value.religion)
         .collect();
     let checks = PartyCheckSummary {
-        medicine: adventuresim_core::capability::aggregate_bounded_party_check(
-            medicine.iter().copied(),
+        physiology: adventuresim_core::capability::aggregate_bounded_party_check(
+            physiology.iter().copied(),
         ),
         command: adventuresim_core::capability::aggregate_party_command(command.iter().copied()),
         religion: adventuresim_core::capability::aggregate_party_check(religion.iter().copied()),
@@ -521,10 +521,10 @@ async fn recruitment_panel_fragment(
                     capability
                         .as_ref()
                         .map_or_default(|candidate| PartyCheckSummary {
-                            medicine:
+                            physiology:
                                 adventuresim_core::capability::aggregate_bounded_party_contribution(
-                                    &medicine,
-                                    candidate.medicine,
+                                    &physiology,
+                                    candidate.physiology,
                                 ),
                             command:
                                 adventuresim_core::capability::aggregate_party_command_contribution(

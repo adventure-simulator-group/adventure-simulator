@@ -21,12 +21,11 @@ test("character dialogs trap focus in either direction", () => {
   assert.equal(wrappedFocusIndex(0, -1, false), -1);
 });
 
-test("medical findings retain body lock and stable cross-document opener identity", () => {
+test("remote dialog replacements retain body lock and stable opener identity", () => {
   assert.equal(dialogOwnsBodyLock(false, true), true);
   assert.equal(dialogOwnsBodyLock(false, false), false);
-  assert.equal(openerIdentity({ dataset: { dialogOpener: "/party/2/examine?building=inn" } }), "/party/2/examine?building=inn");
+  assert.equal(openerIdentity({ dataset: { dialogOpener: "/party/2/social?building=inn" } }), "/party/2/social?building=inn");
   const lifecycle = fs.readFileSync(path.join(__dirname, "../static/character-action-dialog.js"), "utf8");
-  assert.match(lifecycle, /medical-examination-close/);
   assert.match(lifecycle, /restoreKey}-pending/);
 });
 
@@ -68,11 +67,11 @@ test("social and surgery inject overlays into the ordinary character renderers",
   assert.match(surgeryDialog, /preserve_building/);
 });
 
-test("portrait tray keeps unrelated actions but drops cooking and examination launchers", () => {
-  const start = chromeTemplate.indexOf("pub(crate) fn party_portrait_overlay");
-  const portrait = chromeTemplate.slice(start);
+test("portrait tray keeps unrelated actions but drops the cooking launcher", () => {
+  const start = template.indexOf("pub(crate) fn party_portrait_overlay");
+  const end = template.indexOf("pub(crate) fn settlement_chat_area", start);
+  const portrait = template.slice(start, end);
   assert.doesNotMatch(portrait, /party-cooking-action/);
-  assert.doesNotMatch(portrait, /party-medical-examine/);
   assert.match(portrait, /party-alchemy-action/);
   assert.match(portrait, /party-member-remove/);
   assert.match(portrait, /\/inventory/);

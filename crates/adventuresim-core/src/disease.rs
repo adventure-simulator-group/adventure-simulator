@@ -3,10 +3,11 @@
 //! An infection is completely described by its identity, associations and two
 //! character-local timestamps. Everything else in this module is derived.
 
+use crate::physiology::{self, BodyRegion, Humour, Meter, MeterVector};
 use serde::{Deserialize, Serialize};
 
 pub const DISEASE_RULESET_VERSION: u16 = 1;
-pub const MEDICINE_VITALS_THRESHOLD: f32 = 2.0;
+pub const PHYSIOLOGY_VITALS_THRESHOLD: f32 = 2.0;
 const SEED_DOMAIN: &[u8] = b"adventuresim/disease/severity/v1\0";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -63,6 +64,42 @@ impl Symptom {
             Self::Trembling => "trembling",
         }
     }
+
+    /// Every externally visible finding is forced through the same historical,
+    /// deliberately lossy humour vocabulary as the private meter state.
+    pub const fn humour(self) -> Humour {
+        match self {
+            Self::Coughing | Self::Sneezing => Humour::Phlegmatic,
+            Self::Feverish | Self::Vomiting | Self::BloodyStool => Humour::Choleric,
+            Self::Rash | Self::Buboes => Humour::Sanguine,
+            Self::Fatigued | Self::Spasms | Self::Lockjaw | Self::Trembling => Humour::Melancholic,
+        }
+    }
+
+    pub const fn observation_regions(self) -> &'static [BodyRegion] {
+        use BodyRegion::{Abdomen, Chest, Head, LeftArm, LeftLeg, RightArm, RightLeg};
+        match self {
+            Self::Coughing => &[Chest],
+            Self::Sneezing => &[Head, Chest],
+            Self::Feverish | Self::Fatigued => {
+                &[Head, Chest, Abdomen, LeftArm, RightArm, LeftLeg, RightLeg]
+            }
+            Self::Vomiting | Self::BloodyStool => &[Abdomen],
+            Self::Rash => &[Head, Chest, Abdomen, LeftArm, RightArm, LeftLeg, RightLeg],
+            Self::Spasms | Self::Trembling => &[LeftArm, RightArm, LeftLeg, RightLeg],
+            Self::Lockjaw => &[Head],
+            Self::Buboes => &[Chest, Abdomen, LeftArm, RightArm, LeftLeg, RightLeg],
+        }
+    }
+
+    pub const fn humour_deviation(self) -> f32 {
+        match self {
+            Self::Coughing | Self::BloodyStool | Self::Spasms | Self::Lockjaw | Self::Buboes => {
+                0.055
+            }
+            _ => 0.035,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -81,44 +118,6 @@ pub struct VitalImpairment {
     pub phlegmatic: f32,
     pub choleric: f32,
     pub melancholic: f32,
-}
-
-/// Body regions used to localize the complaints caused by otherwise global
-/// disease physiology. These readings are derived from an infection episode;
-/// they are presentation facts, not additional persisted disease state.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BodyRegion {
-    LeftArm,
-    RightArm,
-    LeftLeg,
-    RightLeg,
-    Chest,
-    Stomach,
-    Head,
-}
-
-impl BodyRegion {
-    pub const ALL: [Self; 7] = [
-        Self::LeftArm,
-        Self::RightArm,
-        Self::LeftLeg,
-        Self::RightLeg,
-        Self::Chest,
-        Self::Stomach,
-        Self::Head,
-    ];
-
-    pub const fn index(self) -> usize {
-        match self {
-            Self::LeftArm => 0,
-            Self::RightArm => 1,
-            Self::LeftLeg => 2,
-            Self::RightLeg => 3,
-            Self::Chest => 4,
-            Self::Stomach => 5,
-            Self::Head => 6,
-        }
-    }
 }
 
 impl VitalImpairment {
@@ -167,7 +166,6 @@ pub struct DiseaseDefinition {
     pub rise_minutes: u64,
     pub peak_minutes: u64,
     pub recovery_minutes: u64,
-    pub innate_detection_dc: f32,
     pub base_acquisition: f32,
     pub peak_vitals: VitalImpairment,
     pub peak_attributes: AttributeImpairment,
@@ -189,207 +187,6 @@ impl DiseaseDefinition {
     pub fn supports(&self, vector: TransmissionVector) -> bool {
         self.transmission_vectors.contains(&vector)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RecipeIngredient {
-    pub item_id: &'static str,
-    pub quantity: u32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct MedicationRecipe {
-    pub disease_id: DiseaseId,
-    pub item_id: &'static str,
-    pub name: &'static str,
-    /// Medicine rank required to prepare this treatment. This is deliberately
-    /// independent from the disease's diagnostic difficulty.
-    pub medicine_dc: u8,
-    pub preparation_minutes: u64,
-    pub ingredients: &'static [RecipeIngredient],
-}
-
-const CATARRHAL_CORDIAL: &[RecipeIngredient] = &[
-    RecipeIngredient {
-        item_id: "honey",
-        quantity: 1,
-    },
-    RecipeIngredient {
-        item_id: "sage",
-        quantity: 2,
-    },
-];
-const FLUX_ELECTUARY: &[RecipeIngredient] = &[
-    RecipeIngredient {
-        item_id: "dried_mint",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "charcoal",
-        quantity: 1,
-    },
-];
-const SPOTTED_DRAUGHT: &[RecipeIngredient] = &[
-    RecipeIngredient {
-        item_id: "willow_bark",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "vinegar",
-        quantity: 1,
-    },
-];
-const LOCKJAW_POULTICE: &[RecipeIngredient] = &[
-    RecipeIngredient {
-        item_id: "poppy",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "comfrey",
-        quantity: 1,
-    },
-];
-const ERYSIPELAS_SALVE: &[RecipeIngredient] = &[
-    RecipeIngredient {
-        item_id: "honey",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "garlic",
-        quantity: 1,
-    },
-];
-const SMALLPOX_LOTION: &[RecipeIngredient] = &[
-    RecipeIngredient {
-        item_id: "oatmeal",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "rosewater",
-        quantity: 1,
-    },
-];
-const PLAGUE_THERIAC: &[RecipeIngredient] = &[
-    RecipeIngredient {
-        item_id: "garlic",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "vinegar",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "poppy",
-        quantity: 1,
-    },
-];
-const CONSUMPTION_BALM: &[RecipeIngredient] = &[
-    RecipeIngredient {
-        item_id: "honey",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "comfrey",
-        quantity: 2,
-    },
-    RecipeIngredient {
-        item_id: "sage",
-        quantity: 1,
-    },
-];
-
-pub const MEDICATION_RECIPES: [MedicationRecipe; 8] = [
-    MedicationRecipe {
-        disease_id: DiseaseId::Influenza,
-        item_id: "catarrhal_fever_cordial",
-        name: "Catarrhal fever cordial",
-        medicine_dc: 2,
-        preparation_minutes: 30,
-        ingredients: CATARRHAL_CORDIAL,
-    },
-    MedicationRecipe {
-        disease_id: DiseaseId::Dysentery,
-        item_id: "bloody_flux_electuary",
-        name: "Bloody flux electuary",
-        medicine_dc: 3,
-        preparation_minutes: 45,
-        ingredients: FLUX_ELECTUARY,
-    },
-    MedicationRecipe {
-        disease_id: DiseaseId::Typhus,
-        item_id: "spotted_fever_draught",
-        name: "Spotted fever draught",
-        medicine_dc: 5,
-        preparation_minutes: 90,
-        ingredients: SPOTTED_DRAUGHT,
-    },
-    MedicationRecipe {
-        disease_id: DiseaseId::Tetanus,
-        item_id: "lockjaw_poultice",
-        name: "Lockjaw poultice",
-        medicine_dc: 5,
-        preparation_minutes: 120,
-        ingredients: LOCKJAW_POULTICE,
-    },
-    MedicationRecipe {
-        disease_id: DiseaseId::Erysipelas,
-        item_id: "erysipelas_salve",
-        name: "Erysipelas salve",
-        medicine_dc: 5,
-        preparation_minutes: 75,
-        ingredients: ERYSIPELAS_SALVE,
-    },
-    MedicationRecipe {
-        disease_id: DiseaseId::Smallpox,
-        item_id: "smallpox_lotion",
-        name: "Smallpox lotion",
-        medicine_dc: 5,
-        preparation_minutes: 120,
-        ingredients: SMALLPOX_LOTION,
-    },
-    MedicationRecipe {
-        disease_id: DiseaseId::Plague,
-        item_id: "plague_theriac",
-        name: "Plague theriac",
-        medicine_dc: 5,
-        preparation_minutes: 150,
-        ingredients: PLAGUE_THERIAC,
-    },
-    MedicationRecipe {
-        disease_id: DiseaseId::Consumption,
-        item_id: "consumption_balm",
-        name: "Consumption balm",
-        medicine_dc: 5,
-        preparation_minutes: 120,
-        ingredients: CONSUMPTION_BALM,
-    },
-];
-
-pub fn medication_recipe(disease_id: DiseaseId) -> &'static MedicationRecipe {
-    &MEDICATION_RECIPES[disease_id as usize]
-}
-
-/// The complete information an NPC herbalist may disclose after a confirmed
-/// examination. Callers should not enrich this pair with raw episode facts.
-pub fn herbalist_diagnosis(disease_id: DiseaseId) -> (&'static str, &'static str) {
-    (
-        definition(disease_id).period_name,
-        medication_recipe(disease_id).name,
-    )
-}
-
-pub fn medication_recipe_for_item(item_id: &str) -> Option<&'static MedicationRecipe> {
-    MEDICATION_RECIPES
-        .iter()
-        .find(|recipe| recipe.item_id == item_id)
-}
-
-pub fn treatment_skill_level(medicine_check: f32) -> u8 {
-    medicine_check.clamp(0.0, 5.0).round() as u8
-}
-
-pub fn can_prepare_medication(medicine_check: f32, recipe: &MedicationRecipe) -> bool {
-    treatment_skill_level(medicine_check) >= recipe.medicine_dc
 }
 
 const DAY: u64 = 1_440;
@@ -439,7 +236,6 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         2 * DAY,
         2 * DAY,
         4 * DAY,
-        2.0,
         0.65,
         RESP,
         AttributeImpairment {
@@ -458,7 +254,6 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         DAY,
         3 * DAY,
         5 * DAY,
-        2.0,
         0.55,
         GUT,
         AttributeImpairment {
@@ -478,7 +273,6 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         3 * DAY,
         5 * DAY,
         7 * DAY,
-        2.8,
         0.35,
         SEPTIC,
         AttributeImpairment {
@@ -498,7 +292,6 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         4 * DAY,
         7 * DAY,
         10 * DAY,
-        3.2,
         0.12,
         VitalImpairment {
             phlegmatic: 0.75,
@@ -522,7 +315,6 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         2 * DAY,
         3 * DAY,
         6 * DAY,
-        2.3,
         0.25,
         SEPTIC,
         AttributeImpairment {
@@ -541,7 +333,6 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         3 * DAY,
         7 * DAY,
         12 * DAY,
-        2.4,
         0.45,
         VitalImpairment {
             sanguine: 0.25,
@@ -565,7 +356,6 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         2 * DAY,
         5 * DAY,
         8 * DAY,
-        3.0,
         0.30,
         VitalImpairment {
             sanguine: 0.75,
@@ -593,7 +383,6 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         40 * DAY,
         80 * DAY,
         120 * DAY,
-        3.4,
         0.18,
         VitalImpairment {
             phlegmatic: 0.65,
@@ -631,7 +420,6 @@ const fn d(
     rise_minutes: u64,
     peak_minutes: u64,
     recovery_minutes: u64,
-    innate_detection_dc: f32,
     base_acquisition: f32,
     peak_vitals: VitalImpairment,
     peak_attributes: AttributeImpairment,
@@ -647,7 +435,6 @@ const fn d(
         rise_minutes,
         peak_minutes,
         recovery_minutes,
-        innate_detection_dc,
         base_acquisition,
         peak_vitals,
         peak_attributes,
@@ -667,7 +454,8 @@ pub struct InfectionEpisode {
     pub character_id: u64,
     pub disease_id: DiseaseId,
     pub contracted_at: u64,
-    pub treated_at: Option<u64>,
+    pub ruleset_version: u16,
+    pub phenotype_key_version: u16,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -675,7 +463,6 @@ pub struct DiseaseState {
     pub stage: DiseaseStage,
     pub severity: f32,
     pub progress: f32,
-    pub diagnosis_dc: f32,
     pub symptoms: Vec<Symptom>,
     pub attributes: AttributeImpairment,
     pub vitals: VitalImpairment,
@@ -840,26 +627,11 @@ pub fn exposure_threshold_minute(
 }
 
 fn disease_age(e: InfectionEpisode, now: u64, _d: &DiseaseDefinition) -> f32 {
-    let age = now.saturating_sub(e.contracted_at) as f32;
-    if let Some(t) = e.treated_at.filter(|t| *t <= now) {
-        let before = t.saturating_sub(e.contracted_at) as f32;
-        before + (age - before) * 1.5
-    } else {
-        age
-    }
+    now.saturating_sub(e.contracted_at) as f32
 }
 
 fn wall_minute_for_age(e: InfectionEpisode, target_age: f32) -> u64 {
-    let untreated = e.contracted_at.saturating_add(target_age.ceil() as u64);
-    let Some(treated_at) = e.treated_at else {
-        return untreated;
-    };
-    let age_at_treatment = treated_at.saturating_sub(e.contracted_at) as f32;
-    if target_age <= age_at_treatment {
-        untreated
-    } else {
-        treated_at.saturating_add(((target_age - age_at_treatment) / 1.5).ceil() as u64)
-    }
+    e.contracted_at.saturating_add(target_age.ceil() as u64)
 }
 fn curve(d: &DiseaseDefinition, age: f32) -> (DiseaseStage, f32) {
     let i = d.incubation_minutes as f32;
@@ -887,10 +659,7 @@ pub fn evaluate(e: InfectionEpisode, now: u64, immunity: f32) -> DiseaseState {
     let age = disease_age(e, now, d);
     let (mut stage, progress) = curve(d, age);
     let sev = severity(e, immunity);
-    let mitigation = e.treated_at.filter(|t| *t <= now).map_or(1.0, |t| {
-        1.0 - 0.28 * (now.saturating_sub(t) as f32 / (2.0 * DAY as f32)).clamp(0.0, 1.0)
-    });
-    let scale = progress * sev * mitigation;
+    let scale = progress * sev;
     let vitals = d.peak_vitals.scaled(scale);
     let terminal = vitals.terminal_failure();
     if terminal.is_some() {
@@ -903,20 +672,10 @@ pub fn evaluate(e: InfectionEpisode, now: u64, immunity: f32) -> DiseaseState {
     } else {
         d.symptoms.len()
     };
-    let dc = (d.innate_detection_dc
-        + match stage {
-            DiseaseStage::Incubating => 2.0,
-            DiseaseStage::Early => 1.0 - progress,
-            DiseaseStage::Established | DiseaseStage::Critical => 0.0,
-            DiseaseStage::Convalescent => 0.5,
-            DiseaseStage::Resolved => 2.0,
-        })
-    .max(2.0);
     DiseaseState {
         stage,
         severity: sev,
         progress,
-        diagnosis_dc: dc,
         symptoms: d.symptoms[..symptom_count].to_vec(),
         attributes: AttributeImpairment {
             endurance: d.peak_attributes.endurance * scale,
@@ -996,6 +755,28 @@ pub fn interval_events(
         .collect()
 }
 
+/// Every minute where the authored disease curve can change slope. Consumers
+/// doing combined-state crossing searches must include these points even when
+/// no standalone disease event occurs there.
+pub fn structural_minutes(e: InfectionEpisode, from: u64, to: u64) -> Vec<u64> {
+    let d = definition(e.disease_id);
+    [
+        d.incubation_minutes,
+        d.incubation_minutes.saturating_add(d.rise_minutes),
+        d.incubation_minutes
+            .saturating_add(d.rise_minutes)
+            .saturating_add(d.peak_minutes),
+        d.incubation_minutes
+            .saturating_add(d.rise_minutes)
+            .saturating_add(d.peak_minutes)
+            .saturating_add(d.recovery_minutes),
+    ]
+    .into_iter()
+    .map(|age| wall_minute_for_age(e, age as f32))
+    .filter(|minute| *minute >= from && *minute <= to)
+    .collect()
+}
+
 pub fn combined_state(
     episodes: &[InfectionEpisode],
     now: u64,
@@ -1048,12 +829,110 @@ pub fn regional_vitals(
     regions
 }
 
+/// Private functional-loss state used by the authoritative server. Disease
+/// identity never reaches the browser; the key changes the relative meter
+/// involvement for each episode rather than applying a scalar severity tweak.
+pub fn private_meter_state(
+    episode: InfectionEpisode,
+    now: u64,
+    immunity: f32,
+    phenotype_secret: &[u8],
+) -> MeterVector {
+    let state = evaluate(episode, now, immunity);
+    let phenotype = physiology::phenotype_multipliers(
+        phenotype_secret,
+        episode.phenotype_key_version,
+        episode.character_id,
+        episode.id,
+    );
+    let peak = disease_peak_meters(episode.disease_id);
+    let mut meters = MeterVector::ZERO;
+    for (meter, loss) in peak {
+        meters.0[meter.index()] = (meters.0[meter.index()]
+            + loss * state.progress * state.severity * phenotype[meter.index()])
+        .clamp(-1.0, 2.0);
+    }
+    meters
+}
+
+pub fn disease_peak_meters(disease_id: DiseaseId) -> &'static [(Meter, f32)] {
+    match disease_id {
+        DiseaseId::Influenza => &[
+            (Meter::Oxygenation, 0.55),
+            (Meter::Temperature, 0.20),
+            (Meter::Inflammation, 0.20),
+        ][..],
+        DiseaseId::Dysentery => &[
+            (Meter::Hydration, 0.70),
+            (Meter::RenalClearance, 0.30),
+            (Meter::Perfusion, 0.10),
+        ],
+        DiseaseId::Typhus => &[
+            (Meter::Temperature, 0.35),
+            (Meter::Inflammation, 0.45),
+            (Meter::Perfusion, 0.25),
+            (Meter::Neurologic, 0.10),
+        ],
+        DiseaseId::Tetanus => &[
+            (Meter::Neurologic, 0.75),
+            (Meter::Oxygenation, 0.20),
+            (Meter::TissueIntegrity, 0.10),
+        ],
+        DiseaseId::Erysipelas => &[
+            (Meter::TissueIntegrity, 0.45),
+            (Meter::Inflammation, 0.55),
+            (Meter::Temperature, 0.20),
+        ],
+        DiseaseId::Smallpox => &[
+            (Meter::TissueIntegrity, 0.40),
+            (Meter::Inflammation, 0.45),
+            (Meter::Hydration, 0.20),
+            (Meter::Temperature, 0.30),
+        ],
+        DiseaseId::Plague => &[
+            (Meter::Perfusion, 0.75),
+            (Meter::Coagulation, 0.35),
+            (Meter::Inflammation, 0.50),
+        ],
+        DiseaseId::Consumption => &[
+            (Meter::Oxygenation, 0.65),
+            (Meter::Nutrition, 0.25),
+            (Meter::TissueIntegrity, 0.20),
+        ],
+    }
+}
+
+pub fn private_regional_meter_state(
+    patient_id: u64,
+    episodes: &[InfectionEpisode],
+    now: u64,
+    immunity: f32,
+    phenotype_secret: &[u8],
+    key_version: u16,
+) -> [MeterVector; physiology::REGION_COUNT] {
+    let baseline = physiology::baseline_meters(phenotype_secret, key_version, patient_id);
+    let mut regions = [baseline; physiology::REGION_COUNT];
+    for episode in episodes {
+        let meters = private_meter_state(*episode, now, immunity, phenotype_secret);
+        let weights = disease_region_weights(*episode);
+        let total = weights
+            .iter()
+            .map(|(_, weight)| *weight)
+            .sum::<f32>()
+            .max(1.0);
+        for (region, weight) in weights {
+            regions[region.index()].add_bounded(meters.scaled(weight / total));
+        }
+    }
+    regions
+}
+
 fn disease_region_weights(episode: InfectionEpisode) -> Vec<(BodyRegion, f32)> {
-    use BodyRegion::{Chest, Head, LeftArm, LeftLeg, RightArm, RightLeg, Stomach};
+    use BodyRegion::{Abdomen, Chest, Head, LeftArm, LeftLeg, RightArm, RightLeg};
     match episode.disease_id {
         DiseaseId::Influenza => vec![(Chest, 1.0), (Head, 0.35)],
-        DiseaseId::Dysentery => vec![(Stomach, 1.0), (Chest, 0.25)],
-        DiseaseId::Typhus => vec![(Chest, 0.8), (Head, 1.0), (Stomach, 0.45)],
+        DiseaseId::Dysentery => vec![(Abdomen, 1.0), (Chest, 0.25)],
+        DiseaseId::Typhus => vec![(Chest, 0.8), (Head, 1.0), (Abdomen, 0.45)],
         DiseaseId::Tetanus => vec![
             (Chest, 1.0),
             (Head, 0.7),
@@ -1070,7 +949,7 @@ fn disease_region_weights(episode: InfectionEpisode) -> Vec<(BodyRegion, f32)> {
         DiseaseId::Smallpox => vec![
             (Head, 1.0),
             (Chest, 0.8),
-            (Stomach, 0.6),
+            (Abdomen, 0.6),
             (LeftArm, 0.45),
             (RightArm, 0.45),
             (LeftLeg, 0.45),
@@ -1079,9 +958,9 @@ fn disease_region_weights(episode: InfectionEpisode) -> Vec<(BodyRegion, f32)> {
         DiseaseId::Plague => {
             let limb =
                 [LeftArm, RightArm, LeftLeg, RightLeg][(severity_seed(episode) as usize) % 4];
-            vec![(Chest, 1.0), (Stomach, 0.75), (Head, 0.55), (limb, 0.8)]
+            vec![(Chest, 1.0), (Abdomen, 0.75), (Head, 0.55), (limb, 0.8)]
         }
-        DiseaseId::Consumption => vec![(Chest, 1.0), (Stomach, 0.3)],
+        DiseaseId::Consumption => vec![(Chest, 1.0), (Abdomen, 0.3)],
     }
 }
 
@@ -1117,48 +996,6 @@ pub fn observed_symptoms(episodes: &[InfectionEpisode], now: u64, immunity: f32)
     symptoms
 }
 
-fn finding_weight(symptom: Symptom) -> f32 {
-    match symptom {
-        Symptom::BloodyStool | Symptom::Spasms | Symptom::Lockjaw | Symptom::Buboes => 3.0,
-        Symptom::Rash | Symptom::Vomiting | Symptom::Trembling => 1.5,
-        Symptom::Coughing | Symptom::Sneezing | Symptom::Feverish | Symptom::Fatigued => 1.0,
-    }
-}
-
-/// Return the strongest compatible period diagnoses for an uncertain exam.
-/// The true illness is retained while common and incidental findings introduce
-/// plausible alternatives; distinctive findings carry more weight.
-pub fn differential_candidates(observed: &[Symptom], true_id: DiseaseId) -> Vec<DiseaseId> {
-    let mut scored = STARTER_DISEASES
-        .iter()
-        .map(|candidate| {
-            let matched = candidate
-                .symptoms
-                .iter()
-                .filter(|symptom| observed.contains(symptom))
-                .map(|symptom| finding_weight(*symptom))
-                .sum::<f32>();
-            let total = candidate
-                .symptoms
-                .iter()
-                .map(|symptom| finding_weight(*symptom))
-                .sum::<f32>();
-            (candidate.id, matched / total.max(1.0))
-        })
-        .collect::<Vec<_>>();
-    scored.sort_by(|left, right| right.1.total_cmp(&left.1));
-    let mut candidates = vec![true_id];
-    for (id, score) in scored {
-        if id != true_id && score >= 0.25 && !candidates.contains(&id) {
-            candidates.push(id);
-        }
-        if candidates.len() == 3 {
-            break;
-        }
-    }
-    candidates
-}
-
 /// Earliest combined terminal failure in an interval. Structural boundaries
 /// split every deterministic curve into monotonic spans; binary search prevents
 /// two individually survivable infections from hiding a fatal combined peak.
@@ -1178,10 +1015,6 @@ pub fn first_combined_terminal(
                 .into_iter()
                 .map(|event| event.minute),
         );
-        if let Some(t) = e.treated_at.filter(|t| *t > from && *t < to) {
-            points.push(t);
-            points.push(t.saturating_add(2 * DAY).min(to));
-        }
     }
     points.sort_unstable();
     points.dedup();
@@ -1232,7 +1065,8 @@ mod tests {
             character_id: 7,
             disease_id,
             contracted_at: 100,
-            treated_at: None,
+            ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+            phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
         }
     }
     #[test]
@@ -1260,19 +1094,19 @@ mod tests {
                 .any(|x| x.kind == DiseaseEventKind::Resolution)
         );
     }
+
     #[test]
-    fn treatment_is_continuous_and_accelerates_recovery() {
-        let mut x = e(9, DiseaseId::Dysentery);
-        let t = 100 + 2 * DAY;
-        let before = evaluate(x, t, 3.0).progress;
-        x.treated_at = Some(t);
-        assert_eq!(evaluate(x, t, 3.0).progress, before);
-        let untreated = evaluate(e(9, DiseaseId::Dysentery), t, 3.0).vitals.choleric;
-        assert_eq!(evaluate(x, t, 3.0).vitals.choleric, untreated);
-        assert!(
-            evaluate(x, t + 5 * DAY, 3.0).progress
-                < evaluate(e(9, DiseaseId::Dysentery), t + 5 * DAY, 3.0).progress
+    fn structural_minutes_include_the_start_of_recovery() {
+        let infection = e(1, DiseaseId::Influenza);
+        let definition = definition(infection.disease_id);
+        let recovery_start = wall_minute_for_age(
+            infection,
+            definition
+                .incubation_minutes
+                .saturating_add(definition.rise_minutes)
+                .saturating_add(definition.peak_minutes) as f32,
         );
+        assert!(structural_minutes(infection, 0, u64::MAX).contains(&recovery_start));
     }
     #[test]
     fn zero_immunity_can_make_mild_disease_fatal() {
@@ -1295,7 +1129,7 @@ mod tests {
         assert!(regions[BodyRegion::Chest.index()].phlegmatic > 0.0);
         assert!(regions[BodyRegion::Head.index()].phlegmatic > 0.0);
         assert_eq!(
-            regions[BodyRegion::Stomach.index()],
+            regions[BodyRegion::Abdomen.index()],
             VitalImpairment::default()
         );
 
@@ -1305,31 +1139,16 @@ mod tests {
             regional_vitals(&[erysipelas], 100 + 4 * DAY, 3.0)
         );
     }
+
     #[test]
-    fn treatment_recipes_are_independent_from_diagnosis_difficulty() {
-        let influenza = medication_recipe(DiseaseId::Influenza);
-        let plague = medication_recipe(DiseaseId::Plague);
-        assert_eq!(influenza.medicine_dc, 2);
-        assert_eq!(plague.medicine_dc, 5);
-        assert!(!influenza.ingredients.is_empty());
+    fn private_regional_state_includes_patient_baseline_without_infections() {
+        let regions = private_regional_meter_state(73, &[], 10_000, 3.0, b"test key", 1);
+        assert!(regions.iter().all(|region| *region == regions[0]));
+        assert_ne!(regions[0], MeterVector::ZERO);
         assert_ne!(
-            influenza.medicine_dc as f32,
-            definition(DiseaseId::Influenza).innate_detection_dc + 1.0
+            regions[0],
+            private_regional_meter_state(74, &[], 10_000, 3.0, b"test key", 1)[0]
         );
-        assert!(can_prepare_medication(4.98, plague));
-        assert!(!can_prepare_medication(4.49, plague));
-    }
-    #[test]
-    fn herbalist_diagnosis_maps_only_canonical_names() {
-        assert_eq!(
-            herbalist_diagnosis(DiseaseId::Influenza),
-            ("Catarrhal fever", "Catarrhal fever cordial")
-        );
-        for definition in STARTER_DISEASES {
-            let (disease_name, medication_name) = herbalist_diagnosis(definition.id);
-            assert_eq!(disease_name, definition.period_name);
-            assert_eq!(medication_name, medication_recipe(definition.id).name);
-        }
     }
     #[test]
     fn incidental_findings_are_stable_and_non_distinctive() {
@@ -1340,20 +1159,24 @@ mod tests {
         assert!(!first.contains(&Symptom::Buboes));
         assert!(!first.contains(&Symptom::Lockjaw));
     }
+
     #[test]
-    fn uncertain_differential_keeps_truth_and_plausible_alternatives() {
-        let observed = observed_symptoms(&[e(1, DiseaseId::Influenza)], 100 + 4 * DAY, 3.0);
-        let candidates = differential_candidates(&observed, DiseaseId::Influenza);
-        assert_eq!(candidates.first(), Some(&DiseaseId::Influenza));
-        assert!(candidates.len() >= 2);
-        assert!(candidates.len() <= 3);
+    fn visible_findings_are_forced_through_humours_and_regions() {
+        assert_eq!(Symptom::Coughing.humour(), Humour::Phlegmatic);
+        assert_eq!(Symptom::Vomiting.humour(), Humour::Choleric);
+        assert_eq!(Symptom::Rash.humour(), Humour::Sanguine);
+        assert_eq!(Symptom::Trembling.humour(), Humour::Melancholic);
+        assert_eq!(
+            Symptom::Coughing.observation_regions(),
+            &[BodyRegion::Chest]
+        );
+        assert!(
+            Symptom::Rash
+                .observation_regions()
+                .contains(&BodyRegion::LeftArm)
+        );
     }
-    #[test]
-    fn diagnosis_has_floor_and_gets_easier() {
-        let x = e(1, DiseaseId::Influenza);
-        assert!(evaluate(x, 100, 3.0).diagnosis_dc > evaluate(x, 100 + 4 * DAY, 3.0).diagnosis_dc);
-        assert!(evaluate(x, 100 + 4 * DAY, 3.0).diagnosis_dc >= 2.0);
-    }
+
     #[test]
     fn continuous_exposure_is_chunk_invariant() {
         let at = exposure_threshold_minute(42, 100, 0.8, 0.65, 2.0, 0.0).unwrap();

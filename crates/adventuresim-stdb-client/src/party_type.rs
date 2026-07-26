@@ -27,7 +27,7 @@ pub struct Party {
     pub camp_destination: Option<JourneyEndpoint>,
     pub camp_remaining_minutes: u64,
     pub pooled_water_ml: f32,
-    pub medicine_target: f32,
+    pub physiology_target: f32,
     pub command_target: f32,
     pub religion_target: f32,
 }
@@ -56,7 +56,7 @@ pub struct PartyCols {
     pub camp_destination: __sdk::__query_builder::Col<Party, Option<JourneyEndpoint>>,
     pub camp_remaining_minutes: __sdk::__query_builder::Col<Party, u64>,
     pub pooled_water_ml: __sdk::__query_builder::Col<Party, f32>,
-    pub medicine_target: __sdk::__query_builder::Col<Party, f32>,
+    pub physiology_target: __sdk::__query_builder::Col<Party, f32>,
     pub command_target: __sdk::__query_builder::Col<Party, f32>,
     pub religion_target: __sdk::__query_builder::Col<Party, f32>,
 }
@@ -96,7 +96,7 @@ impl __sdk::__query_builder::HasCols for Party {
                 "camp_remaining_minutes",
             ),
             pooled_water_ml: __sdk::__query_builder::Col::new(table_name, "pooled_water_ml"),
-            medicine_target: __sdk::__query_builder::Col::new(table_name, "medicine_target"),
+            physiology_target: __sdk::__query_builder::Col::new(table_name, "physiology_target"),
             command_target: __sdk::__query_builder::Col::new(table_name, "command_target"),
             religion_target: __sdk::__query_builder::Col::new(table_name, "religion_target"),
         }
