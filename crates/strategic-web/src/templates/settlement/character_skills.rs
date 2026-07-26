@@ -533,7 +533,13 @@ fn terrain_skill_rows(
         / 4.0;
     html! {
         tr class="party-skill-row terrain-primary-row" data-terrain-primary {
-            th scope="row" class="party-skill-name party-skill-icon-cell" { (stat_icon("Terrain", "terrain", "terrain", false)) }
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                @if let Some(action) = action {
+                    (skill_action_icon("Terrain", "terrain", action, false))
+                } @else {
+                    (stat_icon("Terrain", "terrain", "terrain", false))
+                }
+            }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                 (skill_rank_bar_with_tooltip(
                     rank,
@@ -548,9 +554,6 @@ fn terrain_skill_rows(
                 ))
             }
             td class="religion-expand-cell" {
-                @if let Some(action) = action {
-                    (skill_action_icon("Terrain", "terrain", action, false))
-                }
                 button type="button" class="religion-expand-button" data-terrain-expand aria-expanded="false" aria-label="Expand Terrain skills" title="Expand Terrain" {
                     span class="religion-expand-chevron" aria-hidden="true" { "›" }
                 }
@@ -1733,6 +1736,28 @@ mod tests {
         assert!(!allocation.contains("data-schedule-step"));
         assert!(!allocation.contains("type=\"range\""));
         assert!(!allocation.contains("schedule-handle"));
+    }
+
+    #[test]
+    fn forage_action_replaces_the_terrain_skill_icon_not_the_expand_control() {
+        let rendered = terrain_skill_rows(
+            &CharacterSkills::default(),
+            1.0,
+            false,
+            Some(SkillAction::Get {
+                href: "/forage",
+                label: "Forage in the immediate vicinity",
+                open: false,
+            }),
+        )
+        .into_string();
+        let primary = rendered.find("data-terrain-primary").unwrap();
+        let action = rendered.find("href=\"/forage\"").unwrap();
+        let expand = rendered.find("data-terrain-expand").unwrap();
+
+        assert!(primary < action && action < expand);
+        assert!(rendered.contains("class=\"religion-expand-cell\"><button"));
+        assert!(!rendered.contains("class=\"religion-expand-cell\"><a"));
     }
 
     #[test]

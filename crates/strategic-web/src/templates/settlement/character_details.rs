@@ -75,7 +75,7 @@ pub(crate) struct CharacterSheetView<'a> {
     pub combat_profile: CombatTrainingProfile,
     pub religion_id: Option<&'a str>,
     pub training_religion_id: Option<&'a str>,
-    pub notoriety: f32,
+    pub virtue: f32,
     pub attributes_title: &'a str,
     pub skills_title: &'a str,
     pub description: &'a str,
@@ -129,7 +129,7 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
             (character_bio_rail(
                 view.character,
                 view.religion_id,
-                view.notoriety,
+                view.virtue,
                 view.personality,
                 view.can_renounce,
                 view.location_path,
@@ -175,7 +175,7 @@ pub fn party_personal_page(
     combat_profile: CombatTrainingProfile,
     activity_preview: ActivityPreviewRates,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
-    notoriety: f32,
+    virtue: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     _can_examine: bool,
@@ -189,6 +189,7 @@ pub fn party_personal_page(
     character_action_dialog: Option<Markup>,
     surgery_open: Option<&str>,
     social_open: bool,
+    foraging_dialog: Option<Markup>,
 ) -> Markup {
     let cooking_href = location.preserve_building(format!(
         "{}/party/{}?cook=true",
@@ -202,7 +203,10 @@ pub fn party_personal_page(
         active_character.id
     ));
     let location_path = location.base_path();
-    let foraging_href = format!("/forage?return_to={location_path}");
+    let foraging_href = location.preserve_building(format!(
+        "{location_path}/party/{}?forage=true",
+        active_character.id,
+    ));
     let schedule_action = format!("{location_path}/party/{}/schedule", active_character.id);
     let social_path = location.preserve_building(format!(
         "{location_path}/party/{}/social",
@@ -228,10 +232,13 @@ pub fn party_personal_page(
         false,
     );
     let center_after = settlement_chat_area(&active_character.name, Some(active_character));
+    let foraging_open = foraging_dialog.is_some();
     let after = html! {
         (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
         @if cooking_open {
             (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
+        } @else if let Some(dialog) = foraging_dialog {
+            (dialog)
         } @else {
             @if let Some(dialog) = character_action_dialog { (dialog) }
         }
@@ -247,7 +254,7 @@ pub fn party_personal_page(
         combat_profile,
         religion_id,
         training_religion_id: religion_id.or(location.religion_id.as_deref()),
-        notoriety,
+        virtue,
         attributes_title: "Your attributes",
         skills_title: "Your skills",
         description: "Your identity, condition, and capabilities",
@@ -265,7 +272,7 @@ pub fn party_personal_page(
             cooking_href: Some(&cooking_href),
             cooking_open,
             foraging_href: Some(&foraging_href),
-            foraging_open: false,
+            foraging_open,
         },
         location_path: &location_path,
         center_before: html! {},
@@ -293,7 +300,7 @@ pub fn party_stats_page(
     religion_id: Option<&str>,
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
-    notoriety: f32,
+    virtue: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     _can_examine: bool,
@@ -368,7 +375,7 @@ pub fn party_stats_page(
         combat_profile,
         religion_id,
         training_religion_id: religion_id.or(location.religion_id.as_deref()),
-        notoriety,
+        virtue,
         attributes_title: &selected_attributes_title,
         skills_title: &selected_skills_title,
         description: "Party member identity and capabilities",
@@ -413,16 +420,11 @@ pub(super) fn religion_name(religion_id: Option<&str>) -> &'static str {
 fn character_bio_rail(
     character: &Character,
     religion_id: Option<&str>,
-    notoriety: f32,
+    virtue: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     can_renounce: bool,
     location_path: &str,
 ) -> Markup {
-    let virtue = if notoriety.abs() < 0.0005 {
-        0.0
-    } else {
-        -notoriety
-    };
     html! {
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
