@@ -1074,8 +1074,25 @@ pub(crate) fn shared_language_coefficient(
     let Some(right) = ctx.db.character_skills().character_id().find(right_id) else {
         return 0.0;
     };
-    adventuresim_world_schema::best_common_oral_language(left.oral_languages, right.oral_languages)
-        .1
+    let left_cap = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(left_id)
+        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    let right_cap = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(right_id)
+        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    adventuresim_world_schema::best_common_oral_language_capped(
+        left.oral_languages,
+        left_cap,
+        right.oral_languages,
+        right_cap,
+    )
+    .1
 }
 
 fn insert_character_with_origin(

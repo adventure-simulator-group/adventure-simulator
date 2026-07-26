@@ -316,6 +316,54 @@ mod tests {
         assert_eq!(gain.accepted_effective_hours, 0.5);
         assert_eq!(gain.excess_effective_hours, 0.75);
     }
+
+    #[test]
+    fn language_training_zero_neutral_and_multi_leaf_excess_are_conserved() {
+        let mut zero = 0.0;
+        assert_eq!(
+            apply_language_training(&mut zero, 10.0, 0.0),
+            super::TrainingGain::default()
+        );
+        let mut neutral = 0.0;
+        assert_eq!(
+            apply_language_training(&mut neutral, 10.0, 2.5).accepted_effective_hours,
+            10.0
+        );
+        let mut first = 2_999.5;
+        let mut second = 3_000.0;
+        let excess = apply_language_training(&mut first, 1.0, 3.0).excess_effective_hours
+            + apply_language_training(&mut second, 1.0, 3.0).excess_effective_hours;
+        assert_eq!(excess, 2.0);
+    }
+
+    #[test]
+    fn partial_cap_crossing_mastery_is_bulk_chunk_invariant() {
+        let duration = 7 * 24 * 60;
+        let mut bulk_hours = 2_999.0;
+        let bulk = apply_language_training(&mut bulk_hours, 2.0, 3.0);
+        let bulk_morale = crate::morale::mastery_enjoyment_after_interval(
+            0.0,
+            bulk.excess_effective_hours,
+            120,
+            duration,
+        );
+        let mut chunked_hours = 2_999.0;
+        let first = apply_language_training(&mut chunked_hours, 1.0, 3.0);
+        let second = apply_language_training(&mut chunked_hours, 1.0, 3.0);
+        let chunked_morale = crate::morale::mastery_enjoyment_after_interval(
+            crate::morale::mastery_enjoyment_after_interval(
+                0.0,
+                first.excess_effective_hours,
+                60,
+                duration,
+            ),
+            second.excess_effective_hours,
+            60,
+            duration,
+        );
+        assert_eq!(bulk_hours, chunked_hours);
+        assert!((bulk_morale - chunked_morale).abs() < 0.0001);
+    }
 }
 
 impl Skill {

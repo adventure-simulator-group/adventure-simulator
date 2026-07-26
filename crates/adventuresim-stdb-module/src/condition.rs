@@ -919,8 +919,8 @@ fn base_morale(
 }
 
 /// Feed all rejected effective skill training into one shared, durable morale
-/// source. The continuous saturation/decay solution is invariant to splitting
-/// a constant-rate interval into smaller synchronization chunks.
+/// source. Callers aggregate every award in one logical clock interval before
+/// recording it, so skill choice and award order cannot multiply enjoyment.
 pub fn record_mastery_training_morale(
     ctx: &ReducerContext,
     character_id: u64,

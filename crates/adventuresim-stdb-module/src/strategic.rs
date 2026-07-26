@@ -11014,8 +11014,18 @@ fn finalize_storefront_trade_impl(
     let mut merchant = adventuresim_world_schema::OralLanguageHours::default();
     *merchant.direct_mut(settlement.languages.dominant_german()) =
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
-    let (_, shared_language) =
-        adventuresim_world_schema::best_common_oral_language(speaker, merchant);
+    let speaker_cap = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    let (_, shared_language) = adventuresim_world_schema::best_common_oral_language_capped(
+        speaker,
+        speaker_cap,
+        merchant,
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS,
+    );
     let settlement_economy = settlement.economy.clone();
     let problem_effects =
         crate::local_problem::settlement_effects(ctx, &settlement_id, problem_minute);
@@ -12817,9 +12827,10 @@ fn train_party_terrain_movement(
     ctx: &ReducerContext,
     party_id: &str,
     movement_minutes: u64,
-) -> Result<(), String> {
+) -> Result<std::collections::BTreeMap<u64, f32>, String> {
+    let mut excess_by_character = std::collections::BTreeMap::new();
     if movement_minutes == 0 {
-        return Ok(());
+        return Ok(excess_by_character);
     }
     let Some(journey) = ctx
         .db
@@ -12827,7 +12838,7 @@ fn train_party_terrain_movement(
         .party_id()
         .find(&party_id.to_string())
     else {
-        return Ok(());
+        return Ok(excess_by_character);
     };
     let Some(route) = ctx
         .db
@@ -12835,7 +12846,7 @@ fn train_party_terrain_movement(
         .party_id()
         .find(&party_id.to_string())
     else {
-        return Ok(());
+        return Ok(excess_by_character);
     };
     let start = journey.completed_minutes;
     let end = start.saturating_add(movement_minutes).min(route.minutes);
@@ -12880,23 +12891,23 @@ fn train_party_terrain_movement(
                 .excess_effective_hours;
             }
             ctx.db.character_skills().character_id().update(skills);
-            crate::condition::record_mastery_training_morale(
-                ctx,
-                member_id,
-                movement_minutes,
-                excess,
-            );
+            excess_by_character.insert(member_id, excess);
         }
     }
-    Ok(())
+    Ok(excess_by_character)
 }
 
 /// Give each traveler at most one interval of conversational exposure. Choices
 /// are made from one sorted pre-gain snapshot, so party iteration cannot affect
 /// the result and additional companions cannot multiply elapsed time.
-fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement_minutes: u64) {
+fn train_party_oral_communication(
+    ctx: &ReducerContext,
+    party_id: &str,
+    movement_minutes: u64,
+) -> std::collections::BTreeMap<u64, f32> {
+    let mut excess_by_character = std::collections::BTreeMap::new();
     if movement_minutes == 0 {
-        return;
+        return excess_by_character;
     }
     let mut snapshot: Vec<_> = living_party_member_ids(ctx, party_id)
         .into_iter()
@@ -12905,12 +12916,21 @@ fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement
                 .character_skills()
                 .character_id()
                 .find(id)
-                .map(|skills| (id, skills.oral_languages))
+                .map(|skills| {
+                    let cap = ctx
+                        .db
+                        .character_attributes()
+                        .character_id()
+                        .find(id)
+                        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+                    (id, skills.oral_languages, cap)
+                })
         })
         .collect();
-    snapshot.sort_by_key(|(id, _)| *id);
+    snapshot.sort_by_key(|(id, _, _)| *id);
     let interval_hours = movement_minutes as f32 / 60.0;
-    let gains = adventuresim_world_schema::party_oral_training_gains(&snapshot, interval_hours);
+    let gains =
+        adventuresim_world_schema::party_oral_training_gains_capped(&snapshot, interval_hours);
     for (id, language, hours) in gains {
         if let Some(mut skills) = ctx.db.character_skills().character_id().find(id) {
             let instinct = ctx
@@ -12926,9 +12946,10 @@ fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement
             )
             .excess_effective_hours;
             ctx.db.character_skills().character_id().update(skills);
-            crate::condition::record_mastery_training_morale(ctx, id, movement_minutes, excess);
+            excess_by_character.insert(id, excess);
         }
     }
+    excess_by_character
 }
 
 fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 4] {
@@ -12975,8 +12996,20 @@ fn advance_party_movement(
     }
     // Training is committed only after every participant's authoritative
     // clock has committed the same safe movement prefix.
-    train_party_terrain_movement(ctx, party_id, actual_minutes)?;
-    train_party_oral_communication(ctx, party_id, actual_minutes);
+    let mut mastery_excess = train_party_terrain_movement(ctx, party_id, actual_minutes)?;
+    for (character_id, excess) in
+        train_party_oral_communication(ctx, party_id, actual_minutes)
+    {
+        *mastery_excess.entry(character_id).or_default() += excess;
+    }
+    for (character_id, excess) in mastery_excess {
+        crate::condition::record_mastery_training_morale(
+            ctx,
+            character_id,
+            actual_minutes,
+            excess,
+        );
+    }
     Ok((actual_minutes, all_survived))
 }
 

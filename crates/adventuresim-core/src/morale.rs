@@ -27,10 +27,11 @@ pub const MASTERY_ENJOYMENT_LIMIT: f32 = 4.0;
 /// Excess effective hours needed to traverse one e-fold of the mastery curve.
 pub const MASTERY_ENJOYMENT_EFOLD_HOURS: f32 = 40.0;
 
-/// Advance shared mastery enjoyment through one constant-rate interval.
+/// Advance shared mastery enjoyment through one logical training interval.
 ///
-/// Saturation and decay are solved together, making the result invariant to
-/// splitting an interval into synchronization chunks.
+/// Rejected hours saturate at the interval endpoint. Decay applies only across
+/// intervals with no rejected training, so bulk and chunked cap crossings are
+/// identical and the source reaches zero continuously after its duration.
 pub fn mastery_enjoyment_after_interval(
     starting_morale: f32,
     excess_effective_hours: f32,
@@ -47,28 +48,22 @@ pub fn mastery_enjoyment_after_interval(
     } else {
         0.0
     };
-    if elapsed_minutes == 0 || duration_minutes == 0 {
+    if excess > 0.0 {
         return MASTERY_ENJOYMENT_LIMIT
             - (MASTERY_ENJOYMENT_LIMIT - starting)
                 * (-excess / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
     }
-    let elapsed = elapsed_minutes as f32;
-    let saturation_rate = excess / elapsed / MASTERY_ENJOYMENT_EFOLD_HOURS;
-    let decay_rate = 1.0 / duration_minutes as f32;
-    if saturation_rate <= f32::EPSILON {
-        return starting * (-decay_rate * elapsed).exp();
+    if duration_minutes == 0 {
+        return 0.0;
     }
-    let combined_rate = saturation_rate + decay_rate;
-    let equilibrium = MASTERY_ENJOYMENT_LIMIT * saturation_rate / combined_rate;
-    (equilibrium + (starting - equilibrium) * (-combined_rate * elapsed).exp())
-        .clamp(0.0, MASTERY_ENJOYMENT_LIMIT)
+    starting * (1.0 - elapsed_minutes as f32 / duration_minutes as f32).clamp(0.0, 1.0)
 }
 
 pub fn mastery_enjoyment_decay(age_minutes: u64, duration_minutes: u64) -> f32 {
     if duration_minutes == 0 || age_minutes >= duration_minutes {
         0.0
     } else {
-        (-(age_minutes as f32) / duration_minutes as f32).exp()
+        1.0 - age_minutes as f32 / duration_minutes as f32
     }
 }
 
@@ -354,6 +349,20 @@ mod tests {
         assert!(
             mastery_enjoyment_after_interval(0.0, 10_000.0, 1_440, duration)
                 <= MASTERY_ENJOYMENT_LIMIT
+        );
+        // Schedule/language and terrain/oral awards use this same aggregation:
+        // combining sources before the shared update cannot multiply morale.
+        let combined_sources = mastery_enjoyment_after_interval(0.0, 12.0 + 8.0, 1_440, duration);
+        let sequential_sources = mastery_enjoyment_after_interval(
+            mastery_enjoyment_after_interval(0.0, 12.0, 1_440, duration),
+            8.0,
+            0,
+            duration,
+        );
+        assert!((combined_sources - sequential_sources).abs() < 0.0001);
+        assert_eq!(
+            mastery_enjoyment_after_interval(combined, 0.0, duration, duration),
+            0.0
         );
     }
 }

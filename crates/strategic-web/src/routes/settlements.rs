@@ -5468,11 +5468,19 @@ async fn merchant_shop(
     let speaker = query_single::<CharacterSkills>(&state, "character_skills", character.id)
         .await
         .map_or_default(|skills| skills.oral_languages);
+    let speaker_cap =
+        query_single::<CharacterAttributes>(&state, "character_attributes", character.id)
+            .await
+            .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
     let mut merchant_languages = adventuresim_world_schema::OralLanguageHours::default();
     *merchant_languages.direct_mut(settlement.languages.dominant_german()) =
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
-    let (_, shared_language) =
-        adventuresim_world_schema::best_common_oral_language(speaker, merchant_languages);
+    let (_, shared_language) = adventuresim_world_schema::best_common_oral_language_capped(
+        speaker,
+        speaker_cap,
+        merchant_languages,
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS,
+    );
     let now_minutes = times
         .as_ref()
         .ok()

@@ -40,8 +40,10 @@ The current strategic sources are:
 - Standing cleanliness: Neutral characters moderately dislike filth; Slovenly characters ignore it; Cleanly characters suffer a severe scaling penalty and receive a modest benefit while completely clean.
 - Mastery enjoyment: effective training rejected at any skill's governing
   aptitude cap feeds one shared cross-skill source. It approaches a four-point
-  limit with a 40-hour e-fold scale and decays over seven days; changing skills
-  does not reset or multiply the saturation.
+  limit with a 40-hour e-fold scale. All rejected gains in one logical clock
+  interval are combined before saturation, and the retained source decays
+  linearly and continuously to zero over seven days without rejected training.
+  Changing skills does not reset or multiply the saturation.
 
 Food quality and disease will become additional named sources when those systems are implemented. **Comfort-seeking/Ascetic** is a good follow-up personality axis only after food and lodging distinguish quality levels, so it has meaningful conditions to react to.
 

@@ -696,9 +696,8 @@ fn apply_training(
     skills: &mut CharacterSkills,
     schedule: &ScheduleAllocation,
     elapsed: u64,
-    mastery_elapsed: u64,
     activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
-) {
+) -> f32 {
     let attributes = ctx
         .db
         .character_attributes()
@@ -813,32 +812,30 @@ fn apply_training(
                             WrittenLanguage::German
                         }
                     });
-                skills
-                    .written_languages
-                    .add_direct(vernacular, work_hours * profile.vernacular);
-                skills
-                    .written_languages
-                    .add_direct(WrittenLanguage::Latin, work_hours * profile.latin);
+                let mut award_written = |language, real_hours| {
+                    excess += adventuresim_core::skill::apply_language_training(
+                        skills.written_languages.direct_mut(language),
+                        real_hours,
+                        attributes.intelligence,
+                    )
+                    .excess_effective_hours;
+                };
+                award_written(vernacular, work_hours * profile.vernacular);
+                award_written(WrittenLanguage::Latin, work_hours * profile.latin);
                 if profile.religious {
                     let religion = apprenticeship_for_service(ctx, character_id, "religion")
                         .and_then(|row| row.religion_id)
                         .as_deref()
                         .and_then(OfficialReligion::from_id);
                     match religion {
-                        Some(OfficialReligion::RomanCatholic) => skills
-                            .written_languages
-                            .add_direct(WrittenLanguage::Latin, work_hours),
-                        Some(OfficialReligion::Judaism) => {
-                            skills
-                                .written_languages
-                                .add_direct(WrittenLanguage::Hebrew, work_hours * 0.75);
-                            skills
-                                .written_languages
-                                .add_direct(WrittenLanguage::Yiddish, work_hours * 0.25);
+                        Some(OfficialReligion::RomanCatholic) => {
+                            award_written(WrittenLanguage::Latin, work_hours)
                         }
-                        _ => skills
-                            .written_languages
-                            .add_direct(WrittenLanguage::German, work_hours),
+                        Some(OfficialReligion::Judaism) => {
+                            award_written(WrittenLanguage::Hebrew, work_hours * 0.75);
+                            award_written(WrittenLanguage::Yiddish, work_hours * 0.25);
+                        }
+                        _ => award_written(WrittenLanguage::German, work_hours),
                     }
                 }
             }
@@ -888,7 +885,7 @@ fn apply_training(
     skills.balance_hours = hours.balance;
     skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
-    crate::condition::record_mastery_training_morale(ctx, character_id, mastery_elapsed, excess);
+    excess
 }
 
 pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
@@ -1207,14 +1204,19 @@ pub fn perform_immediate_activity(
         .find(character_id)
         .ok_or("Character skills not found")?;
     let profile = activity_training_profile(ctx, character_id)?;
-    apply_training(
+    let excess = apply_training(
         ctx,
         character_id,
         &mut skills,
         &effective_schedule,
         MINUTES_PER_DAY,
-        u64::from(effective_minutes),
         profile,
+    );
+    crate::condition::record_mastery_training_morale(
+        ctx,
+        character_id,
+        u64::from(effective_minutes),
+        excess,
     );
     ctx.db.character_skills().character_id().update(skills);
     let risks = apply_activity_outcomes_without_leisure(
@@ -1473,10 +1475,18 @@ fn rest_for_minutes(
                     .character_skills()
                     .character_id()
                     .find(id)
-                    .map(|skills| (id, skills.oral_languages))
+                    .map(|skills| {
+                        let cap = ctx
+                            .db
+                            .character_attributes()
+                            .character_id()
+                            .find(id)
+                            .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+                        (id, skills.oral_languages, cap)
+                    })
             })
             .collect();
-        adventuresim_world_schema::party_common_oral_choices(&snapshot)
+        adventuresim_world_schema::party_common_oral_choices_capped(&snapshot)
             .into_iter()
             .find(|choice| choice.0 == character_id)
     });
@@ -1579,25 +1589,29 @@ fn rest_for_minutes(
             .find(character_id)
             .ok_or_else(|| "Character skill record not found".to_string())?;
         let activities = activity_training_profile(ctx, character_id)?;
-        apply_training(
+        let mut excess = apply_training(
             ctx,
             character_id,
             &mut skills,
             &schedule.downtime,
             training_elapsed,
-            training_elapsed,
             activities,
         );
         if let Some((_, language, coefficient)) = conversation_choice {
-            let excess = apply_oral_language_training(
+            excess += apply_oral_language_training(
                 ctx,
                 character_id,
                 &mut skills.oral_languages,
                 language,
                 training_elapsed as f32 / 60.0 * (2.0 / 3.0) * coefficient,
             );
-            crate::condition::record_mastery_training_morale(ctx, character_id, 0, excess);
         }
+        crate::condition::record_mastery_training_morale(
+            ctx,
+            character_id,
+            training_elapsed,
+            excess,
+        );
         ctx.db.character_skills().character_id().update(skills);
         let risks = apply_activity_outcomes(
             ctx,
@@ -1792,15 +1806,15 @@ fn advance_personal_camp_time(
             .find(member_id)
             .ok_or("Character skill record not found")?;
         let activities = activity_training_profile(ctx, member_id)?;
-        apply_training(
+        let excess = apply_training(
             ctx,
             member_id,
             &mut skills,
             &allowed,
             downtime,
-            downtime,
             activities,
         );
+        crate::condition::record_mastery_training_morale(ctx, member_id, downtime, excess);
         ctx.db.character_skills().character_id().update(skills);
         crate::condition::apply_settlement_leisure_condition(
             ctx,
@@ -1920,11 +1934,19 @@ pub fn rest_at_camp(
                 .character_skills()
                 .character_id()
                 .find(*id)
-                .map(|skills| (*id, skills.oral_languages))
+                .map(|skills| {
+                    let cap = ctx
+                        .db
+                        .character_attributes()
+                        .character_id()
+                        .find(*id)
+                        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+                    (*id, skills.oral_languages, cap)
+                })
         })
         .collect();
     let language_choices: BTreeMap<_, _> =
-        adventuresim_world_schema::party_common_oral_choices(&language_snapshot)
+        adventuresim_world_schema::party_common_oral_choices_capped(&language_snapshot)
             .into_iter()
             .map(|(id, language, coefficient)| (id, (language, coefficient)))
             .collect();
@@ -2017,25 +2039,24 @@ pub fn rest_at_camp(
                 .find(member_id)
                 .ok_or("Character skill record not found")?;
             let activities = activity_training_profile(ctx, member_id)?;
-            apply_training(
+            let mut excess = apply_training(
                 ctx,
                 member_id,
                 &mut skills,
                 &allowed,
                 downtime,
-                downtime,
                 activities,
             );
             if let Some((language, coefficient)) = language_choices.get(&member_id) {
-                let excess = apply_oral_language_training(
+                excess += apply_oral_language_training(
                     ctx,
                     member_id,
                     &mut skills.oral_languages,
                     *language,
                     downtime as f32 / 60.0 * (2.0 / 3.0) * coefficient,
                 );
-                crate::condition::record_mastery_training_morale(ctx, member_id, 0, excess);
             }
+            crate::condition::record_mastery_training_morale(ctx, member_id, downtime, excess);
             ctx.db.character_skills().character_id().update(skills);
             crate::condition::apply_settlement_leisure_condition(
                 ctx,
@@ -2176,14 +2197,19 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
     let training_elapsed = elapsed.saturating_sub(convalescing);
-    apply_training(
+    let excess = apply_training(
         ctx,
         character_id,
         &mut skills,
         &schedule.downtime,
         training_elapsed,
-        training_elapsed,
         activities,
+    );
+    crate::condition::record_mastery_training_morale(
+        ctx,
+        character_id,
+        training_elapsed,
+        excess,
     );
     ctx.db.character_skills().character_id().update(skills);
     let risks = apply_activity_outcomes(
