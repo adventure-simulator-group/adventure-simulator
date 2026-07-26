@@ -410,6 +410,22 @@ co-located party's strategic clocks, then uses the leader/party minute for
 light, evidence age, and recorded outcomes. Custody and hostile-resolution
 effects are committed only by their owning strategic adapters.
 
+### First-character authority
+
+First-character generation is a versioned strategic authority boundary. The
+age tier (`young`, `adult`, or `old`) is part of the GET, POST, reducer claim,
+and generated-ID coordinates alongside the private session seed and slot.
+Professional previews are regenerated from the organization catalog and the
+same package is persisted on confirmation; the browser never submits trusted
+attributes, skills, inventory, religion, or membership rows. Creation inserts
+the character, skill and equipment package, current organization membership,
+presentation, dues, and required professed religion in one reducer
+transaction. Tactical state is not involved.
+The public confirmation reducer is restricted to the registered strategic
+gateway. Membership timestamps are anchored to the character's initialized
+strategic minute, including the first paid dues interval, rather than assuming
+that a new character always starts at minute zero.
+
 ### Strategic tables
 
 | Table | Description |

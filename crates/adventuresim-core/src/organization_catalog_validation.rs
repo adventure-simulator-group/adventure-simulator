@@ -188,6 +188,18 @@ fn requirements(values: &[Value], source: &str, path: &str) -> Result<(), String
     Ok(())
 }
 
+fn professed_religions(values: &[Value]) -> BTreeSet<&str> {
+    values
+        .iter()
+        .filter_map(|value| {
+            let requirement = value.as_object()?;
+            (requirement.get("kind")?.as_str()? == "professed_religion")
+                .then(|| requirement.get("religion")?.as_str())
+                .flatten()
+        })
+        .collect()
+}
+
 pub fn validate_documents(
     documents: &[Value],
     sources: &[String],
@@ -195,6 +207,7 @@ pub fn validate_documents(
     policy_source: &str,
 ) -> Result<(), String> {
     let mut ids = BTreeSet::new();
+    let mut starting_professions = BTreeSet::new();
     for (document, source) in documents.iter().zip(sources) {
         let org = object(document, source, "organization")?;
         keys(
@@ -205,6 +218,7 @@ pub fn validate_documents(
                 "description",
                 "historical_fantasy_note",
                 "service_id",
+                "starting_role",
                 "chapters",
                 "recognition",
                 "admission",
@@ -227,6 +241,35 @@ pub fn validate_documents(
         }
         text(org, source, "name")?;
         text(org, source, "description")?;
+        if let Some(starting_role) = org.get("starting_role") {
+            let starting_role = object(starting_role, source, "starting_role")?;
+            keys(
+                starting_role,
+                &["profession", "adult_rank_id", "old_rank_id"],
+                source,
+                "starting_role",
+            )?;
+            let profession = text(starting_role, source, "profession")?;
+            if ![
+                "merchant",
+                "weaponsmith",
+                "armourer",
+                "tailor",
+                "herbalist",
+                "cook",
+                "learned_religious_practitioner",
+                "witch_hunter",
+                "knight",
+                "forester",
+            ]
+            .contains(&profession)
+            {
+                return Err(format!(
+                    "{source}: starting_role.profession {profession:?} is invalid"
+                ));
+            }
+            starting_professions.insert(profession.to_owned());
+        }
         unique_strings(array(org, source, "chapters")?, source, "chapters")?;
         let recognition = object(
             org.get("recognition")
@@ -348,6 +391,60 @@ pub fn validate_documents(
                 validate_privileges(privileges, source, &format!("{at}.privileges"))?;
             }
         }
+        if let Some(starting_role) = org.get("starting_role").and_then(Value::as_object) {
+            let adult = text(starting_role, source, "adult_rank_id")?;
+            let old = text(starting_role, source, "old_rank_id")?;
+            if adult == old {
+                return Err(format!(
+                    "{source}: starting_role adult and old ranks must be distinct"
+                ));
+            }
+            if !rank_ids.contains(adult) || !rank_ids.contains(old) {
+                return Err(format!(
+                    "{source}: starting_role references a missing adult or old rank"
+                ));
+            }
+            if array(org, source, "chapters")?.is_empty() {
+                return Err(format!(
+                    "{source}: starting_role organizations must have a playable chapter"
+                ));
+            }
+            if recognition.get("kind").and_then(Value::as_str) == Some("settlements") {
+                let chapters = array(org, source, "chapters")?;
+                let recognized = array(recognition, source, "settlement_ids")?;
+                if !chapters.iter().any(|chapter| recognized.contains(chapter)) {
+                    return Err(format!(
+                        "{source}: starting_role organization has no chapter in a recognized settlement"
+                    ));
+                }
+            }
+            let admission_requirements = org
+                .get("admission")
+                .and_then(Value::as_object)
+                .and_then(|admission| admission.get("requirements"))
+                .and_then(Value::as_array)
+                .map_or(&[][..], Vec::as_slice);
+            for rank_id in [adult, old] {
+                let rank_requirements = ranks
+                    .iter()
+                    .find_map(|rank| {
+                        let rank = rank.as_object()?;
+                        (rank.get("id")?.as_str()? == rank_id)
+                            .then(|| rank.get("requirements")?.as_array())
+                            .flatten()
+                    })
+                    .map_or(&[][..], Vec::as_slice);
+                let religions = professed_religions(admission_requirements)
+                    .into_iter()
+                    .chain(professed_religions(rank_requirements))
+                    .collect::<BTreeSet<_>>();
+                if religions.len() > 1 {
+                    return Err(format!(
+                        "{source}: starting_role rank {rank_id:?} conflicts with admission religion"
+                    ));
+                }
+            }
+        }
         let activity = object(
             org.get("activity")
                 .ok_or_else(|| format!("{source}: activity is required"))?,
@@ -414,6 +511,24 @@ pub fn validate_documents(
             ));
         }
         validate_privileges(array(org, source, "privileges")?, source, "privileges")?;
+    }
+    for profession in [
+        "merchant",
+        "weaponsmith",
+        "armourer",
+        "tailor",
+        "herbalist",
+        "cook",
+        "learned_religious_practitioner",
+        "witch_hunter",
+        "knight",
+        "forester",
+    ] {
+        if documents.len() > 1 && !starting_professions.contains(profession) {
+            return Err(format!(
+                "organization catalog has no eligible starting organization for {profession}"
+            ));
+        }
     }
     let policies = policy
         .as_array()
@@ -581,6 +696,92 @@ mod tests {
             validate(duplicate_rank, json!([]))
                 .unwrap_err()
                 .contains("duplicate")
+        );
+    }
+
+    #[test]
+    fn rejects_bad_starting_rank_mappings() {
+        let mut same_rank = valid_organization();
+        same_rank["starting_role"] = json!({
+            "profession": "cook",
+            "adult_rank_id": "member",
+            "old_rank_id": "member"
+        });
+        assert!(
+            validate(same_rank, json!([]))
+                .unwrap_err()
+                .contains("must be distinct")
+        );
+
+        let mut missing_rank = valid_organization();
+        missing_rank["starting_role"] = json!({
+            "profession": "cook",
+            "adult_rank_id": "member",
+            "old_rank_id": "master"
+        });
+        assert!(
+            validate(missing_rank, json!([]))
+                .unwrap_err()
+                .contains("missing")
+        );
+    }
+
+    #[test]
+    fn rejects_starting_chapter_outside_scoped_recognition() {
+        let mut organization = valid_organization();
+        organization["ranks"].as_array_mut().unwrap().push(json!({
+            "id": "master",
+            "name": "Master",
+            "description": "A master.",
+            "requirements": [],
+            "practice_allowed": true,
+            "practice_reward_interval_minutes": 120
+        }));
+        organization["starting_role"] = json!({
+            "profession": "cook",
+            "adult_rank_id": "member",
+            "old_rank_id": "master"
+        });
+        organization["recognition"]["settlement_ids"] = json!(["viabundus-99"]);
+        assert!(
+            validate(organization, json!([]))
+                .unwrap_err()
+                .contains("no chapter in a recognized settlement")
+        );
+    }
+
+    #[test]
+    fn rejects_starting_rank_religion_conflict() {
+        let mut organization = valid_organization();
+        organization["admission"]["requirements"] =
+            json!([{"kind": "professed_religion", "religion": "lutheran"}]);
+        organization["ranks"] = json!([
+            {
+                "id": "member",
+                "name": "Member",
+                "description": "A member.",
+                "requirements": [{"kind": "professed_religion", "religion": "roman_catholic"}],
+                "practice_allowed": true,
+                "practice_reward_interval_minutes": 480
+            },
+            {
+                "id": "master",
+                "name": "Master",
+                "description": "A master.",
+                "requirements": [],
+                "practice_allowed": true,
+                "practice_reward_interval_minutes": 120
+            }
+        ]);
+        organization["starting_role"] = json!({
+            "profession": "cook",
+            "adult_rank_id": "member",
+            "old_rank_id": "master"
+        });
+        assert!(
+            validate(organization, json!([]))
+                .unwrap_err()
+                .contains("conflicts with admission religion")
         );
     }
 }

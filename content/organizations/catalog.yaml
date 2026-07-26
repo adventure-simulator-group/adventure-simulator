@@ -4,6 +4,11 @@
         "name":  "Company of Merchants",
         "description":  "A local fellowship of traders, factors, and market brokers.",
         "service_id":  "merchants",
+        "starting_role":  {
+                              "profession":  "merchant",
+                              "adult_rank_id":  "journeyman",
+                              "old_rank_id":  "master"
+                          },
         "chapters":  [
                          "viabundus-0",
                          "viabundus-2337",
@@ -86,6 +91,11 @@
         "name":  "Weaponsmiths\u0027 Guild",
         "description":  "A local fellowship governing weapon and shield work.",
         "service_id":  "weapons",
+        "starting_role":  {
+                              "profession":  "weaponsmith",
+                              "adult_rank_id":  "journeyman",
+                              "old_rank_id":  "master"
+                          },
         "chapters":  [
                          "viabundus-0",
                          "viabundus-2337",
@@ -164,6 +174,11 @@
         "name":  "Armourers\u0027 Guild",
         "description":  "A local fellowship of makers and fitters of armor.",
         "service_id":  "armor",
+        "starting_role":  {
+                              "profession":  "armourer",
+                              "adult_rank_id":  "journeyman",
+                              "old_rank_id":  "master"
+                          },
         "chapters":  [
                          "viabundus-0",
                          "viabundus-2337",
@@ -242,6 +257,11 @@
         "name":  "Tailors\u0027 Guild",
         "description":  "A local fellowship of cutters, fitters, and clothing repairers.",
         "service_id":  "clothing",
+        "starting_role":  {
+                              "profession":  "tailor",
+                              "adult_rank_id":  "journeyman",
+                              "old_rank_id":  "master"
+                          },
         "chapters":  [
                          "viabundus-0",
                          "viabundus-2337",
@@ -320,6 +340,11 @@
         "name":  "College of Herbalists",
         "description":  "A local learned fellowship for remedies and wound care.",
         "service_id":  "herbalist",
+        "starting_role":  {
+                              "profession":  "herbalist",
+                              "adult_rank_id":  "practitioner",
+                              "old_rank_id":  "physician"
+                          },
         "chapters":  [
                          "viabundus-0",
                          "viabundus-2337",
@@ -418,6 +443,11 @@
         "name":  "Cooks\u0027 Guild",
         "description":  "A local fellowship of tavern and household cooks.",
         "service_id":  "inn",
+        "starting_role":  {
+                              "profession":  "cook",
+                              "adult_rank_id":  "journeyman",
+                              "old_rank_id":  "master"
+                          },
         "chapters":  [
                          "viabundus-0",
                          "viabundus-2337",
@@ -496,6 +526,11 @@
         "name":  "Confraternity of Christian Doctrine",
         "description":  "A learned Roman Catholic confraternity recognized across settlements.",
         "service_id":  "religion",
+        "starting_role":  {
+                              "profession":  "learned_religious_practitioner",
+                              "adult_rank_id":  "cleric",
+                              "old_rank_id":  "doctor"
+                          },
         "chapters":  [
                          "viabundus-1826"
                      ],
@@ -724,6 +759,11 @@
         "name":  "Lutheran Visitation of Readers",
         "description":  "A learned Lutheran visitation represented at Goslar and GÃ¶ttingen.",
         "service_id":  "religion",
+        "starting_role":  {
+                              "profession":  "learned_religious_practitioner",
+                              "adult_rank_id":  "reader",
+                              "old_rank_id":  "visitor"
+                          },
         "chapters":  [
                          "viabundus-2337",
                          "viabundus-0"
@@ -750,6 +790,22 @@
                                            ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "reader",
+                          "name":  "Reader",
+                          "description":  "A newly licensed reader of doctrine.",
+                          "requirements":  [],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  240
+                      },
+                      {
+                          "id":  "visitor",
+                          "name":  "Visitor",
+                          "description":  "A master entrusted to examine doctrine and teachers.",
+                          "requirements":  [],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
                       }
                   ],
         "activity":  {
@@ -911,6 +967,11 @@
         "name":  "Brotherhood of Saint Peter Martyr",
         "description":  "A commissioned Roman Catholic confraternity investigating supernatural threats.",
         "historical_fantasy_note":  "A historical-fantasy institution inspired by confraternities and judicial commissions, not a claim of a standing historical witch-hunter guild.",
+        "starting_role":  {
+                              "profession":  "witch_hunter",
+                              "adult_rank_id":  "examiner",
+                              "old_rank_id":  "inquisitor"
+                          },
         "chapters":  [
                          "viabundus-1826"
                      ],
@@ -961,6 +1022,14 @@
                                            ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  120
+                      },
+                      {
+                          "id":  "inquisitor",
+                          "name":  "Inquisitor",
+                          "description":  "A master examiner trusted to direct investigations.",
+                          "requirements":  [],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  60
                       }
                   ],
         "activity":  {
@@ -992,6 +1061,11 @@
         "name":  "Brotherhood of the Watchful Lamp",
         "description":  "A commissioned Lutheran fellowship investigating supernatural threats.",
         "historical_fantasy_note":  "A historical-fantasy institution modeled as a territorial visitation.",
+        "starting_role":  {
+                              "profession":  "witch_hunter",
+                              "adult_rank_id":  "examiner",
+                              "old_rank_id":  "visitor"
+                          },
         "chapters":  [
                          "viabundus-2337"
                      ],
@@ -1017,6 +1091,22 @@
                                            ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "examiner",
+                          "name":  "Examiner",
+                          "description":  "A licensed investigator of supernatural reports.",
+                          "requirements":  [],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  240
+                      },
+                      {
+                          "id":  "visitor",
+                          "name":  "Visitor",
+                          "description":  "A master examiner who directs territorial visitations.",
+                          "requirements":  [],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
                       }
                   ],
         "activity":  {
@@ -1216,6 +1306,11 @@
         "name":  "Order of Saint George",
         "description":  "A Roman Catholic military-religious fellowship.",
         "historical_fantasy_note":  "An invented historical-fantasy order.",
+        "starting_role":  {
+                              "profession":  "knight",
+                              "adult_rank_id":  "knight",
+                              "old_rank_id":  "commander"
+                          },
         "chapters":  [
                          "viabundus-1826"
                      ],
@@ -1255,6 +1350,14 @@
                                            ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  120
+                      },
+                      {
+                          "id":  "commander",
+                          "name":  "Commander",
+                          "description":  "A veteran knight entrusted with command.",
+                          "requirements":  [],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  60
                       }
                   ],
         "activity":  {
@@ -1285,6 +1388,11 @@
         "id":  "brandenburg_bailiwick_saint_john",
         "name":  "Brandenburg Bailiwick of Saint John",
         "description":  "The Lutheran Brandenburg bailiwick of the Order of Saint John.",
+        "starting_role":  {
+                              "profession":  "knight",
+                              "adult_rank_id":  "knight",
+                              "old_rank_id":  "commander"
+                          },
         "chapters":  [
                          "viabundus-2337"
                      ],
@@ -1310,6 +1418,22 @@
                                            ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "knight",
+                          "name":  "Knight Brother",
+                          "description":  "A newly proven brother of the bailiwick.",
+                          "requirements":  [],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  240
+                      },
+                      {
+                          "id":  "commander",
+                          "name":  "Commander",
+                          "description":  "A veteran knight entrusted with a commandery.",
+                          "requirements":  [],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
                       }
                   ],
         "activity":  {
@@ -1508,6 +1632,11 @@
         "id":  "wardens_harz",
         "name":  "Wardens of the Harz",
         "description":  "Sworn wardens of forest roads, game, and dangerous beasts.",
+        "starting_role":  {
+                              "profession":  "forester",
+                              "adult_rank_id":  "warden",
+                              "old_rank_id":  "master"
+                          },
         "historical_fantasy_note":  "An invented body using period-appropriate territorial forest-office language.",
         "chapters":  [
                          "viabundus-2337"
@@ -1598,6 +1727,11 @@
         "id":  "keepers_solling",
         "name":  "Keepers of the Solling",
         "description":  "Territorial keepers of woods, roads, and game.",
+        "starting_role":  {
+                              "profession":  "forester",
+                              "adult_rank_id":  "keeper",
+                              "old_rank_id":  "master"
+                          },
         "historical_fantasy_note":  "An invented body using period-appropriate forest-office language.",
         "chapters":  [
                          "viabundus-0"
@@ -1673,6 +1807,11 @@
         "id":  "company_green_staff_thuringia",
         "name":  "Company of the Green Staff of Thuringia",
         "description":  "A company of sworn foresters and march wardens.",
+        "starting_role":  {
+                              "profession":  "forester",
+                              "adult_rank_id":  "green_staff",
+                              "old_rank_id":  "master"
+                          },
         "historical_fantasy_note":  "An invented body using period-appropriate forest-office language.",
         "chapters":  [
                          "viabundus-1826"

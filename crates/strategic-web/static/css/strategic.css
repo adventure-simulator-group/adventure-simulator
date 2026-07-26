@@ -4762,6 +4762,56 @@ body.chat-resizing {
 .prototype-disclaimer { margin: 0 0 1rem; padding: .8rem 1rem; border: 2px solid #d7aa48; background: #342b19; color: #fff2c9; font-weight: 700; text-align: center; }
 .candidate-stage { position: relative; }
 .candidate-play-action { display: flex; justify-content: center; margin: 1rem auto; }
+.candidate-package-summary {
+  margin: 0.9rem auto;
+  padding: 0.8rem 1rem;
+  max-width: 42rem;
+  border: 1px solid var(--border-light);
+  background: var(--panel-bg);
+}
+.candidate-package-summary p { margin: 0.25rem 0; overflow-wrap: anywhere; }
+.candidate-age-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.25rem auto;
+  max-width: 48rem;
+}
+.candidate-age-option {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid var(--border-accent);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.candidate-age-option:hover,
+.candidate-age-option:focus-visible { border-color: var(--accent); }
+.candidate-age-option span { color: var(--text-muted); font-size: var(--font-size-sm); }
+.center-content:has([data-candidate-roster]) .party-portrait-overlay {
+  position: relative;
+  top: auto;
+  right: auto;
+  left: auto;
+  width: min(46rem, calc(100% - 1rem));
+  max-width: none;
+  margin: 0.5rem auto 1rem;
+  padding: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  overflow: visible;
+  transform: none;
+}
+.center-content:has([data-candidate-roster]) .party-portrait-overlay > [data-party-portrait-members] {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem 0.9rem;
+}
+@media (max-width: 600px) {
+  .candidate-age-options { grid-template-columns: 1fr; }
+}
 
 .strategic-notice-main { display: grid; min-height: 28rem; place-items: center; background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%); }
 .strategic-notice { width: min(32rem, 100%); padding: 2rem; border: 1px solid var(--border-accent); background: var(--panel-bg); box-shadow: var(--shadow-lg); text-align: center; }

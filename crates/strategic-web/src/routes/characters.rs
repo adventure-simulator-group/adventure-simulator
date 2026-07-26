@@ -16,7 +16,7 @@ use crate::spacetimedb::{Character, CharacterStrategicCondition};
 use crate::templates::character::{
     character_candidates_bootstrap_page, character_candidates_page, characters_list_page,
 };
-use adventuresim_core::starting_character::{GENERATOR_VERSION, generate, roster};
+use adventuresim_core::starting_character::{GENERATOR_VERSION, StartingAgeTier, generate, roster};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -35,6 +35,7 @@ pub fn routes() -> Router<AppState> {
 struct CandidateQuery {
     version: Option<u16>,
     seed: Option<String>,
+    age: Option<StartingAgeTier>,
     selected: Option<u8>,
 }
 
@@ -77,6 +78,7 @@ async fn character_condition(
 struct ConfirmCandidateForm {
     version: u16,
     seed: String,
+    age: StartingAgeTier,
     slot: u8,
 }
 
@@ -106,11 +108,12 @@ async fn list_characters(State(state): State<AppState>, session: Session) -> Res
 }
 
 async fn candidate_roster(Query(query): Query<CandidateQuery>) -> Response {
-    let (Some(version), Some(seed)) = (query.version, query.seed.as_deref()) else {
+    let (Some(version), Some(seed), Some(age)) = (query.version, query.seed.as_deref(), query.age)
+    else {
         return Html(character_candidates_bootstrap_page(GENERATOR_VERSION).into_string())
             .into_response();
     };
-    let candidates = match roster(version, seed) {
+    let candidates = match roster(version, seed, age) {
         Ok(candidates) => candidates,
         Err(_) => {
             return Html(character_candidates_bootstrap_page(GENERATOR_VERSION).into_string())
@@ -118,7 +121,7 @@ async fn candidate_roster(Query(query): Query<CandidateQuery>) -> Response {
         }
     };
     let selected = query.selected.filter(|slot| *slot < candidates.len() as u8);
-    Html(character_candidates_page(version, seed, &candidates, selected).into_string())
+    Html(character_candidates_page(version, seed, age, &candidates, selected).into_string())
         .into_response()
 }
 
@@ -126,7 +129,7 @@ async fn confirm_candidate(
     State(state): State<AppState>,
     Form(form): Form<ConfirmCandidateForm>,
 ) -> Response {
-    let spec = match generate(form.version, &form.seed, form.slot) {
+    let spec = match generate(form.version, &form.seed, form.age, form.slot) {
         Ok(spec) => spec,
         Err(error) => return (axum::http::StatusCode::BAD_REQUEST, error).into_response(),
     };
@@ -134,7 +137,16 @@ async fn confirm_candidate(
         .db
         .call(
             "create_starting_character",
-            &[json!(form.version), json!(form.seed), json!(form.slot)],
+            &[
+                json!(form.version),
+                json!(form.seed),
+                json!(match form.age {
+                    StartingAgeTier::Young => "Young",
+                    StartingAgeTier::Adult => "Adult",
+                    StartingAgeTier::Old => "Old",
+                }),
+                json!(form.slot),
+            ],
         )
         .await
     {

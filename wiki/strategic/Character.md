@@ -48,7 +48,27 @@ same time. Action labels remain grounded in facts the simulation actually knows.
 The character sheet groups the six skills beneath an expandable **Social** row,
 whose displayed value is their average.
 
-First-time players choose among five generated whole characters with different backgrounds, attributes, combat training, equipment, and personality presentations. They cannot customize individual fields: personality and tradeoffs are part of choosing an existing mortal person rather than assembling one stat by stat. The roster is reproduced from a private random seed stored for the browser tab, but nothing is stored on the server until a candidate is confirmed.
+First-time players first choose a life stage, then choose a generated whole
+character. Young candidates are age 16, professionless, and offered as a varied
+roster of five. Adult candidates are age 22 and freshly
+journeyman-equivalent; old candidates are age 40 and master-equivalent. Adult
+and old rosters each offer one candidate for merchant, weaponsmith, armourer,
+tailor, herbalist, cook, learned religious practitioner, witch hunter, knight,
+and forester. The specific eligible organization is deterministic but random
+from the player's perspective.
+
+Professional candidates preview and receive their complete plausible package:
+organization and mapped rank, current dues and presentation, required
+profession of faith, qualifying skills, equipment, ammunition, and currency.
+Packages are authored per profession and life stage rather than layered over a
+generic combat archetype: a newly qualified adult has a modest working kit and
+purse, while an old master has veteran equipment, more supplies, a larger
+purse, and profession-sensitive experience and presentation. Only deliberately
+equipped items contribute to the previewed combat capability.
+Players cannot customize individual fields. The roster is reproduced from a
+private random seed stored for the browser tab, but nothing is stored on the
+server until a candidate is confirmed. Age is intended to carry further
+tradeoffs later; those tradeoffs are deliberately not specified yet.
 
 ## Mortal
 

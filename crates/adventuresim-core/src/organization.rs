@@ -27,6 +27,8 @@ pub struct OrganizationDefinition {
     #[serde(default)]
     pub service_id: Option<String>,
     #[serde(default)]
+    pub starting_role: Option<OrganizationStartingRole>,
+    #[serde(default)]
     pub chapters: Vec<String>,
     pub recognition: Recognition,
     #[serde(default)]
@@ -37,6 +39,61 @@ pub struct OrganizationDefinition {
     pub activity: OrganizationActivity,
     #[serde(default)]
     pub privileges: Vec<Privilege>,
+}
+
+/// Explicit character-creation metadata. This is deliberately authored rather
+/// than inferred from services, names, requirements, or training skills.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationStartingRole {
+    pub profession: StartingProfession,
+    pub adult_rank_id: String,
+    pub old_rank_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StartingProfession {
+    Merchant,
+    Weaponsmith,
+    Armourer,
+    Tailor,
+    Herbalist,
+    Cook,
+    LearnedReligiousPractitioner,
+    WitchHunter,
+    Knight,
+    Forester,
+}
+
+impl StartingProfession {
+    pub const ALL: [Self; 10] = [
+        Self::Merchant,
+        Self::Weaponsmith,
+        Self::Armourer,
+        Self::Tailor,
+        Self::Herbalist,
+        Self::Cook,
+        Self::LearnedReligiousPractitioner,
+        Self::WitchHunter,
+        Self::Knight,
+        Self::Forester,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Merchant => "Merchant",
+            Self::Weaponsmith => "Weaponsmith",
+            Self::Armourer => "Armourer",
+            Self::Tailor => "Tailor",
+            Self::Herbalist => "Herbalist",
+            Self::Cook => "Cook",
+            Self::LearnedReligiousPractitioner => "Learned religious practitioner",
+            Self::WitchHunter => "Witch hunter",
+            Self::Knight => "Knight",
+            Self::Forester => "Forester",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
