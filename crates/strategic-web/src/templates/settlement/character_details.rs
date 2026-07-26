@@ -1,4 +1,7 @@
-use adventuresim_core::strategic_schedule::CombatTrainingProfile;
+use adventuresim_core::{
+    organization::{OrganizationDefinition, OrganizationRank, organization},
+    strategic_schedule::CombatTrainingProfile,
+};
 use maud::{Markup, html};
 
 use super::{
@@ -15,9 +18,9 @@ use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills,
     CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem, ItemDefinition,
-    LimbInjury, Party, RetainedProjectile,
+    LimbInjury, OrganizationMembership, OrganizationPresentation, Party, RetainedProjectile,
 };
-use crate::templates::{decorative_game_icon, sidebar_section};
+use crate::templates::{decorative_game_icon, religion_icon, sidebar_section};
 
 fn character_summary_rail(capability: Option<&CharacterCapability>) -> Markup {
     let tags = capability
@@ -80,6 +83,9 @@ pub(crate) struct CharacterSheetView<'a> {
     pub skills_title: &'a str,
     pub description: &'a str,
     pub can_renounce: bool,
+    pub organization_memberships: &'a [OrganizationMembership],
+    pub organization_presentation: Option<&'a OrganizationPresentation>,
+    pub organization_minute: u64,
     pub physiology_dialog_id: Option<&'a str>,
     pub surgery: Option<(&'a str, Option<&'a str>)>,
     pub injuries: &'a [LimbInjury],
@@ -133,6 +139,9 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
                 view.personality,
                 view.can_renounce,
                 view.location_path,
+                view.organization_memberships,
+                view.organization_presentation,
+                view.organization_minute,
             ))
             (party_skills_rail(
                 view.skills_title,
@@ -170,6 +179,9 @@ pub fn party_personal_page(
     condition: Option<&CharacterStrategicCondition>,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
+    organization_memberships: &[OrganizationMembership],
+    organization_presentation: Option<&OrganizationPresentation>,
+    organization_minute: u64,
     prayer_religion_check: f32,
     schedule: Option<&CharacterTrainingSchedule>,
     combat_profile: CombatTrainingProfile,
@@ -259,6 +271,9 @@ pub fn party_personal_page(
         skills_title: "Your skills",
         description: "Your identity, condition, and capabilities",
         can_renounce: true,
+        organization_memberships,
+        organization_presentation,
+        organization_minute,
         physiology_dialog_id: Some("physiology-chart-dialog"),
         surgery: Some((&surgery_path_template, surgery_open)),
         injuries,
@@ -380,6 +395,9 @@ pub fn party_stats_page(
         skills_title: &selected_skills_title,
         description: "Party member identity and capabilities",
         can_renounce: selected.id == active_character.id,
+        organization_memberships: &[],
+        organization_presentation: None,
+        organization_minute: 0,
         physiology_dialog_id: Some("physiology-chart-dialog"),
         surgery: Some((&surgery_path_template, surgery_open)),
         injuries,
@@ -424,6 +442,9 @@ fn character_bio_rail(
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     can_renounce: bool,
     location_path: &str,
+    organization_memberships: &[OrganizationMembership],
+    organization_presentation: Option<&OrganizationPresentation>,
+    organization_minute: u64,
 ) -> Markup {
     html! {
         (sidebar_section("Bio", html! {
@@ -440,29 +461,217 @@ fn character_bio_rail(
                         } }
                     }
                 }
-                div class="character-religion" {
-                    dt class="metric-label" { (decorative_game_icon("holy-symbol")) span { "Religion" } }
-                    dd {
-                        (religion_name(religion_id))
-                        @if can_renounce && religion_id.is_some() {
-                            form method="post" action=(format!("{location_path}/party/{}/religion/renounce", character.id)) class="character-religion-action" {
-                                button type="submit" class="btn btn-danger" title="Renounce this faith" { "Renounce" }
-                            }
-                        }
-                    }
-                }
-                @if character.current_settlement_id.is_some() {
-                    div {
-                        dt class="metric-label" { (decorative_game_icon("shield")) span { "Organizations" } }
-                        dd {
-                            a class="btn" href=(format!("{location_path}/party/{}/organizations", character.id)) {
-                                "Manage memberships"
-                            }
+                @if can_renounce {
+                    div class="character-identity-controls" {
+                        (religion_identity_button(character, religion_id, location_path))
+                        @if let Some(settlement_id) = character.current_settlement_id.as_deref() {
+                            (organization_identity_picker(
+                                character,
+                                settlement_id,
+                                location_path,
+                                organization_memberships,
+                                organization_presentation,
+                                organization_minute,
+                            ))
                         }
                     }
                 }
             }
         }))
+    }
+}
+
+fn religion_identity_button(
+    character: &Character,
+    religion_id: Option<&str>,
+    location_path: &str,
+) -> Markup {
+    let name = religion_name(religion_id);
+    html! {
+        @if religion_id.is_some() {
+            form method="post"
+                action=(format!("{location_path}/party/{}/religion/renounce", character.id))
+                class="identity-control-form" {
+                button type="submit" class="identity-control religion-identity-control"
+                    title=(format!("Renounce {name}")) {
+                    (religion_icon(name, religion_id, true))
+                    span class="religion-control-copy" {
+                        span class="religion-control-name" { (name) }
+                        span class="religion-control-renounce" aria-hidden="true" { "Renounce" }
+                    }
+                }
+            }
+        } @else {
+            button type="button" class="identity-control religion-identity-control is-empty"
+                disabled aria-label="No Religion" {
+                (religion_icon("No Religion", None, true))
+                span { "No Religion" }
+            }
+        }
+    }
+}
+
+fn organization_identity_picker(
+    character: &Character,
+    settlement_id: &str,
+    location_path: &str,
+    memberships: &[OrganizationMembership],
+    presentation: Option<&OrganizationPresentation>,
+    minute: u64,
+) -> Markup {
+    let choices = memberships
+        .iter()
+        .filter_map(|membership| {
+            let definition = organization(&membership.organization_id)?;
+            let rank = definition.rank(&membership.rank_id)?;
+            (membership.status == "active"
+                && minute <= membership.dues_paid_through_minute
+                && definition.recognition.includes(settlement_id))
+            .then_some((membership, definition, rank))
+        })
+        .collect::<Vec<_>>();
+    let selected = presentation.and_then(|presentation| {
+        choices
+            .iter()
+            .copied()
+            .find(|(_, definition, _)| definition.id == presentation.organization_id)
+    });
+    let base = format!(
+        "/locations/settlement/{settlement_id}/party/{}",
+        character.id
+    );
+    let summary_class = if selected.is_none() {
+        "identity-control organization-identity-control is-empty"
+    } else {
+        "identity-control organization-identity-control"
+    };
+
+    html! {
+        details class="organization-identity-picker" {
+            summary class=(summary_class) {
+                @if let Some((_, definition, rank)) = selected {
+                    (organization_crest(definition))
+                    (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
+                } @else {
+                    (empty_organization_crest())
+                    (organization_identity_copy("No organization", "No Profession"))
+                }
+                span class="organization-picker-arrow" aria-hidden="true" {}
+            }
+            div class="organization-picker-menu" role="menu" {
+                form method="post" action=(format!("{base}/organizations-none?return_to=character")) {
+                    button type="submit" class=(if selected.is_none() { "organization-picker-option is-selected" } else { "organization-picker-option" })
+                        role="menuitem" {
+                        (empty_organization_crest())
+                        (organization_identity_copy("No organization", "No Profession"))
+                    }
+                }
+                @for (_, definition, rank) in choices {
+                    @let is_selected = selected.is_some_and(|(_, selected_definition, _)| selected_definition.id == definition.id);
+                    form method="post" action=(format!("{base}/organizations/{}/present?return_to=character", definition.id)) {
+                        button type="submit" class=(if is_selected { "organization-picker-option is-selected" } else { "organization-picker-option" })
+                            role="menuitem" {
+                            (organization_crest(definition))
+                            (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
+                        }
+                    }
+                }
+                a class="organization-picker-manage" href=(format!("{location_path}/party/{}/organizations", character.id)) {
+                    "Manage memberships"
+                }
+            }
+        }
+    }
+}
+
+fn organization_identity_copy(organization_name: &str, profession: &str) -> Markup {
+    html! {
+        span class="organization-control-copy" {
+            span class="organization-control-name" { (organization_name) }
+            span class="organization-control-profession" { (profession) }
+        }
+    }
+}
+
+fn profession_name(definition: &OrganizationDefinition, rank: &OrganizationRank) -> String {
+    let profession = match definition.service_id.as_deref() {
+        Some("merchants") => Some("Merchant"),
+        Some("weapons") => Some("Weaponsmith"),
+        Some("armor") => Some("Armourer"),
+        Some("clothing") => Some("Tailor"),
+        Some("herbalist") => Some("Herbalist"),
+        Some("inn") => Some("Cook"),
+        _ => None,
+    };
+    profession.map_or_else(
+        || rank.name.clone(),
+        |profession| match rank.id.as_str() {
+            "apprentice" | "journeyman" | "master" => format!("{} {profession}", rank.name),
+            _ => profession.to_string(),
+        },
+    )
+}
+
+fn organization_crest(definition: &OrganizationDefinition) -> Markup {
+    let (field, accent) = organization_colors(&definition.id);
+    let charge = organization_charge(definition);
+    html! {
+        span class="organization-crest"
+            style=(format!(
+                "--crest-field: {field}; --crest-accent: {accent}; --crest-charge: url('/static/icons/game/{charge}.svg')"
+            ))
+            role="img" aria-label=(format!("{} heraldry", definition.name)) {
+            span class="organization-crest-charge" aria-hidden="true" {}
+        }
+    }
+}
+
+fn empty_organization_crest() -> Markup {
+    html! {
+        span class="organization-crest organization-crest-empty" aria-hidden="true" {
+            span class="organization-crest-charge" {}
+        }
+    }
+}
+
+fn organization_colors(id: &str) -> (&'static str, &'static str) {
+    const PALETTES: &[(&str, &str)] = &[
+        ("#7f1d1d", "#f5d77b"),
+        ("#173f5f", "#d9edf7"),
+        ("#285943", "#f0cf65"),
+        ("#4c2a63", "#e6c9ff"),
+        ("#7a4b12", "#f6e7c1"),
+        ("#1e4d4f", "#f1b24a"),
+        ("#5a2333", "#f3d9a5"),
+        ("#243b67", "#d8c89b"),
+    ];
+    let hash = id.bytes().fold(0usize, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(usize::from(byte))
+    });
+    PALETTES[hash % PALETTES.len()]
+}
+
+fn organization_charge(definition: &OrganizationDefinition) -> &'static str {
+    match definition.service_id.as_deref() {
+        Some("merchants") => "coins",
+        Some("weapons") => "anvil",
+        Some("armor") => "breastplate",
+        Some("clothing") => "clothes",
+        Some("herbalist") => "caduceus",
+        Some("inn") => "meal",
+        _ if definition.id.contains("forester") => "wood-axe",
+        _ if definition.id.contains("saint_george")
+            || definition.id.contains("royal")
+            || definition.id.contains("knight") =>
+        {
+            "mounted-knight"
+        }
+        _ if definition.id.contains("witch") || definition.id.contains("watchful") => "eye-target",
+        _ if definition.id.contains("religion") || definition.id.contains("theolog") => {
+            "gothic-cross"
+        }
+        _ if definition.id.contains("scholar") || definition.id.contains("college") => "open-book",
+        _ => "shield",
     }
 }
 
@@ -647,5 +856,28 @@ mod tests {
         ] {
             assert_eq!(religion_name(Some(id)), label);
         }
+    }
+
+    #[test]
+    fn every_catalog_organization_has_stable_heraldry() {
+        for definition in &adventuresim_core::organization::catalog().organizations {
+            let first = organization_crest(definition).into_string();
+            let second = organization_crest(definition).into_string();
+            assert_eq!(
+                first, second,
+                "{} crest changed within a render",
+                definition.id
+            );
+            assert!(first.contains("organization-crest"));
+            assert!(first.contains("/static/icons/game/"));
+            assert!(first.contains(&format!("{} heraldry", definition.name)));
+        }
+    }
+
+    #[test]
+    fn service_memberships_name_the_profession() {
+        let definition = organization("weaponsmith_guild").expect("weapons guild");
+        let rank = definition.ranks.first().expect("weapons guild rank");
+        assert_eq!(profession_name(definition, rank), "Apprentice Weaponsmith");
     }
 }

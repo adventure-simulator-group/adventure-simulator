@@ -27,6 +27,14 @@ organizations, and a deliberately eccentric Catholic cooks test organization.
 These are historically informed fictional institutions rather than claims that
 each exact organization existed in every listed settlement.
 
+The character sheet exposes the presented organization as a compact profession
+picker. Its large label combines the member's rank with the service profession
+where one exists (for example, `Apprentice Weaponsmith`), while the smaller
+label names the organization. Crests are stable heraldic marks derived from the
+organization ID and service using the locally vendored Game Icons charges, so
+every catalog organization has a stable heraldic identity without
+presentation-only persistence fields.
+
 ## Persistence and authority
 
 SpacetimeDB owns membership, rank, dues, presentation, payment, promotion, and

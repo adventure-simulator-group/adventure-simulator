@@ -2297,6 +2297,7 @@ async fn character_organizations(
 async fn update_character_organization(
     State(state): State<AppState>,
     Path((id, character_id, organization_id, action)): Path<(String, u64, String, String)>,
+    Query(query): Query<OrganizationActionQuery>,
     session: Session,
 ) -> Response {
     if session.character_id_u64() != Some(character_id) {
@@ -2314,10 +2315,9 @@ async fn update_character_organization(
         .call(reducer, &[json!(character_id), json!(organization_id)])
         .await
     {
-        Ok(()) => Redirect::to(&format!(
-            "/locations/settlement/{id}/party/{character_id}/organizations"
-        ))
-        .into_response(),
+        Ok(()) => {
+            Redirect::to(&organization_action_redirect(&id, character_id, &query)).into_response()
+        }
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
@@ -2325,6 +2325,7 @@ async fn update_character_organization(
 async fn clear_presented_organization(
     State(state): State<AppState>,
     Path((id, character_id)): Path<(String, u64)>,
+    Query(query): Query<OrganizationActionQuery>,
     session: Session,
 ) -> Response {
     if session.character_id_u64() != Some(character_id) {
@@ -2335,11 +2336,28 @@ async fn clear_presented_organization(
         .call("clear_organization_presentation", &[json!(character_id)])
         .await
     {
-        Ok(()) => Redirect::to(&format!(
-            "/locations/settlement/{id}/party/{character_id}/organizations"
-        ))
-        .into_response(),
+        Ok(()) => {
+            Redirect::to(&organization_action_redirect(&id, character_id, &query)).into_response()
+        }
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+#[derive(Default, Deserialize)]
+struct OrganizationActionQuery {
+    return_to: Option<String>,
+}
+
+fn organization_action_redirect(
+    settlement_id: &str,
+    character_id: u64,
+    query: &OrganizationActionQuery,
+) -> String {
+    let base = format!("/locations/settlement/{settlement_id}/party/{character_id}");
+    if query.return_to.as_deref() == Some("character") {
+        base
+    } else {
+        format!("{base}/organizations")
     }
 }
 
@@ -2941,6 +2959,14 @@ async fn render_party_personal(
         ))
         .await
         .unwrap_or_default();
+    let organization_presentation = state
+        .db
+        .query_one::<crate::spacetimedb::OrganizationPresentation>(&format!(
+            "SELECT * FROM organization_presentation WHERE character_id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten();
     let character_minute = query_single::<CharacterTime>(&state, "character_time", character_id)
         .await
         .map_or(0, |time| time.minutes);
@@ -3061,6 +3087,9 @@ async fn render_party_personal(
             condition.as_ref(),
             &morale_sources,
             religion.as_deref(),
+            &apprenticeships,
+            organization_presentation.as_ref(),
+            character_minute,
             prayer_religion_check,
             schedule.first(),
             combat_profile,

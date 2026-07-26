@@ -3093,34 +3093,6 @@ button.party-portrait-action {
   line-height: 1;
 }
 
-.character-religion dd {
-  position: relative;
-  min-height: 1.5rem;
-}
-
-.character-religion-action {
-  position: absolute;
-  z-index: 2;
-  top: 50%;
-  right: 0;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%) translateX(0.25rem);
-  transition: opacity 120ms ease, transform 120ms ease;
-}
-
-.character-religion:hover .character-religion-action,
-.character-religion:focus-within .character-religion-action {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(-50%) translateX(0);
-}
-
-.character-religion-action .btn {
-  padding: 0.2rem 0.4rem;
-  font-size: 0.7rem;
-}
-
 .morale-meter {
   display: block;
   box-sizing: border-box;
@@ -3668,7 +3640,7 @@ button.party-portrait-action {
   margin: 0;
 }
 
-.character-bio div {
+.character-bio > div {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3682,6 +3654,286 @@ button.party-portrait-action {
 
 .personality-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; justify-content: flex-end; }
 .personality-tag { border: 1px solid var(--border-color); border-radius: 999px; padding: 0.05rem 0.4rem; font-size: var(--font-size-xs); }
+
+.character-bio > .character-identity-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.45rem;
+  width: 100%;
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.identity-control-form {
+  display: flex;
+  min-width: 0;
+}
+
+.identity-control {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 0.42rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--accent, #d0ad63) 42%, var(--border-color));
+  border-radius: 0.45rem;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.045), transparent 55%),
+    var(--panel-bg);
+  box-shadow: inset 0 1px rgb(255 255 255 / 0.04);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+button.identity-control {
+  cursor: pointer;
+}
+
+.identity-control:hover,
+.identity-control:focus-visible,
+.organization-identity-picker[open] > .identity-control {
+  border-color: var(--accent, #d0ad63);
+  background-color: color-mix(in srgb, var(--panel-bg) 88%, var(--accent, #d0ad63));
+  box-shadow: 0 0 0 1px rgb(208 173 99 / 0.1), inset 0 1px rgb(255 255 255 / 0.06);
+  outline: none;
+}
+
+.identity-control.is-empty {
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--panel-bg) 80%, #727272);
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+button.identity-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.religion-identity-control {
+  justify-content: center;
+  gap: 0.42rem;
+  min-height: 2.55rem;
+  white-space: nowrap;
+}
+
+.religion-identity-control .game-icon {
+  flex: 0 0 1.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.religion-control-copy {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.religion-control-name,
+.religion-control-renounce {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 100ms ease, transform 100ms ease;
+}
+
+.religion-control-renounce {
+  position: absolute;
+  inset: 0;
+  color: var(--danger);
+  opacity: 0;
+  transform: translateY(0.25rem);
+}
+
+.religion-identity-control:hover .religion-control-name,
+.religion-identity-control:focus-visible .religion-control-name {
+  opacity: 0;
+  transform: translateY(-0.25rem);
+}
+
+.religion-identity-control:hover .religion-control-renounce,
+.religion-identity-control:focus-visible .religion-control-renounce {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.organization-identity-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.organization-identity-picker > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.organization-identity-picker > summary::-webkit-details-marker {
+  display: none;
+}
+
+.organization-identity-picker > summary::marker {
+  content: "";
+}
+
+.organization-crest {
+  position: relative;
+  display: grid;
+  flex: 0 0 2rem;
+  place-items: center;
+  width: 2rem;
+  height: 2.35rem;
+  margin-right: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.32);
+  background:
+    linear-gradient(135deg, var(--crest-field) 0 48%, var(--crest-accent) 49% 100%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(0 0 0 / 0.2);
+  clip-path: polygon(7% 0, 93% 0, 93% 65%, 50% 100%, 7% 65%);
+}
+
+.organization-crest::before {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 43%, rgb(255 255 255 / 0.16) 44% 56%, transparent 57%);
+  content: "";
+}
+
+.organization-crest-charge {
+  position: relative;
+  width: 1.15rem;
+  height: 1.15rem;
+  background: #fff8df;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.75));
+  -webkit-mask: var(--crest-charge) center / contain no-repeat;
+  mask: var(--crest-charge) center / contain no-repeat;
+}
+
+.organization-crest-empty {
+  --crest-charge: url("/static/icons/game/shield.svg");
+  --crest-field: #4c4c4c;
+  --crest-accent: #757575;
+  filter: grayscale(1);
+  opacity: 0.62;
+}
+
+.organization-control-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+.organization-control-name,
+.organization-control-profession {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.organization-control-name {
+  margin-bottom: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.63rem;
+}
+
+.organization-control-profession {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
+.organization-picker-arrow {
+  flex: 0 0 0.45rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-left: 0.4rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translateY(-0.12rem);
+  transition: transform var(--transition-fast);
+}
+
+.organization-identity-picker[open] .organization-picker-arrow {
+  transform: rotate(225deg) translate(-0.1rem, -0.1rem);
+}
+
+.organization-picker-menu {
+  width: 100%;
+  max-height: 20rem;
+  box-sizing: border-box;
+  margin-top: 0.35rem;
+  padding: 0.35rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--bg-secondary);
+  box-shadow: 0 0.45rem 1rem rgb(0 0 0 / 0.38);
+}
+
+.organization-picker-menu form {
+  margin: 0;
+}
+
+.organization-picker-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.45rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.organization-picker-option:hover,
+.organization-picker-option:focus-visible,
+.organization-picker-option.is-selected {
+  background: rgb(255 255 255 / 0.07);
+  outline: none;
+}
+
+.organization-picker-option.is-selected {
+  box-shadow: inset 2px 0 var(--accent, #d0ad63);
+}
+
+.organization-picker-option .organization-crest {
+  flex-basis: 1.7rem;
+  width: 1.7rem;
+  height: 2rem;
+}
+
+.organization-picker-option .organization-crest-charge {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.organization-picker-manage {
+  display: block;
+  margin-top: 0.3rem;
+  padding: 0.55rem 0.45rem 0.25rem;
+  border-top: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
 
 .party-skills-table {
   width: 100%;
