@@ -125,17 +125,19 @@ Combat Training practices the leaf skills relevant to the equipped weapons plus 
 
 Selecting an explicit activity icon previews and performs one continuous one-to-24-hour interval using the same training and outcome rules. Its preview is based on the chosen duration; Prayer/Meditation and Carousing are nonlinear, so increasing their duration has diminishing Morale returns. Immediate activity never includes implicit Leisure or modifies the recurring allocation.
 
-A character discovers a service profession by speaking with its NPC and following the linked profession and apprenticeship topics. Apprenticeship unlocks that profession's training activity, costs Gold, and produces no wage. Once every skill associated with the profession reaches rank 2, the character is a journeyman and may practice independently in cities for a small income. At rank 4 the character is a master and earns a good income, representing paid work and the instruction of apprentices. Religious professions use the tradition-neutral titles novice, cleric, and teacher for these same tiers; their practice earns Virtue instead of Gold. These records describe training and professional standing only: guild affiliations, membership conflicts, exclusivity, and settlement restrictions are not modeled.
+A character may join multiple YAML-defined organizations. Each organization
+chooses its own name, chapters, recognition, admission fee, recurring dues,
+rank names and requirements, curriculum, rewards, and privileges. Requirements
+may freely mix skills and professed religion; skills never imply membership. A
+character can present as exactly one active, dues-current organization at a
+time (or none). Presentation controls recognized privileges such as bearing
+arms or wearing armor where settlement policy would otherwise forbid them.
 
-Independent practice pays one coin per hour at Journeyman rank and two per
-hour at Master rank. Apprentices instead pay one coin per eight hours.
-Professional practice accrues tier-weighted reward units against one common
-hourly threshold, so changing rank cannot retroactively revalue earlier work.
-Accrued partial intervals are retained, so splitting work across downtime
-advances does not change its reward. Religious practice keeps the cadence but
-awards Virtue rather than Gold.
-
-Skills with no invested training hours are omitted from the skill list. Joining a profession is stored separately from skill hours, so a newly enrolled apprentice can still reach their activity through the schedule; the skill appears after the activity first awards training. Shared skills likewise do not imply membership in every profession that teaches them.
+Organization training and professional activity are available through the
+schedule while the character is at a chapter. Rank advancement follows the
+next rank's YAML requirements rather than universal
+apprentice/journeyman/master thresholds. Skills with no invested training hours
+remain omitted until training first awards hours.
 
 An ordinary day generates 600 fatigue-reservoir units before tiring activities. Leisure removes 100 units per hour, so six hours exactly offsets ordinary wakefulness. Labor adds another 50 units per hour. Leisure beyond six hours first removes activity fatigue, then fatigue carried into the interval; only the portion of the interval after the reservoir reaches zero earns morale, approaching 4 points per full qualifying day with a 200-unit diminishing-return scale. The schedule displays a one-day preview, but the server awards the result proportionally to the settlement-downtime time actually applied. Earned Leisure morale is kept as one refreshable source capped at 4 points, rather than being projected from the post-rest schedule or stacked into separate events. It decays at a fixed rate when no qualifying Leisure is occurring; qualifying Leisure refreshes it while adding the newly earned amount. This makes the result independent of whether downtime is applied all at once or through frequent synchronization. The compact schedule preview shows one Fatigue point per 100 reservoir units: Labor therefore shows `+0.5` per hour, while Leisure includes baseline and recovery so all visible Fatigue rows sum to the authoritative net change. Positive preview values remain green and negative values red, including negative Fatigue values that represent recovery.
 

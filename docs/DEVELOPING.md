@@ -1,5 +1,17 @@
 # Development Workflow
 
+## Organization content
+
+Organization YAML is validated during `adventuresim-core` builds. Validate its
+settlement references against the canonical or another exported compiled
+Viabundus world with:
+
+```powershell
+python scripts/validate_organization_world.py --world path\to\compiled-world.json
+```
+
+See [ORGANIZATIONS.md](ORGANIZATIONS.md) for the schema and authority boundary.
+
 ## Developer quest spawning
 
 The existing browser-local developer mode is off by default. On settlement
@@ -457,7 +469,13 @@ bisection in source order; authentication, authorization, transport, and
 reducer-validation failures are reported once without replaying their batches.
 The token is neither printed nor written to disk. Import ownership remains
 the authenticated login identity for begin, every batch, and finish, and the
-existing finalization validation remains authoritative.
+existing finalization validation remains authoritative. Starting the first
+import also removes the local smoke-test settlements (Riverdale, Ironforge,
+and Willowmere), their renderer-only route nodes and edge, and their directly
+derived NPC and smith rows. When the import finishes, it deletes all existing
+characters, parties, candidate claims, and recruitment offers. A completed
+world import is therefore a tabula-rasa character boundary: players must create
+new characters, and those characters can only start in imported settlements.
 The same archive installs the AVIF map and final terrain-routing package, so a
 fresh checkout does not need the 26 GiB source bundle or a geospatial rebuild.
 World loading persists canonical map and settlement facts only; it deliberately

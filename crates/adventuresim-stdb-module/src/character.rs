@@ -19,6 +19,7 @@ use crate::{
     },
     enter_mission, inventory_item,
     item::item,
+    organization::{organization_membership, organization_presentation},
     personality::character_personality,
     repair::{item_condition, repair_order},
     strategic::{inventory_quantity_target, party_authority, party_member, settlement},
@@ -366,17 +367,34 @@ pub(crate) fn delete_temporary_character(
     if !character.temporary {
         return Err("Refusing to cascade-delete a persistent character".into());
     }
-    if let Some(party_id) = character.party_id.as_deref() {
-        crate::strategic::delete_temporary_character_party(ctx, character.id, party_id)?;
-    } else {
-        for membership in ctx
-            .db
-            .party_member()
-            .character_id()
-            .filter(character.id)
-            .collect::<Vec<_>>()
-        {
-            ctx.db.party_member().id().delete(membership.id);
+    delete_character_data(ctx, character, true)
+}
+
+pub(crate) fn delete_character_for_world_import(
+    ctx: &ReducerContext,
+    character: Character,
+) -> Result<(), String> {
+    delete_character_data(ctx, character, false)
+}
+
+fn delete_character_data(
+    ctx: &ReducerContext,
+    character: Character,
+    delete_party: bool,
+) -> Result<(), String> {
+    if delete_party {
+        if let Some(party_id) = character.party_id.as_deref() {
+            crate::strategic::delete_temporary_character_party(ctx, character.id, party_id)?;
+        } else {
+            for membership in ctx
+                .db
+                .party_member()
+                .character_id()
+                .filter(character.id)
+                .collect::<Vec<_>>()
+            {
+                ctx.db.party_member().id().delete(membership.id);
+            }
         }
     }
 
@@ -517,6 +535,27 @@ pub(crate) fn delete_temporary_character(
         .collect::<Vec<_>>()
     {
         ctx.db.alcohol_consumption().id().delete(&row.id);
+    }
+    for row in ctx
+        .db
+        .organization_membership()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.organization_membership().id().delete(row.id);
+    }
+    if ctx
+        .db
+        .organization_presentation()
+        .character_id()
+        .find(character.id)
+        .is_some()
+    {
+        ctx.db
+            .organization_presentation()
+            .character_id()
+            .delete(character.id);
     }
 
     ctx.db.character_stats().character_id().delete(character.id);
@@ -1321,6 +1360,7 @@ fn insert_character_with_origin(
     crate::capability::refresh_character_capability(ctx, character.id)?;
     crate::condition::initialize_character_condition(ctx, character.id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character.id)?;
+    crate::equipment_law::enforce_equipment_compliance(ctx, character.id)?;
 
     Ok(())
 }
@@ -1331,6 +1371,17 @@ pub fn equip_item(
     character_id: u64,
     inventory_item_id: u64,
     destination: ItemSlot,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    equip_item_internal(ctx, character_id, inventory_item_id, destination, true)
+}
+
+fn equip_item_internal(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+    destination: ItemSlot,
+    enforce_law: bool,
 ) -> Result<(), String> {
     crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
     require_living_character(ctx, character_id)?;
@@ -1356,6 +1407,9 @@ pub fn equip_item(
             "Can't equip {} in {:?}; its equipment slot is {:?}",
             inventory.item_id, destination, definition.slot
         ));
+    }
+    if enforce_law && destination != ItemSlot::None {
+        crate::equipment_law::require_item_legal(ctx, character_id, inventory_item_id)?;
     }
 
     let mut equip = ctx
@@ -1433,5 +1487,9 @@ pub fn add_and_equip_item(
 ) -> Result<(), String> {
     let id = add_inventory_item(ctx, character_id, item_id, 1)
         .ok_or_else(|| "Can't add item to inventory".to_string())?;
-    equip_item(ctx, character_id, id, destination)
+    // This helper is used only while materializing starter equipment. The
+    // completed character runs the ordinary compliance pass once every starter
+    // item is present, avoiding partial creation when its initial settlement
+    // restricts arms or armor.
+    equip_item_internal(ctx, character_id, id, destination, false)
 }

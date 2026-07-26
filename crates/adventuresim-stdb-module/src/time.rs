@@ -12,12 +12,13 @@ use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, tab
 use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::condition::character_condition as _;
+use crate::organization::organization_membership as _;
 use crate::strategic::party_authority;
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
     character_limbs, character_skills, character_stats, settlement,
 };
-use adventuresim_world_schema::{OfficialReligion, OralLanguage, WrittenLanguage};
+use adventuresim_world_schema::{OfficialReligion, OralLanguage};
 use std::collections::BTreeMap;
 
 /// Natural recovery without useful medical support while taking full
@@ -66,9 +67,9 @@ pub struct ScheduleAllocation {
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
     pub apprenticeship_minutes: u16,
-    pub apprenticeship_service_id: Option<String>,
+    pub apprenticeship_organization_id: Option<String>,
     pub profession_practice_minutes: u16,
-    pub profession_service_id: Option<String>,
+    pub practice_organization_id: Option<String>,
     /// Paid physical work; also trains Will at reduced speed.
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
@@ -101,25 +102,6 @@ pub struct CharacterTrainingSchedule {
     pub downtime: ScheduleAllocation,
     /// Legacy compatibility field. Reducers keep this empty and travel ignores it.
     pub travel: ScheduleAllocation,
-}
-
-/// A profession learned from a settlement service. This records access only;
-/// rank is always derived from the character's canonical skill hours.
-#[derive(Clone, Debug)]
-#[table(accessor = character_apprenticeship, public)]
-pub struct CharacterApprenticeship {
-    #[primary_key]
-    #[auto_inc]
-    pub id: u64,
-    #[index(btree)]
-    pub character_id: u64,
-    pub service_id: String,
-    pub religion_id: Option<String>,
-    pub started_minute: u64,
-    pub apprenticeship_minutes_accrued: u64,
-    /// Tier-weighted practice reward units. One journeyman minute contributes
-    /// one unit and one master minute contributes two, both at minute scale.
-    pub practice_minutes_accrued: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -244,6 +226,7 @@ pub fn advance_character_time(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
@@ -413,6 +396,7 @@ pub fn advance_character_wait_time(
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
@@ -470,187 +454,76 @@ fn ensure_character_time(ctx: &ReducerContext, character_id: u64) -> Result<(), 
     Ok(())
 }
 
-fn apprenticeship_for_service(
-    ctx: &ReducerContext,
-    character_id: u64,
-    service_id: &str,
-) -> Option<CharacterApprenticeship> {
-    ctx.db
-        .character_apprenticeship()
-        .character_id()
-        .filter(character_id)
-        .find(|row| row.service_id == service_id)
-}
-
-fn valid_profession_service(service_id: &str) -> bool {
-    matches!(
-        service_id,
-        "merchants" | "weapons" | "armor" | "clothing" | "herbalist" | "inn" | "religion"
-    )
-}
-
-fn profession_training_hours(
-    skills: &CharacterSkills,
-    apprenticeship: &CharacterApprenticeship,
-    skill: Skill,
-) -> f32 {
-    match skill {
-        Skill::Insight => skills.insight_hours,
-        Skill::SelfAwareness => skills.self_awareness_hours,
-        Skill::Humor => skills.humor_hours,
-        Skill::Command => skills.command_hours,
-        Skill::Deception => skills.deception_hours,
-        Skill::Seduction => skills.seduction_hours,
-        Skill::Smithing => skills.smithing_hours,
-        Skill::Physiology => skills.physiology_hours,
-        Skill::Cooking => skills.cooking_hours,
-        Skill::Bestiary => skills
-            .bestiary_hours
-            .direct(adventuresim_world_schema::BestiaryCategory::Human),
-        Skill::Anatomy => skills.anatomy_hours,
-        Skill::Knife => skills.knife_hours,
-        Skill::Tailoring => skills.tailoring_hours,
-        Skill::Religion => apprenticeship
-            .religion_id
-            .as_deref()
-            .and_then(OfficialReligion::from_id)
-            .map_or(0.0, |religion| skills.religion_hours.direct(religion)),
-        _ => 0.0,
-    }
-}
-
-fn profession_tier_for(
-    ctx: &ReducerContext,
-    character_id: u64,
-    service_id: &str,
-) -> Result<adventuresim_core::profession::ProfessionTier, String> {
-    let apprenticeship = apprenticeship_for_service(ctx, character_id, service_id)
-        .ok_or("That profession has not been learned")?;
-    let skills = ctx
-        .db
-        .character_skills()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character skills not found")?;
-    let attributes = ctx
-        .db
-        .character_attributes()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character attributes not found")?;
-    let profession = adventuresim_core::profession::profession_for_service(service_id)
-        .ok_or("Unknown profession service")?;
-    Ok(adventuresim_core::profession::profession_tier(
-        profession,
-        |skill| profession_training_hours(&skills, &apprenticeship, skill),
-        |skill| skill.governing_aptitude(&attributes),
-    ))
-}
-
-fn validate_profession_schedule(
+fn validate_organization_schedule(
     ctx: &ReducerContext,
     character_id: u64,
     schedule: &ScheduleAllocation,
 ) -> Result<(), String> {
     if schedule.apprenticeship_minutes > 0 {
-        let service = schedule
-            .apprenticeship_service_id
+        let organization_id = schedule
+            .apprenticeship_organization_id
             .as_deref()
-            .ok_or("Apprenticeship time requires a profession")?;
-        profession_tier_for(ctx, character_id, service)?;
+            .ok_or("Apprenticeship time requires an organization")?;
+        crate::organization::require_activity_membership(ctx, character_id, organization_id)?;
     }
     if schedule.profession_practice_minutes > 0 {
-        let service = schedule
-            .profession_service_id
+        let organization_id = schedule
+            .practice_organization_id
             .as_deref()
-            .ok_or("Profession practice time requires a profession")?;
-        let tier = profession_tier_for(ctx, character_id, service)?;
-        if tier == adventuresim_core::profession::ProfessionTier::Apprentice {
-            return Err("Independent practice requires Journeyman rank (2)".into());
+            .ok_or("Professional practice time requires an organization")?;
+        let row =
+            crate::organization::require_activity_membership(ctx, character_id, organization_id)?;
+        let definition = adventuresim_core::organization::organization(organization_id)
+            .ok_or("Unknown organization")?;
+        let rank = definition
+            .rank(&row.rank_id)
+            .ok_or("Membership references an unknown organization rank")?;
+        if !rank.practice_allowed {
+            return Err("This organization rank does not permit independent practice".into());
         }
     }
     Ok(())
 }
 
-/// Learn a profession from a service at the character's current settlement.
-/// Repeating the same request is deliberately idempotent.
-#[reducer]
-pub fn begin_apprenticeship(
+/// Sample organization eligibility at the beginning of an interval. Invalid
+/// saved allocations become leisure without mutating the player's saved plan.
+fn effective_organization_schedule(
     ctx: &ReducerContext,
     character_id: u64,
-    service_id: &str,
-) -> Result<(), String> {
-    let character = crate::character::require_living_character(ctx, character_id)?;
-    // `Character.server` is a transient tactical-server assignment, not the
-    // player's identity. Strategic-web authorizes the active character through
-    // its session before invoking this reducer. Settlement characters normally
-    // have `Identity::ZERO` here, so comparing it to the web connection identity
-    // incorrectly rejects every legitimate apprenticeship request.
-    if !valid_profession_service(service_id) {
-        return Err("Unknown profession service".into());
-    }
-    let settlement_id = character
-        .current_settlement_id
-        .as_ref()
-        .ok_or("Apprenticeships may only begin in a settlement")?;
-    ensure_character_time(ctx, character_id)?;
-    if apprenticeship_for_service(ctx, character_id, service_id).is_some() {
-        select_profession_schedule(ctx, character_id, service_id);
-        return Ok(());
-    }
-    let religion_id = if service_id == "religion" {
-        ctx.db
-            .settlement()
-            .id()
-            .find(settlement_id)
-            .and_then(|settlement| {
-                settlement
-                    .religious_status
-                    .represented_religions()
-                    .first()
-                    .map(|religion| religion.religion_id().to_string())
+    schedule: &ScheduleAllocation,
+) -> ScheduleAllocation {
+    let mut effective = schedule.clone();
+    if effective.apprenticeship_minutes > 0
+        && effective
+            .apprenticeship_organization_id
+            .as_deref()
+            .is_none_or(|organization_id| {
+                crate::organization::require_activity_membership(ctx, character_id, organization_id)
+                    .is_err()
             })
-            .ok_or("This settlement has no religious profession")?
-            .into()
-    } else {
-        None
-    };
-    let started_minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character time record not found")?
-        .minutes;
-    ctx.db
-        .character_apprenticeship()
-        .insert(CharacterApprenticeship {
-            id: 0,
-            character_id,
-            service_id: service_id.into(),
-            religion_id,
-            started_minute,
-            apprenticeship_minutes_accrued: 0,
-            practice_minutes_accrued: 0,
-        });
-    select_profession_schedule(ctx, character_id, service_id);
-    Ok(())
-}
-
-fn select_profession_schedule(ctx: &ReducerContext, character_id: u64, service_id: &str) {
-    if let Some(mut schedule) = ctx
-        .db
-        .character_training_schedule()
-        .character_id()
-        .find(character_id)
     {
-        schedule.downtime.apprenticeship_service_id = Some(service_id.into());
-        schedule.downtime.profession_service_id = Some(service_id.into());
-        ctx.db
-            .character_training_schedule()
-            .character_id()
-            .update(schedule);
+        effective.apprenticeship_minutes = 0;
     }
+    if effective.profession_practice_minutes > 0 {
+        let eligible = effective
+            .practice_organization_id
+            .as_deref()
+            .and_then(|organization_id| {
+                let membership = crate::organization::require_activity_membership(
+                    ctx,
+                    character_id,
+                    organization_id,
+                )
+                .ok()?;
+                let definition = adventuresim_core::organization::organization(organization_id)?;
+                definition.rank(&membership.rank_id)
+            })
+            .is_some_and(|rank| rank.practice_allowed);
+        if !eligible {
+            effective.profession_practice_minutes = 0;
+        }
+    }
+    effective
 }
 
 fn activity_training_profile(
@@ -732,6 +605,10 @@ fn apply_training(
         anatomy: skills.anatomy_hours,
         stealth: skills.stealth_hours,
         balance: skills.balance_hours,
+        terrain_plains: skills.terrain_plains_hours,
+        terrain_forest: skills.terrain_forest_hours,
+        terrain_hills: skills.terrain_hills_hours,
+        terrain_urban: skills.terrain_urban_hours,
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
@@ -784,80 +661,30 @@ fn apply_training(
             }
         }
     }
-    for (minutes, service_id) in [
+    for (minutes, organization_id) in [
         (
             schedule.apprenticeship_minutes,
-            schedule.apprenticeship_service_id.as_deref(),
+            schedule.apprenticeship_organization_id.as_deref(),
         ),
         (
             schedule.profession_practice_minutes,
-            schedule.profession_service_id.as_deref(),
+            schedule.practice_organization_id.as_deref(),
         ),
     ] {
-        if minutes > 0 {
-            if let Some(service_id) = service_id {
-                let work_hours =
-                    elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(minutes) / 60.0;
-                let profile =
-                    adventuresim_core::profession::profession_literacy_profile(service_id);
-                let vernacular = ctx
-                    .db
-                    .character()
-                    .id()
-                    .find(character_id)
-                    .and_then(|character| character.current_settlement_id)
-                    .and_then(|id| ctx.db.settlement().id().find(&id))
-                    .map_or(WrittenLanguage::German, |settlement| {
-                        if settlement.languages.dominant_german() == OralLanguage::Low {
-                            WrittenLanguage::Low
-                        } else {
-                            WrittenLanguage::German
-                        }
-                    });
-                let mut award_written = |language, real_hours| {
-                    excess += adventuresim_core::skill::apply_language_training(
-                        skills.written_languages.direct_mut(language),
-                        real_hours,
-                        attributes.intelligence,
-                    )
-                    .excess_effective_hours;
-                };
-                award_written(vernacular, work_hours * profile.vernacular);
-                award_written(WrittenLanguage::Latin, work_hours * profile.latin);
-                if profile.religious {
-                    let religion = apprenticeship_for_service(ctx, character_id, "religion")
-                        .and_then(|row| row.religion_id)
-                        .as_deref()
-                        .and_then(OfficialReligion::from_id);
-                    match religion {
-                        Some(OfficialReligion::RomanCatholic) => {
-                            award_written(WrittenLanguage::Latin, work_hours)
-                        }
-                        Some(OfficialReligion::Judaism) => {
-                            award_written(WrittenLanguage::Hebrew, work_hours * 0.75);
-                            award_written(WrittenLanguage::Yiddish, work_hours * 0.25);
-                        }
-                        _ => award_written(WrittenLanguage::German, work_hours),
-                    }
-                }
-            }
-        }
-        if minutes == 0 || service_id != Some("religion") {
+        if minutes == 0 {
             continue;
         }
-        if let Some(religion) = apprenticeship_for_service(ctx, character_id, "religion")
-            .and_then(|row| row.religion_id)
-            .as_deref()
-            .and_then(OfficialReligion::from_id)
+        if let Some(definition) =
+            organization_id.and_then(adventuresim_core::organization::organization)
         {
-            let trained = elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(minutes) / 60.0;
-            excess += adventuresim_core::skill::apply_direct_training(
-                Skill::Religion,
-                hours.religion.direct_mut(religion),
-                trained,
+            let work_hours = elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(minutes) / 60.0;
+            excess += apply_organization_training(
+                &mut hours,
+                work_hours,
+                definition,
+                activities,
                 &attributes,
-            )
-            .excess_effective_hours;
+            );
         }
     }
     skills.polearm_hours = hours.polearm;
@@ -885,6 +712,10 @@ fn apply_training(
     skills.anatomy_hours = hours.anatomy;
     skills.stealth_hours = hours.stealth;
     skills.balance_hours = hours.balance;
+    skills.terrain_plains_hours = hours.terrain_plains;
+    skills.terrain_forest_hours = hours.terrain_forest;
+    skills.terrain_hills_hours = hours.terrain_hills;
+    skills.terrain_urban_hours = hours.terrain_urban;
     skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
     excess
@@ -895,20 +726,118 @@ pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
         apprenticeship_minutes: schedule.apprenticeship_minutes,
-        apprenticeship_service_id: schedule
-            .apprenticeship_service_id
-            .as_deref()
-            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
         profession_practice_minutes: schedule.profession_practice_minutes,
-        profession_service_id: schedule
-            .profession_service_id
-            .as_deref()
-            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
         labor: schedule.labor_minutes,
         prayer: schedule.prayer_minutes,
         thievery: schedule.thievery_minutes,
         raiding: schedule.raiding_minutes,
     }
+}
+
+fn apply_organization_training(
+    hours: &mut SkillHours,
+    work_hours: f32,
+    definition: &adventuresim_core::organization::OrganizationDefinition,
+    activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
+    attributes: &impl PlayerAttributes,
+) -> f32 {
+    use adventuresim_core::organization::TrainingTarget;
+    let mut excess = 0.0;
+    let mut award_direct = |skill: Skill, stored: &mut f32, real_hours: f32| {
+        excess +=
+            adventuresim_core::skill::apply_direct_training(skill, stored, real_hours, attributes)
+                .excess_effective_hours;
+    };
+    for entry in &definition.activity.training {
+        let award = work_hours * entry.weight;
+        match &entry.target {
+            TrainingTarget::FixedSkill { skill } => match skill.as_str() {
+                "will" => award_direct(Skill::Will, &mut hours.will, award),
+                "insight" => award_direct(Skill::Insight, &mut hours.insight, award),
+                "self_awareness" => {
+                    award_direct(Skill::SelfAwareness, &mut hours.self_awareness, award)
+                }
+                "humor" => award_direct(Skill::Humor, &mut hours.humor, award),
+                "command" => award_direct(Skill::Command, &mut hours.command, award),
+                "deception" => award_direct(Skill::Deception, &mut hours.deception, award),
+                "seduction" => award_direct(Skill::Seduction, &mut hours.seduction, award),
+                "physiology" => award_direct(Skill::Physiology, &mut hours.physiology, award),
+                "cooking" => award_direct(Skill::Cooking, &mut hours.cooking, award),
+                "anatomy" => award_direct(Skill::Anatomy, &mut hours.anatomy, award),
+                "polearm" => award_direct(Skill::Polearm, &mut hours.polearm, award),
+                "axe" => award_direct(Skill::Axe, &mut hours.axe, award),
+                "bludgeon" => award_direct(Skill::Bludgeon, &mut hours.bludgeon, award),
+                "sword" => award_direct(Skill::Sword, &mut hours.sword, award),
+                "knife" => award_direct(Skill::Knife, &mut hours.knife, award),
+                "bow" => award_direct(Skill::Bow, &mut hours.bow, award),
+                "crossbow" => award_direct(Skill::Crossbow, &mut hours.crossbow, award),
+                "firearm" => award_direct(Skill::Firearm, &mut hours.firearm, award),
+                "throw" => award_direct(Skill::Throw, &mut hours.throw, award),
+                "block" => award_direct(Skill::Block, &mut hours.block, award),
+                "dodge" => award_direct(Skill::Dodge, &mut hours.dodge, award),
+                "stealth" => award_direct(Skill::Stealth, &mut hours.stealth, award),
+                "balance" => award_direct(Skill::Balance, &mut hours.balance, award),
+                "terrain_plains" => {
+                    award_direct(Skill::TerrainPlains, &mut hours.terrain_plains, award)
+                }
+                "terrain_forest" => {
+                    award_direct(Skill::TerrainForest, &mut hours.terrain_forest, award)
+                }
+                "terrain_hills" => {
+                    award_direct(Skill::TerrainHills, &mut hours.terrain_hills, award)
+                }
+                "terrain_urban" => {
+                    award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award)
+                }
+                "tailoring" => award_direct(Skill::Tailoring, &mut hours.tailoring, award),
+                "smithing" => award_direct(Skill::Smithing, &mut hours.smithing, award),
+                _ => {}
+            },
+            TrainingTarget::Religion { religion } => {
+                if let Some(religion) = OfficialReligion::from_id(religion) {
+                    award_direct(Skill::Religion, hours.religion.direct_mut(religion), award);
+                }
+            }
+            TrainingTarget::Bestiary { category } => {
+                if let Some(category) = adventuresim_world_schema::BestiaryCategory::ALL
+                    .into_iter()
+                    .find(|value| format!("{value:?}").eq_ignore_ascii_case(category))
+                {
+                    award_direct(Skill::Bestiary, hours.bestiary.direct_mut(category), award);
+                }
+            }
+            TrainingTarget::Terrain { terrain } => match terrain.as_str() {
+                "plains" => award_direct(Skill::TerrainPlains, &mut hours.terrain_plains, award),
+                "forest" => award_direct(Skill::TerrainForest, &mut hours.terrain_forest, award),
+                "hills" => award_direct(Skill::TerrainHills, &mut hours.terrain_hills, award),
+                "urban" => award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award),
+                _ => {}
+            },
+            TrainingTarget::EquippedWeaponSkills => {
+                let weights = activities.combat.weapons.weights();
+                let total = weights.into_iter().sum::<f32>();
+                if total > 0.0 {
+                    for ((skill, target), weight) in [
+                        (Skill::Polearm, &mut hours.polearm),
+                        (Skill::Axe, &mut hours.axe),
+                        (Skill::Bludgeon, &mut hours.bludgeon),
+                        (Skill::Sword, &mut hours.sword),
+                        (Skill::Knife, &mut hours.knife),
+                        (Skill::Bow, &mut hours.bow),
+                        (Skill::Crossbow, &mut hours.crossbow),
+                        (Skill::Firearm, &mut hours.firearm),
+                        (Skill::Throw, &mut hours.throw),
+                    ]
+                    .into_iter()
+                    .zip(weights)
+                    {
+                        award_direct(skill, target, award * weight / total);
+                    }
+                }
+            }
+        }
+    }
+    excess
 }
 
 fn initialize_notoriety(ctx: &ReducerContext, character_id: u64) {
@@ -1084,7 +1013,7 @@ fn apply_activity_outcomes_inner(
             ctx.db.character_virtue().insert(virtue);
         }
     }
-    apply_profession_outcomes(ctx, character_id, schedule, elapsed, &settlement.id)?;
+    apply_organization_outcomes(ctx, character_id, schedule, elapsed, &settlement.id)?;
     initialize_notoriety(ctx, character_id);
     let notoriety_gain = outcome.notoriety_gained;
     if notoriety_gain > 0.0 {
@@ -1118,7 +1047,7 @@ fn apply_activity_outcomes_inner(
 fn immediate_activity_schedule(
     activity: ImmediateActivity,
     minutes: u16,
-    service_id: Option<&str>,
+    organization_id: Option<&str>,
 ) -> ScheduleAllocation {
     let mut schedule = ScheduleAllocation::default();
     match activity {
@@ -1127,11 +1056,11 @@ fn immediate_activity_schedule(
         ImmediateActivity::Carousing => schedule.carousing_minutes = minutes,
         ImmediateActivity::Apprenticeship => {
             schedule.apprenticeship_minutes = minutes;
-            schedule.apprenticeship_service_id = service_id.map(str::to_owned);
+            schedule.apprenticeship_organization_id = organization_id.map(str::to_owned);
         }
         ImmediateActivity::ProfessionPractice => {
             schedule.profession_practice_minutes = minutes;
-            schedule.profession_service_id = service_id.map(str::to_owned);
+            schedule.practice_organization_id = organization_id.map(str::to_owned);
         }
         ImmediateActivity::Labor => schedule.labor_minutes = minutes,
         ImmediateActivity::Thievery => schedule.thievery_minutes = minutes,
@@ -1149,7 +1078,7 @@ pub fn perform_immediate_activity(
     character_id: u64,
     activity: ImmediateActivity,
     requested_minutes: u64,
-    service_id: Option<&str>,
+    organization_id: Option<&str>,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     let character = crate::character::require_living_character(ctx, character_id)?;
@@ -1162,8 +1091,8 @@ pub fn perform_immediate_activity(
     ensure_character_time(ctx, character_id)?;
     let _ = refresh_clock(ctx)?;
     let minutes = u16::try_from(requested_minutes).map_err(|_| "Activity duration is too long")?;
-    let schedule = immediate_activity_schedule(activity, minutes, service_id);
-    validate_profession_schedule(ctx, character_id, &schedule)?;
+    let schedule = immediate_activity_schedule(activity, minutes, organization_id);
+    validate_organization_schedule(ctx, character_id, &schedule)?;
 
     let mut character_time = ctx
         .db
@@ -1190,6 +1119,7 @@ pub fn perform_immediate_activity(
     crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
+        crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(());
     }
 
@@ -1198,7 +1128,8 @@ pub fn perform_immediate_activity(
     // the selected number of minutes, while the personal clock advances only
     // by the actual interval (which may have been clipped by an incident).
     let effective_minutes = u16::try_from(elapsed.min(requested_minutes)).unwrap_or(minutes);
-    let effective_schedule = immediate_activity_schedule(activity, effective_minutes, service_id);
+    let effective_schedule =
+        immediate_activity_schedule(activity, effective_minutes, organization_id);
     let mut skills = ctx
         .db
         .character_skills()
@@ -1245,42 +1176,13 @@ pub fn perform_immediate_activity(
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    crate::organization::settle_membership_dues(ctx, character_id)?;
     Ok(())
 }
 
 const ACTIVITY_MINUTE_SCALE: u64 = MINUTES_PER_DAY;
-const APPRENTICE_COIN_INTERVAL: u64 = 8 * 60 * ACTIVITY_MINUTE_SCALE;
-const PROFESSION_REWARD_UNIT_INTERVAL: u64 = 60 * ACTIVITY_MINUTE_SCALE;
 
-fn profession_reward_weight(
-    tier: adventuresim_core::profession::ProfessionTier,
-) -> Result<u64, &'static str> {
-    match tier {
-        adventuresim_core::profession::ProfessionTier::Apprentice => {
-            Err("Independent practice requires Journeyman rank (2)")
-        }
-        adventuresim_core::profession::ProfessionTier::Journeyman => Ok(1),
-        adventuresim_core::profession::ProfessionTier::Master => Ok(2),
-    }
-}
-
-fn accrued_profession_reward(
-    old_units: u64,
-    elapsed: u64,
-    allocated_minutes: u16,
-    tier: adventuresim_core::profession::ProfessionTier,
-) -> Result<(u64, u64), &'static str> {
-    let weight = profession_reward_weight(tier)?;
-    let added = elapsed
-        .saturating_mul(u64::from(allocated_minutes))
-        .saturating_mul(weight);
-    let new_units = old_units.saturating_add(added);
-    let reward =
-        new_units / PROFESSION_REWARD_UNIT_INTERVAL - old_units / PROFESSION_REWARD_UNIT_INTERVAL;
-    Ok((new_units, reward))
-}
-
-fn apply_profession_outcomes(
+fn apply_organization_outcomes(
     ctx: &ReducerContext,
     character_id: u64,
     schedule: &ScheduleAllocation,
@@ -1288,41 +1190,42 @@ fn apply_profession_outcomes(
     settlement_id: &str,
 ) -> Result<(), String> {
     if schedule.apprenticeship_minutes > 0 {
-        let service = schedule
-            .apprenticeship_service_id
+        let organization_id = schedule
+            .apprenticeship_organization_id
             .as_deref()
-            .ok_or("Apprenticeship time requires a profession")?;
-        let mut row = apprenticeship_for_service(ctx, character_id, service)
-            .ok_or("That profession has not been learned")?;
-        let old = row.apprenticeship_minutes_accrued;
-        row.apprenticeship_minutes_accrued =
-            old.saturating_add(elapsed.saturating_mul(u64::from(schedule.apprenticeship_minutes)));
-        let due = row.apprenticeship_minutes_accrued / APPRENTICE_COIN_INTERVAL
-            - old / APPRENTICE_COIN_INTERVAL;
-        if due > 0 {
-            crate::item::consume_personal_currency(ctx, character_id, due)?;
-        }
-        ctx.db.character_apprenticeship().id().update(row);
+            .ok_or("Apprenticeship time requires an organization")?;
+        crate::organization::increment_activity_accrual(
+            ctx,
+            character_id,
+            organization_id,
+            elapsed.saturating_mul(u64::from(schedule.apprenticeship_minutes)),
+            0,
+        );
     }
     if schedule.profession_practice_minutes > 0 {
-        let service = schedule
-            .profession_service_id
+        let organization_id = schedule
+            .practice_organization_id
             .as_deref()
-            .ok_or("Profession practice time requires a profession")?;
-        let tier = profession_tier_for(ctx, character_id, service)?;
-        let mut row = apprenticeship_for_service(ctx, character_id, service)
-            .ok_or("That profession has not been learned")?;
-        let (new_units, reward) = accrued_profession_reward(
-            row.practice_minutes_accrued,
-            elapsed,
-            schedule.profession_practice_minutes,
-            tier,
-        )?;
-        row.practice_minutes_accrued = new_units;
-        let definition = adventuresim_core::profession::profession_for_service(service)
-            .ok_or("Unknown profession service")?;
-        match definition.practice_reward {
-            adventuresim_core::profession::PracticeReward::Gold if reward > 0 => {
+            .ok_or("Professional practice time requires an organization")?;
+        let mut row = crate::organization::membership(ctx, character_id, organization_id)
+            .ok_or("Eligible organization membership disappeared during the interval")?;
+        let definition = adventuresim_core::organization::organization(organization_id)
+            .ok_or("Unknown organization")?;
+        let rank = definition
+            .rank(&row.rank_id)
+            .ok_or("Membership references an unknown organization rank")?;
+        let old = row.practice_minutes_accrued;
+        row.practice_minutes_accrued = old.saturating_add(
+            elapsed.saturating_mul(u64::from(schedule.profession_practice_minutes)),
+        );
+        let interval =
+            u64::from(rank.practice_reward_interval_minutes).saturating_mul(ACTIVITY_MINUTE_SCALE);
+        if interval == 0 {
+            return Err("Eligible organization rank has no practice reward cadence".into());
+        }
+        let reward = row.practice_minutes_accrued / interval - old / interval;
+        match definition.activity.reward {
+            adventuresim_core::organization::ActivityReward::Gold if reward > 0 => {
                 crate::item::credit_personal_currency(
                     ctx,
                     character_id,
@@ -1330,7 +1233,7 @@ fn apply_profession_outcomes(
                     u32::try_from(reward).unwrap_or(u32::MAX),
                 )?;
             }
-            adventuresim_core::profession::PracticeReward::Virtue if reward > 0 => {
+            adventuresim_core::organization::ActivityReward::Virtue if reward > 0 => {
                 let mut virtue = ctx
                     .db
                     .character_virtue()
@@ -1355,7 +1258,7 @@ fn apply_profession_outcomes(
             }
             _ => {}
         }
-        ctx.db.character_apprenticeship().id().update(row);
+        ctx.db.organization_membership().id().update(row);
     }
     Ok(())
 }
@@ -1490,6 +1393,14 @@ fn rest_for_minutes(
     if requested_minutes == 0 {
         return Ok(0);
     }
+    let saved_schedule = ctx
+        .db
+        .character_training_schedule()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character training schedule not found".to_string())?;
+    let effective_schedule =
+        effective_organization_schedule(ctx, character_id, &saved_schedule.downtime);
     let conversation_choice = character.party_id.as_ref().and_then(|party_id| {
         let snapshot: Vec<_> = crate::strategic::living_party_member_ids(ctx, party_id)
             .into_iter()
@@ -1579,6 +1490,7 @@ fn rest_for_minutes(
     crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
+        crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(0);
     }
     crate::alcohol::process_rest_evenings(
@@ -1630,7 +1542,7 @@ fn rest_for_minutes(
             ctx,
             character_id,
             &mut skills,
-            &schedule.downtime,
+            &effective_schedule,
             training_elapsed,
             activities,
         );
@@ -1653,7 +1565,7 @@ fn rest_for_minutes(
         let risks = apply_activity_outcomes(
             ctx,
             character_id,
-            &schedule.downtime,
+            &effective_schedule,
             training_elapsed,
             starting_minute.saturating_add(elapsed),
         )?;
@@ -1666,6 +1578,7 @@ fn rest_for_minutes(
     if automatic_social && recovery_elapsed > 0 {
         crate::social::apply_automatic_social_chats(ctx, character_id, recovery_elapsed)?;
     }
+    crate::organization::settle_membership_dues(ctx, character_id)?;
     Ok(training_elapsed)
 }
 
@@ -1775,6 +1688,10 @@ pub(crate) fn synchronize_party_departure_time(
 
 pub(crate) fn allowed_camp_schedule(schedule: &ScheduleAllocation) -> ScheduleAllocation {
     let mut allowed = schedule.clone();
+    allowed.apprenticeship_minutes = 0;
+    allowed.apprenticeship_organization_id = None;
+    allowed.profession_practice_minutes = 0;
+    allowed.practice_organization_id = None;
     allowed.labor_minutes = 0;
     allowed.thievery_minutes = 0;
     allowed.raiding_minutes = 0;
@@ -1804,6 +1721,7 @@ fn advance_personal_camp_time(
     let elapsed = settled.elapsed;
     time.minutes = time.minutes.saturating_add(elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::organization::settle_membership_dues(ctx, member_id)?;
     crate::social::settle_shared_party_time(ctx, member_id);
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
@@ -2004,6 +1922,7 @@ pub fn rest_at_camp(
         time.minutes = time.minutes.saturating_add(member_elapsed);
         let interval_end_minute = time.minutes;
         ctx.db.character_time().character_id().update(time);
+        crate::organization::settle_membership_dues(ctx, member_id)?;
         crate::social::settle_shared_party_time(ctx, member_id);
         crate::condition::apply_elapsed_needs(ctx, member_id, member_elapsed)?;
         crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
@@ -2189,6 +2108,14 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     if requested_elapsed == 0 {
         return Ok(forced_catch_up);
     }
+    let saved_schedule = ctx
+        .db
+        .character_training_schedule()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character training schedule not found".to_string())?;
+    let effective_schedule =
+        effective_organization_schedule(ctx, character_id, &saved_schedule.downtime);
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
     let (elapsed, terminal) =
@@ -2209,14 +2136,9 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
+        crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(forced_catch_up);
     }
-    let schedule = ctx
-        .db
-        .character_training_schedule()
-        .character_id()
-        .find(character_id)
-        .ok_or_else(|| "Character training schedule not found".to_string())?;
     let mut skills = ctx
         .db
         .character_skills()
@@ -2229,7 +2151,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         ctx,
         character_id,
         &mut skills,
-        &schedule.downtime,
+        &effective_schedule,
         training_elapsed,
         activities,
     );
@@ -2238,7 +2160,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     let risks = apply_activity_outcomes(
         ctx,
         character_id,
-        &schedule.downtime,
+        &effective_schedule,
         training_elapsed,
         target_minutes,
     )?;
@@ -2252,6 +2174,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         crate::capability::refresh_character_capability(ctx, character_id)?;
     }
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    crate::organization::settle_membership_dues(ctx, character_id)?;
     Ok(forced_catch_up)
 }
 
@@ -2268,6 +2191,7 @@ pub fn update_training_schedule(
     downtime: ScheduleAllocation,
     _travel: ScheduleAllocation,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if synchronize_character(ctx, character_id)? {
         return Ok(());
@@ -2283,7 +2207,7 @@ pub fn update_training_schedule(
     if !schedule.downtime.uses_quarter_hours() {
         return Err("Schedule allocations must use 15-minute increments".into());
     }
-    validate_profession_schedule(ctx, character_id, &schedule.downtime)?;
+    validate_organization_schedule(ctx, character_id, &schedule.downtime)?;
     ctx.db
         .character_training_schedule()
         .character_id()
@@ -2400,51 +2324,6 @@ mod tests {
     }
 
     #[test]
-    fn profession_practice_pays_a_livelihood_and_master_premium() {
-        assert!(APPRENTICE_COIN_INTERVAL > PROFESSION_REWARD_UNIT_INTERVAL);
-        assert_eq!(PROFESSION_REWARD_UNIT_INTERVAL, 60 * ACTIVITY_MINUTE_SCALE);
-        let ordinary_labor = adventuresim_core::activity::labor_gold(8.0, 2.0, 2.0);
-        let (_, journeyman_day) = accrued_profession_reward(
-            0,
-            8 * 60,
-            MINUTES_PER_DAY as u16,
-            adventuresim_core::profession::ProfessionTier::Journeyman,
-        )
-        .unwrap();
-        let (_, master_day) = accrued_profession_reward(
-            0,
-            8 * 60,
-            MINUTES_PER_DAY as u16,
-            adventuresim_core::profession::ProfessionTier::Master,
-        )
-        .unwrap();
-        assert_eq!(journeyman_day, u64::from(ordinary_labor));
-        assert!(master_day > journeyman_day);
-    }
-
-    #[test]
-    fn profession_reward_units_survive_tier_transitions_and_chunking() {
-        use adventuresim_core::profession::ProfessionTier::{Journeyman, Master};
-        let (after_journeyman, first_reward) =
-            accrued_profession_reward(0, 30, MINUTES_PER_DAY as u16, Journeyman).unwrap();
-        assert_eq!(first_reward, 0);
-        let (mixed_units, mixed_reward) =
-            accrued_profession_reward(after_journeyman, 45, MINUTES_PER_DAY as u16, Master)
-                .unwrap();
-        assert_eq!(mixed_reward, 2);
-
-        let (first_chunk, first_chunk_reward) =
-            accrued_profession_reward(0, 15, MINUTES_PER_DAY as u16, Master).unwrap();
-        let (chunked_units, second_chunk_reward) =
-            accrued_profession_reward(first_chunk, 30, MINUTES_PER_DAY as u16, Master).unwrap();
-        let (bulk_units, bulk_reward) =
-            accrued_profession_reward(0, 45, MINUTES_PER_DAY as u16, Master).unwrap();
-        assert_eq!(chunked_units, bulk_units);
-        assert_eq!(first_chunk_reward + second_chunk_reward, bulk_reward);
-        assert_eq!(mixed_units, 2 * PROFESSION_REWARD_UNIT_INTERVAL);
-    }
-
-    #[test]
     fn departure_synchronization_defers_social_until_all_clocks_advance() {
         let source = include_str!("time.rs");
         let synchronization = source
@@ -2472,14 +2351,94 @@ mod tests {
         let schedule = immediate_activity_schedule(
             ImmediateActivity::ProfessionPractice,
             180,
-            Some("weapons"),
+            Some("weaponsmith_guild"),
         );
         assert_eq!(schedule.profession_practice_minutes, 180);
-        assert_eq!(schedule.profession_service_id.as_deref(), Some("weapons"));
+        assert_eq!(
+            schedule.practice_organization_id.as_deref(),
+            Some("weaponsmith_guild")
+        );
         assert_eq!(schedule.allocated_minutes(), 180);
         let prayer = immediate_activity_schedule(ImmediateActivity::Prayer, 60, None);
         assert_eq!(prayer.prayer_minutes, 60);
         assert_eq!(prayer.allocated_minutes(), 60);
+    }
+
+    #[test]
+    fn camp_schedule_excludes_organization_training_and_activity() {
+        let schedule = ScheduleAllocation {
+            apprenticeship_minutes: 120,
+            apprenticeship_organization_id: Some("wardens_harz".into()),
+            profession_practice_minutes: 180,
+            practice_organization_id: Some("wardens_harz".into()),
+            prayer_minutes: 60,
+            ..Default::default()
+        };
+        let allowed = allowed_camp_schedule(&schedule);
+        assert_eq!(allowed.apprenticeship_minutes, 0);
+        assert!(allowed.apprenticeship_organization_id.is_none());
+        assert_eq!(allowed.profession_practice_minutes, 0);
+        assert!(allowed.practice_organization_id.is_none());
+        assert_eq!(allowed.prayer_minutes, 60);
+    }
+
+    #[test]
+    fn stale_saved_organization_allocations_are_converted_to_leisure() {
+        let source = include_str!("time.rs");
+        let effective = source
+            .split("fn effective_organization_schedule")
+            .nth(1)
+            .and_then(|tail| tail.split("fn activity_training_profile").next())
+            .expect("effective organization schedule");
+        assert!(effective.contains("effective.apprenticeship_minutes = 0"));
+        assert!(effective.contains("effective.profession_practice_minutes = 0"));
+        assert!(effective.contains("rank.practice_allowed"));
+        assert!(!effective.contains("return Err"));
+    }
+
+    #[test]
+    fn organization_interval_samples_eligibility_before_advancing_and_settles_after_outcomes() {
+        let source = include_str!("time.rs");
+        for (start, end) in [
+            ("fn rest_for_minutes", "fn inn_stay_cost"),
+            (
+                "pub fn synchronize_character(",
+                "/// Explicitly synchronize",
+            ),
+        ] {
+            let interval = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect("organization time interval");
+            let sample = interval
+                .find("effective_organization_schedule")
+                .expect("start eligibility sample");
+            let advance = interval
+                .find(".update(character_time)")
+                .expect("clock advance");
+            let outcomes = interval
+                .rfind("apply_activity_outcomes")
+                .expect("activity outcomes");
+            let settle = interval
+                .rfind("settle_membership_dues")
+                .expect("post-interval dues settlement");
+            assert!(sample < advance);
+            assert!(outcomes < settle);
+        }
+        let immediate = source
+            .split("pub fn perform_immediate_activity")
+            .nth(1)
+            .and_then(|tail| tail.split("const ACTIVITY_MINUTE_SCALE").next())
+            .expect("immediate organization interval");
+        assert!(
+            immediate.find("validate_organization_schedule").unwrap()
+                < immediate.find(".update(character_time)").unwrap()
+        );
+        assert!(
+            immediate.rfind("apply_activity_outcomes").unwrap()
+                < immediate.rfind("settle_membership_dues").unwrap()
+        );
     }
 
     #[test]

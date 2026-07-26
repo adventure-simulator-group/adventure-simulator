@@ -451,4 +451,9 @@
       beginEditing(root, stateFor(root), display);
     }
   });
+  document.addEventListener('change', (event) => {
+    const selector = event.target.closest?.('[data-organization-schedule-select]');
+    const root = selector?.closest('[data-skill-schedule]');
+    if (root) save(root);
+  });
 })();

@@ -46,6 +46,8 @@ use adventuresim_stdb_client::{
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
     morale_event_table::MoraleEventTableAccess,
+    organization_membership_table::OrganizationMembershipTableAccess,
+    organization_presentation_table::OrganizationPresentationTableAccess,
     party_action_request_table::PartyActionRequestTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_inventory_state_table::PartyInventoryStateTableAccess,
@@ -100,6 +102,8 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "limb_injury",
     "retained_projectile",
     "character_training_schedule",
+    "organization_membership",
+    "organization_presentation",
     "party",
     "party_journey",
     "party_journey_itinerary",
@@ -270,6 +274,8 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.limb_injury());
         invalidate_on_changes!(state.0._connection.db.retained_projectile());
         invalidate_on_changes!(state.0._connection.db.character_training_schedule());
+        invalidate_on_changes!(state.0._connection.db.organization_membership());
+        invalidate_on_changes!(state.0._connection.db.organization_presentation());
         invalidate_on_view_changes!(state.0._connection.db.party());
         invalidate_on_view_changes!(state.0._connection.db.party_journey());
         invalidate_on_changes!(state.0._connection.db.party_journey_itinerary());
@@ -372,6 +378,8 @@ impl LiveState {
             .add_query(|query| query.from.character_strategic_condition())
             .add_query(|query| query.from.character_time())
             .add_query(|query| query.from.character_training_schedule())
+            .add_query(|query| query.from.organization_membership())
+            .add_query(|query| query.from.organization_presentation())
             .add_query(|query| query.from.party_journey())
             .add_query(|query| query.from.party_journey_itinerary())
             .add_query(|query| query.from.inventory_item())

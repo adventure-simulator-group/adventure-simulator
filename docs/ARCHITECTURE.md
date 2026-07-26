@@ -1,5 +1,12 @@
 # Architecture MVP - Adventure Simulator
 
+Organization definitions are authored in YAML and build-validated into
+`adventuresim-core`; they do not infer organization kind from a skill,
+religion, or service. Strategic SpacetimeDB state stores many memberships and
+the optional single presented organization. Reducers own joining, promotion,
+dues, presentation, organization activity, and settlement arms/armor
+compliance. See [ORGANIZATIONS.md](ORGANIZATIONS.md).
+
 Repository-authored dialogue and quest content share a deployment boundary:
 sorted YAML sources are validated and compiled into their crate, then
 deserialized once at startup. Services never interpret loose deployment files.

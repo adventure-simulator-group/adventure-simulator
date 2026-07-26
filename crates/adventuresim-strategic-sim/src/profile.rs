@@ -286,6 +286,10 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         anatomy: initial(&mut rng),
         stealth: initial(&mut rng),
         balance: initial(&mut rng),
+        terrain_plains: initial(&mut rng),
+        terrain_forest: initial(&mut rng),
+        terrain_hills: initial(&mut rng),
+        terrain_urban: initial(&mut rng),
         tailoring: initial(&mut rng),
         smithing: initial(&mut rng),
     };
@@ -380,8 +384,6 @@ fn generated_schedule(
         }
         BuildRole::Healer => {
             s.apprenticeship_minutes = training_minutes;
-            s.apprenticeship_service_id =
-                Some(adventuresim_core::profession::ProfessionId::Herbalist);
         }
         BuildRole::Devout => s.prayer = s.prayer.saturating_add(training_minutes),
         BuildRole::Civilian => s.carousing_minutes = training_minutes,

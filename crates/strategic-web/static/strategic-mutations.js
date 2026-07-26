@@ -20,7 +20,11 @@
     region.textContent = message;
   };
 
-  const submitMutation = async (url, { body, originPage = document.querySelector("#strategic-page") } = {}) => {
+  const submitMutation = async (url, {
+    body,
+    originPage = document.querySelector("#strategic-page"),
+    errorMessageFromResponse,
+  } = {}) => {
     const mine = ++generation;
     const restore = {
       strategicScroll: [scrollX, scrollY],
@@ -50,9 +54,12 @@
       return true;
     }
     if (!response.ok) {
-      throw new Error(response.status === 409
-        ? "The world changed before that action completed. Review the page and try again."
-        : "The action could not be completed.");
+      const message = errorMessageFromResponse
+        ? await errorMessageFromResponse(response)
+        : response.status === 409
+          ? "The world changed before that action completed. Review the page and try again."
+          : "The action could not be completed.";
+      throw new Error(message);
     }
     const text = await response.text();
     if (mine !== generation || originPage !== document.querySelector("#strategic-page")) return false;

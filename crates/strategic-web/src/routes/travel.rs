@@ -355,15 +355,7 @@ fn camp_schedule(allocation: &ScheduleAllocation) -> DailySchedule {
         combat_training_minutes: allocation.combat_training_minutes,
         carousing_minutes: allocation.carousing_minutes,
         apprenticeship_minutes: allocation.apprenticeship_minutes,
-        apprenticeship_service_id: allocation
-            .apprenticeship_service_id
-            .as_deref()
-            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
         profession_practice_minutes: allocation.profession_practice_minutes,
-        profession_service_id: allocation
-            .profession_service_id
-            .as_deref()
-            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
         labor: 0,
         prayer: allocation.prayer_minutes,
         thievery: 0,
