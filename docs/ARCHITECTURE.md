@@ -459,7 +459,7 @@ changing Affinity or Familiarity. Strategic relationship state
 never contains tactical positions, HP, damage ticks, or enemies.
 
 This is a pre-launch clean schema change. Development databases must be
-recreated/reseeded; there is intentionally no Charisma compatibility field,
+recreated/reseeded; there are intentionally no Charisma or Precision compatibility fields,
 migration, dual-read path, or preservation of disposable characters.
 
 ### Key Reducers
@@ -491,7 +491,7 @@ migration, dual-read path, or preservation of disposable characters.
 | `track_case_site` | Select an already-known exact site for party navigation without accepting a contract, moving, progressing an objective, or paying a reward |
 | `travel_to_case_site` | Authorize through observer-safe exact knowledge, advance strategic time, and move a party to the typed off-road case site |
 | `autoresolve_quest` | Run the bounded shared-core melee/ranged simulation, commit per-hit cut/blunt/projectile facts into manual limb injuries, blood loss, and spent ammunition, retain a seeded summary and expandable combat log, and complete or retain the quest according to the outcome |
-| `treat_limb` | Align one treating character and patient on their personal clocks, advance only those participants, and perform one validated Surgery procedure capped by Bestiary knowledge of the patient's species |
+| `treat_limb` | Align one treating character and patient on their personal clocks, advance only those participants, and perform one validated procedure using Anatomy alone or combined with Knife or Tailoring |
 
 The current strategic module does not yet persist a player-identity-to-character ownership mapping.
 Most strategic reducers therefore rely on the authenticated strategic gateway and simulator's

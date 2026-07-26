@@ -75,7 +75,9 @@ The speed of your muscular reflexes and your ability to control them. Arm-agilit
 In theory eyesight/hearing should be further subdivided into eyes/ears for damage purposes, while intelligence and instinct are brain. In fact, ask a neurologist but intelligence/instinct would be correlated with different physical locations in the brain. But this is fine for now, we do not need infinite detail for the MVP.
 
 ### Intelligence
-The depth at which your character can think at. Applies a bonus to mental skills. In order to use your intelligence bonus, a skill has to give you time to think about the problem.
+The depth at which your character can think. Intelligence governs learning and
+mastery for Physiology, Anatomy, Cooking, Religion, Bestiary, and the Terrain
+leaves. It does not add to their final checks.
 
 0. Not capable of conscious thought
 1. Low-functioning autistic, toddler
@@ -85,7 +87,9 @@ The depth at which your character can think at. Applies a bonus to mental skills
 5. Can meaningfully contribute to the field of mathematics
 
 ### Instinct
-Your ability to make snap judgements without thinking. A character with high instinct makes for a good small group leader in battle, where making a quick, decent decision is more important than making an ideal decision but taking awhile to come to it. Applies a bonus to your mental skills. The bonus does not require focus, but is lower than an equal bonus from intelligence.
+Your ability to make snap judgements without thinking. Instinct governs
+learning and mastery for Will, Insight, Self-awareness, Humor, Command,
+Deception, and Seduction. It does not add to their final checks.
 
 0. Unconscious
 1. Takes a couple seconds to respond if you ask them a question
@@ -111,7 +115,9 @@ Your ability to make snap judgements without thinking. A character with high ins
 5. Blind monk
 
 # Skills
-Skills are divided into two categories: mental and physical. The former is governed by intelligence and instinct, the latter by agility. Physical skills are 
+Every skill has exactly one governing aptitude: Intelligence, Instinct, or
+Agility. Aptitude controls training speed and the effective-rank limit; trained
+skill rank supplies the check itself.
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs. They are not increased via an abstract XP/leveling system, and very little of their value comes from using them during tactical play. Instead they are trained through activities in the character's off-screen settlement-downtime schedule. Individual skill-study allocations are not available.
 
@@ -127,13 +133,38 @@ An ordinary day generates 600 fatigue-reservoir units before tiring activities. 
 
 The rank meter is a five-segment display using the same yellow-green, yellow, orange, red, and violet progression as equipment repair difficulty. Daily allocations are changed in 15-minute steps with the left/right buttons or mouse wheel. Clicking a displayed allocation opens a time field. It accepts `h` or `hh` as whole hours, `h:mm` or `hh:mm`, and compact three- or four-digit times such as `830` or `0830`; entered values snap to the nearest 15 minutes and may not exceed `24:00`. The underlying schedule stores minutes, and the Leisure allocation shows the unallocated remainder. The editor updates these values immediately, serializes background saves, and reconciles with the server after the latest change is saved so live updates cannot momentarily restore an older plan. A failed save leaves the optimistic plan visible and presents a Retry action; making another edit also retries using the newest plan. Compact column icons label Currency (`💎`), Virtue (`⚖️`), Morale (`🙂`), Fatigue (`💤`), and daily allocation (`⌛`); each icon exposes the same label to assistive technology.
 
-The main difference between this and directly allocating skill points is that if your character is [convalescing](Health.md) or [traveling](../strategic/Travel.md) they cannot train. Not all skills are equal though in terms of how much training time they need to be effective, they all have their own falloff curve. The number in the parentheses next to a listed skill here is the number of hours that it takes for it to be 50% effective. The rate of increase from training is lower the higher they get, providing an upper-asymptote for how skilled a character can be in a particular skill. Additionally, skills atrophy with disuse, so even an immortal elf or vampire cannot become optimal at everything (though they may get close) due to there being only so many hours in a day.
+The main difference between this and directly allocating skill points is that if your character is [convalescing](Health.md) or [traveling](../strategic/Travel.md) they cannot train. Not all skills are equal though in terms of how much training time they need to be effective, they all have their own falloff curve. The number in parentheses next to a listed skill is its asymptotic training calibration; half that many effective hours produces rank 2.5. The rate of increase from training is lower the higher they get, providing an upper asymptote for skill rank.
+
+Real training time is converted to effective learned hours by the governing
+aptitude:
+
+```rs
+training_multiplier = max(0, 1 + 0.5 * (aptitude - 2.5))
+```
+
+Thus aptitude 0/1/2.5/4/5 learns at 0×/0.25×/1×/1.75×/2.25×.
+An activity first conserves and divides its real-hour budget, then applies each
+target skill's multiplier. Healthy conditioned aptitude, before injury,
+determines both this multiplier and the maximum effective rank. Stored hours
+above a lowered cap remain latent and become effective again if aptitude
+returns. Effective gain that crosses or exceeds the cap is rejected exactly at
+the boundary and feeds one shared, saturating **Mastery enjoyment** morale
+source. Forty excess effective hours reaches about 63% of its four-point limit.
+All rejected gains in one logical interval are combined before saturation; the
+existing enjoyment first decays linearly through the interval, then the combined
+award refreshes it at the endpoint. It reaches zero after seven days without
+another award. Aptitude zero earns neither effective hours nor mastery morale.
 
 The skill rail has three computed combat groups: **Melee**, **Ranged**, and **Defense**. They have no stored hours and are never used directly for a tactical check. Melee expands to Polearm, Axe, Bludgeon, Sword, and Knife; Ranged expands to Bow, Crossbow, Firearm, and Throw; Defense expands to Dodge, Block, Balance, and Will. Equipped weapon distributions determine the relevant weapon leaves. A shield gives Block full relevance; without one, the best-balanced equipped melee weapon gives Block a weight of `1 - balance`. Combat Training and Raiding divide their conserved activity award deterministically across those relevance weights.
 
 Every weapon stores a nine-field skill distribution. A halberd uses Polearm, Axe, and Bludgeon equally; a glaive uses Polearm and Sword; short swords and daggers use Sword and Knife; a hand axe uses Axe and Knife. An attack averages the complete leaf-skill checks using those weights, including each check's attributes and penalties. Knife means short weapons rather than only literal knives.
 ## Intuitive vs Trained
-Intuitive skills can be attempted without training, the check is an average between their associated attribute and the training rank. Trained skills on the other hand receive no benefit without actual training regardless of how high their associated attribute is, the training value is a ceiling. Most skills relevant to the MVP happen to be intuitive.
+This distinction applies only to correlated training. An intuitive target may
+benefit from correlated hours without formal training in that target. A trained
+target evaluates to zero until it has target-specific direct hours, regardless
+of correlated knowledge. Correlation is derived in one pass, never stored, and
+never produces mastery morale. Physiology, Anatomy, Religion and Bestiary
+leaves, and Written languages are trained; Oral languages are intuitive.
 
 ## Formula
 ```rs
@@ -168,34 +199,13 @@ fn fatigue_penalty(player):
 	1 - fatigue^FATIGUE_EXPONENT
 
 const MAX_CHECK = 5
-fn skill_check(character, skill, focus_level, limb_weights: LimbWeights):
+fn skill_check(character, skill, limb_weights: LimbWeights):
 	hours = character.hours_trained(skill)
-	training = MAX_CHECK * (hours / (hours + skill.half()))
-	(reflex_attribute, focus_attribute) = match skill.type():
-		mental => (Attribute::Instinct, Attribute::Intelligence)
-		physical => (Attribute::Agility, Attribute::Precision)
-		
-	let (reflex, focus) = if skill.type() == physical:
-		(
-			// this iterates through the 4 limb weights and
-			// multiplies each attribute by the corresponding weight
-			// then sums them up.
-			// the weights should always total 1.0
-			character.limbs.get_weighted_attribute(reflex_attribute, limb_weights)
-			character.limbs.get_weighted_attribute(focus_attribute, limb_weights)
-		)
-	else {
-		(
-			character.mental[reflex_attribute],
-			character.mental[focus_attribute],
-		)
-	}
-		
-	attribute_check = reflex + focus * focus_level
-	mut check = if skill.is_intuitive():
-		(training + attribute_check)/2
-	else:
-		min(training, attribute_check)
+	mut check = min(
+		MAX_CHECK * (hours / (hours + skill.half())),
+		character.healthy_governing_aptitude(skill),
+	)
+	check *= character.injury_usability(skill, limb_weights)
 	if skill.type() == physical:
 		# armor penalty ranges from 0-0.4, with full-plate being 0.4
 		if skill.is_upper_body():
@@ -206,7 +216,7 @@ fn skill_check(character, skill, focus_level, limb_weights: LimbWeights):
 	return check
 ```
 
-Each skill is represented in the stats window as a pair of horizontal bars. One represents the value as if focus_level was 0, the other as if it were 2. Each bar is measured in terms of hours trained, with non-equidistant ticks at each whole number value of the skill check. Any penalties such as from encumbrance, armor, or injuries are designated by a color on the bar, so that the white portion shows how much the skill currently is, while the colored portions show how much each penalty is affecting the final value.
+Each skill is represented in the stats window with its stored, uncapped training rank behind its current effective rank. Hover text reports the stored effective hours and governing aptitude cap. Penalties such as encumbrance, armor, or injuries reduce only the current effective portion.
 
 ## Mental
 ### Will (intuitive, 5000 hours)
@@ -219,7 +229,9 @@ Ability to resist [pain](../tactical/Combat.md) or avoid [morale](Morale.md) pen
 5. Zen monk
 
 ### Social skills (intuitive)
-There's no persuasion system or anything for the MVP, this is just a [morale](Morale.md) buff for the party. You lose focus during combat, so instinct gives you tactical morale while intelligence gives you traveling morale.
+There's no persuasion system or anything for the MVP, this is primarily a
+[morale](Morale.md) and relationship system. All current Social leaves are
+governed by Instinct.
 
 Insight reads others, Self-awareness reads oneself, Humor relieves tension, Command rallies and coordinates, Deception sustains false impressions, and Seduction handles romantic interest. Party Command is led by the strongest individual check. Additional members receive a saturating coordination benefit, then contribute half of their deviation from a 2.5 baseline. Checks above 2.5 help and checks below 2.5 burden the party's social leadership. The result is capped from 0 to 5; adding arbitrarily many low-Command members cannot manufacture a high result. Character sheets summarize these six skills with an expandable Social meta-skill whose rank is their average.
 
@@ -283,8 +295,8 @@ category. Transformed animal tracks can support Werekin without identifying
 whether the host is Human, Elf, or Dwarf.
 
 Direct category hours are canonical. Effective hours use one symmetric,
-nonrecursive correlation pass and are capped at the Bestiary skill's
-5,000-hour mastery calibration. Wildmen knowledge correlates strongly with Human knowledge and
+nonrecursive correlation pass after the target category has received direct
+study. Wildmen knowledge correlates strongly with Human knowledge and
 more modestly with Fey knowledge. The expandable skill rail shows effective
 and directly studied hours for every category with transferred knowledge.
 The parent Bestiary value is the mean effective coverage across every category,
@@ -312,7 +324,10 @@ training activity is currently implemented.
 
 ## Physical
 ### Polearm, Axe, Bludgeon, Sword, and Knife (intuitive, 8000 hours)
-These are the five melee weapon leaves. Agility helps against active defense, while Precision helps against unaware or staggered targets. Hybrid weapons use a weighted average of all tagged leaves. Knife covers short weapons, including daggers, short swords, hand axes, and compact butchery tools.
+These are the five melee weapon leaves. Their fixed training aptitude is the
+average healthy Agility of both arms. Hybrid weapons use a weighted average of
+all tagged leaves. Knife covers short weapons, including daggers, short swords,
+hand axes, and compact butchery tools.
 
 0. Has never been shown how to use a weapon or observed for an extended period of time
 1. Can split firewood with an axe, zombies
@@ -322,7 +337,11 @@ These are the five melee weapon leaves. Agility helps against active defense, wh
 5. Elven warrior
 
 ### Bow, Crossbow, Firearm, and Throw (intuitive, 15000 hours)
-These are the four ranged weapon leaves. Aiming builds the Precision contribution, whereas Agility helps more with point-shooting. Hybrid or throwable weapons may use more than one leaf.
+These are the four ranged weapon leaves. Their fixed training aptitude is the
+average healthy Agility of both arms. Input precision remains a future
+client-to-combat signal, while weapon accuracy remains an equipment statistic;
+neither is a character attribute. Hybrid or throwable weapons may use more than
+one leaf.
 
 0. Never practiced even throwing a baseball
 1. Orcs, untrained peasants
@@ -340,7 +359,7 @@ These are the four ranged weapon leaves. Aiming builds the Precision contributio
 4. Knight
 5. Elven warrior
 ### Block (intuitive, 12000 hours)
-The larger your shield is, the less you rely on your block skill to use it effectively. A pavise requires almost none (though considerable strength), a buckler or weapon require high skill to use effectively. Precision doesn't give you a bonus to your defense when blocking, but does increase the amount of poise damage that actually does occur on a successful block (automatically turning it into a parry).
+The larger your shield is, the less you rely on your block skill to use it effectively. A pavise requires almost none (though considerable strength), a buckler or weapon require high skill to use effectively.
 
 0. Never been in a fight
 1. Has been in some barfights
@@ -350,7 +369,8 @@ The larger your shield is, the less you rely on your block skill to use it effec
 5. Elven swordmasters
 
 ### Stealth (intuitive, 8000 hours)
-Agility reduces the noise that you make while moving, precision reduces the radius at which your party can be detected at when [traveling](../strategic/Travel.md).
+Stealth uses the average healthy Agility of all four limbs for training speed
+and mastery. Injury still penalizes current performance.
 
 0. Has never even attempted to steal cookies from the cookie jar
 1. Most people
@@ -370,24 +390,16 @@ separate Terrain meta-skill and does not stack with Balance.
 4. Skilled gymnast or martial artist, can walk a tightrope
 5. Graceful elf
 
-### Surgery (physical, upper-body, trained, 5000 hours)
-Surgery is an ordinary leaf skill with its own directly trained hours. Its
-check uses arm Agility and Precision and receives the same upper-body injury,
-armor, encumbrance, and fatigue penalties as other upper-body physical skills.
-Herbalist apprenticeship and practice divide their training between Medicine
-(one half), Human Bestiary knowledge (one sixth), and Surgery (one third).
+### Anatomy (mental, trained, 10000 hours)
+Anatomy represents trained knowledge of bodies and wounds. Intelligence governs
+its training speed and mastery cap, while head injury remains a performance
+penalty. Herbalist apprenticeship and practice divide their training between
+Physiology (one half) and Anatomy, Knife, and Tailoring (one sixth each).
 
-Effective Surgery knowledge is calculated in one nonrecursive pass as direct
-Surgery hours plus 25% of direct Knife hours and 25% of direct Tailoring hours,
-capped at Surgery's 5,000-hour mastery calibration. Knife and Tailoring are
-trained through their own activities; transferred Surgery knowledge does not
-feed back into either source skill.
-
-Every procedure uses the resulting physical Surgery check. Separately, that
-check is capped by the treating character's effective Bestiary knowledge for
-the patient's species before the self-treatment penalty is applied. Current
-characters are Human, while the category boundary is ready for future playable
-species.
+Surgery is a procedure, not a skill. Projectile extraction averages the
+treating character's Anatomy and Knife checks; stitching averages Anatomy and
+Tailoring. Bandaging and splinting use Anatomy alone. Self-treatment applies
+the shared 2.5-point penalty after the applicable skills are combined.
 
 ### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
 
@@ -401,7 +413,7 @@ underlying terrain rather than Urban and reduce training in proportion to the
 time they save.
 
 ### Tailoring (trained, 10000 hours)
-Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, and one quarter of direct Tailoring hours transfers to effective Surgery knowledge.
+Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, and stitching combines it with Anatomy.
 
 ### Smithing (trained, 10000 hours)
 Smithing makes and repairs weapons, armor, and shields. It does not repair clothing.

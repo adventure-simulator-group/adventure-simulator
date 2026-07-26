@@ -3351,8 +3351,8 @@ fn issue_rumor_action_graph(
     validate_action_route_graph(ctx, owner_character_id, case_id)
 }
 
-fn skill_bps(skill: Skill, hours: f32) -> u16 {
-    (skill.training_rank(hours) * 2_000.0)
+fn skill_bps(skill: Skill, hours: f32, attributes: &crate::CharacterAttributes) -> u16 {
+    (skill.capped_training_rank(hours, attributes) * 2_000.0)
         .round()
         .clamp(0.0, 10_000.0) as u16
 }
@@ -3369,13 +3369,33 @@ fn party_action_skills(
         .character_id()
         .find(actor_id)
         .ok_or("Character skills not found")?;
+    let actor_attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character attributes not found")?;
     let terrain_bps = match terrain {
-        action::Terrain::Forest => skill_bps(Skill::TerrainForest, actor.terrain_forest_hours),
-        action::Terrain::Hills => skill_bps(Skill::TerrainHills, actor.terrain_hills_hours),
-        action::Terrain::Settlement | action::Terrain::Ruins => {
-            skill_bps(Skill::TerrainUrban, actor.terrain_urban_hours)
-        }
-        _ => skill_bps(Skill::TerrainPlains, actor.terrain_plains_hours),
+        action::Terrain::Forest => skill_bps(
+            Skill::TerrainForest,
+            actor.terrain_forest_hours,
+            &actor_attributes,
+        ),
+        action::Terrain::Hills => skill_bps(
+            Skill::TerrainHills,
+            actor.terrain_hills_hours,
+            &actor_attributes,
+        ),
+        action::Terrain::Settlement | action::Terrain::Ruins => skill_bps(
+            Skill::TerrainUrban,
+            actor.terrain_urban_hours,
+            &actor_attributes,
+        ),
+        _ => skill_bps(
+            Skill::TerrainPlains,
+            actor.terrain_plains_hours,
+            &actor_attributes,
+        ),
     };
     let mut assistance = 0u16;
     for member_id in living_party_member_ids(ctx, party_id) {
@@ -3383,25 +3403,35 @@ fn party_action_skills(
             continue;
         }
         if let Some(skills) = ctx.db.character_skills().character_id().find(member_id) {
+            let Some(attributes) = ctx.db.character_attributes().character_id().find(member_id)
+            else {
+                continue;
+            };
             let contribution = match terrain {
-                action::Terrain::Forest => {
-                    skill_bps(Skill::TerrainForest, skills.terrain_forest_hours)
-                }
+                action::Terrain::Forest => skill_bps(
+                    Skill::TerrainForest,
+                    skills.terrain_forest_hours,
+                    &attributes,
+                ),
                 action::Terrain::Hills => {
-                    skill_bps(Skill::TerrainHills, skills.terrain_hills_hours)
+                    skill_bps(Skill::TerrainHills, skills.terrain_hills_hours, &attributes)
                 }
                 action::Terrain::Settlement | action::Terrain::Ruins => {
-                    skill_bps(Skill::TerrainUrban, skills.terrain_urban_hours)
+                    skill_bps(Skill::TerrainUrban, skills.terrain_urban_hours, &attributes)
                 }
-                _ => skill_bps(Skill::TerrainPlains, skills.terrain_plains_hours),
+                _ => skill_bps(
+                    Skill::TerrainPlains,
+                    skills.terrain_plains_hours,
+                    &attributes,
+                ),
             } / 4;
             assistance = assistance.saturating_add(contribution).min(2_000);
         }
     }
     Ok(action::SkillContribution {
         terrain_bps,
-        awareness_bps: skill_bps(Skill::Insight, actor.insight_hours),
-        stealth_bps: skill_bps(Skill::Stealth, actor.stealth_hours),
+        awareness_bps: skill_bps(Skill::Insight, actor.insight_hours, &actor_attributes),
+        stealth_bps: skill_bps(Skill::Stealth, actor.stealth_hours, &actor_attributes),
         assistance_bps: assistance,
         // No authoritative locality-familiarity source exists yet.
         familiarity_bps: 0,

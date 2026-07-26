@@ -22,6 +22,48 @@ pub const MAX_RELIGIOUS_NEGLECT_MORALE: f32 = 8.0;
 pub const RELIGIOUS_NEGLECT_COMMAND_RELIEF: f32 = 1.6;
 /// Losing this fraction of maximum blood volume fully incapacitates a character.
 pub const BLOOD_LOSS_INCAPACITATION_FRACTION: f32 = 0.30;
+/// Shared upper bound for enjoyment from training already-mastered skills.
+pub const MASTERY_ENJOYMENT_LIMIT: f32 = 4.0;
+/// Excess effective hours needed to traverse one e-fold of the mastery curve.
+pub const MASTERY_ENJOYMENT_EFOLD_HOURS: f32 = 40.0;
+
+/// Advance shared mastery enjoyment through one logical training interval.
+///
+/// Existing enjoyment first decays through the full interval. The combined
+/// rejected-hour award then saturates at the interval endpoint, so award order
+/// within one logical clock advance cannot affect the result.
+pub fn mastery_enjoyment_after_interval(
+    starting_morale: f32,
+    excess_effective_hours: f32,
+    elapsed_minutes: u64,
+    duration_minutes: u64,
+) -> f32 {
+    let starting = if starting_morale.is_finite() {
+        starting_morale.clamp(0.0, MASTERY_ENJOYMENT_LIMIT)
+    } else {
+        0.0
+    };
+    let excess = if excess_effective_hours.is_finite() {
+        excess_effective_hours.max(0.0)
+    } else {
+        0.0
+    };
+    let decayed = if duration_minutes == 0 {
+        0.0
+    } else {
+        starting * (1.0 - elapsed_minutes as f32 / duration_minutes as f32).clamp(0.0, 1.0)
+    };
+    MASTERY_ENJOYMENT_LIMIT
+        - (MASTERY_ENJOYMENT_LIMIT - decayed) * (-excess / MASTERY_ENJOYMENT_EFOLD_HOURS).exp()
+}
+
+pub fn mastery_enjoyment_decay(age_minutes: u64, duration_minutes: u64) -> f32 {
+    if duration_minutes == 0 || age_minutes >= duration_minutes {
+        0.0
+    } else {
+        1.0 - age_minutes as f32 / duration_minutes as f32
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncapacitationStatus {
@@ -291,5 +333,39 @@ mod tests {
         assert_eq!(thirst_incapacitation(1.0, 4_000.0), 0.0);
         assert!((hunger_incapacitation(-18_000.0, 6_000.0) - 1.0).abs() < 0.0001);
         assert!((thirst_incapacitation(-4_000.0, 4_000.0) - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn mastery_enjoyment_is_bounded_aggregated_and_continuously_decayed() {
+        let duration = 7 * 24 * 60;
+        let combined = mastery_enjoyment_after_interval(0.0, 80.0, 1_440, duration);
+        assert!(combined > 0.0 && combined < MASTERY_ENJOYMENT_LIMIT);
+        assert!(mastery_enjoyment_after_interval(0.0, 0.01, 1_440, duration) > 0.0);
+        assert!(
+            mastery_enjoyment_after_interval(0.0, 10_000.0, 1_440, duration)
+                <= MASTERY_ENJOYMENT_LIMIT
+        );
+        // Schedule/language and terrain/oral awards use this same aggregation:
+        // combining sources before the shared update cannot multiply morale.
+        let combined_sources = mastery_enjoyment_after_interval(0.0, 12.0 + 8.0, 1_440, duration);
+        let sequential_sources = mastery_enjoyment_after_interval(
+            mastery_enjoyment_after_interval(0.0, 12.0, 1_440, duration),
+            8.0,
+            0,
+            duration,
+        );
+        assert!((combined_sources - sequential_sources).abs() < 0.0001);
+        let partially_aged = mastery_enjoyment_after_interval(2.0, 0.01, duration / 2, duration);
+        let decayed = 1.0;
+        let expected = MASTERY_ENJOYMENT_LIMIT
+            - (MASTERY_ENJOYMENT_LIMIT - decayed) * (-0.01 / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
+        let frozen_then_awarded = MASTERY_ENJOYMENT_LIMIT
+            - (MASTERY_ENJOYMENT_LIMIT - 2.0) * (-0.01 / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
+        assert!((partially_aged - expected).abs() < 0.0001);
+        assert!(partially_aged < frozen_then_awarded);
+        assert_eq!(
+            mastery_enjoyment_after_interval(combined, 0.0, duration, duration),
+            0.0
+        );
     }
 }

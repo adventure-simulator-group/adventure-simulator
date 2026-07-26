@@ -2690,7 +2690,7 @@ async fn render_party_personal(
         settlement.as_ref(),
         stats.as_ref(),
     )
-    .with_professions(skills.first(), &apprenticeships);
+    .with_professions(attributes.first(), skills.first(), &apprenticeships);
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -5468,11 +5468,19 @@ async fn merchant_shop(
     let speaker = query_single::<CharacterSkills>(&state, "character_skills", character.id)
         .await
         .map_or_default(|skills| skills.oral_languages);
+    let speaker_cap =
+        query_single::<CharacterAttributes>(&state, "character_attributes", character.id)
+            .await
+            .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
     let mut merchant_languages = adventuresim_world_schema::OralLanguageHours::default();
     *merchant_languages.direct_mut(settlement.languages.dominant_german()) =
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
-    let (_, shared_language) =
-        adventuresim_world_schema::best_common_oral_language(speaker, merchant_languages);
+    let (_, shared_language) = adventuresim_world_schema::best_common_oral_language_capped(
+        speaker,
+        speaker_cap,
+        merchant_languages,
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS,
+    );
     let now_minutes = times
         .as_ref()
         .ok()
@@ -5686,24 +5694,34 @@ async fn equipment_rest_recommendation(
     inventory: &[InventoryItem],
 ) -> (u64, u64) {
     let skills_sql = format!("SELECT * FROM character_skills WHERE character_id = {character_id}");
+    let attributes_sql =
+        format!("SELECT * FROM character_attributes WHERE character_id = {character_id}");
     let settlement_literal = sql_string_literal(settlement_id);
     let orders_sql = format!(
         "SELECT * FROM repair_order WHERE owner_character_id = {character_id} AND settlement_id = {settlement_literal}"
     );
     let time_sql = format!("SELECT * FROM character_time WHERE character_id = {character_id}");
-    let (conditions, skills, orders, times) = tokio::join!(
+    let (conditions, skills, attributes, orders, times) = tokio::join!(
         state
             .db
             .query::<ItemCondition>("SELECT * FROM item_condition"),
         state.db.query::<CharacterSkills>(&skills_sql),
+        state.db.query::<CharacterAttributes>(&attributes_sql),
         state.db.query::<RepairOrder>(&orders_sql),
         state.db.query::<CharacterTime>(&time_sql),
     );
+    let skills = skills.unwrap_or_default();
+    let attributes = attributes.unwrap_or_default();
     let skill = skills
-        .unwrap_or_default()
         .first()
-        .map(|skills| Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8)
-        .unwrap_or(0)
+        .zip(attributes.first())
+        .map(|(skills, attributes)| {
+            let arm_agility = (attributes.left_arm_agility + attributes.right_arm_agility) * 0.5;
+            Skill::Smithing
+                .capped_rank_for_aptitude(skills.smithing_hours, arm_agility)
+                .floor() as u8
+        })
+        .unwrap_or_default()
         .min(2);
     let owned: std::collections::HashSet<u64> = inventory.iter().map(|item| item.id).collect();
     let yellow: f32 = conditions
@@ -6676,7 +6694,6 @@ mod encumbrance_tests {
                 endurance: 0.0,
                 immunity: 0.0,
                 gut: 0.0,
-                precision: 0.0,
                 intelligence: 0.0,
                 instinct: 0.0,
                 eyesight: 0.0,

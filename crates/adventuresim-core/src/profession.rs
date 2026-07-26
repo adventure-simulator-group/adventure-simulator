@@ -261,11 +261,16 @@ pub fn profession_definition(id: ProfessionId) -> Option<&'static ProfessionDefi
 pub fn profession_tier(
     profession: &ProfessionDefinition,
     mut training_hours: impl FnMut(Skill) -> f32,
+    mut aptitude: impl FnMut(Skill) -> f32,
 ) -> ProfessionTier {
     let lowest_rank = profession
         .skills
         .iter()
-        .map(|entry| entry.skill.training_rank(training_hours(entry.skill)))
+        .map(|entry| {
+            entry
+                .skill
+                .capped_rank_for_aptitude(training_hours(entry.skill), aptitude(entry.skill))
+        })
         .fold(f32::INFINITY, f32::min);
     if lowest_rank >= 4.0 {
         ProfessionTier::Master
@@ -344,24 +349,34 @@ mod tests {
     fn standing_changes_at_exact_rank_boundaries() {
         let smith = profession_for_service("weapons").unwrap();
         // Smithing max_hours is 10,000: ranks two and four occur at max/3 and 2*max.
-        assert_eq!(profession_tier(smith, |_| 0.0), ProfessionTier::Apprentice);
         assert_eq!(
-            profession_tier(smith, |_| 10_000.0 / 3.0),
+            profession_tier(smith, |_| 0.0, |_| 5.0),
+            ProfessionTier::Apprentice
+        );
+        assert_eq!(
+            profession_tier(smith, |_| 10_000.0 / 3.0, |_| 5.0),
             ProfessionTier::Journeyman
         );
-        assert_eq!(profession_tier(smith, |_| 20_000.0), ProfessionTier::Master);
+        assert_eq!(
+            profession_tier(smith, |_| 20_000.0, |_| 5.0),
+            ProfessionTier::Master
+        );
     }
 
     #[test]
     fn multi_skill_profession_uses_its_lowest_rank() {
         let herbalist = profession_for_service("herbalist").unwrap();
         assert_eq!(
-            profession_tier(herbalist, |skill| match skill {
-                Skill::Physiology => 20_000.0,
-                Skill::Anatomy => 0.0,
-                Skill::Knife | Skill::Tailoring => 20_000.0,
-                _ => unreachable!("unexpected medical skill: {skill:?}"),
-            }),
+            profession_tier(
+                herbalist,
+                |skill| match skill {
+                    Skill::Physiology => 20_000.0,
+                    Skill::Anatomy => 0.0,
+                    Skill::Knife | Skill::Tailoring => 20_000.0,
+                    _ => unreachable!("unexpected medical skill: {skill:?}"),
+                },
+                |_| 5.0,
+            ),
             ProfessionTier::Apprentice
         );
     }

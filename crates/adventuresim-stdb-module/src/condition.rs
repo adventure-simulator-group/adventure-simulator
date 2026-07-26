@@ -21,6 +21,7 @@ pub const BLOOD_ML_PER_KG: f32 = 70.0;
 pub const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
 pub const RECENT_MORALE_DURATION_MINUTES: u64 = 7 * 24 * 60;
 const LEISURE_MORALE_SOURCE_ID: &str = "settlement-leisure";
+const MASTERY_MORALE_SOURCE_ID: &str = "mastery-enjoyment";
 const INJURY_MORALE_PER_HEALTH_DEFICIT: f32 = 5.0;
 pub const TRAVEL_CALORIES_PER_DAY: f32 = STRATEGIC_TRAVEL_KCAL_PER_DAY;
 pub const TRAVEL_WATER_ML_PER_DAY: f32 = STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
@@ -889,6 +890,8 @@ fn base_morale(
         let age = current_minute.saturating_sub(event.occurred_at_minute);
         let effect = if event.source_id.as_deref() == Some(LEISURE_MORALE_SOURCE_ID) {
             leisure_morale_effect(event.magnitude, age as f32, duration)
+        } else if event.source_id.as_deref() == Some(MASTERY_MORALE_SOURCE_ID) {
+            event.magnitude * adventuresim_core::morale::mastery_enjoyment_decay(age, duration)
         } else {
             event.magnitude * morale_event_decay(age, duration)
         };
@@ -901,6 +904,7 @@ fn base_morale(
                     "victory" => "Recent victory".into(),
                     "defeat" => "Recent defeat".into(),
                     "leisure" => "Restful leisure".into(),
+                    "mastery_enjoyment" => "Mastery enjoyment".into(),
                     other => other.replace('_', " "),
                 },
                 effect,
@@ -912,6 +916,60 @@ fn base_morale(
     rank_morale_sources(&mut raw_sources, will);
     let morale = raw_sources.iter().map(|source| source.magnitude).sum();
     Ok((morale, raw_sources))
+}
+
+/// Feed all rejected effective skill training into one shared, durable morale
+/// source. Callers aggregate every award in one logical clock interval before
+/// recording it, so skill choice and award order cannot multiply enjoyment.
+pub fn record_mastery_training_morale(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+    excess_effective_hours: f32,
+) {
+    if excess_effective_hours <= 0.0 || !excess_effective_hours.is_finite() {
+        return;
+    }
+    let interval_end = character_minute(ctx, character_id);
+    let interval_start = interval_end.saturating_sub(elapsed_minutes);
+    let existing = ctx
+        .db
+        .morale_event()
+        .character_id()
+        .filter(character_id)
+        .find(|event| event.source_id.as_deref() == Some(MASTERY_MORALE_SOURCE_ID));
+    let at_interval_start = existing.as_ref().map_or(0.0, |event| {
+        let duration = event
+            .expires_at_minute
+            .saturating_sub(event.occurred_at_minute);
+        event.magnitude
+            * adventuresim_core::morale::mastery_enjoyment_decay(
+                interval_start.saturating_sub(event.occurred_at_minute),
+                duration,
+            )
+    });
+    // Endpoint semantics: the helper decays this interval-start magnitude
+    // through `elapsed_minutes` before applying the one aggregated award.
+    let magnitude = adventuresim_core::morale::mastery_enjoyment_after_interval(
+        at_interval_start,
+        excess_effective_hours,
+        elapsed_minutes,
+        RECENT_MORALE_DURATION_MINUTES,
+    );
+    let event = MoraleEvent {
+        id: existing.as_ref().map_or(0, |event| event.id),
+        character_id,
+        kind: "mastery_enjoyment".into(),
+        magnitude,
+        occurred_at_minute: interval_end,
+        expires_at_minute: interval_end.saturating_add(RECENT_MORALE_DURATION_MINUTES),
+        source_id: Some(MASTERY_MORALE_SOURCE_ID.into()),
+    };
+    if existing.is_some() {
+        ctx.db.morale_event().id().update(event);
+    } else {
+        ctx.db.morale_event().insert(event);
+    }
 }
 
 fn party_morale_support(

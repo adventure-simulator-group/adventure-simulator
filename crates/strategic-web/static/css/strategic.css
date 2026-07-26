@@ -375,6 +375,30 @@
   font-size: 1.05em;
 }
 
+.strategic-skill-tooltip-title {
+  margin-bottom: .18rem;
+}
+
+.strategic-skill-tooltip-line {
+  display: block;
+}
+
+.strategic-skill-tooltip-correlations {
+  width: 100%;
+  margin-top: .16rem;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategic-skill-tooltip-correlations td {
+  padding: 0;
+}
+
+.strategic-skill-tooltip-correlations td:last-child {
+  padding-left: 1rem;
+  text-align: right;
+}
+
 .strategic-tooltip-list {
   display: grid;
   gap: .08rem;

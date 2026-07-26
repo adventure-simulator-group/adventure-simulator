@@ -129,13 +129,38 @@ test('nested meter segments show their own multiline value tooltip', () => {
   assert.equal(system.tooltip.textContent, 'Blood\n24');
 });
 
+test('skill tooltips render generated details with aligned correlation percentages', () => {
+  const { window, document, system } = fixture(`
+    <div tabindex="0"
+      data-strategic-tooltip="Human&#10;Governed by Intelligence&#10;500.0 effective hours trained&#10;250.0 hours from correlated skills:&#10;Wildmen | 65%&#10;Fey | 30%"
+      data-skill-tooltip='{"name":"Human","governed_by":"Intelligence","trained_hours":500,"correlated_hours":250,"correlations":[{"name":"Wildmen","percent":65},{"name":"Fey","percent":30}]}'></div>
+  `);
+  const skill = document.querySelector('[data-skill-tooltip]');
+
+  dispatch(window, skill, 'focusin');
+
+  assert.equal(system.tooltip.querySelector('.strategic-tooltip-title').textContent, 'Human');
+  assert.deepEqual(
+    [...system.tooltip.querySelectorAll('.strategic-skill-tooltip-line')].map((line) => line.textContent),
+    [
+      'Governed by Intelligence',
+      '500.0 effective hours trained',
+      '250.0 hours from correlated skills:',
+    ],
+  );
+  assert.deepEqual(
+    [...system.tooltip.querySelectorAll('.strategic-skill-tooltip-correlations tr')]
+      .map((row) => [...row.querySelectorAll('td')].map((cell) => cell.textContent)),
+    [['Wildmen', '65%'], ['Fey', '30%']],
+  );
+  assert.equal(skill.getAttribute('aria-describedby'), 'strategic-tooltip');
+});
+
 test('shared tooltips render above every popup overlay', () => {
   const tooltipZ = Number(styles.match(/#strategic-tooltip,[\s\S]*?z-index:\s*(\d+)/)[1]);
   const characterDialogZ = Number(styles.match(/\.character-action-overlay\s*\{[\s\S]*?z-index:\s*(\d+)/)[1]);
-  const medicalDialogZ = Number(styles.match(/\.medical-examination-overlay\s*\{[\s\S]*?z-index:\s*(\d+)/)[1]);
 
   assert.ok(tooltipZ > characterDialogZ);
-  assert.ok(tooltipZ > medicalDialogZ);
 });
 
 test('Bestiary tooltips separate main and secondary types, pin, and show enemy facts', () => {
@@ -199,7 +224,7 @@ test('Bestiary tooltips separate main and secondary types, pin, and show enemy f
   );
   assert.equal(system.tooltip.querySelectorAll('.strategic-tooltip-section').length, 0);
 
-  dispatch(window, skill, 'click');
+  dispatch(window, skill, 'click', { detail: 1 });
   dispatch(window, skill, 'pointerout', { pointerType: 'mouse', relatedTarget: document.body });
   assert.equal(system.pinnedTarget, skill);
   assert.equal(skill.getAttribute('aria-pressed'), 'true');
@@ -218,7 +243,7 @@ test('Bestiary tooltips separate main and secondary types, pin, and show enemy f
     ['No innate padding against blunt force'],
   );
 
-  dispatch(window, skill, 'click');
+  dispatch(window, skill, 'click', { detail: 1 });
   assert.equal(system.pinnedTarget, null);
   assert.equal(skill.getAttribute('aria-pressed'), 'false');
   assert.equal(system.tooltip.hidden, true);

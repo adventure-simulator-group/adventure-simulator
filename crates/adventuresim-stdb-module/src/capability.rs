@@ -212,14 +212,6 @@ impl PlayerAttributes for CharacterAttributes {
             SimpleAttribute::Hearing => self.hearing,
         }
     }
-
-    fn raw_precision(&self) -> f32 {
-        self.precision
-    }
-
-    fn has_dedicated_precision(&self) -> bool {
-        true
-    }
 }
 
 impl PlayerSkills for CharacterSkills {
@@ -655,7 +647,6 @@ pub(crate) fn load_combatant(
             endurance: attributes.endurance,
             immunity: attributes.immunity,
             gut: attributes.gut,
-            precision: attributes.precision,
             intelligence: attributes.intelligence,
             instinct: attributes.instinct,
             eyesight: attributes.eyesight,

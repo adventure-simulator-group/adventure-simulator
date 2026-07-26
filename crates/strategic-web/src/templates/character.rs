@@ -240,7 +240,6 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             endurance: spec.attributes.endurance,
             immunity: spec.attributes.immunity,
             gut: spec.attributes.gut,
-            precision: spec.attributes.precision,
             intelligence: spec.attributes.intelligence,
             instinct: spec.attributes.instinct,
             eyesight: spec.attributes.eyesight,

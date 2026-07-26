@@ -1,7 +1,9 @@
 //! Pure settlement schedule progression shared by the authoritative module and tools.
 
+use crate::attribute::PlayerAttributes;
 use crate::equipment::WeaponSkillDistribution;
 use crate::profession::ProfessionId;
+use crate::skill::{Skill, apply_direct_training};
 use crate::{activity::*, strategic_time::training_hours_increment};
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
@@ -301,11 +303,29 @@ pub fn apply_schedule_training(
     schedule: DailySchedule,
     elapsed_minutes: u64,
     profile: ActivityTrainingProfile,
-) {
+    attributes: &impl PlayerAttributes,
+) -> f32 {
+    let mut excess = 0.0;
+    let mut award = |stored: &mut f32, skill: Skill, real_hours: f32| {
+        excess +=
+            apply_direct_training(skill, stored, real_hours, attributes).excess_effective_hours;
+    };
     let increment = |minutes| training_hours_increment(elapsed_minutes, minutes);
-    skills.humor += increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE;
-    skills.will += increment(schedule.labor) * ACTIVITY_TRAINING_RATE;
-    skills.stealth += increment(schedule.thievery) * ACTIVITY_TRAINING_RATE;
+    award(
+        &mut skills.humor,
+        Skill::Humor,
+        increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE,
+    );
+    award(
+        &mut skills.will,
+        Skill::Will,
+        increment(schedule.labor) * ACTIVITY_TRAINING_RATE,
+    );
+    award(
+        &mut skills.stealth,
+        Skill::Stealth,
+        increment(schedule.thievery) * ACTIVITY_TRAINING_RATE,
+    );
     // Combat Training and Raiding conserve their activity training budget
     // across equipped weapon leaves and all four Defense leaves.
     let combat_training_hours = increment(schedule.combat_training_minutes)
@@ -313,25 +333,25 @@ pub fn apply_schedule_training(
     if combat_training_hours > 0.0 {
         let combat_weights = profile.combat.weights();
         let total_weight = combat_weights.into_iter().sum::<f32>();
-        for (hours, weight) in [
-            &mut skills.polearm,
-            &mut skills.axe,
-            &mut skills.bludgeon,
-            &mut skills.sword,
-            &mut skills.knife,
-            &mut skills.bow,
-            &mut skills.crossbow,
-            &mut skills.firearm,
-            &mut skills.throw,
-            &mut skills.dodge,
-            &mut skills.block,
-            &mut skills.balance,
-            &mut skills.will,
+        for ((hours, skill), weight) in [
+            (&mut skills.polearm, Skill::Polearm),
+            (&mut skills.axe, Skill::Axe),
+            (&mut skills.bludgeon, Skill::Bludgeon),
+            (&mut skills.sword, Skill::Sword),
+            (&mut skills.knife, Skill::Knife),
+            (&mut skills.bow, Skill::Bow),
+            (&mut skills.crossbow, Skill::Crossbow),
+            (&mut skills.firearm, Skill::Firearm),
+            (&mut skills.throw, Skill::Throw),
+            (&mut skills.dodge, Skill::Dodge),
+            (&mut skills.block, Skill::Block),
+            (&mut skills.balance, Skill::Balance),
+            (&mut skills.will, Skill::Will),
         ]
         .into_iter()
         .zip(combat_weights)
         {
-            *hours += combat_training_hours * weight / total_weight;
+            award(hours, skill, combat_training_hours * weight / total_weight);
         }
     }
 
@@ -339,30 +359,43 @@ pub fn apply_schedule_training(
         skills,
         schedule.apprenticeship_service_id,
         increment(schedule.apprenticeship_minutes),
+        attributes,
+        &mut excess,
     );
     apply_profession_training(
         skills,
         schedule.profession_service_id,
         increment(schedule.profession_practice_minutes),
+        attributes,
+        &mut excess,
     );
+    excess
 }
 
 fn apply_profession_training(
     skills: &mut SkillHours,
     service_id: Option<ProfessionId>,
     hours: f32,
+    attributes: &impl PlayerAttributes,
+    excess: &mut f32,
 ) {
+    let mut award = |stored: &mut f32, skill: Skill, real_hours: f32| {
+        *excess +=
+            apply_direct_training(skill, stored, real_hours, attributes).excess_effective_hours;
+    };
     match service_id {
-        Some(ProfessionId::Merchant) => skills.command += hours,
-        Some(ProfessionId::Weaponsmith | ProfessionId::Armourer) => skills.smithing += hours,
-        Some(ProfessionId::Tailor) => skills.tailoring += hours,
-        Some(ProfessionId::Herbalist) => {
-            skills.physiology += hours * 0.5;
-            skills.anatomy += hours / 6.0;
-            skills.knife += hours / 6.0;
-            skills.tailoring += hours / 6.0;
+        Some(ProfessionId::Merchant) => award(&mut skills.command, Skill::Command, hours),
+        Some(ProfessionId::Weaponsmith | ProfessionId::Armourer) => {
+            award(&mut skills.smithing, Skill::Smithing, hours)
         }
-        Some(ProfessionId::Cook) => skills.cooking += hours,
+        Some(ProfessionId::Tailor) => award(&mut skills.tailoring, Skill::Tailoring, hours),
+        Some(ProfessionId::Herbalist) => {
+            award(&mut skills.physiology, Skill::Physiology, hours * 0.5);
+            award(&mut skills.anatomy, Skill::Anatomy, hours / 6.0);
+            award(&mut skills.knife, Skill::Knife, hours / 6.0);
+            award(&mut skills.tailoring, Skill::Tailoring, hours / 6.0);
+        }
+        Some(ProfessionId::Cook) => award(&mut skills.cooking, Skill::Cooking, hours),
         // Religion is tradition-specific and is applied by the authoritative
         // caller after resolving the settlement tradition.
         _ => {}
@@ -375,13 +408,18 @@ pub fn apply_religion_training(
     elapsed_minutes: u64,
     prayer_religion: Option<OfficialReligion>,
     prayer_minutes: u16,
-) {
+    attributes: &impl PlayerAttributes,
+) -> f32 {
     if let Some(religion) = prayer_religion {
-        religion_hours.add_direct(
-            religion,
+        return apply_direct_training(
+            Skill::Religion,
+            religion_hours.direct_mut(religion),
             training_hours_increment(elapsed_minutes, prayer_minutes) * ACTIVITY_TRAINING_RATE,
-        );
+            attributes,
+        )
+        .excess_effective_hours;
     }
+    0.0
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -450,8 +488,20 @@ pub fn settlement_activity_outcome(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::body::BodyPart;
+    use crate::prelude::{LimbAttribute, SimpleAttribute};
     use crate::profession::ProfessionId;
     use crate::strategic_time::MINUTES_PER_DAY;
+
+    struct NeutralAttributes;
+    impl PlayerAttributes for NeutralAttributes {
+        fn raw_limb_attr(&self, _attr: LimbAttribute, _limb: BodyPart) -> f32 {
+            2.5
+        }
+        fn raw_single_body_part_attr(&self, _attr: SimpleAttribute) -> f32 {
+            2.5
+        }
+    }
 
     #[test]
     fn new_activities_conserve_training_and_apply_profession_weights() {
@@ -468,6 +518,7 @@ mod tests {
             schedule,
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+            &NeutralAttributes,
         );
         let combat_total = skills.polearm
             + skills.axe
@@ -503,6 +554,7 @@ mod tests {
             schedule,
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+            &NeutralAttributes,
         );
         assert!((skills.cooking - 3.0).abs() < 0.001);
         assert_eq!(skills.command, 0.0);
@@ -596,9 +648,21 @@ mod tests {
             ..Default::default()
         };
         let mut chunked = bulk;
-        apply_schedule_training(&mut bulk, schedule, 30 * MINUTES_PER_DAY, profile);
+        apply_schedule_training(
+            &mut bulk,
+            schedule,
+            30 * MINUTES_PER_DAY,
+            profile,
+            &NeutralAttributes,
+        );
         for _ in 0..30 {
-            apply_schedule_training(&mut chunked, schedule, MINUTES_PER_DAY, profile);
+            apply_schedule_training(
+                &mut chunked,
+                schedule,
+                MINUTES_PER_DAY,
+                profile,
+                &NeutralAttributes,
+            );
         }
         for (left, right) in bulk.values().into_iter().zip(chunked.values()) {
             assert!((left - right).abs() < 0.002, "{left} != {right}");
@@ -619,6 +683,7 @@ mod tests {
             schedule,
             30 * MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
+            &NeutralAttributes,
         );
         let mut daily = SkillHours::default();
         for _ in 0..30 {
@@ -627,6 +692,7 @@ mod tests {
                 schedule,
                 MINUTES_PER_DAY,
                 ActivityTrainingProfile::default(),
+                &NeutralAttributes,
             );
         }
         for (a, b) in chunked.values().into_iter().zip(daily.values()) {
@@ -642,13 +708,20 @@ mod tests {
             MINUTES_PER_DAY,
             Some(OfficialReligion::Lutheran),
             60,
+            &NeutralAttributes,
         );
         assert_eq!(hours.lutheran, 0.25);
         assert_eq!(hours.total_direct(), 0.25);
-        assert!(hours.effective(OfficialReligion::RomanCatholic) > 0.0);
+        assert_eq!(hours.effective(OfficialReligion::RomanCatholic), 0.0);
 
         let mut meditation = ReligionHours::default();
-        apply_religion_training(&mut meditation, MINUTES_PER_DAY, None, 60);
+        apply_religion_training(
+            &mut meditation,
+            MINUTES_PER_DAY,
+            None,
+            60,
+            &NeutralAttributes,
+        );
         assert_eq!(meditation.total_direct(), 0.0);
     }
 

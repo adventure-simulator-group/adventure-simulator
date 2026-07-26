@@ -198,10 +198,22 @@ pub fn best_common_oral_language(
     left: OralLanguageHours,
     right: OralLanguageHours,
 ) -> (OralLanguage, f32) {
+    best_common_oral_language_capped(left, ORAL_FLUENCY_HOURS, right, ORAL_FLUENCY_HOURS)
+}
+
+pub fn best_common_oral_language_capped(
+    left: OralLanguageHours,
+    left_cap_hours: f32,
+    right: OralLanguageHours,
+    right_cap_hours: f32,
+) -> (OralLanguage, f32) {
     OralLanguage::ALL
         .into_iter()
         .map(|language| {
-            let coefficient = (left.effective(language).min(right.effective(language))
+            let coefficient = (left
+                .effective(language)
+                .min(left_cap_hours.max(0.0))
+                .min(right.effective(language).min(right_cap_hours.max(0.0)))
                 / ORAL_FLUENCY_HOURS)
                 .clamp(0.0, 1.0);
             (language, coefficient)
@@ -224,10 +236,20 @@ pub fn language_scaled_effect(value: f32, shared_language: f32) -> f32 {
 pub fn party_common_oral_choices(
     speakers: &[(u64, OralLanguageHours)],
 ) -> Vec<(u64, OralLanguage, f32)> {
+    let capped: Vec<_> = speakers
+        .iter()
+        .map(|(id, hours)| (*id, *hours, ORAL_FLUENCY_HOURS))
+        .collect();
+    party_common_oral_choices_capped(&capped)
+}
+
+pub fn party_common_oral_choices_capped(
+    speakers: &[(u64, OralLanguageHours, f32)],
+) -> Vec<(u64, OralLanguage, f32)> {
     let mut top = [[(0_u64, -1.0_f32); 2]; 8];
-    for (id, hours) in speakers {
+    for (id, hours, cap) in speakers {
         for language in OralLanguage::ALL {
-            let candidate = (*id, hours.effective(language));
+            let candidate = (*id, hours.effective(language).min((*cap).max(0.0)));
             let values = &mut top[language.index()];
             if candidate.1 > values[0].1
                 || (candidate.1 == values[0].1 && candidate.0 < values[0].0)
@@ -243,7 +265,7 @@ pub fn party_common_oral_choices(
     }
     speakers
         .iter()
-        .map(|(id, own)| {
+        .map(|(id, own, cap)| {
             OralLanguage::ALL
                 .into_iter()
                 .map(|language| {
@@ -256,7 +278,9 @@ pub fn party_common_oral_choices(
                     let coefficient = if other < 0.0 {
                         0.0
                     } else {
-                        (own.effective(language).min(other) / ORAL_FLUENCY_HOURS).clamp(0.0, 1.0)
+                        (own.effective(language).min((*cap).max(0.0)).min(other)
+                            / ORAL_FLUENCY_HOURS)
+                            .clamp(0.0, 1.0)
                     };
                     (language, coefficient)
                 })
@@ -280,6 +304,21 @@ pub fn party_oral_training_gains(
         0.0
     };
     party_common_oral_choices(speakers)
+        .into_iter()
+        .map(|(id, language, coefficient)| (id, language, hours * coefficient))
+        .collect()
+}
+
+pub fn party_oral_training_gains_capped(
+    speakers: &[(u64, OralLanguageHours, f32)],
+    elapsed_hours: f32,
+) -> Vec<(u64, OralLanguage, f32)> {
+    let hours = if elapsed_hours.is_finite() {
+        elapsed_hours.max(0.0)
+    } else {
+        0.0
+    };
+    party_common_oral_choices_capped(speakers)
         .into_iter()
         .map(|(id, language, coefficient)| (id, language, hours * coefficient))
         .collect()
@@ -421,6 +460,9 @@ impl WrittenLanguageHours {
             })
     }
     pub fn effective(self, l: WrittenLanguage) -> f32 {
+        if self.direct(l) <= 0.0 {
+            return 0.0;
+        }
         WrittenLanguage::ALL
             .into_iter()
             .map(|s| self.direct(s).max(0.0) * l.correlation(s))
@@ -621,6 +663,29 @@ mod tests {
         let (language, coefficient) = best_common_oral_language(a, b);
         assert_eq!(language, OralLanguage::EastCentral);
         assert!((coefficient - 0.14).abs() < 1e-5);
+    }
+
+    #[test]
+    fn common_oral_language_caps_direct_and_correlated_fluency() {
+        let left = OralLanguageHours {
+            east_central: 5_000.0,
+            ..Default::default()
+        };
+        let right = OralLanguageHours {
+            west_central: 5_000.0,
+            ..Default::default()
+        };
+        let (_, low) = best_common_oral_language_capped(left, 1_000.0, right, 5_000.0);
+        let (_, restored) = best_common_oral_language_capped(left, 4_000.0, right, 5_000.0);
+        assert_eq!(low, 0.2);
+        assert_eq!(restored, 0.7);
+
+        let choices = party_common_oral_choices_capped(&[(1, left, 1_000.0), (2, right, 5_000.0)]);
+        assert!(
+            choices
+                .iter()
+                .all(|(_, _, coefficient)| *coefficient == 0.2)
+        );
     }
     #[test]
     fn yiddish_people_are_bilingual_with_weaker_local_german() {

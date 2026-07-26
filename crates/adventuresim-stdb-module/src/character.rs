@@ -205,7 +205,6 @@ pub struct CharacterAttributes {
     pub endurance: f32,
     pub immunity: f32,
     pub gut: f32,
-    pub precision: f32,
     pub intelligence: f32,
     pub instinct: f32,
     pub eyesight: f32,
@@ -1075,8 +1074,25 @@ pub(crate) fn shared_language_coefficient(
     let Some(right) = ctx.db.character_skills().character_id().find(right_id) else {
         return 0.0;
     };
-    adventuresim_world_schema::best_common_oral_language(left.oral_languages, right.oral_languages)
-        .1
+    let left_cap = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(left_id)
+        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    let right_cap = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(right_id)
+        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    adventuresim_world_schema::best_common_oral_language_capped(
+        left.oral_languages,
+        left_cap,
+        right.oral_languages,
+        right_cap,
+    )
+    .1
 }
 
 fn insert_character_with_origin(
@@ -1197,7 +1213,6 @@ fn insert_character_with_origin(
         endurance: generated_attributes.map_or(2.0, |a| a.endurance),
         immunity: generated_attributes.map_or(2.0, |a| a.immunity),
         gut: generated_attributes.map_or(2.0, |a| a.gut),
-        precision: generated_attributes.map_or(2.0, |a| a.precision),
         intelligence: generated_attributes.map_or(2.0, |a| a.intelligence),
         instinct: generated_attributes.map_or(2.0, |a| a.instinct),
         eyesight: generated_attributes.map_or(2.0, |a| a.eyesight),

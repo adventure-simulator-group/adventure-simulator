@@ -1342,7 +1342,6 @@ pub struct CharacterAttributes {
     pub endurance: f32,
     pub immunity: f32,
     pub gut: f32,
-    pub precision: f32,
     pub intelligence: f32,
     pub instinct: f32,
     pub eyesight: f32,

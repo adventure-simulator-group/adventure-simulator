@@ -110,7 +110,6 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Result<Comba
         endurance: rating,
         immunity: rating,
         gut: rating,
-        precision: rating + profile.precision_bonus,
         intelligence: rating * 0.7,
         instinct: rating,
         eyesight: rating,
@@ -5971,36 +5970,32 @@ fn dialogue_fact_context(
             },
             FactValue::Bool(prior),
         );
-        if let (Some(skills), Some(settlement)) = (
+        if let (Some(skills), Some(attributes), Some(settlement)) = (
             ctx.db.character_skills().character_id().find(character_id),
+            ctx.db
+                .character_attributes()
+                .character_id()
+                .find(character_id),
             ctx.db.settlement().id().find(&session.settlement_id),
         ) {
-            let coefficient = skills
+            let effective_hours = skills
                 .oral_languages
-                .effective(settlement.languages.dominant_german())
-                / adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+                .effective(settlement.languages.dominant_german());
+            let (compatibility, passes_check) =
+                participant_language_compatibility(effective_hours, attributes.instinct);
             result.facts.insert(
                 FactKey::ParticipantLanguageCompatibility {
                     left: player.role.clone(),
                     right: npc.role.clone(),
                 },
-                FactValue::Text(
-                    if coefficient >= 0.75 {
-                        "fluent"
-                    } else if coefficient >= 0.35 {
-                        "limited"
-                    } else {
-                        "poor"
-                    }
-                    .into(),
-                ),
+                FactValue::Text(compatibility.into()),
             );
             result.facts.insert(
                 FactKey::LanguageCheck {
                     left: player.role.clone(),
                     right: npc.role.clone(),
                 },
-                FactValue::Bool(coefficient >= 0.35),
+                FactValue::Bool(passes_check),
             );
         }
     }
@@ -6066,6 +6061,60 @@ fn dialogue_fact_context(
         }
     }
     Ok(result)
+}
+
+fn participant_language_compatibility(
+    target_effective_hours: f32,
+    instinct: f32,
+) -> (&'static str, bool) {
+    let effective = if target_effective_hours.is_finite() {
+        target_effective_hours.max(0.0)
+    } else {
+        0.0
+    };
+    let aptitude = if instinct.is_finite() {
+        instinct.clamp(0.0, 5.0)
+    } else {
+        0.0
+    };
+    let coefficient =
+        effective.min(aptitude * 1_000.0) / adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+    if coefficient >= 0.75 {
+        ("fluent", true)
+    } else if coefficient >= 0.35 {
+        ("limited", true)
+    } else {
+        ("poor", false)
+    }
+}
+
+#[cfg(test)]
+mod participant_language_compatibility_tests {
+    use super::participant_language_compatibility;
+
+    #[test]
+    fn instinct_cap_controls_dialogue_language_thresholds() {
+        assert_eq!(
+            participant_language_compatibility(5_000.0, 1.749),
+            ("poor", false)
+        );
+        assert_eq!(
+            participant_language_compatibility(5_000.0, 1.75),
+            ("limited", true)
+        );
+        assert_eq!(
+            participant_language_compatibility(5_000.0, 3.749),
+            ("limited", true)
+        );
+        assert_eq!(
+            participant_language_compatibility(5_000.0, 3.75),
+            ("fluent", true)
+        );
+        assert_eq!(
+            participant_language_compatibility(1_749.0, 5.0),
+            ("poor", false)
+        );
+    }
 }
 
 fn dialogue_runtime_bindings(
@@ -11015,8 +11064,18 @@ fn finalize_storefront_trade_impl(
     let mut merchant = adventuresim_world_schema::OralLanguageHours::default();
     *merchant.direct_mut(settlement.languages.dominant_german()) =
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
-    let (_, shared_language) =
-        adventuresim_world_schema::best_common_oral_language(speaker, merchant);
+    let speaker_cap = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    let (_, shared_language) = adventuresim_world_schema::best_common_oral_language_capped(
+        speaker,
+        speaker_cap,
+        merchant,
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS,
+    );
     let settlement_economy = settlement.economy.clone();
     let problem_effects =
         crate::local_problem::settlement_effects(ctx, &settlement_id, problem_minute);
@@ -12818,9 +12877,10 @@ fn train_party_terrain_movement(
     ctx: &ReducerContext,
     party_id: &str,
     movement_minutes: u64,
-) -> Result<(), String> {
+) -> Result<std::collections::BTreeMap<u64, f32>, String> {
+    let mut excess_by_character = std::collections::BTreeMap::new();
     if movement_minutes == 0 {
-        return Ok(());
+        return Ok(excess_by_character);
     }
     let Some(journey) = ctx
         .db
@@ -12828,7 +12888,7 @@ fn train_party_terrain_movement(
         .party_id()
         .find(&party_id.to_string())
     else {
-        return Ok(());
+        return Ok(excess_by_character);
     };
     let Some(route) = ctx
         .db
@@ -12836,33 +12896,68 @@ fn train_party_terrain_movement(
         .party_id()
         .find(&party_id.to_string())
     else {
-        return Ok(());
+        return Ok(excess_by_character);
     };
     let start = journey.completed_minutes;
     let end = start.saturating_add(movement_minutes).min(route.minutes);
     let exposure = terrain_training_exposure(&route.spans, start, end);
     for member_id in living_party_member_ids(ctx, party_id) {
         if let Some(mut skills) = ctx.db.character_skills().character_id().find(member_id) {
-            skills.terrain_plains_hours = (skills.terrain_plains_hours + exposure[0])
-                .clamp(0.0, Skill::TerrainPlains.max_hours());
-            skills.terrain_forest_hours = (skills.terrain_forest_hours + exposure[1])
-                .clamp(0.0, Skill::TerrainForest.max_hours());
-            skills.terrain_hills_hours = (skills.terrain_hills_hours + exposure[2])
-                .clamp(0.0, Skill::TerrainHills.max_hours());
-            skills.terrain_urban_hours = (skills.terrain_urban_hours + exposure[3])
-                .clamp(0.0, Skill::TerrainUrban.max_hours());
+            let attributes = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(member_id)
+                .ok_or("Character attributes not found")?;
+            let mut excess = 0.0;
+            for (stored, skill, real_hours) in [
+                (
+                    &mut skills.terrain_plains_hours,
+                    Skill::TerrainPlains,
+                    exposure[0],
+                ),
+                (
+                    &mut skills.terrain_forest_hours,
+                    Skill::TerrainForest,
+                    exposure[1],
+                ),
+                (
+                    &mut skills.terrain_hills_hours,
+                    Skill::TerrainHills,
+                    exposure[2],
+                ),
+                (
+                    &mut skills.terrain_urban_hours,
+                    Skill::TerrainUrban,
+                    exposure[3],
+                ),
+            ] {
+                excess += adventuresim_core::skill::apply_direct_training(
+                    skill,
+                    stored,
+                    real_hours,
+                    &attributes,
+                )
+                .excess_effective_hours;
+            }
             ctx.db.character_skills().character_id().update(skills);
+            excess_by_character.insert(member_id, excess);
         }
     }
-    Ok(())
+    Ok(excess_by_character)
 }
 
 /// Give each traveler at most one interval of conversational exposure. Choices
 /// are made from one sorted pre-gain snapshot, so party iteration cannot affect
 /// the result and additional companions cannot multiply elapsed time.
-fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement_minutes: u64) {
+fn train_party_oral_communication(
+    ctx: &ReducerContext,
+    party_id: &str,
+    movement_minutes: u64,
+) -> std::collections::BTreeMap<u64, f32> {
+    let mut excess_by_character = std::collections::BTreeMap::new();
     if movement_minutes == 0 {
-        return;
+        return excess_by_character;
     }
     let mut snapshot: Vec<_> = living_party_member_ids(ctx, party_id)
         .into_iter()
@@ -12871,18 +12966,40 @@ fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement
                 .character_skills()
                 .character_id()
                 .find(id)
-                .map(|skills| (id, skills.oral_languages))
+                .map(|skills| {
+                    let cap = ctx
+                        .db
+                        .character_attributes()
+                        .character_id()
+                        .find(id)
+                        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+                    (id, skills.oral_languages, cap)
+                })
         })
         .collect();
-    snapshot.sort_by_key(|(id, _)| *id);
+    snapshot.sort_by_key(|(id, _, _)| *id);
     let interval_hours = movement_minutes as f32 / 60.0;
-    let gains = adventuresim_world_schema::party_oral_training_gains(&snapshot, interval_hours);
+    let gains =
+        adventuresim_world_schema::party_oral_training_gains_capped(&snapshot, interval_hours);
     for (id, language, hours) in gains {
         if let Some(mut skills) = ctx.db.character_skills().character_id().find(id) {
-            skills.oral_languages.add_direct(language, hours);
+            let instinct = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(id)
+                .map_or(0.0, |attributes| attributes.instinct);
+            let excess = adventuresim_core::skill::apply_language_training(
+                skills.oral_languages.direct_mut(language),
+                hours,
+                instinct,
+            )
+            .excess_effective_hours;
             ctx.db.character_skills().character_id().update(skills);
+            excess_by_character.insert(id, excess);
         }
     }
+    excess_by_character
 }
 
 fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 4] {
@@ -12929,8 +13046,13 @@ fn advance_party_movement(
     }
     // Training is committed only after every participant's authoritative
     // clock has committed the same safe movement prefix.
-    train_party_terrain_movement(ctx, party_id, actual_minutes)?;
-    train_party_oral_communication(ctx, party_id, actual_minutes);
+    let mut mastery_excess = train_party_terrain_movement(ctx, party_id, actual_minutes)?;
+    for (character_id, excess) in train_party_oral_communication(ctx, party_id, actual_minutes) {
+        *mastery_excess.entry(character_id).or_default() += excess;
+    }
+    for (character_id, excess) in mastery_excess {
+        crate::condition::record_mastery_training_morale(ctx, character_id, actual_minutes, excess);
+    }
     Ok((actual_minutes, all_survived))
 }
 
@@ -13421,10 +13543,9 @@ fn whole_party_sneak_score(ctx: &ReducerContext, member_ids: &[u64]) -> u16 {
                 .character_attributes()
                 .character_id()
                 .find(*member_id)?;
-            let training =
-                adventuresim_core::prelude::Skill::Stealth.training_rank(skills.stealth_hours);
-            let agility = (attributes.left_arm_agility + attributes.right_arm_agility) * 0.5;
-            Some((training.min(agility).max(0.0) * 100.0).round() as u16)
+            let training = adventuresim_core::prelude::Skill::Stealth
+                .capped_training_rank(skills.stealth_hours, &attributes);
+            Some((training.max(0.0) * 100.0).round() as u16)
         })
         .min()
         .unwrap_or(0)

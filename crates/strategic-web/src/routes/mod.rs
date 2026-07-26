@@ -34,9 +34,9 @@ use crate::session::{CHARACTER_COOKIE, Session};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     BackendCaseSitePin, BackendCharacterCaseSiteLocation, Character, CharacterAttributes,
-    CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
-    Party, PartyActionRequest, PartyJourney, PartyJourneyRoute, PartyMember, Settlement,
-    SpacetimeClient, WorldClock,
+    CharacterLimbs, CharacterSkills, CharacterStrategicCondition, CharacterTime, Party,
+    PartyActionRequest, PartyJourney, PartyJourneyRoute, PartyMember, Settlement, SpacetimeClient,
+    WorldClock,
 };
 
 /// Application state shared across routes
@@ -106,12 +106,12 @@ mod return_url_tests {
 
     #[test]
     fn terrain_mental_check_applies_authoritative_head_health() {
-        let healthy = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 1.0);
-        let injured = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 0.5);
-        let destroyed = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 0.0);
-        assert_eq!(healthy, 3.0);
-        assert_eq!(injured, 2.0);
-        assert_eq!(destroyed, 1.0);
+        let healthy = terrain_mental_check(2.0, 2.0, 1.0);
+        let injured = terrain_mental_check(2.0, 2.0, 0.5);
+        let destroyed = terrain_mental_check(2.0, 2.0, 0.0);
+        assert_eq!(healthy, 2.0);
+        assert_eq!(injured, 1.0);
+        assert_eq!(destroyed, 0.0);
     }
 }
 
@@ -325,16 +325,6 @@ pub(crate) async fn party_terrain_profile(
         else {
             continue;
         };
-        let Some(stats) = state
-            .db
-            .query_one::<CharacterStats>(&format!(
-                "SELECT * FROM character_stats WHERE character_id = {id}"
-            ))
-            .await
-            .map_err(|e| e.to_string())?
-        else {
-            continue;
-        };
         let Some(limbs) = state
             .db
             .query_one::<CharacterLimbs>(&format!(
@@ -378,9 +368,7 @@ pub(crate) async fn party_terrain_profile(
         {
             checks[index].push(terrain_mental_check(
                 skill.training_rank(hours),
-                attributes.instinct,
                 attributes.intelligence,
-                stats.focus,
                 limbs.head_health,
             ));
         }
@@ -399,17 +387,9 @@ pub(crate) async fn party_terrain_profile(
     })
 }
 
-fn terrain_mental_check(
-    training_rank: f32,
-    instinct: f32,
-    intelligence: f32,
-    focus: f32,
-    head_health: f32,
-) -> f32 {
+fn terrain_mental_check(training_rank: f32, intelligence: f32, head_health: f32) -> f32 {
     let head_health = head_health.clamp(0.0, 1.0);
-    let attribute_check =
-        instinct * head_health + intelligence * head_health * focus.clamp(0.0, 1.0);
-    ((training_rank + attribute_check) * 0.5).clamp(0.0, 5.0)
+    training_rank.min(intelligence.clamp(0.0, 5.0)) * head_health
 }
 
 async fn planned_travel_call(

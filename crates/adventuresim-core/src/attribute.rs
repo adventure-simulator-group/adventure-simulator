@@ -43,10 +43,10 @@ pub enum SimpleAttribute {
     /// Digestive system, food tolerance.
     #[assoc(body_part = BodyPart::Stomach)]
     Gut,
-    /// Deep thinking, mental skill bonus requiring focus.
+    /// Deep thinking; learning speed and mastery cap for intellectual skills.
     #[assoc(body_part = BodyPart::Head)]
     Intelligence,
-    /// Quick decisions, tactical morale without focus.
+    /// Quick decisions; learning speed and mastery cap for instinctive skills.
     #[assoc(body_part = BodyPart::Head)]
     Instinct,
     /// Visual acuity.
@@ -64,29 +64,6 @@ pub trait PlayerAttributes {
     // this can panic if attribute and limb isn't a valid limb
     fn raw_limb_attr(&self, attr: LimbAttribute, limb: BodyPart) -> f32;
     fn raw_single_body_part_attr(&self, attr: SimpleAttribute) -> f32;
-
-    /// Fine motor control used while a character has time to concentrate.
-    fn raw_precision(&self) -> f32 {
-        0.0
-    }
-
-    /// Whether this adapter exposes a dedicated Precision attribute. Older
-    /// adapters retain their legacy agility-based behavior.
-    fn has_dedicated_precision(&self) -> bool {
-        false
-    }
-
-    fn precision_by_parts(&self, body: &impl PlayerBody, weights: LimbWeights) -> f32 {
-        let usable_limbs = BodyPart::LIMBS.iter().fold(0.0, |sum, part| {
-            sum + weights.by_part(part).clamp(0.0, 1.0)
-                * body.body_part_health(part).clamp(0.0, 1.0)
-        });
-        if self.has_dedicated_precision() {
-            self.raw_precision() * usable_limbs
-        } else {
-            self.limb_attr_by_weight_by_parts(LimbAttribute::Agility, body, weights)
-        }
-    }
 
     fn attr_by_parts(&self, attr: impl Into<Attribute>, body: &impl PlayerBody) -> f32 {
         let attr = attr.into();

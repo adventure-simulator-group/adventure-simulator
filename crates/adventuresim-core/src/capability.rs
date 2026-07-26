@@ -36,9 +36,9 @@ pub fn aggregate_party_check(values: impl IntoIterator<Item = f32>) -> f32 {
 /// are sufficient to reproduce the same check for a schedule preview.
 pub fn religion_knowledge_check(
     effective_hours: f32,
-    instinct: f32,
+    _instinct: f32,
     intelligence: f32,
-    focus: f32,
+    _focus: f32,
     head_health: f32,
 ) -> f32 {
     let health = if head_health.is_finite() {
@@ -46,19 +46,15 @@ pub fn religion_knowledge_check(
     } else {
         0.0
     };
-    let attribute_check = health * (instinct + intelligence * focus);
-    Skill::Religion
-        .training_rank(effective_hours)
-        .min(attribute_check)
-        .max(0.0)
+    Skill::Religion.capped_rank_for_aptitude(effective_hours, intelligence) * health
 }
 
 /// The authoritative trained-mental Bestiary check for one creature category.
 pub fn bestiary_knowledge_check(
     effective_hours: f32,
-    instinct: f32,
+    _instinct: f32,
     intelligence: f32,
-    focus: f32,
+    _focus: f32,
     head_health: f32,
 ) -> f32 {
     let health = if head_health.is_finite() {
@@ -66,11 +62,7 @@ pub fn bestiary_knowledge_check(
     } else {
         0.0
     };
-    let attribute_check = health * (instinct + intelligence * focus);
-    Skill::Bestiary
-        .training_rank(effective_hours)
-        .min(attribute_check)
-        .max(0.0)
+    Skill::Bestiary.capped_rank_for_aptitude(effective_hours, intelligence) * health
 }
 
 pub fn aggregate_party_contribution(current: &[f32], candidate: f32) -> f32 {
@@ -519,11 +511,11 @@ mod tests {
     }
 
     #[test]
-    fn religion_knowledge_check_is_bounded_by_training_and_healthy_focus() {
+    fn religion_knowledge_check_is_capped_by_intelligence_and_head_health() {
         assert_eq!(religion_knowledge_check(0.0, 5.0, 5.0, 1.0, 1.0), 0.0);
         let trained = Skill::Religion.training_rank(2_500.0);
         assert!((religion_knowledge_check(2_500.0, 5.0, 5.0, 1.0, 1.0) - trained).abs() < 0.001);
-        assert!((religion_knowledge_check(100_000.0, 1.0, 1.0, 0.5, 0.5) - 0.75).abs() < 0.001);
+        assert!((religion_knowledge_check(100_000.0, 5.0, 1.0, 0.5, 0.5) - 0.5).abs() < 0.001);
     }
 
     #[test]

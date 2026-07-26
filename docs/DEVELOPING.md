@@ -276,14 +276,16 @@ permanently discards only that profile's contents. Keep
 the moved directory until the reset has been validated, then retire it under
 the operator's normal backup-retention policy.
 
-Bestiary knowledge adds a clean `bestiary_hours` field to `character_skills`;
-trained Surgery adds `surgery_hours` to the same disposable schema. Surgery
-uses direct hours plus one-pass Knife and Tailoring transfer, while procedures
-are capped by Bestiary knowledge for the patient's species. These changes add
-canonical physical-inspection/action-receipt authority, and structured
-Bestiary results on investigation journal notices. Because development data is
+Bestiary knowledge adds a clean `bestiary_hours` field to `character_skills`.
+Surgical procedures use separate trained skills: extraction combines Anatomy
+with Knife, while stitching combines Anatomy with Tailoring. These changes add
+canonical physical-inspection/action-receipt authority and structured Bestiary
+results on investigation journal notices. Because development data is
 disposable, regenerate the SpacetimeDB client bindings and reset/reseed an
 isolated profile rather than adding a migration or compatibility path.
+Precision is not a character attribute. The clean public attribute schema
+contains Intelligence, Instinct, and per-limb Agility; weapon precision and
+tactical hit/input precision remain separate equipment and combat concepts.
 
 After this one-time reset, routine startup should use `just dev` / `just web`
 and routine publishes should use `just publish`, all of which preserve data.

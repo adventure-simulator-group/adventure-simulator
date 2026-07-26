@@ -285,6 +285,11 @@ impl BestiaryHours {
     }
 
     pub fn effective(self, category: BestiaryCategory) -> f32 {
+        // Bestiary leaves are trained: correlation cannot bootstrap a target
+        // category which has never received formal/direct study.
+        if self.direct(category) <= 0.0 {
+            return 0.0;
+        }
         BestiaryCategory::ALL
             .into_iter()
             .map(|studied| {
@@ -296,7 +301,6 @@ impl BestiaryHours {
                 }) * category.correlation(studied)
             })
             .sum::<f32>()
-            .min(BESTIARY_MASTERY_HOURS)
     }
 
     pub fn maximum_effective(self) -> f32 {
@@ -460,6 +464,11 @@ impl ReligionHours {
     }
 
     pub fn effective(self, religion: OfficialReligion) -> f32 {
+        // Religion leaves are trained and therefore require target-specific
+        // direct study before correlated knowledge becomes usable.
+        if self.direct(religion) <= 0.0 {
+            return 0.0;
+        }
         OfficialReligion::ALL
             .into_iter()
             .map(|studied| {
@@ -4721,18 +4730,21 @@ mod tests {
             OfficialReligion::Islamic.correlation(OfficialReligion::Judaism),
             0.35
         );
-        let hours = ReligionHours {
+        let mut hours = ReligionHours {
             roman_catholic: 1.0,
             ..Default::default()
         };
-        assert_eq!(hours.effective(OfficialReligion::Lutheran), 0.8);
-        // The derived Lutheran knowledge does not feed back into Catholicism.
-        assert_eq!(hours.effective(OfficialReligion::RomanCatholic), 1.0);
-        assert_eq!(hours.total_direct(), 1.0);
+        assert_eq!(hours.effective(OfficialReligion::Lutheran), 0.0);
+        hours.lutheran = 0.1;
+        assert!((hours.effective(OfficialReligion::Lutheran) - 0.9).abs() < 0.0001);
+        // Only the newly direct Lutheran study transfers back; derived hours
+        // never recursively feed another tradition.
+        assert!((hours.effective(OfficialReligion::RomanCatholic) - 1.08).abs() < 0.0001);
+        assert_eq!(hours.total_direct(), 1.1);
     }
 
     #[test]
-    fn bestiary_correlations_are_symmetric_nonrecursive_and_capped() {
+    fn bestiary_correlations_are_symmetric_nonrecursive_and_direct_gated() {
         for left in BestiaryCategory::ALL {
             assert_eq!(left.correlation(left), 1.0);
             for right in BestiaryCategory::ALL {
@@ -4747,7 +4759,7 @@ mod tests {
             human: 1_000.0,
             ..Default::default()
         };
-        assert_eq!(hours.effective(BestiaryCategory::Wildmen), 650.0);
+        assert_eq!(hours.effective(BestiaryCategory::Wildmen), 0.0);
         assert_eq!(hours.effective(BestiaryCategory::Human), 1_000.0);
         assert!(hours.aggregate_effective() > 0.0);
         assert!(hours.aggregate_effective() < hours.maximum_effective());
@@ -4758,10 +4770,7 @@ mod tests {
             wildmen: super::BESTIARY_MASTERY_HOURS,
             ..Default::default()
         };
-        assert_eq!(
-            mastered.effective(BestiaryCategory::Beast),
-            super::BESTIARY_MASTERY_HOURS
-        );
+        assert!(mastered.effective(BestiaryCategory::Beast) >= super::BESTIARY_MASTERY_HOURS);
     }
 
     #[test]
