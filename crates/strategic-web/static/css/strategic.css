@@ -4760,6 +4760,18 @@ body.chat-resizing {
 }
 
 .prototype-disclaimer { margin: 0 0 1rem; padding: .8rem 1rem; border: 2px solid #d7aa48; background: #342b19; color: #fff2c9; font-weight: 700; text-align: center; }
+.main-grid:has(> .candidate-bootstrap) {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-y: auto;
+}
+.candidate-bootstrap {
+  box-sizing: border-box;
+  width: min(56rem, 100%);
+  min-height: 100%;
+  justify-self: center;
+}
+.candidate-bootstrap .page-title,
+.candidate-bootstrap > .small-copy { text-align: center; }
 .candidate-stage { position: relative; }
 .candidate-play-action { display: flex; justify-content: center; margin: 1rem auto; }
 .candidate-package-summary {
