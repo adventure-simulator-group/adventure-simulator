@@ -321,7 +321,7 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
 
 pub(super) fn npc_description_stage(name: &str, fallback: &str) -> Markup {
     html! { section class="visual-stage npc-description-stage" data-npc-description aria-live="polite" {
-        div class="visual-stage-placeholder" aria-hidden="true" { "?" }
+        div class="visual-stage-placeholder npc-portrait-silhouette" aria-hidden="true" {}
         h2 { (name) }
         p { (fallback) }
     } }
@@ -479,6 +479,19 @@ mod tests {
     use crate::spacetimedb::*;
     use crate::templates::settlement::settlement_npc_location_page;
     use crate::templates::settlement::test_support::*;
+
+    #[test]
+    fn npc_description_fallback_uses_the_neutral_person_silhouette() {
+        let markup = npc_description_stage("Residents", "Select a resident.").into_string();
+        assert!(markup.contains(
+            "class=\"visual-stage-placeholder npc-portrait-silhouette\" aria-hidden=\"true\""
+        ));
+        assert!(!markup.contains('?',));
+
+        let client = include_str!("../../../static/dialogue-client.js");
+        assert!(client.contains("\"visual-stage-placeholder npc-portrait-silhouette\""));
+        assert!(!client.contains("npc.initials || \"?\""));
+    }
 
     #[test]
     fn companion_social_dialog_has_persisted_accessible_automation_control() {

@@ -800,7 +800,7 @@ fn camp_fire_is_lit(
 
 /// The transient strategic location between planned travel legs.
 fn camp_forage_href(has_active_character: bool) -> Option<&'static str> {
-    has_active_character.then_some("/forage?return_to=/camp")
+    has_active_character.then_some("/camp?forage=true")
 }
 
 pub fn camp_page(
@@ -818,6 +818,7 @@ pub fn camp_page(
     planned_wake_minute: u16,
     continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
+    foraging_dialog: Option<Markup>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let camp_fire_lit = camp_fire_is_lit(journey, itinerary);
@@ -884,6 +885,9 @@ pub fn camp_page(
                 p class="travel-action-status" data-travel-action-status role="alert" hidden {}
             }
             (sidebar_section("Travel preferences", travel_preferences_form(party, "/camp/travel-configuration")))
+        }
+        @if let Some(dialog) = foraging_dialog {
+            (dialog)
         }
     };
     camp_location_layout_with_session(
@@ -1011,7 +1015,7 @@ mod tests {
 
     #[test]
     fn camp_foraging_affordance_is_discoverable_and_returns_to_camp() {
-        assert_eq!(camp_forage_href(true), Some("/forage?return_to=/camp"));
+        assert_eq!(camp_forage_href(true), Some("/camp?forage=true"));
         assert_eq!(camp_forage_href(false), None);
     }
     use crate::spacetimedb::*;

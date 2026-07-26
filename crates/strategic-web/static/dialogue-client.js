@@ -265,7 +265,7 @@
       candidate.tabIndex = active ? 0 : -1;
     });
     if (npcDescription) {
-      const placeholder = document.createElement("div"); placeholder.className = "visual-stage-placeholder"; placeholder.setAttribute("aria-hidden", "true"); placeholder.textContent = npc.initials || "?";
+      const placeholder = document.createElement("div"); placeholder.className = npc.initials ? "visual-stage-placeholder" : "visual-stage-placeholder npc-portrait-silhouette"; placeholder.setAttribute("aria-hidden", "true"); placeholder.textContent = npc.initials || "";
       const heading = document.createElement("h2"); heading.textContent = npc.name;
       const description = document.createElement("p"); description.textContent = npc.description;
       npcDescription.replaceChildren(placeholder, heading, description);
@@ -282,7 +282,7 @@
     const buttons = people.map((npc) => {
       const button = document.createElement("button"); button.type = "button"; button.className = "party-portrait settlement-npc-portrait"; button.dataset.npcId = npc.id; button.setAttribute("aria-label", `Talk to ${npc.name}`); button.setAttribute("aria-pressed", "false"); button.tabIndex = -1;
       const portrait = document.createElement("span"); portrait.className = "party-portrait-initial settlement-npc-initials";
-      const face = document.createElement("span"); face.className = "party-portrait-face"; face.textContent = npc.initials || "?";
+      const face = document.createElement("span"); face.className = npc.initials ? "party-portrait-face" : "party-portrait-face npc-portrait-silhouette"; face.setAttribute("aria-hidden", "true"); face.textContent = npc.initials || "";
       const name = document.createElement("span"); name.className = "party-portrait-name settlement-npc-name"; name.textContent = npc.name;
       portrait.append(face, name); button.append(portrait); button.addEventListener("click", () => selectNpc(npc, button));
       button.addEventListener("keydown", (event) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); const offset = event.key === 'ArrowRight' ? 1 : -1; buttons[(buttons.indexOf(button) + offset + buttons.length) % buttons.length].focus(); });

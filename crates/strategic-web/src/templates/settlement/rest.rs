@@ -172,7 +172,8 @@ pub(super) fn rest_service_menu(
         }
         (soap_wash_preview(soap_preview))
         @if let Some(summary) = summary {
-            div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
+            div class="rest-summary-overlay" role="dialog" aria-modal="true"
+                aria-labelledby="rest-summary-title" tabindex="-1" data-rest-summary {
                 section class="rest-summary" {
                     div class="rest-summary-heading" {
                         strong id="rest-summary-title" { "Rest summary" }

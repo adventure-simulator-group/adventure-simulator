@@ -29,6 +29,29 @@
   --building-surface:var(--content-surface-recess);
   --building-interactive:color-mix(in srgb, var(--content-surface) 78%, black);
   --building-interactive-hover:color-mix(in srgb, var(--content-surface) 84%, white 16%);
+  --tactile-face:var(--building-interactive, var(--bg-secondary));
+  --tactile-face-hover:var(--building-interactive-hover, var(--bg-tertiary));
+  --tactile-edge:color-mix(in srgb, var(--active-building-tint, var(--accent)) 66%, #17120b);
+  --tactile-highlight:color-mix(in srgb, var(--active-building-tint, var(--accent-light)) 38%, white);
+  --tactile-background:linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--tactile-face) 82%, white) 0%,
+    var(--tactile-face) 58%,
+    color-mix(in srgb, var(--tactile-face) 82%, black) 100%
+  );
+  --tactile-background-hover:linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--tactile-face-hover) 82%, white) 0%,
+    var(--tactile-face-hover) 58%,
+    color-mix(in srgb, var(--tactile-face-hover) 82%, black) 100%
+  );
+  --tactile-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--tactile-highlight) 72%, transparent),
+    0 3px 0 var(--tactile-edge),
+    0 5px 9px rgb(0 0 0 / 35%);
+  --tactile-shadow-pressed:
+    inset 0 2px 4px rgb(0 0 0 / 38%),
+    0 1px 0 var(--tactile-edge);
 }
 
 body { background:var(--bg-primary); color:var(--text-primary); }

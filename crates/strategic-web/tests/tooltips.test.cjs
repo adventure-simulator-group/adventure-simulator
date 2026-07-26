@@ -91,6 +91,24 @@ test('touch pointers neither open nor leave a focused tooltip trapped', () => {
   assert.equal(system.tooltip.hidden, true);
 });
 
+test('a touch click pins the tooltip after pointer focus suppression', () => {
+  const { window, document, system } = fixture(
+    '<button data-tooltip-pinnable data-strategic-tooltip="Pinned detail">Detail</button>',
+  );
+  const button = document.querySelector('button');
+  dispatch(window, button, 'pointerdown', { pointerType: 'touch' });
+  dispatch(window, button, 'click', { detail: 1 });
+  assert.equal(system.pinnedTarget, button);
+  assert.equal(system.tooltip.hidden, false);
+  assert.equal(system.tooltip.textContent, 'Pinned detail');
+  assert.equal(button.getAttribute('aria-pressed'), 'true');
+
+  dispatch(window, button, 'click', { detail: 1 });
+  assert.equal(system.pinnedTarget, null);
+  assert.equal(system.tooltip.hidden, true);
+  assert.equal(button.getAttribute('aria-pressed'), 'false');
+});
+
 test('existing accessible names and descriptions are not overwritten', () => {
   const { window, document, system } = fixture(
     '<button aria-label="Bag" aria-describedby="inventory-help" title="Open inventory"></button>',

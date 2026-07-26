@@ -217,7 +217,7 @@ fn quest_location_center(
                             input type="hidden" name="action_id" value=(&action.action_id);
                             input type="hidden" name="method" value=(&action.method);
                             input type="hidden" name="expected_version" value=(action.expected_version);
-                            button type="submit" { (&action.summary) }
+                            button type="submit" class="btn btn-secondary btn-small" { (&action.summary) }
                         }
                     }
                 }

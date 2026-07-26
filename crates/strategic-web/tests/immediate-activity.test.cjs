@@ -44,3 +44,12 @@ test('focus wrapping excludes hidden controls and wraps in both directions', () 
   assert.equal(wrappedFocusTarget(last, [first, middle, last], false), first);
   assert.equal(wrappedFocusTarget(middle, [first, middle, last], false), null);
 });
+
+test('activity dialogs remount after strategic soft navigation', () => {
+  const source = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '../static/immediate-activity.js'),
+    'utf8',
+  );
+  assert.match(source, /strategic-page-mounted/);
+  assert.match(source, /\(\) => mountAll\(\)/);
+});

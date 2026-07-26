@@ -146,6 +146,7 @@
 
   const mountAll = (root = document) => root.querySelectorAll?.('[data-activity-modal]').forEach(mount);
   mountAll();
+  document.addEventListener('strategic-page-mounted', () => mountAll());
   document.addEventListener('strategic-live-regions-refreshed', (event) => {
     if (!event.detail?.regions || event.detail.regions.includes('right-sidebar')) mountAll();
   });

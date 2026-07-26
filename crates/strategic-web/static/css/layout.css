@@ -112,6 +112,7 @@
 [data-developer-only] { display: none; }
 
 html[data-developer-mode] [data-developer-only] { display: inline-grid; }
+html[data-developer-mode] .location-stat-list > div[data-developer-only] { display: flex; }
 
 .developer-quest-button {
   width: 2rem;
@@ -789,7 +790,7 @@ html[data-developer-mode] [data-developer-only] { display: inline-grid; }
    city overrides belong in equally specific per-service rules only when those
    individual assets exist, so a missing higher-tier image never becomes a 404. */
 .settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
-  .nav-tab[data-service-id=""],
+  .nav-tab[data-service-id="public-square"],
 .settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
   .nav-tab[data-service-id="residences"],
 .settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
@@ -797,6 +798,18 @@ html[data-developer-mode] [data-developer-only] { display: inline-grid; }
 .settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
   .nav-tab[data-service-id="map"] {
   --service-building-image: url("/static/styles/timber-framed/building/village/map.png?v=watchtower-2");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="public-square"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/public-square.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="residences"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/residences.png");
+}
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="keep"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/keep.png");
 }
 .settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
   .nav-tab[data-service-id="merchants"] {
@@ -829,6 +842,9 @@ html[data-developer-mode] [data-developer-only] { display: inline-grid; }
 
 /* Higher tiers are complete sets; village remains the explicit fallback above. */
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/town/map.png?v=watchtower-2"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="public-square"] { --service-building-image: url("/static/styles/timber-framed/building/town/public-square.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="residences"] { --service-building-image: url("/static/styles/timber-framed/building/town/residences.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="keep"] { --service-building-image: url("/static/styles/timber-framed/building/town/keep.png"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="merchants"] { --service-building-image: url("/static/styles/timber-framed/building/town/merchants.png"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="weapons"] { --service-building-image: url("/static/styles/timber-framed/building/town/weapons.png"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="armor"] { --service-building-image: url("/static/styles/timber-framed/building/town/armor.png"); }
@@ -838,6 +854,9 @@ html[data-developer-mode] [data-developer-only] { display: inline-grid; }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="religion"] { --service-building-image: url("/static/styles/timber-framed/building/town/religion.png"); }
 
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/city/map.png?v=watchtower-2"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="public-square"] { --service-building-image: url("/static/styles/timber-framed/building/city/public-square.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="residences"] { --service-building-image: url("/static/styles/timber-framed/building/city/residences.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="keep"] { --service-building-image: url("/static/styles/timber-framed/building/city/keep.png"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="merchants"] { --service-building-image: url("/static/styles/timber-framed/building/city/merchants.png"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="weapons"] { --service-building-image: url("/static/styles/timber-framed/building/city/weapons.png"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="armor"] { --service-building-image: url("/static/styles/timber-framed/building/city/armor.png"); }
@@ -1147,6 +1166,15 @@ body:has(.settlement-top-bar[data-environment="settlement"])
 
 /* The selected building changes joinery, not the plaster. This lets semantic
    reds, greens, and blues inside panels remain visually authoritative. */
+body:has(.nav-tab[data-service-id="public-square"].active) {
+  --architectural-edge: repeating-linear-gradient(90deg, transparent 0 3rem, rgb(231 216 188 / 3%) 3rem 3.08rem);
+}
+body:has(.nav-tab[data-service-id="residences"].active) {
+  --architectural-edge: repeating-linear-gradient(0deg, transparent 0 2.8rem, rgb(229 211 181 / 3%) 2.8rem 2.88rem);
+}
+body:has(.nav-tab[data-service-id="keep"].active) {
+  --architectural-edge: radial-gradient(circle at 1.2rem 1.2rem, rgb(225 222 211 / 4%) 0 .08rem, transparent .1rem) 0 0 / 2.4rem 2.4rem;
+}
 body:has(.nav-tab[data-service-id="map"].active) {
   --architectural-edge: repeating-linear-gradient(0deg, transparent 0 1.15rem, rgb(222 215 196 / 4%) 1.15rem 1.22rem);
 }

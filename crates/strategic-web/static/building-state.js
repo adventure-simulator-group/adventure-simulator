@@ -1,5 +1,5 @@
 (() => {
-  const services = new Set(["", "residences", "keep", "map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]);
+  const services = new Set(["public-square", "residences", "keep", "map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]);
   let observer;
   const mount = () => {
     observer?.disconnect();

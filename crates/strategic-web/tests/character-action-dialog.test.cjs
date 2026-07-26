@@ -12,6 +12,7 @@ const tradeTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/set
 const chromeTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/chrome.rs"), "utf8");
 const template = [socialTemplate, healthTemplate, tradeTemplate, chromeTemplate].join("\n");
 const styles = fs.readFileSync(path.join(__dirname, "../static/css/strategic.css"), "utf8");
+const components = fs.readFileSync(path.join(__dirname, "../static/css/components.css"), "utf8");
 const routes = fs.readFileSync(path.join(__dirname, "../src/routes/settlements.rs"), "utf8");
 
 test("character dialogs trap focus in either direction", () => {
@@ -47,8 +48,13 @@ test("character actions use one dialog and raised-button contract", () => {
   assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="surgery-dialog-title"/);
   assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="social-dialog-title"/);
   assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="cooking-dialog-title"/);
-  assert.match(styles, /border-color: #eee #353535 #353535 #eee/);
-  assert.match(styles, /border-color: #353535 #eee #eee #353535/);
+  assert.match(styles, /\.character-menu-button[\s\S]*background: var\(--tactile-background\)/);
+  assert.match(styles, /\.character-menu-button[\s\S]*box-shadow: var\(--tactile-shadow\)/);
+  assert.match(styles, /\.character-menu-button:focus-visible[\s\S]*outline: 2px solid var\(--accent-light\)/);
+  assert.match(styles, /\.character-menu-button:active,[\s\S]*box-shadow: var\(--tactile-shadow-pressed\)/);
+  assert.match(components, /\.btn-primary[\s\S]*--tactile-face: color-mix\(in srgb, var\(--accent-dark\)/);
+  assert.match(components, /\.btn-primary[\s\S]*color: #fff/);
+  assert.match(styles, /\.btn:not\(\.btn-danger, \.btn-primary, \.btn-secondary\)/);
   assert.match(styles, /\.skill-schedule \.party-skill-name-column \{ width: 2\.75rem; \}/);
 });
 

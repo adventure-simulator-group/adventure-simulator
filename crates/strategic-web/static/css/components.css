@@ -56,8 +56,9 @@
   letter-spacing: 0.03em;
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
-  background: var(--bg-secondary);
+  background: var(--tactile-background);
   color: var(--text-primary);
+  box-shadow: var(--tactile-shadow);
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
@@ -65,13 +66,20 @@
 }
 
 .btn:hover {
-  background: var(--bg-tertiary);
+  background: var(--tactile-background-hover);
   border-color: var(--accent);
   color: var(--accent-dark);
 }
 
 .btn:active {
-  transform: translateY(1px);
+  box-shadow: var(--tactile-shadow-pressed);
+  transform: translateY(2px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--bg-primary);
+  outline-offset: 2px;
+  box-shadow: var(--tactile-shadow), 0 0 0 4px var(--accent-light);
 }
 
 .btn:disabled,
@@ -81,36 +89,40 @@
   opacity: 0.45;
   transform: none;
   background: var(--bg-tertiary);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 32%);
   border-color: var(--border-light);
   color: var(--text-muted);
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: var(--bg-primary);
+  --tactile-face: color-mix(in srgb, var(--accent-dark) 78%, #111);
+  --tactile-face-hover: color-mix(in srgb, var(--accent) 68%, #18120c);
+  color: #fff;
   border-color: var(--accent-dark);
 }
 
 .btn-primary:hover {
-  background: var(--accent-hover);
-  color: var(--bg-primary);
+  color: #fff;
   border-color: var(--accent);
 }
 
 .btn-secondary {
-  background: transparent;
+  --tactile-face: var(--building-interactive, var(--bg-secondary));
+  --tactile-face-hover: var(--building-interactive-hover, var(--bg-tertiary));
   border-color: var(--border-color);
   color: var(--text-secondary);
 }
 
 .btn-secondary:hover {
-  background: var(--bg-secondary);
   color: var(--text-primary);
   border-color: var(--accent);
 }
 
 .btn-danger {
-  background: var(--danger);
+  --tactile-face: color-mix(in srgb, var(--danger) 64%, #3b1818);
+  --tactile-face-hover: color-mix(in srgb, var(--danger) 78%, #3b1818);
+  --tactile-edge: color-mix(in srgb, var(--danger) 55%, black);
+  background: var(--tactile-background);
   color: #fff;
   border-color: var(--danger);
 }
@@ -247,8 +259,28 @@
   gap: 1rem;
 }
 
+.location-stat-list > div[data-developer-only] { display: none; }
+html[data-developer-mode] .location-stat-list > div[data-developer-only] { display: flex; }
+
 .location-stat-list dt { color: var(--text-muted); }
 .location-stat-list dd { margin: 0; text-align: right; }
+
+.settlement-places-nav {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.settlement-places-nav a {
+  display: block;
+  padding: 0.35rem 0.5rem;
+  border-left: 2px solid transparent;
+}
+
+.settlement-places-nav a:is(:hover, :focus-visible, .active, [aria-current="page"]) {
+  border-left-color: var(--accent);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+}
 
 .list-item-content {
   display: flex;

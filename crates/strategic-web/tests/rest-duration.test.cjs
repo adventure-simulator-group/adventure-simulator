@@ -10,6 +10,18 @@ const {
   targetForDuration,
 } = require("../static/rest-duration.js");
 
+test("rest summaries receive focus, contain Tab, and dismiss with Escape", () => {
+  const source = require("node:fs").readFileSync(
+    "crates/strategic-web/static/rest-duration.js",
+    "utf8",
+  );
+  assert.match(source, /mountRestSummary/);
+  assert.match(source, /summary\.focus\(\)/);
+  assert.match(source, /event\.key === "Escape"/);
+  assert.match(source, /event\.key !== "Tab"/);
+  assert.match(source, /rest-summary-close/);
+});
+
 test("08:00 wake preserves the full-day minimum at its boundaries", () => {
   assert.equal(minutesUntilWake(7 * 60 + 59, 8 * 60), 1441);
   assert.equal(minutesUntilWake(8 * 60, 8 * 60), 1440);
@@ -37,14 +49,14 @@ test("typed HH:MM durations preserve exact minutes and update target modulo day"
 });
 
 test("markup reuses the accessible wake-time control for settlement and field rest", () => {
-  const source = require("node:fs").readFileSync("crates/strategic-web/src/templates/settlement.rs", "utf8");
+  const source = require("node:fs").readFileSync("crates/strategic-web/src/templates/settlement/rest.rs", "utf8");
   const settlementControl = source.slice(source.indexOf("fn settlement_rest_duration_control"));
   assert.match(settlementControl, /type="range"/);
   assert.match(settlementControl, /step="60"/);
   assert.match(settlementControl, /pattern="\[0-9\]\+:\[0-5\]\[0-9\]"/);
   assert.match(settlementControl, /aria-label="Wake time"/);
   assert.match(settlementControl, /disabled\[!hours_active\]/);
-  const partyControl = source.slice(source.indexOf("pub(crate) fn party_rest_menu"), source.indexOf("pub(crate) fn settlement_description"));
+  const partyControl = source.slice(source.indexOf("pub(crate) fn party_rest_menu"), source.indexOf("pub fn rest_service_menu"));
   assert.match(partyControl, /wake_time_rest_duration_control/);
   assert.match(source, /data-rest-minimum-minutes/);
   assert.match(source, /data-rest-default-minutes/);

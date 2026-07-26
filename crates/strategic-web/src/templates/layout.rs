@@ -205,6 +205,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
                     script src="/static/strategic-map.js?v=population-culling-3" defer {}
                     script src="/static/rest-duration.js?v=wake-time-3" defer {}
+                    script src="/static/training-schedule.js?v=apprentice-system-1" defer {}
+                    script src="/static/immediate-activity.js?v=manual-activities-1" defer {}
                 }
             }
             body {
@@ -250,23 +252,24 @@ fn settlement_top_bar(
     logged_in_as: Option<&str>,
 ) -> Markup {
     let services = [
-        ("", "Public square", "house"),
-        ("residences", "Residences", "house"),
-        ("keep", "Keep", "castle"),
-        ("map", "Map", "map"),
-        ("merchants", "General Market", "market"),
-        ("weapons", "Weapons", "weapons"),
-        ("armor", "Armour", "armor"),
-        ("clothing", "Clothing", "clothing"),
-        ("herbalist", "Herbalist", "medical-pack"),
-        ("inn", "Inn", "inn"),
-        ("religion", "Church", "church"),
+        ("", "public-square", "Public square", "market"),
+        ("residences", "residences", "Residences", "house"),
+        ("keep", "keep", "Keep", "castle"),
+        ("map", "map", "Map", "map"),
+        ("merchants", "merchants", "General Market", "market"),
+        ("weapons", "weapons", "Weapons", "weapons"),
+        ("armor", "armor", "Armour", "armor"),
+        ("clothing", "clothing", "Clothing", "clothing"),
+        ("herbalist", "herbalist", "Herbalist", "medical-pack"),
+        ("inn", "inn", "Inn", "inn"),
+        ("religion", "religion", "Church", "church"),
     ];
 
     html! {
         @let material = if matches!(category, SettlementCategory::City | SettlementCategory::Capital) { "stone" } else { "wood" };
-        @let active_material = if active_service == "religion" { "stone" } else { material };
-        @let active_tint = building_tint(settlement_id, active_service, active_material);
+        @let active_id = if active_service.is_empty() { "public-square" } else { active_service };
+        @let active_material = if active_id == "religion" || (active_id == "keep" && !matches!(category, SettlementCategory::Village)) { "stone" } else { material };
+        @let active_tint = building_tint(settlement_id, active_id, active_material);
         style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
         header class=(format!("top-bar settlement-top-bar material-{material}"))
             data-environment="settlement"
@@ -286,7 +289,7 @@ fn settlement_top_bar(
 
             nav class="top-bar-center settlement-services" aria-label="Settlement services"
                 data-settlement-id=(settlement_id) {
-                @for (path, label, icon) in services {
+                @for (path, service_id, label, icon) in services {
                     @let available = match path {
                         "" | "residences" => true,
                         "keep" => settlement_has_keep(category),
@@ -302,12 +305,13 @@ fn settlement_top_bar(
                     } else {
                         format!("/settlements/{}/{}", settlement_id, path)
                     };
-                    @let service_material = if path == "religion" { "stone" } else { material };
-                    @let tint = building_tint(settlement_id, path, service_material);
+                    @let service_material = if service_id == "religion" || (service_id == "keep" && !matches!(category, SettlementCategory::Village)) { "stone" } else { material };
+                    @let tint = building_tint(settlement_id, service_id, service_material);
                     a href=(href)
                         class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
                         style=(format!("--building-tint:{tint}"))
-                        data-service-id=(path)
+                        data-service-id=(service_id)
+                        data-building-material=(service_material)
                         data-service-label=(label)
                         aria-label=(label)
                         data-strategic-tooltip=(label)
@@ -556,21 +560,24 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
         });
     let service_slot = match service {
-        "map" => 0,
-        "merchants" => 1,
-        "weapons" => 2,
-        "armor" => 3,
-        "clothing" => 4,
-        "herbalist" => 5,
-        "inn" => 6,
-        "religion" => 7,
-        _ => (hash % 8) as usize,
+        "public-square" => 0,
+        "residences" => 1,
+        "keep" => 2,
+        "map" => 3,
+        "merchants" => 4,
+        "weapons" => 5,
+        "armor" => 6,
+        "clothing" => 7,
+        "herbalist" => 8,
+        "inn" => 9,
+        "religion" => 10,
+        _ => (hash % 11) as usize,
     };
     let settlement_shift = ((hash >> 24) % 9) as u64;
     let hue = if material == "stone" {
-        [205, 224, 252, 282, 164, 128, 36, 214][service_slot] + settlement_shift
+        [46, 198, 218, 205, 224, 252, 282, 164, 128, 36, 214][service_slot] + settlement_shift
     } else {
-        [8, 20, 31, 43, 56, 104, 72, 350][service_slot] + settlement_shift
+        [35, 58, 16, 8, 20, 31, 43, 56, 104, 72, 350][service_slot] + settlement_shift
     };
     let saturation = if material == "stone" {
         12 + (hash >> 8) % 13
@@ -721,6 +728,10 @@ mod tests {
         assert!(markup.contains("id=\"strategic-page\""));
         assert!(markup.contains("/static/strategic-navigation.js"));
         assert!(markup.contains("/static/strategic-mutations.js"));
+        assert_eq!(markup.matches("/static/training-schedule.js").count(), 1);
+        assert_eq!(markup.matches("/static/immediate-activity.js").count(), 1);
+        assert!(markup.contains("/static/training-schedule.js?v=apprentice-system-1\" defer"));
+        assert!(markup.contains("/static/immediate-activity.js?v=manual-activities-1\" defer"));
         assert_eq!(markup.matches("id=\"strategic-live-stream\"").count(), 1);
         assert!(markup.find("id=\"strategic-live-stream\"") < markup.find("id=\"strategic-page\""));
         assert!(!markup.contains("live-regions.js?v=floating-time-editor-1"));
@@ -745,6 +756,9 @@ mod tests {
             building_tint("lubeck", "weapons", "wood")
         );
         let wood_tints = [
+            "public-square",
+            "residences",
+            "keep",
             "map",
             "merchants",
             "weapons",
@@ -853,8 +867,12 @@ mod tests {
         assert_eq!(markup.matches("class=\"service-tab-icon ").count(), 10);
         assert!(markup.contains("aria-label=\"Public square\""));
         assert!(markup.contains("href=\"/locations/settlement/s\""));
+        assert!(markup.contains("data-service-id=\"public-square\""));
+        assert!(markup.contains("service-tab-icon-market"));
         assert!(markup.contains("aria-label=\"Residences\""));
         assert!(markup.contains("href=\"/settlements/s/places/residences\""));
+        assert!(markup.contains("data-service-id=\"residences\""));
+        assert!(markup.contains("service-tab-icon-house"));
         assert!(!markup.contains("aria-label=\"Keep\""));
         assert!(markup.contains("aria-label=\"Church\""));
         assert!(markup.contains("aria-current=\"page\""));
@@ -863,6 +881,9 @@ mod tests {
 
         let css = include_str!("../../static/css/layout.css").replace("\r\n", "\n");
         for service in [
+            "public-square",
+            "residences",
+            "keep",
             "map",
             "merchants",
             "weapons",
@@ -878,6 +899,9 @@ mod tests {
         }
         assert!(css.contains("--service-building-image"));
         assert!(css.contains("data-building-tier"));
+        assert!(css.contains("data-service-id=\"public-square\"].active"));
+        assert!(css.contains("data-service-id=\"residences\"].active"));
+        assert!(css.contains("data-service-id=\"keep\"].active"));
 
         let town = settlement_top_bar(
             "Larger Place",
@@ -893,6 +917,7 @@ mod tests {
         assert!(town.contains("aria-label=\"Keep\""));
         assert!(town.contains("href=\"/settlements/t/places/keep\" class=\"nav-tab active\""));
         assert!(town.contains("service-tab-icon-castle"));
+        assert!(town.contains("data-service-id=\"keep\" data-building-material=\"stone\""));
     }
 
     #[test]

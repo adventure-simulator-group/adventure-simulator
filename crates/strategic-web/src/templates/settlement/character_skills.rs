@@ -305,14 +305,12 @@ pub(super) fn party_skills_rail(
                         ))
                         div class="schedule-save-status" data-schedule-save-status role="status" aria-live="polite" hidden {
                             span { "Schedule could not be saved." }
-                            button type="button" data-schedule-retry { "Retry" }
+                            button type="button" class="btn btn-secondary btn-small" data-schedule-retry { "Retry" }
                         }
                     }
                     @if action.starts_with("/locations/settlement/") {
                         (immediate_activity_dialog(&action.replace("/schedule", "/activity")))
                     }
-                    script src="/static/training-schedule.js?v=apprentice-system-1" {}
-                    script src="/static/immediate-activity.js?v=manual-activities-1" {}
                 } @else {
                     (skills_table(
                         title, attributes, skills, head_health, upper_health, lower_health, None, None,
@@ -321,7 +319,6 @@ pub(super) fn party_skills_rail(
                         combat_profile, false,
                         actions,
                     ))
-                    script src="/static/training-schedule.js?v=apprentice-system-1" {}
                 }
             } @else {
                 h3 class="sidebar-header" { (title) }
@@ -1715,7 +1712,7 @@ fn immediate_activity_dialog(action: &str) -> Markup {
                 header class="activity-modal-header" {
                     h3 id="activity-modal-title" data-activity-title { "Perform activity" }
                     button type="button" class="activity-modal-close" data-activity-close
-                        aria-label="Close activity dialog" { "x" }
+                        aria-label="Close activity dialog" { "×" }
                 }
                 input type="hidden" name="activity" data-activity-kind;
                 input type="hidden" name="service_id" data-activity-service;
@@ -1747,7 +1744,7 @@ fn immediate_activity_dialog(action: &str) -> Markup {
                         td class="schedule-effect schedule-training-effect" data-activity-effect="training" { "--" }
                     } }
                 }
-                button type="submit" class="activity-submit" data-activity-submit { "Spend 1 hour" }
+                button type="submit" class="btn btn-primary activity-submit" data-activity-submit { "Spend 1 hour" }
             }
         }
     }
@@ -2007,6 +2004,7 @@ mod tests {
         assert!(rail.contains("data-schedule-save-status"));
         assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
         assert!(rail.contains("data-schedule-retry>Retry</button>"));
+        assert!(rail.contains("class=\"btn btn-secondary btn-small\""));
         assert!(!rail.contains("data-activity-modal"));
         assert!(!rail.contains("data-activity-open"));
         let settlement_rail = party_skills_rail(
@@ -2432,6 +2430,7 @@ mod tests {
         assert!(immediate_activity.contains("input:not([type=\"hidden\"]):not(:disabled)"));
         assert!(immediate_activity.contains("wrappedFocusTarget"));
         assert!(immediate_activity.contains("strategic-editor-idle"));
+        assert!(immediate_activity.contains("'strategic-page-mounted'"));
         assert!(css.contains(".numeric-editor-input {"));
         assert!(css.contains("position: fixed;"));
         assert!(css.contains("z-index: 80;"));

@@ -134,12 +134,13 @@ pub fn recruitment_panel(
                 }
             }
             @if can_manage {
-                dialog class="recruitment-dialog" data-recruitment-dialog {
+                dialog class="recruitment-dialog" data-recruitment-dialog
+                    aria-labelledby="recruitment-dialog-title" {
                     form method="dialog" class="dialog-close-form" {
                         button class="dialog-close" aria-label="Close recruitment" { "×" }
                     }
                     header class="recruitment-dialog-header" {
-                        h2 data-role-builder-heading { "Recruit party roles" }
+                        h2 id="recruitment-dialog-title" data-role-builder-heading { "Recruit party roles" }
                         p { "Describe the adventurers you want to add to your party." }
                     }
                     section class="saved-role-section" aria-labelledby="current-role-heading" {
@@ -249,12 +250,13 @@ pub fn recruitment_panel(
                         }
                     }
                 }
-                dialog class="role-name-dialog" data-save-role-dialog {
+                dialog class="role-name-dialog" data-save-role-dialog
+                    aria-labelledby="save-role-dialog-title" {
                     form method="dialog" class="dialog-close-form" {
                         button class="dialog-close" aria-label="Close save role dialog" { "×" }
                     }
                     form action="/party-recruitment/saved" method="post" class="role-name-form" data-save-role-form {
-                        h3 { "Save this role" }
+                        h3 id="save-role-dialog-title" { "Save this role" }
                         p class="small-copy text-muted" { "Name this set of recommendations so you can reuse it later." }
                         label {
                             span { "Role name" }
@@ -267,12 +269,13 @@ pub fn recruitment_panel(
                         }
                     }
                 }
-                dialog class="role-name-dialog" data-rename-role-dialog {
+                dialog class="role-name-dialog" data-rename-role-dialog
+                    aria-labelledby="rename-role-dialog-title" {
                     form method="dialog" class="dialog-close-form" {
                         button class="dialog-close" aria-label="Close rename role dialog" { "×" }
                     }
                     form method="post" class="role-name-form" data-rename-role-form {
-                        h3 { "Rename saved role" }
+                        h3 id="rename-role-dialog-title" { "Rename saved role" }
                         label {
                             span { "Role name" }
                             input type="text" name="name" required autofocus;
