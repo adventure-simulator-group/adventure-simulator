@@ -1,12 +1,28 @@
 use super::{
     ChoiceKind, DecisionArguments, EVAL_FORMAT_VERSION, MAX_PROVIDER_RESPONSE_BYTES, PlayerFrame,
-    PolicyDecision,
+    PolicyClassification, PolicyDecision, PolicyRunMetadata,
 };
 use std::time::Instant;
 
 pub trait QuestPolicy {
     fn name(&self) -> &str;
     fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, String>;
+    fn classify(&mut self, _frame: &PlayerFrame) -> Result<PolicyClassification, String> {
+        Ok(PolicyClassification::default())
+    }
+    fn run_metadata(&self) -> PolicyRunMetadata {
+        PolicyRunMetadata {
+            policy_name: self.name().into(),
+            policy_kind: "local".into(),
+            provider: None,
+            model: None,
+            prompt_revision: "investigation-policy-v3".into(),
+            requests: 0,
+            estimated_prompt_tokens: 0,
+            estimated_completion_tokens: 0,
+            estimated_cost_microusd: 0,
+        }
+    }
     /// Providers that can block on I/O override this to respect the evaluator's
     /// absolute deadline. Deterministic policies remain immediate.
     fn decide_before(
@@ -67,6 +83,22 @@ impl QuestPolicy for ScriptedPolicy {
             arguments: DecisionArguments::default(),
         })
     }
+
+    fn classify(&mut self, frame: &PlayerFrame) -> Result<PolicyClassification, String> {
+        let summary = frame.discovery.problem_summary.to_ascii_lowercase();
+        let template_guess = if summary.contains("missing") || summary.contains("disappear") {
+            Some("disappearance_or_loss".into())
+        } else if summary.contains("attack") || summary.contains("livestock") {
+            Some("recurring_depredation".into())
+        } else {
+            Some("unknown".into())
+        };
+        Ok(PolicyClassification {
+            template_guess,
+            threat_guess: Some("unknown".into()),
+            confidence_percent: Some(25),
+        })
+    }
 }
 
 /// Credential-free fixture that exercises the exact strict JSON boundary used
@@ -84,6 +116,24 @@ impl QuestPolicy for MockLlmPolicy {
         let intended = baseline.decide(frame)?;
         let fixture_reply = serde_json::to_vec(&intended).map_err(|error| error.to_string())?;
         parse_provider_decision(&fixture_reply)
+    }
+
+    fn classify(&mut self, frame: &PlayerFrame) -> Result<PolicyClassification, String> {
+        ScriptedPolicy::default().classify(frame)
+    }
+
+    fn run_metadata(&self) -> PolicyRunMetadata {
+        PolicyRunMetadata {
+            policy_name: self.name().into(),
+            policy_kind: "mock_provider".into(),
+            provider: Some("strict-json-fixture".into()),
+            model: Some("deterministic-mock".into()),
+            prompt_revision: "investigation-policy-v3".into(),
+            requests: 0,
+            estimated_prompt_tokens: 0,
+            estimated_completion_tokens: 0,
+            estimated_cost_microusd: 0,
+        }
     }
 }
 

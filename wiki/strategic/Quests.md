@@ -118,7 +118,7 @@ later receive a dry journal notice about the result.
 
 ### Automated investigation evaluation
 
-There are two evaluation paths. The server-side strategic simulator exercises
+There are two gameplay evaluation paths. The server-side strategic simulator exercises
 the real NPC adventuring companies described above. Scripted decisions are the
 default; an optional LLM can choose only among observer-safe strategies offered
 by the server, while the server remains the sole outcome authority. Every run
@@ -132,6 +132,15 @@ plays through the same web interface as a person. It produces a screenshot
 timeline rather than a Markdown story. It receives no canonical cause, true
 destination, generation weights, reducer names, or hidden case identifiers.
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
+
+A third developer tool, `quest-analyze`, is an offline generator/content
+analyzer. It uses a synthetic observer-safe projection and can run with a
+scripted policy or a credential-free strict-JSON mock. It produces separate
+public traces/stories and developer-only truth/factor audits. It is useful for
+finding generator dead ends, loops, route dominance, correction persistence,
+and policy fingerprints, but it is not reducer-authoritative gameplay or
+browser evidence. Unsupported contract, language, tactical-combat, perception,
+and causal skill-benefit measures remain explicitly unavailable.
 ### Mixed-Level
 Quests are not balanced around the assumption that all members of a party have a similar power level, in fact its generally the case that you *want* a mixed-strength party. When you set out to clear out a vampire crypt, you need a very skilled armored duelist or two to fight the vampire. But you'll also be encountering plenty of zombies and skeletons, which can be efficiently dealt with by a small group of decent semi-armored combatants with clubs and axes. 
 ## Reward

@@ -1,8 +1,9 @@
 use super::{
     ArgumentValue, Capability, ChoiceArguments, ChoiceKind, DeveloperCaseAnalysis, DiscoveryView,
     EVAL_FORMAT_VERSION, JournalView, LegalChoice, LocationResolution, PartyView, PlayerFrame,
-    PublicClaim, PublicDialogueLine, PublicEvidence, PublicLocation, PublicQuestTrace,
-    PublicTraceEvent, Termination, WitnessAvailability, WitnessReferral,
+    PolicyClassification, PublicClaim, PublicDialogueLine, PublicEvidence, PublicLocation,
+    PublicQuestTrace, PublicTraceEvent, Termination, TerminationErrorCode, WitnessAvailability,
+    WitnessReferral,
 };
 use adventuresim_core::quest_generation::{
     self as qg, Circumstance, GeneratedActionOutput, GeneratedCase, GeneratedDestinationStage,
@@ -153,8 +154,11 @@ impl InvestigationEnvironment {
         let kind = legal.kind;
         let action_label = legal.label.clone();
         let game_minute = self.frame.game_minute;
+        let action_step = self.frame.step;
+        let pre_observation_digest = semantic_digest(&self.frame)?;
         let waiting_for_witness = matches!(&capability, Capability::WaitForWitness(_));
         let mut learned = Vec::new();
+        let mut learned_claim_ids = Vec::new();
         let mut dialogue = Vec::new();
         let mut corrected_proposition_ids = Vec::new();
         let (result, minutes, cost) = match capability {
@@ -170,8 +174,9 @@ impl InvestigationEnvironment {
                     .generated
                     .witnesses
                     .iter()
-                    .map(|witness| WitnessReferral {
-                        witness_id: witness.id.0.clone(),
+                    .enumerate()
+                    .map(|(index, witness)| WitnessReferral {
+                        witness_id: opaque_handle("witness", index),
                         display_name: witness.display_name.clone(),
                         physical_description: witness.visible_description.clone(),
                         expected_location: witness.expected_location_label.clone(),
@@ -213,14 +218,17 @@ impl InvestigationEnvironment {
                     referral.interviewed = true;
                 }
                 for statement in &witness.testimony {
+                    let claim_id = claim_handle(&self.generated, &statement.proposition_id);
                     self.frame.journal.claims.push(PublicClaim {
-                        proposition_id: statement.proposition_id.clone(),
+                        proposition_id: claim_id.clone(),
                         source: witness.visible_description.clone(),
                         text: statement.spoken_text.clone(),
                     });
+                    learned_claim_ids.push(claim_id);
                     if let Some(corrected) = &statement.corrects_proposition_id {
-                        self.frame.journal.corrections.push(corrected.clone());
-                        corrected_proposition_ids.push(corrected.clone());
+                        let handle = claim_handle(&self.generated, corrected);
+                        self.frame.journal.corrections.push(handle.clone());
+                        corrected_proposition_ids.push(handle);
                     }
                     learned.push(statement.spoken_text.clone());
                     dialogue.push(PublicDialogueLine {
@@ -292,20 +300,22 @@ impl InvestigationEnvironment {
                         }
                         GeneratedActionOutput::Evidence { evidence_id }
                         | GeneratedActionOutput::PatternCondition { evidence_id, .. } => {
-                            if let Some(evidence) = self
+                            if let Some((evidence_index, evidence)) = self
                                 .generated
                                 .evidence
                                 .iter()
-                                .find(|item| &item.id == evidence_id)
+                                .enumerate()
+                                .find(|(_, item)| &item.id == evidence_id)
                             {
                                 self.frame.journal.evidence.push(PublicEvidence {
-                                    evidence_id: evidence.id.0.clone(),
+                                    evidence_id: opaque_handle("evidence", evidence_index),
                                     description: evidence.safe_description.clone(),
                                     discovery_source: action.safe_summary.clone(),
                                 });
                                 if let Some(corrected) = &evidence.corrects_proposition_id {
-                                    self.frame.journal.corrections.push(corrected.clone());
-                                    corrected_proposition_ids.push(corrected.clone());
+                                    let handle = claim_handle(&self.generated, corrected);
+                                    self.frame.journal.corrections.push(handle.clone());
+                                    corrected_proposition_ids.push(handle);
                                 }
                                 learned.push(evidence.safe_description.clone());
                             }
@@ -364,27 +374,40 @@ impl InvestigationEnvironment {
             }
         };
         self.frame.party.supplies = self.frame.party.supplies.saturating_sub(cost);
-        let digest = semantic_digest(&self.frame)?;
+        let preparation_tags = if kind == ChoiceKind::Prepare {
+            learned
+                .iter()
+                .filter_map(|item| item.strip_prefix("Prepared "))
+                .map(|item| item.trim_end_matches('.').to_owned())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.frame.step += 1;
+        if !waiting_for_witness {
+            self.frame.game_minute += u64::from(minutes);
+        }
+        self.refresh_choices();
+        let post_observation_digest = semantic_digest(&self.frame)?;
         self.trace.push(PublicTraceEvent {
-            step: self.frame.step,
+            step: action_step,
             game_minute,
             location: self.current_location.clone(),
-            frame_digest: digest,
+            observation_provenance: "offline_projection/player_frame".into(),
+            pre_observation_digest,
+            post_observation_digest,
             choice_id: decision.choice_id.clone(),
             choice_kind: kind,
             action_label,
             dialogue,
             result,
             learned,
+            learned_claim_ids,
             corrected_proposition_ids,
+            preparation_tags,
             game_minutes: minutes,
             resource_cost: cost,
         });
-        self.frame.step += 1;
-        if !waiting_for_witness {
-            self.frame.game_minute += u64::from(minutes);
-        }
-        self.refresh_choices();
         Ok(())
     }
 
@@ -395,7 +418,10 @@ impl InvestigationEnvironment {
     pub fn public_trace(
         &self,
         policy: String,
+        initial_observation_digest: String,
+        initial_classification: PolicyClassification,
         termination: Termination,
+        termination_error: Option<TerminationErrorCode>,
     ) -> Result<PublicQuestTrace, String> {
         let mut trace = PublicQuestTrace {
             version: EVAL_FORMAT_VERSION,
@@ -403,10 +429,13 @@ impl InvestigationEnvironment {
             policy,
             title: format!("Investigation in {}", self.settlement_name),
             problem_summary: self.generated.consequence.public_summary.clone(),
+            initial_observation_digest,
+            initial_classification,
             events: self.trace.clone(),
             solved: self.solved,
             exhausted: self.frame.legal_choices.is_empty(),
             termination,
+            termination_error,
             route: self.route,
             semantic_digest: String::new(),
         };
@@ -709,28 +738,28 @@ fn developer_analysis(case: &GeneratedCase) -> Result<DeveloperCaseAnalysis, Str
         generation_seed: case.generation_seed,
         catalog_revision: case.catalog_revision.clone(),
         true_site,
-        factor_ids: case
-            .factor_trace
-            .iter()
-            .flat_map(|trace| trace.factor_ids.iter().map(|id| id.0.clone()))
-            .collect(),
-        plausibility_factors: case
-            .factor_trace
-            .iter()
-            .map(|trace| trace.plausibility)
-            .collect(),
-        curation_factors: case
-            .factor_trace
-            .iter()
-            .map(|trace| trace.curation)
-            .collect(),
-        bridge_ids: case
-            .bridges
-            .iter()
-            .map(|bridge| bridge.id.0.clone())
-            .collect(),
+        factor_trace: case.factor_trace.clone(),
+        bridges: case.bridges.clone(),
         generator_manifest_digest: private_digest,
     })
+}
+
+fn opaque_handle(kind: &str, index: usize) -> String {
+    format!("{kind}:observed-{}", index + 1)
+}
+
+fn claim_handle(case: &GeneratedCase, proposition_id: &str) -> String {
+    let index = case
+        .witnesses
+        .iter()
+        .flat_map(|witness| &witness.testimony)
+        .position(|statement| statement.proposition_id == proposition_id)
+        .unwrap_or(usize::MAX);
+    if index == usize::MAX {
+        "claim:observed-unknown".into()
+    } else {
+        opaque_handle("claim", index)
+    }
 }
 
 fn generation_context(seed: u64, family: TemplateFamily) -> qg::GenerationContext {
