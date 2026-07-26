@@ -2,6 +2,14 @@
 /* ============================================
    SETTLEMENT INTERFACE
    ============================================ */
+:root {
+  --rank-tier-1: #a8c84a;
+  --rank-tier-2: #e0bd3f;
+  --rank-tier-3: #e48336;
+  --rank-tier-4: #c84d4d;
+  --rank-tier-5: #9b63c7;
+}
+
 .settlement-main {
   --chat-bottom-gap: 0.3rem;
   --chat-inline-gap: 1rem;
@@ -1108,11 +1116,11 @@
 }
 .condition-bar > span { display: block; min-width: 0; }
 .condition-green { background: #4c9b55; }
-.condition-tier-1 { --condition-color: #a8c84a; background-color: var(--condition-color); }
-.condition-tier-2 { --condition-color: #e0bd3f; background-color: var(--condition-color); }
-.condition-tier-3 { --condition-color: #e48336; background-color: var(--condition-color); }
-.condition-tier-4 { --condition-color: #c84d4d; background-color: var(--condition-color); }
-.condition-tier-5 { --condition-color: #9b63c7; background-color: var(--condition-color); }
+.condition-tier-1 { --condition-color: var(--rank-tier-1); background-color: var(--condition-color); }
+.condition-tier-2 { --condition-color: var(--rank-tier-2); background-color: var(--condition-color); }
+.condition-tier-3 { --condition-color: var(--rank-tier-3); background-color: var(--condition-color); }
+.condition-tier-4 { --condition-color: var(--rank-tier-4); background-color: var(--condition-color); }
+.condition-tier-5 { --condition-color: var(--rank-tier-5); background-color: var(--condition-color); }
 .condition-repairable {
   animation: repairable-damage-pulse 1.6s linear infinite;
 }
@@ -3667,19 +3675,50 @@ button.party-portrait-action {
   mask: var(--party-action-icon) center / contain no-repeat;
 }
 
-.character-summary-tags {
+.character-summary-icons {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 
-.character-summary-tag {
-  padding: 0.2rem 0.45rem;
+.character-summary-icon {
+  --summary-rank-color: var(--text-muted);
+  display: inline-grid;
+  width: 1.85rem;
+  height: 1.85rem;
+  place-items: center;
+  padding: 0.22rem;
   border: 1px solid var(--border-light);
-  border-radius: 999px;
-  background: var(--panel-bg);
-  color: var(--text-primary);
-  font-size: var(--font-size-xs);
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--summary-rank-color) 13%, var(--panel-bg));
+  color: var(--summary-rank-color);
+  cursor: help;
+}
+
+.character-summary-icon:is(:hover, :focus-visible) {
+  border-color: var(--summary-rank-color);
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--summary-rank-color) 55%, transparent);
+}
+
+.skill-rank-tier-1 { --summary-rank-color: var(--rank-tier-1); }
+.skill-rank-tier-2 { --summary-rank-color: var(--rank-tier-2); }
+.skill-rank-tier-3 { --summary-rank-color: var(--rank-tier-3); }
+.skill-rank-tier-4 { --summary-rank-color: var(--rank-tier-4); }
+.skill-rank-tier-5 { --summary-rank-color: var(--rank-tier-5); }
+
+.character-summary-icon-mask {
+  width: 100%;
+  height: 100%;
+  background: currentColor;
+  -webkit-mask: var(--summary-icon) center / contain no-repeat;
+  mask: var(--summary-icon) center / contain no-repeat;
+}
+
+.character-summary-monogram {
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .character-bio {
@@ -4180,11 +4219,11 @@ button.identity-control:disabled {
   background: color-mix(in srgb, var(--skill-tier-color) 18%, var(--bg-tertiary));
 }
 
-.skill-rank-segment-1 { --skill-tier-color: #a8c84a; }
-.skill-rank-segment-2 { --skill-tier-color: #e0bd3f; }
-.skill-rank-segment-3 { --skill-tier-color: #e48336; }
-.skill-rank-segment-4 { --skill-tier-color: #c84d4d; }
-.skill-rank-segment-5 { --skill-tier-color: #9b63c7; }
+.skill-rank-segment-1 { --skill-tier-color: var(--rank-tier-1); }
+.skill-rank-segment-2 { --skill-tier-color: var(--rank-tier-2); }
+.skill-rank-segment-3 { --skill-tier-color: var(--rank-tier-3); }
+.skill-rank-segment-4 { --skill-tier-color: var(--rank-tier-4); }
+.skill-rank-segment-5 { --skill-tier-color: var(--rank-tier-5); }
 
 .skill-rank-segment > .rank-current,
 .skill-rank-segment > .rank-damage {

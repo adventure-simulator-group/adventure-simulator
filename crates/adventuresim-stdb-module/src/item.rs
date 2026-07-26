@@ -103,38 +103,26 @@ impl WeaponSkillDistribution {
             throw: self.throw_skill,
         }
     }
+
+    fn from_core(value: adventuresim_core::equipment::WeaponSkillDistribution) -> Self {
+        Self {
+            polearm: value.polearm,
+            axe: value.axe,
+            bludgeon: value.bludgeon,
+            sword: value.sword,
+            knife: value.knife,
+            bow: value.bow,
+            crossbow: value.crossbow,
+            firearm: value.firearm,
+            throw_skill: value.throw,
+        }
+    }
 }
 
 fn weapon_skills(id: &str) -> WeaponSkillDistribution {
-    let mut value = WeaponSkillDistribution::default();
-    let tags: &[&str] = match id {
-        "club" | "flanged_mace" | "war_hammer" | "walking_staff" => &["bludgeon"],
-        "hand_axe" => &["axe", "knife"],
-        "utility_knife" | "rondel_dagger" | "misericorde" => &["knife", "sword"],
-        "baselard" | "bauernwehr" | "katzbalger" => &["knife", "sword"],
-        "hunting_spear" | "military_pike" => &["polearm"],
-        "halberd" => &["polearm", "axe", "bludgeon"],
-        "self_bow" | "longbow" => &["bow"],
-        "light_crossbow" | "heavy_crossbow" => &["crossbow"],
-        "matchlock_arquebus" | "hooked_arquebus" => &["firearm"],
-        _ => &["sword"],
-    };
-    let weight = 1.0 / tags.len() as f32;
-    for tag in tags {
-        match *tag {
-            "polearm" => value.polearm = weight,
-            "axe" => value.axe = weight,
-            "bludgeon" => value.bludgeon = weight,
-            "sword" => value.sword = weight,
-            "knife" => value.knife = weight,
-            "bow" => value.bow = weight,
-            "crossbow" => value.crossbow = weight,
-            "firearm" => value.firearm = weight,
-            "throw" => value.throw_skill = weight,
-            _ => {}
-        }
-    }
-    value
+    WeaponSkillDistribution::from_core(
+        adventuresim_core::equipment::weapon_skill_distribution_for_item(id),
+    )
 }
 
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq, EnumCount, VariantArray)]

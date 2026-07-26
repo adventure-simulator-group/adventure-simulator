@@ -6,8 +6,10 @@ use axum::{
     response::{Html, Json, Redirect},
     routing::{get, post},
 };
+use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{AppState, PartyAction, approve_party_action, execute_or_request_party_action};
 use crate::session::Session;
@@ -20,6 +22,8 @@ use crate::spacetimedb::{
 use crate::templates::recruitment::{
     PartyCheckSummary, RecruitmentApplicant, RecruitmentRolePanel, recruitment_panel,
 };
+
+const RECRUITMENT_PROFILE_QUERY_CONCURRENCY: usize = 8;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -456,6 +460,26 @@ async fn recruitment_panel_fragment(
         command: adventuresim_core::capability::aggregate_party_command(command.iter().copied()),
         religion: adventuresim_core::capability::aggregate_party_check(religion.iter().copied()),
     };
+    let applicant_ids = requests
+        .iter()
+        .map(|request| request.character_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut combat_profiles = BTreeMap::new();
+    for chunk in applicant_ids.chunks(RECRUITMENT_PROFILE_QUERY_CONCURRENCY) {
+        let lookups = chunk.iter().copied().map(|applicant_id| {
+            let state = &state;
+            async move {
+                (
+                    applicant_id,
+                    crate::routes::settlements::get_combat_training_profile(state, applicant_id)
+                        .await,
+                )
+            }
+        });
+        combat_profiles.extend(join_all(lookups).await);
+    }
     let mut panels = Vec::new();
     for role in roles {
         let mut filled = Vec::new();
@@ -517,6 +541,10 @@ async fn recruitment_panel_fragment(
                     .unwrap_or_default()
                     .into_iter()
                     .next();
+                let combat_profile = combat_profiles
+                    .get(&request.character_id)
+                    .copied()
+                    .unwrap_or_default();
                 let contribution =
                     capability
                         .as_ref()
@@ -543,6 +571,7 @@ async fn recruitment_panel_fragment(
                     attributes,
                     skills,
                     limbs,
+                    combat_profile,
                     contribution,
                     medical: crate::routes::settlements::medical_presentation(
                         &state,

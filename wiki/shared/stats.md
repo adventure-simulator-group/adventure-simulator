@@ -143,6 +143,23 @@ An ordinary day generates 600 fatigue-reservoir units before tiring activities. 
 
 The rank meter is a five-segment display using the same yellow-green, yellow, orange, red, and violet progression as equipment repair difficulty. Daily allocations are changed in 15-minute steps with the left/right buttons or mouse wheel. Clicking a displayed allocation opens a time field. It accepts `h` or `hh` as whole hours, `h:mm` or `hh:mm`, and compact three- or four-digit times such as `830` or `0830`; entered values snap to the nearest 15 minutes and may not exceed `24:00`. The underlying schedule stores minutes, and the Leisure allocation shows the unallocated remainder. The editor updates these values immediately, serializes background saves, and reconciles with the server after the latest change is saved so live updates cannot momentarily restore an older plan. A failed save leaves the optimistic plan visible and presents a Retry action; making another edit also retries using the newest plan. Compact column icons label Currency (`💎`), Virtue (`⚖️`), Morale (`🙂`), Fatigue (`💤`), and daily allocation (`⌛`); each icon exposes the same label to assistive technology.
 
+Character summaries use that same five-color rank progression on compact,
+keyboard-focusable icons. Equipped hands contribute one icon for every unique
+weapon leaf they exercise, including every leaf of a hybrid weapon. Armor
+contributes one icon for the highest equipped coverage tier and uses the
+stronger healthy Dodge or Block rank for its color. These combat and armor
+icons always precede non-combat skills.
+
+An exact non-combat skill appears in the summary at healthy rank 3 or higher.
+Expandable families remain one icon: Social and context-free Terrain use their
+means, Oral and Written languages use their strongest effective language and
+that language's displayed identity, Religion uses the same contextual primary
+tradition (or strongest-effective fallback) as its rail, and Bestiary uses its
+aggregate effective coverage. Family tooltips list only qualifying leaves and
+their exact ranks. Standalone skills use their own icon and rank. The visible
+color is supplementary: every icon exposes its identity and score through the
+shared instant tooltip and accessible name.
+
 The main difference between this and directly allocating skill points is that if your character is [convalescing](health.md) or [traveling](../strategic/travel.md) they cannot train. Not all skills are equal though in terms of how much training time they need to be effective, they all have their own falloff curve. The number in parentheses next to a listed skill is its asymptotic training calibration; half that many effective hours produces rank 2.5. The rate of increase from training is lower the higher they get, providing an upper asymptote for skill rank.
 
 Real training time is converted to effective learned hours by the governing

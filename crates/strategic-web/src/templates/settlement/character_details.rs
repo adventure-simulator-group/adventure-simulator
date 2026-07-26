@@ -2,13 +2,17 @@ use adventuresim_core::{
     organization::{OrganizationDefinition, OrganizationRank, organization},
     strategic_schedule::CombatTrainingProfile,
 };
+use adventuresim_world_schema::OfficialReligion;
 use maud::{Markup, html};
 
 use super::{
     character_health::{
         party_attributes_rail, physiology_controls, physiology_dialog, strategic_condition_rail,
     },
-    character_skills::{ActivityPreviewRates, CharacterSheetActions, party_skills_rail},
+    character_skills::{
+        ActivityPreviewRates, CharacterSheetActions, SummaryIconKind, character_summary_icons,
+        party_skills_rail, skill_rank_tier,
+    },
     chrome::{party_portrait_overlay, visual_stage},
     context::LocationView,
     social::{player_chat_area, settlement_chat_area},
@@ -23,17 +27,51 @@ use crate::spacetimedb::{
 };
 use crate::templates::{decorative_game_icon, religion_icon, sidebar_section};
 
-fn character_summary_rail(capability: Option<&CharacterCapability>) -> Markup {
-    let tags = capability
-        .map(CharacterCapability::summary_tags)
-        .unwrap_or_default();
+fn character_summary_rail(
+    capability: Option<&CharacterCapability>,
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    combat_profile: CombatTrainingProfile,
+    religion_context: Option<OfficialReligion>,
+) -> Markup {
+    let icons = character_summary_icons(
+        capability,
+        attributes,
+        skills,
+        combat_profile,
+        religion_context,
+    );
     html! {
         (sidebar_section("Summary", html! {
-            @if tags.is_empty() {
+            @if icons.is_empty() {
                 p class="text-muted small-copy" { "No notable capabilities." }
             } @else {
-                div class="character-summary-tags" aria-label="Character capability summary" {
-                    @for tag in tags { span class="character-summary-tag" { (tag) } }
+                div class="character-summary-icons" role="list"
+                    aria-label="Character capability summary" {
+                    @for icon in icons {
+                        span class=(format!(
+                                "character-summary-icon skill-rank-tier-{}",
+                                skill_rank_tier(icon.rank)
+                            ))
+                            role="listitem" tabindex="0" aria-label=(&icon.label)
+                            data-strategic-tooltip=(&icon.tooltip) {
+                            @match icon.kind {
+                                SummaryIconKind::Mask(path) => {
+                                    span class="character-summary-icon-mask"
+                                        style=(format!("--summary-icon: url('{path}')"))
+                                        aria-hidden="true" {}
+                                }
+                                SummaryIconKind::Monogram { text, germanic_style, written } => {
+                                    span class=(format!(
+                                            "character-summary-monogram language-{}{}",
+                                            if written { "written" } else { "oral" },
+                                            if germanic_style { " language-blackletter" } else { "" },
+                                        ))
+                                        aria-hidden="true" { (text) }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }))
@@ -47,9 +85,13 @@ pub(crate) fn character_stats_panel(
     skills: Option<&CharacterSkills>,
     limbs: Option<&CharacterLimbs>,
     medical: &MedicalPresentation,
+    combat_profile: CombatTrainingProfile,
+    religion_context: Option<OfficialReligion>,
 ) -> Markup {
     html! {
-        (character_summary_rail(capability))
+        (character_summary_rail(
+            capability, attributes, skills, combat_profile, religion_context,
+        ))
         (party_attributes_rail(
             &format!("{}'s attributes", character.name),
             attributes,
@@ -62,7 +104,7 @@ pub(crate) fn character_stats_panel(
         ))
         (party_skills_rail(
             &format!("{}'s skills", character.name), attributes, skills, limbs, None, None, None,
-            false, 0.0, None, CombatTrainingProfile::default(), CharacterSheetActions::default(),
+            false, 0.0, None, combat_profile, CharacterSheetActions::default(),
         ))
         (physiology_dialog(medical, "physiology-chart-dialog", &character.name))
     }
@@ -132,7 +174,13 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
             (view.center_after)
         }
         aside class="right-sidebar" {
-            (character_summary_rail(view.capability))
+            (character_summary_rail(
+                view.capability,
+                view.attributes,
+                view.skills,
+                view.combat_profile,
+                view.training_religion_id.and_then(OfficialReligion::from_id),
+            ))
             (character_bio_rail(
                 view.character,
                 view.religion_id,
@@ -975,6 +1023,64 @@ mod personality_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn summary_attributes() -> CharacterAttributes {
+        CharacterAttributes {
+            character_id: 1,
+            endurance: 5.0,
+            immunity: 5.0,
+            gut: 5.0,
+            intelligence: 5.0,
+            instinct: 5.0,
+            eyesight: 5.0,
+            hearing: 5.0,
+            left_arm_strength: 5.0,
+            right_arm_strength: 5.0,
+            left_leg_strength: 5.0,
+            right_leg_strength: 5.0,
+            left_arm_agility: 5.0,
+            right_arm_agility: 5.0,
+            left_leg_agility: 5.0,
+            right_leg_agility: 5.0,
+        }
+    }
+
+    #[test]
+    fn summary_icons_expose_instant_tooltips_and_keyboard_names() {
+        let skills = CharacterSkills {
+            sword_hours: 50_000.0,
+            ..Default::default()
+        };
+        let profile = CombatTrainingProfile {
+            weapons: adventuresim_core::equipment::WeaponSkillDistribution {
+                sword: 1.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let markup = character_summary_rail(
+            None,
+            Some(&summary_attributes()),
+            Some(&skills),
+            profile,
+            None,
+        )
+        .into_string();
+        assert!(markup.contains("class=\"character-summary-icons\" role=\"list\""));
+        assert!(markup.contains("role=\"listitem\" tabindex=\"0\""));
+        assert!(markup.contains("aria-label=\"Sword —"));
+        assert!(markup.contains("data-strategic-tooltip=\"Sword —"));
+        assert!(!markup.contains("character-summary-tag"));
+        assert!(!markup.contains(" title="));
+    }
+
+    #[test]
+    fn summary_without_required_profile_data_keeps_the_empty_state() {
+        let markup =
+            character_summary_rail(None, None, None, CombatTrainingProfile::default(), None)
+                .into_string();
+        assert!(markup.contains("No notable capabilities."));
+    }
 
     #[test]
     fn canonical_imported_religions_have_ui_labels() {
