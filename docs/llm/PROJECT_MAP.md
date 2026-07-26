@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1285)
+## Files (1290)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -384,6 +384,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/inland_water_access_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inland_water_size_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inspect_physical_evidence_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/inventory_item_amount_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/inventory_item_amount_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inventory_item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/inventory_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inventory_quantity_target_table.rs` — Generated SpacetimeDB table interface.
@@ -497,6 +499,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/party_inventory_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_inventory_state_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_inventory_state_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/party_item_amount_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/party_item_amount_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_item_condition_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_item_condition_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_join_request_table.rs` — Generated SpacetimeDB table interface.
@@ -745,6 +749,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/filth.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/foraging.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/inventory_amount.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/investigation.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/item.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.

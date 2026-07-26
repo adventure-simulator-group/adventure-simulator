@@ -1,4 +1,4 @@
-//! Discrete alcohol consumption, durable evening history, and shared selection.
+//! Measured alcohol consumption, durable evening history, and shared selection.
 
 use adventuresim_core::alcohol::{
     AlcoholProperties, HEAVY_ETHANOL_ML, LOW_MORALE_THRESHOLD, NIGHTLY_MORALE_SOURCE_ID,
@@ -11,6 +11,10 @@ use crate::character::character;
 use crate::condition::character_strategic_condition;
 use crate::item::item;
 use crate::{inventory_item, inventory_quantity_target, party_authority, party_inventory_item};
+
+use crate::inventory_amount::FULL_AMOUNT_MILLIUNITS;
+
+const SURGERY_DISINFECTANT_ML: u64 = 25;
 
 pub const TAVERN_DRINK_ITEM_ID: &str = "table_wine";
 #[derive(Clone, Debug)]
@@ -77,13 +81,64 @@ enum Stack {
     Personal(crate::InventoryItem),
 }
 
+fn stack_amount(ctx: &ReducerContext, stack: &Stack) -> u32 {
+    match stack {
+        Stack::Party(row) => crate::inventory_amount::party_amount(ctx, row.id).unwrap_or(0),
+        Stack::Personal(row) => crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0),
+    }
+}
+
+fn available_item_amount(
+    ctx: &ReducerContext,
+    owner: u64,
+    party_scope: bool,
+    item_id: &str,
+    settled: bool,
+) -> u32 {
+    let total = if party_scope {
+        ctx.db
+            .character()
+            .id()
+            .find(owner)
+            .and_then(|character| character.party_id)
+            .map_or(0_u64, |party_id| {
+                ctx.db
+                    .party_inventory_item()
+                    .party_id()
+                    .filter(&party_id)
+                    .filter(|row| row.item_id == item_id)
+                    .map(|row| {
+                        u64::from(crate::inventory_amount::party_amount(ctx, row.id).unwrap_or(0))
+                    })
+                    .sum()
+            })
+    } else {
+        ctx.db
+            .inventory_item()
+            .character_id()
+            .filter(owner)
+            .filter(|row| row.item_id == item_id)
+            .map(|row| {
+                u64::from(crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0))
+            })
+            .sum()
+    };
+    let reserve = if settled {
+        u64::from(target_for(ctx, owner, party_scope, item_id))
+            .saturating_mul(u64::from(FULL_AMOUNT_MILLIUNITS))
+    } else {
+        0
+    };
+    u32::try_from(total.saturating_sub(reserve).min(u64::from(u32::MAX))).unwrap_or(u32::MAX)
+}
+
 fn available_stacks(
     ctx: &ReducerContext,
     character_id: u64,
     settled: bool,
     allow_medical: bool,
     hydration: bool,
-) -> Vec<(Stack, crate::Item)> {
+) -> Vec<(Stack, crate::Item, u32)> {
     let character = match ctx.db.character().id().find(character_id) {
         Some(row) => row,
         None => return Vec::new(),
@@ -99,19 +154,20 @@ fn available_stacks(
                     && ethanol_ml(p) > 0
                     && (!hydration || emergency_hydration_ml(p) > 0)
                     && (allow_medical || !p.disinfectant_focused)
-                    && adventuresim_core::alcohol::consumable_units(
-                        ctx.db
-                            .party_inventory_item()
-                            .party_id()
-                            .filter(party_id)
-                            .filter(|row| row.item_id == stack.item_id)
-                            .map(|row| row.quantity)
-                            .sum::<u32>(),
-                        target_for(ctx, party.leader_id, true, &stack.item_id),
-                        settled,
-                    ) > 0
+                    && available_item_amount(ctx, party.leader_id, true, &stack.item_id, settled)
+                        > 0
                 {
-                    rows.push((Stack::Party(stack), def));
+                    let tagged = Stack::Party(stack);
+                    let available = stack_amount(ctx, &tagged).min(available_item_amount(
+                        ctx,
+                        party.leader_id,
+                        true,
+                        &def.id,
+                        settled,
+                    ));
+                    if available > 0 {
+                        rows.push((tagged, def, available));
+                    }
                 }
             }
         }
@@ -123,23 +179,23 @@ fn available_stacks(
                 && ethanol_ml(p) > 0
                 && (!hydration || emergency_hydration_ml(p) > 0)
                 && (allow_medical || !p.disinfectant_focused)
-                && adventuresim_core::alcohol::consumable_units(
-                    ctx.db
-                        .inventory_item()
-                        .character_id()
-                        .filter(character_id)
-                        .filter(|row| row.item_id == stack.item_id)
-                        .map(|row| row.quantity)
-                        .sum::<u32>(),
-                    target_for(ctx, character_id, false, &stack.item_id),
-                    settled,
-                ) > 0
+                && available_item_amount(ctx, character_id, false, &stack.item_id, settled) > 0
             {
-                rows.push((Stack::Personal(stack), def));
+                let tagged = Stack::Personal(stack);
+                let available = stack_amount(ctx, &tagged).min(available_item_amount(
+                    ctx,
+                    character_id,
+                    false,
+                    &def.id,
+                    settled,
+                ));
+                if available > 0 {
+                    rows.push((tagged, def, available));
+                }
             }
         }
     }
-    rows.sort_by(|(a, ad), (b, bd)| {
+    rows.sort_by(|(a, ad, _), (b, bd, _)| {
         let scope = |s: &Stack| if matches!(s, Stack::Party(_)) { 0 } else { 1 };
         let id = |s: &Stack| match s {
             Stack::Party(x) => x.id,
@@ -161,23 +217,15 @@ fn available_stacks(
     rows
 }
 
-fn consume_stack(ctx: &ReducerContext, stack: Stack) {
+fn consume_stack(
+    ctx: &ReducerContext,
+    stack: Stack,
+    amount_milliunits: u32,
+) -> Result<u32, String> {
     match stack {
-        Stack::Party(mut row) => {
-            row.quantity -= 1;
-            if row.quantity == 0 {
-                ctx.db.party_inventory_item().id().delete(row.id);
-            } else {
-                ctx.db.party_inventory_item().id().update(row);
-            }
-        }
-        Stack::Personal(mut row) => {
-            row.quantity -= 1;
-            if row.quantity == 0 {
-                ctx.db.inventory_item().id().delete(row.id);
-            } else {
-                ctx.db.inventory_item().id().update(row);
-            }
+        Stack::Party(row) => crate::inventory_amount::consume_party(ctx, row.id, amount_milliunits),
+        Stack::Personal(row) => {
+            crate::inventory_amount::consume_personal(ctx, row.id, amount_milliunits)
         }
     }
 }
@@ -191,14 +239,28 @@ fn consume_for_ethanol(
 ) -> u32 {
     let mut total = 0_u32;
     while total < target {
-        let Some((stack, def)) = available_stacks(ctx, character_id, settled, allow_medical, false)
-            .into_iter()
-            .next()
+        let Some((stack, def, available)) =
+            available_stacks(ctx, character_id, settled, allow_medical, false)
+                .into_iter()
+                .next()
         else {
             break;
         };
-        total = total.saturating_add(ethanol_ml(properties(&def)));
-        consume_stack(ctx, stack);
+        let full_effect = ethanol_ml(properties(&def));
+        let requested = adventuresim_core::inventory_measurement::amount_for_fraction(
+            u64::from(target - total),
+            u64::from(full_effect),
+        )
+        .unwrap_or(FULL_AMOUNT_MILLIUNITS)
+        .min(available);
+        let consumed = consume_stack(ctx, stack, requested).unwrap_or(0);
+        if consumed == 0 {
+            break;
+        }
+        total = total.saturating_add(adventuresim_core::inventory_measurement::scaled_by_amount(
+            u64::from(full_effect),
+            consumed,
+        ) as u32);
     }
     total
 }
@@ -396,16 +458,38 @@ pub fn consume_emergency_hydration(
 ) -> u32 {
     let mut supplied = 0_u32;
     while supplied as f32 + f32::EPSILON < requested_ml {
-        let Some((stack, def)) = available_stacks(ctx, character_id, false, false, true)
+        let Some((stack, def, available)) = available_stacks(ctx, character_id, false, false, true)
             .into_iter()
             .next()
         else {
             break;
         };
         let p = properties(&def);
-        supplied = supplied.saturating_add(emergency_hydration_ml(p));
-        record_consumed_ethanol(ctx, character_id, minute, ethanol_ml(p));
-        consume_stack(ctx, stack);
+        let full_hydration = emergency_hydration_ml(p);
+        let requested = adventuresim_core::inventory_measurement::amount_for_fraction(
+            (requested_ml - supplied as f32).ceil().max(0.0) as u64,
+            u64::from(full_hydration),
+        )
+        .unwrap_or(FULL_AMOUNT_MILLIUNITS)
+        .min(available);
+        let consumed = consume_stack(ctx, stack, requested).unwrap_or(0);
+        if consumed == 0 {
+            break;
+        }
+        supplied =
+            supplied.saturating_add(adventuresim_core::inventory_measurement::scaled_by_amount(
+                u64::from(full_hydration),
+                consumed,
+            ) as u32);
+        record_consumed_ethanol(
+            ctx,
+            character_id,
+            minute,
+            adventuresim_core::inventory_measurement::scaled_by_amount(
+                u64::from(ethanol_ml(p)),
+                consumed,
+            ) as u32,
+        );
     }
     supplied
 }
@@ -417,7 +501,15 @@ pub fn best_disinfectant(ctx: &ReducerContext, character_id: u64) -> Option<(u64
         .character_id()
         .filter(character_id)
         .filter_map(|row| ctx.db.item().id().find(&row.item_id).map(|def| (row, def)))
-        .filter(|(row, def)| row.quantity > 0 && def.alcohol_disinfectant_effectiveness > 0)
+        .filter(|(row, def)| {
+            let required = adventuresim_core::inventory_measurement::amount_for_fraction(
+                SURGERY_DISINFECTANT_ML,
+                u64::from(def.alcohol_serving_ml),
+            )
+            .unwrap_or(FULL_AMOUNT_MILLIUNITS);
+            crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0) >= required
+                && def.alcohol_disinfectant_effectiveness > 0
+        })
         .collect::<Vec<_>>();
     let ranking = candidates
         .iter()
@@ -438,14 +530,21 @@ pub fn disinfectant_count(ctx: &ReducerContext, character_id: u64) -> u32 {
         .inventory_item()
         .character_id()
         .filter(character_id)
-        .filter(|row| {
-            ctx.db
-                .item()
-                .id()
-                .find(&row.item_id)
-                .is_some_and(|def| def.alcohol_disinfectant_effectiveness > 0)
+        .filter_map(|row| {
+            let definition = ctx.db.item().id().find(&row.item_id)?;
+            if definition.alcohol_disinfectant_effectiveness == 0 {
+                return None;
+            }
+            let required = adventuresim_core::inventory_measurement::amount_for_fraction(
+                SURGERY_DISINFECTANT_ML,
+                u64::from(definition.alcohol_serving_ml),
+            )
+            .ok()?;
+            Some(
+                crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0)
+                    / required.max(1),
+            )
         })
-        .map(|row| row.quantity)
         .sum()
 }
 
@@ -456,6 +555,17 @@ pub fn consume_inventory_row(ctx: &ReducerContext, id: u64) -> Result<(), String
         .id()
         .find(id)
         .ok_or("Selected alcohol is no longer available")?;
-    consume_stack(ctx, Stack::Personal(row));
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(&row.item_id)
+        .ok_or("Selected alcohol definition is missing")?;
+    let requested = adventuresim_core::inventory_measurement::amount_for_fraction(
+        SURGERY_DISINFECTANT_ML,
+        u64::from(definition.alcohol_serving_ml),
+    )
+    .map_err(|_| "Selected alcohol has an invalid serving size")?;
+    consume_stack(ctx, Stack::Personal(row), requested)?;
     Ok(())
 }

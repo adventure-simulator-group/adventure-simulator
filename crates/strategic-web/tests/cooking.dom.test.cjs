@@ -10,16 +10,16 @@ function fixture() {
       </aside>
       <main>
         <input type="radio" data-cooking-method value="roast" checked>
-        <form><input data-cooking-ids><input data-cooking-quantities>
+        <form><input data-cooking-ids><input data-cooking-amounts>
           <button type="submit" data-cook-submit disabled>Cook</button></form>
       </main>
       <aside class="right-sidebar">
         <div data-inventory-browser="cooking-inventory-right"><table><tbody>
           <tr class="trade-inventory-row trade-row-player" data-cooking-source="42">
             <td class="inventory-item-name"><span data-item-name="Carrot" data-item-kind="food" data-food-lot="true">Carrot</span>
-              <span class="inventory-row-actions"><button type="button" data-cooking-stage="42" data-cooking-name="Carrot" data-count="3" data-mass="0.2" data-safety="5" data-transfer-mode="one">left</button></span>
+              <span class="inventory-row-actions"><button type="button" data-cooking-stage="42" data-cooking-name="Carrot" data-count="1000000" data-mass="0.2" data-safety="5" data-transfer-mode="one">left</button></span>
             </td>
-            <td class="inventory-count">3</td><td class="inventory-weight">0.2</td><td class="inventory-gold">2</td>
+            <td class="inventory-count">1</td><td class="inventory-weight">0.2</td><td class="inventory-gold">2</td>
           </tr>
         </tbody></table></div>
       </aside>
@@ -42,9 +42,9 @@ test("ingredients transfer between inventory and pot and drive the cooking form"
   stage.dispatchEvent(new window.Event("click", { bubbles: true }));
 
   assert.equal(form.querySelector("[data-cooking-ids]").value, "42");
-  assert.equal(form.querySelector("[data-cooking-quantities]").value, "1");
-  assert.equal(form.querySelector("[data-cooking-pot-id='42'] .inventory-count").textContent, "1");
-  assert.match(form.querySelector("[data-cooking-source='42'] .inventory-count").textContent, /-1/);
+  assert.equal(form.querySelector("[data-cooking-amounts]").value, "250000");
+  assert.equal(form.querySelector("[data-cooking-pot-id='42'] .inventory-count").textContent, "0.25");
+  assert.match(form.querySelector("[data-cooking-source='42'] .inventory-count").textContent, /-0.25/);
   assert.equal(form.querySelector("[data-cook-submit]").disabled, false);
   assert.equal(form.querySelector("[data-cooking-pot-empty]").hidden, true);
 

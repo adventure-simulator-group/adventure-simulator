@@ -1,4 +1,7 @@
-use crate::{character::character_equip, repair::item_condition, strategic::settlement};
+use crate::{
+    character::character_equip, inventory_amount::inventory_item_amount, repair::item_condition,
+    strategic::settlement,
+};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 use strum::{EnumCount, VariantArray};
 
@@ -1329,10 +1332,11 @@ pub(crate) fn add_inventory_item_checked(
         )
     });
     let food = food_definition.is_some();
+    let measured = crate::inventory_amount::is_measured_item(ctx, item_id);
     // Every food unit is its own non-fungible batch. A partly consumed unit
     // remains quantity one while its authoritative lot mass/value/provenance
     // shrink, so it can never be merged back into fresh stock.
-    let individual = durable || kind == Some(ItemKind::Medication) || food;
+    let individual = durable || kind == Some(ItemKind::Medication) || measured;
     let count = if individual { quantity } else { 1 };
     let mut first = None;
     for _ in 0..count {
@@ -1344,6 +1348,9 @@ pub(crate) fn add_inventory_item_checked(
         });
         if durable {
             crate::repair::initialize_item_condition(ctx, &item);
+        }
+        if measured {
+            crate::inventory_amount::initialize_personal(ctx, item.id);
         }
         if food {
             crate::food::create_personal_food_lot(
@@ -1564,7 +1571,8 @@ pub fn change_inventory_item(
         .find(item_id.to_owned())
         .is_some_and(|definition| definition.kind == ItemKind::Food)
         || adventuresim_core::food::definition(item_id).is_some();
-    if food {
+    let measured = crate::inventory_amount::is_measured_item(ctx, item_id);
+    if measured {
         if by_quantity > 0 {
             add_inventory_item(ctx, character_id, item_id, by_quantity as u32)
                 .ok_or("food definition not found")?;
@@ -1584,10 +1592,16 @@ pub fn change_inventory_item(
             }
             for mut row in items {
                 let take = row.quantity.min(remaining);
-                crate::food::remove_lot_quantity(ctx, row.id, take, row.quantity)?;
+                if food {
+                    crate::food::remove_lot_quantity(ctx, row.id, take, row.quantity)?;
+                }
                 row.quantity -= take;
                 remaining -= take;
                 if row.quantity == 0 {
+                    ctx.db
+                        .inventory_item_amount()
+                        .inventory_item_id()
+                        .delete(row.id);
                     ctx.db.inventory_item().id().delete(row.id);
                 } else {
                     ctx.db.inventory_item().id().update(row);

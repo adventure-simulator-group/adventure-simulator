@@ -390,11 +390,16 @@ impl StrategicEquipment {
                 {
                     return Some(lot.mass_kg.max(0.0));
                 }
-                ctx.db
-                    .item()
-                    .id()
-                    .find(&inventory.item_id)
-                    .map(|item| item.weight * inventory.quantity as f32)
+                ctx.db.item().id().find(&inventory.item_id).map(|item| {
+                    let effective_quantity = crate::inventory_amount::personal_amount(
+                        ctx,
+                        inventory.id,
+                    )
+                    .map_or(inventory.quantity as f32, |amount| {
+                        amount as f32 / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
+                    });
+                    item.weight * effective_quantity
+                })
             })
             .sum();
         let carried_water_weight = ctx

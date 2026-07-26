@@ -1,10 +1,10 @@
 # Food and cooking
 
-This page describes current production behavior. The accepted replacement for
-floating conserved food-lot mass, nutrition, and value is the integer
-quantity-plus-measured-state architecture in
-[`MEASURED_INVENTORY.md`](MEASURED_INVENTORY.md). That schema has not yet been
-rolled out; until it is, the behavior below remains authoritative.
+This page describes current production behavior. Food rows now use the initial
+integer quantity-plus-measured-state rollout in
+[`MEASURED_INVENTORY.md`](MEASURED_INVENTORY.md), while conserved food-lot
+mass, nutrition, and value remain floating fields pending the stable
+measured-object schema.
 
 Food is authoritative strategic inventory. `ItemKind::Food` identifies ordinary
 foods, while edible herbalist ingredients may retain `Ingredient`. Every
@@ -12,7 +12,8 @@ acquisition creates one independent quantity-one `food_lot` per purchased or
 found unit; food lots never merge merely because item IDs match. The inventory
 row identifies the batch, while mass, calories, value, and fractional ingredient
 provenance live on the lot. Partly eaten lots retain quantity one and scale all
-four conserved properties together. Transfers, cooking, and sales therefore
+four conserved properties together with their fixed-point remaining amount.
+Transfers and sales therefore
 move a complete remaining batch rather than manufacturing rounded sub-units.
 Food definitions are validated before either personal or party inventory is
 mutated, so an acquisition cannot leave an inedible inventory row without its
@@ -50,6 +51,8 @@ dialog over the unchanged character sheet. It uses the same two-sided inventory
 browser as trading and
 looting: the cooking pot is on the left, the character's full inventory is on
 the right, and transfer arrows stage bounded amounts of food between them. The
+amount controls use integer milliunits internally and quarter-unit steps in the
+current interface, including a final smaller remainder when necessary. The
 center shows a placeholder cooking scene, Cook and Cancel, and a horizontal
 icon row for pan-fry, stew, roast/skewer, and bake. Roast is always available.
 Pan-fry requires a pan, stew a pot plus water, and bake a portable oven. Stew

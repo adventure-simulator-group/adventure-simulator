@@ -1,17 +1,17 @@
 # Management
-The current implementation mixes ordinary quantity stacks, whole-unit alcohol
-and soap, and quantity-one food lots with floating conserved fields. The
-accepted future model keeps integer object quantity plus optional fixed-point
-measured state, including container tare mass/value and identical personal and
-party invariants. See
+The current implementation keeps ordinary quantity stacks alongside
+quantity-one measured food, alcohol, and soft-soap rows. Measured rows carry an
+integer remaining fraction in personal or party companion state; food lots
+still use floating conserved fields. The target model adds stable object
+identity, integer conserved bases, and container tare mass/value. See
 [`docs/MEASURED_INVENTORY.md`](../../docs/MEASURED_INVENTORY.md). It is an
-architecture and rollout plan, not yet the production inventory schema.
+architecture, initial rollout, and remaining rollout plan.
 
 Food uses the same collapsed-parent disclosure pattern as coin in the browser,
 but the rows below `Food` are non-fungible quantity-one lots, including edible
 herbalist ingredients such as garlic and sage. Each lot retains age, preparation,
 fractional ingredient provenance, nutrition, value, and hidden contamination.
-Partial eating scales the lot fields while the row continues to identify the
+Partial eating scales the lot fields and remaining milliunits while the row continues to identify the
 remaining batch; custody, cooking, and sales move that complete remainder. See
 [`docs/FOOD_AND_COOKING.md`](../../docs/FOOD_AND_COOKING.md).
 
@@ -57,16 +57,16 @@ member consumes shared party rations and pooled water before their own supply;
  staged into the party inventory at the General Market and use party gold when
  the offer is submitted.
 
-Alcohol remains a discrete whole-unit supply. One small beer, table-wine
-serving, or aqua-vitae measure is one stack unit used consistently by drinking,
-travel, and surgery; partially consumed containers are deferred to #150. Item
+Alcohol is a measured quantity-one supply. A small beer, table-wine serving, or
+aqua-vitae measure begins at one full definition unit; drinking and emergency
+hydration consume only the fraction needed, while surgery consumes 25 ml. Item
 definitions explicitly record serving volume, ABV in basis points, net
 emergency hydration, and disinfectant effectiveness. ABV must be at most
 10,000 basis points, and usable hydration is clamped to the serving's physical
 non-alcohol water volume; invalid seeded definitions fail initialization.
-Quantity targets become
-reserve floors only while resting at a settlement. Nightly drinking first uses
-surplus shared-party stacks, then surplus personal stacks, and finally buys a
+Quantity targets become equivalent full-unit amount reserve floors only while
+resting at a settlement. Nightly drinking first uses surplus shared-party
+amount, then surplus personal amount, and finally buys a
 table-wine serving for immediate consumption with that character's personal
 coin. It creates no debt and never spends unrestricted party wealth. On the
 road the reserve floor is ignored because the carried stock was reserved for
@@ -117,12 +117,13 @@ range-of-motion columns. General inventory views offer the union; merchants
 whose goods do not use combat statistics retain only the basic columns.
 # Soap
 
-Soft soap is a stackable, discrete personal or shared-party supply. One whole
+Soft soap is a measured quantity-one personal or shared-party supply. One full
 unit provides 25 points of cleansing capacity against the bounded 100-point
-filth meter; any unused capacity is lost at the end of that wash. Automatic
-washing consumes stable personal stacks first, then stable shared-party stacks.
+filth meter. Washing consumes exactly one twenty-fifth of a unit per filth
+point, so unused capacity remains. Automatic washing consumes stable personal
+rows first, then stable shared-party rows.
 When shared soap is scarce, it is assigned deterministically by health risk:
 diseased blood first, then the strongest blood exposure, total filth, and character
-ID as a final tie-breaker. Every explicit rest control previews the exact whole
+ID as a final tie-breaker. Every explicit rest control previews the fractional
 units that will be consumed, split between personal and shared supplies, and warns
 that the same soap is used by surgery.

@@ -42,7 +42,9 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
-    food_lot_table::FoodLotTableAccess, inventory_item_table::InventoryItemTableAccess,
+    food_lot_table::FoodLotTableAccess,
+    inventory_item_amount_table::InventoryItemAmountTableAccess,
+    inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
     morale_event_table::MoraleEventTableAccess,
@@ -51,6 +53,7 @@ use adventuresim_stdb_client::{
     party_action_request_table::PartyActionRequestTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_inventory_state_table::PartyInventoryStateTableAccess,
+    party_item_amount_table::PartyItemAmountTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
     party_journey_itinerary_table::PartyJourneyItineraryTableAccess,
     party_journey_table::PartyJourneyTableAccess,
@@ -116,6 +119,7 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "settlement_alias",
     "settlement_description",
     "inventory_item",
+    "inventory_item_amount",
     "food_lot",
     "item_condition",
     "repair_order",
@@ -123,6 +127,7 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "character_time",
     "inventory_quantity_target",
     "party_inventory_item",
+    "party_item_amount",
     "party_inventory_state",
     "party_stake",
     "character_equip",
@@ -288,6 +293,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.settlement_alias());
         invalidate_on_changes!(state.0._connection.db.settlement_description());
         invalidate_on_changes!(state.0._connection.db.inventory_item());
+        invalidate_on_changes!(state.0._connection.db.inventory_item_amount());
         invalidate_on_changes!(state.0._connection.db.food_lot());
         invalidate_on_changes!(state.0._connection.db.item_condition());
         invalidate_on_changes!(state.0._connection.db.repair_order());
@@ -295,6 +301,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_time());
         invalidate_on_changes!(state.0._connection.db.inventory_quantity_target());
         invalidate_on_changes!(state.0._connection.db.party_inventory_item());
+        invalidate_on_changes!(state.0._connection.db.party_item_amount());
         invalidate_on_changes!(state.0._connection.db.party_inventory_state());
         invalidate_on_changes!(state.0._connection.db.party_stake());
         invalidate_on_changes!(state.0._connection.db.character_equip());
@@ -383,6 +390,7 @@ impl LiveState {
             .add_query(|query| query.from.party_journey())
             .add_query(|query| query.from.party_journey_itinerary())
             .add_query(|query| query.from.inventory_item())
+            .add_query(|query| query.from.inventory_item_amount())
             .add_query(|query| query.from.food_lot())
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item_condition())
@@ -396,6 +404,7 @@ impl LiveState {
             .add_query(|query| query.from.party())
             .add_query(|query| query.from.party_action_request())
             .add_query(|query| query.from.party_inventory_item())
+            .add_query(|query| query.from.party_item_amount())
             .add_query(|query| query.from.party_inventory_state())
             .add_query(|query| query.from.party_join_request())
             .add_query(|query| query.from.party_leader_vote())

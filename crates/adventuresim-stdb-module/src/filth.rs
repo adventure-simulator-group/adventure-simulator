@@ -472,8 +472,11 @@ fn has_cut(ctx: &ReducerContext, character_id: u64) -> bool {
         .any(|i| i.cut_damage > 0.0)
 }
 
-fn consume_personal(ctx: &ReducerContext, stack_id: u64, quantity: u32) -> Result<(), String> {
-    let mut stack = ctx
+pub const SOAP_MILLIUNITS_PER_CLEANSING_POINT: u32 =
+    crate::inventory_amount::FULL_AMOUNT_MILLIUNITS / filth::SOAP_CLEANSING_CAPACITY as u32;
+
+fn consume_personal(ctx: &ReducerContext, stack_id: u64, points: u32) -> Result<(), String> {
+    let stack = ctx
         .db
         .inventory_item()
         .id()
@@ -482,19 +485,14 @@ fn consume_personal(ctx: &ReducerContext, stack_id: u64, quantity: u32) -> Resul
     if stack.item_id != SOAP_ITEM_ID {
         return Err("Planned personal stack is not soap".into());
     }
-    stack.quantity = stack
-        .quantity
-        .checked_sub(quantity)
-        .ok_or("Planned personal soap quantity is no longer available")?;
-    if stack.quantity == 0 {
-        ctx.db.inventory_item().id().delete(stack.id);
-    } else {
-        ctx.db.inventory_item().id().update(stack);
-    }
+    let amount = points
+        .checked_mul(SOAP_MILLIUNITS_PER_CLEANSING_POINT)
+        .ok_or("Planned personal soap amount overflow")?;
+    crate::inventory_amount::consume_personal(ctx, stack.id, amount)?;
     Ok(())
 }
-fn consume_party(ctx: &ReducerContext, stack_id: u64, quantity: u32) -> Result<(), String> {
-    let mut stack = ctx
+fn consume_party(ctx: &ReducerContext, stack_id: u64, points: u32) -> Result<(), String> {
+    let stack = ctx
         .db
         .party_inventory_item()
         .id()
@@ -503,16 +501,25 @@ fn consume_party(ctx: &ReducerContext, stack_id: u64, quantity: u32) -> Result<(
     if stack.item_id != SOAP_ITEM_ID {
         return Err("Planned shared stack is not soap".into());
     }
-    stack.quantity = stack
-        .quantity
-        .checked_sub(quantity)
-        .ok_or("Planned shared soap quantity is no longer available")?;
-    if stack.quantity == 0 {
-        ctx.db.party_inventory_item().id().delete(stack.id);
-    } else {
-        ctx.db.party_inventory_item().id().update(stack);
-    }
+    let amount = points
+        .checked_mul(SOAP_MILLIUNITS_PER_CLEANSING_POINT)
+        .ok_or("Planned shared soap amount overflow")?;
+    crate::inventory_amount::consume_party(ctx, stack.id, amount)?;
     Ok(())
+}
+
+pub fn consume_personal_soap_points(
+    ctx: &ReducerContext,
+    stack_id: u64,
+    points: u32,
+) -> Result<(), String> {
+    let required = points
+        .checked_mul(SOAP_MILLIUNITS_PER_CLEANSING_POINT)
+        .ok_or("Requested soap amount overflow")?;
+    if crate::inventory_amount::personal_amount(ctx, stack_id).unwrap_or(0) < required {
+        return Err("Not enough soap remains for the requested use".into());
+    }
+    consume_personal(ctx, stack_id, points)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -576,11 +583,7 @@ fn plan_party_wash(
         if dirty.is_empty() {
             continue;
         }
-        let needed = dirty
-            .iter()
-            .map(|d| u32::from(d.amount))
-            .sum::<u32>()
-            .div_ceil(u32::from(filth::SOAP_CLEANSING_CAPACITY));
+        let needed = dirty.iter().map(|d| u32::from(d.amount)).sum::<u32>();
         let mut personal = ctx
             .db
             .inventory_item()
@@ -591,7 +594,8 @@ fn plan_party_wash(
                     source: SoapSource::Personal,
                     id: stack.id,
                 },
-                quantity: stack.quantity,
+                quantity: crate::inventory_amount::personal_amount(ctx, stack.id).unwrap_or(0)
+                    / SOAP_MILLIUNITS_PER_CLEANSING_POINT,
             })
             .collect::<Vec<_>>();
         let assigned = take_units(&mut personal, needed);
@@ -615,7 +619,8 @@ fn plan_party_wash(
                     source: SoapSource::Party,
                     id: stack.id,
                 },
-                quantity: stack.quantity,
+                quantity: crate::inventory_amount::party_amount(ctx, stack.id).unwrap_or(0)
+                    / SOAP_MILLIUNITS_PER_CLEANSING_POINT,
             })
             .collect::<Vec<_>>()
     });
@@ -698,7 +703,10 @@ pub fn wash_party_before_explicit_rest(
                     .id()
                     .find(key.id)
                     .ok_or("Planned personal soap stack is missing")?;
-                if stack.item_id != SOAP_ITEM_ID || stack.quantity < *quantity {
+                if stack.item_id != SOAP_ITEM_ID
+                    || crate::inventory_amount::personal_amount(ctx, stack.id).unwrap_or(0)
+                        < quantity.saturating_mul(SOAP_MILLIUNITS_PER_CLEANSING_POINT)
+                {
                     return Err("Planned personal soap is no longer available".into());
                 }
             }
@@ -709,7 +717,10 @@ pub fn wash_party_before_explicit_rest(
                     .id()
                     .find(key.id)
                     .ok_or("Planned shared soap stack is missing")?;
-                if stack.item_id != SOAP_ITEM_ID || stack.quantity < *quantity {
+                if stack.item_id != SOAP_ITEM_ID
+                    || crate::inventory_amount::party_amount(ctx, stack.id).unwrap_or(0)
+                        < quantity.saturating_mul(SOAP_MILLIUNITS_PER_CLEANSING_POINT)
+                {
                     return Err("Planned shared soap is no longer available".into());
                 }
             }
@@ -775,7 +786,10 @@ pub fn preview_soap_units(ctx: &ReducerContext, character_id: u64) -> u32 {
         .inventory_item()
         .character_and_item_id()
         .filter((character_id, SOAP_ITEM_ID))
-        .map(|s| s.quantity)
+        .map(|s| {
+            crate::inventory_amount::personal_amount(ctx, s.id).unwrap_or(0)
+                / SOAP_MILLIUNITS_PER_CLEANSING_POINT
+        })
         .sum::<u32>()
         + ctx
             .db
@@ -788,12 +802,13 @@ pub fn preview_soap_units(ctx: &ReducerContext, character_id: u64) -> u32 {
                     .party_inventory_item()
                     .iter()
                     .filter(|s| s.party_id == p && s.item_id == SOAP_ITEM_ID)
-                    .map(|s| s.quantity)
+                    .map(|s| {
+                        crate::inventory_amount::party_amount(ctx, s.id).unwrap_or(0)
+                            / SOAP_MILLIUNITS_PER_CLEANSING_POINT
+                    })
                     .sum()
             });
-    amount
-        .div_ceil(u32::from(filth::SOAP_CLEANSING_CAPACITY))
-        .min(available)
+    amount.min(available)
 }
 
 pub(crate) fn seed_demo(

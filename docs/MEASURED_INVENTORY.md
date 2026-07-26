@@ -1,7 +1,7 @@
 # Measured inventory architecture
 
-Status: accepted architecture for issue #150; production schema rollout is
-deliberately not part of this change.
+Status: accepted architecture for issue #150 with an initial production
+rollout for food, alcohol, and soft soap.
 
 This document defines how fractional consumables will coexist with ordinary
 inventory stacks. Its authority is the strategic SpacetimeDB layer. Tactical
@@ -28,10 +28,12 @@ not variants in one giant exclusive `ItemKind` union. A bottled medicine may
 be both alcohol and food; clothing may also be armor. An exhaustive union would
 make those legitimate combinations awkward or impossible.
 
-The framework-independent arithmetic prototype is
+The framework-independent arithmetic boundary is
 `adventuresim_core::inventory_measurement`. It validates profiles and evaluates
-full stacks and partial or empty singletons without changing a public database
-schema.
+full stacks and partial or empty singletons. The first rollout also publishes
+`inventory_item_amount` and `party_item_amount`: each stores
+`remaining_milliunits` on a quantity-one row, where `1_000_000` is one full
+definition unit.
 
 ## Alternatives considered
 
@@ -89,7 +91,7 @@ selected capability model with a weaker schema. Floating point is additionally
 unsuitable for conserved durable inventory, nutrition, mass, and value because
 split/recombine results would depend on operation order.
 
-## Future clean schema
+## Target clean schema
 
 Names are illustrative, but the relationships and invariants are normative.
 The production implementation should use the repository's clean reset/reseed
@@ -445,13 +447,40 @@ integer amount where consumption supports it; object IDs are returned for
 identity but clients cannot reassign custody directly. Generated
 `adventuresim-stdb-client` bindings, strategic-web view models, tactical
 snapshots, simulator actions, and reducer call sites must update in the same
-schema commit. No bindings are generated for this architecture/prototype-only
-change because no public table changed.
+schema commit. The initial rollout includes regenerated
+`adventuresim-stdb-client` bindings for both public amount tables, and
+strategic-web subscribes to them for live invalidation.
+
+## Initial rollout implemented here
+
+- Food, alcoholic drinks, and soft soap are created as quantity-one measured
+  rows with a full amount of `1_000_000`.
+- Eating and travel eating reduce amount together with the existing lot mass,
+  nutrition, value, provenance, and contamination inputs.
+- Cooking accepts integer milliunit portions; the UI stages quarter-unit
+  increments and the reducer checks each amount against the current lot.
+- Evening drinking and emergency hydration consume only the fraction needed
+  for the requested effect. Quantity targets reserve the equivalent number of
+  full measured units.
+- Washing consumes one twenty-fifth of a soap unit per cleansing point.
+  Surgery consumes that bounded soap amount plus 25 ml of disinfectant.
+- Complete measured rows retain their state across personal/party custody
+  changes. Encumbrance, party stake/liquidation, and merchant sale value use
+  the remaining fraction.
+- Zero consumption, discard, liquidation, and sale remove companion state with
+  the parent row.
+
+Stable measured-object/profile tables, container tare/recovery, integer
+replacement of the existing floating food-lot conserved fields, arbitrary
+pouring, and arbitrary partial-row trade remain target-schema work. This first
+rollout intentionally uses definition-relative milliunits so gameplay stops
+wasting whole consumable units without claiming the full container model is
+complete.
 
 ## Rollout plan
 
-1. Preparatory currency subunits, pure checked mass/value/pricing helpers, and
-   definition constants may land before measured rows can be created.
+1. **Implemented initially:** checked mass/value/pricing helpers and
+   definition-relative milliunit state.
 2. Add the profile, stable object/basis, family metadata, and personal/party
    custody-state schemas behind per-family creation gates. Merely publishing
    these tables must not make a reducer able to create partial rows.
@@ -462,15 +491,14 @@ change because no public table changed.
    This includes loot, targets, party stakes, liquidation, surrender,
    encumbrance, trade, and transfers wherever that family can appear. Consumer
    parity is a prerequisite, not later cleanup.
-4. Reset and reseed the isolated development database as part of each enabled
-   family cutover. Convert alcohol and soap definitions/reducers while retaining
-   complete-row transfer/trade.
-5. Enable food only when floating conserved `food_lot` fields have been replaced
-   by measured objects with integer derived bases and all cooking, eating,
-   contamination-dose inputs, merchant quotes, projections, and bindings use
-   them.
-6. Ship each family's measured UI display, amount controls, previews,
-   accessibility labels, and stable live-refresh behavior with its gate.
+4. **Implemented initially:** reset/reseed schema support and alcohol/soap
+   reducer cutover while retaining complete-row transfer/trade.
+5. **Implemented as an interim:** food consumption and cooking portions are
+   authoritative, while floating `food_lot` conserved fields remain until
+   stable measured objects and integer derived bases land.
+6. **Partially implemented:** ship each family's measured UI display, amount
+   controls, previews, accessibility labels, and stable live-refresh behavior
+   with its gate.
 
 There is intentionally no live-data migration. Deployment of the schema change
 requires an isolated database reset/reseed and regenerated client bindings.

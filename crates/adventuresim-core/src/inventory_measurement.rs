@@ -4,6 +4,25 @@
 //! implemented yet. This module is the small arithmetic boundary reducers can
 //! adopt when that schema lands.
 
+/// Canonical fixed-point magnitude of one full consumable unit.
+pub const FULL_AMOUNT_MILLIUNITS: u32 = 1_000_000;
+
+pub fn amount_for_fraction(numerator: u64, denominator: u64) -> Result<u32, MeasurementError> {
+    if denominator == 0 {
+        return Err(MeasurementError::ZeroCapacity);
+    }
+    let amount = u128::from(FULL_AMOUNT_MILLIUNITS)
+        .checked_mul(u128::from(numerator))
+        .ok_or(MeasurementError::Overflow)?
+        .div_ceil(u128::from(denominator));
+    u32::try_from(amount.min(u128::from(FULL_AMOUNT_MILLIUNITS)))
+        .map_err(|_| MeasurementError::Overflow)
+}
+
+pub fn scaled_by_amount(full: u64, amount_milliunits: u32) -> u64 {
+    ((u128::from(full) * u128::from(amount_milliunits)) / u128::from(FULL_AMOUNT_MILLIUNITS)) as u64
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeasurementKind {
     /// The item itself is consumed. An empty row has no remaining object.
@@ -275,6 +294,23 @@ mod tests {
                 tare_value: 0,
             },
         }
+    }
+
+    #[test]
+    fn fixed_point_fraction_rounds_up_and_caps_at_one_unit() {
+        assert_eq!(amount_for_fraction(1, 25), Ok(40_000));
+        assert_eq!(amount_for_fraction(25, 100), Ok(250_000));
+        assert_eq!(amount_for_fraction(2, 1), Ok(FULL_AMOUNT_MILLIUNITS));
+        assert_eq!(
+            amount_for_fraction(1, 0),
+            Err(MeasurementError::ZeroCapacity)
+        );
+    }
+
+    #[test]
+    fn fixed_point_scaling_rounds_down() {
+        assert_eq!(scaled_by_amount(425, 500_000), 212);
+        assert_eq!(scaled_by_amount(30, FULL_AMOUNT_MILLIUNITS), 30);
     }
 
     fn bottle() -> MeasurementProfile {

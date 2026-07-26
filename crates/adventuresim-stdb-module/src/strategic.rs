@@ -31,6 +31,7 @@ use crate::{
         character_stats, starting_character_claim,
     },
     condition::character_condition,
+    inventory_amount::{inventory_item_amount, party_item_amount},
     investigation::{
         CaseSiteAuthority, CaseSiteId, EvidencePresentationKind, PartyCaseSiteTracking,
         case_site_authority, case_site_provenance_reducer, disclose_exact_case_site,
@@ -9949,6 +9950,19 @@ pub fn transfer_party_item(
         return Err("Unequip an item before transferring it".into());
     }
 
+    let measured = crate::inventory_amount::personal_amount(ctx, source_item.id).is_some();
+    if measured {
+        if quantity != 1 || source_item.quantity != 1 {
+            return Err("Measured items must be transferred as complete rows".into());
+        }
+        let mut transferred = source_item;
+        transferred.character_id = to_character_id;
+        ctx.db.inventory_item().id().update(transferred);
+        crate::capability::refresh_character_capability(ctx, from_character_id)?;
+        crate::capability::refresh_character_capability(ctx, to_character_id)?;
+        return Ok(());
+    }
+
     let durable = item_is_durable(ctx, &source_item.item_id);
     if durable {
         if quantity != 1 || source_item.quantity != 1 {
@@ -10057,6 +10071,14 @@ fn personal_inventory_value(
             return Err("Food batches must move as complete lots".into());
         }
         food_lot_value(lot.total_value)
+    } else if let Some(amount) = crate::inventory_amount::personal_amount(ctx, inventory.id) {
+        if quantity != 1 || inventory.quantity != 1 {
+            return Err("Measured inventory must be valued as a complete row".into());
+        }
+        Ok(adventuresim_core::inventory_measurement::scaled_by_amount(
+            objective_item_value(ctx, &inventory.item_id)?,
+            amount,
+        ))
     } else {
         objective_item_value(ctx, &inventory.item_id)?
             .checked_mul(u64::from(quantity))
@@ -10074,6 +10096,14 @@ fn party_inventory_value(
             return Err("Food batches must move as complete lots".into());
         }
         food_lot_value(lot.total_value)
+    } else if let Some(amount) = crate::inventory_amount::party_amount(ctx, inventory.id) {
+        if quantity != 1 || inventory.quantity != 1 {
+            return Err("Measured inventory must be valued as a complete row".into());
+        }
+        Ok(adventuresim_core::inventory_measurement::scaled_by_amount(
+            objective_item_value(ctx, &inventory.item_id)?,
+            amount,
+        ))
     } else {
         objective_item_value(ctx, &inventory.item_id)?
             .checked_mul(u64::from(quantity))
@@ -10119,7 +10149,8 @@ fn add_to_party_inventory_checked(
         .find(item_id.to_string())
         .map(|row| row.kind);
     let food_definition = crate::item::inventory_food_definition(kind, item_id)?;
-    if food_definition.is_some() {
+    let measured = crate::inventory_amount::is_measured_item(ctx, item_id);
+    if measured {
         let minute = ctx
             .db
             .party_authority()
@@ -10134,8 +10165,11 @@ fn add_to_party_inventory_checked(
                 item_id: item_id.into(),
                 quantity: 1,
             });
-            crate::food::create_party_food_lot(ctx, row.id, item_id, 1, minute)
-                .ok_or_else(|| format!("Could not create party food lot for {item_id}"))?;
+            crate::inventory_amount::initialize_party(ctx, row.id);
+            if food_definition.is_some() {
+                crate::food::create_party_food_lot(ctx, row.id, item_id, 1, minute)
+                    .ok_or_else(|| format!("Could not create party food lot for {item_id}"))?;
+            }
         }
         return Ok(());
     }
@@ -10944,31 +10978,42 @@ pub fn deposit_party_inventory_item(
         None
     };
     let food = crate::food::personal_lot(ctx, inventory.id).is_some();
-    if food {
+    let measured = crate::inventory_amount::personal_amount(ctx, inventory.id).is_some();
+    let inserted_party_row = if measured {
+        if quantity != 1 || inventory.quantity != 1 {
+            return Err("Measured items must be deposited as complete rows".into());
+        }
         let party_row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
             id: 0,
             party_id: party_id.clone(),
             item_id: inventory.item_id.clone(),
             quantity,
         });
-        crate::food::move_or_split_to_party(
-            ctx,
-            inventory.id,
-            party_row.id,
-            quantity,
-            inventory.quantity,
-        )?;
+        if food {
+            crate::food::move_or_split_to_party(
+                ctx,
+                inventory.id,
+                party_row.id,
+                quantity,
+                inventory.quantity,
+            )?;
+        }
+        crate::inventory_amount::move_personal_to_party(ctx, inventory.id, party_row.id)?;
+        Some(party_row)
     } else {
         add_to_party_inventory(ctx, &party_id, &inventory.item_id, quantity);
-    }
+        None
+    };
     if let Some(condition) = preserved_condition {
-        let party_row = ctx
-            .db
-            .party_inventory_item()
-            .party_id()
-            .filter(&party_id)
-            .filter(|row| row.item_id == inventory.item_id)
-            .max_by_key(|row| row.id)
+        let party_row = inserted_party_row
+            .or_else(|| {
+                ctx.db
+                    .party_inventory_item()
+                    .party_id()
+                    .filter(&party_id)
+                    .filter(|row| row.item_id == inventory.item_id)
+                    .max_by_key(|row| row.id)
+            })
             .expect("durable party row was just inserted");
         ctx.db
             .party_item_condition()
@@ -11185,20 +11230,27 @@ pub fn withdraw_party_inventory_item(
         .party_inventory_item_id()
         .find(inventory.id);
     let food = crate::food::party_lot(ctx, inventory.id).is_some();
-    let new_inventory_id = if food {
+    let measured = crate::inventory_amount::party_amount(ctx, inventory.id).is_some();
+    let new_inventory_id = if measured {
+        if quantity != 1 || inventory.quantity != 1 {
+            return Err("Measured items must be withdrawn as complete rows".into());
+        }
         let row = ctx.db.inventory_item().insert(InventoryItem {
             id: 0,
             character_id,
             item_id: inventory.item_id.clone(),
             quantity,
         });
-        crate::food::move_or_split_to_personal(
-            ctx,
-            inventory.id,
-            row.id,
-            quantity,
-            inventory.quantity,
-        )?;
+        if food {
+            crate::food::move_or_split_to_personal(
+                ctx,
+                inventory.id,
+                row.id,
+                quantity,
+                inventory.quantity,
+            )?;
+        }
+        crate::inventory_amount::move_party_to_personal(ctx, inventory.id, row.id)?;
         Some(row.id)
     } else {
         crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity)
@@ -11299,6 +11351,10 @@ pub fn liquidate_party_inventory(
             crate::food::remove_party_lot_quantity(ctx, entry.id, quantity, entry.quantity)?;
         }
         if entry.quantity == quantity {
+            ctx.db
+                .party_item_amount()
+                .party_inventory_item_id()
+                .delete(entry.id);
             ctx.db.party_inventory_item().id().delete(entry.id);
             ctx.db
                 .party_item_condition()
@@ -11355,6 +11411,10 @@ pub fn discard_inventory_items(
 
     for (mut item, quantity) in staged {
         if item.quantity == quantity {
+            ctx.db
+                .inventory_item_amount()
+                .inventory_item_id()
+                .delete(item.id);
             ctx.db.inventory_item().id().delete(item.id);
             ctx.db.item_condition().inventory_item_id().delete(item.id);
             crate::food::delete_personal_food_lot(ctx, item.id);
@@ -11743,10 +11803,28 @@ fn finalize_storefront_trade_impl(
                 -problem_effects.sell_penalty_bps,
             ))
         } else {
+            let measured_amount = if party_scope {
+                crate::inventory_amount::party_amount(ctx, *inventory_id)
+            } else {
+                crate::inventory_amount::personal_amount(ctx, *inventory_id)
+            };
+            if measured_amount.is_some() && *quantity != available {
+                return Err("Measured inventory must be sold as a complete row".into());
+            }
+            let intrinsic = measured_amount.map_or(item.base_value.unwrap_or(1), |amount| {
+                adventuresim_core::inventory_measurement::scaled_by_amount(
+                    u64::from(item.base_value.unwrap_or(1)),
+                    amount,
+                )
+                .min(u64::from(u32::MAX)) as u32
+            });
+            let merchant_value = if measured_amount.is_some() && intrinsic == 0 {
+                0
+            } else {
+                adventuresim_core::strategic_economy::merchant_sell_price(intrinsic)
+            };
             let quoted = adventuresim_core::strategic_economy::language_adjusted_sell_price(
-                adventuresim_core::strategic_economy::merchant_sell_price(
-                    item.base_value.unwrap_or(1),
-                ),
+                merchant_value,
                 shared_language,
             );
             let quoted = adventuresim_core::local_problem::adjust_price(
@@ -11783,6 +11861,10 @@ fn finalize_storefront_trade_impl(
                 .unwrap();
             if inventory.quantity == *quantity {
                 crate::food::delete_party_food_lot(ctx, *inventory_id);
+                ctx.db
+                    .party_item_amount()
+                    .party_inventory_item_id()
+                    .delete(*inventory_id);
                 ctx.db.party_inventory_item().id().delete(*inventory_id);
                 ctx.db
                     .party_item_condition()
@@ -11804,6 +11886,10 @@ fn finalize_storefront_trade_impl(
             let mut inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
             if inventory.quantity == *quantity {
                 crate::food::delete_personal_food_lot(ctx, *inventory_id);
+                ctx.db
+                    .inventory_item_amount()
+                    .inventory_item_id()
+                    .delete(*inventory_id);
                 ctx.db.inventory_item().id().delete(*inventory_id);
                 ctx.db
                     .item_condition()
@@ -14034,11 +14120,16 @@ fn party_encumbrance_remaining_basis_points(
         .iter()
         .flat_map(|member_id| ctx.db.inventory_item().character_id().filter(*member_id))
         .map(|row| {
-            ctx.db
-                .item()
-                .id()
-                .find(&row.item_id)
-                .map_or(0.0, |item| item.weight * row.quantity as f32)
+            if let Some(lot) = crate::food::personal_lot(ctx, row.id) {
+                return lot.mass_kg.max(0.0);
+            }
+            ctx.db.item().id().find(&row.item_id).map_or(0.0, |item| {
+                let quantity = crate::inventory_amount::personal_amount(ctx, row.id)
+                    .map_or(row.quantity as f32, |amount| {
+                        amount as f32 / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
+                    });
+                item.weight * quantity
+            })
         })
         .sum();
     let party_burden: f32 = ctx
@@ -14047,11 +14138,16 @@ fn party_encumbrance_remaining_basis_points(
         .party_id()
         .filter(party_id)
         .map(|row| {
-            ctx.db
-                .item()
-                .id()
-                .find(&row.item_id)
-                .map_or(0.0, |item| item.weight * row.quantity as f32)
+            if let Some(lot) = crate::food::party_lot(ctx, row.id) {
+                return lot.mass_kg.max(0.0);
+            }
+            ctx.db.item().id().find(&row.item_id).map_or(0.0, |item| {
+                let quantity = crate::inventory_amount::party_amount(ctx, row.id)
+                    .map_or(row.quantity as f32, |amount| {
+                        amount as f32 / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
+                    });
+                item.weight * quantity
+            })
         })
         .sum();
     let capacity: f32 = member_ids

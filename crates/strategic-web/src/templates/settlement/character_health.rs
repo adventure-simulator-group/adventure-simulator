@@ -163,9 +163,9 @@ fn surgery_procedure_row(
                 input type="hidden" name="projectile_id" value=(projectile_id);
             }
             @if soap_applicable {
-                label class="surgery-soap-option" title="Consumes one unit; lowers contamination risk independently of other supplies" {
+                label class="surgery-soap-option" title="Consumes 0.04 of a soap unit; lowers contamination risk independently of other supplies" {
                     input type="checkbox" name="use_soap" value="true" disabled[!soap_available];
-                    " Use 1 soft soap"
+                    " Use 0.04 soft soap"
                 }
             }
             @if icon == "bullet-visual" {

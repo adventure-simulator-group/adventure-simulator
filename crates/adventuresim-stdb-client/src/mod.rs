@@ -289,6 +289,8 @@ pub mod inferred_tree_species_profile_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
 pub mod inspect_physical_evidence_reducer;
+pub mod inventory_item_amount_table;
+pub mod inventory_item_amount_type;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
 pub mod inventory_quantity_target_table;
@@ -400,6 +402,8 @@ pub mod party_inventory_item_table;
 pub mod party_inventory_item_type;
 pub mod party_inventory_state_table;
 pub mod party_inventory_state_type;
+pub mod party_item_amount_table;
+pub mod party_item_amount_type;
 pub mod party_item_condition_table;
 pub mod party_item_condition_type;
 pub mod party_join_request_table;
@@ -920,6 +924,8 @@ pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
 pub use inspect_physical_evidence_reducer::inspect_physical_evidence;
+pub use inventory_item_amount_table::*;
+pub use inventory_item_amount_type::InventoryItemAmount;
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
 pub use inventory_quantity_target_table::*;
@@ -1031,6 +1037,8 @@ pub use party_inventory_item_table::*;
 pub use party_inventory_item_type::PartyInventoryItem;
 pub use party_inventory_state_table::*;
 pub use party_inventory_state_type::PartyInventoryState;
+pub use party_item_amount_table::*;
+pub use party_item_amount_type::PartyItemAmount;
 pub use party_item_condition_table::*;
 pub use party_item_condition_type::PartyItemCondition;
 pub use party_join_request_table::*;
@@ -1383,7 +1391,7 @@ pub enum Reducer {
         character_id: u64,
         method: CookingMethod,
         inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
+        amounts_milliunits: Vec<u32>,
     },
     CreateCharacter {
         id: u64,
@@ -2229,12 +2237,12 @@ Reducer::CancelMissionRequest{
                 character_id,
                 method,
                 inventory_item_ids,
-                quantities,
+                amounts_milliunits,
 }             => __sats::bsatn::to_vec(&cook_food_reducer::CookFoodArgs {
                 character_id: character_id.clone(),
                 method: method.clone(),
                 inventory_item_ids: inventory_item_ids.clone(),
-                quantities: quantities.clone(),
+                amounts_milliunits: amounts_milliunits.clone(),
 }),
             Reducer::CreateCharacter{
                 id,
@@ -3203,6 +3211,7 @@ pub struct DbUpdate {
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
     food_lot: __sdk::TableUpdate<FoodLot>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
+    inventory_item_amount: __sdk::TableUpdate<InventoryItemAmount>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
     item_condition: __sdk::TableUpdate<ItemCondition>,
@@ -3215,6 +3224,7 @@ pub struct DbUpdate {
     party_action_request: __sdk::TableUpdate<PartyActionRequest>,
     party_inventory_item: __sdk::TableUpdate<PartyInventoryItem>,
     party_inventory_state: __sdk::TableUpdate<PartyInventoryState>,
+    party_item_amount: __sdk::TableUpdate<PartyItemAmount>,
     party_item_condition: __sdk::TableUpdate<PartyItemCondition>,
     party_join_request: __sdk::TableUpdate<PartyJoinRequest>,
     party_journey: __sdk::TableUpdate<PartyJourney>,
@@ -3456,6 +3466,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
+                "inventory_item_amount" => db_update.inventory_item_amount.append(
+                    inventory_item_amount_table::parse_table_update(table_update)?,
+                ),
                 "inventory_quantity_target" => db_update.inventory_quantity_target.append(
                     inventory_quantity_target_table::parse_table_update(table_update)?,
                 ),
@@ -3492,6 +3505,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "party_inventory_state" => db_update.party_inventory_state.append(
                     party_inventory_state_table::parse_table_update(table_update)?,
                 ),
+                "party_item_amount" => db_update
+                    .party_item_amount
+                    .append(party_item_amount_table::parse_table_update(table_update)?),
                 "party_item_condition" => db_update.party_item_condition.append(
                     party_item_condition_table::parse_table_update(table_update)?,
                 ),
@@ -3728,6 +3744,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
+        diff.inventory_item_amount = cache
+            .apply_diff_to_table::<InventoryItemAmount>(
+                "inventory_item_amount",
+                &self.inventory_item_amount,
+            )
+            .with_updates_by_pk(|row| &row.inventory_item_id);
         diff.inventory_quantity_target = cache
             .apply_diff_to_table::<InventoryQuantityTarget>(
                 "inventory_quantity_target",
@@ -3776,6 +3798,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.party_inventory_state,
             )
             .with_updates_by_pk(|row| &row.party_id);
+        diff.party_item_amount = cache
+            .apply_diff_to_table::<PartyItemAmount>("party_item_amount", &self.party_item_amount)
+            .with_updates_by_pk(|row| &row.party_inventory_item_id);
         diff.party_item_condition = cache
             .apply_diff_to_table::<PartyItemCondition>(
                 "party_item_condition",
@@ -4223,6 +4248,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "inventory_item_amount" => db_update
+                    .inventory_item_amount
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_quantity_target" => db_update
                     .inventory_quantity_target
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -4258,6 +4286,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_inventory_state" => db_update
                     .party_inventory_state
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_item_amount" => db_update
+                    .party_item_amount
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_item_condition" => db_update
                     .party_item_condition
@@ -4539,6 +4570,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "inventory_item_amount" => db_update
+                    .inventory_item_amount
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_quantity_target" => db_update
                     .inventory_quantity_target
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4574,6 +4608,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_inventory_state" => db_update
                     .party_inventory_state
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_item_amount" => db_update
+                    .party_item_amount
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_item_condition" => db_update
                     .party_item_condition
@@ -4749,6 +4786,7 @@ pub struct AppliedDiff<'r> {
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
     food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
+    inventory_item_amount: __sdk::TableAppliedDiff<'r, InventoryItemAmount>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
     item_condition: __sdk::TableAppliedDiff<'r, ItemCondition>,
@@ -4761,6 +4799,7 @@ pub struct AppliedDiff<'r> {
     party_action_request: __sdk::TableAppliedDiff<'r, PartyActionRequest>,
     party_inventory_item: __sdk::TableAppliedDiff<'r, PartyInventoryItem>,
     party_inventory_state: __sdk::TableAppliedDiff<'r, PartyInventoryState>,
+    party_item_amount: __sdk::TableAppliedDiff<'r, PartyItemAmount>,
     party_item_condition: __sdk::TableAppliedDiff<'r, PartyItemCondition>,
     party_join_request: __sdk::TableAppliedDiff<'r, PartyJoinRequest>,
     party_journey: __sdk::TableAppliedDiff<'r, PartyJourney>,
@@ -5083,6 +5122,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.inventory_item,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<InventoryItemAmount>(
+            "inventory_item_amount",
+            &self.inventory_item_amount,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<InventoryQuantityTarget>(
             "inventory_quantity_target",
             &self.inventory_quantity_target,
@@ -5129,6 +5173,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PartyInventoryState>(
             "party_inventory_state",
             &self.party_inventory_state,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PartyItemAmount>(
+            "party_item_amount",
+            &self.party_item_amount,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PartyItemCondition>(
@@ -5988,6 +6037,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         connected_players_table::register_table(client_cache);
         food_lot_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
+        inventory_item_amount_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
         item_condition_table::register_table(client_cache);
@@ -6000,6 +6050,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         party_action_request_table::register_table(client_cache);
         party_inventory_item_table::register_table(client_cache);
         party_inventory_state_table::register_table(client_cache);
+        party_item_amount_table::register_table(client_cache);
         party_item_condition_table::register_table(client_cache);
         party_join_request_table::register_table(client_cache);
         party_journey_table::register_table(client_cache);
@@ -6091,6 +6142,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "connected_players",
         "food_lot",
         "inventory_item",
+        "inventory_item_amount",
         "inventory_quantity_target",
         "item",
         "item_condition",
@@ -6103,6 +6155,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "party_action_request",
         "party_inventory_item",
         "party_inventory_state",
+        "party_item_amount",
         "party_item_condition",
         "party_join_request",
         "party_journey",
