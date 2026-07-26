@@ -2,22 +2,90 @@
 
 use adventuresim_core::skill::Skill;
 use adventuresim_core::social::{
-    AFFINITY_MAX, AFFINITY_MIN, PersonalityAxis, SOCIAL_COOLDOWN_MINUTES, SocialActionKind,
-    SocialAttempt, SocialTopic, affinity_gain, axis_for_topic, canonical_cooldown_id,
-    canonical_pair, choose_automatic_social_action, diagnosed_axis, diagnosis_for_axis,
-    resolve_social_attempt, settle_affinity, social_source_eligible, topic_for_source_kind,
+    AFFINITY_MAX, AFFINITY_MIN, Courtship as CoreCourtship, Inclination as CoreInclination,
+    Mirth as CoreMirth, PersonalityAxis, Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES,
+    SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt, SocialTopic,
+    Transparency as CoreTransparency, actor_allows_social_action, affinity_gain, axis_for_topic,
+    canonical_cooldown_id, canonical_pair, choose_automatic_social_action,
+    command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
+    flirt_charm_modifier, humor_charm_modifier, incompatible_flirt_outcome, resolve_social_attempt,
+    self_knowledge_insight_modifier, settle_affinity, should_replace_belief,
+    social_source_eligible, topic_for_source_kind,
 };
-use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table, view};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::{character, character__view};
 use crate::condition::{character_morale_source__view, morale_event};
 use crate::strategic::strategic_gateway_authority__view;
 use crate::{
-    character_capability, character_morale_source, character_personality,
-    character_strategic_condition, character_time,
+    character_attributes, character_capability, character_morale_source, character_personality,
+    character_skills, character_strategic_condition, character_time,
 };
 
 pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum BeliefAxis {
+    Nerve,
+    Drive,
+    Outlook,
+    Sociability,
+    Conscience,
+    SelfRegard,
+    Conviction,
+    Hygiene,
+    Temperance,
+    Mirth,
+    Courtship,
+    Transparency,
+    SelfKnowledge,
+    Inclination,
+    Presentation,
+}
+
+impl BeliefAxis {
+    fn core(self) -> PersonalityAxis {
+        match self {
+            Self::Nerve => PersonalityAxis::Nerve,
+            Self::Drive => PersonalityAxis::Drive,
+            Self::Outlook => PersonalityAxis::Outlook,
+            Self::Sociability => PersonalityAxis::Sociability,
+            Self::Conscience => PersonalityAxis::Conscience,
+            Self::SelfRegard => PersonalityAxis::SelfRegard,
+            Self::Conviction => PersonalityAxis::Conviction,
+            Self::Hygiene => PersonalityAxis::Hygiene,
+            Self::Temperance => PersonalityAxis::Temperance,
+            Self::Mirth => PersonalityAxis::Mirth,
+            Self::Courtship => PersonalityAxis::Courtship,
+            Self::Transparency => PersonalityAxis::Transparency,
+            Self::SelfKnowledge => PersonalityAxis::SelfKnowledge,
+            Self::Inclination => PersonalityAxis::Inclination,
+            Self::Presentation => PersonalityAxis::Presentation,
+        }
+    }
+}
+
+impl From<PersonalityAxis> for BeliefAxis {
+    fn from(value: PersonalityAxis) -> Self {
+        match value {
+            PersonalityAxis::Nerve => Self::Nerve,
+            PersonalityAxis::Drive => Self::Drive,
+            PersonalityAxis::Outlook => Self::Outlook,
+            PersonalityAxis::Sociability => Self::Sociability,
+            PersonalityAxis::Conscience => Self::Conscience,
+            PersonalityAxis::SelfRegard => Self::SelfRegard,
+            PersonalityAxis::Conviction => Self::Conviction,
+            PersonalityAxis::Hygiene => Self::Hygiene,
+            PersonalityAxis::Temperance => Self::Temperance,
+            PersonalityAxis::Mirth => Self::Mirth,
+            PersonalityAxis::Courtship => Self::Courtship,
+            PersonalityAxis::Transparency => Self::Transparency,
+            PersonalityAxis::SelfKnowledge => Self::SelfKnowledge,
+            PersonalityAxis::Inclination => Self::Inclination,
+            PersonalityAxis::Presentation => Self::Presentation,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 #[table(accessor = character_affinity)]
@@ -78,7 +146,7 @@ pub struct SocialBelief {
     pub observer_id: u64,
     #[index(btree)]
     pub subject_id: u64,
-    pub axis: String,
+    pub axis: BeliefAxis,
     pub perceived_value: i8,
     pub confidence: f32,
     pub observed_at_minute: u64,
@@ -127,6 +195,13 @@ pub fn backend_social_beliefs(ctx: &ViewContext) -> Vec<SocialBelief> {
         .social_belief()
         .observer_id()
         .filter(0u64..)
+        .filter(|belief| {
+            belief
+                .axis
+                .core()
+                .legal_values()
+                .contains(&belief.perceived_value)
+        })
         .collect()
 }
 
@@ -448,6 +523,8 @@ pub fn reset_familiarity_after_join(ctx: &ReducerContext, character_id: u64) {
         .iter()
         .filter(|v| v.alive && v.id != character_id && v.party_id.as_deref() == Some(party_id))
     {
+        observe_presentation_on_contact(ctx, character_id, peer.id);
+        observe_presentation_on_contact(ctx, peer.id, character_id);
         let Some((low_id, high_id)) = canonical_pair(character_id, peer.id) else {
             continue;
         };
@@ -502,6 +579,71 @@ pub fn reset_familiarity_after_join(ctx: &ReducerContext, character_id: u64) {
     }
 }
 
+fn observe_presentation_on_contact(ctx: &ReducerContext, observer_id: u64, subject_id: u64) {
+    let Some(personality) = ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(subject_id)
+    else {
+        return;
+    };
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(observer_id)
+        .map_or(0, |time| time.minutes);
+    let truth = match personality.presentation {
+        crate::personality::Presentation::Masculine => 0,
+        crate::personality::Presentation::Ambiguous => 1,
+        crate::personality::Presentation::Feminine => 2,
+    };
+    if personality.presentation != crate::personality::Presentation::Ambiguous {
+        upsert_belief(
+            ctx,
+            observer_id,
+            subject_id,
+            PersonalityAxis::Presentation,
+            truth,
+            1.0,
+            now,
+        );
+        return;
+    }
+    let (Ok(insight), Ok(base_deception)) = (
+        crate::condition::mental_check(ctx, observer_id, Skill::Insight),
+        crate::condition::mental_check(ctx, subject_id, Skill::Deception),
+    ) else {
+        return;
+    };
+    let deception = (base_deception
+        + match personality.transparency {
+            crate::personality::Transparency::Open => -1.0,
+            crate::personality::Transparency::Neutral => 0.0,
+            crate::personality::Transparency::Guarded => 1.0,
+        })
+    .clamp(0.0, 5.0);
+    let roll = (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32;
+    let (value, confidence) = diagnosed_axis(
+        PersonalityAxis::Presentation,
+        truth,
+        insight,
+        deception,
+        roll,
+    );
+    upsert_belief(
+        ctx,
+        observer_id,
+        subject_id,
+        PersonalityAxis::Presentation,
+        value,
+        confidence,
+        now,
+    );
+    award_discovery_training(ctx, observer_id, subject_id, personality.transparency);
+}
+
 /// Close every open span before leave, party change, death or disband. Taking
 /// the minimum personal clock preserves asymmetric-clock and chunk invariance.
 pub fn close_physiology_presence(ctx: &ReducerContext, character_id: u64) {
@@ -535,24 +677,24 @@ fn parse_action(value: &str) -> Result<SocialActionKind, String> {
         "reflect" => Ok(SocialActionKind::Reflect),
         "listen" => Ok(SocialActionKind::Listen),
         "commiserate" => Ok(SocialActionKind::Commiserate),
-        "humor" => Ok(SocialActionKind::LightenMood),
+        "lighten_mood" => Ok(SocialActionKind::LightenMood),
         "command" => Ok(SocialActionKind::Rally),
         "deception" => Ok(SocialActionKind::Reframe),
-        "seduction" => Ok(SocialActionKind::Flirt),
+        "flirt" => Ok(SocialActionKind::Flirt),
         _ => Err("Unknown social action".into()),
     }
 }
 
 fn social_action_skill(action: SocialActionKind, shares_concern: bool) -> Skill {
     match action {
-        SocialActionKind::Reflect => Skill::SelfAwareness,
+        SocialActionKind::Reflect => Skill::Insight,
         SocialActionKind::Listen => Skill::Insight,
         SocialActionKind::Commiserate if shares_concern => Skill::Insight,
         SocialActionKind::Commiserate => Skill::Deception,
-        SocialActionKind::LightenMood => Skill::Humor,
+        SocialActionKind::LightenMood => Skill::Charm,
         SocialActionKind::Rally => Skill::Command,
         SocialActionKind::Reframe => Skill::Deception,
-        SocialActionKind::Flirt => Skill::Seduction,
+        SocialActionKind::Flirt => Skill::Charm,
     }
 }
 
@@ -562,7 +704,7 @@ fn automatic_personality_fit(
     topic: SocialTopic,
 ) -> f32 {
     use crate::personality::{
-        Conscience, Conviction, Drive, Nerve, Outlook, SelfRegard, Sociability,
+        Conscience, Conviction, Courtship, Drive, Mirth, Nerve, Outlook, SelfRegard, Sociability,
     };
 
     let mut fit = 0.0;
@@ -656,6 +798,16 @@ fn automatic_personality_fit(
         SelfRegard::Humble if action == SocialActionKind::Flirt => fit -= 0.25,
         _ => {}
     }
+    match personality.mirth {
+        Mirth::Merry if action == SocialActionKind::LightenMood => fit += 1.0,
+        Mirth::Grave if action == SocialActionKind::LightenMood => fit -= 1.0,
+        _ => {}
+    }
+    match personality.courtship {
+        Courtship::Amorous if action == SocialActionKind::Flirt => fit += 1.25,
+        Courtship::Proper if action == SocialActionKind::Flirt => fit -= 1.25,
+        _ => {}
+    }
     if topic == SocialTopic::Faith {
         match personality.conviction {
             Conviction::Zealous if action == SocialActionKind::Rally => fit += 0.75,
@@ -691,10 +843,14 @@ fn automatic_social_action(
         .map_or(0, |row| row.minutes);
     let language = crate::character::shared_language_coefficient(ctx, actor_id, target_id);
     let mut candidates = Vec::with_capacity(ACTIONS.len());
-    for action in ACTIONS
-        .into_iter()
-        .filter(|action| action.available_for(topic))
-    {
+    for action in ACTIONS.into_iter().filter(|action| {
+        action.available_for(topic)
+            && actor_allows_social_action(
+                *action,
+                core_mirth(personality.mirth),
+                core_courtship(personality.courtship),
+            )
+    }) {
         let action_kind = action.reducer_value();
         let cooldown_id = canonical_cooldown_id(actor_id, target_id, topic, action_kind);
         if ctx
@@ -706,14 +862,19 @@ fn automatic_social_action(
         {
             continue;
         }
-        let skill_check = adventuresim_world_schema::language_scaled_effect(
-            crate::condition::mental_check(
-                ctx,
-                actor_id,
-                social_action_skill(action, shares_concern),
-            )?,
-            language,
-        );
+        let mut unscaled_skill_check = crate::condition::mental_check(
+            ctx,
+            actor_id,
+            social_action_skill(action, shares_concern),
+        )?;
+        if action == SocialActionKind::Rally {
+            unscaled_skill_check += command_gravitas_modifier(
+                core_mirth(personality.mirth),
+                core_courtship(personality.courtship),
+            );
+        }
+        let skill_check =
+            adventuresim_world_schema::language_scaled_effect(unscaled_skill_check, language);
         candidates.push((
             action,
             skill_check,
@@ -783,27 +944,265 @@ fn personality_truth(ctx: &ReducerContext, target_id: u64, axis: PersonalityAxis
         .character_id()
         .find(target_id)?;
     Some(match axis {
+        PersonalityAxis::Nerve => match p.nerve {
+            crate::personality::Nerve::Neutral => 0,
+            crate::personality::Nerve::Brave => 1,
+            crate::personality::Nerve::Fearful => 2,
+        },
         PersonalityAxis::Drive => match p.drive {
-            crate::personality::Drive::Ambitious => 1,
-            crate::personality::Drive::Content => -1,
             crate::personality::Drive::Neutral => 0,
+            crate::personality::Drive::Ambitious => 1,
+            crate::personality::Drive::Content => 2,
+        },
+        PersonalityAxis::Outlook => match p.outlook {
+            crate::personality::Outlook::Neutral => 0,
+            crate::personality::Outlook::Sanguine => 1,
+            crate::personality::Outlook::Brooding => 2,
+        },
+        PersonalityAxis::Sociability => match p.sociability {
+            crate::personality::Sociability::Neutral => 0,
+            crate::personality::Sociability::Gregarious => 1,
+            crate::personality::Sociability::Solitary => 2,
+        },
+        PersonalityAxis::Conscience => match p.conscience {
+            crate::personality::Conscience::Neutral => 0,
+            crate::personality::Conscience::Compassionate => 1,
+            crate::personality::Conscience::Callous => 2,
+            crate::personality::Conscience::Cruel => 3,
         },
         PersonalityAxis::SelfRegard => match p.self_regard {
-            crate::personality::SelfRegard::Proud => 1,
-            crate::personality::SelfRegard::Humble => -1,
             crate::personality::SelfRegard::Neutral => 0,
+            crate::personality::SelfRegard::Proud => 1,
+            crate::personality::SelfRegard::Humble => 2,
         },
         PersonalityAxis::Conviction => match p.conviction {
-            crate::personality::Conviction::Zealous => 1,
-            crate::personality::Conviction::Irreverent => -1,
             crate::personality::Conviction::Neutral => 0,
+            crate::personality::Conviction::Zealous => 1,
+            crate::personality::Conviction::Irreverent => 2,
         },
         PersonalityAxis::Hygiene => match p.hygiene {
-            crate::personality::Hygiene::Cleanly => 1,
-            crate::personality::Hygiene::Slovenly => -1,
             crate::personality::Hygiene::Neutral => 0,
+            crate::personality::Hygiene::Slovenly => 1,
+            crate::personality::Hygiene::Cleanly => 2,
+        },
+        PersonalityAxis::Temperance => match p.temperance {
+            crate::personality::Temperance::Neutral => 0,
+            crate::personality::Temperance::Temperate => 1,
+            crate::personality::Temperance::Drunkard => 2,
+        },
+        PersonalityAxis::Mirth => match p.mirth {
+            crate::personality::Mirth::Neutral => 0,
+            crate::personality::Mirth::Merry => 1,
+            crate::personality::Mirth::Grave => 2,
+        },
+        PersonalityAxis::Courtship => match p.courtship {
+            crate::personality::Courtship::Neutral => 0,
+            crate::personality::Courtship::Amorous => 1,
+            crate::personality::Courtship::Proper => 2,
+        },
+        PersonalityAxis::Transparency => match p.transparency {
+            crate::personality::Transparency::Neutral => 0,
+            crate::personality::Transparency::Open => 1,
+            crate::personality::Transparency::Guarded => 2,
+        },
+        PersonalityAxis::SelfKnowledge => match p.self_knowledge {
+            crate::personality::SelfKnowledge::Neutral => 0,
+            crate::personality::SelfKnowledge::Introspective => 1,
+            crate::personality::SelfKnowledge::SelfDeceiving => 2,
+        },
+        PersonalityAxis::Inclination => match p.inclination {
+            crate::personality::Inclination::Men => 0,
+            crate::personality::Inclination::Either => 1,
+            crate::personality::Inclination::Women => 2,
+            crate::personality::Inclination::Neither => 3,
+        },
+        PersonalityAxis::Presentation => match p.presentation {
+            crate::personality::Presentation::Masculine => 0,
+            crate::personality::Presentation::Ambiguous => 1,
+            crate::personality::Presentation::Feminine => 2,
         },
     })
+}
+
+fn core_mirth(value: crate::personality::Mirth) -> CoreMirth {
+    match value {
+        crate::personality::Mirth::Neutral => CoreMirth::Neutral,
+        crate::personality::Mirth::Merry => CoreMirth::Merry,
+        crate::personality::Mirth::Grave => CoreMirth::Grave,
+    }
+}
+
+fn core_courtship(value: crate::personality::Courtship) -> CoreCourtship {
+    match value {
+        crate::personality::Courtship::Neutral => CoreCourtship::Neutral,
+        crate::personality::Courtship::Amorous => CoreCourtship::Amorous,
+        crate::personality::Courtship::Proper => CoreCourtship::Proper,
+    }
+}
+
+fn core_inclination(value: crate::personality::Inclination) -> CoreInclination {
+    match value {
+        crate::personality::Inclination::Men => CoreInclination::Men,
+        crate::personality::Inclination::Either => CoreInclination::Either,
+        crate::personality::Inclination::Women => CoreInclination::Women,
+        crate::personality::Inclination::Neither => CoreInclination::Neither,
+    }
+}
+
+fn core_presentation(value: crate::personality::Presentation) -> CorePresentation {
+    match value {
+        crate::personality::Presentation::Masculine => CorePresentation::Masculine,
+        crate::personality::Presentation::Ambiguous => CorePresentation::Ambiguous,
+        crate::personality::Presentation::Feminine => CorePresentation::Feminine,
+    }
+}
+
+fn discovery_axes(
+    action: SocialActionKind,
+    topic: SocialTopic,
+    is_self: bool,
+) -> Vec<PersonalityAxis> {
+    if is_self {
+        return vec![
+            PersonalityAxis::SelfKnowledge,
+            axis_for_topic(topic).unwrap_or(PersonalityAxis::Outlook),
+        ];
+    }
+    match action {
+        SocialActionKind::Listen => vec![
+            axis_for_topic(topic).unwrap_or(match topic {
+                SocialTopic::Fatigue => PersonalityAxis::Outlook,
+                SocialTopic::Hunger => PersonalityAxis::Temperance,
+                _ => PersonalityAxis::Transparency,
+            }),
+            PersonalityAxis::Transparency,
+        ],
+        SocialActionKind::Commiserate => {
+            vec![PersonalityAxis::Conscience, PersonalityAxis::Sociability]
+        }
+        SocialActionKind::LightenMood => vec![PersonalityAxis::Mirth],
+        SocialActionKind::Rally => vec![
+            PersonalityAxis::Nerve,
+            if topic == SocialTopic::Faith {
+                PersonalityAxis::Conviction
+            } else {
+                PersonalityAxis::Drive
+            },
+        ],
+        SocialActionKind::Reframe => {
+            vec![PersonalityAxis::SelfRegard, PersonalityAxis::Outlook]
+        }
+        SocialActionKind::Flirt => {
+            vec![PersonalityAxis::Courtship, PersonalityAxis::Inclination]
+        }
+        SocialActionKind::Reflect => unreachable!("self-only handled above"),
+    }
+}
+
+fn award_discovery_training(
+    ctx: &ReducerContext,
+    observer_id: u64,
+    subject_id: u64,
+    transparency: crate::personality::Transparency,
+) {
+    let (observer_insight, subject_deception) = discovery_training_split(match transparency {
+        crate::personality::Transparency::Open => CoreTransparency::Open,
+        crate::personality::Transparency::Neutral => CoreTransparency::Neutral,
+        crate::personality::Transparency::Guarded => CoreTransparency::Guarded,
+    });
+    if observer_id == subject_id {
+        if let (Some(mut skills), Some(attributes)) = (
+            ctx.db.character_skills().character_id().find(observer_id),
+            ctx.db
+                .character_attributes()
+                .character_id()
+                .find(observer_id),
+        ) {
+            adventuresim_core::skill::apply_direct_training(
+                Skill::Insight,
+                &mut skills.insight_hours,
+                observer_insight,
+                &attributes,
+            );
+            adventuresim_core::skill::apply_direct_training(
+                Skill::Deception,
+                &mut skills.deception_hours,
+                subject_deception,
+                &attributes,
+            );
+            ctx.db.character_skills().character_id().update(skills);
+        }
+        return;
+    }
+    if observer_insight > 0.0
+        && let (Some(mut skills), Some(attributes)) = (
+            ctx.db.character_skills().character_id().find(observer_id),
+            ctx.db
+                .character_attributes()
+                .character_id()
+                .find(observer_id),
+        )
+    {
+        adventuresim_core::skill::apply_direct_training(
+            Skill::Insight,
+            &mut skills.insight_hours,
+            observer_insight,
+            &attributes,
+        );
+        ctx.db.character_skills().character_id().update(skills);
+    }
+    if subject_deception > 0.0
+        && let (Some(mut skills), Some(attributes)) = (
+            ctx.db.character_skills().character_id().find(subject_id),
+            ctx.db
+                .character_attributes()
+                .character_id()
+                .find(subject_id),
+        )
+    {
+        adventuresim_core::skill::apply_direct_training(
+            Skill::Deception,
+            &mut skills.deception_hours,
+            subject_deception,
+            &attributes,
+        );
+        ctx.db.character_skills().character_id().update(skills);
+    }
+}
+
+fn upsert_belief(
+    ctx: &ReducerContext,
+    observer_id: u64,
+    subject_id: u64,
+    axis: PersonalityAxis,
+    perceived_value: i8,
+    confidence: f32,
+    now: u64,
+) {
+    if !axis.legal_values().contains(&perceived_value) {
+        return;
+    }
+    let axis_slug = axis.slug().to_owned();
+    let id = format!("{observer_id}:{subject_id}:{axis_slug}");
+    if let Some(existing) = ctx.db.social_belief().id().find(&id)
+        && !should_replace_belief(existing.confidence, confidence)
+    {
+        return;
+    }
+    let row = SocialBelief {
+        id: id.clone(),
+        observer_id,
+        subject_id,
+        axis: axis.into(),
+        perceived_value,
+        confidence,
+        observed_at_minute: now,
+    };
+    if ctx.db.social_belief().id().find(&id).is_some() {
+        ctx.db.social_belief().id().update(row);
+    } else {
+        ctx.db.social_belief().insert(row);
+    }
 }
 
 fn validate_social_pair(
@@ -865,6 +1264,14 @@ fn perform_social_action_authoritative(
         .find(target_id)
         .ok_or("Target not found")?;
     validate_social_pair(ctx, &actor, &target, is_self)?;
+    let actor_personality = crate::personality::personality_or_neutral(ctx, actor_id);
+    if !actor_allows_social_action(
+        action,
+        core_mirth(actor_personality.mirth),
+        core_courtship(actor_personality.courtship),
+    ) {
+        return Err("Your disposition does not permit that social approach".into());
+    }
     let source = ctx
         .db
         .character_morale_source()
@@ -909,18 +1316,38 @@ fn perform_social_action_authoritative(
     let actor_shares_concern = shares_concern(ctx, actor_id, topic);
     let skill = social_action_skill(action, actor_shares_concern);
     let mut skill_check = crate::condition::mental_check(ctx, actor_id, skill)?;
+    if action == SocialActionKind::Rally {
+        skill_check += command_gravitas_modifier(
+            core_mirth(actor_personality.mirth),
+            core_courtship(actor_personality.courtship),
+        );
+    }
     if !is_self {
         skill_check = adventuresim_world_schema::language_scaled_effect(
             skill_check,
             crate::character::shared_language_coefficient(ctx, actor_id, target_id),
         );
     }
-    let target_deception = if is_self {
-        0.0
+    let target_personality = crate::personality::personality_or_neutral(ctx, target_id);
+    let base_target_deception = crate::condition::mental_check(ctx, target_id, Skill::Deception)?;
+    let obscuring_deception = (base_target_deception
+        + match target_personality.transparency {
+            crate::personality::Transparency::Open => -1.0,
+            crate::personality::Transparency::Neutral => 0.0,
+            crate::personality::Transparency::Guarded => 1.0,
+        })
+    .clamp(0.0, 5.0);
+    let insight_check = crate::condition::mental_check(ctx, actor_id, Skill::Insight)?;
+    let self_insight_modifier = if is_self {
+        self_knowledge_insight_modifier(match target_personality.self_knowledge {
+            crate::personality::SelfKnowledge::Neutral => CoreSelfKnowledge::Neutral,
+            crate::personality::SelfKnowledge::Introspective => CoreSelfKnowledge::Introspective,
+            crate::personality::SelfKnowledge::SelfDeceiving => CoreSelfKnowledge::SelfDeceiving,
+        })
     } else {
-        crate::condition::mental_check(ctx, target_id, Skill::Deception)?
+        0.0
     };
-    let roll = (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32;
+    let social_roll = (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32;
     let relevant_axis = axis_for_topic(topic);
     let truth = relevant_axis.and_then(|axis| personality_truth(ctx, target_id, axis));
     let relevant_belief = relevant_axis.and_then(|axis| {
@@ -928,23 +1355,53 @@ fn perform_social_action_authoritative(
             .social_belief()
             .id()
             .find(&format!("{actor_id}:{target_id}:{}", axis.slug()))
-            .map(|belief| (axis, belief.perceived_value))
+            .and_then(|belief| {
+                (belief.axis.core() == axis
+                    && axis.legal_values().contains(&belief.perceived_value))
+                .then_some((axis, belief.perceived_value))
+            })
     });
     let diagnosis_correct = diagnosis_for_axis(
         relevant_axis,
         truth,
         &relevant_belief.into_iter().collect::<Vec<_>>(),
     );
-    let outcome = resolve_social_attempt(SocialAttempt {
-        action,
-        topic,
-        skill_check,
-        affinity,
-        familiarity_hours: familiarity,
-        diagnosis_correct,
-        sensitivity: sensitivity(ctx, target_id, topic),
-        roll,
-    });
+    let flirt_modifier = if action == SocialActionKind::Flirt {
+        flirt_charm_modifier(
+            core_inclination(actor_personality.inclination),
+            core_presentation(actor_personality.presentation),
+            core_inclination(target_personality.inclination),
+            core_presentation(target_personality.presentation),
+            core_courtship(target_personality.courtship),
+        )
+    } else {
+        Some(0.0)
+    };
+    if action == SocialActionKind::LightenMood {
+        skill_check += humor_charm_modifier(
+            core_mirth(actor_personality.mirth),
+            core_mirth(target_personality.mirth),
+        );
+    }
+    if let Some(modifier) = flirt_modifier {
+        skill_check += modifier;
+    }
+    let outcome = if flirt_modifier.is_none() {
+        // Incompatibility is a hard gate: it cannot leak the resolver's
+        // minimum success chance or any positive outcome.
+        incompatible_flirt_outcome()
+    } else {
+        resolve_social_attempt(SocialAttempt {
+            action,
+            topic,
+            skill_check,
+            affinity,
+            familiarity_hours: familiarity,
+            diagnosis_correct,
+            sensitivity: sensitivity(ctx, target_id, topic),
+            roll: social_roll,
+        })
+    };
     let before = ctx
         .db
         .character_strategic_condition()
@@ -1028,26 +1485,41 @@ fn perform_social_action_authoritative(
     } else {
         ctx.db.social_action_cooldown().insert(cooldown);
     }
-    if outcome.revealed_belief
-        && let (Some(axis), Some(truth)) = (relevant_axis, truth)
+    // Presentation is normally obvious on contact. Its explicit axis leaves
+    // room for a future disguise override without exposing demographic sex.
+    if !is_self
+        && let Some(value) = personality_truth(ctx, target_id, PersonalityAxis::Presentation)
+        && value != 1
     {
-        let (value, confidence) = diagnosed_axis(truth, skill_check, target_deception, roll);
-        let axis = axis.slug().to_owned();
-        let id = format!("{actor_id}:{target_id}:{axis}");
-        let row = SocialBelief {
-            id: id.clone(),
-            observer_id: actor_id,
-            subject_id: target_id,
-            axis,
-            perceived_value: value,
-            confidence,
-            observed_at_minute: now,
+        upsert_belief(
+            ctx,
+            actor_id,
+            target_id,
+            PersonalityAxis::Presentation,
+            value,
+            1.0,
+            now,
+        );
+    }
+    for axis in discovery_axes(action, topic, is_self) {
+        let Some(truth) = personality_truth(ctx, target_id, axis) else {
+            continue;
         };
-        if ctx.db.social_belief().id().find(&id).is_some() {
-            ctx.db.social_belief().id().update(row);
+        let discovery_roll = (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32;
+        let deception = if axis == PersonalityAxis::Transparency {
+            base_target_deception
         } else {
-            ctx.db.social_belief().insert(row);
-        }
+            obscuring_deception
+        };
+        let (value, confidence) = diagnosed_axis(
+            axis,
+            truth,
+            (insight_check + self_insight_modifier).clamp(0.0, 5.0),
+            deception,
+            discovery_roll,
+        );
+        upsert_belief(ctx, actor_id, target_id, axis, value, confidence, now);
+        award_discovery_training(ctx, actor_id, target_id, target_personality.transparency);
     }
     Ok(())
 }
@@ -1238,9 +1710,23 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         .character_id()
         .find(TARGET)
         .map_or(0, |v| v.minutes);
+    let mut viewer_personality = crate::personality::personality_or_neutral(ctx, VIEWER);
+    viewer_personality.sex = crate::personality::Sex::Male;
+    viewer_personality.presentation = crate::personality::Presentation::Masculine;
+    viewer_personality.inclination = crate::personality::Inclination::Women;
+    ctx.db
+        .character_personality()
+        .character_id()
+        .update(viewer_personality);
     let mut personality = crate::personality::CharacterPersonality::neutral(TARGET);
     personality.drive = crate::personality::Drive::Ambitious;
     personality.self_regard = crate::personality::SelfRegard::Proud;
+    personality.conscience = crate::personality::Conscience::Cruel;
+    personality.mirth = crate::personality::Mirth::Merry;
+    personality.courtship = crate::personality::Courtship::Amorous;
+    personality.sex = crate::personality::Sex::Female;
+    personality.presentation = crate::personality::Presentation::Feminine;
+    personality.inclination = crate::personality::Inclination::Men;
     ctx.db
         .character_personality()
         .character_id()
@@ -1299,8 +1785,8 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         id: format!("{VIEWER}:{TARGET}:drive"),
         observer_id: VIEWER,
         subject_id: TARGET,
-        axis: "drive".into(),
-        perceived_value: -1,
+        axis: BeliefAxis::Drive,
+        perceived_value: 2,
         confidence: 0.64,
         observed_at_minute: now,
     };
@@ -1309,12 +1795,134 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     } else {
         ctx.db.social_belief().insert(belief);
     }
+    upsert_belief(
+        ctx,
+        VIEWER,
+        TARGET,
+        PersonalityAxis::Conscience,
+        3,
+        0.82,
+        now,
+    );
+    upsert_belief(
+        ctx,
+        VIEWER,
+        TARGET,
+        PersonalityAxis::Presentation,
+        2,
+        1.0,
+        now,
+    );
     Ok(())
 }
 
 #[cfg(test)]
 mod contract_tests {
     use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn every_personality_axis_has_a_reachable_observation_context() {
+        let mut axes = HashSet::from([PersonalityAxis::Presentation]);
+        for (action, topic, is_self) in [
+            (SocialActionKind::Reflect, SocialTopic::Defeat, true),
+            (SocialActionKind::Listen, SocialTopic::Defeat, false),
+            (SocialActionKind::Listen, SocialTopic::Injury, false),
+            (SocialActionKind::Listen, SocialTopic::Fatigue, false),
+            (SocialActionKind::Listen, SocialTopic::Hunger, false),
+            (SocialActionKind::Listen, SocialTopic::Faith, false),
+            (SocialActionKind::Listen, SocialTopic::Filth, false),
+            (SocialActionKind::Commiserate, SocialTopic::Defeat, false),
+            (SocialActionKind::LightenMood, SocialTopic::Defeat, false),
+            (SocialActionKind::Rally, SocialTopic::Defeat, false),
+            (SocialActionKind::Rally, SocialTopic::Faith, false),
+            (SocialActionKind::Reframe, SocialTopic::Injury, false),
+            (SocialActionKind::Flirt, SocialTopic::Injury, false),
+        ] {
+            axes.extend(discovery_axes(action, topic, is_self));
+        }
+        for axis in [
+            PersonalityAxis::Nerve,
+            PersonalityAxis::Drive,
+            PersonalityAxis::Outlook,
+            PersonalityAxis::Sociability,
+            PersonalityAxis::Conscience,
+            PersonalityAxis::SelfRegard,
+            PersonalityAxis::Conviction,
+            PersonalityAxis::Hygiene,
+            PersonalityAxis::Temperance,
+            PersonalityAxis::Mirth,
+            PersonalityAxis::Courtship,
+            PersonalityAxis::Transparency,
+            PersonalityAxis::SelfKnowledge,
+            PersonalityAxis::Inclination,
+            PersonalityAxis::Presentation,
+        ] {
+            assert!(axes.contains(&axis), "{axis:?} is unreachable");
+        }
+    }
+
+    #[test]
+    fn self_discovery_updates_one_skills_row_and_unsupported_contexts_do_not_check() {
+        let source = include_str!("social.rs");
+        let training = source
+            .split("fn award_discovery_training")
+            .nth(1)
+            .and_then(|tail| tail.split("fn upsert_belief").next())
+            .expect("training helper");
+        let self_branch = training
+            .split("if observer_id == subject_id")
+            .nth(1)
+            .and_then(|tail| tail.split("return;").next())
+            .expect("self training branch");
+        assert_eq!(
+            self_branch
+                .matches("character_skills().character_id().update(skills)")
+                .count(),
+            1
+        );
+        assert!(!adventuresim_core::social::discovery_supported(
+            PersonalityAxis::Nerve,
+            adventuresim_core::social::DiscoveryContext::Ordinary,
+        ));
+        assert!(!adventuresim_core::social::discovery_supported(
+            PersonalityAxis::Courtship,
+            adventuresim_core::social::DiscoveryContext::Stress,
+        ));
+    }
+
+    #[test]
+    fn contact_observes_obvious_presentation_but_checks_ambiguous_presentation() {
+        let source = include_str!("social.rs");
+        let contact = source
+            .split("fn observe_presentation_on_contact")
+            .nth(1)
+            .and_then(|tail| tail.split("fn close_physiology_presence").next())
+            .expect("contact presentation helper");
+        assert!(contact.contains("presentation != crate::personality::Presentation::Ambiguous"));
+        assert!(contact.contains("confidence"));
+        assert!(contact.contains("diagnosed_axis("));
+        assert!(contact.contains("award_discovery_training("));
+        let join = source
+            .split("pub fn reset_familiarity_after_join")
+            .nth(1)
+            .and_then(|tail| tail.split("fn observe_presentation_on_contact").next())
+            .expect("join boundary");
+        assert!(join.contains("observe_presentation_on_contact(ctx, character_id, peer.id)"));
+        assert!(join.contains("observe_presentation_on_contact(ctx, peer.id, character_id)"));
+    }
+
+    #[test]
+    fn persisted_beliefs_are_typed_and_invalid_values_fail_closed() {
+        let source = include_str!("social.rs");
+        assert!(source.contains("pub axis: BeliefAxis"));
+        assert!(source.contains("if !axis.legal_values().contains(&perceived_value)"));
+        assert_eq!(
+            PersonalityAxis::Inclination.value_label(-1),
+            None,
+            "invalid typed value must not decode as a normal belief"
+        );
+    }
 
     #[test]
     fn automatic_personality_fit_changes_the_preferred_style() {
@@ -1340,6 +1948,38 @@ mod contract_tests {
                     SocialTopic::Defeat,
                 )
         );
+    }
+
+    #[test]
+    fn manual_and_automatic_actions_share_actor_trait_gates_and_rally_bonus() {
+        let source = include_str!("social.rs");
+        let automatic = source
+            .split("fn automatic_social_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn sensitivity").next())
+            .expect("automatic selector");
+        assert!(automatic.contains("actor_allows_social_action("));
+        assert!(automatic.contains("command_gravitas_modifier("));
+        assert!(
+            automatic.find("command_gravitas_modifier(")
+                < automatic.find("language_scaled_effect(")
+        );
+
+        let authoritative = source
+            .split("fn perform_social_action_authoritative")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn apply_automatic_social_chats")
+                    .next()
+            })
+            .expect("authoritative action");
+        assert!(authoritative.contains("actor_allows_social_action("));
+        assert!(authoritative.contains("command_gravitas_modifier("));
+        assert!(
+            authoritative.find("command_gravitas_modifier(")
+                < authoritative.find("language_scaled_effect(")
+        );
+        assert!(authoritative.contains("Your disposition does not permit"));
     }
 
     #[test]

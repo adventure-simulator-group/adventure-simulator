@@ -10,6 +10,7 @@ pub const AFFINITY_MIN: f32 = -100.0;
 pub const AFFINITY_MAX: f32 = 100.0;
 pub const AFFINITY_HALF_LIFE_MINUTES: u64 = 30 * 24 * 60;
 pub const SOCIAL_COOLDOWN_MINUTES: u64 = 24 * 60;
+pub const DISCOVERY_TRAINING_HOURS: f32 = 0.25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SocialTopic {
@@ -23,21 +24,335 @@ pub enum SocialTopic {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PersonalityAxis {
+    Nerve,
     Drive,
+    Outlook,
+    Sociability,
+    Conscience,
     SelfRegard,
     Conviction,
     Hygiene,
+    Temperance,
+    Mirth,
+    Courtship,
+    Transparency,
+    SelfKnowledge,
+    Inclination,
+    Presentation,
 }
 
 impl PersonalityAxis {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Nerve => "Nerve",
+            Self::Drive => "Drive",
+            Self::Outlook => "Outlook",
+            Self::Sociability => "Sociability",
+            Self::Conscience => "Conscience",
+            Self::SelfRegard => "Self-regard",
+            Self::Conviction => "Conviction",
+            Self::Hygiene => "Hygiene",
+            Self::Temperance => "Temperance",
+            Self::Mirth => "Mirth",
+            Self::Courtship => "Courtship",
+            Self::Transparency => "Transparency",
+            Self::SelfKnowledge => "Self-knowledge",
+            Self::Inclination => "Inclination",
+            Self::Presentation => "Presentation",
+        }
+    }
+
+    pub const fn value_label(self, value: i8) -> Option<&'static str> {
+        match (self, value) {
+            (Self::Nerve, 0)
+            | (Self::Drive, 0)
+            | (Self::Outlook, 0)
+            | (Self::Sociability, 0)
+            | (Self::Conscience, 0)
+            | (Self::SelfRegard, 0)
+            | (Self::Conviction, 0)
+            | (Self::Hygiene, 0)
+            | (Self::Temperance, 0)
+            | (Self::Mirth, 0)
+            | (Self::Courtship, 0)
+            | (Self::Transparency, 0)
+            | (Self::SelfKnowledge, 0) => Some("Neutral"),
+            (Self::Nerve, 1) => Some("Brave"),
+            (Self::Nerve, 2) => Some("Fearful"),
+            (Self::Drive, 1) => Some("Ambitious"),
+            (Self::Drive, 2) => Some("Content"),
+            (Self::Outlook, 1) => Some("Sanguine"),
+            (Self::Outlook, 2) => Some("Brooding"),
+            (Self::Sociability, 1) => Some("Gregarious"),
+            (Self::Sociability, 2) => Some("Solitary"),
+            (Self::Conscience, 1) => Some("Compassionate"),
+            (Self::Conscience, 2) => Some("Callous"),
+            (Self::Conscience, 3) => Some("Cruel"),
+            (Self::SelfRegard, 1) => Some("Proud"),
+            (Self::SelfRegard, 2) => Some("Humble"),
+            (Self::Conviction, 1) => Some("Zealous"),
+            (Self::Conviction, 2) => Some("Irreverent"),
+            (Self::Hygiene, 1) => Some("Slovenly"),
+            (Self::Hygiene, 2) => Some("Cleanly"),
+            (Self::Temperance, 1) => Some("Temperate"),
+            (Self::Temperance, 2) => Some("Drunkard"),
+            (Self::Mirth, 1) => Some("Merry"),
+            (Self::Mirth, 2) => Some("Grave"),
+            (Self::Courtship, 1) => Some("Amorous"),
+            (Self::Courtship, 2) => Some("Proper"),
+            (Self::Transparency, 1) => Some("Open"),
+            (Self::Transparency, 2) => Some("Guarded"),
+            (Self::SelfKnowledge, 1) => Some("Introspective"),
+            (Self::SelfKnowledge, 2) => Some("Self-deceiving"),
+            (Self::Inclination, 0) => Some("Men"),
+            (Self::Inclination, 1) => Some("Either"),
+            (Self::Inclination, 2) => Some("Women"),
+            (Self::Inclination, 3) => Some("Neither"),
+            (Self::Presentation, 0) => Some("Masculine"),
+            (Self::Presentation, 1) => Some("Ambiguous"),
+            (Self::Presentation, 2) => Some("Feminine"),
+            _ => None,
+        }
+    }
+
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::Nerve => "nerve",
             Self::Drive => "drive",
+            Self::Outlook => "outlook",
+            Self::Sociability => "sociability",
+            Self::Conscience => "conscience",
             Self::SelfRegard => "self_regard",
             Self::Conviction => "conviction",
             Self::Hygiene => "hygiene",
+            Self::Temperance => "temperance",
+            Self::Mirth => "mirth",
+            Self::Courtship => "courtship",
+            Self::Transparency => "transparency",
+            Self::SelfKnowledge => "self_knowledge",
+            Self::Inclination => "inclination",
+            Self::Presentation => "presentation",
         }
     }
+
+    /// Stable legal value codes. Codes are axis-local and must never be
+    /// interpreted by sign.
+    pub const fn legal_values(self) -> &'static [i8] {
+        match self {
+            Self::Conscience | Self::Inclination => &[0, 1, 2, 3],
+            _ => &[0, 1, 2],
+        }
+    }
+
+    pub const fn base_obscurity(self) -> u8 {
+        match self {
+            Self::Presentation => 0,
+            Self::Hygiene
+            | Self::Mirth
+            | Self::Outlook
+            | Self::Sociability
+            | Self::Transparency => 1,
+            Self::Temperance | Self::Drive | Self::SelfRegard | Self::Conviction | Self::Nerve => 2,
+            Self::Conscience | Self::SelfKnowledge | Self::Courtship => 3,
+            Self::Inclination => 4,
+        }
+    }
+
+    pub const fn is_neutral_code(self, value: i8) -> bool {
+        match self {
+            Self::Inclination => false,
+            Self::Presentation => value == 1,
+            _ => value == 0,
+        }
+    }
+
+    pub fn parse(slug: &str) -> Option<Self> {
+        [
+            Self::Nerve,
+            Self::Drive,
+            Self::Outlook,
+            Self::Sociability,
+            Self::Conscience,
+            Self::SelfRegard,
+            Self::Conviction,
+            Self::Hygiene,
+            Self::Temperance,
+            Self::Mirth,
+            Self::Courtship,
+            Self::Transparency,
+            Self::SelfKnowledge,
+            Self::Inclination,
+            Self::Presentation,
+        ]
+        .into_iter()
+        .find(|axis| axis.slug() == slug)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscoveryContext {
+    Ordinary,
+    Stress,
+    Romantic,
+    Reflection,
+}
+
+pub const fn discovery_supported(axis: PersonalityAxis, context: DiscoveryContext) -> bool {
+    match axis {
+        PersonalityAxis::Nerve => matches!(context, DiscoveryContext::Stress),
+        PersonalityAxis::Courtship | PersonalityAxis::Inclination => {
+            matches!(context, DiscoveryContext::Romantic)
+        }
+        PersonalityAxis::SelfKnowledge => matches!(context, DiscoveryContext::Reflection),
+        _ => true,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mirth {
+    Neutral,
+    Merry,
+    Grave,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Courtship {
+    Neutral,
+    Amorous,
+    Proper,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transparency {
+    Neutral,
+    Open,
+    Guarded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelfKnowledge {
+    Neutral,
+    Introspective,
+    SelfDeceiving,
+}
+
+pub const fn self_knowledge_insight_modifier(value: SelfKnowledge) -> f32 {
+    match value {
+        SelfKnowledge::Neutral => 0.0,
+        SelfKnowledge::Introspective => 1.0,
+        SelfKnowledge::SelfDeceiving => -1.0,
+    }
+}
+
+/// Conserved real-hour split for one actual discovery check.
+pub const fn discovery_training_split(transparency: Transparency) -> (f32, f32) {
+    match transparency {
+        Transparency::Open => (DISCOVERY_TRAINING_HOURS, 0.0),
+        Transparency::Neutral => (
+            DISCOVERY_TRAINING_HOURS * 0.5,
+            DISCOVERY_TRAINING_HOURS * 0.5,
+        ),
+        Transparency::Guarded => (0.0, DISCOVERY_TRAINING_HOURS),
+    }
+}
+
+pub fn should_replace_belief(existing_confidence: f32, new_confidence: f32) -> bool {
+    new_confidence.is_finite()
+        && (!existing_confidence.is_finite() || new_confidence >= existing_confidence)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Inclination {
+    Men,
+    Either,
+    Women,
+    Neither,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Presentation {
+    Masculine,
+    Ambiguous,
+    Feminine,
+}
+
+/// Ambiguous presentation is compatible only with `Either`; a directional
+/// preference requires an unambiguous signal.
+pub const fn inclination_accepts(inclination: Inclination, presentation: Presentation) -> bool {
+    match inclination {
+        Inclination::Men => matches!(presentation, Presentation::Masculine),
+        Inclination::Women => matches!(presentation, Presentation::Feminine),
+        Inclination::Either => true,
+        Inclination::Neither => false,
+    }
+}
+
+pub const fn mutually_attracted(
+    actor_inclination: Inclination,
+    actor_presentation: Presentation,
+    target_inclination: Inclination,
+    target_presentation: Presentation,
+) -> bool {
+    inclination_accepts(actor_inclination, target_presentation)
+        && inclination_accepts(target_inclination, actor_presentation)
+}
+
+pub const fn humor_charm_modifier(actor: Mirth, target: Mirth) -> f32 {
+    match (actor, target) {
+        (Mirth::Merry, Mirth::Merry) => 0.75,
+        (Mirth::Merry, Mirth::Neutral) => 0.35,
+        (Mirth::Merry, Mirth::Grave) => -1.25,
+        (_, Mirth::Grave) => -0.4,
+        _ => 0.0,
+    }
+}
+
+/// Grave and Proper characters give up their matching expressive Charm
+/// approaches, but their reserve makes direct Command somewhat more credible.
+/// The two modest bonuses stack without replacing trained Command.
+pub const fn command_gravitas_modifier(mirth: Mirth, courtship: Courtship) -> f32 {
+    let grave = if matches!(mirth, Mirth::Grave) {
+        0.35
+    } else {
+        0.0
+    };
+    let proper = if matches!(courtship, Courtship::Proper) {
+        0.35
+    } else {
+        0.0
+    };
+    grave + proper
+}
+
+/// Returns no modifier when flirting cannot succeed. Same-presentation mutual
+/// attraction receives a recognition bonus on top of Courtship's stronger
+/// response.
+pub fn flirt_charm_modifier(
+    actor_inclination: Inclination,
+    actor_presentation: Presentation,
+    target_inclination: Inclination,
+    target_presentation: Presentation,
+    target_courtship: Courtship,
+) -> Option<f32> {
+    if !mutually_attracted(
+        actor_inclination,
+        actor_presentation,
+        target_inclination,
+        target_presentation,
+    ) {
+        return None;
+    }
+    let courtship = match target_courtship {
+        Courtship::Amorous => 1.5,
+        Courtship::Neutral => 0.0,
+        Courtship::Proper => -1.75,
+    };
+    let recognition = if actor_presentation == target_presentation {
+        0.75
+    } else {
+        0.0
+    };
+    Some(courtship + recognition)
 }
 
 pub fn topic_for_source_kind(kind: &str) -> Option<SocialTopic> {
@@ -165,23 +480,23 @@ impl SocialActionKind {
             Self::Reflect => "reflect",
             Self::Listen => "listen",
             Self::Commiserate => "commiserate",
-            Self::LightenMood => "humor",
+            Self::LightenMood => "lighten_mood",
             Self::Rally => "command",
             Self::Reframe => "deception",
-            Self::Flirt => "seduction",
+            Self::Flirt => "flirt",
         }
     }
 
     pub const fn skill_name(self, shares_concern: bool) -> &'static str {
         match self {
-            Self::Reflect => "Self-awareness",
+            Self::Reflect => "Insight",
             Self::Listen => "Insight",
             Self::Commiserate if shares_concern => "Insight",
             Self::Commiserate => "Deception",
-            Self::LightenMood => "Humor",
+            Self::LightenMood => "Charm",
             Self::Rally => "Command",
             Self::Reframe => "Deception",
-            Self::Flirt => "Seduction",
+            Self::Flirt => "Charm",
         }
     }
 
@@ -261,6 +576,21 @@ impl SocialActionKind {
             Self::Reframe => 0.65,
             Self::Flirt => 0.85,
         }
+    }
+}
+
+/// Actor personality is authoritative availability, separate from whether an
+/// action fits the current morale topic. Neutral and positive values retain
+/// access; only the explicitly contrary value closes its expressive action.
+pub const fn actor_allows_social_action(
+    action: SocialActionKind,
+    mirth: Mirth,
+    courtship: Courtship,
+) -> bool {
+    match action {
+        SocialActionKind::LightenMood => !matches!(mirth, Mirth::Grave),
+        SocialActionKind::Flirt => !matches!(courtship, Courtship::Proper),
+        _ => true,
     }
 }
 
@@ -387,19 +717,62 @@ pub fn resolve_social_attempt(attempt: SocialAttempt) -> SocialOutcome {
     }
 }
 
-/// Produces a deterministic, plausible diagnosis which may be wrong.
-pub fn diagnosed_axis(true_axis: i8, insight: f32, deception: f32, roll: f32) -> (i8, f32) {
-    let chance =
-        (0.45 + 0.1 * insight.clamp(0.0, 5.0) - 0.08 * deception.clamp(0.0, 5.0)).clamp(0.1, 0.95);
+/// Hard failure used by a flirt which fails mutual compatibility. It has no
+/// random minimum-success floor and therefore cannot produce positive morale
+/// or affinity.
+pub fn incompatible_flirt_outcome() -> SocialOutcome {
+    let risk = SocialActionKind::Flirt.risk();
+    let morale_delta = -(0.5 + 5.5 * risk);
+    SocialOutcome {
+        succeeded: false,
+        morale_delta,
+        affinity_delta: morale_delta * (0.3 + risk * 0.7),
+        revealed_belief: false,
+    }
+}
+
+/// Produces a deterministic, legal, axis-aware diagnosis which may be wrong.
+pub fn diagnosed_axis(
+    axis: PersonalityAxis,
+    true_value: i8,
+    insight: f32,
+    deception: f32,
+    roll: f32,
+) -> (i8, f32) {
+    let legal = axis.legal_values();
+    debug_assert!(legal.contains(&true_value));
+    let obscurity = axis.base_obscurity() as f32
+        + if axis.is_neutral_code(true_value) {
+            1.0
+        } else {
+            0.0
+        };
+    let chance = (0.72 + 0.09 * insight.clamp(0.0, 5.0)
+        - 0.07 * deception.clamp(0.0, 5.0)
+        - 0.08 * obscurity)
+        .clamp(0.05, 0.95);
     let correct = roll.clamp(0.0, 1.0) < chance;
     let belief = if correct {
-        true_axis.clamp(-1, 1)
-    } else if true_axis == 0 {
-        if roll < 0.5 { -1 } else { 1 }
+        true_value
     } else {
-        -true_axis
+        let alternatives: Vec<_> = legal
+            .iter()
+            .copied()
+            .filter(|value| *value != true_value)
+            .collect();
+        // Conditional entropy within the failed interval remains uniform,
+        // instead of reusing the upper tail of the success roll directly.
+        let failed_entropy =
+            ((roll.clamp(0.0, 0.999_999) - chance) / (1.0 - chance)).clamp(0.0, 0.999_999);
+        alternatives
+            [((failed_entropy * alternatives.len() as f32) as usize).min(alternatives.len() - 1)]
     };
-    (belief, if correct { chance } else { 1.0 - chance })
+    let confidence = if correct {
+        chance
+    } else {
+        (1.0 - chance) / (legal.len() - 1) as f32
+    };
+    (belief, confidence)
 }
 
 #[cfg(test)]
@@ -483,11 +856,189 @@ mod tests {
     }
 
     #[test]
-    fn misdiagnosis_is_deterministic_and_actionable() {
-        assert_eq!(diagnosed_axis(1, 0.0, 5.0, 0.9), (-1, 0.9));
+    fn misdiagnosis_is_deterministic_and_axis_legal() {
+        let first = diagnosed_axis(PersonalityAxis::Inclination, 1, 0.0, 5.0, 0.9);
+        assert!(
+            PersonalityAxis::Inclination
+                .legal_values()
+                .contains(&first.0)
+        );
+        assert_ne!(first.0, 1);
         assert_eq!(
-            diagnosed_axis(1, 0.0, 5.0, 0.9),
-            diagnosed_axis(1, 0.0, 5.0, 0.9)
+            first,
+            diagnosed_axis(PersonalityAxis::Inclination, 1, 0.0, 5.0, 0.9)
+        );
+        let conscience = diagnosed_axis(PersonalityAxis::Conscience, 3, 0.0, 5.0, 0.9);
+        assert!(
+            PersonalityAxis::Conscience
+                .legal_values()
+                .contains(&conscience.0)
+        );
+        let chance = 0.72 - 0.07 * 5.0 - 0.08 * 4.0;
+        let mut alternatives = std::collections::HashSet::new();
+        for segment in 0..3 {
+            let entropy = (segment as f32 + 0.5) / 3.0;
+            let roll = chance + entropy * (1.0 - chance);
+            alternatives.insert(diagnosed_axis(PersonalityAxis::Inclination, 1, 0.0, 5.0, roll).0);
+        }
+        assert_eq!(alternatives, std::collections::HashSet::from([0, 2, 3]));
+        let wrong = diagnosed_axis(PersonalityAxis::Inclination, 1, 0.0, 5.0, 0.99);
+        assert!(wrong.1 < 0.5);
+        assert!(should_replace_belief(wrong.1, 0.7));
+        let obvious = diagnosed_axis(PersonalityAxis::Presentation, 0, 2.0, 2.0, 0.0);
+        let ambiguous = diagnosed_axis(PersonalityAxis::Presentation, 1, 2.0, 2.0, 0.0);
+        assert!(
+            obvious.1 > ambiguous.1,
+            "ambiguous presentation retains the neutral-value obscurity penalty"
+        );
+    }
+
+    #[test]
+    fn attraction_gate_and_rarity_bonus_are_fail_closed() {
+        assert!(!mutually_attracted(
+            Inclination::Neither,
+            Presentation::Masculine,
+            Inclination::Women,
+            Presentation::Feminine,
+        ));
+        assert_eq!(
+            flirt_charm_modifier(
+                Inclination::Neither,
+                Presentation::Masculine,
+                Inclination::Women,
+                Presentation::Feminine,
+                Courtship::Amorous,
+            ),
+            None
+        );
+        let same = flirt_charm_modifier(
+            Inclination::Men,
+            Presentation::Masculine,
+            Inclination::Men,
+            Presentation::Masculine,
+            Courtship::Neutral,
+        )
+        .unwrap();
+        let other = flirt_charm_modifier(
+            Inclination::Women,
+            Presentation::Masculine,
+            Inclination::Men,
+            Presentation::Feminine,
+            Courtship::Neutral,
+        )
+        .unwrap();
+        assert!(same > other);
+        assert!(inclination_accepts(
+            Inclination::Either,
+            Presentation::Ambiguous
+        ));
+        assert!(!inclination_accepts(
+            Inclination::Men,
+            Presentation::Ambiguous
+        ));
+        let failed = incompatible_flirt_outcome();
+        assert!(!failed.succeeded);
+        assert!(failed.morale_delta < 0.0);
+        assert!(failed.affinity_delta < 0.0);
+    }
+
+    #[test]
+    fn courtship_is_stronger_than_mirth_and_contexts_are_gated() {
+        assert!(
+            flirt_charm_modifier(
+                Inclination::Women,
+                Presentation::Masculine,
+                Inclination::Men,
+                Presentation::Feminine,
+                Courtship::Amorous,
+            )
+            .unwrap()
+                > humor_charm_modifier(Mirth::Merry, Mirth::Merry)
+        );
+        assert!(discovery_supported(
+            PersonalityAxis::Inclination,
+            DiscoveryContext::Romantic
+        ));
+        assert!(!discovery_supported(
+            PersonalityAxis::Inclination,
+            DiscoveryContext::Ordinary
+        ));
+        for transparency in [
+            Transparency::Open,
+            Transparency::Neutral,
+            Transparency::Guarded,
+        ] {
+            let (insight, deception) = discovery_training_split(transparency);
+            assert!((insight + deception - DISCOVERY_TRAINING_HOURS).abs() < f32::EPSILON);
+        }
+        assert_eq!(
+            discovery_training_split(Transparency::Neutral),
+            (0.125, 0.125)
+        );
+        assert!(should_replace_belief(0.6, 0.6));
+        assert!(!should_replace_belief(0.8, 0.6));
+        let introspective = diagnosed_axis(
+            PersonalityAxis::SelfKnowledge,
+            1,
+            2.0 + self_knowledge_insight_modifier(SelfKnowledge::Introspective),
+            2.0,
+            0.5,
+        );
+        let neutral = diagnosed_axis(
+            PersonalityAxis::SelfKnowledge,
+            1,
+            2.0 + self_knowledge_insight_modifier(SelfKnowledge::Neutral),
+            2.0,
+            0.5,
+        );
+        let self_deceiving = diagnosed_axis(
+            PersonalityAxis::SelfKnowledge,
+            1,
+            2.0 + self_knowledge_insight_modifier(SelfKnowledge::SelfDeceiving),
+            2.0,
+            0.5,
+        );
+        assert!(introspective.1 > neutral.1);
+        assert!(neutral.1 > self_deceiving.1);
+    }
+
+    #[test]
+    fn reserved_traits_trade_expressive_actions_for_command_gravitas() {
+        assert!(actor_allows_social_action(
+            SocialActionKind::LightenMood,
+            Mirth::Merry,
+            Courtship::Neutral,
+        ));
+        assert!(!actor_allows_social_action(
+            SocialActionKind::LightenMood,
+            Mirth::Grave,
+            Courtship::Neutral,
+        ));
+        assert!(actor_allows_social_action(
+            SocialActionKind::Flirt,
+            Mirth::Neutral,
+            Courtship::Amorous,
+        ));
+        assert!(!actor_allows_social_action(
+            SocialActionKind::Flirt,
+            Mirth::Neutral,
+            Courtship::Proper,
+        ));
+        assert_eq!(
+            command_gravitas_modifier(Mirth::Neutral, Courtship::Neutral),
+            0.0
+        );
+        assert_eq!(
+            command_gravitas_modifier(Mirth::Grave, Courtship::Neutral),
+            0.35
+        );
+        assert_eq!(
+            command_gravitas_modifier(Mirth::Neutral, Courtship::Proper),
+            0.35
+        );
+        assert_eq!(
+            command_gravitas_modifier(Mirth::Grave, Courtship::Proper),
+            0.7
         );
     }
 
@@ -691,7 +1242,7 @@ mod tests {
             diagnosis_for_axis(
                 Some(PersonalityAxis::Drive),
                 Some(1),
-                &[(PersonalityAxis::Drive, -1)]
+                &[(PersonalityAxis::Drive, 2)]
             ),
             Some(false)
         );

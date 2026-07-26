@@ -176,7 +176,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
                 script src="/static/developer-mode.js?v=dialogue-sources-1" defer {}
-                script src="/static/tooltips.js?v=ordinary-skill-correlations-2" defer {}
+                script src="/static/tooltips.js?v=pinnable-lifecycle-3" defer {}
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}

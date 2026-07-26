@@ -1853,8 +1853,12 @@ async fn travel_provision_forecast_for_minutes(
             }
         }
         let time = query_single::<CharacterTime>(state, "character_time", traveler.id).await;
-        let personality =
-            query_single::<CharacterPersonality>(state, "character_personality", traveler.id).await;
+        let personality = query_single::<CharacterPersonality>(
+            state,
+            "backend_character_personalities",
+            traveler.id,
+        )
+        .await;
         if time.is_some() {
             let history = state
                 .db
@@ -4387,6 +4391,25 @@ async fn party_social(
             .flatten()
             .is_some_and(|row| row.enabled)
     };
+    let actor_personality_result = state
+        .db
+        .query::<CharacterPersonality>(&format!(
+            "SELECT * FROM backend_character_personalities WHERE character_id = {}",
+            active.id
+        ))
+        .await;
+    let actor_personality_available = actor_personality_result.is_ok();
+    let actor_personality = match actor_personality_result {
+        Ok(rows) => rows.into_iter().next(),
+        Err(error) => {
+            tracing::error!(
+                %error,
+                actor_id = active.id,
+                "private actor personality query failed closed"
+            );
+            None
+        }
+    };
     let social = SocialPresentation {
         affinity,
         familiarity_hours: adventuresim_core::social::effective_familiarity_hours(
@@ -4400,6 +4423,16 @@ async fn party_social(
         shared_concerns,
         addressed_source_ids,
         automatic_chat_enabled,
+        joke_blocked: social_action_blocked_by_actor(
+            actor_personality_available,
+            actor_personality.as_ref(),
+            adventuresim_core::social::SocialActionKind::LightenMood,
+        ),
+        flirt_blocked: social_action_blocked_by_actor(
+            actor_personality_available,
+            actor_personality.as_ref(),
+            adventuresim_core::social::SocialActionKind::Flirt,
+        ),
         feedback: social_feedback(building.social_feedback.as_deref()),
         unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
@@ -4536,6 +4569,34 @@ fn social_action_error_feedback(error: &str) -> &'static str {
     } else {
         "unavailable"
     }
+}
+
+fn social_action_blocked_by_actor(
+    personality_available: bool,
+    personality: Option<&CharacterPersonality>,
+    action: adventuresim_core::social::SocialActionKind,
+) -> bool {
+    use adventuresim_core::social::{
+        Courtship as CoreCourtship, Mirth as CoreMirth, actor_allows_social_action,
+    };
+
+    if !personality_available {
+        return true;
+    }
+    let Some(personality) = personality else {
+        return true;
+    };
+    let mirth = match personality.mirth {
+        crate::spacetimedb::Mirth::Neutral => CoreMirth::Neutral,
+        crate::spacetimedb::Mirth::Merry => CoreMirth::Merry,
+        crate::spacetimedb::Mirth::Grave => CoreMirth::Grave,
+    };
+    let courtship = match personality.courtship {
+        crate::spacetimedb::Courtship::Neutral => CoreCourtship::Neutral,
+        crate::spacetimedb::Courtship::Amorous => CoreCourtship::Amorous,
+        crate::spacetimedb::Courtship::Proper => CoreCourtship::Proper,
+    };
+    !actor_allows_social_action(action, mirth, courtship)
 }
 
 fn social_feedback(value: Option<&str>) -> Option<crate::templates::settlement::SocialFeedback> {
@@ -4777,8 +4838,9 @@ async fn merchant_provider_id(
     location_id: &str,
 ) -> Option<String> {
     let settlement_literal = sql_string_literal(settlement_id);
-    let providers_sql =
-        format!("SELECT * FROM settlement_npc WHERE home_settlement_id = {settlement_literal}");
+    let providers_sql = format!(
+        "SELECT * FROM backend_settlement_npcs WHERE home_settlement_id = {settlement_literal}"
+    );
     let presences_sql =
         format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {settlement_literal}");
     let (providers, presences) = tokio::join!(
@@ -5243,15 +5305,9 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ("Throw", before.throw_hours, after.throw_hours),
         ("Will", before.will_hours, after.will_hours),
         ("Insight", before.insight_hours, after.insight_hours),
-        (
-            "Self-awareness",
-            before.self_awareness_hours,
-            after.self_awareness_hours,
-        ),
-        ("Humor", before.humor_hours, after.humor_hours),
+        ("Charm", before.charm_hours, after.charm_hours),
         ("Command", before.command_hours, after.command_hours),
         ("Deception", before.deception_hours, after.deception_hours),
-        ("Seduction", before.seduction_hours, after.seduction_hours),
         (
             "Physiology",
             before.physiology_hours,
@@ -6490,7 +6546,8 @@ pub(crate) async fn get_active_party_members(
 
 #[cfg(test)]
 mod social_notification_query_tests {
-    use super::{social_action_error_feedback, social_feedback};
+    use super::{social_action_blocked_by_actor, social_action_error_feedback, social_feedback};
+    use adventuresim_core::social::SocialActionKind;
 
     #[test]
     fn social_action_feedback_is_allowlisted_and_describes_cooldowns_and_results() {
@@ -6531,6 +6588,43 @@ mod social_notification_query_tests {
         );
         assert!(!loader.contains("backend_social_interactions"));
     }
+
+    #[test]
+    fn social_actor_action_visibility_uses_shared_policy_and_fails_closed() {
+        assert!(social_action_blocked_by_actor(
+            false,
+            None,
+            SocialActionKind::LightenMood
+        ));
+        let mut personality = crate::spacetimedb::CharacterPersonality::neutral(1);
+        assert!(!social_action_blocked_by_actor(
+            true,
+            Some(&personality),
+            SocialActionKind::LightenMood
+        ));
+        personality.mirth = crate::spacetimedb::Mirth::Grave;
+        assert!(social_action_blocked_by_actor(
+            true,
+            Some(&personality),
+            SocialActionKind::LightenMood
+        ));
+        assert!(!social_action_blocked_by_actor(
+            true,
+            Some(&personality),
+            SocialActionKind::Flirt
+        ));
+        personality.courtship = crate::spacetimedb::Courtship::Proper;
+        assert!(social_action_blocked_by_actor(
+            true,
+            Some(&personality),
+            SocialActionKind::Flirt
+        ));
+        assert!(social_action_blocked_by_actor(
+            true,
+            None,
+            SocialActionKind::Flirt
+        ));
+    }
 }
 
 pub(crate) async fn soap_rest_preview(
@@ -6557,7 +6651,7 @@ pub(crate) async fn soap_rest_preview(
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
         state
             .db
-            .query::<CharacterPersonality>("SELECT * FROM character_personality"),
+            .query::<CharacterPersonality>("SELECT * FROM backend_character_personalities"),
     );
     let personal = personal.unwrap_or_default();
     let shared = shared.unwrap_or_default();
@@ -6801,6 +6895,7 @@ mod rest_form_tests {
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
             temperance,
+            ..CharacterPersonality::neutral(character_id)
         }
     }
 

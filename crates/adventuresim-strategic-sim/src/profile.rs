@@ -107,6 +107,55 @@ pub enum Temperance {
     Temperate,
     Drunkard,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mirth {
+    Neutral,
+    Merry,
+    Grave,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Courtship {
+    Neutral,
+    Amorous,
+    Proper,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Transparency {
+    Neutral,
+    Open,
+    Guarded,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SelfKnowledge {
+    Neutral,
+    Introspective,
+    SelfDeceiving,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Inclination {
+    Men,
+    Either,
+    Women,
+    Neither,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Presentation {
+    Masculine,
+    Ambiguous,
+    Feminine,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Sex {
+    Female,
+    Male,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -120,6 +169,13 @@ pub struct Personality {
     pub conviction: Conviction,
     pub hygiene: Hygiene,
     pub temperance: Temperance,
+    pub mirth: Mirth,
+    pub courtship: Courtship,
+    pub transparency: Transparency,
+    pub self_knowledge: SelfKnowledge,
+    pub inclination: Inclination,
+    pub presentation: Presentation,
+    pub sex: Sex,
 }
 
 impl Personality {
@@ -134,6 +190,13 @@ impl Personality {
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
             temperance: Temperance::Neutral,
+            mirth: Mirth::Neutral,
+            courtship: Courtship::Neutral,
+            transparency: Transparency::Neutral,
+            self_knowledge: SelfKnowledge::Neutral,
+            inclination: Inclination::Women,
+            presentation: Presentation::Masculine,
+            sex: Sex::Male,
         }
     }
 
@@ -147,6 +210,10 @@ impl Personality {
             + usize::from(self.conviction != Conviction::Neutral)
             + usize::from(self.hygiene != Hygiene::Neutral)
             + usize::from(self.temperance != Temperance::Neutral)
+            + usize::from(self.mirth != Mirth::Neutral)
+            + usize::from(self.courtship != Courtship::Neutral)
+            + usize::from(self.transparency != Transparency::Neutral)
+            + usize::from(self.self_knowledge != SelfKnowledge::Neutral)
     }
 }
 
@@ -267,11 +334,9 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         throw: initial(&mut rng),
         will: initial(&mut rng),
         insight: initial(&mut rng),
-        self_awareness: initial(&mut rng),
-        humor: initial(&mut rng),
+        charm: initial(&mut rng),
         command: initial(&mut rng),
         deception: initial(&mut rng),
-        seduction: initial(&mut rng),
         physiology: initial(&mut rng),
         cooking: initial(&mut rng),
         religion: ReligionHours {
@@ -393,7 +458,7 @@ fn generated_schedule(
 
 fn generated_personality(rng: &mut StableRng) -> Personality {
     let mut p = Personality::neutral();
-    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8];
+    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     for index in (1..axes.len()).rev() {
         axes.swap(index, rng.next_u64() as usize % (index + 1));
     }
@@ -456,15 +521,73 @@ fn generated_personality(rng: &mut StableRng) -> Personality {
                     Hygiene::Cleanly
                 }
             }
-            _ => {
+            8 => {
                 p.temperance = if rng.next_u64().is_multiple_of(2) {
                     Temperance::Temperate
                 } else {
                     Temperance::Drunkard
                 }
             }
+            9 => {
+                p.mirth = if rng.next_u64().is_multiple_of(2) {
+                    Mirth::Merry
+                } else {
+                    Mirth::Grave
+                }
+            }
+            10 => {
+                p.courtship = if rng.next_u64().is_multiple_of(2) {
+                    Courtship::Amorous
+                } else {
+                    Courtship::Proper
+                }
+            }
+            11 => {
+                p.transparency = if rng.next_u64().is_multiple_of(2) {
+                    Transparency::Open
+                } else {
+                    Transparency::Guarded
+                }
+            }
+            _ => {
+                p.self_knowledge = if rng.next_u64().is_multiple_of(2) {
+                    SelfKnowledge::Introspective
+                } else {
+                    SelfKnowledge::SelfDeceiving
+                }
+            }
         }
     }
+    p.sex = if rng.next_u64().is_multiple_of(2) {
+        Sex::Female
+    } else {
+        Sex::Male
+    };
+    p.presentation = match (p.sex, rng.next_u64() % 100) {
+        (_, 0..=3) => Presentation::Ambiguous,
+        (Sex::Female, 4) => Presentation::Masculine,
+        (Sex::Male, 4) => Presentation::Feminine,
+        (Sex::Female, _) => Presentation::Feminine,
+        (Sex::Male, _) => Presentation::Masculine,
+    };
+    p.inclination = match rng.next_u64() % 100 {
+        0 => Inclination::Neither,
+        1..=4 => Inclination::Either,
+        5..=9 => {
+            if p.sex == Sex::Female {
+                Inclination::Women
+            } else {
+                Inclination::Men
+            }
+        }
+        _ => {
+            if p.sex == Sex::Female {
+                Inclination::Men
+            } else {
+                Inclination::Women
+            }
+        }
+    };
     p
 }
 

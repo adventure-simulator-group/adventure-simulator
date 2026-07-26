@@ -109,6 +109,56 @@ test('a touch click pins the tooltip after pointer focus suppression', () => {
   assert.equal(button.getAttribute('aria-pressed'), 'false');
 });
 
+test('clicking a hovered ordinary tooltip opener hides it without pinning', () => {
+  const { window, document, system } = fixture();
+  const button = document.querySelector('button');
+
+  dispatch(window, button, 'pointerover', { pointerType: 'mouse' });
+  assert.equal(system.tooltip.hidden, false);
+
+  dispatch(window, button, 'click', { detail: 1 });
+  assert.equal(system.pinnedTarget, null);
+  assert.equal(system.activeTarget, null);
+  assert.equal(system.tooltip.hidden, true);
+});
+
+test('strategic page transitions clear a pinned tooltip', () => {
+  const { window, document, system } = fixture(
+    '<button data-tooltip-pinnable data-strategic-tooltip="Pinned detail">Detail</button>',
+  );
+  const button = document.querySelector('button');
+
+  dispatch(window, button, 'click', { detail: 1 });
+  assert.equal(system.pinnedTarget, button);
+
+  dispatch(window, document, 'strategic-page-unmounting');
+  assert.equal(system.pinnedTarget, null);
+  assert.equal(system.activeTarget, null);
+  assert.equal(system.tooltip.hidden, true);
+  assert.equal(button.getAttribute('aria-pressed'), 'false');
+
+  dispatch(window, document, 'strategic-page-mounted');
+  assert.equal(system.pinnedTarget, null);
+  assert.equal(system.activeTarget, null);
+  assert.equal(system.tooltip.hidden, true);
+});
+
+test('tooltips inside newly mounted modal content can show after transition cleanup', () => {
+  const { window, document, system } = fixture('<main></main>');
+  dispatch(window, document, 'strategic-page-unmounting');
+
+  const modalButton = document.createElement('button');
+  modalButton.textContent = 'Modal action';
+  modalButton.setAttribute('data-strategic-tooltip', 'Modal detail');
+  document.querySelector('main').append(modalButton);
+  dispatch(window, document, 'strategic-page-mounted');
+  dispatch(window, modalButton, 'pointerover', { pointerType: 'mouse' });
+
+  assert.equal(system.activeTarget, modalButton);
+  assert.equal(system.tooltip.textContent, 'Modal detail');
+  assert.equal(system.tooltip.hidden, false);
+});
+
 test('existing accessible names and descriptions are not overwritten', () => {
   const { window, document, system } = fixture(
     '<button aria-label="Bag" aria-describedby="inventory-help" title="Open inventory"></button>',
@@ -162,7 +212,8 @@ test('skill tooltips render generated details with aligned correlation percentag
     [...system.tooltip.querySelectorAll('.strategic-skill-tooltip-line')].map((line) => line.textContent),
     [
       'Governed by Intelligence',
-      '500.0 effective hours trained',
+      '500.0 direct hours trained',
+      '750.0 effective hours trained',
       '250.0 hours from correlated skills:',
     ],
   );

@@ -69,7 +69,7 @@ struct SettlementNpcRow {
     home_settlement_id: String,
     name: String,
     age_band: String,
-    sex: String,
+    presentation: String,
     height: String,
     build: String,
     hair: String,
@@ -186,6 +186,25 @@ mod npc_navigation_tests {
     use crate::spacetimedb::SettlementCategory;
 
     #[test]
+    fn browser_npc_description_uses_presentation_not_private_sex() {
+        let source = include_str!("dialogue.rs");
+        let row = source
+            .split("struct SettlementNpcRow")
+            .nth(1)
+            .and_then(|tail| tail.split("struct NpcPresenceRow").next())
+            .expect("NPC transport row");
+        assert!(row.contains("presentation: String"));
+        assert!(!row.contains("sex: String"));
+        let endpoint = source
+            .rsplit_once("async fn location_npcs(")
+            .map(|(_, tail)| tail)
+            .and_then(|tail| tail.split("async fn build_view").next())
+            .expect("NPC endpoint");
+        assert!(endpoint.contains("npc.presentation.to_lowercase()"));
+        assert!(!endpoint.contains("npc.sex"));
+    }
+
+    #[test]
     fn templeless_settlement_cannot_enumerate_hidden_npcs() {
         let profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
         assert!(npc_location_is_navigable(
@@ -258,7 +277,7 @@ async fn location_npcs(
     let npcs = state
         .db
         .query::<SettlementNpcRow>(&format!(
-            "SELECT * FROM settlement_npc WHERE home_settlement_id = {}",
+            "SELECT * FROM backend_settlement_npcs WHERE home_settlement_id = {}",
             sql_string_literal(&settlement_id)
         ))
         .await
@@ -284,7 +303,7 @@ async fn location_npcs(
     let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && u64::from(presence.start_minute) <= minute && minute < u64::from(presence.end_minute)).filter_map(|presence| {
         let npc = npcs.iter().find(|npc| npc.id == presence.npc_id)?;
         let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
-        Some(NpcView { id: npc.id.clone(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} {} with a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.sex.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default })
+        Some(NpcView { id: npc.id.clone(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} person with {} presentation, a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.presentation.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default })
     }).collect::<Vec<_>>();
     views.sort_by_key(|view| (!view.is_default, view.name.clone()));
     Ok(Json(views))
@@ -440,7 +459,7 @@ async fn start(
     let npc = state
         .db
         .query_one::<SettlementNpcRow>(&format!(
-            "SELECT * FROM settlement_npc WHERE id = {}",
+            "SELECT * FROM backend_settlement_npcs WHERE id = {}",
             sql_string_literal(&request.npc_actor_id)
         ))
         .await

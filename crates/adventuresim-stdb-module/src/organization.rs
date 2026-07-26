@@ -89,11 +89,9 @@ fn skill_hours(skills: &CharacterSkills, skill: &str, leaf: Option<&str>) -> Opt
     Some(match skill {
         "will" => (Skill::Will, skills.will_hours),
         "insight" => (Skill::Insight, skills.insight_hours),
-        "self_awareness" => (Skill::SelfAwareness, skills.self_awareness_hours),
-        "humor" => (Skill::Humor, skills.humor_hours),
+        "charm" => (Skill::Charm, skills.charm_hours),
         "command" => (Skill::Command, skills.command_hours),
         "deception" => (Skill::Deception, skills.deception_hours),
-        "seduction" => (Skill::Seduction, skills.seduction_hours),
         "physiology" => (Skill::Physiology, skills.physiology_hours),
         "cooking" => (Skill::Cooking, skills.cooking_hours),
         "religion" => (

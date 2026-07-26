@@ -10,8 +10,8 @@ Characters have an immutable sparse personality drawn from discrete axes. Genera
 Authoritative personality is private. Other characters instead keep durable,
 observer-specific beliefs with confidence and observation time. Beliefs may be
 wrong and can later be corrected. Insight forms beliefs about other people and
-is opposed by Deception where applicable; Self-awareness governs beliefs about
-oneself. Public morale labels never reveal the true trait that changed a
+is opposed by involuntary Deception modified by Transparency; Insight also
+governs reflection about oneself. Public morale labels never reveal the true trait that changed a
 reaction.
 
 ## Relationships
@@ -24,15 +24,14 @@ character pair. Its displayed effective hours divide shared time by current
 party size while both characters remain together, and use the undivided total
 after they separate.
 
-The former Charisma skill is replaced by the Social family: **Insight**,
-**Self-awareness**, **Humor**, **Command**, **Deception**, and **Seduction**.
+The Social family is **Insight**, **Charm**, **Command**, and **Deception**.
 Social outcomes combine the action skill, current Affinity and Familiarity,
 the actor's diagnosis, the target's true personality and topic sensitivity,
 and a server roll. Listening is low-risk exploration; more presumptuous actions
 have greater upside and downside. Only recognized negative morale concerns are
 actionable. Their topic is derived by the server, and repeating the same
 approach to the same topic has a cooldown even if the source row is refreshed.
-Characters use Self-awareness to Reflect on their own concern; reflection can
+Characters use Insight to Reflect on their own concern; reflection can
 revise a self-belief but never changes Affinity or Familiarity. The interface
 shows only a qualitative, familiarity-weighted affinity estimate rather than
 the authoritative value. Observed traits and morale-source interpretations use
@@ -45,7 +44,7 @@ every Social skill for every problem. Commiseration is always available as one
 action: it uses Insight when the actor currently shares that kind of concern and
 Deception when they do not, so sincere and feigned variants never appear at the
 same time. Action labels remain grounded in facts the simulation actually knows.
-The character sheet groups the six skills beneath an expandable **Social** row,
+The character sheet groups the four skills beneath an expandable **Social** row,
 whose displayed value is their average.
 
 First-time players first choose a life stage, then choose a generated whole
@@ -81,7 +80,19 @@ roster is browser-scoped and is not an account or authentication boundary.
 Character personality includes an immutable Temperance axis. **Temperate** and
 **Drunkard** are visible non-neutral tags; the neutral state is omitted like
 other neutral axes. Random mortal/NPC profiles still activate exactly two to
-four distinct axes across the expanded nine-axis catalog.
+four distinct axes across the expanded thirteen-axis behavioral catalog.
+Mirth, Courtship, Transparency, and Self-knowledge join the existing axes.
+Presentation and Inclination are always assigned outside that sparse count;
+private Sex supplies demographic truth and never participates in attraction.
+Inclination is Men/Either/Women/Neither. Presentation is
+Masculine/Ambiguous/Feminine. Masculine and Feminine presentation are normally
+learned on contact; Ambiguous presentation requires an Insight discovery check.
+
+Each actual personality discovery check conserves 0.25 real training hours.
+An Open subject awards all of it to the observer's Insight; a Neutral subject
+splits it evenly between observer Insight and subject Deception; a Guarded
+subject awards it all to subject Deception. Unsupported contexts produce
+neither a check nor training.
 Mortal characters [age](../strategic/time.md) normally and eventually die. They cannot have their physical features customized; when rolling them, players must choose from a limited selection of randomly generated characters. They are cheap and efficient, ideal for players who want a [roguelike](https://en.wikipedia.org/wiki/Roguelike)/extraction-esque experience of frequently rolling new characters, quickly obtaining power, dying, and starting over.
 ### Humans
 [Default](https://en.wikipedia.org/wiki/Human).

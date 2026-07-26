@@ -163,7 +163,7 @@ async fn actor_and_selector(
             let npc = state
                 .db
                 .query_one::<LocalNpcRow>(&format!(
-                    "SELECT * FROM settlement_npc WHERE id = {}",
+                    "SELECT * FROM backend_settlement_npcs WHERE id = {}",
                     sql_string_literal(subject_id)
                 ))
                 .await
@@ -481,7 +481,7 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("async fn messages").next())
             .expect("local chat authority handler");
-        assert!(local_route.contains("SELECT * FROM settlement_npc WHERE id = {}"));
+        assert!(local_route.contains("SELECT * FROM backend_settlement_npcs WHERE id = {}"));
         assert!(local_route.contains("SELECT * FROM settlement_npc_presence WHERE npc_id = {}"));
         assert!(
             include_str!("local_chat.rs").contains("presence.location_id == requested_location_id")

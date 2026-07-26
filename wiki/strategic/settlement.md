@@ -37,7 +37,8 @@ villages and hamlets cannot enter a keep that their population does not have.
 
 NPC presences and daily time windows are strategic database state, not tactical
 positions or tick state. The player view exposes physical presentation, occupation,
-household, and public local role, but never personality, motives, beliefs, quest truth,
+household, observable presentation, and public local role, but never private
+sex, personality, motives, beliefs, quest truth,
 generation weights, required causal bridges, or the private explanation for an unusual
 presence. Generation uses one stable typed weighted evaluator for production and tests;
 zero weights are impossible, while any rare choice marked as bridge-dependent is rejected

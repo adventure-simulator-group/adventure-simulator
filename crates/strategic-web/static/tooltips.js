@@ -325,7 +325,13 @@
     });
     documentRoot.addEventListener('click', (event) => {
       const target = tooltipTarget(event.target);
-      if (!target || event.detail === 0) return;
+      if (!target) return;
+      if (!target.hasAttribute('data-tooltip-pinnable')) {
+        setPinned(null);
+        hide(true);
+        return;
+      }
+      if (event.detail === 0) return;
       if (pinnedTarget === target) {
         setPinned(null);
         hide(true);
@@ -352,6 +358,12 @@
         }
       }
     });
+    const clear = () => {
+      setPinned(null);
+      hide(true);
+    };
+    documentRoot.addEventListener('strategic-page-unmounting', clear);
+    documentRoot.addEventListener('strategic-page-mounted', clear);
     tooltip.addEventListener('pointerleave', () => hide());
     windowRoot.addEventListener('resize', position);
     windowRoot.addEventListener('scroll', position, true);

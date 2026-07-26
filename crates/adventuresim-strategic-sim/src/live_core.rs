@@ -383,11 +383,9 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
         throw_hours: s.throw,
         will_hours: s.will,
         insight_hours: s.insight,
-        self_awareness_hours: s.self_awareness,
-        humor_hours: s.humor,
+        charm_hours: s.charm,
         command_hours: s.command,
         deception_hours: s.deception,
-        seduction_hours: s.seduction,
         physiology_hours: s.physiology,
         cooking_hours: s.cooking,
         religion_hours: adventuresim_stdb_client::ReligionHours {
@@ -490,6 +488,7 @@ fn medical_rest_schedule() -> ScheduleAllocation {
 fn live_personality(character_id: u64, p: &crate::Personality) -> CharacterPersonality {
     CharacterPersonality {
         character_id,
+        projection_character_id: character_id,
         nerve: match p.nerve {
             crate::Nerve::Neutral => adventuresim_stdb_client::Nerve::Neutral,
             crate::Nerve::Brave => adventuresim_stdb_client::Nerve::Brave,
@@ -535,6 +534,45 @@ fn live_personality(character_id: u64, p: &crate::Personality) -> CharacterPerso
             crate::Temperance::Neutral => adventuresim_stdb_client::Temperance::Neutral,
             crate::Temperance::Temperate => adventuresim_stdb_client::Temperance::Temperate,
             crate::Temperance::Drunkard => adventuresim_stdb_client::Temperance::Drunkard,
+        },
+        mirth: match p.mirth {
+            crate::Mirth::Neutral => adventuresim_stdb_client::Mirth::Neutral,
+            crate::Mirth::Merry => adventuresim_stdb_client::Mirth::Merry,
+            crate::Mirth::Grave => adventuresim_stdb_client::Mirth::Grave,
+        },
+        courtship: match p.courtship {
+            crate::Courtship::Neutral => adventuresim_stdb_client::Courtship::Neutral,
+            crate::Courtship::Amorous => adventuresim_stdb_client::Courtship::Amorous,
+            crate::Courtship::Proper => adventuresim_stdb_client::Courtship::Proper,
+        },
+        transparency: match p.transparency {
+            crate::Transparency::Neutral => adventuresim_stdb_client::Transparency::Neutral,
+            crate::Transparency::Open => adventuresim_stdb_client::Transparency::Open,
+            crate::Transparency::Guarded => adventuresim_stdb_client::Transparency::Guarded,
+        },
+        self_knowledge: match p.self_knowledge {
+            crate::SelfKnowledge::Neutral => adventuresim_stdb_client::SelfKnowledge::Neutral,
+            crate::SelfKnowledge::Introspective => {
+                adventuresim_stdb_client::SelfKnowledge::Introspective
+            }
+            crate::SelfKnowledge::SelfDeceiving => {
+                adventuresim_stdb_client::SelfKnowledge::SelfDeceiving
+            }
+        },
+        inclination: match p.inclination {
+            crate::Inclination::Men => adventuresim_stdb_client::Inclination::Men,
+            crate::Inclination::Either => adventuresim_stdb_client::Inclination::Either,
+            crate::Inclination::Women => adventuresim_stdb_client::Inclination::Women,
+            crate::Inclination::Neither => adventuresim_stdb_client::Inclination::Neither,
+        },
+        presentation: match p.presentation {
+            crate::Presentation::Masculine => adventuresim_stdb_client::Presentation::Masculine,
+            crate::Presentation::Ambiguous => adventuresim_stdb_client::Presentation::Ambiguous,
+            crate::Presentation::Feminine => adventuresim_stdb_client::Presentation::Feminine,
+        },
+        sex: match p.sex {
+            crate::Sex::Female => adventuresim_stdb_client::Sex::Female,
+            crate::Sex::Male => adventuresim_stdb_client::Sex::Male,
         },
     }
 }

@@ -1,4 +1,5 @@
-use spacetimedb::{ReducerContext, SpacetimeType, Table, table};
+use crate::strategic::strategic_gateway_authority__view;
+use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum Nerve {
@@ -55,13 +56,58 @@ pub enum Temperance {
     Temperate,
     Drunkard,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Mirth {
+    Neutral,
+    Merry,
+    Grave,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Courtship {
+    Neutral,
+    Amorous,
+    Proper,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Transparency {
+    Neutral,
+    Open,
+    Guarded,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum SelfKnowledge {
+    Neutral,
+    Introspective,
+    SelfDeceiving,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Inclination {
+    Men,
+    Either,
+    Women,
+    Neither,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Presentation {
+    Masculine,
+    Ambiguous,
+    Feminine,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Sex {
+    Female,
+    Male,
+}
 
 /// Immutable strategic temperament. Each field is one mutually-exclusive axis.
 #[derive(Clone, Debug)]
-#[table(accessor = character_personality, public)]
+#[table(accessor = character_personality)]
 pub struct CharacterPersonality {
     #[primary_key]
     pub character_id: u64,
+    /// Duplicate bounded traversal key for the fail-closed gateway view.
+    #[index(btree)]
+    pub projection_character_id: u64,
     pub nerve: Nerve,
     pub drive: Drive,
     pub outlook: Outlook,
@@ -71,12 +117,43 @@ pub struct CharacterPersonality {
     pub conviction: Conviction,
     pub hygiene: Hygiene,
     pub temperance: Temperance,
+    pub mirth: Mirth,
+    pub courtship: Courtship,
+    pub transparency: Transparency,
+    pub self_knowledge: SelfKnowledge,
+    /// Private demographic truth. Attraction never reads this field.
+    pub sex: Sex,
+    /// Always assigned, normally observable social signal.
+    pub presentation: Presentation,
+    /// Always assigned private preference.
+    pub inclination: Inclination,
+}
+
+/// Fail-closed truth projection for trusted SSR. Browser subscriptions never
+/// receive authoritative personality or demographic rows.
+#[view(accessor = backend_character_personalities, public)]
+pub fn backend_character_personalities(ctx: &ViewContext) -> Vec<CharacterPersonality> {
+    let trusted = ctx
+        .db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|authority| authority.identity == ctx.sender());
+    if !trusted {
+        return Vec::new();
+    }
+    ctx.db
+        .character_personality()
+        .projection_character_id()
+        .filter(0u64..)
+        .collect()
 }
 
 impl CharacterPersonality {
     pub fn neutral(character_id: u64) -> Self {
         Self {
             character_id,
+            projection_character_id: character_id,
             nerve: Nerve::Neutral,
             drive: Drive::Neutral,
             outlook: Outlook::Neutral,
@@ -86,6 +163,13 @@ impl CharacterPersonality {
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
             temperance: Temperance::Neutral,
+            mirth: Mirth::Neutral,
+            courtship: Courtship::Neutral,
+            transparency: Transparency::Neutral,
+            self_knowledge: SelfKnowledge::Neutral,
+            sex: Sex::Male,
+            presentation: Presentation::Masculine,
+            inclination: Inclination::Women,
         }
     }
 
@@ -99,6 +183,10 @@ impl CharacterPersonality {
             + usize::from(self.conviction != Conviction::Neutral)
             + usize::from(self.hygiene != Hygiene::Neutral)
             + usize::from(self.temperance != Temperance::Neutral)
+            + usize::from(self.mirth != Mirth::Neutral)
+            + usize::from(self.courtship != Courtship::Neutral)
+            + usize::from(self.transparency != Transparency::Neutral)
+            + usize::from(self.self_knowledge != SelfKnowledge::Neutral)
     }
 }
 
@@ -119,7 +207,7 @@ pub fn random_personality(
     mut random: impl FnMut() -> u64,
 ) -> CharacterPersonality {
     let mut result = CharacterPersonality::neutral(character_id);
-    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8];
+    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     for index in (1..axes.len()).rev() {
         axes.swap(index, random() as usize % (index + 1));
     }
@@ -182,15 +270,70 @@ pub fn random_personality(
                     Hygiene::Cleanly
                 }
             }
-            _ => {
+            8 => {
                 result.temperance = if random() % 2 == 0 {
                     Temperance::Temperate
                 } else {
                     Temperance::Drunkard
                 }
             }
+            9 => {
+                result.mirth = if random() % 2 == 0 {
+                    Mirth::Merry
+                } else {
+                    Mirth::Grave
+                }
+            }
+            10 => {
+                result.courtship = if random() % 2 == 0 {
+                    Courtship::Amorous
+                } else {
+                    Courtship::Proper
+                }
+            }
+            11 => {
+                result.transparency = if random() % 2 == 0 {
+                    Transparency::Open
+                } else {
+                    Transparency::Guarded
+                }
+            }
+            _ => {
+                result.self_knowledge = if random() % 2 == 0 {
+                    SelfKnowledge::Introspective
+                } else {
+                    SelfKnowledge::SelfDeceiving
+                }
+            }
         }
     }
+    result.sex = if random() % 2 == 0 {
+        Sex::Female
+    } else {
+        Sex::Male
+    };
+    let presentation_roll = random() % 100;
+    result.presentation = match (result.sex, presentation_roll) {
+        (_, 0..=3) => Presentation::Ambiguous,
+        (Sex::Female, 4) => Presentation::Masculine,
+        (Sex::Male, 4) => Presentation::Feminine,
+        (Sex::Female, _) => Presentation::Feminine,
+        (Sex::Male, _) => Presentation::Masculine,
+    };
+    // Direction is generated from demographic sex rather than the public
+    // presentation signal. The signal is the only field attraction consumes.
+    result.inclination = match random() % 100 {
+        0 => Inclination::Neither,
+        1..=4 => Inclination::Either,
+        5..=9 => match result.sex {
+            Sex::Female => Inclination::Women,
+            Sex::Male => Inclination::Men,
+        },
+        _ => match result.sex {
+            Sex::Female => Inclination::Men,
+            Sex::Male => Inclination::Women,
+        },
+    };
     result
 }
 
@@ -213,7 +356,14 @@ pub fn initialize_personality(ctx: &ReducerContext, character_id: u64, npc: bool
         let row = if npc {
             random_personality(character_id, || ctx.random())
         } else {
-            CharacterPersonality::neutral(character_id)
+            // Non-candidate characters remain behaviorally neutral, but the
+            // always-assigned demographic axes must still have real values.
+            let generated = random_personality(character_id, || ctx.random());
+            let mut neutral = CharacterPersonality::neutral(character_id);
+            neutral.sex = generated.sex;
+            neutral.presentation = generated.presentation;
+            neutral.inclination = generated.inclination;
+            neutral
         };
         ctx.db.character_personality().insert(row);
     }

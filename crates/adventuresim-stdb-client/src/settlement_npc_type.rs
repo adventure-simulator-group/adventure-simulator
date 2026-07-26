@@ -5,16 +5,19 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::npc_age_band_type::NpcAgeBand;
+use super::npc_presentation_type::NpcPresentation;
 use super::npc_sex_type::NpcSex;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct SettlementNpc {
     pub id: String,
+    pub projection_id: u64,
     pub home_settlement_id: String,
     pub name: String,
     pub age_band: NpcAgeBand,
     pub sex: NpcSex,
+    pub presentation: NpcPresentation,
     pub height: String,
     pub build: String,
     pub hair: String,
@@ -38,10 +41,12 @@ impl __sdk::InModule for SettlementNpc {
 /// Provides typed access to columns for query building.
 pub struct SettlementNpcCols {
     pub id: __sdk::__query_builder::Col<SettlementNpc, String>,
+    pub projection_id: __sdk::__query_builder::Col<SettlementNpc, u64>,
     pub home_settlement_id: __sdk::__query_builder::Col<SettlementNpc, String>,
     pub name: __sdk::__query_builder::Col<SettlementNpc, String>,
     pub age_band: __sdk::__query_builder::Col<SettlementNpc, NpcAgeBand>,
     pub sex: __sdk::__query_builder::Col<SettlementNpc, NpcSex>,
+    pub presentation: __sdk::__query_builder::Col<SettlementNpc, NpcPresentation>,
     pub height: __sdk::__query_builder::Col<SettlementNpc, String>,
     pub build: __sdk::__query_builder::Col<SettlementNpc, String>,
     pub hair: __sdk::__query_builder::Col<SettlementNpc, String>,
@@ -61,10 +66,12 @@ impl __sdk::__query_builder::HasCols for SettlementNpc {
     fn cols(table_name: &'static str) -> Self::Cols {
         SettlementNpcCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            projection_id: __sdk::__query_builder::Col::new(table_name, "projection_id"),
             home_settlement_id: __sdk::__query_builder::Col::new(table_name, "home_settlement_id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             age_band: __sdk::__query_builder::Col::new(table_name, "age_band"),
             sex: __sdk::__query_builder::Col::new(table_name, "sex"),
+            presentation: __sdk::__query_builder::Col::new(table_name, "presentation"),
             height: __sdk::__query_builder::Col::new(table_name, "height"),
             build: __sdk::__query_builder::Col::new(table_name, "build"),
             hair: __sdk::__query_builder::Col::new(table_name, "hair"),
@@ -87,6 +94,7 @@ impl __sdk::__query_builder::HasCols for SettlementNpc {
 pub struct SettlementNpcIxCols {
     pub home_settlement_id: __sdk::__query_builder::IxCol<SettlementNpc, String>,
     pub id: __sdk::__query_builder::IxCol<SettlementNpc, String>,
+    pub projection_id: __sdk::__query_builder::IxCol<SettlementNpc, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for SettlementNpc {
@@ -98,6 +106,7 @@ impl __sdk::__query_builder::HasIxCols for SettlementNpc {
                 "home_settlement_id",
             ),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            projection_id: __sdk::__query_builder::IxCol::new(table_name, "projection_id"),
         }
     }
 }

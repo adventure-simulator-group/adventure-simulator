@@ -18,6 +18,8 @@ pub struct SocialPresentation {
     pub shared_concerns: Vec<adventuresim_core::social::SocialTopic>,
     pub addressed_source_ids: Vec<String>,
     pub automatic_chat_enabled: bool,
+    pub joke_blocked: bool,
+    pub flirt_blocked: bool,
     pub feedback: Option<SocialFeedback>,
     pub unavailable: bool,
 }
@@ -31,6 +33,8 @@ pub struct SocialFeedback {
 fn social_actions(
     is_self: bool,
     topic: adventuresim_core::social::SocialTopic,
+    joke_blocked: bool,
+    flirt_blocked: bool,
 ) -> Vec<(
     &'static str,
     adventuresim_core::social::SocialActionKind,
@@ -43,32 +47,27 @@ fn social_actions(
     [
         ("awareness", Listen, "listen"),
         ("awareness", Commiserate, "commiserate"),
-        ("juggler", LightenMood, "humor"),
+        ("juggler", LightenMood, "lighten_mood"),
         ("crown", Rally, "command"),
         ("conversation", Reframe, "deception"),
-        ("rose", Flirt, "seduction"),
+        ("rose", Flirt, "flirt"),
     ]
     .into_iter()
-    .filter(|(_, action, _)| action.available_for(topic))
+    .filter(|(_, action, _)| {
+        action.available_for(topic)
+            && !(*action == LightenMood && joke_blocked)
+            && !(*action == Flirt && flirt_blocked)
+    })
     .collect()
 }
 
-fn perceived_trait(axis: &str, value: i8) -> (&'static str, &'static str) {
-    match (axis, value.signum()) {
-        ("drive", 1) => ("Drive", "Ambitious"),
-        ("drive", -1) => ("Drive", "Content"),
-        ("self_regard", 1) => ("Self-regard", "Proud"),
-        ("self_regard", -1) => ("Self-regard", "Humble"),
-        ("conviction", 1) => ("Conviction", "Zealous"),
-        ("conviction", -1) => ("Conviction", "Irreverent"),
-        ("hygiene", 1) => ("Hygiene", "Cleanly"),
-        ("hygiene", -1) => ("Hygiene", "Slovenly"),
-        ("drive", _) => ("Drive", "Neutral"),
-        ("self_regard", _) => ("Self-regard", "Neutral"),
-        ("conviction", _) => ("Conviction", "Neutral"),
-        ("hygiene", _) => ("Hygiene", "Neutral"),
-        _ => ("Personality", "Uncertain"),
-    }
+fn perceived_trait(
+    axis: crate::spacetimedb::BeliefAxis,
+    value: i8,
+) -> (&'static str, &'static str) {
+    let axis = axis.core();
+    axis.value_label(value)
+        .map_or(("Personality", "Uncertain"), |value| (axis.label(), value))
 }
 
 fn familiarity_label(hours: f32) -> String {
@@ -86,30 +85,31 @@ fn belief_style(confidence: f32) -> String {
     )
 }
 
-fn personality_reaction_hint(axis: &str, value: i8) -> &'static str {
-    match (axis, value.signum()) {
+fn personality_reaction_hint(axis: crate::spacetimedb::BeliefAxis, value: i8) -> &'static str {
+    let axis = axis.core().slug();
+    match (axis, value) {
         ("drive", 1) => {
             "Likely reaction: Rallying can motivate them after defeat; pity or flippancy may offend."
         }
-        ("drive", -1) => {
+        ("drive", 2) => {
             "Likely reaction: Listening and commiseration are safer than pressuring them to prove themselves."
         }
         ("self_regard", 1) => {
             "Likely reaction: Injury is touchy; admiration may land better than pity or minimizing the wound."
         }
-        ("self_regard", -1) => {
+        ("self_regard", 2) => {
             "Likely reaction: Plain sympathy is safer; conspicuous flattery may feel insincere."
         }
         ("conviction", 1) => {
             "Likely reaction: Treat moral concerns seriously; jokes and false reassurance are especially risky."
         }
-        ("conviction", -1) => {
+        ("conviction", 2) => {
             "Likely reaction: Gentle reframing may work better than appeals to duty or conviction."
         }
-        ("hygiene", 1) => {
+        ("hygiene", 2) => {
             "Likely reaction: Filth is genuinely upsetting; acknowledge it rather than dismissing the concern."
         }
-        ("hygiene", -1) => {
+        ("hygiene", 1) => {
             "Likely reaction: They may not share strong concern about grime, so forceful reassurance can seem strange."
         }
         _ => "Likely reaction: Their response to riskier social actions remains uncertain.",
@@ -120,7 +120,7 @@ fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
     format!(
         "Confidence: {:.0}%\n{}",
         belief.confidence.clamp(0.0, 1.0) * 100.0,
-        personality_reaction_hint(&belief.axis, belief.perceived_value)
+        personality_reaction_hint(belief.axis, belief.perceived_value)
     )
 }
 
@@ -209,7 +209,7 @@ pub fn party_social_dialog(
                 } @else {
                     ul class="perceived-traits" aria-label="Perceived personality traits" {
                         @for belief in &social.beliefs {
-                            @let (_, value) = perceived_trait(&belief.axis, belief.perceived_value);
+                            @let (_, value) = perceived_trait(belief.axis, belief.perceived_value);
                             li class="perceived-trait" style=(belief_style(belief.confidence))
                                 tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
                                 (value)
@@ -231,8 +231,8 @@ pub fn party_social_dialog(
                                     p class="social-addressed-status" { "Addressed by you" }
                                 }
                                 @if let Some(axis) = topic.and_then(adventuresim_core::social::axis_for_topic) {
-                                    @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis == axis.slug()) {
-                                        @let (axis_name, value) = perceived_trait(&belief.axis, belief.perceived_value);
+                                    @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis.core() == axis) {
+                                        @let (axis_name, value) = perceived_trait(belief.axis, belief.perceived_value);
                                         p class="belief-copy" style=(belief_style(belief.confidence))
                                             tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
                                             "You think their " (axis_name) " is " (value) "."
@@ -248,7 +248,7 @@ pub fn party_social_dialog(
                                 @if let Some(topic) = topic {
                                   div class="social-actions" aria-label=(format!("Actions for {}", source.label)) {
                                     @let shares_concern = social.shared_concerns.contains(&topic);
-                                    @for (default_icon, action, value) in social_actions(is_self, topic) {
+                                    @for (default_icon, action, value) in social_actions(is_self, topic, social.joke_blocked, social.flirt_blocked) {
                                       @let action_shares_concern = action != adventuresim_core::social::SocialActionKind::Commiserate || shares_concern;
                                       @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
                                       @let description = action.description(topic, action_shares_concern);
@@ -565,7 +565,7 @@ mod tests {
         let defeat = SocialActionKind::Commiserate.description(SocialTopic::Defeat, true);
         assert_eq!(defeat, "Commiserate about the defeat");
         assert!(!defeat.to_ascii_lowercase().contains("goblin"));
-        let actions = social_actions(false, SocialTopic::Defeat);
+        let actions = social_actions(false, SocialTopic::Defeat, false, false);
         assert_eq!(actions.len(), 6);
         assert!(
             actions
@@ -573,11 +573,28 @@ mod tests {
                 .any(|(_, action, _)| *action == SocialActionKind::Listen)
         );
         assert_eq!(
-            social_actions(true, SocialTopic::Defeat),
+            social_actions(true, SocialTopic::Defeat, true, true),
             vec![("inner-self", SocialActionKind::Reflect, "reflect")]
         );
-        assert_eq!(social_actions(false, SocialTopic::Hunger).len(), 3);
-        assert_eq!(social_actions(false, SocialTopic::Faith).len(), 4);
+        assert_eq!(
+            social_actions(false, SocialTopic::Hunger, false, false).len(),
+            3
+        );
+        assert_eq!(
+            social_actions(false, SocialTopic::Faith, false, false).len(),
+            4
+        );
+        let reserved = social_actions(false, SocialTopic::Defeat, true, true);
+        assert_eq!(reserved.len(), 4);
+        assert!(reserved.iter().all(|(_, action, _)| !matches!(
+            action,
+            SocialActionKind::LightenMood | SocialActionKind::Flirt
+        )));
+        assert!(
+            reserved
+                .iter()
+                .any(|(_, action, _)| *action == SocialActionKind::Rally)
+        );
         assert_eq!(SocialActionKind::Commiserate.skill_name(false), "Deception");
         assert_eq!(
             SocialActionKind::Flirt.description(SocialTopic::Injury, false),
@@ -590,13 +607,37 @@ mod tests {
             id: "belief".into(),
             observer_id: 1,
             subject_id: 2,
-            axis: "self_regard".into(),
+            axis: crate::spacetimedb::BeliefAxis::SelfRegard,
             perceived_value: 1,
             confidence: 0.64,
             observed_at_minute: 0,
         });
         assert!(tooltip.contains("Confidence: 64%"));
         assert!(tooltip.contains("Injury is touchy"));
+        assert_eq!(
+            perceived_trait(crate::spacetimedb::BeliefAxis::Inclination, 1),
+            ("Inclination", "Either")
+        );
+        assert_eq!(
+            perceived_trait(crate::spacetimedb::BeliefAxis::Inclination, 3),
+            ("Inclination", "Neither")
+        );
+        assert_eq!(
+            perceived_trait(crate::spacetimedb::BeliefAxis::Conscience, 2),
+            ("Conscience", "Callous")
+        );
+        assert_eq!(
+            perceived_trait(crate::spacetimedb::BeliefAxis::Conscience, 3),
+            ("Conscience", "Cruel")
+        );
+        assert_eq!(
+            perceived_trait(crate::spacetimedb::BeliefAxis::Presentation, 1),
+            ("Presentation", "Ambiguous")
+        );
+        assert_eq!(
+            perceived_trait(crate::spacetimedb::BeliefAxis::Inclination, -1),
+            ("Personality", "Uncertain")
+        );
     }
 
     #[test]

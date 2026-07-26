@@ -232,11 +232,9 @@ fn training_target_skill(
         TrainingTarget::FixedSkill { skill } => match skill.as_str() {
             "will" => Some(Skill::Will),
             "insight" => Some(Skill::Insight),
-            "self_awareness" => Some(Skill::SelfAwareness),
-            "humor" => Some(Skill::Humor),
+            "charm" => Some(Skill::Charm),
             "command" => Some(Skill::Command),
             "deception" => Some(Skill::Deception),
-            "seduction" => Some(Skill::Seduction),
             "physiology" => Some(Skill::Physiology),
             "cooking" => Some(Skill::Cooking),
             "anatomy" => Some(Skill::Anatomy),
@@ -525,7 +523,7 @@ fn skills_table(
                             },
                         ))
                         (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, combat_training, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
-                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, immediate_actions, ActivityEffectRates::carousing(), None, None, instinct_training, "Drink and socialize to improve morale and train Humor at 25% speed, at a small cost to Virtue."))
+                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, immediate_actions, ActivityEffectRates::carousing(), None, None, instinct_training, "Drink and socialize to improve morale and train Charm at 25% speed, at a small cost to Virtue."))
                         @let apprenticeship_id = schedule.downtime.apprenticeship_organization_id.as_deref().filter(|id| preview.profession.contains_key(*id)).or_else(|| preview.profession.keys().next().map(String::as_str));
                         @if let Some(service_id) = apprenticeship_id {
                             (schedule_organization_selection("Training organization", "apprenticeship_organization_id", service_id, preview.profession.iter().map(|(id, entry)| (id.as_str(), entry.tier_label.as_str())).collect()))
@@ -965,25 +963,13 @@ fn social_skill_rows(
 ) -> Markup {
     let entries = [
         ("Insight", "insight", Skill::Insight, skills.insight_hours),
-        (
-            "Self-awareness",
-            "self-awareness",
-            Skill::SelfAwareness,
-            skills.self_awareness_hours,
-        ),
-        ("Humor", "humor", Skill::Humor, skills.humor_hours),
+        ("Charm", "charm", Skill::Charm, skills.charm_hours),
         ("Command", "command", Skill::Command, skills.command_hours),
         (
             "Deception",
             "deception",
             Skill::Deception,
             skills.deception_hours,
-        ),
-        (
-            "Seduction",
-            "seduction",
-            Skill::Seduction,
-            skills.seduction_hours,
         ),
     ];
     if entries.iter().all(|entry| entry.3 <= 0.0) {
@@ -1345,11 +1331,9 @@ impl PlayerSkills for CharacterSkillHours<'_> {
             Skill::Throw => skills.throw_hours,
             Skill::Will => skills.will_hours,
             Skill::Insight => skills.insight_hours,
-            Skill::SelfAwareness => skills.self_awareness_hours,
-            Skill::Humor => skills.humor_hours,
+            Skill::Charm => skills.charm_hours,
             Skill::Command => skills.command_hours,
             Skill::Deception => skills.deception_hours,
-            Skill::Seduction => skills.seduction_hours,
             Skill::Physiology => skills.physiology_hours,
             Skill::Cooking => skills.cooking_hours,
             Skill::Stealth => skills.stealth_hours,
@@ -1598,7 +1582,7 @@ fn activity_training_cell(
         "combat_training_minutes" => {
             vec![("Relevant combat skills".into(), training_multiplier)]
         }
-        "carousing_minutes" => vec![("Humor".into(), 0.25 * training_multiplier)],
+        "carousing_minutes" => vec![("Charm".into(), 0.25 * training_multiplier)],
         "labor_minutes" => vec![("Will".into(), 0.25 * training_multiplier)],
         "thievery_minutes" => vec![("Stealth".into(), 0.25 * training_multiplier)],
         "raiding_minutes" => vec![("Relevant combat skills".into(), 0.25 * training_multiplier)],
@@ -1849,15 +1833,13 @@ mod tests {
     }
 
     #[test]
-    fn social_skill_family_has_an_average_and_six_expandable_icon_rows() {
+    fn social_skill_family_has_an_average_and_four_expandable_icon_rows() {
         let skills = CharacterSkills {
             character_id: 7,
             insight_hours: 100.0,
-            self_awareness_hours: 80.0,
-            humor_hours: 60.0,
+            charm_hours: 80.0,
             command_hours: 40.0,
             deception_hours: 20.0,
-            seduction_hours: 10.0,
             ..CharacterSkills::default()
         };
         let markup = social_skill_rows(&skills, 5.0, 1.0, None).into_string();
@@ -1865,15 +1847,8 @@ mod tests {
         assert!(markup.contains("data-skill-tooltip"));
         assert!(markup.contains("Social"));
         assert!(markup.contains("Governed by Instinct"));
-        assert_eq!(markup.matches("data-social-detail").count(), 6);
-        for icon in [
-            "conversation.svg",
-            "awareness.svg",
-            "inner-self.svg",
-            "juggler.svg",
-            "crown.svg",
-            "rose.svg",
-        ] {
+        assert_eq!(markup.matches("data-social-detail").count(), 4);
+        for icon in ["conversation.svg", "awareness.svg", "crown.svg", "rose.svg"] {
             assert!(markup.contains(icon), "missing social icon {icon}");
         }
     }
@@ -1937,11 +1912,9 @@ mod tests {
             throw_hours: 0.0,
             will_hours: 0.0,
             insight_hours: 0.0,
-            self_awareness_hours: 0.0,
-            humor_hours: 0.0,
+            charm_hours: 0.0,
             command_hours: 0.0,
             deception_hours: 0.0,
-            seduction_hours: 0.0,
             physiology_hours: 0.0,
             cooking_hours: 0.0,
             religion_hours: adventuresim_world_schema::ReligionHours {
@@ -2262,7 +2235,7 @@ mod tests {
         let carousing =
             activity_training_cell("Carousing", "carousing_minutes", 120, None, 1.0).into_string();
         assert!(carousing.contains(">+0.50h<"));
-        assert!(carousing.contains("Humor: +0.50h"));
+        assert!(carousing.contains("Charm: +0.50h"));
 
         let profession = ProfessionActivityPreview {
             training_rates: vec![

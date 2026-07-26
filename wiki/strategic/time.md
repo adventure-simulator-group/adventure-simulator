@@ -22,7 +22,7 @@ convalescence, maintenance, and fatigue recovery, the server considers enabled
 companions in stable character-ID order and selects an available approach for
 the first stable unaddressed source by combining the actor's effective relevant
 skills with their immutable personality. A Sanguine, Gregarious actor may lean
-toward Humor, for example, while an Ambitious, Brave actor may favor Command;
+toward humorous Charm, for example, while an Ambitious, Brave actor may favor Command;
 the strongest effective skill can outweigh that disposition. Exact-score ties
 favor the riskier fitting action instead of collapsing to Listen. The ordinary
 authoritative social action path still decides life, party, co-location, topic,
@@ -39,7 +39,7 @@ Activities combine reduced-rate training with another strategic result:
 
 - **Apprenticeship** is available after accepting a service NPC's offer to teach their profession. It costs Gold and divides conserved training time among that profession's associated skills. At profession rank 2, **Practice** replaces paid instruction and earns a small wage; at rank 4 it earns a substantially better master's income. Religious variants are called novice, cleric, and teacher rather than apprentice, journeyman, and master, and their independent practice earns Virtue instead of Gold.
 - **Combat Training** includes sparring and target practice. It trains equipment-relevant Melee, Ranged, Dodge, and Block along with Will and Balance.
-- **Carousing** trains Humor, grants saturating Morale, and imposes a small Virtue penalty.
+- **Carousing** trains Charm, grants saturating Morale, and imposes a small Virtue penalty.
 - **Prayer** recites and practices prayers rather than studying doctrine. For a professed character it trains their own Religion tradition at 25% speed, and its saturating morale is scaled by the party's knowledge of that tradition. A character with no professed religion instead sees **Meditate**, receives one quarter of the ordinary saturating morale independently of party Religion, and gains no Religion hours, Fervor, or neglect.
 
 Religion stores only direct hours in each tradition. Correlated knowledge is derived from those direct hours and never fed back into storage. Religious apprenticeship and practice train the tradition represented by the service NPC rather than an aggregate Religion skill.
