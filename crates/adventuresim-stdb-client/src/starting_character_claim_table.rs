@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
 use super::starting_character_claim_type::StartingCharacterClaim;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

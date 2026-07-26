@@ -4,11 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct CreateStartingCharacterArgs {
     pub generator_version: u16,
     pub seed: String,
+    pub age_tier: StartingAgeTierCoordinate,
     pub slot: u8,
 }
 
@@ -17,6 +20,7 @@ impl From<CreateStartingCharacterArgs> for super::Reducer {
         Self::CreateStartingCharacter {
             generator_version: args.generator_version,
             seed: args.seed,
+            age_tier: args.age_tier,
             slot: args.slot,
         }
     }
@@ -41,9 +45,10 @@ pub trait create_starting_character {
         &self,
         generator_version: u16,
         seed: String,
+        age_tier: StartingAgeTierCoordinate,
         slot: u8,
     ) -> __sdk::Result<()> {
-        self.create_starting_character_then(generator_version, seed, slot, |_, _| {})
+        self.create_starting_character_then(generator_version, seed, age_tier, slot, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `create_starting_character` to run as soon as possible,
@@ -56,6 +61,7 @@ pub trait create_starting_character {
         &self,
         generator_version: u16,
         seed: String,
+        age_tier: StartingAgeTierCoordinate,
         slot: u8,
 
         callback: impl FnOnce(
@@ -71,6 +77,7 @@ impl create_starting_character for super::RemoteReducers {
         &self,
         generator_version: u16,
         seed: String,
+        age_tier: StartingAgeTierCoordinate,
         slot: u8,
 
         callback: impl FnOnce(
@@ -83,6 +90,7 @@ impl create_starting_character for super::RemoteReducers {
             CreateStartingCharacterArgs {
                 generator_version,
                 seed,
+                age_tier,
                 slot,
             },
             callback,

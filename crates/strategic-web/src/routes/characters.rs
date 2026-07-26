@@ -37,6 +37,14 @@ struct CandidateQuery {
     seed: Option<String>,
     age: Option<StartingAgeTier>,
     selected: Option<u8>,
+    view: Option<CandidateView>,
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum CandidateView {
+    Profile,
+    Inventory,
 }
 
 async fn character_condition(
@@ -121,8 +129,18 @@ async fn candidate_roster(Query(query): Query<CandidateQuery>) -> Response {
         }
     };
     let selected = query.selected.filter(|slot| *slot < candidates.len() as u8);
-    Html(character_candidates_page(version, seed, age, &candidates, selected).into_string())
-        .into_response()
+    Html(
+        character_candidates_page(
+            version,
+            seed,
+            age,
+            &candidates,
+            selected,
+            query.view == Some(CandidateView::Inventory),
+        )
+        .into_string(),
+    )
+    .into_response()
 }
 
 async fn confirm_candidate(

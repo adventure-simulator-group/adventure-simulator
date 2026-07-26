@@ -6,7 +6,7 @@ use super::settlement::{
     CharacterPortraitView, CharacterSheetActions, CharacterSheetView, character_portrait_overlay,
     character_sheet_markup,
 };
-use super::{entry_layout, panel, sidebar_section};
+use super::{entry_layout, item_display_name, item_type_icon, panel, sidebar_section};
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterPersonality,
@@ -140,6 +140,7 @@ pub fn character_candidates_page(
     age_tier: StartingAgeTier,
     candidates: &[StartingCharacterSpec],
     selected: Option<u8>,
+    show_inventory: bool,
 ) -> Markup {
     let presentations = candidates
         .iter()
@@ -151,21 +152,36 @@ pub fn character_candidates_page(
     let portraits = presentations
         .iter()
         .enumerate()
-        .map(|(slot, candidate)| CharacterPortraitView {
-            id: candidate.character.id,
-            name: &candidate.character.name,
-            alive: true,
-            active: false,
-            selected: selected == Some(slot as u8),
-            href: format!(
+        .map(|(slot, candidate)| {
+            let profile_href = format!(
                 "/characters/candidates?version={version}&seed={seed}&age={}&selected={slot}",
                 age_tier.as_str()
-            ),
-            title: format!("Inspect {}", candidate.character.name),
-            aria_label: format!("Inspect {}", candidate.character.name),
-            decoration: None,
-            badge: None,
-            actions: None,
+            );
+            let inventory_href = format!("{profile_href}&view=inventory");
+            CharacterPortraitView {
+                id: candidate.character.id,
+                name: &candidate.character.name,
+                alive: true,
+                active: false,
+                selected: selected == Some(slot as u8),
+                href: profile_href,
+                title: format!("Inspect {}", candidate.character.name),
+                aria_label: format!("Inspect {}", candidate.character.name),
+                decoration: None,
+                badge: None,
+                actions: Some(html! {
+                    span class="party-portrait-actions" aria-label=(format!("Actions for {}", candidate.character.name)) {
+                        a href=(inventory_href)
+                            class="party-portrait-action candidate-inventory-action"
+                            title=(format!("View {}'s inventory", candidate.character.name))
+                            aria-label=(format!("View {}'s inventory", candidate.character.name)) {
+                            span class="party-action-icon"
+                                style="--party-action-icon: url('/static/icons/game/knapsack.svg')"
+                                role="img" aria-label="Inventory" {}
+                        }
+                    }
+                }),
+            }
         })
         .collect::<Vec<_>>();
     let medical = MedicalPresentation::default();
@@ -177,23 +193,11 @@ pub fn character_candidates_page(
             span data-candidate-roster data-age-tier=(age_tier.as_str()) hidden {}
     };
     let center_after = html! {
-            div class="candidate-package-summary" data-candidate-package {
-                p { strong { "Background: " } (&spec.background) }
-                @if let Some(organization) = &spec.organization {
-                    p { strong { "Profession: " } (spec.profession.map(|profession| profession.label()).unwrap_or("None")) }
-                    p { strong { "Organization: " } (&organization.organization_name) }
-                    p { strong { "Rank: " } (&organization.rank_name) }
-                } @else {
-                    p { strong { "Profession: " } "None" }
-                }
-                p {
-                    strong { "Religion: " }
-                    (spec.religion_id.as_deref().map(|religion| religion.replace('_', " ")).unwrap_or_else(|| "None".into()))
-                }
-                p { strong { "Starting purse: " } (spec.currency) }
-                p {
-                    strong { "Package: " }
-                    (spec.inventory.iter().map(|item| format!("{} x{}", item.item_id.replace('_', " "), item.quantity)).collect::<Vec<_>>().join(", "))
+            @if show_inventory {
+                (candidate_inventory_view(spec))
+            } @else {
+                div class="candidate-background-summary" {
+                    p { strong { "Background: " } (&spec.background) }
                 }
             }
             @if let Some(selected) = selected {
@@ -248,6 +252,49 @@ pub fn character_candidates_page(
     });
 
     entry_layout("Choose Your Adventurer", content)
+}
+
+fn candidate_inventory_view(spec: &StartingCharacterSpec) -> Markup {
+    html! {
+        section class="candidate-inventory-view" data-candidate-inventory {
+            header class="candidate-inventory-header" {
+                h2 { (item_type_icon("coin")) " Starting inventory" }
+                span class="candidate-inventory-purse" {
+                    (item_type_icon("coin")) (spec.currency) " coins"
+                }
+            }
+            div class="candidate-inventory-grid" {
+                @for item in &spec.inventory {
+                    article class="candidate-inventory-item" {
+                        (item_type_icon(&item.item_id))
+                        span class="candidate-inventory-copy" {
+                            strong { (item_display_name(&item.item_id)) }
+                            span {
+                                "Quantity " (item.quantity)
+                                @if let Some(slot) = &item.equipped {
+                                    " · Equipped: " (starting_slot_label(*slot))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn starting_slot_label(slot: StartingSlot) -> &'static str {
+    match slot {
+        StartingSlot::LeftHand => "left hand",
+        StartingSlot::RightHand => "right hand",
+        StartingSlot::LeftArm => "left arm",
+        StartingSlot::RightArm => "right arm",
+        StartingSlot::LeftLeg => "left leg",
+        StartingSlot::RightLeg => "right leg",
+        StartingSlot::Head => "head",
+        StartingSlot::Chest => "chest",
+        StartingSlot::Stomach => "stomach",
+    }
 }
 
 struct CandidatePresentation {
@@ -624,6 +671,7 @@ mod creation_tests {
             StartingAgeTier::Young,
             &candidates,
             None,
+            false,
         )
         .into_string();
         assert_eq!(markup.matches("class=\"party-portrait\"").count(), 5);
@@ -632,7 +680,8 @@ mod creation_tests {
         assert!(markup.contains("class=\"party-portrait-overlay\""));
         assert!(markup.contains("class=\"party-attributes-list\""));
         assert!(markup.contains("class=\"party-skills-table\""));
-        assert!(!markup.contains("class=\"party-portrait-actions\""));
+        assert!(markup.contains("class=\"party-portrait-actions\""));
+        assert!(markup.contains("candidate-inventory-action"));
         assert!(!markup.contains("class=\"schedule-section-heading\""));
         assert!(!markup.contains("data-skill-schedule"));
         assert!(!markup.contains("data-candidate-confirm-form"));
@@ -653,6 +702,7 @@ mod creation_tests {
             StartingAgeTier::Adult,
             &candidates,
             Some(2),
+            false,
         )
         .into_string();
         assert!(!markup.contains("role=\"dialog\""));
@@ -663,10 +713,36 @@ mod creation_tests {
         assert!(markup.contains("name=\"slot\" value=\"2\""));
         assert_eq!(markup.matches("data-character-alive=\"true\"").count(), 10);
         assert!(markup.contains("name=\"age\" value=\"adult\""));
-        assert!(markup.contains("data-candidate-package"));
-        assert!(markup.contains("Organization:"));
-        assert!(markup.contains("Rank:"));
-        assert!(markup.contains("Religion:"));
+        assert!(!markup.contains("data-candidate-package"));
+        assert!(markup.contains("organization-identity-control is-readonly"));
+        assert!(markup.contains("religion-identity-control"));
+        assert!(markup.contains("candidate-inventory-action"));
+    }
+
+    #[test]
+    fn candidate_inventory_opens_from_the_portrait_without_listing_the_package_on_profile() {
+        let candidates = roster(
+            2,
+            "00112233445566778899aabbccddeeff",
+            StartingAgeTier::Adult,
+        )
+        .unwrap();
+        let markup = character_candidates_page(
+            2,
+            "00112233445566778899aabbccddeeff",
+            StartingAgeTier::Adult,
+            &candidates,
+            Some(2),
+            true,
+        )
+        .into_string();
+        assert!(markup.contains("data-candidate-inventory"));
+        assert!(markup.contains("Starting inventory"));
+        assert!(markup.contains("candidate-inventory-item"));
+        assert!(markup.contains("view=inventory"));
+        assert!(!markup.contains("Package:"));
+        assert!(markup.contains("party-attributes-list"));
+        assert!(markup.contains("party-skills-table"));
     }
 
     #[test]
