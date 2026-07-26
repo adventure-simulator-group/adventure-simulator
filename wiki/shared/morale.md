@@ -177,6 +177,14 @@ use humor, rally with Command, offer a deceptive reframe, or flirt. Labels are
 generic and grounded in the durable source; the game does not invent incidental
 details about a battle or conversation.
 
+Joke and Flirt remain distinct actions even though both use Charm. Actor
+personality determines whether those approaches are available: Grave
+characters cannot Joke, and Proper characters cannot Flirt. Their reserve has
+a compensating benefit when Rallying: Grave and Proper each add 0.35 to the
+actor's Command check, stacking to 0.70 when both apply. Merry and Amorous
+characters retain the corresponding action, while target personality and
+mutual inclination/presentation still determine how well it lands.
+
 Successful realized morale improvement increases the recipient's directional
 Affinity toward the actor. Gains diminish near the positive cap. Failure,
 exposure, or a boundary-crossing response can lower Affinity. Repeating the same

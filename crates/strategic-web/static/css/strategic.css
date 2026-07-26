@@ -1920,7 +1920,7 @@ body.character-action-dialog-open { overflow: hidden; }
 .physiology-dialog-close:active { box-shadow: var(--tactile-shadow-pressed); transform: translateY(2px); }
 .cooking-dialog { width: min(76rem, 100%); padding: 0; }
 .cooking-dialog > .character-action-dialog-header { padding: 1rem 1rem 0; }
-.social-dialog { width: min(52rem, 100%); }
+.social-dialog { width: min(40rem, 100%); }
 .automatic-social-chat {
   display: flex;
   align-items: center;

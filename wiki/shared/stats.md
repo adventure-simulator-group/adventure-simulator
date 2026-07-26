@@ -255,7 +255,7 @@ There's no persuasion system or anything for the MVP, this is primarily a
 [morale](morale.md) and relationship system. All current Social leaves are
 governed by Instinct.
 
-Insight reads others and oneself, Charm powers both humor and compatible flirtation, Command rallies and coordinates, and Deception sustains false impressions. Party Command is led by the strongest individual check. Additional members receive a saturating coordination benefit, then contribute half of their deviation from a 2.5 baseline. Checks above 2.5 help and checks below 2.5 burden the party's social leadership. The result is capped from 0 to 5; adding arbitrarily many low-Command members cannot manufacture a high result. Character sheets summarize these four skills with an expandable Social meta-skill whose rank is their average.
+Insight reads others and oneself, Charm powers both humor and compatible flirtation, Command rallies and coordinates, and Deception sustains false impressions. Joke and Flirt remain separate morale actions: Grave actors cannot Joke and Proper actors cannot Flirt, while each of those reserved traits adds 0.35 to Rally Command. Party Command is led by the strongest individual check. Additional members receive a saturating coordination benefit, then contribute half of their deviation from a 2.5 baseline. Checks above 2.5 help and checks below 2.5 burden the party's social leadership. The result is capped from 0 to 5; adding arbitrarily many low-Command members cannot manufacture a high result. Character sheets summarize these four skills with an expandable Social meta-skill whose rank is their average.
 
 0. Autistic
 1. Cold and aloof

@@ -56,6 +56,7 @@ test("character actions use one dialog and raised-button contract", () => {
   assert.match(components, /\.btn-primary[\s\S]*color: #fff/);
   assert.match(styles, /\.btn:not\(\.btn-danger, \.btn-primary, \.btn-secondary\)/);
   assert.match(styles, /\.skill-schedule \.party-skill-name-column \{ width: 2\.75rem; \}/);
+  assert.match(styles, /\.social-dialog \{ width: min\(40rem, 100%\); \}/);
 });
 
 test("social and surgery inject overlays into the ordinary character renderers", () => {

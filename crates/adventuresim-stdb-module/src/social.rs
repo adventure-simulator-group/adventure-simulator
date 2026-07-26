@@ -5,11 +5,12 @@ use adventuresim_core::social::{
     AFFINITY_MAX, AFFINITY_MIN, Courtship as CoreCourtship, Inclination as CoreInclination,
     Mirth as CoreMirth, PersonalityAxis, Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES,
     SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt, SocialTopic,
-    Transparency as CoreTransparency, affinity_gain, axis_for_topic, canonical_cooldown_id,
-    canonical_pair, choose_automatic_social_action, diagnosed_axis, diagnosis_for_axis,
-    discovery_training_split, flirt_charm_modifier, humor_charm_modifier,
-    incompatible_flirt_outcome, resolve_social_attempt, self_knowledge_insight_modifier,
-    settle_affinity, should_replace_belief, social_source_eligible, topic_for_source_kind,
+    Transparency as CoreTransparency, actor_allows_social_action, affinity_gain, axis_for_topic,
+    canonical_cooldown_id, canonical_pair, choose_automatic_social_action,
+    command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
+    flirt_charm_modifier, humor_charm_modifier, incompatible_flirt_outcome, resolve_social_attempt,
+    self_knowledge_insight_modifier, settle_affinity, should_replace_belief,
+    social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -842,10 +843,14 @@ fn automatic_social_action(
         .map_or(0, |row| row.minutes);
     let language = crate::character::shared_language_coefficient(ctx, actor_id, target_id);
     let mut candidates = Vec::with_capacity(ACTIONS.len());
-    for action in ACTIONS
-        .into_iter()
-        .filter(|action| action.available_for(topic))
-    {
+    for action in ACTIONS.into_iter().filter(|action| {
+        action.available_for(topic)
+            && actor_allows_social_action(
+                *action,
+                core_mirth(personality.mirth),
+                core_courtship(personality.courtship),
+            )
+    }) {
         let action_kind = action.reducer_value();
         let cooldown_id = canonical_cooldown_id(actor_id, target_id, topic, action_kind);
         if ctx
@@ -857,14 +862,19 @@ fn automatic_social_action(
         {
             continue;
         }
-        let skill_check = adventuresim_world_schema::language_scaled_effect(
-            crate::condition::mental_check(
-                ctx,
-                actor_id,
-                social_action_skill(action, shares_concern),
-            )?,
-            language,
-        );
+        let mut unscaled_skill_check = crate::condition::mental_check(
+            ctx,
+            actor_id,
+            social_action_skill(action, shares_concern),
+        )?;
+        if action == SocialActionKind::Rally {
+            unscaled_skill_check += command_gravitas_modifier(
+                core_mirth(personality.mirth),
+                core_courtship(personality.courtship),
+            );
+        }
+        let skill_check =
+            adventuresim_world_schema::language_scaled_effect(unscaled_skill_check, language);
         candidates.push((
             action,
             skill_check,
@@ -1254,6 +1264,14 @@ fn perform_social_action_authoritative(
         .find(target_id)
         .ok_or("Target not found")?;
     validate_social_pair(ctx, &actor, &target, is_self)?;
+    let actor_personality = crate::personality::personality_or_neutral(ctx, actor_id);
+    if !actor_allows_social_action(
+        action,
+        core_mirth(actor_personality.mirth),
+        core_courtship(actor_personality.courtship),
+    ) {
+        return Err("Your disposition does not permit that social approach".into());
+    }
     let source = ctx
         .db
         .character_morale_source()
@@ -1298,13 +1316,18 @@ fn perform_social_action_authoritative(
     let actor_shares_concern = shares_concern(ctx, actor_id, topic);
     let skill = social_action_skill(action, actor_shares_concern);
     let mut skill_check = crate::condition::mental_check(ctx, actor_id, skill)?;
+    if action == SocialActionKind::Rally {
+        skill_check += command_gravitas_modifier(
+            core_mirth(actor_personality.mirth),
+            core_courtship(actor_personality.courtship),
+        );
+    }
     if !is_self {
         skill_check = adventuresim_world_schema::language_scaled_effect(
             skill_check,
             crate::character::shared_language_coefficient(ctx, actor_id, target_id),
         );
     }
-    let actor_personality = crate::personality::personality_or_neutral(ctx, actor_id);
     let target_personality = crate::personality::personality_or_neutral(ctx, target_id);
     let base_target_deception = crate::condition::mental_check(ctx, target_id, Skill::Deception)?;
     let obscuring_deception = (base_target_deception
@@ -1925,6 +1948,38 @@ mod contract_tests {
                     SocialTopic::Defeat,
                 )
         );
+    }
+
+    #[test]
+    fn manual_and_automatic_actions_share_actor_trait_gates_and_rally_bonus() {
+        let source = include_str!("social.rs");
+        let automatic = source
+            .split("fn automatic_social_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn sensitivity").next())
+            .expect("automatic selector");
+        assert!(automatic.contains("actor_allows_social_action("));
+        assert!(automatic.contains("command_gravitas_modifier("));
+        assert!(
+            automatic.find("command_gravitas_modifier(")
+                < automatic.find("language_scaled_effect(")
+        );
+
+        let authoritative = source
+            .split("fn perform_social_action_authoritative")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn apply_automatic_social_chats")
+                    .next()
+            })
+            .expect("authoritative action");
+        assert!(authoritative.contains("actor_allows_social_action("));
+        assert!(authoritative.contains("command_gravitas_modifier("));
+        assert!(
+            authoritative.find("command_gravitas_modifier(")
+                < authoritative.find("language_scaled_effect(")
+        );
+        assert!(authoritative.contains("Your disposition does not permit"));
     }
 
     #[test]

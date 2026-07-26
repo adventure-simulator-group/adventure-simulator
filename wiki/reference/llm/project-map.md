@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1305)
+## Files (1297)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -88,8 +88,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/simulation_security.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/skill.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/social.rs` — Rust source module for this component.
-- `crates/adventuresim-core/src/starting_character.rs` — Rust source module for this component.
-- `crates/adventuresim-core/src/starting_character.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/starting_character.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_currency.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_economy.rs` — Rust source module for this component.
@@ -755,8 +753,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/alcohol.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/capability.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/character.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/src/character.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/src/character.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/condition.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/disease.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/equipment_law.rs` — Rust source module for this component.
@@ -904,8 +900,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/spacetimedb/mod.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/spacetimedb/types.rs` — Strategic web SpacetimeDB integration module.
 - `crates/strategic-web/src/strategic_map.rs` — Rust source module for this component.
-- `crates/strategic-web/src/templates/character.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/character.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/character.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/components.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/inventory_browser.rs` — Strategic web server-rendered template.
@@ -1304,8 +1298,6 @@ development, or other wiki document before changing a subsystem.
 - `wiki/shared/stats.md` — Project documentation.
 - `wiki/shared/strata-map.md` — Project documentation.
 - `wiki/shared/terrain.md` — Project documentation.
-- `wiki/strategic/character.md` — Project documentation.
-- `wiki/strategic/character.md` — Project documentation.
 - `wiki/strategic/character.md` — Project documentation.
 - `wiki/strategic/quests.md` — Project documentation.
 - `wiki/strategic/settlement.md` — Project documentation.

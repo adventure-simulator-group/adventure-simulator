@@ -307,6 +307,23 @@ pub const fn humor_charm_modifier(actor: Mirth, target: Mirth) -> f32 {
     }
 }
 
+/// Grave and Proper characters give up their matching expressive Charm
+/// approaches, but their reserve makes direct Command somewhat more credible.
+/// The two modest bonuses stack without replacing trained Command.
+pub const fn command_gravitas_modifier(mirth: Mirth, courtship: Courtship) -> f32 {
+    let grave = if matches!(mirth, Mirth::Grave) {
+        0.35
+    } else {
+        0.0
+    };
+    let proper = if matches!(courtship, Courtship::Proper) {
+        0.35
+    } else {
+        0.0
+    };
+    grave + proper
+}
+
 /// Returns no modifier when flirting cannot succeed. Same-presentation mutual
 /// attraction receives a recognition bonus on top of Courtship's stronger
 /// response.
@@ -559,6 +576,21 @@ impl SocialActionKind {
             Self::Reframe => 0.65,
             Self::Flirt => 0.85,
         }
+    }
+}
+
+/// Actor personality is authoritative availability, separate from whether an
+/// action fits the current morale topic. Neutral and positive values retain
+/// access; only the explicitly contrary value closes its expressive action.
+pub const fn actor_allows_social_action(
+    action: SocialActionKind,
+    mirth: Mirth,
+    courtship: Courtship,
+) -> bool {
+    match action {
+        SocialActionKind::LightenMood => !matches!(mirth, Mirth::Grave),
+        SocialActionKind::Flirt => !matches!(courtship, Courtship::Proper),
+        _ => true,
     }
 }
 
@@ -968,6 +1000,46 @@ mod tests {
         );
         assert!(introspective.1 > neutral.1);
         assert!(neutral.1 > self_deceiving.1);
+    }
+
+    #[test]
+    fn reserved_traits_trade_expressive_actions_for_command_gravitas() {
+        assert!(actor_allows_social_action(
+            SocialActionKind::LightenMood,
+            Mirth::Merry,
+            Courtship::Neutral,
+        ));
+        assert!(!actor_allows_social_action(
+            SocialActionKind::LightenMood,
+            Mirth::Grave,
+            Courtship::Neutral,
+        ));
+        assert!(actor_allows_social_action(
+            SocialActionKind::Flirt,
+            Mirth::Neutral,
+            Courtship::Amorous,
+        ));
+        assert!(!actor_allows_social_action(
+            SocialActionKind::Flirt,
+            Mirth::Neutral,
+            Courtship::Proper,
+        ));
+        assert_eq!(
+            command_gravitas_modifier(Mirth::Neutral, Courtship::Neutral),
+            0.0
+        );
+        assert_eq!(
+            command_gravitas_modifier(Mirth::Grave, Courtship::Neutral),
+            0.35
+        );
+        assert_eq!(
+            command_gravitas_modifier(Mirth::Neutral, Courtship::Proper),
+            0.35
+        );
+        assert_eq!(
+            command_gravitas_modifier(Mirth::Grave, Courtship::Proper),
+            0.7
+        );
     }
 
     #[test]

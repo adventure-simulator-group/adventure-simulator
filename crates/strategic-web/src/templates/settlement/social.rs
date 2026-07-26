@@ -18,6 +18,8 @@ pub struct SocialPresentation {
     pub shared_concerns: Vec<adventuresim_core::social::SocialTopic>,
     pub addressed_source_ids: Vec<String>,
     pub automatic_chat_enabled: bool,
+    pub joke_blocked: bool,
+    pub flirt_blocked: bool,
     pub feedback: Option<SocialFeedback>,
     pub unavailable: bool,
 }
@@ -31,6 +33,8 @@ pub struct SocialFeedback {
 fn social_actions(
     is_self: bool,
     topic: adventuresim_core::social::SocialTopic,
+    joke_blocked: bool,
+    flirt_blocked: bool,
 ) -> Vec<(
     &'static str,
     adventuresim_core::social::SocialActionKind,
@@ -49,7 +53,11 @@ fn social_actions(
         ("rose", Flirt, "flirt"),
     ]
     .into_iter()
-    .filter(|(_, action, _)| action.available_for(topic))
+    .filter(|(_, action, _)| {
+        action.available_for(topic)
+            && !(*action == LightenMood && joke_blocked)
+            && !(*action == Flirt && flirt_blocked)
+    })
     .collect()
 }
 
@@ -240,7 +248,7 @@ pub fn party_social_dialog(
                                 @if let Some(topic) = topic {
                                   div class="social-actions" aria-label=(format!("Actions for {}", source.label)) {
                                     @let shares_concern = social.shared_concerns.contains(&topic);
-                                    @for (default_icon, action, value) in social_actions(is_self, topic) {
+                                    @for (default_icon, action, value) in social_actions(is_self, topic, social.joke_blocked, social.flirt_blocked) {
                                       @let action_shares_concern = action != adventuresim_core::social::SocialActionKind::Commiserate || shares_concern;
                                       @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
                                       @let description = action.description(topic, action_shares_concern);
@@ -557,7 +565,7 @@ mod tests {
         let defeat = SocialActionKind::Commiserate.description(SocialTopic::Defeat, true);
         assert_eq!(defeat, "Commiserate about the defeat");
         assert!(!defeat.to_ascii_lowercase().contains("goblin"));
-        let actions = social_actions(false, SocialTopic::Defeat);
+        let actions = social_actions(false, SocialTopic::Defeat, false, false);
         assert_eq!(actions.len(), 6);
         assert!(
             actions
@@ -565,11 +573,28 @@ mod tests {
                 .any(|(_, action, _)| *action == SocialActionKind::Listen)
         );
         assert_eq!(
-            social_actions(true, SocialTopic::Defeat),
+            social_actions(true, SocialTopic::Defeat, true, true),
             vec![("inner-self", SocialActionKind::Reflect, "reflect")]
         );
-        assert_eq!(social_actions(false, SocialTopic::Hunger).len(), 3);
-        assert_eq!(social_actions(false, SocialTopic::Faith).len(), 4);
+        assert_eq!(
+            social_actions(false, SocialTopic::Hunger, false, false).len(),
+            3
+        );
+        assert_eq!(
+            social_actions(false, SocialTopic::Faith, false, false).len(),
+            4
+        );
+        let reserved = social_actions(false, SocialTopic::Defeat, true, true);
+        assert_eq!(reserved.len(), 4);
+        assert!(reserved.iter().all(|(_, action, _)| !matches!(
+            action,
+            SocialActionKind::LightenMood | SocialActionKind::Flirt
+        )));
+        assert!(
+            reserved
+                .iter()
+                .any(|(_, action, _)| *action == SocialActionKind::Rally)
+        );
         assert_eq!(SocialActionKind::Commiserate.skill_name(false), "Deception");
         assert_eq!(
             SocialActionKind::Flirt.description(SocialTopic::Injury, false),

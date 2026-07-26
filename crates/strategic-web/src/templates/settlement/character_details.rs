@@ -828,12 +828,18 @@ fn personality_tags(
             "Merry",
             "Charm through humor lands best with Merry or Neutral company.",
         )),
-        Grave => tags.push(("Grave", "Resists humor used to lighten a serious concern.")),
+        Grave => tags.push((
+            "Grave",
+            "Cannot use Joke; serious reserve adds +0.35 to Rally Command.",
+        )),
         _ => {}
     }
     match personality.courtship {
         Amorous => tags.push(("Amorous", "Responds strongly to compatible flirtation.")),
-        Proper => tags.push(("Proper", "Strongly resists flirtation.")),
+        Proper => tags.push((
+            "Proper",
+            "Cannot use Flirt; decorous reserve adds +0.35 to Rally Command.",
+        )),
         _ => {}
     }
     match personality.transparency {

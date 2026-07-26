@@ -349,52 +349,52 @@ pub fn generate(
         ],
     );
     let (background, weapon, weapon_slot, armor, primary, defense, currency_base) = match slot {
-            0 => (
-                "Militia runner",
-                "katzbalger",
-                StartingSlot::RightHand,
-                "arming_doublet",
-                "sword",
-                "block",
-                90,
-            ),
-            1 => (
-                "Woodland hunter",
-                "longbow",
-                StartingSlot::RightHand,
-                "quilted_sleeve",
-                "bow",
-                "dodge",
-                65,
-            ),
-            2 => (
-                "Caravan guard",
-                "hunting_spear",
-                StartingSlot::RightHand,
-                "padded_chausses",
-                "polearm",
-                "dodge",
-                125,
-            ),
-            3 => (
-                "Town watch apprentice",
-                "light_crossbow",
-                StartingSlot::RightHand,
-                "arming_cap",
-                "crossbow",
-                "block",
-                155,
-            ),
-            _ => (
-                "Camp follower turned scout",
-                "bauernwehr",
-                StartingSlot::RightHand,
-                "padded_skirt",
-                "knife",
-                "dodge",
-                105,
-            ),
-        };
+        0 => (
+            "Militia runner",
+            "katzbalger",
+            StartingSlot::RightHand,
+            "arming_doublet",
+            "sword",
+            "block",
+            90,
+        ),
+        1 => (
+            "Woodland hunter",
+            "longbow",
+            StartingSlot::RightHand,
+            "quilted_sleeve",
+            "bow",
+            "dodge",
+            65,
+        ),
+        2 => (
+            "Caravan guard",
+            "hunting_spear",
+            StartingSlot::RightHand,
+            "padded_chausses",
+            "polearm",
+            "dodge",
+            125,
+        ),
+        3 => (
+            "Town watch apprentice",
+            "light_crossbow",
+            StartingSlot::RightHand,
+            "arming_cap",
+            "crossbow",
+            "block",
+            155,
+        ),
+        _ => (
+            "Camp follower turned scout",
+            "bauernwehr",
+            StartingSlot::RightHand,
+            "padded_skirt",
+            "knife",
+            "dodge",
+            105,
+        ),
+    };
     let primary_hours = 2600.0 + (hash("training", seed, slot) % 1800) as f32;
     let defense_hours = 1400.0 + (hash("defense", seed, slot) % 1400) as f32;
     let mut skills = StartingSkills {
@@ -545,11 +545,7 @@ fn personality_with_demographics(
     }
 }
 
-fn generated_personality(
-    seed: &str,
-    tier: StartingAgeTier,
-    slot: u8,
-) -> StartingPersonality {
+fn generated_personality(seed: &str, tier: StartingAgeTier, slot: u8) -> StartingPersonality {
     use StartingPersonalityTrait as Trait;
     let axes: &[&[Trait]] = &[
         &[Trait::Brave, Trait::Fearful],
@@ -567,26 +563,15 @@ fn generated_personality(
         &[Trait::Introspective, Trait::SelfDeceiving],
     ];
     let mut order: Vec<_> = (0..axes.len()).collect();
-    order.sort_by_key(|axis| {
-        tier_hash(
-            &format!("personality-axis-{axis}"),
-            seed,
-            tier,
-            slot,
-        )
-    });
+    order.sort_by_key(|axis| tier_hash(&format!("personality-axis-{axis}"), seed, tier, slot));
     let count = 2 + (tier_hash("personality-count", seed, tier, slot) % 3) as usize;
     let traits = order
         .into_iter()
         .take(count)
         .map(|axis| {
             let values = axes[axis];
-            values[(tier_hash(
-                &format!("personality-value-{axis}"),
-                seed,
-                tier,
-                slot,
-            ) % values.len() as u64) as usize]
+            values[(tier_hash(&format!("personality-value-{axis}"), seed, tier, slot)
+                % values.len() as u64) as usize]
         })
         .collect();
     personality_with_demographics(traits, seed, tier, slot)
@@ -1509,10 +1494,9 @@ mod tests {
 
     #[test]
     fn unknown_fixed_training_skill_fails_closed() {
-        let mut skills =
-            generate(GENERATOR_VERSION, SEED, StartingAgeTier::Young, 0)
-                .unwrap()
-                .skills;
+        let mut skills = generate(GENERATOR_VERSION, SEED, StartingAgeTier::Young, 0)
+            .unwrap()
+            .skills;
         assert!(set_fixed_skill(&mut skills, "future_unknown_skill", 100.0).is_err());
     }
     #[test]
@@ -1538,9 +1522,7 @@ mod tests {
             )
             .unwrap();
             assert!((2..=4).contains(&c.personality.traits.len()));
-            ambiguous += usize::from(
-                c.personality.presentation == StartingPresentation::Ambiguous,
-            );
+            ambiguous += usize::from(c.personality.presentation == StartingPresentation::Ambiguous);
             either += usize::from(c.personality.inclination == StartingInclination::Either);
             neither += usize::from(c.personality.inclination == StartingInclination::Neither);
             same += usize::from(matches!(
