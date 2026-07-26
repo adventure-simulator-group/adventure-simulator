@@ -647,3 +647,8 @@ if (document.readyState === "loading") {
   mountInventoryBulkControls();
 }
 document.addEventListener("strategic-live-regions-refreshed", () => refreshInventoryPanel(document));
+document.addEventListener("strategic-page-mounted", () => {
+  initializeProvisioningDraft();
+  mountInventoryBulkControls();
+  refreshInventoryPanel(document);
+});

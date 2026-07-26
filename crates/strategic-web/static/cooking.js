@@ -183,5 +183,6 @@
 
   window.addEventListener("DOMContentLoaded", () => mount());
   window.addEventListener("strategic-live-regions-refreshed", () => mount());
+  document.addEventListener("strategic-page-mounted", () => mount());
   window.strategicCooking = { mount };
 })();

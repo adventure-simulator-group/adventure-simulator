@@ -102,6 +102,11 @@
 
   window.strategicChat = Object.freeze({ appendChannelRow, appendInfo, createChannelRow });
 
+  let lifecycle;
+  const mount = () => {
+  lifecycle?.abort();
+  lifecycle = new AbortController();
+  const { signal } = lifecycle;
   document.querySelectorAll(".settlement-chat").forEach((panel) => {
     const messages = panel.querySelector(".settlement-chat-messages");
     const filters = [...panel.querySelectorAll("[data-chat-filter]")];
@@ -114,8 +119,10 @@
       const rows = [...messages.querySelectorAll("[data-chat-channel]")];
       applyChannelVisibility(rows, visibleChannels);
     };
-    filters.forEach((filter) => filter.addEventListener("change", applyFilters));
-    new MutationObserver(applyFilters).observe(messages, { childList: true, subtree: true });
+    filters.forEach((filter) => filter.addEventListener("change", applyFilters, { signal }));
+    const observer = new MutationObserver(applyFilters);
+    observer.observe(messages, { childList: true, subtree: true });
+    signal.addEventListener("abort", () => observer.disconnect(), { once: true });
     applyFilters();
   });
 
@@ -131,7 +138,7 @@
     incomingHost.replaceChildren(...players.map((player) => {
       const link = document.createElement("a");
       link.className = "local-chat-incoming-portrait";
-      const match = location.pathname.match(/^\/locations\/(settlement|quest)\/[^/]+/);
+      const match = location.pathname.match(/^\/locations\/(settlement|case-site)\/[^/]+/);
       link.href = `${match?.[0] || ""}/players/${player.id}`;
       link.title = `Talk to ${player.name}`;
       link.textContent = player.name.charAt(0) || "?";
@@ -139,7 +146,7 @@
     }));
   };
   window.queueStrategicInitialLoad(refreshIncoming);
-  document.addEventListener("strategic-live-update", refreshIncoming);
+  document.addEventListener("strategic-live-update", refreshIncoming, { signal });
 
   const chat = document.querySelector(".settlement-chat[data-local-chat-kind][data-local-chat-subject]");
   if (!chat) return;
@@ -231,13 +238,17 @@
     const response = await window.strategicFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form });
     if (response.ok) { input.value = ""; await refresh(); }
   };
-  send?.addEventListener("click", submit);
-  input?.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } });
+  send?.addEventListener("click", submit, { signal });
+  input?.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }, { signal });
   window.queueStrategicInitialLoad(refresh).finally(() => {
     chat.dataset.localChatReady = "true";
     chat.dispatchEvent(new Event("local-chat-ready"));
   });
-  document.addEventListener("strategic-live-update", refresh);
-  chat.addEventListener("local-chat-subject-changed", () => { lastSignature = ""; refresh(); });
+  document.addEventListener("strategic-live-update", refresh, { signal });
+  chat.addEventListener("local-chat-subject-changed", () => { lastSignature = ""; refresh(); }, { signal });
 
+  };
+  mount();
+  document.addEventListener("strategic-page-mounted", mount);
+  document.addEventListener("strategic-page-unmounting", () => lifecycle?.abort());
 })();

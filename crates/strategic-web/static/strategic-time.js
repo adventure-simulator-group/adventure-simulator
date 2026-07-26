@@ -77,7 +77,7 @@
   window.strategicTimeLighting = lighting;
   window.strategicTimeApplyLighting = applyLighting;
 
-  window.queueStrategicInitialLoad(() => window.strategicBackgroundFetch("strategic-time", "/time"))
+  const refreshTime = () => window.queueStrategicInitialLoad(() => window.strategicBackgroundFetch("strategic-time", "/time"))
     .then((response) => response.json())
     .then(({ character_minutes: characterMinutes, official_minutes: officialMinutes }) => {
       window.strategicCharacterMinutes = characterMinutes;
@@ -91,4 +91,6 @@
       }));
     })
     .catch((error) => window.reportStrategicError(error, "strategic time"));
+  refreshTime();
+  document.addEventListener("strategic-page-mounted", refreshTime);
 })();

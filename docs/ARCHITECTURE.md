@@ -692,3 +692,25 @@ The final terrain pack is also the single authority for exact 1 km cultivated
 state. Strategic-web may attest a bounded current-location sample through its
 authenticated digest-pinned gateway; reducers re-derive location and reject
 direct, stale, or mismatched attestations.
+### Strategic document shell
+
+Strategic pages render as complete server-authoritative HTML documents for direct
+requests and no-JavaScript clients. In an active strategic session, one
+document-scoped `/live` stream remains outside the stable `#strategic-page`
+morph root. Eligible same-origin links are progressively enhanced with a
+negotiated GET (`X-Strategic-Navigation: true`); the returned server markup
+replaces that root while retaining native `href` fallbacks. Page scripts use
+`strategic-page-unmounting` and `strategic-page-mounted` for per-page cleanup
+and setup. Character selection, licences, and tactical transitions remain hard
+document navigations.
+
+Strategic POST forms are also progressively enhanced. The browser marks the
+request with the same negotiation header. Negotiated GETs contain only the
+stable root plus its title/profile metadata; ordinary GETs remain complete
+documents. An authoritative reducer still performs the mutation. The gateway
+then renders the reducer's local redirect destination through a middleware-free
+internal router and returns that strategic root in the original POST response,
+so the browser performs no follow-up GET and never commits a new URL over old
+page chrome. Entry, licence, mission, tactical, external, and non-strategic
+destinations remain deliberate hard navigations. Direct form submissions retain
+their ordinary `303` and complete HTML fallback.

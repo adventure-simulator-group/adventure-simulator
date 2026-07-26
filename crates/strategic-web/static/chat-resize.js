@@ -2,72 +2,71 @@
   const STORAGE_KEY = "adventuresim.chat-height";
   const DESKTOP_MIN_HEIGHT = 128;
   const MOBILE_MIN_HEIGHT = 160;
-  // Preserve room for the party tray, centered counterparty description, and
-  // the counterparty tray attached to the moving top edge of the chat.
   const MIN_STAGE_HEIGHT = 260;
   const CHAT_BOTTOM_GAP = 5;
   const KEYBOARD_STEP = 24;
-
-  const chat = document.querySelector(".settlement-chat");
-  const handle = chat?.querySelector(".settlement-chat-resize");
-  const container = chat?.closest(".settlement-main");
-  if (!chat || !handle || !container) return;
-
-  const minimumHeight = () => window.matchMedia("(max-width: 768px)").matches ? MOBILE_MIN_HEIGHT : DESKTOP_MIN_HEIGHT;
-  const maximumHeight = () => Math.max(minimumHeight(), container.clientHeight - MIN_STAGE_HEIGHT - CHAT_BOTTOM_GAP);
-  const clampHeight = (height) => Math.min(maximumHeight(), Math.max(minimumHeight(), height));
-
-  const setHeight = (height, persist = true) => {
-    const next = Math.round(clampHeight(height));
-    chat.style.setProperty("--chat-height", `${next}px`);
-    // The quest combat controls share this stage with the floating chat. Keep
-    // their reserved space in lockstep with a user-resized chat panel.
-    container.style.setProperty("--chat-panel-height", `${next}px`);
-    handle.setAttribute("aria-valuemin", String(minimumHeight()));
-    handle.setAttribute("aria-valuenow", String(next));
-    handle.setAttribute("aria-valuemax", String(Math.round(maximumHeight())));
-    if (persist) localStorage.setItem(STORAGE_KEY, String(next));
-  };
-
-  const savedHeight = Number.parseInt(localStorage.getItem(STORAGE_KEY) || "", 10);
-  if (Number.isFinite(savedHeight)) setHeight(savedHeight, false);
-  else setHeight(chat.getBoundingClientRect().height, false);
-
-  let startY = 0;
-  let startHeight = 0;
-
-  handle.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
-    startY = event.clientY;
-    startHeight = chat.getBoundingClientRect().height;
-    handle.setPointerCapture(event.pointerId);
-    handle.classList.add("is-resizing");
-    document.body.classList.add("chat-resizing");
-    event.preventDefault();
-  });
-
-  handle.addEventListener("pointermove", (event) => {
-    if (!handle.hasPointerCapture(event.pointerId)) return;
-    setHeight(startHeight + startY - event.clientY, false);
-  });
-
-  const finishResize = (event) => {
-    if (!handle.hasPointerCapture(event.pointerId)) return;
-    handle.releasePointerCapture(event.pointerId);
-    handle.classList.remove("is-resizing");
+  let lifecycle;
+  let activeHandle;
+  const unmount = () => {
+    lifecycle?.abort();
+    activeHandle?.classList.remove("is-resizing");
     document.body.classList.remove("chat-resizing");
-    setHeight(chat.getBoundingClientRect().height);
+    activeHandle = null;
   };
-
-  handle.addEventListener("pointerup", finishResize);
-  handle.addEventListener("pointercancel", finishResize);
-
-  handle.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-    const direction = event.key === "ArrowUp" ? 1 : -1;
-    setHeight(chat.getBoundingClientRect().height + direction * KEYBOARD_STEP);
-    event.preventDefault();
-  });
-
-  window.addEventListener("resize", () => setHeight(chat.getBoundingClientRect().height, false));
+  const mount = () => {
+    unmount();
+    lifecycle = new AbortController();
+    const { signal } = lifecycle;
+    const chat = document.querySelector("#strategic-page .settlement-chat");
+    const handle = chat?.querySelector(".settlement-chat-resize");
+    const container = chat?.closest(".settlement-main");
+    if (!chat || !handle || !container) return;
+    activeHandle = handle;
+    const minimum = () => matchMedia("(max-width: 768px)").matches ? MOBILE_MIN_HEIGHT : DESKTOP_MIN_HEIGHT;
+    const maximum = () => Math.max(minimum(), container.clientHeight - MIN_STAGE_HEIGHT - CHAT_BOTTOM_GAP);
+    const setHeight = (height, persist = true) => {
+      const value = Math.round(Math.max(minimum(), Math.min(maximum(), height)));
+      chat.style.setProperty("--chat-height", `${value}px`);
+      container.style.setProperty("--chat-panel-height", `${value}px`);
+      handle.setAttribute("aria-valuemin", String(minimum()));
+      handle.setAttribute("aria-valuenow", String(value));
+      handle.setAttribute("aria-valuemax", String(Math.round(maximum())));
+      if (persist) localStorage.setItem(STORAGE_KEY, String(value));
+    };
+    setHeight(Number(localStorage.getItem(STORAGE_KEY)) || chat.getBoundingClientRect().height, false);
+    let startY = 0;
+    let startHeight = 0;
+    const finish = (event) => {
+      if (!handle.hasPointerCapture?.(event.pointerId)) return;
+      handle.releasePointerCapture(event.pointerId);
+      handle.classList.remove("is-resizing");
+      document.body.classList.remove("chat-resizing");
+      setHeight(chat.getBoundingClientRect().height);
+    };
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      startY = event.clientY;
+      startHeight = chat.getBoundingClientRect().height;
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add("is-resizing");
+      document.body.classList.add("chat-resizing");
+      event.preventDefault();
+    }, { signal });
+    handle.addEventListener("pointermove", (event) => {
+      if (handle.hasPointerCapture(event.pointerId)) setHeight(startHeight + startY - event.clientY, false);
+    }, { signal });
+    handle.addEventListener("pointerup", finish, { signal });
+    handle.addEventListener("pointercancel", finish, { signal });
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const current = chat.getBoundingClientRect().height;
+      setHeight(event.key === "Home" ? minimum() : event.key === "End" ? maximum() :
+        current + (event.key === "ArrowUp" ? KEYBOARD_STEP : -KEYBOARD_STEP));
+    }, { signal });
+    addEventListener("resize", () => setHeight(chat.getBoundingClientRect().height, false), { signal });
+  };
+  mount();
+  document.addEventListener("strategic-page-mounted", mount);
+  document.addEventListener("strategic-page-unmounting", unmount);
 })();

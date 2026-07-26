@@ -667,6 +667,14 @@ mod tests {
     }
 
     #[test]
+    fn live_navigation_uses_the_canonical_case_site_contract() {
+        let source = include_str!("live.rs");
+        assert!(source.contains("kind: Some(\"case_site\")"));
+        assert!(source.contains("path: format!(\"/locations/case-site/{id}\")"));
+        assert!(!source.contains("kind: Some(\"quest\")"));
+    }
+
+    #[test]
     fn public_cache_facade_does_not_offer_private_projection_reads() {
         let source = include_str!("live.rs");
         for private_table in [

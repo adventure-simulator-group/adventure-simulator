@@ -2565,14 +2565,14 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
                     )
                 })
             }),
-        LocationKind::Quest => state
+        LocationKind::CaseSite => state
             .db
-            .query_one::<ContractPresentation>(&format!(
-                "SELECT * FROM backend_contracts WHERE id = {}",
+            .query_one::<BackendCaseSitePin>(&format!(
+                "SELECT * FROM backend_case_site_pins WHERE case_site_id = {}",
                 sql_string_literal(id)
             ))
             .await
-            .map(|row| row.map(|quest| (quest.title, None, None))),
+            .map(|row| row.map(|site| (site.display_title, None, None))),
     };
     let (name, category, religion_id) = match location {
         Ok(Some(location)) => location,
@@ -2597,7 +2597,7 @@ fn character_is_at_location(character: &Character, location: &LocationView) -> b
         LocationKind::Settlement => {
             character.current_settlement_id.as_deref() == Some(location.id.as_str())
         }
-        LocationKind::Quest => {
+        LocationKind::CaseSite => {
             character.current_case_site_id.as_deref() == Some(location.id.as_str())
         }
     }

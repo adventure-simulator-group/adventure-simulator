@@ -17,14 +17,14 @@ pub struct LocationView {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LocationKind {
     Settlement,
-    Quest,
+    CaseSite,
 }
 
 impl LocationKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Settlement => "settlement",
-            Self::Quest => "quest",
+            Self::CaseSite => "case-site",
         }
     }
 }
@@ -40,7 +40,7 @@ impl FromStr for LocationKind {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "settlement" => Ok(Self::Settlement),
-            "quest" => Ok(Self::Quest),
+            "case-site" => Ok(Self::CaseSite),
             _ => Err(()),
         }
     }
@@ -101,7 +101,8 @@ mod tests {
 
     #[test]
     fn location_kind_rejects_unknown_path_segments() {
-        assert_eq!("quest".parse(), Ok(LocationKind::Quest));
+        assert_eq!("case-site".parse(), Ok(LocationKind::CaseSite));
+        assert!("quest".parse::<LocationKind>().is_err());
         assert!("merchant".parse::<LocationKind>().is_err());
     }
 }

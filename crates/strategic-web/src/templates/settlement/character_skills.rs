@@ -2253,7 +2253,9 @@ mod tests {
         assert!(!schedule.contains("scheduleDrag"));
         assert!(!schedule.contains("travel_"));
         assert!(equipment.contains("'/api/equipment'"));
-        assert!(equipment.contains("window.location.reload()"));
+        assert!(equipment.contains("strategicSubmitMutation"));
+        assert!(!equipment.contains("window.location.reload()"));
+        assert!(!equipment.contains("strategic-live-refresh-requested"));
         assert!(live_regions.contains("const scrollOffsets = (selector)"));
         assert!(live_regions.contains("region.scrollTop = offsets.top"));
         assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));

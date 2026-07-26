@@ -38,7 +38,7 @@ pub fn journal_layout(content: Markup, logged_in_as: Option<&str>) -> Markup {
         "Journal",
         entry_top_bar_with_session(logged_in_as),
         content,
-        ScriptProfile::Live,
+        ScriptProfile::Strategic,
     )
 }
 
@@ -183,6 +183,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
+                    script src="/static/strategic-navigation.js?v=soft-navigation-1" defer {}
+                    script src="/static/strategic-mutations.js?v=single-transaction-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
                     script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog" defer {}
@@ -211,13 +213,16 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                         span id="strategic-live-revision" data-live-revision="0" hidden {}
                     }
                 }
-                div class="app" {
+                (maud::PreEscaped("<!-- strategic-page-start -->"))
+                div class="app" id="strategic-page" data-page-title=(title)
+                    data-script-profile=(match scripts { ScriptProfile::Entry => "entry", ScriptProfile::Live => "live", ScriptProfile::Strategic => "strategic" }) {
                     (header)
 
                     div class="main-grid" {
                         (content)
                     }
                 }
+                (maud::PreEscaped("<!-- strategic-page-end -->"))
             }
         }
     }
@@ -701,8 +706,8 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 mod tests {
     use super::{
         HorizonVariant, ScriptProfile, WildernessVariant, building_tier, building_tint,
-        entry_layout, horizon_variant, page_shell, quest_location_top_bar, religion_icon_path,
-        settlement_layout_with_session, settlement_top_bar, wilderness_variant,
+        entry_layout, horizon_variant, journal_layout, page_shell, quest_location_top_bar,
+        religion_icon_path, settlement_layout_with_session, settlement_top_bar, wilderness_variant,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
@@ -713,7 +718,20 @@ mod tests {
         assert!(markup.contains("/static/local-chat.js?v=local-chat-location-authority-1"));
         assert!(!markup.contains("local-chat.js?v=herbalist-private-1"));
         assert!(markup.contains("/static/live-regions.js?v=persistent-rest-refresh-2"));
+        assert!(markup.contains("id=\"strategic-page\""));
+        assert!(markup.contains("/static/strategic-navigation.js"));
+        assert!(markup.contains("/static/strategic-mutations.js"));
+        assert_eq!(markup.matches("id=\"strategic-live-stream\"").count(), 1);
+        assert!(markup.find("id=\"strategic-live-stream\"") < markup.find("id=\"strategic-page\""));
         assert!(!markup.contains("live-regions.js?v=floating-time-editor-1"));
+    }
+
+    #[test]
+    fn direct_journal_uses_the_persistent_strategic_profile() {
+        let markup = journal_layout(html! {}, Some("Ada")).into_string();
+        assert!(markup.contains("data-script-profile=\"strategic\""));
+        assert!(markup.contains("/static/strategic-navigation.js"));
+        assert_eq!(markup.matches("id=\"strategic-live-stream\"").count(), 1);
     }
 
     #[test]

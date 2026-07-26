@@ -325,5 +325,6 @@
   const initializeStrategicMaps = (root = document) => root.querySelectorAll("[data-strategic-map]").forEach((map) => initializeMap(map));
   globalThis.StrategicMap = { boxesOverlap, hitTargetRadius, initializeMap, labelPriorityThreshold, layoutLabels, layoutSettlementPins, parentTileFallback, parseViewBox, pannedView, populationLevelThreshold, renderTiles, resizedView, scaleHitTargets, tileZoom, viewForElement, visibleTileRange, zoomedView };
   initializeStrategicMaps();
+  document.addEventListener("strategic-page-mounted", () => initializeStrategicMaps());
   document.addEventListener("strategic-live-regions-refreshed", () => initializeStrategicMaps());
 })();

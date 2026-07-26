@@ -110,7 +110,7 @@ test("merchant provisioning initializes only once the Party tab DOM exists", () 
   const layout = fs.readFileSync(path.join(staticRoot, "src", "templates", "layout.rs"), "utf8");
   assert.match(layout, /party-trade\.js[^\n]+defer/);
   assert.match(trade, /DOMContentLoaded", initializeProvisioningDraft, \{ once: true \}/);
-  assert.match(trade, /partyTab\.click\(\)/);
+  assert.match(trade, /selectMerchantInventoryScope\(partyTab\)/);
   assert.match(trade, /\["travel_ration", parseQuantity\("provision_rations"\)\]/);
   assert.match(trade, /\["waterskin", parseQuantity\("provision_waterskins"\)\]/);
 });
