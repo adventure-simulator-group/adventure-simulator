@@ -5897,6 +5897,31 @@ pub fn start_dialogue(
             .id()
             .find(&delivery.receipt_id)
             .ok_or("Rumor delivery receipt disappeared")?;
+        let speaker_role = ctx
+            .db
+            .dialogue_participant()
+            .session_id()
+            .filter(&session.id)
+            .find(|participant| participant.actor_id == npc_actor_id)
+            .map(|participant| participant.role)
+            .ok_or("Rumor delivery speaker disappeared")?;
+        let sequence = ctx
+            .db
+            .dialogue_event()
+            .session_id()
+            .filter(&session.id)
+            .count() as u32;
+        ctx.db.dialogue_event().insert(DialogueEvent {
+            id: format!("{}:event:{sequence}", session.id),
+            gateway_bucket: 0,
+            session_id: session.id.clone(),
+            sequence,
+            response_id: "generated-referral".into(),
+            speaker_role,
+            fragments_json: delivery.fragments_json,
+            source_refs_json: "[]".into(),
+            created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+        });
         crate::investigation::receive_local_problem_rumor(
             ctx,
             character_id,

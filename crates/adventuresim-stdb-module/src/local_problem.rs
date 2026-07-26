@@ -1352,6 +1352,9 @@ mod tests {
             start.find("local_problem_rumor_delivery()").unwrap()
                 < start.find("receive_local_problem_rumor").unwrap()
         );
+        let referral_event = start.find("response_id: \"generated-referral\"").unwrap();
+        assert!(start.find("surface_problem(").unwrap() < referral_event);
+        assert!(referral_event < start.find("receive_local_problem_rumor").unwrap());
     }
     #[test]
     fn authoritative_purchase_seams_apply_problem_price_after_base_quote() {

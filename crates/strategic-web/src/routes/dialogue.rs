@@ -23,21 +23,11 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Deserialize)]
 struct SessionRow {
     id: String,
-    settlement_id: String,
-    location_id: String,
     catalog_revision: String,
     revision: u64,
-}
-#[derive(Deserialize)]
-struct DialogueCharacterPlace {
-    current_settlement_id: Option<String>,
-}
-#[derive(Deserialize)]
-struct DialogueCharacterTime {
-    minutes: u64,
 }
 #[derive(Clone, Deserialize, Serialize)]
 struct ParticipantRow {
@@ -54,14 +44,6 @@ struct EventRow {
     speaker_role: String,
     fragments_json: String,
     source_refs_json: String,
-}
-#[derive(Deserialize)]
-struct BackendProblemRumorRow {
-    #[serde(rename = "receipt_id")]
-    _receipt_id: String,
-    character_id: u64,
-    session_id: String,
-    fragments_json: String,
 }
 #[derive(Deserialize)]
 struct PromptRow {
@@ -227,6 +209,21 @@ mod npc_navigation_tests {
             "keep"
         ));
     }
+
+    #[test]
+    fn conversation_projection_does_not_reappend_problem_referrals() {
+        let source = include_str!("dialogue.rs");
+        let build_view = source
+            .rsplit_once("async fn build_view(")
+            .unwrap()
+            .1
+            .split("struct StartRequest")
+            .next()
+            .unwrap();
+        assert!(build_view.contains("backend_dialogue_events"));
+        assert!(!build_view.contains("backend_local_problem_rumors"));
+        assert!(!build_view.contains("events.push"));
+    }
 }
 
 async fn location_npcs(
@@ -335,7 +332,7 @@ async fn build_view(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     events.sort_by_key(|event| event.sequence);
-    let mut events: Vec<_> = events
+    let events: Vec<_> = events
         .into_iter()
         .map(|event| {
             let fragments: Vec<adventuresim_dialogue::Fragment> =
@@ -365,92 +362,6 @@ async fn build_view(
             }
         })
         .collect();
-    let rumor_sql = format!(
-        "SELECT * FROM backend_local_problem_rumors WHERE character_id = {character_id} AND session_id = {}",
-        sql_string_literal(session_id)
-    );
-    let rumors = state
-        .db
-        .query::<BackendProblemRumorRow>(&rumor_sql)
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let npc_actor = participants
-        .iter()
-        .find(|p| p.character_id.is_none())
-        .map(|p| p.actor_id.clone());
-    let place = state
-        .db
-        .query_one::<DialogueCharacterPlace>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .ok()
-        .flatten();
-    let time = state
-        .db
-        .query_one::<DialogueCharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
-        ))
-        .await
-        .ok()
-        .flatten()
-        .map_or(0, |r| r.minutes);
-    let presence = if let Some(actor) = npc_actor.as_ref() {
-        state
-            .db
-            .query_one::<NpcPresenceRow>(&format!(
-                "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
-                sql_string_literal(actor)
-            ))
-            .await
-            .ok()
-            .flatten()
-    } else {
-        None
-    };
-    let minute_of_day = (time % 1440) as u16;
-    let live = place.is_some_and(|p| {
-        p.current_settlement_id.as_deref() == Some(session.settlement_id.as_str())
-    }) && presence.is_some_and(|p| {
-        p.settlement_id == session.settlement_id
-            && p.location_id == session.location_id
-            && p.start_minute <= minute_of_day
-            && minute_of_day < p.end_minute
-    });
-    if live
-        && let Some(rumor) = rumors
-            .into_iter()
-            .find(|r| r.character_id == character_id && r.session_id == session_id)
-    {
-        let speaker_role = participants
-            .iter()
-            .find(|p| p.character_id.is_none())
-            .map_or("npc", |p| p.role.as_str())
-            .to_owned();
-        events.push(EventView {
-            sequence: events
-                .iter()
-                .map(|e| e.sequence)
-                .max()
-                .map_or(0, |n| n.saturating_add(1)),
-            speaker_name: names
-                .get(&speaker_role)
-                .cloned()
-                .unwrap_or_else(|| "Local resident".into()),
-            speaker_is_player: false,
-            speaker_role,
-            fragments: serde_json::from_str::<Vec<adventuresim_dialogue::Fragment>>(
-                &rumor.fragments_json,
-            )
-            .unwrap_or_default()
-            .into_iter()
-            .map(|fragment| FragmentView {
-                fragment,
-                source: None,
-            })
-            .collect(),
-        });
-    }
     let mut topics = state
         .db
         .query::<TopicRow>(&format!(
