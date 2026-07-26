@@ -1806,14 +1806,7 @@ fn advance_personal_camp_time(
             .find(member_id)
             .ok_or("Character skill record not found")?;
         let activities = activity_training_profile(ctx, member_id)?;
-        let excess = apply_training(
-            ctx,
-            member_id,
-            &mut skills,
-            &allowed,
-            downtime,
-            activities,
-        );
+        let excess = apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
         crate::condition::record_mastery_training_morale(ctx, member_id, downtime, excess);
         ctx.db.character_skills().character_id().update(skills);
         crate::condition::apply_settlement_leisure_condition(
@@ -2039,14 +2032,8 @@ pub fn rest_at_camp(
                 .find(member_id)
                 .ok_or("Character skill record not found")?;
             let activities = activity_training_profile(ctx, member_id)?;
-            let mut excess = apply_training(
-                ctx,
-                member_id,
-                &mut skills,
-                &allowed,
-                downtime,
-                activities,
-            );
+            let mut excess =
+                apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
             if let Some((language, coefficient)) = language_choices.get(&member_id) {
                 excess += apply_oral_language_training(
                     ctx,
@@ -2205,12 +2192,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         training_elapsed,
         activities,
     );
-    crate::condition::record_mastery_training_morale(
-        ctx,
-        character_id,
-        training_elapsed,
-        excess,
-    );
+    crate::condition::record_mastery_training_morale(ctx, character_id, training_elapsed, excess);
     ctx.db.character_skills().character_id().update(skills);
     let risks = apply_activity_outcomes(
         ctx,

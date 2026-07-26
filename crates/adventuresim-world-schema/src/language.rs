@@ -680,11 +680,12 @@ mod tests {
         assert_eq!(low, 0.2);
         assert_eq!(restored, 0.7);
 
-        let choices = party_common_oral_choices_capped(&[
-            (1, left, 1_000.0),
-            (2, right, 5_000.0),
-        ]);
-        assert!(choices.iter().all(|(_, _, coefficient)| *coefficient == 0.2));
+        let choices = party_common_oral_choices_capped(&[(1, left, 1_000.0), (2, right, 5_000.0)]);
+        assert!(
+            choices
+                .iter()
+                .all(|(_, _, coefficient)| *coefficient == 0.2)
+        );
     }
     #[test]
     fn yiddish_people_are_bilingual_with_weaker_local_german() {

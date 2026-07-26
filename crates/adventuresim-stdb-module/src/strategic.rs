@@ -12997,18 +12997,11 @@ fn advance_party_movement(
     // Training is committed only after every participant's authoritative
     // clock has committed the same safe movement prefix.
     let mut mastery_excess = train_party_terrain_movement(ctx, party_id, actual_minutes)?;
-    for (character_id, excess) in
-        train_party_oral_communication(ctx, party_id, actual_minutes)
-    {
+    for (character_id, excess) in train_party_oral_communication(ctx, party_id, actual_minutes) {
         *mastery_excess.entry(character_id).or_default() += excess;
     }
     for (character_id, excess) in mastery_excess {
-        crate::condition::record_mastery_training_morale(
-            ctx,
-            character_id,
-            actual_minutes,
-            excess,
-        );
+        crate::condition::record_mastery_training_morale(ctx, character_id, actual_minutes, excess);
     }
     Ok((actual_minutes, all_survived))
 }
