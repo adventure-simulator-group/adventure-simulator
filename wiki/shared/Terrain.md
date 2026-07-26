@@ -30,3 +30,9 @@ For the MVP, there is no need for any point of interest other than enemy camps/l
 # Underground
 In our setting, there is ostensibly a vast underground network of caves, crypts, tunnels, Ratling under-cities, Dwarven strongholds, and even antediluvian ruins. But this sounds hard, therefore we shouldn't bother with it for the MVP. All of the quests will conveniently take you to overland locations, which don't even need to have structures. 
 > Halbe: You are essentially being hired by local municipalities to clear out homeless encampments. If only we had this in the IRL modern setting...
+## Foraging
+
+Personal foraging trains only the Plains, Forest, and Hills leaf skills in the
+normalized mixture of the character's current 1 km vicinity. The Terrain
+heading remains a presentation aggregate and is never awarded or stored.
+Cultivated ground affects legality, not the biome mixture.

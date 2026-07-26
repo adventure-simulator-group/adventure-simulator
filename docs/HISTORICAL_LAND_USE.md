@@ -55,3 +55,28 @@ Canonical land use is stored as bounded basis-point fractions for cropland,
 grazing land, built-up land, and natural/seminatural land. The four fractions
 sum to exactly 10,000 and support agriculture, livestock, encounters, and
 forest-cover fallbacks.
+The strategic map compiler separately reads raw interpolated HYDE cropland
+kmÂ² for every source cell intersecting the playable bounds. It does not reuse
+rounded settlement profiles. Largest-remainder rounding gives each HYDE cell a
+whole-square quota while preserving the rounded global area with less than
+0.5 kmÂ² residual.
+
+Those quotas are allocated to exact EPSG:3035 1 km squares by deterministic
+four-neighbour region growth. All settlements seed one global frontier;
+settlement-less HYDE cells receive a deterministic fallback seed, and
+adjacency crosses HYDE boundaries. Final inferred roads are merged before this
+allocation and therefore participate in both suitability and package identity.
+Bounded uniform-grid indexes measure exact point-to-line-segment distance
+without scanning every feature for every square. Suitability strongly prefers
+settlement proximity, gives roads only short-range influence, prefers an access
+band near water rather than banks, requires at least 75% of sixteen explicit
+within-square samples to be dry non-wetland land, penalizes 15-degree
+slopes/local relief, and weakly penalizes modern canopy. Soil is deliberately
+omitted: the current SoilGrids stage exposes settlement samples rather than a
+bounded map-wide raster, and expanding that compiler surface is
+disproportionate to this allocator. Impossible coastal/usable-land quotas fail
+the build instead of silently losing area.
+
+The selected square IDs, HYDE source digest, rules version, residual, and
+counts determine the final terrain package identity. Exact square boundaries
+are used for both foraging legality and map paint.

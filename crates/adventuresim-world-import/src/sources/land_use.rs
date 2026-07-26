@@ -7,12 +7,13 @@
 use std::{
     collections::HashMap,
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
 };
 
 use adventuresim_world_schema::{LandUseFraction, LandUseProfile, SourceProvenance};
 use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
+use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
 use crate::{
@@ -29,6 +30,94 @@ const HYDE_CELL_SIZE: f64 = 1.0 / 12.0;
 const MAX_GRID_CELLS: usize = 10_000_000;
 const MAX_NORMALIZABLE_OVERLAP: f64 = 1.05;
 const AXIS_EPSILON: f64 = 1e-6;
+
+#[derive(Clone, Copy, Debug)]
+pub struct HydeCropCell {
+    pub row: i16,
+    pub column: i16,
+    pub bounds: [f64; 4],
+    pub crop_km2: f64,
+}
+
+/// Read every HYDE source cell intersecting the playable bounds. This exposes
+/// raw interpolated cropland kmÂ² to the map allocator rather than reusing the
+/// rounded settlement profile.
+pub fn crop_cells(
+    directory: &Path,
+    year: i32,
+    bounds: [f64; 4],
+) -> Result<(Vec<HydeCropCell>, String)> {
+    let [west, south, east, north] = bounds;
+    if !bounds.into_iter().all(f64::is_finite) || west >= east || south >= north {
+        return Err(Error::Validation("invalid HYDE crop bounds".into()));
+    }
+    let mut coordinates = Vec::new();
+    let mut identities = Vec::new();
+    for row in 0..HYDE_ROWS {
+        let latitude = 90.0 - (row as f64 + 0.5) * HYDE_CELL_SIZE;
+        if latitude + HYDE_CELL_SIZE / 2.0 <= south || latitude - HYDE_CELL_SIZE / 2.0 >= north {
+            continue;
+        }
+        for column in 0..HYDE_COLUMNS {
+            let longitude = -180.0 + (column as f64 + 0.5) * HYDE_CELL_SIZE;
+            if longitude + HYDE_CELL_SIZE / 2.0 <= west || longitude - HYDE_CELL_SIZE / 2.0 >= east
+            {
+                continue;
+            }
+            coordinates.push((latitude, longitude));
+            identities.push((row as i16, column as i16));
+        }
+    }
+    if coordinates.is_empty() || coordinates.len() > MAX_GRID_CELLS {
+        return Err(Error::Validation(
+            "HYDE crop selection is empty or unbounded".into(),
+        ));
+    }
+    let grid = HydeGrid::open(directory, year, &coordinates)?;
+    let cells = coordinates
+        .into_iter()
+        .zip(identities)
+        .zip(grid.values)
+        .map(|(((latitude, longitude), (row, column)), values)| {
+            let crop_start = values.crop_start.ok_or_else(|| {
+                Error::Validation("HYDE crop cell has missing start value".into())
+            })?;
+            let crop_end = values
+                .crop_end
+                .ok_or_else(|| Error::Validation("HYDE crop cell has missing end value".into()))?;
+            let crop_km2 = interpolate(crop_start, crop_end, grid.interpolation);
+            if !crop_km2.is_finite() || crop_km2 < 0.0 {
+                return Err(Error::Validation("HYDE crop area is invalid".into()));
+            }
+            Ok(HydeCropCell {
+                row,
+                column,
+                bounds: [
+                    longitude - HYDE_CELL_SIZE / 2.0,
+                    latitude - HYDE_CELL_SIZE / 2.0,
+                    longitude + HYDE_CELL_SIZE / 2.0,
+                    latitude + HYDE_CELL_SIZE / 2.0,
+                ],
+                crop_km2,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"hyde-3.5-c9-cropland-1544-grid-v1");
+    for name in ["cropland.nc", "general_files.zip"] {
+        let path = require(directory, name)?;
+        let mut reader = BufReader::new(File::open(path)?);
+        let mut buffer = vec![0_u8; 1024 * 1024];
+        loop {
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+    }
+    Ok((cells, format!("{:x}", hasher.finalize())))
+}
 
 const COMPONENTS: [HydeComponent; 3] = [
     HydeComponent::new("cropland.nc", "cropland"),

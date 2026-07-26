@@ -17,6 +17,9 @@ pub struct Features {
     pub water: Vec<Vec<Vec<[f64; 2]>>>,
     pub wetlands: Vec<Vec<Vec<[f64; 2]>>>,
     pub wetland_source_sha256: String,
+    pub cultivated: Vec<Vec<Vec<[f64; 2]>>>,
+    pub cultivation_source_sha256: String,
+    pub cultivation_rules_version: u16,
 }
 
 pub fn build(
@@ -42,6 +45,7 @@ pub fn build(
     ];
     let mut entries = Vec::new();
     let mut pack = Vec::new();
+    let mut cultivated_native_cells = 0_u64;
     for south in source_bounds[1]..source_bounds[3] {
         for west in source_bounds[0]..source_bounds[2] {
             let path = elevation_path(elevation_dir, south, west)?;
@@ -85,7 +89,7 @@ pub fn build(
                 )));
             };
             let forest = read_forest(forest_dir, south, west)?;
-            let (roads, water, wetlands) = masks(features, south, west, width, height);
+            let (roads, water, wetlands, cultivated) = masks(features, south, west, width, height);
             let chunks_x = width.div_ceil(u32::from(CHUNK_SIDE));
             let chunks_y = height.div_ceil(u32::from(CHUNK_SIDE));
             for chunk_y in 0..chunks_y {
@@ -131,6 +135,8 @@ pub fn build(
                             let on_road = roads.contains(&(x as u16, y as u16));
                             let on_water = water[pixel_index] != 0;
                             let on_wetland = wetlands[pixel_index] != 0;
+                            let is_cultivated = cultivated[pixel_index] != 0;
+                            cultivated_native_cells += u64::from(is_cultivated);
                             let surface = choose_surface(
                                 on_road,
                                 on_water,
@@ -144,7 +150,11 @@ pub fn build(
                             let hilly = elevations.as_ref().is_some_and(|pixels| {
                                 native_cell_is_hilly(pixels, x, y, width, height, south)
                             });
-                            decoded.push(u8::from(crossing) | (u8::from(hilly) << 1));
+                            decoded.push(
+                                u8::from(crossing)
+                                    | (u8::from(hilly) << 1)
+                                    | (u8::from(is_cultivated) << 2),
+                            );
                             decoded.push(canopy);
                         }
                     }
@@ -182,6 +192,12 @@ pub fn build(
         road_geometry_sha256,
         wetland_source_sha256: features.wetland_source_sha256.clone(),
         wetland_cells,
+        cultivation_grid_crs: "EPSG:3035".into(),
+        cultivation_grid_resolution_m: 1_000,
+        cultivation_rules_version: features.cultivation_rules_version,
+        cultivation_source_sha256: features.cultivation_source_sha256.clone(),
+        cultivated_square_count: features.cultivated.len() as u64,
+        cultivated_native_cells,
         entries,
         package_sha256: "0".repeat(64),
     };
@@ -335,7 +351,7 @@ fn masks(
     west: i16,
     width: u32,
     height: u32,
-) -> (HashSet<(u16, u16)>, Vec<u8>, Vec<u8>) {
+) -> (HashSet<(u16, u16)>, Vec<u8>, Vec<u8>, Vec<u8>) {
     let mut roads = HashSet::new();
     let to_pixel = |point: [f64; 2]| -> (i32, i32) {
         (
@@ -376,7 +392,8 @@ fn masks(
     }
     let water = polygon_mask(&features.water, south, west, width, height);
     let wetlands = polygon_mask(&features.wetlands, south, west, width, height);
-    (roads, water, wetlands)
+    let cultivated = polygon_mask(&features.cultivated, south, west, width, height);
+    (roads, water, wetlands, cultivated)
 }
 
 fn polygon_mask(
@@ -574,6 +591,23 @@ mod tests {
         let polygon = vec![vec![[1.0, 2.0], [4.0, 3.0]], vec![[-1.0, 8.0], [2.0, -2.0]]];
         assert_eq!(polygon_bounds(&polygon), Some([-1.0, -2.0, 4.0, 8.0]));
         assert_eq!(polygon_bounds(&[]), None);
+    }
+
+    #[test]
+    fn cultivated_square_polygon_sets_only_covered_native_cells() {
+        let polygon = vec![vec![vec![
+            [0.2, 0.4],
+            [0.6, 0.4],
+            [0.6, 0.8],
+            [0.2, 0.8],
+            [0.2, 0.4],
+        ]]];
+        let mask = polygon_mask(&polygon, 0, 0, 5, 5);
+        assert_eq!(mask.iter().filter(|&&value| value != 0).count(), 4);
+        assert_eq!(mask[0], 0);
+        assert_eq!(mask[1 + 5], 1);
+        assert_eq!(mask[2 + 2 * 5], 1);
+        assert_eq!(mask[4 + 4 * 5], 0);
     }
 
     #[test]

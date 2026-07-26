@@ -182,7 +182,7 @@ pub fn character_candidates_page(
         combat_profile: CombatTrainingProfile::default(),
         religion_id: None,
         training_religion_id: None,
-        notoriety: 0.0,
+        virtue: 0.0,
         attributes_title: &attributes_title,
         skills_title: &skills_title,
         description: "Adventurer profile",

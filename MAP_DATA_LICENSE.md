@@ -75,3 +75,8 @@ The generated packs contain rendered tiles and compiled terrain values. They do
 not redistribute the original Viabundus CSV files, Copernicus DEM GeoTIFFs, or
 Copernicus forest source rasters. Source access remains subject to each
 provider's terms and distribution service.
+Cultivated-land classification and its rendered map layer are derived from
+HYDE 3.5 c9 cropland areas, combined with the project inputs already identified
+for roads, hydrology, elevation, wetlands, forest cover, and settlements. HYDE
+terms and attribution remain applicable to distributed final terrain and map
+artifacts.

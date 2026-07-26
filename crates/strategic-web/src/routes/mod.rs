@@ -5,6 +5,7 @@ mod data;
 pub mod developer_quests;
 pub mod dialogue;
 pub mod evidence;
+pub mod foraging;
 pub mod home;
 mod inventory_forms;
 pub mod investigation;
@@ -550,7 +551,10 @@ async fn planned_travel_call(
     )))
 }
 
-fn persisted_route_position(route: &PartyJourneyRoute, minute: u64) -> Option<(f64, f64)> {
+pub(crate) fn persisted_route_position(
+    route: &PartyJourneyRoute,
+    minute: u64,
+) -> Option<(f64, f64)> {
     let coordinate = |point: &crate::spacetimedb::JourneyRoutePoint| {
         (
             f64::from(point.latitude_e7) / 10_000_000.0,
@@ -739,6 +743,7 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(dialogue::routes())
                 .merge(developer_quests::routes())
                 .merge(evidence::routes())
+                .merge(foraging::routes())
                 .merge(local_chat::routes())
                 .merge(settlements::routes())
                 .merge(parties::routes())

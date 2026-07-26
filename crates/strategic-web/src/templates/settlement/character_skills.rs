@@ -212,6 +212,8 @@ pub(crate) struct CharacterSheetActions<'a> {
     pub(super) cooking_open: bool,
     pub(super) examination_action: Option<&'a str>,
     pub(super) examination_open: bool,
+    pub(super) foraging_href: Option<&'a str>,
+    pub(super) foraging_open: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -388,7 +390,11 @@ fn skills_table(
                     (language_skill_rows(skills, schedule.is_some()))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some(), None)) }
-                    (terrain_skill_rows(skills, schedule.is_some()))
+                    (terrain_skill_rows(skills, schedule.is_some(), actions.foraging_href.map(|href| SkillAction::Get {
+                        href,
+                        label: "Forage in the immediate vicinity",
+                        open: actions.foraging_open,
+                    })))
                     @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some(), None)) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
@@ -443,7 +449,11 @@ fn skills_table(
     }
 }
 
-fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
+fn terrain_skill_rows(
+    skills: &CharacterSkills,
+    schedule_context: bool,
+    action: Option<SkillAction<'_>>,
+) -> Markup {
     let entries = [
         (
             "Plains",
@@ -482,6 +492,9 @@ fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Marku
                 (skill_rank_bar(rank, rank, "Unweighted mean; route previews use the local terrain mixture", skill_rail_bar_options()))
             }
             td class="religion-expand-cell" {
+                @if let Some(action) = action {
+                    (skill_action_icon("Terrain", "terrain", action, false))
+                }
                 button type="button" class="religion-expand-button" data-terrain-expand aria-expanded="false" aria-label="Expand Terrain skills" title="Expand Terrain" {
                     span class="religion-expand-chevron" aria-hidden="true" { "›" }
                 }

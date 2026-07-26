@@ -15,8 +15,8 @@ mod raster;
 #[path = "build-strategic-map/tiles.rs"]
 mod tiles;
 
-const PACKAGE_SCHEMA: u32 = 4;
-const RENDERER_REVISION: u32 = 9;
+const PACKAGE_SCHEMA: u32 = 5;
+const RENDERER_REVISION: u32 = 10;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
@@ -38,6 +38,8 @@ struct Args {
     forest_cover_dir: PathBuf,
     #[arg(long, default_value = "target/world-data-sources/raw/jung-pnv")]
     potential_vegetation_dir: PathBuf,
+    #[arg(long, default_value = "target/world-data-sources/raw/hyde-3-5")]
+    hyde_dir: PathBuf,
     #[arg(long, default_value = "target/world-1544.json")]
     compiled_world: PathBuf,
     #[arg(long, default_value = "target/strategic-map/strategic-map-v1.json")]
@@ -102,6 +104,7 @@ struct Package {
     routing_roads: Vec<Vec<Point>>,
     water: Vec<WaterPolygon>,
     wetlands: Vec<WaterPolygon>,
+    cultivated: Vec<WaterPolygon>,
     elevation: ElevationLayer,
     forest: ForestLayer,
     tiles: TilePyramid,
@@ -121,6 +124,7 @@ struct DeploymentPackage<'a> {
     source: &'a Source,
     elevation: DeploymentLayer<'a>,
     forest: DeploymentForestLayer<'a>,
+    cultivation: DeploymentCultivation,
     tiles: &'a TilePyramid,
     terrain_package_sha256: String,
     inferred_road_geometry_sha256: String,
@@ -137,6 +141,15 @@ struct DeploymentLayer<'a> {
 struct DeploymentForestLayer<'a> {
     source: &'a raster::LayerSource,
     coverage_tiles: usize,
+}
+
+#[derive(Serialize)]
+struct DeploymentCultivation {
+    grid_crs: &'static str,
+    grid_resolution_m: u16,
+    rules_version: u16,
+    source_sha256: String,
+    square_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -258,7 +271,20 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             .then_with(|| point_order(&a.points, &b.points))
     });
     package.routing_roads.sort_by(|a, b| point_order(a, b));
-    let terrain_features = terrain_features(&package, wetland.polygons, wetland.source_sha256);
+    let (cultivated, cultivation_source_sha256) =
+        cultivated_land(&args.hyde_dir, &base, &package, &world)?;
+    package.cultivated = cultivated
+        .iter()
+        .map(|rings| WaterPolygon {
+            rings: rings
+                .iter()
+                .map(|ring| ring.iter().copied().map(Point).collect())
+                .collect(),
+        })
+        .collect();
+    let mut terrain_features = terrain_features(&package, wetland.polygons, wetland.source_sha256);
+    terrain_features.cultivated = cultivated;
+    terrain_features.cultivation_source_sha256 = cultivation_source_sha256;
     let terrain = adventuresim_terrain::builder::build(
         &args.elevation_dir,
         &args.forest_cover_dir,
@@ -290,6 +316,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         &terrain.package_sha256,
         &world.report.inferred_road_geometry_sha256,
         &terrain.wetland_source_sha256,
+        &terrain.cultivation_source_sha256,
     );
     deployment.package_sha256 = package_digest(&deployment)?;
     let mut bytes = serde_json::to_vec(&deployment)?;
@@ -397,7 +424,224 @@ fn terrain_features(
             .collect(),
         wetlands,
         wetland_source_sha256,
+        cultivated: Vec::new(),
+        cultivation_source_sha256: format!("{:x}", Sha256::digest(b"no-cultivation")),
+        cultivation_rules_version:
+            adventuresim_world_import::cultivation::CULTIVATION_RULES_VERSION,
     }
+}
+
+fn cultivated_land(
+    hyde_dir: &Path,
+    terrain: &adventuresim_terrain::TerrainPack,
+    package: &Package,
+    world: &CompiledWorld,
+) -> Result<(Vec<Vec<Vec<[f64; 2]>>>, String), Box<dyn std::error::Error>> {
+    use adventuresim_world_import::{
+        cultivation::{
+            CultivationCandidate, CultivationCell, HydeCropQuota, MetricSegment,
+            SegmentDistanceIndex, allocate, square_is_usable,
+        },
+        spatial::{ProjectedCoordinate, SpatialProjection},
+    };
+    let projection = SpatialProjection::new()?;
+    let projected_corners = [
+        projection.project(BOUNDS[1], BOUNDS[0])?,
+        projection.project(BOUNDS[1], BOUNDS[2])?,
+        projection.project(BOUNDS[3], BOUNDS[0])?,
+        projection.project(BOUNDS[3], BOUNDS[2])?,
+    ];
+    let min_column = projected_corners
+        .iter()
+        .map(|point| point.easting_millimeters().div_euclid(1_000_000))
+        .min()
+        .ok_or("projected map has no corners")?
+        - 1;
+    let max_column = projected_corners
+        .iter()
+        .map(|point| point.easting_millimeters().div_euclid(1_000_000))
+        .max()
+        .ok_or("projected map has no corners")?
+        + 1;
+    let min_row = projected_corners
+        .iter()
+        .map(|point| point.northing_millimeters().div_euclid(1_000_000))
+        .min()
+        .ok_or("projected map has no corners")?
+        - 1;
+    let max_row = projected_corners
+        .iter()
+        .map(|point| point.northing_millimeters().div_euclid(1_000_000))
+        .max()
+        .ok_or("projected map has no corners")?
+        + 1;
+    let metric_point = |point: ProjectedCoordinate| {
+        [
+            point.easting_millimeters().div_euclid(1_000),
+            point.northing_millimeters().div_euclid(1_000),
+        ]
+    };
+    let settlement_segments = world
+        .settlements
+        .iter()
+        .map(|settlement| projection.project(settlement.latitude, settlement.longitude))
+        .map(|point| {
+            point.map(|point| {
+                let point = metric_point(point);
+                MetricSegment {
+                    from: point,
+                    to: point,
+                }
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let project_segments =
+        |lines: &[Vec<Point>]| -> Result<Vec<MetricSegment>, Box<dyn std::error::Error>> {
+            lines
+                .iter()
+                .flat_map(|line| line.windows(2))
+                .map(|pair| {
+                    Ok(MetricSegment {
+                        from: metric_point(projection.project(pair[0].0[1], pair[0].0[0])?),
+                        to: metric_point(projection.project(pair[1].0[1], pair[1].0[0])?),
+                    })
+                })
+                .collect()
+        };
+    let settlement_index = SegmentDistanceIndex::new(settlement_segments)?;
+    let road_index = SegmentDistanceIndex::new(project_segments(&package.routing_roads)?)?;
+    let water_lines = package
+        .water
+        .iter()
+        .flat_map(|polygon| polygon.rings.iter().cloned())
+        .collect::<Vec<_>>();
+    let water_index = SegmentDistanceIndex::new(project_segments(&water_lines)?)?;
+    let mut candidates = Vec::new();
+    for row in min_row..=max_row {
+        for column in min_column..=max_column {
+            let center = ProjectedCoordinate::from_meters(
+                column as f64 * 1_000.0 + 500.0,
+                row as f64 * 1_000.0 + 500.0,
+            )?;
+            let (latitude, longitude) = projection.unproject(center)?;
+            if longitude < BOUNDS[0]
+                || longitude >= BOUNDS[2]
+                || latitude < BOUNDS[1]
+                || latitude >= BOUNDS[3]
+            {
+                continue;
+            }
+            let native = terrain.cell(latitude, longitude)?;
+            let mut dry_passable_samples = 0u16;
+            for sample_row in 0..4 {
+                for sample_column in 0..4 {
+                    let sample = ProjectedCoordinate::from_meters(
+                        column as f64 * 1_000.0 + (f64::from(sample_column) + 0.5) * 250.0,
+                        row as f64 * 1_000.0 + (f64::from(sample_row) + 0.5) * 250.0,
+                    )?;
+                    let (sample_latitude, sample_longitude) = projection.unproject(sample)?;
+                    if terrain
+                        .cell(sample_latitude, sample_longitude)?
+                        .is_some_and(|cell| {
+                            !matches!(
+                                cell.surface,
+                                adventuresim_terrain::Surface::Water
+                                    | adventuresim_terrain::Surface::Wetland
+                            )
+                        })
+                    {
+                        dry_passable_samples += 1;
+                    }
+                }
+            }
+            let usable_land = square_is_usable(dry_passable_samples, 16);
+            let elevation_samples = [
+                (latitude, longitude),
+                (latitude + 0.0045, longitude),
+                (latitude - 0.0045, longitude),
+                (latitude, longitude + 0.0075),
+                (latitude, longitude - 0.0075),
+            ]
+            .into_iter()
+            .filter_map(|(latitude, longitude)| terrain.cell(latitude, longitude).ok().flatten())
+            .map(|cell| cell.elevation_m)
+            .collect::<Vec<_>>();
+            let relief = elevation_samples
+                .iter()
+                .max()
+                .zip(elevation_samples.iter().min())
+                .map_or(0, |(high, low)| high.saturating_sub(*low).max(0) as u16);
+            let hyde_row = ((90.0 - latitude) * 12.0).floor().clamp(0.0, 2_159.0) as i16;
+            let hyde_column = ((longitude + 180.0) * 12.0).floor().clamp(0.0, 4_319.0) as i16;
+            candidates.push(CultivationCandidate {
+                cell: CultivationCell { column, row },
+                hyde_cell: (hyde_row, hyde_column),
+                usable_land,
+                settlement_distance_m: settlement_index
+                    .nearest_distance_m(metric_point(center), 100_000),
+                road_distance_m: road_index.nearest_distance_m(metric_point(center), 10_000),
+                water_distance_m: water_index.nearest_distance_m(metric_point(center), 10_000),
+                slope_permille: native.map_or(0, |cell| {
+                    if cell.hilly_fraction_percent >= 50 {
+                        268
+                    } else {
+                        0
+                    }
+                }),
+                relief_m: relief,
+                canopy_percent: native.map_or(0, |cell| cell.canopy_percent),
+            });
+        }
+    }
+    let (hyde, source_sha256) = adventuresim_world_import::hyde_crop_cells(hyde_dir, YEAR, BOUNDS)?;
+    let quotas = hyde
+        .into_iter()
+        .map(|cell| HydeCropQuota {
+            cell: (cell.row, cell.column),
+            crop_km2: cell.crop_km2
+                * ((cell.bounds[2].min(BOUNDS[2]) - cell.bounds[0].max(BOUNDS[0]))
+                    / (cell.bounds[2] - cell.bounds[0]))
+                    .clamp(0.0, 1.0)
+                * ((cell.bounds[3].min(BOUNDS[3]) - cell.bounds[1].max(BOUNDS[1]))
+                    / (cell.bounds[3] - cell.bounds[1]))
+                    .clamp(0.0, 1.0),
+        })
+        .collect::<Vec<_>>();
+    let allocation = allocate(&candidates, &quotas)?;
+    if allocation.residual_km2.abs() >= 0.500_001 {
+        return Err("cultivation quota rounding residual exceeded 0.5 km2".into());
+    }
+    let polygons = allocation
+        .cells
+        .into_iter()
+        .map(|cell| {
+            let ring = [
+                (cell.column as f64 * 1_000.0, cell.row as f64 * 1_000.0),
+                (
+                    (cell.column + 1) as f64 * 1_000.0,
+                    cell.row as f64 * 1_000.0,
+                ),
+                (
+                    (cell.column + 1) as f64 * 1_000.0,
+                    (cell.row + 1) as f64 * 1_000.0,
+                ),
+                (
+                    cell.column as f64 * 1_000.0,
+                    (cell.row + 1) as f64 * 1_000.0,
+                ),
+                (cell.column as f64 * 1_000.0, cell.row as f64 * 1_000.0),
+            ]
+            .into_iter()
+            .map(|(easting, northing)| {
+                let (latitude, longitude) =
+                    projection.unproject(ProjectedCoordinate::from_meters(easting, northing)?)?;
+                Ok([longitude, latitude])
+            })
+            .collect::<Result<Vec<_>, adventuresim_world_import::Error>>()?;
+            Ok(vec![ring])
+        })
+        .collect::<Result<Vec<_>, adventuresim_world_import::Error>>()?;
+    Ok((polygons, source_sha256))
 }
 
 fn write_data_license(outputs: &[&Path]) -> std::io::Result<()> {
@@ -549,6 +793,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
         routing_roads,
         water,
         wetlands: Vec::new(),
+        cultivated: Vec::new(),
         elevation: layers.elevation,
         forest: layers.forest,
         tiles: TilePyramid {
@@ -621,6 +866,7 @@ fn deployment_package<'a>(
     terrain_package_sha256: &str,
     inferred_geometry_sha256: &str,
     wetland_source_sha256: &str,
+    cultivation_source_sha256: &str,
 ) -> DeploymentPackage<'a> {
     DeploymentPackage {
         schema: PACKAGE_SCHEMA,
@@ -634,6 +880,13 @@ fn deployment_package<'a>(
         forest: DeploymentForestLayer {
             source: &package.forest.source,
             coverage_tiles: package.forest.coverage.len(),
+        },
+        cultivation: DeploymentCultivation {
+            grid_crs: "EPSG:3035",
+            grid_resolution_m: 1_000,
+            rules_version: adventuresim_world_import::cultivation::CULTIVATION_RULES_VERSION,
+            source_sha256: cultivation_source_sha256.into(),
+            square_count: package.cultivated.len(),
         },
         tiles: &package.tiles,
         terrain_package_sha256: terrain_package_sha256.into(),
@@ -1058,8 +1311,13 @@ mod tests {
 
         let mut rendered = first.clone();
         rendered.tiles = first_manifest;
-        let mut deployment =
-            deployment_package(&rendered, &"0".repeat(64), &"1".repeat(64), &"2".repeat(64));
+        let mut deployment = deployment_package(
+            &rendered,
+            &"0".repeat(64),
+            &"1".repeat(64),
+            &"2".repeat(64),
+            &"3".repeat(64),
+        );
         deployment.package_sha256 = package_digest(&deployment).unwrap();
         let value = serde_json::to_value(&deployment).unwrap();
         assert_eq!(value["schema"], PACKAGE_SCHEMA);

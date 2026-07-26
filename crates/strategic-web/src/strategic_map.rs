@@ -29,8 +29,8 @@ const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 pub(crate) const DATA_LICENSE_PATH: &str = "/map/data-license";
 const DATA_LICENSE: &str = include_str!("../../../MAP_DATA_LICENSE.md");
-const PACKAGE_SCHEMA: u32 = 4;
-const RENDERER_REVISION: u32 = 9;
+const PACKAGE_SCHEMA: u32 = 5;
+const RENDERER_REVISION: u32 = 10;
 const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_ENTRIES: usize = 100_000;
@@ -46,6 +46,7 @@ struct Package {
     source: Source,
     elevation: ElevationLayer,
     forest: ForestLayer,
+    cultivation: CultivationLayer,
     tiles: TilePyramid,
     terrain_package_sha256: String,
     inferred_road_geometry_sha256: String,
@@ -91,6 +92,15 @@ struct ElevationLayer {
 #[derive(Debug, Deserialize)]
 struct ForestLayer {
     source: LayerSource,
+}
+
+#[derive(Debug, Deserialize)]
+struct CultivationLayer {
+    grid_crs: String,
+    grid_resolution_m: u16,
+    rules_version: u16,
+    source_sha256: String,
+    square_count: usize,
 }
 
 pub struct StrategicMap {
@@ -153,6 +163,7 @@ impl StrategicMap {
             &package.terrain_package_sha256,
             &package.inferred_road_geometry_sha256,
             &package.wetland_source_sha256,
+            &package.cultivation.source_sha256,
         ] {
             anyhow::ensure!(
                 digest.len() == 64
@@ -165,6 +176,13 @@ impl StrategicMap {
         anyhow::ensure!(
             package.renderer_revision == RENDERER_REVISION,
             "unsupported strategic map renderer revision"
+        );
+        anyhow::ensure!(
+            package.cultivation.grid_crs == "EPSG:3035"
+                && package.cultivation.grid_resolution_m == 1_000
+                && package.cultivation.rules_version > 0
+                && package.cultivation.square_count <= 5_000_000,
+            "invalid strategic map cultivation contract"
         );
         anyhow::ensure!(
             package_json_digest(&package_json, &package.package_sha256)? == package.package_sha256,
@@ -249,6 +267,7 @@ impl StrategicMap {
                 terrain.purpose(),
                 terrain.package_sha256(),
                 terrain.wetland_source_sha256(),
+                terrain.cultivation_source_sha256(),
                 terrain.bounds()
             ),
             "map/terrain purpose, package, wetland, or bounds identity mismatch"
@@ -262,11 +281,13 @@ fn terrain_identity_matches(
     purpose: adventuresim_terrain::TerrainPurpose,
     terrain_sha: &str,
     wetland_sha: &str,
+    cultivation_sha: &str,
     bounds: [f64; 4],
 ) -> bool {
     purpose == adventuresim_terrain::TerrainPurpose::Final
         && terrain_sha == package.terrain_package_sha256
         && wetland_sha == package.wetland_source_sha256
+        && cultivation_sha == package.cultivation.source_sha256
         && bounds == package.bounds
 }
 
@@ -710,10 +731,11 @@ mod tests {
         let placeholder = "0".repeat(64);
         let unsigned = format!(
             concat!(
-                r#"{{"schema":4,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":2048,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"terrain_package_sha256":"{}","inferred_road_geometry_sha256":"{}","wetland_source_sha256":"{}","package_sha256":"{}"}}"#
+                r#"{{"schema":4,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"cultivation":{{"grid_crs":"EPSG:3035","grid_resolution_m":1000,"rules_version":1,"source_sha256":"{}","square_count":1}},"tiles":{{"format":"avif","tile_size":2048,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"terrain_package_sha256":"{}","inferred_road_geometry_sha256":"{}","wetland_source_sha256":"{}","package_sha256":"{}"}}"#
             ),
-            tile_digest, placeholder, placeholder, placeholder, placeholder
+            placeholder, tile_digest, placeholder, placeholder, placeholder, placeholder
         )
+        .replace("\"schema\":4", &format!("\"schema\":{PACKAGE_SCHEMA}"))
         .replace(
             "\"renderer_revision\":3",
             &format!("\"renderer_revision\":{RENDERER_REVISION}"),
@@ -779,12 +801,14 @@ mod tests {
         let map = map_bundle();
         let terrain = map.package.terrain_package_sha256.clone();
         let wet = map.package.wetland_source_sha256.clone();
+        let cultivation = map.package.cultivation.source_sha256.clone();
         let bounds = map.package.bounds;
         assert!(terrain_identity_matches(
             &map.package,
             adventuresim_terrain::TerrainPurpose::Final,
             &terrain,
             &wet,
+            &cultivation,
             bounds
         ));
         assert!(!terrain_identity_matches(
@@ -792,6 +816,7 @@ mod tests {
             adventuresim_terrain::TerrainPurpose::DocumentedBase,
             &terrain,
             &wet,
+            &cultivation,
             bounds
         ));
         assert!(!terrain_identity_matches(
@@ -799,6 +824,7 @@ mod tests {
             adventuresim_terrain::TerrainPurpose::Final,
             &"f".repeat(64),
             &wet,
+            &cultivation,
             bounds
         ));
         assert!(!terrain_identity_matches(
@@ -806,6 +832,7 @@ mod tests {
             adventuresim_terrain::TerrainPurpose::Final,
             &terrain,
             &"e".repeat(64),
+            &cultivation,
             bounds
         ));
     }

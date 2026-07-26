@@ -3969,7 +3969,7 @@ pub fn register_strategic_gateway(
     if terrain_package_digest
         .as_deref()
         .is_some_and(|digest| !valid_route_digest(digest))
-        || (terrain_package_digest.is_some() && terrain_schema != 1)
+        || (terrain_package_digest.is_some() && terrain_schema != 2)
         || (terrain_package_digest.is_none() && terrain_schema != 0)
     {
         return Err("Strategic gateway terrain package metadata is invalid".into());
@@ -11955,7 +11955,7 @@ fn validate_journey_route(
     destination: (f64, f64),
 ) -> Result<(), String> {
     let authority = require_strategic_gateway(ctx)?;
-    if authority.terrain_schema != 1
+    if authority.terrain_schema != 2
         || authority.terrain_package_digest.as_deref() != Some(route.package_digest.as_str())
     {
         return Err("Terrain route does not match the gateway terrain package".into());
@@ -13189,7 +13189,10 @@ fn camp_redirect_minutes(journey: &PartyJourney, settlement_id: &str) -> Option<
     None
 }
 
-fn route_position_at_minute(route: &PartyJourneyRoute, minute: u64) -> Option<(f64, f64)> {
+pub(crate) fn route_position_at_minute(
+    route: &PartyJourneyRoute,
+    minute: u64,
+) -> Option<(f64, f64)> {
     let coordinate = |point: &JourneyRoutePoint| {
         (
             f64::from(point.longitude_e7) / 10_000_000.0,

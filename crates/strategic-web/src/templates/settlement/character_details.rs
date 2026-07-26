@@ -66,7 +66,7 @@ pub(crate) struct CharacterSheetView<'a> {
     pub combat_profile: CombatTrainingProfile,
     pub religion_id: Option<&'a str>,
     pub training_religion_id: Option<&'a str>,
-    pub notoriety: f32,
+    pub virtue: f32,
     pub attributes_title: &'a str,
     pub skills_title: &'a str,
     pub description: &'a str,
@@ -118,7 +118,7 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
             (character_bio_rail(
                 view.character,
                 view.religion_id,
-                view.notoriety,
+                view.virtue,
                 view.personality,
                 view.can_renounce,
                 view.location_path,
@@ -163,7 +163,7 @@ pub fn party_personal_page(
     combat_profile: CombatTrainingProfile,
     activity_preview: ActivityPreviewRates,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
-    notoriety: f32,
+    virtue: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     can_examine: bool,
@@ -195,6 +195,7 @@ pub fn party_personal_page(
         active_character.id
     ));
     let location_path = location.base_path();
+    let foraging_href = format!("/forage?return_to={location_path}");
     let social_path = location.preserve_building(format!(
         "{location_path}/party/{}/social",
         active_character.id
@@ -236,7 +237,7 @@ pub fn party_personal_page(
         combat_profile,
         religion_id,
         training_religion_id: religion_id.or(location.religion_id.as_deref()),
-        notoriety,
+        virtue,
         attributes_title: "Your attributes",
         skills_title: "Your skills",
         description: "Your identity, condition, and capabilities",
@@ -254,6 +255,8 @@ pub fn party_personal_page(
             cooking_open,
             examination_action: can_examine.then_some(examination_action.as_str()),
             examination_open: medical.examination_id.is_some(),
+            foraging_href: Some(&foraging_href),
+            foraging_open: false,
         },
         location_path: &location_path,
         center_before: html! {},
@@ -281,7 +284,7 @@ pub fn party_stats_page(
     religion_id: Option<&str>,
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
-    notoriety: f32,
+    virtue: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     can_examine: bool,
@@ -367,7 +370,7 @@ pub fn party_stats_page(
         combat_profile,
         religion_id,
         training_religion_id: religion_id.or(location.religion_id.as_deref()),
-        notoriety,
+        virtue,
         attributes_title: &selected_attributes_title,
         skills_title: &selected_skills_title,
         description: "Party member identity and capabilities",
@@ -415,16 +418,12 @@ pub(super) fn religion_name(religion_id: Option<&str>) -> &'static str {
 fn character_bio_rail(
     character: &Character,
     religion_id: Option<&str>,
-    notoriety: f32,
+    virtue: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     can_renounce: bool,
     location_path: &str,
 ) -> Markup {
-    let virtue = if notoriety.abs() < 0.0005 {
-        0.0
-    } else {
-        -notoriety
-    };
+    let virtue = if virtue.abs() < 0.0005 { 0.0 } else { virtue };
     html! {
         (sidebar_section("Bio", html! {
             dl class="character-bio" {

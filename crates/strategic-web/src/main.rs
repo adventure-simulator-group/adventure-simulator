@@ -120,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
         "register_strategic_gateway",
         &[
             sats_option_string(terrain.as_ref().map(|planner| planner.digest())),
-            serde_json::json!(if terrain.is_some() { 1_u32 } else { 0_u32 }),
+            serde_json::json!(if terrain.is_some() { 2_u32 } else { 0_u32 }),
         ],
     )
     .await

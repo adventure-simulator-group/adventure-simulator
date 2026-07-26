@@ -46,6 +46,8 @@ pub mod backend_dialogue_session_type;
 pub mod backend_dialogue_sessions_table;
 pub mod backend_dialogue_topic_option_type;
 pub mod backend_dialogue_topic_options_table;
+pub mod backend_forage_receipt_type;
+pub mod backend_forage_receipts_table;
 pub mod backend_herbalist_examinations_table;
 pub mod backend_infection_episodes_table;
 pub mod backend_investigation_action_outcome_type;
@@ -256,6 +258,9 @@ pub mod food_contamination_type;
 pub mod food_lot_table;
 pub mod food_lot_type;
 pub mod food_preparation_type;
+pub mod forage_attempt_authority_type;
+pub mod forage_current_vicinity_reducer;
+pub mod forage_environment_attestation_type;
 pub mod forest_commodity_type;
 pub mod forest_cover_type;
 pub mod forestry_industry_type;
@@ -672,6 +677,8 @@ pub use backend_dialogue_session_type::BackendDialogueSession;
 pub use backend_dialogue_sessions_table::*;
 pub use backend_dialogue_topic_option_type::BackendDialogueTopicOption;
 pub use backend_dialogue_topic_options_table::*;
+pub use backend_forage_receipt_type::BackendForageReceipt;
+pub use backend_forage_receipts_table::*;
 pub use backend_herbalist_examinations_table::*;
 pub use backend_infection_episodes_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
@@ -882,6 +889,9 @@ pub use food_contamination_type::FoodContamination;
 pub use food_lot_table::*;
 pub use food_lot_type::FoodLot;
 pub use food_preparation_type::FoodPreparation;
+pub use forage_attempt_authority_type::ForageAttemptAuthority;
+pub use forage_current_vicinity_reducer::forage_current_vicinity;
+pub use forage_environment_attestation_type::ForageEnvironmentAttestation;
 pub use forest_commodity_type::ForestCommodity;
 pub use forest_cover_type::ForestCover;
 pub use forestry_industry_type::ForestryIndustry;
@@ -1506,6 +1516,13 @@ pub enum Reducer {
     FinishWorldDataImport {
         artifact_id: String,
     },
+    ForageCurrentVicinity {
+        character_id: u64,
+        request_id: String,
+        target_item_ids: Vec<String>,
+        requested_minutes: u64,
+        attestation: ForageEnvironmentAttestation,
+    },
     ImportSettlementAliases {
         aliases: Vec<SettlementAliasBatchRow>,
     },
@@ -1941,6 +1958,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
+            Reducer::ForageCurrentVicinity { .. } => "forage_current_vicinity",
             Reducer::ImportSettlementAliases { .. } => "import_settlement_aliases",
             Reducer::ImportSettlementDescriptions { .. } => "import_settlement_descriptions",
             Reducer::ImportSettlements { .. } => "import_settlements",
@@ -2456,6 +2474,19 @@ Reducer::CancelMissionRequest{
                 artifact_id,
 }             => __sats::bsatn::to_vec(&finish_world_data_import_reducer::FinishWorldDataImportArgs {
                 artifact_id: artifact_id.clone(),
+}),
+            Reducer::ForageCurrentVicinity{
+                character_id,
+                request_id,
+                target_item_ids,
+                requested_minutes,
+                attestation,
+}             => __sats::bsatn::to_vec(&forage_current_vicinity_reducer::ForageCurrentVicinityArgs {
+                character_id: character_id.clone(),
+                request_id: request_id.clone(),
+                target_item_ids: target_item_ids.clone(),
+                requested_minutes: requested_minutes.clone(),
+                attestation: attestation.clone(),
 }),
             Reducer::ImportSettlementAliases{
                 aliases,
@@ -3140,6 +3171,7 @@ pub struct DbUpdate {
     backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableUpdate<BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableUpdate<BackendDialogueTopicOption>,
+    backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
     backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
@@ -3289,6 +3321,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         backend_dialogue_topic_options_table::parse_table_update(table_update)?,
                     )
                 }
+                "backend_forage_receipts" => db_update.backend_forage_receipts.append(
+                    backend_forage_receipts_table::parse_table_update(table_update)?,
+                ),
                 "backend_herbalist_examinations" => {
                     db_update.backend_herbalist_examinations.append(
                         backend_herbalist_examinations_table::parse_table_update(table_update)?,
@@ -3928,6 +3963,10 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_topic_options",
                 &self.backend_dialogue_topic_options,
             );
+        diff.backend_forage_receipts = cache.apply_diff_to_table::<BackendForageReceipt>(
+            "backend_forage_receipts",
+            &self.backend_forage_receipts,
+        );
         diff.backend_herbalist_examinations = cache.apply_diff_to_table::<HerbalistExamination>(
             "backend_herbalist_examinations",
             &self.backend_herbalist_examinations,
@@ -4074,6 +4113,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_dialogue_topic_options" => db_update
                     .backend_dialogue_topic_options
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_forage_receipts" => db_update
+                    .backend_forage_receipts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_herbalist_examinations" => db_update
                     .backend_herbalist_examinations
@@ -4391,6 +4433,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_topic_options" => db_update
                     .backend_dialogue_topic_options
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_forage_receipts" => db_update
+                    .backend_forage_receipts
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_herbalist_examinations" => db_update
                     .backend_herbalist_examinations
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4680,6 +4725,7 @@ pub struct AppliedDiff<'r> {
     backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableAppliedDiff<'r, BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableAppliedDiff<'r, BackendDialogueTopicOption>,
+    backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
     backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
     backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
     backend_investigation_action_outcomes:
@@ -4856,6 +4902,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendDialogueTopicOption>(
             "backend_dialogue_topic_options",
             &self.backend_dialogue_topic_options,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
+            "backend_forage_receipts",
+            &self.backend_forage_receipts,
             event,
         );
         callbacks.invoke_table_row_callbacks::<HerbalistExamination>(
@@ -5923,6 +5974,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_dialogue_prompts_table::register_table(client_cache);
         backend_dialogue_sessions_table::register_table(client_cache);
         backend_dialogue_topic_options_table::register_table(client_cache);
+        backend_forage_receipts_table::register_table(client_cache);
         backend_herbalist_examinations_table::register_table(client_cache);
         backend_infection_episodes_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
@@ -6026,6 +6078,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_dialogue_prompts",
         "backend_dialogue_sessions",
         "backend_dialogue_topic_options",
+        "backend_forage_receipts",
         "backend_herbalist_examinations",
         "backend_infection_episodes",
         "backend_investigation_action_outcomes",

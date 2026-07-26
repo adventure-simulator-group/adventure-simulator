@@ -17,6 +17,7 @@ pub mod equipment;
 pub mod essential;
 pub mod filth;
 pub mod food;
+pub mod foraging;
 pub mod investigation;
 pub mod investigation_action;
 pub mod leadership;

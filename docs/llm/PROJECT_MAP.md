@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1248)
+## Files (1258)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -64,6 +64,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/essential.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/filth.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/food.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/foraging.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/investigation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/investigation_action.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
@@ -135,6 +136,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_sessions_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_topic_option_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_topic_options_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_forage_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_forage_receipts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_herbalist_examinations_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_infection_episodes_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_investigation_action_outcome_type.rs` — Generated SpacetimeDB data type.
@@ -345,6 +348,9 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/food_lot_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/food_lot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/food_preparation_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/forage_attempt_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/forage_current_vicinity_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/forage_environment_attestation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forest_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forest_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forestry_industry_type.rs` — Generated SpacetimeDB data type.
@@ -732,6 +738,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/disease.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/filth.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/food.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/foraging.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/investigation.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/item.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.
@@ -802,6 +809,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-world-import/src/bin/build-strategic-map/raster.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/bin/build-strategic-map/tiles.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/builder.rs` — Rust source module for this component.
+- `crates/adventuresim-world-import/src/cultivation.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/draft.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/error.rs` — Rust source module for this component.
 - `crates/adventuresim-world-import/src/lib.rs` — Rust source module for this component.
@@ -852,6 +860,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/routes/developer_quests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/dialogue.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/evidence.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/foraging.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/home.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/inventory_forms.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/investigation.rs` — Strategic web HTTP route handler.
@@ -1176,6 +1185,7 @@ development, or wiki document before changing a subsystem.
 - `docs/ELEVATION.md` — Project documentation.
 - `docs/EQUIPMENT.md` — Project documentation.
 - `docs/FOOD_AND_COOKING.md` — Project documentation.
+- `docs/FORAGING.md` — Project documentation.
 - `docs/FOREST_COVER.md` — Project documentation.
 - `docs/GEOLOGY.md` — Project documentation.
 - `docs/HISTORICAL_LAND_USE.md` — Project documentation.
