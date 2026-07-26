@@ -348,17 +348,19 @@ mod tests {
             duration,
         );
         let mut chunked_hours = 2_999.0;
-        let first = apply_language_training(&mut chunked_hours, 1.0, 3.0);
-        let second = apply_language_training(&mut chunked_hours, 1.0, 3.0);
+        // Split exactly at the cap crossing: the accepted prefix produces no
+        // enjoyment, while the same rejected suffix reaches the endpoint.
+        let first = apply_language_training(&mut chunked_hours, 0.8, 3.0);
+        let second = apply_language_training(&mut chunked_hours, 1.2, 3.0);
         let chunked_morale = crate::morale::mastery_enjoyment_after_interval(
             crate::morale::mastery_enjoyment_after_interval(
                 0.0,
                 first.excess_effective_hours,
-                60,
+                48,
                 duration,
             ),
             second.excess_effective_hours,
-            60,
+            72,
             duration,
         );
         assert_eq!(bulk_hours, chunked_hours);

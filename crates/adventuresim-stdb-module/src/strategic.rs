@@ -5970,36 +5970,32 @@ fn dialogue_fact_context(
             },
             FactValue::Bool(prior),
         );
-        if let (Some(skills), Some(settlement)) = (
+        if let (Some(skills), Some(attributes), Some(settlement)) = (
             ctx.db.character_skills().character_id().find(character_id),
+            ctx.db
+                .character_attributes()
+                .character_id()
+                .find(character_id),
             ctx.db.settlement().id().find(&session.settlement_id),
         ) {
-            let coefficient = skills
+            let effective_hours = skills
                 .oral_languages
-                .effective(settlement.languages.dominant_german())
-                / adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+                .effective(settlement.languages.dominant_german());
+            let (compatibility, passes_check) =
+                participant_language_compatibility(effective_hours, attributes.instinct);
             result.facts.insert(
                 FactKey::ParticipantLanguageCompatibility {
                     left: player.role.clone(),
                     right: npc.role.clone(),
                 },
-                FactValue::Text(
-                    if coefficient >= 0.75 {
-                        "fluent"
-                    } else if coefficient >= 0.35 {
-                        "limited"
-                    } else {
-                        "poor"
-                    }
-                    .into(),
-                ),
+                FactValue::Text(compatibility.into()),
             );
             result.facts.insert(
                 FactKey::LanguageCheck {
                     left: player.role.clone(),
                     right: npc.role.clone(),
                 },
-                FactValue::Bool(coefficient >= 0.35),
+                FactValue::Bool(passes_check),
             );
         }
     }
@@ -6065,6 +6061,60 @@ fn dialogue_fact_context(
         }
     }
     Ok(result)
+}
+
+fn participant_language_compatibility(
+    target_effective_hours: f32,
+    instinct: f32,
+) -> (&'static str, bool) {
+    let effective = if target_effective_hours.is_finite() {
+        target_effective_hours.max(0.0)
+    } else {
+        0.0
+    };
+    let aptitude = if instinct.is_finite() {
+        instinct.clamp(0.0, 5.0)
+    } else {
+        0.0
+    };
+    let coefficient =
+        effective.min(aptitude * 1_000.0) / adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+    if coefficient >= 0.75 {
+        ("fluent", true)
+    } else if coefficient >= 0.35 {
+        ("limited", true)
+    } else {
+        ("poor", false)
+    }
+}
+
+#[cfg(test)]
+mod participant_language_compatibility_tests {
+    use super::participant_language_compatibility;
+
+    #[test]
+    fn instinct_cap_controls_dialogue_language_thresholds() {
+        assert_eq!(
+            participant_language_compatibility(5_000.0, 1.749),
+            ("poor", false)
+        );
+        assert_eq!(
+            participant_language_compatibility(5_000.0, 1.75),
+            ("limited", true)
+        );
+        assert_eq!(
+            participant_language_compatibility(5_000.0, 3.749),
+            ("limited", true)
+        );
+        assert_eq!(
+            participant_language_compatibility(5_000.0, 3.75),
+            ("fluent", true)
+        );
+        assert_eq!(
+            participant_language_compatibility(1_749.0, 5.0),
+            ("poor", false)
+        );
+    }
 }
 
 fn dialogue_runtime_bindings(

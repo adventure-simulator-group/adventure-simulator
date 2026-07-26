@@ -938,7 +938,7 @@ pub fn record_mastery_training_morale(
         .character_id()
         .filter(character_id)
         .find(|event| event.source_id.as_deref() == Some(MASTERY_MORALE_SOURCE_ID));
-    let starting = existing.as_ref().map_or(0.0, |event| {
+    let at_interval_start = existing.as_ref().map_or(0.0, |event| {
         let duration = event
             .expires_at_minute
             .saturating_sub(event.occurred_at_minute);
@@ -948,8 +948,10 @@ pub fn record_mastery_training_morale(
                 duration,
             )
     });
+    // Endpoint semantics: the helper decays this interval-start magnitude
+    // through `elapsed_minutes` before applying the one aggregated award.
     let magnitude = adventuresim_core::morale::mastery_enjoyment_after_interval(
-        starting,
+        at_interval_start,
         excess_effective_hours,
         elapsed_minutes,
         RECENT_MORALE_DURATION_MINUTES,

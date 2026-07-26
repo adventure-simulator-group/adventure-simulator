@@ -151,9 +151,9 @@ returns. Effective gain that crosses or exceeds the cap is rejected exactly at
 the boundary and feeds one shared, saturating **Mastery enjoyment** morale
 source. Forty excess effective hours reaches about 63% of its four-point limit.
 All rejected gains in one logical interval are combined before saturation; the
-retained source decays linearly and continuously to zero across seven days
-without rejected training. Aptitude zero earns neither effective hours nor
-mastery morale.
+existing enjoyment first decays linearly through the interval, then the combined
+award refreshes it at the endpoint. It reaches zero after seven days without
+another award. Aptitude zero earns neither effective hours nor mastery morale.
 
 The skill rail has three computed combat groups: **Melee**, **Ranged**, and **Defense**. They have no stored hours and are never used directly for a tactical check. Melee expands to Polearm, Axe, Bludgeon, Sword, and Knife; Ranged expands to Bow, Crossbow, Firearm, and Throw; Defense expands to Dodge, Block, Balance, and Will. Equipped weapon distributions determine the relevant weapon leaves. A shield gives Block full relevance; without one, the best-balanced equipped melee weapon gives Block a weight of `1 - balance`. Combat Training and Raiding divide their conserved activity award deterministically across those relevance weights.
 

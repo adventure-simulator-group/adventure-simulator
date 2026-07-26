@@ -29,9 +29,9 @@ pub const MASTERY_ENJOYMENT_EFOLD_HOURS: f32 = 40.0;
 
 /// Advance shared mastery enjoyment through one logical training interval.
 ///
-/// Rejected hours saturate at the interval endpoint. Decay applies only across
-/// intervals with no rejected training, so bulk and chunked cap crossings are
-/// identical and the source reaches zero continuously after its duration.
+/// Existing enjoyment first decays through the full interval. The combined
+/// rejected-hour award then saturates at the interval endpoint, so award order
+/// within one logical clock advance cannot affect the result.
 pub fn mastery_enjoyment_after_interval(
     starting_morale: f32,
     excess_effective_hours: f32,
@@ -48,15 +48,14 @@ pub fn mastery_enjoyment_after_interval(
     } else {
         0.0
     };
-    if excess > 0.0 {
-        return MASTERY_ENJOYMENT_LIMIT
-            - (MASTERY_ENJOYMENT_LIMIT - starting)
-                * (-excess / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
-    }
-    if duration_minutes == 0 {
-        return 0.0;
-    }
-    starting * (1.0 - elapsed_minutes as f32 / duration_minutes as f32).clamp(0.0, 1.0)
+    let decayed = if duration_minutes == 0 {
+        0.0
+    } else {
+        starting * (1.0 - elapsed_minutes as f32 / duration_minutes as f32).clamp(0.0, 1.0)
+    };
+    MASTERY_ENJOYMENT_LIMIT
+        - (MASTERY_ENJOYMENT_LIMIT - decayed)
+            * (-excess / MASTERY_ENJOYMENT_EFOLD_HOURS).exp()
 }
 
 pub fn mastery_enjoyment_decay(age_minutes: u64, duration_minutes: u64) -> f32 {
@@ -338,12 +337,9 @@ mod tests {
     }
 
     #[test]
-    fn mastery_enjoyment_is_bounded_positive_and_chunk_invariant() {
+    fn mastery_enjoyment_is_bounded_aggregated_and_continuously_decayed() {
         let duration = 7 * 24 * 60;
         let combined = mastery_enjoyment_after_interval(0.0, 80.0, 1_440, duration);
-        let first = mastery_enjoyment_after_interval(0.0, 40.0, 720, duration);
-        let chunked = mastery_enjoyment_after_interval(first, 40.0, 720, duration);
-        assert!((combined - chunked).abs() < 0.0001);
         assert!(combined > 0.0 && combined < MASTERY_ENJOYMENT_LIMIT);
         assert!(mastery_enjoyment_after_interval(0.0, 0.01, 1_440, duration) > 0.0);
         assert!(
@@ -360,6 +356,17 @@ mod tests {
             duration,
         );
         assert!((combined_sources - sequential_sources).abs() < 0.0001);
+        let partially_aged =
+            mastery_enjoyment_after_interval(2.0, 0.01, duration / 2, duration);
+        let decayed = 1.0;
+        let expected = MASTERY_ENJOYMENT_LIMIT
+            - (MASTERY_ENJOYMENT_LIMIT - decayed)
+                * (-0.01 / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
+        let frozen_then_awarded = MASTERY_ENJOYMENT_LIMIT
+            - (MASTERY_ENJOYMENT_LIMIT - 2.0)
+                * (-0.01 / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
+        assert!((partially_aged - expected).abs() < 0.0001);
+        assert!(partially_aged < frozen_then_awarded);
         assert_eq!(
             mastery_enjoyment_after_interval(combined, 0.0, duration, duration),
             0.0

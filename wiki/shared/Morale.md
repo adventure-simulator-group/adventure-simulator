@@ -41,9 +41,10 @@ The current strategic sources are:
 - Mastery enjoyment: effective training rejected at any skill's governing
   aptitude cap feeds one shared cross-skill source. It approaches a four-point
   limit with a 40-hour e-fold scale. All rejected gains in one logical clock
-  interval are combined before saturation, and the retained source decays
-  linearly and continuously to zero over seven days without rejected training.
-  Changing skills does not reset or multiply the saturation.
+  interval are combined before saturation. Existing enjoyment decays linearly
+  through that interval before the combined award refreshes it at the endpoint,
+  and reaches zero after seven days without another award. Changing skills does
+  not reset or multiply the saturation.
 
 Food quality and disease will become additional named sources when those systems are implemented. **Comfort-seeking/Ascetic** is a good follow-up personality axis only after food and lodging distinguish quality levels, so it has meaningful conditions to react to.
 
