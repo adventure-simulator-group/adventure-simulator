@@ -676,11 +676,6 @@ fn character_switcher(name: &str) -> Markup {
 fn journal_button() -> Markup {
     html! {
         span class="reference-buttons" {
-            a href="/physiology" class="journal-button physiology-reference-button"
-                aria-label="Open Physiology reference"
-                title="Physiology reference" data-strategic-tooltip="Physiology reference" {
-                span class="physiology-reference-button-icon" aria-hidden="true" { "⚕" }
-            }
             a href="/quests" class="journal-button" data-journal-tab
                 aria-label="Open journal" aria-pressed="false"
                 title="Journal" data-strategic-tooltip="Journal" {

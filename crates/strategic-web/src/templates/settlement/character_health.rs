@@ -812,7 +812,6 @@ fn physiology_dialog_legacy(
                     }
                     footer class="physiology-dialog-footer" {
                         span { "Observed, quantized, and limited to shared presence." }
-                        a href="/physiology" { "Open visual key" }
                     }
                 }
             }
@@ -1120,7 +1119,6 @@ pub(super) fn physiology_dialog(
                         span {
                             "Visible findings are folded into the four humours; deviations are observer estimates."
                         }
-                        a href="/physiology" { "Open visual key" }
                     }
                 }
             }

@@ -65,8 +65,8 @@ remain follow-up systems (#214 and #215).
 Private disease curves, individual baseline, phenotype, and interventions are
 combined before terminal thresholds are checked. The exact earliest
 integer-minute crossing is used regardless of how an activity interval is
-chunked. See [the Physiology system](../../docs/PHYSIOLOGY.md) and the in-game
-`/physiology` codex for the complete meter and Humour model.
+chunked. See [the Physiology system](../../docs/PHYSIOLOGY.md) for the complete
+meter and Humour model.
 
 Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease

@@ -128,7 +128,7 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "command" => "crown",
         "deception" => "conversation",
         "seduction" => "rose",
-        "physiology" => "medical-pack",
+        "physiology" => "caduceus",
         "cooking" => "meal",
         "faith" => "holy-symbol",
         "religion" => "holy-symbol",
@@ -304,6 +304,7 @@ mod icon_tests {
             ("command", "crown"),
             ("deception", "conversation"),
             ("seduction", "rose"),
+            ("physiology", "caduceus"),
         ] {
             assert_eq!(stat_game_icon_name(key), expected);
             assert_ne!(stat_game_icon_name(key), "help");
@@ -359,6 +360,7 @@ mod icon_tests {
             ("musket", "musket"),
             ("throwing-ball", "plain-arrow"),
             ("religion", "holy-symbol"),
+            ("physiology", "caduceus"),
         ] {
             assert_eq!(stat_game_icon_name(key), expected, "{key}");
             assert_ne!(stat_game_icon_name(key), "help", "{key}");

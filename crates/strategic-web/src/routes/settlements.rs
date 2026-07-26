@@ -617,7 +617,7 @@ async fn perform_surgery(
 
 async fn alchemy(
     State(_state): State<AppState>,
-    Path(_id): Path<String>,
+    Path(id): Path<String>,
     session: Session,
 ) -> Response {
     if session.character_id_u64().is_none() {
@@ -626,8 +626,8 @@ async fn alchemy(
     Html(crate::templates::strategic_notice_page(
         "Alchemy is not yet modelled",
         "Physiology observes patients and administers existing preparations; it does not craft them. Herbalism issue #214 owns preparations, and chemistry issue #215 owns Alchemy.",
-        "/physiology",
-        "Open the Physiology reference",
+        &format!("/locations/settlement/{id}"),
+        "Return to the settlement",
         None,
     ).into_string())
     .into_response()

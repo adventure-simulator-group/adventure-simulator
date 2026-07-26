@@ -348,7 +348,7 @@ fn skills_table(
                     @if skills.physiology_hours > 0.0 {
                         (party_skill_row(
                             "Physiology",
-                            "medical-pack",
+                            "physiology",
                             Skill::Physiology,
                             skills.physiology_hours,
                             head_health,

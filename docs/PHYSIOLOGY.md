@@ -98,9 +98,12 @@ private tables.
 
 ## Presentation contract
 
-The standalone `/physiology` codex is the canonical player-facing explanation
-of meters, Humour weights, chart limitations, and intervention scope. Physician
-dialogue uses separate semantic fragments for period claims and authoritative
-explanations so presentation does not blur in-world belief with system truth.
+This document and the [Health wiki page](../wiki/shared/Health.md) are the
+canonical explanation of meters, Humour weights, chart limitations, and
+intervention scope. The game does not expose a standalone authoritative
+reference page: players currently encounter the system through the physician
+notebook. Future NPC dialogue should keep period claims separate from
+authoritative explanations so presentation does not blur in-world belief with
+system truth.
 Humour information remains textual as well as colored, keyboard focusable, and
 available through pinned mouse/touch tooltips.

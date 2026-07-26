@@ -12,7 +12,6 @@ pub mod local_chat;
 pub mod missions;
 pub mod parties;
 mod party_actions;
-pub mod physiology;
 pub mod quests;
 pub mod settlements;
 pub(crate) mod travel;
@@ -743,7 +742,6 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(local_chat::routes())
                 .merge(settlements::routes())
                 .merge(parties::routes())
-                .merge(physiology::routes())
                 .merge(quests::routes())
                 .merge(missions::routes())
                 .merge(crate::live::routes())

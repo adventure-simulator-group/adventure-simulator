@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1247)
+## Files (1246)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -856,7 +856,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/routes/mod.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/parties.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/party_actions.rs` — Strategic web HTTP route handler.
-- `crates/strategic-web/src/routes/physiology.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/quests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/travel.rs` — Strategic web HTTP route handler.
@@ -872,7 +871,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mission.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/physiology.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/quest.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/recruitment.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/character_details.rs` — Strategic web server-rendered template.
@@ -932,6 +930,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/broken-heart.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/bullseye.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/byzantin-temple.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/caduceus.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/calendar.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/campfire.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/camping-tent.svg` — Vector UI or texture asset.

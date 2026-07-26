@@ -4973,117 +4973,11 @@ body.chat-resizing {
 .filth-dirt { background: #76552e; }
 .filth-blood { background: #8e2020; }
 
-.physiology-reference-index nav {
-  display: grid;
-  gap: .45rem;
-}
-
-.physiology-reference-index nav a {
-  display: block;
-  line-height: 1.25;
-}
-.physiology-reference-todo {
-  margin: 0 0 1rem;
-  padding: .65rem .8rem;
-  border: 1px solid var(--warning);
-  background: color-mix(in srgb, var(--warning) 12%, var(--panel-bg));
-  color: var(--text-primary);
-  font-weight: 700;
-}
-
 /* Physiology: visual-first, deliberately lossy public observations. */
 .physiology-tone-sanguine { --physiology-tone: #d56a72; }
 .physiology-tone-phlegmatic { --physiology-tone: #6ca9cf; }
 .physiology-tone-choleric { --physiology-tone: #d6ad42; }
 .physiology-tone-melancholic { --physiology-tone: #8b6ba7; }
-
-.physiology-model-flow {
-  display: grid;
-  grid-template-columns: minmax(7rem, 1fr) auto minmax(8rem, 1fr) auto minmax(7rem, 1fr);
-  gap: .65rem;
-  align-items: center;
-  margin: 1rem 0 1.5rem;
-  padding: 1rem;
-  border: 1px solid var(--border-accent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--panel-bg) 92%, var(--accent)), var(--panel-bg));
-}
-.physiology-model-flow figcaption { grid-column: 1 / -1; color: var(--text-secondary); text-align: center; }
-.physiology-flow-private,
-.physiology-flow-humours,
-.physiology-flow-chart { position: relative; min-width: 0; }
-.physiology-flow-private strong,
-.physiology-flow-humours strong,
-.physiology-flow-chart strong { display: block; margin-top: .35rem; font-size: .72rem; letter-spacing: .06em; text-align: center; text-transform: uppercase; }
-.physiology-flow-lock { position: absolute; top: -.35rem; right: -.25rem; z-index: 2; display: grid; width: 1.35rem; height: 1.35rem; place-items: center; border: 1px solid var(--border-accent); border-radius: 50%; background: var(--bg-primary); color: var(--accent-light); }
-.physiology-flow-meter-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: .2rem; filter: blur(1.6px); opacity: .6; }
-.physiology-flow-meter-grid i { display: grid; aspect-ratio: 1; place-items: center; border: 1px solid var(--border-color); background: var(--bg-tertiary); font-style: normal; }
-.physiology-flow-arrow { color: var(--accent); font-size: 1.6rem; }
-.physiology-flow-humours { display: grid; gap: .25rem; }
-.physiology-flow-bar { display: grid; grid-template-columns: 1rem 1fr; gap: .3rem; align-items: center; font-size: .7rem; }
-.physiology-flow-bar i { height: .42rem; background: linear-gradient(90deg, var(--physiology-tone) var(--flow-value), color-mix(in srgb, var(--bg-tertiary) 80%, transparent) var(--flow-value)); }
-.physiology-flow-chart svg { display: block; width: 100%; height: 4.3rem; border: 1px solid var(--border-color); background: repeating-linear-gradient(0deg, transparent 0 1rem, color-mix(in srgb, var(--border-color) 40%, transparent) 1rem calc(1rem + 1px)); }
-.physiology-flow-chart path { fill: none; stroke: var(--accent-light); stroke-width: 2; vector-effect: non-scaling-stroke; }
-.physiology-flow-chart path + path { stroke: #6ca9cf; }
-
-.physiology-meter-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .55rem;
-  margin: .75rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-.physiology-meter-list li { display: grid; grid-template-columns: 2.4rem 1fr; gap: .65rem; align-items: center; padding: .65rem; border: 1px solid var(--border-color); background: color-mix(in srgb, var(--panel-bg) 92%, transparent); }
-.physiology-meter-list li:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
-.physiology-meter-symbol { display: grid; width: 2.2rem; height: 2.2rem; place-items: center; border: 1px solid var(--border-accent); border-radius: 50%; color: var(--accent-light); font-family: Georgia, serif; font-size: 1.05rem; }
-.physiology-meter-list strong { font-size: .84rem; }
-.physiology-meter-list small { display: block; margin-top: .22rem; color: var(--text-secondary); line-height: 1.2; }
-.physiology-private-badge { float: right; padding: .05rem .25rem; border: 1px solid var(--border-color); color: var(--text-muted); font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; }
-.physiology-concept-track { position: relative; height: .3rem; margin-top: .35rem; overflow: hidden; background: linear-gradient(90deg, #55795c, #b99a45 65%, #9c3f45); }
-.physiology-concept-track::after { position: absolute; inset: 0; background: repeating-linear-gradient(135deg, transparent 0 4px, #0007 4px 6px); content: ""; }
-.physiology-concept-track b { position: absolute; top: -.15rem; right: 0; z-index: 1; width: 1px; height: .6rem; background: #fff; }
-
-.physiology-weight-table-wrap { overflow-x: auto; }
-.physiology-weight-table-wrap:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
-.physiology-weight-table { width: 100%; min-width: 34rem; border-collapse: separate; border-spacing: .18rem; font-size: .72rem; }
-.physiology-weight-table caption { margin-bottom: .45rem; color: var(--text-secondary); text-align: left; }
-.physiology-weight-table th { padding: .25rem .35rem; text-align: left; }
-.physiology-weight-table thead th:not(:first-child) { color: var(--physiology-tone); text-align: center; }
-.physiology-weight-table thead i { display: inline-block; width: .55rem; height: .55rem; margin-right: .2rem; border-radius: 50%; background: var(--physiology-tone); }
-.physiology-weight-cell { position: relative; height: 1.7rem; overflow: hidden; border: 1px solid color-mix(in srgb, var(--physiology-tone) 55%, var(--border-color)); background: color-mix(in srgb, var(--physiology-tone) var(--weight), var(--bg-tertiary)); color: color-mix(in srgb, #fff calc(35% + var(--weight)), var(--text-secondary)); font-variant-numeric: tabular-nums; font-weight: 700; text-align: center; }
-.physiology-weight-cell span { position: relative; z-index: 1; text-shadow: 0 1px 2px #000; }
-
-.physiology-disease-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
-.physiology-disease-card { padding: .65rem; border: 1px solid var(--border-color); background: color-mix(in srgb, var(--panel-bg) 94%, transparent); }
-.physiology-disease-card header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
-.physiology-disease-card h3 { margin: 0; font-size: .95rem; }
-.physiology-disease-card header span { color: var(--accent-light); font-variant-numeric: tabular-nums; }
-.physiology-disease-card p { margin: .45rem 0 0; color: var(--text-secondary); font-size: .72rem; line-height: 1.25; }
-.physiology-course-track { display: flex; height: .85rem; margin-top: .6rem; overflow: hidden; border: 1px solid #000; background: var(--bg-tertiary); }
-.physiology-course-track i { flex: 0 0 var(--phase-width); min-width: 2px; }
-.phase-incubation { background: #4b5560; }
-.phase-rise { background: #b07b3e; }
-.phase-peak { background: #a84248; }
-.phase-recovery { background: #5c8060; }
-.physiology-course-labels { display: flex; margin: .2rem 0 0; padding: 0; color: var(--text-muted); font-size: .58rem; list-style: none; text-align: center; text-transform: uppercase; }
-.physiology-course-labels li { flex: 0 0 var(--phase-width); min-width: 0; overflow: hidden; }
-
-.physiology-observation-diagram { display: grid; grid-template-columns: auto 1fr; gap: .6rem 1rem; align-items: center; padding: 1rem; border: 1px solid var(--border-color); background: var(--panel-bg); }
-.physiology-observation-presence { display: grid; grid-template-columns: auto 2rem auto; align-items: center; color: var(--accent-light); }
-.physiology-observation-presence i { height: 1px; border-top: 1px dashed currentColor; }
-.physiology-observation-presence strong { grid-column: 1 / -1; margin-top: .2rem; color: var(--text-secondary); font-size: .68rem; text-align: center; }
-.physiology-observation-samples { display: flex; height: 5rem; gap: .35rem; align-items: end; padding: .35rem; border-bottom: 1px solid var(--border-accent); background: repeating-linear-gradient(0deg, transparent 0 .95rem, color-mix(in srgb, var(--border-color) 42%, transparent) .95rem 1rem); }
-.physiology-observation-samples i { flex: 1; height: var(--sample-height); border-top: 3px solid var(--accent-light); background: linear-gradient(transparent, color-mix(in srgb, var(--accent) 24%, transparent)); }
-.physiology-observation-samples b { align-self: stretch; flex: 1.2; border: 1px dashed var(--text-muted); background: repeating-linear-gradient(135deg, transparent 0 5px, #ffffff0d 5px 7px); }
-.physiology-observation-skill { grid-column: 2; display: grid; grid-template-columns: auto repeat(3, 1fr) auto; gap: .3rem; align-items: center; color: var(--text-muted); font-size: .65rem; }
-.physiology-observation-skill i { height: .28rem; background: var(--accent); }
-.physiology-observation-skill i:nth-of-type(1) { opacity: .35; }
-.physiology-observation-skill i:nth-of-type(2) { opacity: .65; }
-.physiology-visual-caption { margin-top: .45rem; color: var(--text-secondary); font-size: .78rem; }
-.physiology-limit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; margin: 0; padding: 0; list-style: none; }
-.physiology-limit-grid li { display: grid; grid-template-columns: 2rem 1fr; padding: .65rem; border: 1px solid var(--border-color); }
-.physiology-limit-grid li > span { grid-row: 1 / 3; color: var(--danger); font-size: 1.25rem; }
-.physiology-limit-grid small { color: var(--text-muted); line-height: 1.2; }
 
 .physiology-dialog { width: min(76rem, calc(100vw - 2rem)); max-width: none; max-height: calc(100vh - 2rem); padding: 0; overflow: hidden; border: 1px solid var(--border-accent); background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 1rem 4rem #000d; }
 .physiology-dialog::backdrop { background: #080706d9; backdrop-filter: blur(3px); }
@@ -5182,12 +5076,6 @@ body.chat-resizing {
 .physiology-dialog-button { cursor: pointer; }
 
 @media (max-width: 760px) {
-  .physiology-model-flow { grid-template-columns: 1fr; }
-  .physiology-flow-arrow { transform: rotate(90deg); text-align: center; }
-  .physiology-meter-list,
-  .physiology-disease-grid { grid-template-columns: 1fr; }
-  .physiology-weight-table { font-size: .6rem; }
-  .physiology-weight-table th { padding-inline: .12rem; }
   .physiology-dialog { width: 100vw; max-height: 100vh; border-width: 0; }
   .physiology-dialog-shell { max-height: 100vh; }
   .physiology-dialog-body { padding: .7rem; }
