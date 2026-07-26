@@ -458,9 +458,9 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
         // the disposable character has not learned yet. Do not submit those
         // locked activities to the authoritative schedule reducer.
         apprenticeship_minutes: 0,
-        apprenticeship_service_id: None,
+        apprenticeship_organization_id: None,
         profession_practice_minutes: 0,
-        profession_service_id: None,
+        practice_organization_id: None,
         labor_minutes: quarter_hour(s.labor),
         prayer_minutes: quarter_hour(s.prayer),
         // Crime activities can open a tactical incident and move the party to
@@ -477,9 +477,9 @@ fn medical_rest_schedule() -> ScheduleAllocation {
         combat_training_minutes: 0,
         carousing_minutes: 0,
         apprenticeship_minutes: 0,
-        apprenticeship_service_id: None,
+        apprenticeship_organization_id: None,
         profession_practice_minutes: 0,
-        profession_service_id: None,
+        practice_organization_id: None,
         labor_minutes: 0,
         prayer_minutes: 0,
         thievery_minutes: 0,

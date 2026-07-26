@@ -451,6 +451,16 @@ fn character_bio_rail(
                         }
                     }
                 }
+                @if character.current_settlement_id.is_some() {
+                    div {
+                        dt class="metric-label" { (decorative_game_icon("shield")) span { "Organizations" } }
+                        dd {
+                            a class="btn" href=(format!("{location_path}/party/{}/organizations", character.id)) {
+                                "Manage memberships"
+                            }
+                        }
+                    }
+                }
             }
         }))
     }

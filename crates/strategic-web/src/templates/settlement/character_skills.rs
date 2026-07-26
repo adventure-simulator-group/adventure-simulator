@@ -15,8 +15,8 @@ use maud::{Markup, html};
 
 use super::character_health::stat_icon;
 use crate::spacetimedb::{
-    CharacterApprenticeship, CharacterAttributes, CharacterCapability, CharacterLimbs,
-    CharacterSkills, CharacterStats, CharacterTrainingSchedule, ScheduleAllocation, Settlement,
+    CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, CharacterStats,
+    CharacterTrainingSchedule, OrganizationMembership, ScheduleAllocation, Settlement,
 };
 use crate::templates::{game_icon, religion_icon, sidebar_section};
 
@@ -39,21 +39,16 @@ struct ProfessionActivityPreview {
     practice_threshold: u64,
     practice_weight: u64,
     practice_reward: &'static str,
-    tier_label: &'static str,
+    tier_label: String,
+    practice_allowed: bool,
 }
 
 const PROFESSION_ACCRUAL_SCALE: u64 = MINUTES_PER_DAY;
-const APPRENTICESHIP_REWARD_THRESHOLD: u64 = 8 * 60 * PROFESSION_ACCRUAL_SCALE;
 
 impl ProfessionActivityPreview {
     fn reward_delta(&self, allocation_name: &str, minutes: u16) -> [f32; 2] {
         let (accrued, threshold, sign, reward) = match allocation_name {
-            "apprenticeship_minutes" => (
-                self.apprenticeship_accrued,
-                APPRENTICESHIP_REWARD_THRESHOLD,
-                -1.0,
-                "gold",
-            ),
+            "apprenticeship_minutes" => return [0.0, 0.0],
             "profession_practice_minutes" => (
                 self.practice_accrued,
                 self.practice_threshold,
@@ -153,84 +148,142 @@ impl ActivityPreviewRates {
     pub fn with_professions(
         mut self,
         attributes: Option<&CharacterAttributes>,
-        skills: Option<&CharacterSkills>,
-        apprenticeships: &[CharacterApprenticeship],
+        _skills: Option<&CharacterSkills>,
+        memberships: &[OrganizationMembership],
+        settlement_id: &str,
+        minute: u64,
     ) -> Self {
-        let (Some(attributes), Some(skills)) = (attributes, skills) else {
+        let Some(attributes) = attributes else {
             return self;
         };
-        for row in apprenticeships {
+        for row in memberships {
             let Some(definition) =
-                adventuresim_core::profession::profession_for_service(&row.service_id)
+                adventuresim_core::organization::organization(&row.organization_id)
             else {
                 continue;
             };
-            let hours = |skill: Skill| match skill {
-                Skill::Command => skills.command_hours,
-                Skill::Smithing => skills.smithing_hours,
-                Skill::Tailoring => skills.tailoring_hours,
-                Skill::Physiology => skills.physiology_hours,
-                Skill::Anatomy => skills.anatomy_hours,
-                Skill::Knife => skills.knife_hours,
-                Skill::Cooking => skills.cooking_hours,
-                Skill::Religion => row
-                    .religion_id
-                    .as_deref()
-                    .and_then(OfficialReligion::from_id)
-                    .map_or(0.0, |religion| skills.religion_hours.direct(religion)),
-                _ => 0.0,
+            if row.status != "active"
+                || minute > row.dues_paid_through_minute
+                || !definition.has_chapter(settlement_id)
+            {
+                continue;
+            }
+            let Some(rank) = definition.rank(&row.rank_id) else {
+                continue;
             };
-            let aptitude = |skill: Skill| match skill.governing_aptitude_kind() {
-                adventuresim_core::skill::GoverningAptitude::Intelligence => {
-                    attributes.intelligence
-                }
-                adventuresim_core::skill::GoverningAptitude::Instinct => attributes.instinct,
-                adventuresim_core::skill::GoverningAptitude::Agility(weights) => {
-                    attributes.left_arm_agility * weights.left_arm
-                        + attributes.right_arm_agility * weights.right_arm
-                        + attributes.left_leg_agility * weights.left_leg
-                        + attributes.right_leg_agility * weights.right_leg
-                }
-            };
-            let tier = adventuresim_core::profession::profession_tier(definition, hours, aptitude);
-            let practice_weight = match tier {
-                adventuresim_core::profession::ProfessionTier::Master => 2,
-                _ => 1,
-            };
-            let practice_reward = match definition.practice_reward {
-                adventuresim_core::profession::PracticeReward::Gold => "gold",
-                adventuresim_core::profession::PracticeReward::Virtue => "virtue",
+            let practice_threshold =
+                u64::from(rank.practice_reward_interval_minutes) * MINUTES_PER_DAY;
+            let practice_reward = match definition.activity.reward {
+                adventuresim_core::organization::ActivityReward::Gold => "gold",
+                adventuresim_core::organization::ActivityReward::Virtue => "virtue",
             };
             self.profession.insert(
-                row.service_id.clone(),
+                row.organization_id.clone(),
                 ProfessionActivityPreview {
                     training_rates: definition
-                        .skills
+                        .activity
+                        .training
                         .iter()
                         .map(|entry| {
+                            let multiplier =
+                                training_target_skill(&entry.target).map_or(1.0, |skill| {
+                                    aptitude_training_multiplier(character_aptitude(
+                                        attributes, skill,
+                                    ))
+                                });
                             (
-                                if entry.skill == Skill::Bestiary {
-                                    "Human knowledge".into()
-                                } else {
-                                    format!("{:?}", entry.skill)
-                                },
-                                entry.weight
-                                    * adventuresim_core::skill::aptitude_training_multiplier(
-                                        aptitude(entry.skill),
-                                    ),
+                                training_target_label(&entry.target),
+                                entry.weight * multiplier,
                             )
                         })
                         .collect(),
                     apprenticeship_accrued: row.apprenticeship_minutes_accrued,
                     practice_accrued: row.practice_minutes_accrued,
-                    practice_threshold: 60 * MINUTES_PER_DAY,
-                    practice_weight,
+                    practice_threshold,
+                    practice_weight: 1,
                     practice_reward,
-                    tier_label: tier.title(definition.religious),
+                    tier_label: definition
+                        .rank(&row.rank_id)
+                        .map_or_else(|| row.rank_id.clone(), |rank| rank.name.clone()),
+                    practice_allowed: rank.practice_allowed,
                 },
             );
         }
         self
+    }
+}
+
+fn training_target_label(target: &adventuresim_core::organization::TrainingTarget) -> String {
+    use adventuresim_core::organization::TrainingTarget;
+    match target {
+        TrainingTarget::FixedSkill { skill } => skill.replace('_', " "),
+        TrainingTarget::Religion { religion } => format!("{religion} Religion"),
+        TrainingTarget::Bestiary { category } => format!("{category} Bestiary"),
+        TrainingTarget::Terrain { terrain } => format!("{terrain} Terrain"),
+        TrainingTarget::EquippedWeaponSkills => "equipped weapon skills".into(),
+    }
+}
+
+fn training_target_skill(
+    target: &adventuresim_core::organization::TrainingTarget,
+) -> Option<Skill> {
+    use adventuresim_core::organization::TrainingTarget;
+    match target {
+        TrainingTarget::FixedSkill { skill } => match skill.as_str() {
+            "will" => Some(Skill::Will),
+            "insight" => Some(Skill::Insight),
+            "self_awareness" => Some(Skill::SelfAwareness),
+            "humor" => Some(Skill::Humor),
+            "command" => Some(Skill::Command),
+            "deception" => Some(Skill::Deception),
+            "seduction" => Some(Skill::Seduction),
+            "physiology" => Some(Skill::Physiology),
+            "cooking" => Some(Skill::Cooking),
+            "anatomy" => Some(Skill::Anatomy),
+            "polearm" => Some(Skill::Polearm),
+            "axe" => Some(Skill::Axe),
+            "bludgeon" => Some(Skill::Bludgeon),
+            "sword" => Some(Skill::Sword),
+            "knife" => Some(Skill::Knife),
+            "bow" => Some(Skill::Bow),
+            "crossbow" => Some(Skill::Crossbow),
+            "firearm" => Some(Skill::Firearm),
+            "throw" => Some(Skill::Throw),
+            "block" => Some(Skill::Block),
+            "dodge" => Some(Skill::Dodge),
+            "stealth" => Some(Skill::Stealth),
+            "balance" => Some(Skill::Balance),
+            "terrain_plains" => Some(Skill::TerrainPlains),
+            "terrain_forest" => Some(Skill::TerrainForest),
+            "terrain_hills" => Some(Skill::TerrainHills),
+            "terrain_urban" => Some(Skill::TerrainUrban),
+            "tailoring" => Some(Skill::Tailoring),
+            "smithing" => Some(Skill::Smithing),
+            _ => None,
+        },
+        TrainingTarget::Religion { .. } => Some(Skill::Religion),
+        TrainingTarget::Bestiary { .. } => Some(Skill::Bestiary),
+        TrainingTarget::Terrain { terrain } => match terrain.as_str() {
+            "plains" => Some(Skill::TerrainPlains),
+            "forest" => Some(Skill::TerrainForest),
+            "hills" => Some(Skill::TerrainHills),
+            "urban" => Some(Skill::TerrainUrban),
+            _ => None,
+        },
+        TrainingTarget::EquippedWeaponSkills => Some(Skill::Polearm),
+    }
+}
+
+fn character_aptitude(attributes: &CharacterAttributes, skill: Skill) -> f32 {
+    match skill.governing_aptitude_kind() {
+        adventuresim_core::skill::GoverningAptitude::Intelligence => attributes.intelligence,
+        adventuresim_core::skill::GoverningAptitude::Instinct => attributes.instinct,
+        adventuresim_core::skill::GoverningAptitude::Agility(weights) => {
+            attributes.left_arm_agility * weights.left_arm
+                + attributes.right_arm_agility * weights.right_arm
+                + attributes.left_leg_agility * weights.left_leg
+                + attributes.right_leg_agility * weights.right_leg
+        }
     }
 }
 #[derive(Clone, Copy, Default)]
@@ -473,17 +526,17 @@ fn skills_table(
                         ))
                         (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, combat_training, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
                         (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, immediate_actions, ActivityEffectRates::carousing(), None, None, instinct_training, "Drink and socialize to improve morale and train Humor at 25% speed, at a small cost to Virtue."))
-                        @if let Some(service_id) = schedule.downtime.apprenticeship_service_id.as_deref() {
-                            (schedule_service_selection("apprenticeship_service_id", service_id))
-                            (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, immediate_actions && preview.profession.contains_key(service_id), ActivityEffectRates::default(), None, preview.profession.get(service_id), 1.0, "Pay one coin per completed eight hours of instruction in an enrolled profession. Religious students are called novices."))
+                        @let apprenticeship_id = schedule.downtime.apprenticeship_organization_id.as_deref().filter(|id| preview.profession.contains_key(*id)).or_else(|| preview.profession.keys().next().map(String::as_str));
+                        @if let Some(service_id) = apprenticeship_id {
+                            (schedule_organization_selection("Training organization", "apprenticeship_organization_id", service_id, preview.profession.iter().map(|(id, entry)| (id.as_str(), entry.tier_label.as_str())).collect()))
+                            (schedule_special_row(&format!("Organization training — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, immediate_actions && preview.profession.contains_key(service_id), ActivityEffectRates::default(), None, preview.profession.get(service_id), 1.0, "Train according to this organization's YAML-defined curriculum. Any dues are assessed separately."))
                         }
-                        @if let Some(service_id) = schedule.downtime.profession_service_id.as_deref() {
-                            (schedule_service_selection("profession_service_id", service_id))
+                        @let practice_choices: Vec<(&str, &str)> = preview.profession.iter().filter(|(_, entry)| entry.practice_allowed).map(|(id, entry)| (id.as_str(), entry.tier_label.as_str())).collect();
+                        @let practice_id = schedule.downtime.practice_organization_id.as_deref().filter(|id| practice_choices.iter().any(|(candidate, _)| candidate == id)).or_else(|| practice_choices.first().map(|(id, _)| *id));
+                        @if let Some(service_id) = practice_id {
+                            (schedule_organization_selection("Activity organization", "practice_organization_id", service_id, practice_choices))
                             @if let Some(profession) = preview.profession.get(service_id) {
-                                @if profession.tier_label != "apprentice" && profession.tier_label != "novice" {
-                                    @let religious = service_id == "religion";
-                                    (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, immediate_actions, ActivityEffectRates::default(), None, Some(profession), 1.0, if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; teachers earn faster than clerics." } else { "Practice an enrolled profession independently. Journeymen earn one coin per hour; masters earn two per hour." }))
-                                }
+                                (schedule_special_row(&format!("Organization activity — {}", profession_label(service_id)), "shield", "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, immediate_actions, ActivityEffectRates::default(), None, Some(profession), 1.0, "Conduct the activity associated with the awarded rank. Training and rewards come from the organization's YAML definition."))
                             }
                         }
                         (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, None, instinct_training, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
@@ -1423,15 +1476,7 @@ fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
         apprenticeship_minutes: schedule.apprenticeship_minutes,
-        apprenticeship_service_id: schedule
-            .apprenticeship_service_id
-            .as_deref()
-            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
         profession_practice_minutes: schedule.profession_practice_minutes,
-        profession_service_id: schedule
-            .profession_service_id
-            .as_deref()
-            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
         labor: schedule.labor_minutes,
         prayer: schedule.prayer_minutes,
         thievery: schedule.thievery_minutes,
@@ -1622,10 +1667,10 @@ fn schedule_special_row(
             data-prayer-morale-scale=[effects.prayer_morale.then_some(effects.morale_scale_minutes)]
             data-prayer-morale-multiplier=[effects.prayer_morale.then_some(effects.prayer_morale_multiplier)]
             data-profession-accrued=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { preview.apprenticeship_accrued } else { preview.practice_accrued })]
-            data-profession-threshold=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { APPRENTICESHIP_REWARD_THRESHOLD } else { preview.practice_threshold })]
+            data-profession-threshold=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { u64::MAX } else { preview.practice_threshold })]
             data-profession-reward=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { "gold" } else { preview.practice_reward })]
             data-profession-sign=[profession.map(|_| if allocation_name == "apprenticeship_minutes" { -1 } else { 1 })]
-            data-profession-tier=[profession.map(|preview| preview.tier_label)]
+            data-profession-tier=[profession.map(|preview| preview.tier_label.as_str())]
             data-leisure-current-fatigue=[leisure.map(|preview| preview.current_fatigue)]
             data-leisure-baseline-fatigue=[leisure.map(|_| BASELINE_FATIGUE_PER_DAY)]
             data-leisure-labor-fatigue-rate=[leisure.map(|_| LABOR_FATIGUE_PER_HOUR)]
@@ -1655,17 +1700,31 @@ fn schedule_special_row(
     }
 }
 
-fn schedule_service_selection(name: &str, service_id: &str) -> Markup {
+fn schedule_organization_selection(
+    label: &str,
+    name: &str,
+    selected_id: &str,
+    choices: Vec<(&str, &str)>,
+) -> Markup {
     html! {
-        tr hidden aria-hidden="true" {
-            td colspan="9" { input type="hidden" name=(name) value=(service_id); }
+        tr class="schedule-organization-selection" {
+            th scope="row" { (label) }
+            td colspan="8" {
+                select name=(name) data-organization-schedule-select aria-label=(label) {
+                    @for (organization_id, rank_name) in choices {
+                        option value=(organization_id) selected[organization_id == selected_id] {
+                            (profession_label(organization_id)) " — " (rank_name)
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-fn profession_label(service_id: &str) -> &'static str {
-    adventuresim_core::profession::profession_for_service(service_id)
-        .map_or("profession", |profession| profession.label)
+fn profession_label(organization_id: &str) -> &str {
+    adventuresim_core::organization::organization(organization_id)
+        .map_or("organization", |organization| organization.name.as_str())
 }
 
 fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup {
@@ -2217,7 +2276,8 @@ mod tests {
             practice_threshold: 8 * 60 * PROFESSION_ACCRUAL_SCALE,
             practice_weight: 1,
             practice_reward: "gold",
-            tier_label: "apprentice",
+            tier_label: "Apprentice".into(),
+            practice_allowed: false,
         };
         let apprenticeship = activity_training_cell(
             "Apprenticeship — herbalist",
@@ -2237,74 +2297,6 @@ mod tests {
             activity_training_cell("Leisure", "leisure_minutes", 480, None, 1.0).into_string();
         assert!(leisure.contains(">—<"));
         assert!(leisure.contains("No skill training"));
-    }
-
-    #[test]
-    fn profession_preview_uses_accrual_tier_reward_and_training_distribution() {
-        let threshold = APPRENTICESHIP_REWARD_THRESHOLD;
-        let row = CharacterApprenticeship {
-            id: 1,
-            character_id: 7,
-            service_id: "weapons".into(),
-            religion_id: None,
-            started_minute: 0,
-            apprenticeship_minutes_accrued: threshold - 60 * PROFESSION_ACCRUAL_SCALE,
-            practice_minutes_accrued: 0,
-        };
-        let journeyman = CharacterSkills {
-            smithing_hours: 4_000.0,
-            ..Default::default()
-        };
-        let attributes = CharacterAttributes {
-            character_id: 7,
-            endurance: 5.0,
-            immunity: 5.0,
-            gut: 5.0,
-            intelligence: 5.0,
-            instinct: 5.0,
-            eyesight: 5.0,
-            hearing: 5.0,
-            left_arm_strength: 5.0,
-            right_arm_strength: 5.0,
-            left_leg_strength: 5.0,
-            right_leg_strength: 5.0,
-            left_arm_agility: 5.0,
-            right_arm_agility: 5.0,
-            left_leg_agility: 5.0,
-            right_leg_agility: 5.0,
-        };
-        let preview = ActivityPreviewRates::default().with_professions(
-            Some(&attributes),
-            Some(&journeyman),
-            std::slice::from_ref(&row),
-        );
-        let smith = preview.profession.get("weapons").unwrap();
-        assert_eq!(smith.tier_label, "journeyman");
-        assert_eq!(smith.practice_threshold, 60 * PROFESSION_ACCRUAL_SCALE);
-        assert_eq!(smith.practice_weight, 1);
-        assert_eq!(
-            smith.reward_delta("apprenticeship_minutes", 60),
-            [-1.0, 0.0]
-        );
-        assert_eq!(smith.training_rates, vec![("Smithing".into(), 2.25)]);
-
-        let master = CharacterSkills {
-            smithing_hours: 25_000.0,
-            ..Default::default()
-        };
-        let preview = ActivityPreviewRates::default().with_professions(
-            Some(&attributes),
-            Some(&master),
-            &[row],
-        );
-        let smith = preview.profession.get("weapons").unwrap();
-        assert_eq!(smith.tier_label, "master");
-        assert_eq!(smith.practice_threshold, 60 * PROFESSION_ACCRUAL_SCALE);
-        assert_eq!(smith.practice_weight, 2);
-        assert_eq!(
-            smith.reward_delta("profession_practice_minutes", 240),
-            [8.0, 0.0]
-        );
     }
 
     #[test]

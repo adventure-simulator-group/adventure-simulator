@@ -2,7 +2,6 @@
 
 use crate::attribute::PlayerAttributes;
 use crate::equipment::WeaponSkillDistribution;
-use crate::profession::ProfessionId;
 use crate::skill::{Skill, apply_direct_training};
 use crate::{
     activity::*,
@@ -11,7 +10,7 @@ use crate::{
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 27;
+pub const SKILL_COUNT: usize = 31;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -53,6 +52,10 @@ pub struct SkillHours {
     pub stealth: f32,
     pub balance: f32,
     pub anatomy: f32,
+    pub terrain_plains: f32,
+    pub terrain_forest: f32,
+    pub terrain_hills: f32,
+    pub terrain_urban: f32,
     pub tailoring: f32,
     pub smithing: f32,
 }
@@ -85,6 +88,10 @@ impl SkillHours {
             self.stealth,
             self.balance,
             self.anatomy,
+            self.terrain_plains,
+            self.terrain_forest,
+            self.terrain_hills,
+            self.terrain_urban,
             self.tailoring,
             self.smithing,
         ]
@@ -112,10 +119,8 @@ pub struct DailySchedule {
     pub carousing_minutes: u16,
     /// Supervised work in an unlocked profession.
     pub apprenticeship_minutes: u16,
-    pub apprenticeship_service_id: Option<ProfessionId>,
     /// Independent paid professional work, available at Journeyman rank.
     pub profession_practice_minutes: u16,
-    pub profession_service_id: Option<ProfessionId>,
     pub labor: u16,
     pub prayer: u16,
     pub thievery: u16,
@@ -376,52 +381,7 @@ pub fn apply_schedule_training(
             award(hours, skill, combat_training_hours * weight / total_weight);
         }
     }
-
-    apply_profession_training(
-        skills,
-        schedule.apprenticeship_service_id,
-        increment(schedule.apprenticeship_minutes),
-        attributes,
-        &mut excess,
-    );
-    apply_profession_training(
-        skills,
-        schedule.profession_service_id,
-        increment(schedule.profession_practice_minutes),
-        attributes,
-        &mut excess,
-    );
     excess
-}
-
-fn apply_profession_training(
-    skills: &mut SkillHours,
-    service_id: Option<ProfessionId>,
-    hours: f32,
-    attributes: &impl PlayerAttributes,
-    excess: &mut f32,
-) {
-    let mut award = |stored: &mut f32, skill: Skill, real_hours: f32| {
-        *excess +=
-            apply_direct_training(skill, stored, real_hours, attributes).excess_effective_hours;
-    };
-    match service_id {
-        Some(ProfessionId::Merchant) => award(&mut skills.command, Skill::Command, hours),
-        Some(ProfessionId::Weaponsmith | ProfessionId::Armourer) => {
-            award(&mut skills.smithing, Skill::Smithing, hours)
-        }
-        Some(ProfessionId::Tailor) => award(&mut skills.tailoring, Skill::Tailoring, hours),
-        Some(ProfessionId::Herbalist) => {
-            award(&mut skills.physiology, Skill::Physiology, hours * 0.5);
-            award(&mut skills.anatomy, Skill::Anatomy, hours / 6.0);
-            award(&mut skills.knife, Skill::Knife, hours / 6.0);
-            award(&mut skills.tailoring, Skill::Tailoring, hours / 6.0);
-        }
-        Some(ProfessionId::Cook) => award(&mut skills.cooking, Skill::Cooking, hours),
-        // Religion is tradition-specific and is applied by the authoritative
-        // caller after resolving the settlement tradition.
-        _ => {}
-    }
 }
 
 /// Apply prayer activity training after the caller resolves the settlement tradition.
@@ -512,7 +472,6 @@ mod tests {
     use super::*;
     use crate::body::BodyPart;
     use crate::prelude::{LimbAttribute, SimpleAttribute};
-    use crate::profession::ProfessionId;
     use crate::strategic_time::MINUTES_PER_DAY;
 
     struct NeutralAttributes;
@@ -526,13 +485,11 @@ mod tests {
     }
 
     #[test]
-    fn new_activities_conserve_training_and_apply_profession_weights() {
+    fn new_activities_conserve_training() {
         let mut skills = SkillHours::default();
         let schedule = DailySchedule {
             combat_training_minutes: 360,
             carousing_minutes: 240,
-            apprenticeship_minutes: 120,
-            apprenticeship_service_id: Some(ProfessionId::Herbalist),
             ..Default::default()
         };
         apply_schedule_training(
@@ -555,14 +512,12 @@ mod tests {
             + skills.block
             + skills.will
             + skills.balance;
-        // The dedicated combat budget is six hours; physician training adds
-        // its separately conserved one-sixth share to Knife.
-        assert!((combat_total - (6.0 + 1.0 / 3.0)).abs() < 0.001);
+        assert!((combat_total - 6.0).abs() < 0.001);
         assert!((skills.humor - 1.0).abs() < 0.001);
-        assert!((skills.physiology - 1.0).abs() < 0.001);
-        assert!((skills.anatomy - 1.0 / 3.0).abs() < 0.001);
-        assert!((skills.knife - 1.0 / 3.0).abs() < 0.001);
-        assert!((skills.tailoring - 1.0 / 3.0).abs() < 0.001);
+        assert_eq!(skills.physiology, 0.0);
+        assert_eq!(skills.anatomy, 0.0);
+        assert_eq!(skills.knife, 0.0);
+        assert_eq!(skills.tailoring, 0.0);
     }
 
     #[test]
@@ -583,25 +538,6 @@ mod tests {
         let first = restorative_leisure_minutes(half, 17, 333);
         let second = restorative_leisure_minutes(half, 350, 667);
         assert_eq!(bulk, first + second);
-    }
-
-    #[test]
-    fn cooks_profession_trains_only_cooking() {
-        let mut skills = SkillHours::default();
-        let schedule = DailySchedule {
-            apprenticeship_minutes: 180,
-            apprenticeship_service_id: Some(ProfessionId::Cook),
-            ..Default::default()
-        };
-        apply_schedule_training(
-            &mut skills,
-            schedule,
-            MINUTES_PER_DAY,
-            ActivityTrainingProfile::default(),
-            &NeutralAttributes,
-        );
-        assert!((skills.cooking - 3.0).abs() < 0.001);
-        assert_eq!(skills.command, 0.0);
     }
 
     fn item(melee: bool, ranged: bool, shield: bool, balance: f32) -> EquippedCombatItem {

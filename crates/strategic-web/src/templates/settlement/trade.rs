@@ -1096,8 +1096,15 @@ fn equipment_checkbox(
             disabled[!equippable]
             data-equipment-toggle
             data-inventory-item-id=(inventory.id)
+            aria-describedby=(format!("equipment-status-{}", inventory.id))
             aria-label=(label)
             title=(if equippable { "Equip or unequip this item" } else { "This item cannot be equipped" });
+        span id=(format!("equipment-status-{}", inventory.id))
+            class="equipment-toggle-status"
+            data-equipment-status
+            role="status"
+            aria-live="polite"
+            hidden {}
     }
 }
 

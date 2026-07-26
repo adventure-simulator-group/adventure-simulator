@@ -25,8 +25,10 @@ pub mod local_problem;
 pub mod mission;
 pub mod morale;
 pub mod npc_adventurer;
+pub mod organization;
+#[cfg(test)]
+mod organization_catalog_validation;
 pub mod physiology;
-pub mod profession;
 pub mod provisioning;
 pub mod quest_catalog;
 mod quest_catalog_validation;
@@ -63,7 +65,7 @@ pub mod prelude {
     pub use crate::mission::*;
     pub use crate::morale::*;
     pub use crate::npc_adventurer::*;
-    pub use crate::profession::*;
+    pub use crate::organization::*;
     pub use crate::provisioning::*;
     pub use crate::skill::*;
     pub use crate::social::*;

@@ -48,8 +48,8 @@ use crate::{
         tactical_server_authority, tactical_server_claim, tactical_server_request_authority,
     },
     time::{
-        advance_travel_time, character_apprenticeship, character_time, character_training_schedule,
-        preview_travel_time, settle_travel_boundary,
+        advance_travel_time, character_time, character_training_schedule, preview_travel_time,
+        settle_travel_boundary,
     },
 };
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -6060,18 +6060,14 @@ fn dialogue_fact_context(
                     FactValue::Text(age.into()),
                 );
             }
-            if let Some(apprenticeship) = ctx
-                .db
-                .character_apprenticeship()
-                .character_id()
-                .filter(id)
-                .next()
+            if let Some(organization_id) =
+                crate::organization::effective_presented_organization(ctx, id)
             {
                 result.facts.insert(
                     FactKey::ParticipantProfession {
                         role: participant.role.clone(),
                     },
-                    FactValue::Text(apprenticeship.service_id),
+                    FactValue::Text(organization_id),
                 );
             }
             if let Some(character) = ctx.db.character().id().find(id) {
@@ -7667,7 +7663,14 @@ fn apply_dialogue_effect(
             } else {
                 profession.clone()
             };
-            crate::time::begin_apprenticeship(ctx, character_id, &service)
+            let organization_id =
+                adventuresim_core::organization::organizations_for_chapter(&session.settlement_id)
+                    .find(|organization| {
+                        organization.service_id.as_deref() == Some(service.as_str())
+                    })
+                    .map(|organization| organization.id.clone())
+                    .ok_or("No organization chapter offers that professional activity here")?;
+            crate::organization::join_organization(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
             receive_referred_testimony(ctx, character_id, session, &live_npc, action_id)
@@ -15928,6 +15931,7 @@ fn travel_to_settlement_impl(
         ctx.db.character().id().update(traveler);
         crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
         crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
+        crate::organization::reconcile_presentation(ctx, traveler_id)?;
         crate::capability::refresh_character_capability(ctx, traveler_id)?;
         crate::time::rest_temporary_party_member_until_healed_at_settlement(ctx, traveler_id)?;
     }
@@ -16124,6 +16128,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                 ctx.db.character().id().update(member);
                 crate::condition::replenish_needs_at_settlement(ctx, member_id)?;
                 crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
+                crate::organization::reconcile_presentation(ctx, member_id)?;
                 crate::time::rest_temporary_party_member_until_healed_at_settlement(
                     ctx, member_id,
                 )?;

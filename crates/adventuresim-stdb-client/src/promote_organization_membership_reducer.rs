@@ -4,71 +4,55 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::immediate_activity_type::ImmediateActivity;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct PerformImmediateActivityArgs {
+pub(super) struct PromoteOrganizationMembershipArgs {
     pub character_id: u64,
-    pub activity: ImmediateActivity,
-    pub requested_minutes: u64,
-    pub organization_id: Option<String>,
+    pub organization_id: String,
 }
 
-impl From<PerformImmediateActivityArgs> for super::Reducer {
-    fn from(args: PerformImmediateActivityArgs) -> Self {
-        Self::PerformImmediateActivity {
+impl From<PromoteOrganizationMembershipArgs> for super::Reducer {
+    fn from(args: PromoteOrganizationMembershipArgs) -> Self {
+        Self::PromoteOrganizationMembership {
             character_id: args.character_id,
-            activity: args.activity,
-            requested_minutes: args.requested_minutes,
             organization_id: args.organization_id,
         }
     }
 }
 
-impl __sdk::InModule for PerformImmediateActivityArgs {
+impl __sdk::InModule for PromoteOrganizationMembershipArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `perform_immediate_activity`.
+/// Extension trait for access to the reducer `promote_organization_membership`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait perform_immediate_activity {
-    /// Request that the remote module invoke the reducer `perform_immediate_activity` to run as soon as possible.
+pub trait promote_organization_membership {
+    /// Request that the remote module invoke the reducer `promote_organization_membership` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`perform_immediate_activity:perform_immediate_activity_then`] to run a callback after the reducer completes.
-    fn perform_immediate_activity(
+    /// /// Use [`promote_organization_membership:promote_organization_membership_then`] to run a callback after the reducer completes.
+    fn promote_organization_membership(
         &self,
         character_id: u64,
-        activity: ImmediateActivity,
-        requested_minutes: u64,
-        organization_id: Option<String>,
+        organization_id: String,
     ) -> __sdk::Result<()> {
-        self.perform_immediate_activity_then(
-            character_id,
-            activity,
-            requested_minutes,
-            organization_id,
-            |_, _| {},
-        )
+        self.promote_organization_membership_then(character_id, organization_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `perform_immediate_activity` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `promote_organization_membership` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn perform_immediate_activity_then(
+    fn promote_organization_membership_then(
         &self,
         character_id: u64,
-        activity: ImmediateActivity,
-        requested_minutes: u64,
-        organization_id: Option<String>,
+        organization_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -78,13 +62,11 @@ pub trait perform_immediate_activity {
     ) -> __sdk::Result<()>;
 }
 
-impl perform_immediate_activity for super::RemoteReducers {
-    fn perform_immediate_activity_then(
+impl promote_organization_membership for super::RemoteReducers {
+    fn promote_organization_membership_then(
         &self,
         character_id: u64,
-        activity: ImmediateActivity,
-        requested_minutes: u64,
-        organization_id: Option<String>,
+        organization_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -93,10 +75,8 @@ impl perform_immediate_activity for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            PerformImmediateActivityArgs {
+            PromoteOrganizationMembershipArgs {
                 character_id,
-                activity,
-                requested_minutes,
                 organization_id,
             },
             callback,

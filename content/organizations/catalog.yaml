@@ -1,0 +1,1760 @@
+[
+    {
+        "id":  "merchant_guild",
+        "name":  "Company of Merchants",
+        "description":  "A local fellowship of traders, factors, and market brokers.",
+        "service_id":  "merchants",
+        "chapters":  [
+                         "viabundus-0",
+                         "viabundus-2337",
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "dues":  {
+                     "amount":  1,
+                     "interval_days":  30
+                 },
+        "ranks":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "description":  "A learner working under company oversight.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "description":  "A merchant trusted to practice independently.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "command",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "description":  "A senior merchant entitled to train apprentices.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "command",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "command",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "weaponsmith_guild",
+        "name":  "Weaponsmiths\u0027 Guild",
+        "description":  "A local fellowship governing weapon and shield work.",
+        "service_id":  "weapons",
+        "chapters":  [
+                         "viabundus-0",
+                         "viabundus-2337",
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  1,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "description":  "A learner at the forge.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "description":  "A smith admitted to independent work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "smithing",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "description":  "A guild master trusted to teach.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "smithing",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "smithing",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "armourers_guild",
+        "name":  "Armourers\u0027 Guild",
+        "description":  "A local fellowship of makers and fitters of armor.",
+        "service_id":  "armor",
+        "chapters":  [
+                         "viabundus-0",
+                         "viabundus-2337",
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  1,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "description":  "A learner in an armourer\u0027s shop.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "description":  "An armourer admitted to independent work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "smithing",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "description":  "A guild master trusted to teach.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "smithing",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "smithing",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "tailors_guild",
+        "name":  "Tailors\u0027 Guild",
+        "description":  "A local fellowship of cutters, fitters, and clothing repairers.",
+        "service_id":  "clothing",
+        "chapters":  [
+                         "viabundus-0",
+                         "viabundus-2337",
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "description":  "A learner at the cutting table.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "description":  "A tailor admitted to independent work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "tailoring",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "description":  "A guild master trusted to teach.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "tailoring",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "tailoring",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "herbalists_college",
+        "name":  "College of Herbalists",
+        "description":  "A local learned fellowship for remedies and wound care.",
+        "service_id":  "herbalist",
+        "chapters":  [
+                         "viabundus-0",
+                         "viabundus-2337",
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  1,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "student",
+                          "name":  "Student",
+                          "description":  "A supervised student of remedies.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "practitioner",
+                          "name":  "Practitioner",
+                          "description":  "A healer recognized for independent practice.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "physiology",
+                                                   "minimum":  2.0
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "anatomy",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "physician",
+                          "name":  "Physician",
+                          "description":  "A senior practitioner and teacher.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "physiology",
+                                                   "minimum":  4.0
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "anatomy",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "physiology",
+                                              "weight":  0.5
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "human",
+                                              "weight":  0.16666667
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "anatomy",
+                                              "weight":  0.33333333
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "cooks_guild",
+        "name":  "Cooks\u0027 Guild",
+        "description":  "A local fellowship of tavern and household cooks.",
+        "service_id":  "inn",
+        "chapters":  [
+                         "viabundus-0",
+                         "viabundus-2337",
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "description":  "A supervised kitchen learner.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "description":  "A cook admitted to independent work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "cooking",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "description":  "A senior cook and teacher.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "cooking",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "cooking",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "roman_catholic_learned_chapter",
+        "name":  "Confraternity of Christian Doctrine",
+        "description":  "A learned Roman Catholic confraternity recognized across settlements.",
+        "service_id":  "religion",
+        "chapters":  [
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "roman_catholic"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "novice",
+                          "name":  "Novice",
+                          "description":  "A new student of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "cleric",
+                          "name":  "Cleric",
+                          "description":  "A recognized teacher.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "roman_catholic",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "doctor",
+                          "name":  "Doctor",
+                          "description":  "A senior teacher of doctrine.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "roman_catholic",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "roman_catholic",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "virtue"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "reformed_learned_chapter",
+        "name":  "Company of Reformed Readers",
+        "description":  "A learned Reformed fellowship recognized across settlements.",
+        "service_id":  "religion",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "reformed"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "hearer",
+                          "name":  "Hearer",
+                          "description":  "A new student of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "reader",
+                          "name":  "Reader",
+                          "description":  "A recognized reader.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "reformed",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "teacher",
+                          "name":  "Teacher",
+                          "description":  "A senior teacher of doctrine.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "reformed",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "reformed",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "virtue"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "orthodox_learned_brotherhood",
+        "name":  "Brotherhood of Orthodox Readers",
+        "description":  "A learned Eastern Orthodox brotherhood recognized across settlements.",
+        "service_id":  "religion",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "eastern_orthodox"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "novice",
+                          "name":  "Novice",
+                          "description":  "A new student of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "reader",
+                          "name":  "Reader",
+                          "description":  "A recognized reader.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "eastern_orthodox",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "teacher",
+                          "name":  "Teacher",
+                          "description":  "A senior teacher of doctrine.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "eastern_orthodox",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "eastern_orthodox",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "virtue"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "lutheran_learned_visitation",
+        "name":  "Lutheran Visitation of Readers",
+        "description":  "A learned Lutheran visitation represented at Goslar and GÃ¶ttingen.",
+        "service_id":  "religion",
+        "chapters":  [
+                         "viabundus-2337",
+                         "viabundus-0"
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "lutheran"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "hearer",
+                          "name":  "Hearer",
+                          "description":  "A new student of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "lutheran",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "virtue"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "anglican_learned_fellowship",
+        "name":  "Royal Fellowship of Readers",
+        "description":  "A learned Anglican fellowship; no researched Viabundus chapter is currently assigned.",
+        "service_id":  "religion",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "anglican"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "reader",
+                          "name":  "Reader",
+                          "description":  "A student licensed to read.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "anglican",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "virtue"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "islamic_learned_fellowship",
+        "name":  "Fellowship of Learned Readers",
+        "description":  "A universal-recognition Islamic learned fellowship; no researched Viabundus chapter is currently assigned.",
+        "historical_fantasy_note":  "A generic gameplay institution pending settlement-specific historical research.",
+        "service_id":  "religion",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "islamic"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "student",
+                          "name":  "Student",
+                          "description":  "A student of the tradition.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "islamic",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "virtue"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "jewish_learned_fellowship",
+        "name":  "Fellowship of Learned Readers",
+        "description":  "A universal-recognition Jewish learned fellowship; no researched Viabundus chapter is currently assigned.",
+        "historical_fantasy_note":  "A generic gameplay institution pending settlement-specific historical research.",
+        "service_id":  "religion",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "judaism"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "student",
+                          "name":  "Student",
+                          "description":  "A student of the tradition.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "judaism",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "virtue"
+                     },
+        "privileges":  [
+
+                       ]
+    },
+    {
+        "id":  "brotherhood_saint_peter_martyr",
+        "name":  "Brotherhood of Saint Peter Martyr",
+        "description":  "A commissioned Roman Catholic confraternity investigating supernatural threats.",
+        "historical_fantasy_note":  "A historical-fantasy institution inspired by confraternities and judicial commissions, not a claim of a standing historical witch-hunter guild.",
+        "chapters":  [
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "dues":  {
+                     "amount":  2,
+                     "interval_days":  30
+                 },
+        "admission":  {
+                          "joining_fee":  3,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "roman_catholic"
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "roman_catholic",
+                                                   "minimum":  1.0
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "familiar",
+                          "name":  "Familiar",
+                          "description":  "A sworn assistant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "examiner",
+                          "name":  "Examiner",
+                          "description":  "An investigator trusted to examine cases.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "bestiary",
+                                                   "leaf":  "spirit",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "roman_catholic",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "spirit",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.4
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "brotherhood_watchful_lamp",
+        "name":  "Brotherhood of the Watchful Lamp",
+        "description":  "A commissioned Lutheran fellowship investigating supernatural threats.",
+        "historical_fantasy_note":  "A historical-fantasy institution modeled as a territorial visitation.",
+        "chapters":  [
+                         "viabundus-2337"
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  3,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "lutheran"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "watcher",
+                          "name":  "Watcher",
+                          "description":  "A sworn assistant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "lutheran",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "spirit",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.4
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "commission_false_wonders",
+        "name":  "Commission for False Wonders and Malefic Arts",
+        "description":  "A commissioned Reformed body investigating supernatural threats.",
+        "historical_fantasy_note":  "A historical-fantasy institution modeled as a magistrates\u0027 commission.",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  3,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "reformed"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "assistant",
+                          "name":  "Commission Assistant",
+                          "description":  "A sworn assistant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "reformed",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "spirit",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.4
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "fellowship_kings_watch",
+        "name":  "Fellowship of the King\u0027s Watch",
+        "description":  "A royal Anglican fellowship investigating supernatural threats.",
+        "historical_fantasy_note":  "A historical-fantasy royal commission.",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  3,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "anglican"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "watchman",
+                          "name":  "Watchman",
+                          "description":  "A sworn assistant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "anglican",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "spirit",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.4
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "brotherhood_archangel_michael",
+        "name":  "Brotherhood of the Holy Archangel Michael",
+        "description":  "An Orthodox brotherhood investigating supernatural threats.",
+        "historical_fantasy_note":  "A historical-fantasy episcopal brotherhood.",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  3,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "eastern_orthodox"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "companion",
+                          "name":  "Companion",
+                          "description":  "A sworn assistant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "religion",
+                                              "religion":  "eastern_orthodox",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "spirit",
+                                              "weight":  0.3
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.4
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "order_saint_george",
+        "name":  "Order of Saint George",
+        "description":  "A Roman Catholic military-religious fellowship.",
+        "historical_fantasy_note":  "An invented historical-fantasy order.",
+        "chapters":  [
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  5,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "roman_catholic"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "sergeant",
+                          "name":  "Sergeant",
+                          "description":  "A serving brother-at-arms.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "knight",
+                          "name":  "Knight Brother",
+                          "description":  "A proven mounted brother.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "sword",
+                                                   "minimum":  3.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.7
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "dodge",
+                                              "weight":  0.15
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "block",
+                                              "weight":  0.15
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "brandenburg_bailiwick_saint_john",
+        "name":  "Brandenburg Bailiwick of Saint John",
+        "description":  "The Lutheran Brandenburg bailiwick of the Order of Saint John.",
+        "chapters":  [
+                         "viabundus-2337"
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  5,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "lutheran"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "sergeant",
+                          "name":  "Sergeant",
+                          "description":  "A serving brother-at-arms.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.7
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "dodge",
+                                              "weight":  0.15
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "block",
+                                              "weight":  0.15
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "covenanted_company_shield",
+        "name":  "Covenanted Company of the Shield",
+        "description":  "A Reformed sworn defensive company.",
+        "historical_fantasy_note":  "An invented historical-fantasy company.",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  5,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "reformed"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "companion",
+                          "name":  "Covenanted Companion",
+                          "description":  "A sworn defender.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.7
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "dodge",
+                                              "weight":  0.15
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "block",
+                                              "weight":  0.15
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "royal_fellowship_saint_george",
+        "name":  "Royal Fellowship of Saint George",
+        "description":  "An Anglican royal military fellowship.",
+        "historical_fantasy_note":  "An invented historical-fantasy fellowship.",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  5,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "anglican"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "man_at_arms",
+                          "name":  "Man-at-Arms",
+                          "description":  "A sworn royal defender.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.7
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "dodge",
+                                              "weight":  0.15
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "block",
+                                              "weight":  0.15
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "military_brotherhood_saint_george",
+        "name":  "Military Brotherhood of Saint George",
+        "description":  "An Eastern Orthodox military brotherhood.",
+        "historical_fantasy_note":  "An invented historical-fantasy brotherhood.",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  5,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "eastern_orthodox"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "brother_at_arms",
+                          "name":  "Brother-at-Arms",
+                          "description":  "A sworn defender.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.7
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "dodge",
+                                              "weight":  0.15
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "block",
+                                              "weight":  0.15
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ]
+    },
+    {
+        "id":  "wardens_harz",
+        "name":  "Wardens of the Harz",
+        "description":  "Sworn wardens of forest roads, game, and dangerous beasts.",
+        "historical_fantasy_note":  "An invented body using period-appropriate territorial forest-office language.",
+        "chapters":  [
+                         "viabundus-2337"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-2337",
+                                                   "viabundus-0"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  2,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "under_warden",
+                          "name":  "Under-Warden",
+                          "description":  "A probationary forest servant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "warden",
+                          "name":  "Warden",
+                          "description":  "A sworn forest officer.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "terrain_forest",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "terrain",
+                                              "terrain":  "forest",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "beast",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.3
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms"
+                       ]
+    },
+    {
+        "id":  "keepers_solling",
+        "name":  "Keepers of the Solling",
+        "description":  "Territorial keepers of woods, roads, and game.",
+        "historical_fantasy_note":  "An invented body using period-appropriate forest-office language.",
+        "chapters":  [
+                         "viabundus-0"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  2,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "keeper",
+                          "name":  "Keeper",
+                          "description":  "A sworn forest servant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "terrain",
+                                              "terrain":  "forest",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "beast",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.3
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms"
+                       ]
+    },
+    {
+        "id":  "company_green_staff_thuringia",
+        "name":  "Company of the Green Staff of Thuringia",
+        "description":  "A company of sworn foresters and march wardens.",
+        "historical_fantasy_note":  "An invented body using period-appropriate forest-office language.",
+        "chapters":  [
+                         "viabundus-1826"
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  2,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "green_staff",
+                          "name":  "Green Staff",
+                          "description":  "A sworn forest servant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "terrain",
+                                              "terrain":  "hills",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "beast",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.3
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms"
+                       ]
+    },
+    {
+        "id":  "test_catholic_polearm_cooks",
+        "name":  "Confraternity of the Long Spoon",
+        "description":  "Catalog-only validation fixture demonstrating arbitrary cross-domain requirements.",
+        "historical_fantasy_note":  "Unavailable test content; it exists to prove the evaluator has no cook, Catholic, or polearm special case.",
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+                                               {
+                                                   "kind":  "professed_religion",
+                                                   "religion":  "roman_catholic"
+                                               }
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "spoon_bearer",
+                          "name":  "Spoon-Bearer",
+                          "description":  "A new confraternity member.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "keeper_of_the_long_spoon",
+                          "name":  "Keeper of the Long Spoon",
+                          "description":  "A cook proven with both ladle and polearm.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "cooking",
+                                                   "minimum":  4.0
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "polearm",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "cooking",
+                                              "weight":  0.5
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "polearm",
+                                              "weight":  0.5
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ]
+    }
+]

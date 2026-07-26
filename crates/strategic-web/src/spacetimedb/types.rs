@@ -1401,14 +1401,22 @@ pub struct CharacterTime {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterApprenticeship {
+pub struct OrganizationMembership {
     pub id: u64,
     pub character_id: u64,
-    pub service_id: String,
-    pub religion_id: Option<String>,
-    pub started_minute: u64,
+    pub organization_id: String,
+    pub rank_id: String,
+    pub joined_minute: u64,
+    pub dues_paid_through_minute: u64,
+    pub status: String,
     pub apprenticeship_minutes_accrued: u64,
     pub practice_minutes_accrued: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizationPresentation {
+    pub character_id: u64,
+    pub organization_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1470,9 +1478,9 @@ pub struct ScheduleAllocation {
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
     pub apprenticeship_minutes: u16,
-    pub apprenticeship_service_id: Option<String>,
+    pub apprenticeship_organization_id: Option<String>,
     pub profession_practice_minutes: u16,
-    pub profession_service_id: Option<String>,
+    pub practice_organization_id: Option<String>,
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,

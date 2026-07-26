@@ -21,7 +21,7 @@ use futures_util::{
     future::join_all,
     stream::{self, StreamExt},
 };
-use maud::Markup;
+use maud::{Markup, html};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashSet;
@@ -238,6 +238,18 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}",
             get(party_personal),
+        )
+        .route(
+            "/locations/settlement/{id}/party/{character_id}/organizations",
+            get(character_organizations),
+        )
+        .route(
+            "/locations/settlement/{id}/party/{character_id}/organizations/{organization_id}/{action}",
+            post(update_character_organization),
+        )
+        .route(
+            "/locations/settlement/{id}/party/{character_id}/organizations-none",
+            post(clear_presented_organization),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/cook",
@@ -571,10 +583,10 @@ fn spacetime_option_string(value: Option<&str>) -> serde_json::Value {
 
 fn schedule_allocation_reducer_arg(schedule: &ScheduleAllocation) -> serde_json::Value {
     let mut value = json!(schedule);
-    value["apprenticeship_service_id"] =
-        spacetime_option_string(schedule.apprenticeship_service_id.as_deref());
-    value["profession_service_id"] =
-        spacetime_option_string(schedule.profession_service_id.as_deref());
+    value["apprenticeship_organization_id"] =
+        spacetime_option_string(schedule.apprenticeship_organization_id.as_deref());
+    value["practice_organization_id"] =
+        spacetime_option_string(schedule.practice_organization_id.as_deref());
     value
 }
 
@@ -593,15 +605,15 @@ mod surgery_reducer_argument_tests {
     #[test]
     fn schedule_profession_ids_use_spacetime_option_encoding() {
         let encoded = schedule_allocation_reducer_arg(&ScheduleAllocation {
-            apprenticeship_service_id: Some("armor".into()),
-            profession_service_id: None,
+            apprenticeship_organization_id: Some("armourers_guild".into()),
+            practice_organization_id: None,
             ..Default::default()
         });
         assert_eq!(
-            encoded["apprenticeship_service_id"],
-            json!({ "some": "armor" })
+            encoded["apprenticeship_organization_id"],
+            json!({ "some": "armourers_guild" })
         );
-        assert_eq!(encoded["profession_service_id"], json!({ "none": [] }));
+        assert_eq!(encoded["practice_organization_id"], json!({ "none": [] }));
     }
 }
 
@@ -2067,21 +2079,14 @@ async fn begin_service_apprenticeship(
     Path((id, service_id)): Path<(String, String)>,
     session: Session,
 ) -> Json<ApprenticeshipResult> {
-    const PROFESSIONS: &[&str] = &[
-        "merchants",
-        "weapons",
-        "armor",
-        "clothing",
-        "herbalist",
-        "inn",
-        "religion",
-    ];
-    if !PROFESSIONS.contains(&service_id.as_str()) {
+    let Some(organization) = adventuresim_core::organization::organizations_for_chapter(&id)
+        .find(|organization| organization.service_id.as_deref() == Some(service_id.as_str()))
+    else {
         return Json(ApprenticeshipResult {
             enrolled: false,
-            message: "That profession is not taught here.",
+            message: "No local organization offers that professional activity.",
         });
-    }
+    };
     let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     else {
         return Json(ApprenticeshipResult {
@@ -2098,18 +2103,14 @@ async fn begin_service_apprenticeship(
     match state
         .db
         .call(
-            "begin_apprenticeship",
-            &[json!(character.id), json!(service_id)],
+            "join_organization",
+            &[json!(character.id), json!(organization.id)],
         )
         .await
     {
         Ok(()) => Json(ApprenticeshipResult {
             enrolled: true,
-            message: if service_id == "religion" {
-                "Then you shall begin as a novice. In time, a cleric may become a teacher."
-            } else {
-                "Then your apprenticeship begins today."
-            },
+            message: "Your membership begins today.",
         }),
         Err(error) => {
             tracing::warn!(%error, character_id = character.id, %service_id, "failed to begin apprenticeship");
@@ -2118,6 +2119,227 @@ async fn begin_service_apprenticeship(
                 message: "I cannot take you on just now.",
             })
         }
+    }
+}
+
+fn organization_requirement_label(
+    requirement: &adventuresim_core::organization::Requirement,
+) -> String {
+    use adventuresim_core::organization::Requirement;
+    match requirement {
+        Requirement::SkillRating {
+            skill,
+            minimum,
+            leaf,
+        } => format!(
+            "{}{} {:.1}",
+            skill.replace('_', " "),
+            leaf.as_ref()
+                .map_or(String::new(), |leaf| format!(" ({leaf})")),
+            minimum
+        ),
+        Requirement::ProfessedReligion { religion } => {
+            format!("Professes {}", religion.replace('_', " "))
+        }
+    }
+}
+
+async fn character_organizations(
+    State(state): State<AppState>,
+    Path((id, character_id)): Path<(String, u64)>,
+    session: Session,
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (StatusCode::FORBIDDEN, "Select this character first").into_response();
+    }
+    let Some(character) = state
+        .db
+        .query_one::<Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+    else {
+        return (StatusCode::NOT_FOUND, "Character not found").into_response();
+    };
+    if character.current_settlement_id.as_deref() != Some(id.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Organizations can only be managed at the current settlement",
+        )
+            .into_response();
+    }
+    let memberships: Vec<crate::spacetimedb::OrganizationMembership> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM organization_membership WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let presentation = state
+        .db
+        .query_one::<crate::spacetimedb::OrganizationPresentation>(&format!(
+            "SELECT * FROM organization_presentation WHERE character_id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten();
+    let minute = state
+        .db
+        .query_one::<CharacterTime>(&format!(
+            "SELECT * FROM character_time WHERE character_id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .map_or(0, |row| row.minutes);
+    let base = format!("/locations/settlement/{id}/party/{character_id}");
+    let markup = html! {
+        (maud::DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                title { "Organizations — " (character.name) }
+                link rel="stylesheet" href="/static/style.css";
+            }
+            body {
+                main class="center-content settlement-main" data-live-region="organizations" {
+                    nav { a href=(base) { "← Back to character" } }
+                    h1 { "Organizations" }
+                    p { "Memberships are independent. Exactly one recognized, dues-current organization may be presented, or none." }
+                    section aria-labelledby="membership-heading" {
+                        h2 id="membership-heading" { "Memberships" }
+                        @if memberships.is_empty() {
+                            p { "No memberships." }
+                        }
+                        @for membership in &memberships {
+                            @let definition = adventuresim_core::organization::organization(&membership.organization_id);
+                            @let rank = definition.and_then(|definition| definition.rank(&membership.rank_id));
+                            article class="card organization-membership" {
+                                h3 { (definition.map_or(membership.organization_id.as_str(), |entry| entry.name.as_str())) }
+                                p { strong { (rank.map_or(membership.rank_id.as_str(), |rank| rank.name.as_str())) } }
+                                @if let Some(rank) = rank { p { (rank.description) } }
+                                p {
+                                    "Status: " (membership.status)
+                                    @if membership.dues_paid_through_minute != u64::MAX {
+                                        " · paid through minute " (membership.dues_paid_through_minute)
+                                        @if minute > membership.dues_paid_through_minute { " (payment required)" }
+                                    } @else { " · no dues" }
+                                }
+                                @if let Some(definition) = definition {
+                                    p { "Privileges: "
+                                        @if definition.privileges.is_empty() { "none" }
+                                        @for privilege in &definition.privileges { code { (format!("{privilege:?}")) } " " }
+                                    }
+                                    p { "Recognition: " (match &definition.recognition {
+                                        adventuresim_core::organization::Recognition::Universal => "universal".into(),
+                                        adventuresim_core::organization::Recognition::Settlements { settlement_ids } => settlement_ids.join(", "),
+                                    }) }
+                                    @if let Some(next) = definition.next_rank(&membership.rank_id) {
+                                        p { "Next rank: " strong { (next.name) } " — " (next.description) }
+                                        form method="post" action=(format!("{base}/organizations/{}/promote", definition.id)) {
+                                            button type="submit" { "Request promotion" }
+                                        }
+                                    }
+                                    @if definition.dues.is_some() {
+                                        form method="post" action=(format!("{base}/organizations/{}/pay", definition.id)) {
+                                            button type="submit" { "Pay one dues interval" }
+                                        }
+                                    }
+                                    @if definition.recognition.includes(&id) && membership.status == "active" && minute <= membership.dues_paid_through_minute {
+                                        form method="post" action=(format!("{base}/organizations/{}/present", definition.id)) {
+                                            button type="submit" aria-pressed=(presentation.as_ref().is_some_and(|row| row.organization_id == definition.id)) {
+                                                "Present as " (definition.name)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        form method="post" action=(format!("{base}/organizations-none")) {
+                            button type="submit" aria-pressed=(presentation.is_none()) { "Present as none" }
+                        }
+                    }
+                    section aria-labelledby="available-heading" {
+                        h2 id="available-heading" { "Available here" }
+                        @for definition in adventuresim_core::organization::organizations_for_chapter(&id) {
+                            @if !memberships.iter().any(|row| row.organization_id == definition.id) {
+                                article class="card organization-available" {
+                                    h3 { (definition.name) }
+                                    p { (definition.description) }
+                                    @if let Some(note) = &definition.historical_fantasy_note {
+                                        p class="text-muted" { (note) }
+                                    }
+                                    p { "Joining fee: " (definition.admission.joining_fee) " coin(s)" }
+                                    @if !definition.admission.requirements.is_empty() {
+                                        ul {
+                                            @for requirement in &definition.admission.requirements {
+                                                li { (organization_requirement_label(requirement)) }
+                                            }
+                                        }
+                                    }
+                                    form method="post" action=(format!("{base}/organizations/{}/join", definition.id)) {
+                                        button type="submit" { "Join" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    Html(markup.into_string()).into_response()
+}
+
+async fn update_character_organization(
+    State(state): State<AppState>,
+    Path((id, character_id, organization_id, action)): Path<(String, u64, String, String)>,
+    session: Session,
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (StatusCode::FORBIDDEN, "Select this character first").into_response();
+    }
+    let reducer = match action.as_str() {
+        "join" => "join_organization",
+        "promote" => "promote_organization_membership",
+        "pay" => "pay_organization_dues",
+        "present" => "present_organization",
+        _ => return (StatusCode::NOT_FOUND, "Unknown organization action").into_response(),
+    };
+    match state
+        .db
+        .call(reducer, &[json!(character_id), json!(organization_id)])
+        .await
+    {
+        Ok(()) => Redirect::to(&format!(
+            "/locations/settlement/{id}/party/{character_id}/organizations"
+        ))
+        .into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+async fn clear_presented_organization(
+    State(state): State<AppState>,
+    Path((id, character_id)): Path<(String, u64)>,
+    session: Session,
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (StatusCode::FORBIDDEN, "Select this character first").into_response();
+    }
+    match state
+        .db
+        .call("clear_organization_presentation", &[json!(character_id)])
+        .await
+    {
+        Ok(()) => Redirect::to(&format!(
+            "/locations/settlement/{id}/party/{character_id}/organizations"
+        ))
+        .into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
 
@@ -2712,13 +2934,16 @@ async fn render_party_personal(
         ))
         .await
         .unwrap_or_default();
-    let apprenticeships: Vec<crate::spacetimedb::CharacterApprenticeship> = state
+    let apprenticeships: Vec<crate::spacetimedb::OrganizationMembership> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_apprenticeship WHERE character_id = {character_id}"
+            "SELECT * FROM organization_membership WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
+    let character_minute = query_single::<CharacterTime>(&state, "character_time", character_id)
+        .await
+        .map_or(0, |time| time.minutes);
     let capability = get_character_capability(&state, character_id).await;
     let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = false;
@@ -2744,7 +2969,13 @@ async fn render_party_personal(
         settlement.as_ref(),
         stats.as_ref(),
     )
-    .with_professions(attributes.first(), skills.first(), &apprenticeships);
+    .with_professions(
+        attributes.first(),
+        skills.first(),
+        &apprenticeships,
+        &location.id,
+        character_minute,
+    );
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -3022,9 +3253,9 @@ struct TrainingScheduleForm {
     combat_training_minutes: u16,
     carousing_minutes: u16,
     apprenticeship_minutes: u16,
-    apprenticeship_service_id: Option<String>,
+    apprenticeship_organization_id: Option<String>,
     profession_practice_minutes: u16,
-    profession_service_id: Option<String>,
+    practice_organization_id: Option<String>,
     labor_minutes: u16,
     prayer_minutes: u16,
     thievery_minutes: u16,
@@ -3067,9 +3298,9 @@ async fn update_training_schedule(
         combat_training_minutes: form.combat_training_minutes,
         carousing_minutes: form.carousing_minutes,
         apprenticeship_minutes: form.apprenticeship_minutes,
-        apprenticeship_service_id: form.apprenticeship_service_id,
+        apprenticeship_organization_id: form.apprenticeship_organization_id,
         profession_practice_minutes: form.profession_practice_minutes,
-        profession_service_id: form.profession_service_id,
+        practice_organization_id: form.practice_organization_id,
         labor_minutes: form.labor_minutes,
         prayer_minutes: form.prayer_minutes,
         thievery_minutes: form.thievery_minutes,
@@ -3461,9 +3692,9 @@ async fn set_equipment(
     State(state): State<AppState>,
     session: Session,
     Form(form): Form<EquipmentForm>,
-) -> impl IntoResponse {
+) -> Response {
     let Some(character_id) = session.character_id_u64() else {
-        return (StatusCode::UNAUTHORIZED, "Choose a character");
+        return (StatusCode::UNAUTHORIZED, "Choose a character").into_response();
     };
     let inventory: Option<InventoryItem> = match state
         .db
@@ -3476,11 +3707,11 @@ async fn set_equipment(
         Ok(inventory) => inventory,
         Err(error) => {
             tracing::warn!(%error, character_id, "failed to load equipment inventory row");
-            return (StatusCode::SERVICE_UNAVAILABLE, "Inventory is unavailable");
+            return (StatusCode::SERVICE_UNAVAILABLE, "Inventory is unavailable").into_response();
         }
     };
     let Some(inventory) = inventory else {
-        return (StatusCode::NOT_FOUND, "Item is not in this inventory");
+        return (StatusCode::NOT_FOUND, "Item is not in this inventory").into_response();
     };
     let definition: Option<ItemDefinition> = match state
         .db
@@ -3496,17 +3727,19 @@ async fn set_equipment(
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Equipment catalog is unavailable",
-            );
+            )
+                .into_response();
         }
     };
     let Some(definition) = definition else {
-        return (StatusCode::NOT_FOUND, "Item definition is missing");
+        return (StatusCode::NOT_FOUND, "Item definition is missing").into_response();
     };
     if definition.kind == crate::spacetimedb::ItemKind::Medication {
         return (
             StatusCode::BAD_REQUEST,
             "Preparations are administered through the Physiology interface.",
-        );
+        )
+            .into_response();
     }
     let destination = if form.equipped {
         definition.slot
@@ -3514,7 +3747,7 @@ async fn set_equipment(
         ItemSlot::None
     };
     if form.equipped && destination == ItemSlot::None {
-        return (StatusCode::BAD_REQUEST, "This item cannot be equipped");
+        return (StatusCode::BAD_REQUEST, "This item cannot be equipped").into_response();
     }
     if let Err(error) = state
         .db
@@ -3529,14 +3762,14 @@ async fn set_equipment(
         .await
     {
         tracing::warn!(%error, character_id, "failed to update equipment");
-        return (StatusCode::BAD_REQUEST, "Could not update equipment");
+        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
     }
     for reducer in ["refresh_capabilities", "refresh_strategic_condition"] {
         if let Err(error) = state.db.call(reducer, &[json!(character_id)]).await {
             tracing::warn!(%error, character_id, reducer, "failed to refresh equipment projection");
         }
     }
-    (StatusCode::NO_CONTENT, "")
+    (StatusCode::NO_CONTENT, "").into_response()
 }
 
 async fn deposit_party_inventory(

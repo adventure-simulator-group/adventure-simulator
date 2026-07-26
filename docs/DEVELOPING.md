@@ -1,5 +1,17 @@
 # Development Workflow
 
+## Organization content
+
+Organization YAML is validated during `adventuresim-core` builds. Validate its
+settlement references against the canonical or another exported compiled
+Viabundus world with:
+
+```powershell
+python scripts/validate_organization_world.py --world path\to\compiled-world.json
+```
+
+See [ORGANIZATIONS.md](ORGANIZATIONS.md) for the schema and authority boundary.
+
 ## Developer quest spawning
 
 The existing browser-local developer mode is off by default. On settlement

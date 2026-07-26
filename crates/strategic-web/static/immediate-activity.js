@@ -114,8 +114,8 @@
       const schedule = button.closest('[data-skill-schedule]')
         || modal.parentElement?.querySelector('[data-skill-schedule]');
       const serviceName = kind === 'apprenticeship'
-        ? 'apprenticeship_service_id'
-        : kind === 'profession_practice' ? 'profession_service_id' : '';
+        ? 'apprenticeship_organization_id'
+        : kind === 'profession_practice' ? 'practice_organization_id' : '';
       modal.querySelector('[data-activity-service]').value = serviceName
         ? schedule?.elements.namedItem(serviceName)?.value || '' : '';
       modal.hidden = false;
