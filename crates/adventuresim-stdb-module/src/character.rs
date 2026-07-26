@@ -367,17 +367,34 @@ pub(crate) fn delete_temporary_character(
     if !character.temporary {
         return Err("Refusing to cascade-delete a persistent character".into());
     }
-    if let Some(party_id) = character.party_id.as_deref() {
-        crate::strategic::delete_temporary_character_party(ctx, character.id, party_id)?;
-    } else {
-        for membership in ctx
-            .db
-            .party_member()
-            .character_id()
-            .filter(character.id)
-            .collect::<Vec<_>>()
-        {
-            ctx.db.party_member().id().delete(membership.id);
+    delete_character_data(ctx, character, true)
+}
+
+pub(crate) fn delete_character_for_world_import(
+    ctx: &ReducerContext,
+    character: Character,
+) -> Result<(), String> {
+    delete_character_data(ctx, character, false)
+}
+
+fn delete_character_data(
+    ctx: &ReducerContext,
+    character: Character,
+    delete_party: bool,
+) -> Result<(), String> {
+    if delete_party {
+        if let Some(party_id) = character.party_id.as_deref() {
+            crate::strategic::delete_temporary_character_party(ctx, character.id, party_id)?;
+        } else {
+            for membership in ctx
+                .db
+                .party_member()
+                .character_id()
+                .filter(character.id)
+                .collect::<Vec<_>>()
+            {
+                ctx.db.party_member().id().delete(membership.id);
+            }
         }
     }
 

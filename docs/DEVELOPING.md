@@ -472,8 +472,10 @@ the authenticated login identity for begin, every batch, and finish, and the
 existing finalization validation remains authoritative. Starting the first
 import also removes the local smoke-test settlements (Riverdale, Ironforge,
 and Willowmere), their renderer-only route nodes and edge, and their directly
-derived NPC and smith rows. Placeholder settlement data therefore never mixes
-with an imported historical world.
+derived NPC and smith rows. When the import finishes, it deletes all existing
+characters, parties, candidate claims, and recruitment offers. A completed
+world import is therefore a tabula-rasa character boundary: players must create
+new characters, and those characters can only start in imported settlements.
 The same archive installs the AVIF map and final terrain-routing package, so a
 fresh checkout does not need the 26 GiB source bundle or a geospatial rebuild.
 World loading persists canonical map and settlement facts only; it deliberately

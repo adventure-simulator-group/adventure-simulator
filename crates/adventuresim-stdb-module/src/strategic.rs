@@ -28,7 +28,7 @@ use crate::{
     capability::character_capability,
     character::{
         character, character_attributes, character_equip, character_limbs, character_skills,
-        character_stats,
+        character_stats, starting_character_claim,
     },
     condition::character_condition,
     investigation::{
@@ -2636,7 +2636,7 @@ pub struct WorldDataImport {
     pub completed: bool,
 }
 
-fn discard_placeholder_settlement_data(ctx: &ReducerContext) {
+fn discard_placeholder_settlement_data(ctx: &ReducerContext) -> Result<(), String> {
     for settlement_id in PLACEHOLDER_SETTLEMENT_IDS {
         for alias in ctx
             .db
@@ -2698,6 +2698,29 @@ fn discard_placeholder_settlement_data(ctx: &ReducerContext) {
         .world_node()
         .id()
         .delete(IRONFORGE_RENDERER_DEMO_NODE);
+    Ok(())
+}
+
+fn discard_character_data_for_world_import(ctx: &ReducerContext) -> Result<(), String> {
+    for claim in ctx.db.starting_character_claim().iter().collect::<Vec<_>>() {
+        ctx.db
+            .starting_character_claim()
+            .request_key()
+            .delete(&claim.request_key);
+    }
+    for offer in ctx.db.recruitment_offer().iter().collect::<Vec<_>>() {
+        ctx.db.recruitment_offer().id_key().delete(&offer.id_key);
+    }
+    for membership in ctx.db.party_member().iter().collect::<Vec<_>>() {
+        ctx.db.party_member().id().delete(membership.id);
+    }
+    for party in ctx.db.party_authority().iter().collect::<Vec<_>>() {
+        delete_temporary_character_party(ctx, party.leader_id, &party.id)?;
+    }
+    for character in ctx.db.character().iter().collect::<Vec<_>>() {
+        crate::character::delete_character_for_world_import(ctx, character)?;
+    }
+    Ok(())
 }
 
 /// Start a world import. This must be called before sending any import batch.
@@ -2750,7 +2773,7 @@ pub fn begin_world_data_import(
             import.schema_version, import.artifact_id
         )),
         None => {
-            discard_placeholder_settlement_data(ctx);
+            discard_placeholder_settlement_data(ctx)?;
             ctx.db.world_data_import().insert(WorldDataImport {
                 id: 0,
                 owner: ctx.sender(),
@@ -2788,6 +2811,7 @@ pub fn finish_world_data_import(ctx: &ReducerContext, artifact_id: String) -> Re
     }
     validate_final_settlement_industries(ctx)?;
     validate_final_settlement_economies(ctx)?;
+    discard_character_data_for_world_import(ctx)?;
     import.completed = true;
     ctx.db.world_data_import().id().update(import);
     Ok(())
