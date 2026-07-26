@@ -448,6 +448,16 @@ unstructured Markdown `sources` field for future debugging; it is persisted but
 not currently displayed. `just load-world` first verifies or downloads the
 pinned approximately 60 MiB runtime archive when its files are absent, then
 sends `target/world-1544.json` in bounded batches to a published local module.
+The importer reads `spacetime login show --token` once and keeps one
+authenticated HTTP reducer client for the complete import, so batches are no
+longer constrained by the Windows command-line limit. Each complete JSON
+reducer request is conservatively capped at 512 KiB (and still respects
+`--batch-size`). A server HTTP 413 (`Payload Too Large`) is retried by
+bisection in source order; authentication, authorization, transport, and
+reducer-validation failures are reported once without replaying their batches.
+The token is neither printed nor written to disk. Import ownership remains
+the authenticated login identity for begin, every batch, and finish, and the
+existing finalization validation remains authoritative.
 The same archive installs the AVIF map and final terrain-routing package, so a
 fresh checkout does not need the 26 GiB source bundle or a geospatial rebuild.
 World loading persists canonical map and settlement facts only; it deliberately
