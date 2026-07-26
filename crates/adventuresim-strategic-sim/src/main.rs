@@ -15,6 +15,51 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Analyze generated quest content through an offline observer-safe projection.
+    QuestAnalyze {
+        #[arg(long, value_enum, default_value_t = EvalPolicyArg::Mock)]
+        policy: EvalPolicyArg,
+        #[arg(long, default_value_t = 41)]
+        seed: u64,
+        #[arg(long, default_value_t = 4)]
+        cases_per_template: u32,
+        #[arg(long)]
+        public_output: PathBuf,
+        #[arg(long)]
+        developer_output: PathBuf,
+        #[arg(long)]
+        stories_output: PathBuf,
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value = "gpt-4.1-nano")]
+        model: String,
+        #[arg(long, default_value = "OPENAI_API_KEY")]
+        api_key_env: String,
+        #[arg(long, default_value_t = false)]
+        allow_network: bool,
+    },
+    /// Replay a review-approved deterministic quest-analysis fixture.
+    QuestAnalyzeReplay {
+        #[arg(long)]
+        fixture: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Emit a reviewable fixture candidate from a bounded non-solving run.
+    QuestAnalyzePromote {
+        #[arg(long, default_value_t = 41)]
+        seed: u64,
+        #[arg(long, value_enum, default_value_t = EvalFamilyArg::RecurringDepredation)]
+        family: EvalFamilyArg,
+        #[arg(long, default_value_t = 1)]
+        max_steps: u32,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
+    },
     /// Generate profiles and run canonical settlement downtime.
     Run {
         #[arg(long)]
@@ -89,9 +134,137 @@ enum NpcStrategyPolicyArg {
     Openai,
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum EvalPolicyArg {
+    Scripted,
+    Mock,
+    Openai,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum EvalFamilyArg {
+    RecurringDepredation,
+    DisappearanceOrLoss,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let command = cli.command;
+    let command = match cli.command {
+        Command::QuestAnalyze {
+            policy,
+            seed,
+            cases_per_template,
+            public_output,
+            developer_output,
+            stories_output,
+            overwrite,
+            endpoint,
+            model,
+            api_key_env,
+            allow_network,
+        } => {
+            validate_distinct_output_paths(&[&public_output, &developer_output, &stories_output])?;
+            if !overwrite
+                && [&public_output, &developer_output, &stories_output]
+                    .iter()
+                    .any(|path| path.exists())
+            {
+                return Err(
+                    "one or more quest analysis outputs already exist; pass --overwrite explicitly"
+                        .into(),
+                );
+            }
+            let mut policy: Box<dyn QuestPolicy> = match policy {
+                EvalPolicyArg::Scripted => Box::new(ScriptedPolicy::default()),
+                EvalPolicyArg::Mock => Box::new(MockLlmPolicy),
+                EvalPolicyArg::Openai => Box::new(OpenAiCompatiblePolicy::new(ProviderConfig {
+                    endpoint: endpoint.unwrap_or_else(|| ProviderConfig::default().endpoint),
+                    model,
+                    api_key_env,
+                    allow_network,
+                    ..ProviderConfig::default()
+                })?),
+            };
+            let case_count = cases_per_template
+                .checked_mul(2)
+                .ok_or("case count overflow")?;
+            let limits = EvalLimits {
+                max_cases: case_count,
+                ..EvalLimits::default()
+            };
+            let bundle = evaluate_cases(
+                &golden_suite(seed, cases_per_template),
+                policy.as_mut(),
+                &limits,
+            )?;
+            write_output(&public_output, &bundle.artifacts.public_json, overwrite)?;
+            write_output(
+                &developer_output,
+                &bundle.artifacts.developer_json,
+                overwrite,
+            )?;
+            write_output(
+                &stories_output,
+                &bundle.artifacts.stories_markdown,
+                overwrite,
+            )?;
+            eprintln!(
+                "offline quest content analysis: {}/{} solved; public={} developer={} stories={}",
+                bundle.public.metrics.solved,
+                bundle.public.metrics.cases,
+                public_output.display(),
+                developer_output.display(),
+                stories_output.display()
+            );
+            return Ok(());
+        }
+        Command::QuestAnalyzeReplay { fixture, output } => {
+            let recorded: ReplayCase = serde_json::from_slice(&read_bounded(&fixture)?)?;
+            let trace = replay_case(&recorded)?;
+            let json = serde_json::to_vec_pretty(&trace)?;
+            if let Some(path) = output {
+                write_output(&path, &json, false)?;
+            } else {
+                println!("{}", String::from_utf8(json)?);
+            }
+            return Ok(());
+        }
+        Command::QuestAnalyzePromote {
+            seed,
+            family,
+            max_steps,
+            output,
+            overwrite,
+        } => {
+            let family = match family {
+                EvalFamilyArg::RecurringDepredation => {
+                    adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation
+                }
+                EvalFamilyArg::DisappearanceOrLoss => {
+                    adventuresim_core::quest_generation::TemplateFamily::DisappearanceOrLoss
+                }
+            };
+            let limits = EvalLimits {
+                max_cases: 1,
+                max_steps_per_case: max_steps,
+                ..EvalLimits::default()
+            };
+            let mut policy = MockLlmPolicy;
+            let bundle = evaluate_cases(
+                &[EvalCaseConfig::fixture(seed, family)],
+                &mut policy,
+                &limits,
+            )?;
+            let fixture = promote_replay_candidate(&bundle, 0)?;
+            write_output(&output, &serde_json::to_vec_pretty(&fixture)?, overwrite)?;
+            eprintln!(
+                "reviewable replay candidate written to {}; verify before committing",
+                output.display()
+            );
+            return Ok(());
+        }
+        command => command,
+    };
     if let Command::CoreLoop {
         host,
         database,
@@ -221,9 +394,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             emit(run_profiles(config, vec![a, b])?, output)?
         }
-        Command::CoreLoop { .. } => unreachable!(),
+        Command::CoreLoop { .. }
+        | Command::QuestAnalyze { .. }
+        | Command::QuestAnalyzeReplay { .. }
+        | Command::QuestAnalyzePromote { .. } => unreachable!(),
     };
     eprintln!("{}", human_summary(&report));
+    Ok(())
+}
+
+fn write_output(
+    path: &Path,
+    bytes: &[u8],
+    overwrite: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs::OpenOptions;
+    let mut options = OpenOptions::new();
+    options.write(true);
+    if overwrite {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+    std::io::Write::write_all(&mut options.open(path)?, bytes)?;
     Ok(())
 }
 
@@ -234,14 +427,15 @@ fn validate_distinct_output_paths(paths: &[&Path]) -> Result<(), Box<dyn std::er
         } else {
             std::env::current_dir()?.join(path)
         };
-        // `canonicalize` cannot normalize a not-yet-created output. Collapse
-        // `.` and `..` lexically first, then resolve existing aliases/symlinks.
         let lexical = lexical_normalize(&absolute);
-        if lexical.exists() {
-            Ok(lexical_normalize(&fs::canonicalize(lexical)?))
-        } else {
-            Ok(lexical)
-        }
+        let existing = lexical
+            .ancestors()
+            .find(|candidate| candidate.exists())
+            .ok_or("output path has no existing ancestor")?;
+        let missing_tail = lexical.strip_prefix(existing)?;
+        Ok(lexical_normalize(
+            &fs::canonicalize(existing)?.join(missing_tail),
+        ))
     };
     let normalized = paths
         .iter()
@@ -328,5 +522,22 @@ mod tests {
         let stories = PathBuf::from("npc-adventurer-stories.md");
         assert!(validate_distinct_output_paths(&[&report, &stories]).is_ok());
         assert!(validate_distinct_output_paths(&[&stories, &stories]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nonexistent_leaves_under_symlinked_parents_are_aliases() {
+        use std::os::unix::fs::symlink;
+
+        let root =
+            std::env::temp_dir().join(format!("adventuresim-output-alias-{}", std::process::id()));
+        let real = root.join("real");
+        let alias = root.join("alias");
+        fs::create_dir_all(&real).unwrap();
+        symlink(&real, &alias).unwrap();
+        let direct = real.join("future.json");
+        let through_alias = alias.join("future.json");
+        assert!(validate_distinct_output_paths(&[&direct, &through_alias]).is_err());
+        fs::remove_dir_all(&root).unwrap();
     }
 }

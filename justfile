@@ -325,6 +325,21 @@ test-dev-stack:
 strategic-sim seed="42" population="100" days="1095":
     @cargo run -p adventuresim-strategic-sim -- run --seed {{ seed }} --population {{ population }} --days {{ days }}
 
+# Credential-free offline generator/content analysis. These artifacts are not
+# reducer-authoritative gameplay evidence.
+quest-analyze seed="41" cases_per_template="4":
+    @cargo run -p adventuresim-strategic-sim -- quest-analyze --policy scripted --seed {{ seed }} --cases-per-template {{ cases_per_template }} --public-output quest-analysis-public.json --developer-output quest-analysis-developer.json --stories-output quest-analysis-stories.md
+
+quest-analyze-mock seed="41" cases_per_template="4":
+    @cargo run -p adventuresim-strategic-sim -- quest-analyze --policy mock --seed {{ seed }} --cases-per-template {{ cases_per_template }} --public-output quest-analysis-public.json --developer-output quest-analysis-developer.json --stories-output quest-analysis-stories.md
+
+# Intentionally use a short run to create a non-solving, reviewable replay candidate.
+quest-analyze-promote seed="41" family="recurring-depredation":
+    @cargo run -p adventuresim-strategic-sim -- quest-analyze-promote --seed {{ seed }} --family {{ family }} --max-steps 1 --output quest-analysis-replay-candidate.json
+
+quest-analyze-replay-fixture:
+    @cargo run -p adventuresim-strategic-sim -- quest-analyze-replay --fixture crates/adventuresim-strategic-sim/fixtures/quest-analysis-failure-v3.json
+
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim
 

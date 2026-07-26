@@ -1,10 +1,10 @@
 use adventuresim_core::{
     investigation_action::InvestigationActionKind,
-    quest_generation::{RouteClass, TemplateFamily},
+    quest_generation::{CausalBridge, FactorTrace, RouteClass, TemplateFamily},
 };
 use serde::{Deserialize, Serialize};
 
-pub const EVAL_FORMAT_VERSION: u32 = 2;
+pub const EVAL_FORMAT_VERSION: u32 = 3;
 pub const MAX_PROVIDER_RESPONSE_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,6 +144,59 @@ pub struct PolicyDecision {
     pub arguments: DecisionArguments,
 }
 
+/// A bounded, player-facing classification probe. This records an answer, not
+/// hidden reasoning or chain-of-thought.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyClassification {
+    pub template_guess: Option<String>,
+    pub threat_guess: Option<String>,
+    pub confidence_percent: Option<u8>,
+}
+
+impl PolicyClassification {
+    pub fn validate(&self) -> Result<(), String> {
+        for value in [&self.template_guess, &self.threat_guess]
+            .into_iter()
+            .flatten()
+        {
+            if value.is_empty()
+                || value.len() > 64
+                || !value.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b'-')
+                })
+            {
+                return Err(
+                    "policy classification contains an invalid bounded taxonomy value".into(),
+                );
+            }
+        }
+        if self
+            .confidence_percent
+            .is_some_and(|confidence| confidence > 100)
+        {
+            return Err("policy classification confidence exceeds 100".into());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyRunMetadata {
+    pub policy_name: String,
+    pub policy_kind: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub prompt_revision: String,
+    pub requests: u32,
+    pub estimated_prompt_tokens: u64,
+    pub estimated_completion_tokens: u64,
+    pub estimated_cost_microusd: u64,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DecisionArguments {
@@ -164,7 +217,9 @@ pub struct PublicTraceEvent {
     /// Player-visible in-world time at which this action began.
     pub game_minute: u64,
     pub location: String,
-    pub frame_digest: String,
+    pub observation_provenance: String,
+    pub pre_observation_digest: String,
+    pub post_observation_digest: String,
     pub choice_id: String,
     pub choice_kind: ChoiceKind,
     /// Exact label presented to the policy when it chose this action.
@@ -173,8 +228,10 @@ pub struct PublicTraceEvent {
     pub dialogue: Vec<PublicDialogueLine>,
     pub result: String,
     pub learned: Vec<String>,
+    pub learned_claim_ids: Vec<String>,
     /// Structured correction provenance; metrics must not infer it from prose.
     pub corrected_proposition_ids: Vec<String>,
+    pub preparation_tags: Vec<String>,
     pub game_minutes: u32,
     pub resource_cost: u16,
 }
@@ -187,10 +244,13 @@ pub struct PublicQuestTrace {
     pub policy: String,
     pub title: String,
     pub problem_summary: String,
+    pub initial_observation_digest: String,
+    pub initial_classification: PolicyClassification,
     pub events: Vec<PublicTraceEvent>,
     pub solved: bool,
     pub exhausted: bool,
     pub termination: Termination,
+    pub termination_error: Option<TerminationErrorCode>,
     pub route: Option<RouteClass>,
     pub semantic_digest: String,
 }
@@ -206,6 +266,14 @@ pub enum Termination {
     BudgetExceeded,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminationErrorCode {
+    BudgetExceeded,
+    PolicyFailure,
+    InvalidDecision,
+}
+
 /// This type must never be passed to a policy or serialized into public trace.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -216,10 +284,8 @@ pub struct DeveloperCaseAnalysis {
     pub generation_seed: u64,
     pub catalog_revision: String,
     pub true_site: String,
-    pub factor_ids: Vec<String>,
-    pub plausibility_factors: Vec<u32>,
-    pub curation_factors: Vec<u32>,
-    pub bridge_ids: Vec<String>,
+    pub factor_trace: Vec<FactorTrace>,
+    pub bridges: Vec<CausalBridge>,
     pub generator_manifest_digest: String,
 }
 

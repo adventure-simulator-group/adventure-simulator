@@ -1,6 +1,6 @@
 use super::{
-    MAX_PROVIDER_RESPONSE_BYTES, PlayerFrame, PolicyDecision, QuestPolicy, parse_provider_decision,
-    policy_prompt,
+    MAX_PROVIDER_RESPONSE_BYTES, PlayerFrame, PolicyDecision, PolicyRunMetadata, QuestPolicy,
+    parse_provider_decision, policy_prompt,
 };
 use reqwest::{
     StatusCode, Url,
@@ -109,6 +109,8 @@ pub struct OpenAiCompatiblePolicy {
     client: Client,
     requests: u32,
     estimated_cost_microusd: u64,
+    estimated_prompt_tokens: u64,
+    estimated_completion_tokens: u64,
     last_request: Option<Instant>,
 }
 
@@ -127,6 +129,8 @@ impl OpenAiCompatiblePolicy {
             client,
             requests: 0,
             estimated_cost_microusd: 0,
+            estimated_prompt_tokens: 0,
+            estimated_completion_tokens: 0,
             last_request: None,
         })
     }
@@ -183,6 +187,11 @@ impl OpenAiCompatiblePolicy {
                 return Err("provider cost budget exceeded".into());
             }
             self.estimated_cost_microusd = self.estimated_cost_microusd.saturating_add(projected);
+            self.estimated_prompt_tokens =
+                self.estimated_prompt_tokens.saturating_add(prompt_tokens);
+            self.estimated_completion_tokens = self
+                .estimated_completion_tokens
+                .saturating_add(u64::from(self.config.max_completion_tokens));
             self.requests += 1;
             self.last_request = Some(Instant::now());
             let timeout = deadline
@@ -275,6 +284,20 @@ impl QuestPolicy for OpenAiCompatiblePolicy {
         }?;
         check_deadline(Some(deadline))?;
         Ok(decision)
+    }
+
+    fn run_metadata(&self) -> PolicyRunMetadata {
+        PolicyRunMetadata {
+            policy_name: self.name().into(),
+            policy_kind: "remote_provider".into(),
+            provider: Some("openai_compatible".into()),
+            model: Some(self.config.model.clone()),
+            prompt_revision: "investigation-policy-v3".into(),
+            requests: self.requests,
+            estimated_prompt_tokens: self.estimated_prompt_tokens,
+            estimated_completion_tokens: self.estimated_completion_tokens,
+            estimated_cost_microusd: self.estimated_cost_microusd,
+        }
     }
 }
 

@@ -167,7 +167,71 @@ just strategic-sim-core-loop 42 8 20 30 2
 
 ## Quest evaluators
 
-There are two evaluator surfaces, with deliberately different boundaries.
+There are two gameplay evaluator surfaces and one offline content-analysis
+surface, with deliberately different boundaries.
+
+### Offline generated-content analyzer
+
+`quest-analyze` projects deterministic generated investigations into an
+observer-safe, in-memory `PlayerFrame`. It is useful for generator regression,
+route diversity, policy fingerprints, dead ends, loops, correction persistence,
+and separate public/developer audit artifacts. It does **not** call
+SpacetimeDB reducers, exercise the browser, perform tactical combat, or prove
+production gameplay behavior.
+
+The default recipe is credential-free and the mock policy round-trips through
+the same strict JSON response parser used by an OpenAI-compatible provider:
+
+```powershell
+just quest-analyze-mock 41 4
+```
+
+This creates `quest-analysis-public.json`, `quest-analysis-developer.json`, and
+`quest-analysis-stories.md` as distinct artifacts and refuses to overwrite
+them unless direct invocation passes `--overwrite`. The public report contains
+only player-visible traces, bounded run provenance, classifications, and
+aggregate behavior. Seeds, catalog revisions, canonical truth, structured
+factor traces, bridge IDs, generator marginals, and truth-joined
+classification/counterfactual audits remain in the developer report. Their
+digest join is one-way.
+
+All three artifacts are rendered in memory first. Per-artifact and combined
+byte budgets are checked against the exact pretty JSON and Markdown bytes
+before any output file is created. Existing-ancestor canonicalization also
+prevents distinct-looking paths through symlinked or junction parents from
+collapsing public and developer output onto the same file.
+
+Each trace records pre/post observation digests, opaque legal choices, exact
+dialogue, public discoveries and corrections, preparation, costs, exhaustion,
+and termination. Classifications are bounded answers, never chain-of-thought.
+Prepared/unprepared solve rates are descriptive quality slices, not causal
+skill or equipment-benefit estimates.
+Counterfactual comparisons are made only when different hidden cases naturally
+share an identical player-visible initial prefix; absence of such a group is
+reported as `not_measured`.
+
+Contract completion, language benefit, tactical combat benefit, causal skill
+benefit, and accidental perception discovery are also explicitly
+`not_measured` because this projection does not implement those mechanics.
+No proxy number should be treated as evidence for them. The privacy audit is a
+structural type boundary plus canary scan, not a formal proof.
+
+An observed non-solving run can be promoted into a reviewable deterministic
+fixture candidate:
+
+```powershell
+just quest-analyze-promote 41 recurring-depredation
+cargo run -p adventuresim-strategic-sim -- quest-analyze-replay `
+  --fixture quest-analysis-replay-candidate.json
+# Replay the reviewed checked-in regression:
+just quest-analyze-replay-fixture
+```
+
+The versioned fixture joins catalog revision and generator manifest, records
+opaque decisions, and checks stable outcome fields. Promotion never silently
+commits or approves a fixture. Only step-limit and dead-end failures can be
+promoted; provider failures, loop detection, and exhausted runtime budgets
+cannot be reproduced from an opaque action list alone.
 
 ### Server-simulated NPC adventurers
 

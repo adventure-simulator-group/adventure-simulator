@@ -1,0 +1,23 @@
+{
+  "version": 3,
+  "catalog_revision": "22015d9052c8d9b25937a441c32d6409fa7a4d51a26a1fa6c8d6822b5a29897e",
+  "generator_manifest_digest": "c810d69068e2120d320a25c003d11601b786684af0527dd20d844f6866d7866f",
+  "seed": 41,
+  "family": "recurring_depredation",
+  "decisions": [
+    {
+      "version": 3,
+      "choice_id": "choice:eb66c32c53fcd28794778eba",
+      "arguments": {
+        "selection": null
+      }
+    }
+  ],
+  "expected": {
+    "solved": false,
+    "termination": "step_limit",
+    "route": null,
+    "event_count": 1,
+    "semantic_digest": null
+  }
+}
