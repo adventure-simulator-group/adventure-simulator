@@ -2,18 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::agriculture_industry_type::AgricultureIndustry;
-use super::charcoal_burning_industry_type::CharcoalBurningIndustry;
-use super::construction_industry_type::ConstructionIndustry;
 use super::fishing_industry_type::FishingIndustry;
-use super::forestry_industry_type::ForestryIndustry;
-use super::mining_industry_type::MiningIndustry;
-use super::peat_cutting_industry_type::PeatCuttingIndustry;
-use super::pottery_industry_type::PotteryIndustry;
 use super::quarrying_industry_type::QuarryingIndustry;
+use super::mining_industry_type::MiningIndustry;
+use super::pottery_industry_type::PotteryIndustry;
+use super::peat_cutting_industry_type::PeatCuttingIndustry;
+use super::forestry_industry_type::ForestryIndustry;
+use super::charcoal_burning_industry_type::CharcoalBurningIndustry;
 use super::saltmaking_industry_type::SaltmakingIndustry;
+use super::construction_industry_type::ConstructionIndustry;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -37,8 +42,12 @@ pub enum DerivedIndustry {
     Saltmaking(SaltmakingIndustry),
 
     Construction(ConstructionIndustry),
+
 }
+
+
 
 impl __sdk::InModule for DerivedIndustry {
     type Module = super::RemoteModule;
 }
+

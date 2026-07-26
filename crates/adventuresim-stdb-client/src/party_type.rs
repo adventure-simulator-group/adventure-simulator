@@ -2,10 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::camp_duration_mode_type::CampDurationMode;
 use super::case_site_id_type::CaseSiteId;
+use super::camp_duration_mode_type::CampDurationMode;
 use super::journey_endpoint_type::JourneyEndpoint;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -15,16 +20,16 @@ pub struct Party {
     pub gateway_bucket: u8,
     pub name: String,
     pub leader_id: u64,
-    pub current_settlement_id: Option<String>,
-    pub current_case_site_id: Option<CaseSiteId>,
-    pub active_contract_id: Option<String>,
+    pub current_settlement_id: Option::<String>,
+    pub current_case_site_id: Option::<CaseSiteId>,
+    pub active_contract_id: Option::<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
     pub walking_minutes_per_day: u16,
     pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
-    pub camp_destination: Option<JourneyEndpoint>,
+    pub camp_destination: Option::<JourneyEndpoint>,
     pub camp_remaining_minutes: u64,
     pub pooled_water_ml: f32,
     pub physiology_target: f32,
@@ -32,9 +37,11 @@ pub struct Party {
     pub religion_target: f32,
 }
 
+
 impl __sdk::InModule for Party {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `Party`.
 ///
@@ -44,16 +51,16 @@ pub struct PartyCols {
     pub gateway_bucket: __sdk::__query_builder::Col<Party, u8>,
     pub name: __sdk::__query_builder::Col<Party, String>,
     pub leader_id: __sdk::__query_builder::Col<Party, u64>,
-    pub current_settlement_id: __sdk::__query_builder::Col<Party, Option<String>>,
-    pub current_case_site_id: __sdk::__query_builder::Col<Party, Option<CaseSiteId>>,
-    pub active_contract_id: __sdk::__query_builder::Col<Party, Option<String>>,
+    pub current_settlement_id: __sdk::__query_builder::Col<Party, Option::<String>>,
+    pub current_case_site_id: __sdk::__query_builder::Col<Party, Option::<CaseSiteId>>,
+    pub active_contract_id: __sdk::__query_builder::Col<Party, Option::<String>>,
     pub is_solo: __sdk::__query_builder::Col<Party, bool>,
     pub camp_fatigue_percent: __sdk::__query_builder::Col<Party, u8>,
     pub walking_minutes_per_day: __sdk::__query_builder::Col<Party, u16>,
     pub travel_at_night: __sdk::__query_builder::Col<Party, bool>,
     pub camp_duration_mode: __sdk::__query_builder::Col<Party, CampDurationMode>,
     pub fixed_camp_minutes: __sdk::__query_builder::Col<Party, u16>,
-    pub camp_destination: __sdk::__query_builder::Col<Party, Option<JourneyEndpoint>>,
+    pub camp_destination: __sdk::__query_builder::Col<Party, Option::<JourneyEndpoint>>,
     pub camp_remaining_minutes: __sdk::__query_builder::Col<Party, u64>,
     pub pooled_water_ml: __sdk::__query_builder::Col<Party, f32>,
     pub physiology_target: __sdk::__query_builder::Col<Party, f32>,
@@ -69,36 +76,22 @@ impl __sdk::__query_builder::HasCols for Party {
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             leader_id: __sdk::__query_builder::Col::new(table_name, "leader_id"),
-            current_settlement_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "current_settlement_id",
-            ),
-            current_case_site_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "current_case_site_id",
-            ),
+            current_settlement_id: __sdk::__query_builder::Col::new(table_name, "current_settlement_id"),
+            current_case_site_id: __sdk::__query_builder::Col::new(table_name, "current_case_site_id"),
             active_contract_id: __sdk::__query_builder::Col::new(table_name, "active_contract_id"),
             is_solo: __sdk::__query_builder::Col::new(table_name, "is_solo"),
-            camp_fatigue_percent: __sdk::__query_builder::Col::new(
-                table_name,
-                "camp_fatigue_percent",
-            ),
-            walking_minutes_per_day: __sdk::__query_builder::Col::new(
-                table_name,
-                "walking_minutes_per_day",
-            ),
+            camp_fatigue_percent: __sdk::__query_builder::Col::new(table_name, "camp_fatigue_percent"),
+            walking_minutes_per_day: __sdk::__query_builder::Col::new(table_name, "walking_minutes_per_day"),
             travel_at_night: __sdk::__query_builder::Col::new(table_name, "travel_at_night"),
             camp_duration_mode: __sdk::__query_builder::Col::new(table_name, "camp_duration_mode"),
             fixed_camp_minutes: __sdk::__query_builder::Col::new(table_name, "fixed_camp_minutes"),
             camp_destination: __sdk::__query_builder::Col::new(table_name, "camp_destination"),
-            camp_remaining_minutes: __sdk::__query_builder::Col::new(
-                table_name,
-                "camp_remaining_minutes",
-            ),
+            camp_remaining_minutes: __sdk::__query_builder::Col::new(table_name, "camp_remaining_minutes"),
             pooled_water_ml: __sdk::__query_builder::Col::new(table_name, "pooled_water_ml"),
             physiology_target: __sdk::__query_builder::Col::new(table_name, "physiology_target"),
             command_target: __sdk::__query_builder::Col::new(table_name, "command_target"),
             religion_target: __sdk::__query_builder::Col::new(table_name, "religion_target"),
+
         }
     }
 }
@@ -117,8 +110,10 @@ impl __sdk::__query_builder::HasIxCols for Party {
         PartyIxCols {
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for Party {}
+

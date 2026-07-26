@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::contract_interaction_stage_type::ContractInteractionStage;
 
@@ -23,9 +28,11 @@ pub struct ContractIssuerInteractionReceipt {
     pub consumed: bool,
 }
 
+
 impl __sdk::InModule for ContractIssuerInteractionReceipt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `ContractIssuerInteractionReceipt`.
 ///
@@ -34,11 +41,9 @@ pub struct ContractIssuerInteractionReceiptCols {
     pub id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
     pub contract_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
     pub party_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
-    pub stage:
-        __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, ContractInteractionStage>,
+    pub stage: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, ContractInteractionStage>,
     pub issuer_npc_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
-    pub interacting_character_id:
-        __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
+    pub interacting_character_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
     pub interacted_at_minute: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
     pub dialogue_session_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
     pub dialogue_action_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
@@ -56,22 +61,14 @@ impl __sdk::__query_builder::HasCols for ContractIssuerInteractionReceipt {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             stage: __sdk::__query_builder::Col::new(table_name, "stage"),
             issuer_npc_id: __sdk::__query_builder::Col::new(table_name, "issuer_npc_id"),
-            interacting_character_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "interacting_character_id",
-            ),
-            interacted_at_minute: __sdk::__query_builder::Col::new(
-                table_name,
-                "interacted_at_minute",
-            ),
-            dialogue_session_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "dialogue_session_id",
-            ),
+            interacting_character_id: __sdk::__query_builder::Col::new(table_name, "interacting_character_id"),
+            interacted_at_minute: __sdk::__query_builder::Col::new(table_name, "interacted_at_minute"),
+            dialogue_session_id: __sdk::__query_builder::Col::new(table_name, "dialogue_session_id"),
             dialogue_action_id: __sdk::__query_builder::Col::new(table_name, "dialogue_action_id"),
             dialogue_revision: __sdk::__query_builder::Col::new(table_name, "dialogue_revision"),
             location_id: __sdk::__query_builder::Col::new(table_name, "location_id"),
             consumed: __sdk::__query_builder::Col::new(table_name, "consumed"),
+
         }
     }
 }
@@ -88,8 +85,10 @@ impl __sdk::__query_builder::HasIxCols for ContractIssuerInteractionReceipt {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ContractIssuerInteractionReceiptIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for ContractIssuerInteractionReceipt {}
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::immediate_activity_type::ImmediateActivity;
 
@@ -12,7 +17,7 @@ pub(super) struct PerformImmediateActivityArgs {
     pub character_id: u64,
     pub activity: ImmediateActivity,
     pub requested_minutes: u64,
-    pub service_id: Option<String>,
+    pub service_id: Option::<String>,
 }
 
 impl From<PerformImmediateActivityArgs> for super::Reducer {
@@ -22,8 +27,8 @@ impl From<PerformImmediateActivityArgs> for super::Reducer {
             activity: args.activity,
             requested_minutes: args.requested_minutes,
             service_id: args.service_id,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for PerformImmediateActivityArgs {
@@ -41,20 +46,12 @@ pub trait perform_immediate_activity {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`perform_immediate_activity:perform_immediate_activity_then`] to run a callback after the reducer completes.
-    fn perform_immediate_activity(
-        &self,
-        character_id: u64,
-        activity: ImmediateActivity,
-        requested_minutes: u64,
-        service_id: Option<String>,
-    ) -> __sdk::Result<()> {
-        self.perform_immediate_activity_then(
-            character_id,
-            activity,
-            requested_minutes,
-            service_id,
-            |_, _| {},
-        )
+    fn perform_immediate_activity(&self, character_id: u64,
+activity: ImmediateActivity,
+requested_minutes: u64,
+service_id: Option::<String>,
+) -> __sdk::Result<()> {
+        self.perform_immediate_activity_then(character_id, activity, requested_minutes, service_id,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `perform_immediate_activity` to run as soon as possible,
@@ -66,15 +63,13 @@ pub trait perform_immediate_activity {
     fn perform_immediate_activity_then(
         &self,
         character_id: u64,
-        activity: ImmediateActivity,
-        requested_minutes: u64,
-        service_id: Option<String>,
+activity: ImmediateActivity,
+requested_minutes: u64,
+service_id: Option::<String>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -82,24 +77,15 @@ impl perform_immediate_activity for super::RemoteReducers {
     fn perform_immediate_activity_then(
         &self,
         character_id: u64,
-        activity: ImmediateActivity,
-        requested_minutes: u64,
-        service_id: Option<String>,
+activity: ImmediateActivity,
+requested_minutes: u64,
+service_id: Option::<String>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            PerformImmediateActivityArgs {
-                character_id,
-                activity,
-                requested_minutes,
-                service_id,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(PerformImmediateActivityArgs { character_id, activity, requested_minutes, service_id,  }, callback)
     }
 }
+

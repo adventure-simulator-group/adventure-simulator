@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<RestAtCampArgs> for super::Reducer {
         Self::RestAtCamp {
             character_id: args.character_id,
             requested_minutes: args.requested_minutes,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for RestAtCampArgs {
@@ -35,8 +41,10 @@ pub trait rest_at_camp {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`rest_at_camp:rest_at_camp_then`] to run a callback after the reducer completes.
-    fn rest_at_camp(&self, character_id: u64, requested_minutes: u64) -> __sdk::Result<()> {
-        self.rest_at_camp_then(character_id, requested_minutes, |_, _| {})
+    fn rest_at_camp(&self, character_id: u64,
+requested_minutes: u64,
+) -> __sdk::Result<()> {
+        self.rest_at_camp_then(character_id, requested_minutes,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `rest_at_camp` to run as soon as possible,
@@ -48,13 +56,11 @@ pub trait rest_at_camp {
     fn rest_at_camp_then(
         &self,
         character_id: u64,
-        requested_minutes: u64,
+requested_minutes: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -62,20 +68,13 @@ impl rest_at_camp for super::RemoteReducers {
     fn rest_at_camp_then(
         &self,
         character_id: u64,
-        requested_minutes: u64,
+requested_minutes: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            RestAtCampArgs {
-                character_id,
-                requested_minutes,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(RestAtCampArgs { character_id, requested_minutes,  }, callback)
     }
 }
+

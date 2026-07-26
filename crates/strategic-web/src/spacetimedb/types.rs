@@ -1500,6 +1500,17 @@ pub struct CharacterVirtue {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendForageReceipt {
+    pub character_id: u64,
+    pub request_id: String,
+    pub elapsed_minutes: u64,
+    pub yielded_item_ids: Vec<String>,
+    pub yielded_quantities: Vec<u16>,
+    pub interrupted: bool,
+    pub legal_outcome: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldClock {
     pub id: u64,
     pub official_minutes: u64,

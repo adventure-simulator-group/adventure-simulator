@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,13 +21,15 @@ pub struct ReligiousDemand {
     pub fervor: f32,
     pub status: String,
     pub created_at_minute: u64,
-    pub resolved_at_minute: Option<u64>,
-    pub resolution: Option<String>,
+    pub resolved_at_minute: Option::<u64>,
+    pub resolution: Option::<String>,
 }
+
 
 impl __sdk::InModule for ReligiousDemand {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `ReligiousDemand`.
 ///
@@ -35,8 +43,8 @@ pub struct ReligiousDemandCols {
     pub fervor: __sdk::__query_builder::Col<ReligiousDemand, f32>,
     pub status: __sdk::__query_builder::Col<ReligiousDemand, String>,
     pub created_at_minute: __sdk::__query_builder::Col<ReligiousDemand, u64>,
-    pub resolved_at_minute: __sdk::__query_builder::Col<ReligiousDemand, Option<u64>>,
-    pub resolution: __sdk::__query_builder::Col<ReligiousDemand, Option<String>>,
+    pub resolved_at_minute: __sdk::__query_builder::Col<ReligiousDemand, Option::<u64>>,
+    pub resolution: __sdk::__query_builder::Col<ReligiousDemand, Option::<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for ReligiousDemand {
@@ -53,6 +61,7 @@ impl __sdk::__query_builder::HasCols for ReligiousDemand {
             created_at_minute: __sdk::__query_builder::Col::new(table_name, "created_at_minute"),
             resolved_at_minute: __sdk::__query_builder::Col::new(table_name, "resolved_at_minute"),
             resolution: __sdk::__query_builder::Col::new(table_name, "resolution"),
+
         }
     }
 }
@@ -71,8 +80,10 @@ impl __sdk::__query_builder::HasIxCols for ReligiousDemand {
         ReligiousDemandIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for ReligiousDemand {}
+

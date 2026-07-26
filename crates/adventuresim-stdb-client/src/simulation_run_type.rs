@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,9 +20,11 @@ pub struct SimulationRun {
     pub claimed_micros: i64,
 }
 
+
 impl __sdk::InModule for SimulationRun {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `SimulationRun`.
 ///
@@ -38,6 +46,7 @@ impl __sdk::__query_builder::HasCols for SimulationRun {
             owner: __sdk::__query_builder::Col::new(table_name, "owner"),
             policy_seed: __sdk::__query_builder::Col::new(table_name, "policy_seed"),
             claimed_micros: __sdk::__query_builder::Col::new(table_name, "claimed_micros"),
+
         }
     }
 }
@@ -56,8 +65,10 @@ impl __sdk::__query_builder::HasIxCols for SimulationRun {
         SimulationRunIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             nonce: __sdk::__query_builder::IxCol::new(table_name, "nonce"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for SimulationRun {}
+

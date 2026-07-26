@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,15 +16,17 @@ pub struct ScheduleAllocation {
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
     pub apprenticeship_minutes: u16,
-    pub apprenticeship_service_id: Option<String>,
+    pub apprenticeship_service_id: Option::<String>,
     pub profession_practice_minutes: u16,
-    pub profession_service_id: Option<String>,
+    pub profession_service_id: Option::<String>,
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,
     pub raiding_minutes: u16,
 }
 
+
 impl __sdk::InModule for ScheduleAllocation {
     type Module = super::RemoteModule;
 }
+

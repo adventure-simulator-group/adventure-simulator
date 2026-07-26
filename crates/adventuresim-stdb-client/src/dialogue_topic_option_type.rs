@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,9 +21,11 @@ pub struct DialogueTopicOption {
     pub source_ref_json: String,
 }
 
+
 impl __sdk::InModule for DialogueTopicOption {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `DialogueTopicOption`.
 ///
@@ -41,6 +49,7 @@ impl __sdk::__query_builder::HasCols for DialogueTopicOption {
             topic_id: __sdk::__query_builder::Col::new(table_name, "topic_id"),
             label: __sdk::__query_builder::Col::new(table_name, "label"),
             source_ref_json: __sdk::__query_builder::Col::new(table_name, "source_ref_json"),
+
         }
     }
 }
@@ -61,8 +70,10 @@ impl __sdk::__query_builder::HasIxCols for DialogueTopicOption {
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             session_id: __sdk::__query_builder::IxCol::new(table_name, "session_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for DialogueTopicOption {}
+

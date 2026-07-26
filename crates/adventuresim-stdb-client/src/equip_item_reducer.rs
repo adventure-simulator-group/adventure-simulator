@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::item_slot_type::ItemSlot;
 
@@ -20,8 +25,8 @@ impl From<EquipItemArgs> for super::Reducer {
             character_id: args.character_id,
             inventory_item_id: args.inventory_item_id,
             destination: args.destination,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for EquipItemArgs {
@@ -39,13 +44,11 @@ pub trait equip_item {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`equip_item:equip_item_then`] to run a callback after the reducer completes.
-    fn equip_item(
-        &self,
-        character_id: u64,
-        inventory_item_id: u64,
-        destination: ItemSlot,
-    ) -> __sdk::Result<()> {
-        self.equip_item_then(character_id, inventory_item_id, destination, |_, _| {})
+    fn equip_item(&self, character_id: u64,
+inventory_item_id: u64,
+destination: ItemSlot,
+) -> __sdk::Result<()> {
+        self.equip_item_then(character_id, inventory_item_id, destination,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `equip_item` to run as soon as possible,
@@ -57,14 +60,12 @@ pub trait equip_item {
     fn equip_item_then(
         &self,
         character_id: u64,
-        inventory_item_id: u64,
-        destination: ItemSlot,
+inventory_item_id: u64,
+destination: ItemSlot,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -72,22 +73,14 @@ impl equip_item for super::RemoteReducers {
     fn equip_item_then(
         &self,
         character_id: u64,
-        inventory_item_id: u64,
-        destination: ItemSlot,
+inventory_item_id: u64,
+destination: ItemSlot,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            EquipItemArgs {
-                character_id,
-                inventory_item_id,
-                destination,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(EquipItemArgs { character_id, inventory_item_id, destination,  }, callback)
     }
 }
+

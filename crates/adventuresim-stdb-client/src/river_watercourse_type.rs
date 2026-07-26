@@ -2,10 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::flow_persistence_type::FlowPersistence;
 use super::strahler_order_type::StrahlerOrder;
+use super::flow_persistence_type::FlowPersistence;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,6 +19,8 @@ pub struct RiverWatercourse {
     pub persistence: FlowPersistence,
 }
 
+
 impl __sdk::InModule for RiverWatercourse {
     type Module = super::RemoteModule;
 }
+

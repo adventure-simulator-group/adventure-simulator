@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,8 +26,8 @@ impl From<ShareInvestigationLeadArgs> for super::Reducer {
             recipient_id: args.recipient_id,
             source_lead_id: args.source_lead_id,
             action_id: args.action_id,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for ShareInvestigationLeadArgs {
@@ -39,20 +45,12 @@ pub trait share_investigation_lead {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`share_investigation_lead:share_investigation_lead_then`] to run a callback after the reducer completes.
-    fn share_investigation_lead(
-        &self,
-        sender_id: u64,
-        recipient_id: u64,
-        source_lead_id: String,
-        action_id: String,
-    ) -> __sdk::Result<()> {
-        self.share_investigation_lead_then(
-            sender_id,
-            recipient_id,
-            source_lead_id,
-            action_id,
-            |_, _| {},
-        )
+    fn share_investigation_lead(&self, sender_id: u64,
+recipient_id: u64,
+source_lead_id: String,
+action_id: String,
+) -> __sdk::Result<()> {
+        self.share_investigation_lead_then(sender_id, recipient_id, source_lead_id, action_id,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `share_investigation_lead` to run as soon as possible,
@@ -64,15 +62,13 @@ pub trait share_investigation_lead {
     fn share_investigation_lead_then(
         &self,
         sender_id: u64,
-        recipient_id: u64,
-        source_lead_id: String,
-        action_id: String,
+recipient_id: u64,
+source_lead_id: String,
+action_id: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -80,24 +76,15 @@ impl share_investigation_lead for super::RemoteReducers {
     fn share_investigation_lead_then(
         &self,
         sender_id: u64,
-        recipient_id: u64,
-        source_lead_id: String,
-        action_id: String,
+recipient_id: u64,
+source_lead_id: String,
+action_id: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            ShareInvestigationLeadArgs {
-                sender_id,
-                recipient_id,
-                source_lead_id,
-                action_id,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(ShareInvestigationLeadArgs { sender_id, recipient_id, source_lead_id, action_id,  }, callback)
     }
 }
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::case_site_id_type::CaseSiteId;
 
@@ -22,9 +27,11 @@ pub struct CaseSiteAuthority {
     pub distance_m: u64,
 }
 
+
 impl __sdk::InModule for CaseSiteAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `CaseSiteAuthority`.
 ///
@@ -50,20 +57,15 @@ impl __sdk::__query_builder::HasCols for CaseSiteAuthority {
             id_key: __sdk::__query_builder::Col::new(table_name, "id_key"),
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
-            origin_settlement_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "origin_settlement_id",
-            ),
+            origin_settlement_id: __sdk::__query_builder::Col::new(table_name, "origin_settlement_id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             description: __sdk::__query_builder::Col::new(table_name, "description"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
-            coordinates_are_geographic: __sdk::__query_builder::Col::new(
-                table_name,
-                "coordinates_are_geographic",
-            ),
+            coordinates_are_geographic: __sdk::__query_builder::Col::new(table_name, "coordinates_are_geographic"),
             distance_m: __sdk::__query_builder::Col::new(table_name, "distance_m"),
+
         }
     }
 }
@@ -83,12 +85,11 @@ impl __sdk::__query_builder::HasIxCols for CaseSiteAuthority {
         CaseSiteAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id_key: __sdk::__query_builder::IxCol::new(table_name, "id_key"),
-            origin_settlement_id: __sdk::__query_builder::IxCol::new(
-                table_name,
-                "origin_settlement_id",
-            ),
+            origin_settlement_id: __sdk::__query_builder::IxCol::new(table_name, "origin_settlement_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CaseSiteAuthority {}
+

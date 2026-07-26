@@ -226,6 +226,8 @@ impl ActivityPreviewRates {
 pub(crate) struct CharacterSheetActions<'a> {
     pub(super) cooking_href: Option<&'a str>,
     pub(super) cooking_open: bool,
+    pub(super) foraging_href: Option<&'a str>,
+    pub(super) foraging_open: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -422,7 +424,16 @@ fn skills_table(
                     (language_skill_rows(skills, instinct, intelligence, schedule.is_some()))
                     (combat_skill_rows(skills, instinct, arm_agility, leg_agility, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, all_agility, (upper_health + lower_health) * 0.5, schedule.is_some(), None)) }
-                    (terrain_skill_rows(skills, intelligence, schedule.is_some()))
+                    (terrain_skill_rows(
+                        skills,
+                        intelligence,
+                        schedule.is_some(),
+                        actions.foraging_href.map(|href| SkillAction::Get {
+                            href,
+                            label: "Forage in the immediate vicinity",
+                            open: actions.foraging_open,
+                        }),
+                    ))
                     @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, intelligence, head_health, schedule.is_some(), None)) }
                     @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, arm_agility, upper_health, schedule.is_some(), None)) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, arm_agility, upper_health, schedule.is_some(), None)) }
@@ -478,7 +489,12 @@ fn skills_table(
     }
 }
 
-fn terrain_skill_rows(skills: &CharacterSkills, aptitude: f32, schedule_context: bool) -> Markup {
+fn terrain_skill_rows(
+    skills: &CharacterSkills,
+    aptitude: f32,
+    schedule_context: bool,
+    action: Option<SkillAction<'_>>,
+) -> Markup {
     let entries = [
         (
             "Plains",
@@ -532,6 +548,9 @@ fn terrain_skill_rows(skills: &CharacterSkills, aptitude: f32, schedule_context:
                 ))
             }
             td class="religion-expand-cell" {
+                @if let Some(action) = action {
+                    (skill_action_icon("Terrain", "terrain", action, false))
+                }
                 button type="button" class="religion-expand-button" data-terrain-expand aria-expanded="false" aria-label="Expand Terrain skills" title="Expand Terrain" {
                     span class="religion-expand-chevron" aria-hidden="true" { "›" }
                 }

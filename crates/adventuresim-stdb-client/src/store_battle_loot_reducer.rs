@@ -2,15 +2,21 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct StoreBattleLootArgs {
     pub character_id: u64,
     pub battle_id: String,
-    pub loot_item_ids: Vec<u64>,
-    pub quantities: Vec<u32>,
+    pub loot_item_ids: Vec::<u64>,
+    pub quantities: Vec::<u32>,
 }
 
 impl From<StoreBattleLootArgs> for super::Reducer {
@@ -20,8 +26,8 @@ impl From<StoreBattleLootArgs> for super::Reducer {
             battle_id: args.battle_id,
             loot_item_ids: args.loot_item_ids,
             quantities: args.quantities,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for StoreBattleLootArgs {
@@ -39,20 +45,12 @@ pub trait store_battle_loot {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`store_battle_loot:store_battle_loot_then`] to run a callback after the reducer completes.
-    fn store_battle_loot(
-        &self,
-        character_id: u64,
-        battle_id: String,
-        loot_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    ) -> __sdk::Result<()> {
-        self.store_battle_loot_then(
-            character_id,
-            battle_id,
-            loot_item_ids,
-            quantities,
-            |_, _| {},
-        )
+    fn store_battle_loot(&self, character_id: u64,
+battle_id: String,
+loot_item_ids: Vec::<u64>,
+quantities: Vec::<u32>,
+) -> __sdk::Result<()> {
+        self.store_battle_loot_then(character_id, battle_id, loot_item_ids, quantities,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `store_battle_loot` to run as soon as possible,
@@ -64,15 +62,13 @@ pub trait store_battle_loot {
     fn store_battle_loot_then(
         &self,
         character_id: u64,
-        battle_id: String,
-        loot_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
+battle_id: String,
+loot_item_ids: Vec::<u64>,
+quantities: Vec::<u32>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -80,24 +76,15 @@ impl store_battle_loot for super::RemoteReducers {
     fn store_battle_loot_then(
         &self,
         character_id: u64,
-        battle_id: String,
-        loot_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
+battle_id: String,
+loot_item_ids: Vec::<u64>,
+quantities: Vec::<u32>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            StoreBattleLootArgs {
-                character_id,
-                battle_id,
-                loot_item_ids,
-                quantities,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(StoreBattleLootArgs { character_id, battle_id, loot_item_ids, quantities,  }, callback)
     }
 }
+

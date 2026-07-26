@@ -68,7 +68,7 @@ document does not claim issue #62 complete.
 
 ## Native routing skill mixture
 
-The separate native terrain-routing pack (schema 4) retains canopy and hill coverage
+The separate native terrain-routing pack (schema 5) retains canopy and hill coverage
 independently. Runtime routing cells normalize them to exactly 1,000 permille:
 Forest follows canopy density, Hills receives the hill-covered share of the
 remaining non-forest ground, and Plains receives the remainder. Urban is part
@@ -94,3 +94,8 @@ be served as the final pack. `terrain-routing-v2` is rebuilt after world
 compilation with the accepted inferred polylines. Both manifests carry a purpose,
 road-geometry digest, Jung wetland source digest, and package digest. Wetland
 ground moves at 0.5 km/h unless overridden by water or a road.
+Schema 5 uses a previously reserved flag bit for the canonical EPSG:3035 1 km
+cultivation classification, so cells remain five bytes. The manifest validates
+the grid CRS/resolution, HYDE dependency digest, allocator rules version, and
+square/native-cell counts. Runtime sampling is bounded by the existing chunk
+LRU.

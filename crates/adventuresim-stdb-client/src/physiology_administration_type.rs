@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,18 +19,20 @@ pub struct PhysiologyAdministration {
     pub profile_version: u16,
     pub route: String,
     pub amount_milliunits: u32,
-    pub region: Option<String>,
+    pub region: Option::<String>,
     pub administered_at: u64,
-    pub stopped_at: Option<u64>,
+    pub stopped_at: Option::<u64>,
     pub sensitivity_bps: i16,
     pub adverse_bps: u16,
     pub ruleset_version: u16,
     pub phenotype_key_version: u16,
 }
 
+
 impl __sdk::InModule for PhysiologyAdministration {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PhysiologyAdministration`.
 ///
@@ -36,9 +44,9 @@ pub struct PhysiologyAdministrationCols {
     pub profile_version: __sdk::__query_builder::Col<PhysiologyAdministration, u16>,
     pub route: __sdk::__query_builder::Col<PhysiologyAdministration, String>,
     pub amount_milliunits: __sdk::__query_builder::Col<PhysiologyAdministration, u32>,
-    pub region: __sdk::__query_builder::Col<PhysiologyAdministration, Option<String>>,
+    pub region: __sdk::__query_builder::Col<PhysiologyAdministration, Option::<String>>,
     pub administered_at: __sdk::__query_builder::Col<PhysiologyAdministration, u64>,
-    pub stopped_at: __sdk::__query_builder::Col<PhysiologyAdministration, Option<u64>>,
+    pub stopped_at: __sdk::__query_builder::Col<PhysiologyAdministration, Option::<u64>>,
     pub sensitivity_bps: __sdk::__query_builder::Col<PhysiologyAdministration, i16>,
     pub adverse_bps: __sdk::__query_builder::Col<PhysiologyAdministration, u16>,
     pub ruleset_version: __sdk::__query_builder::Col<PhysiologyAdministration, u16>,
@@ -61,10 +69,8 @@ impl __sdk::__query_builder::HasCols for PhysiologyAdministration {
             sensitivity_bps: __sdk::__query_builder::Col::new(table_name, "sensitivity_bps"),
             adverse_bps: __sdk::__query_builder::Col::new(table_name, "adverse_bps"),
             ruleset_version: __sdk::__query_builder::Col::new(table_name, "ruleset_version"),
-            phenotype_key_version: __sdk::__query_builder::Col::new(
-                table_name,
-                "phenotype_key_version",
-            ),
+            phenotype_key_version: __sdk::__query_builder::Col::new(table_name, "phenotype_key_version"),
+
         }
     }
 }
@@ -83,8 +89,10 @@ impl __sdk::__query_builder::HasIxCols for PhysiologyAdministration {
         PhysiologyAdministrationIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             patient_id: __sdk::__query_builder::IxCol::new(table_name, "patient_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PhysiologyAdministration {}
+

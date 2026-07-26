@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -17,9 +23,11 @@ pub struct CharacterLimbs {
     pub stomach_health: f32,
 }
 
+
 impl __sdk::InModule for CharacterLimbs {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `CharacterLimbs`.
 ///
@@ -47,6 +55,7 @@ impl __sdk::__query_builder::HasCols for CharacterLimbs {
             head_health: __sdk::__query_builder::Col::new(table_name, "head_health"),
             chest_health: __sdk::__query_builder::Col::new(table_name, "chest_health"),
             stomach_health: __sdk::__query_builder::Col::new(table_name, "stomach_health"),
+
         }
     }
 }
@@ -63,8 +72,10 @@ impl __sdk::__query_builder::HasIxCols for CharacterLimbs {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterLimbsIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterLimbs {}
+

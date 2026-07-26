@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::backend_physical_evidence_inspection_type::BackendPhysicalEvidenceInspection;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_physical_evidence_inspections`.
 ///
@@ -25,19 +30,13 @@ pub struct BackendPhysicalEvidenceInspectionsTableHandle<'ctx> {
 pub trait BackendPhysicalEvidenceInspectionsTableAccess {
     #[allow(non_snake_case)]
     /// Obtain a [`BackendPhysicalEvidenceInspectionsTableHandle`], which mediates access to the table `backend_physical_evidence_inspections`.
-    fn backend_physical_evidence_inspections(
-        &self,
-    ) -> BackendPhysicalEvidenceInspectionsTableHandle<'_>;
+    fn backend_physical_evidence_inspections(&self) -> BackendPhysicalEvidenceInspectionsTableHandle<'_>;
 }
 
 impl BackendPhysicalEvidenceInspectionsTableAccess for super::RemoteTables {
-    fn backend_physical_evidence_inspections(
-        &self,
-    ) -> BackendPhysicalEvidenceInspectionsTableHandle<'_> {
+    fn backend_physical_evidence_inspections(&self) -> BackendPhysicalEvidenceInspectionsTableHandle<'_> {
         BackendPhysicalEvidenceInspectionsTableHandle {
-            imp: self.imp.get_table::<BackendPhysicalEvidenceInspection>(
-                "backend_physical_evidence_inspections",
-            ),
+            imp: self.imp.get_table::<BackendPhysicalEvidenceInspection>("backend_physical_evidence_inspections"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -50,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendPhysicalEvidenceInspectionsTableHandle<'ctx> 
     type Row = BackendPhysicalEvidenceInspection;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = BackendPhysicalEvidenceInspection> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = BackendPhysicalEvidenceInspection> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendPhysicalEvidenceInspectionsInsertCallbackId;
 
@@ -86,9 +81,8 @@ impl<'ctx> __sdk::Table for BackendPhysicalEvidenceInspectionsTableHandle<'ctx> 
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<BackendPhysicalEvidenceInspection>(
-        "backend_physical_evidence_inspections",
-    );
+
+        let _table = client_cache.get_or_make_table::<BackendPhysicalEvidenceInspection>("backend_physical_evidence_inspections");
 }
 
 #[doc(hidden)]
@@ -99,28 +93,23 @@ pub(super) fn parse_table_update(
         __sdk::InternalError::failed_parse(
             "TableUpdate<BackendPhysicalEvidenceInspection>",
             "TableUpdate",
-        )
-        .with_cause(e)
-        .into()
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `BackendPhysicalEvidenceInspection`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_physical_evidence_inspectionsQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `BackendPhysicalEvidenceInspection`.
-    fn backend_physical_evidence_inspections(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendPhysicalEvidenceInspection>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `BackendPhysicalEvidenceInspection`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_physical_evidence_inspectionsQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `BackendPhysicalEvidenceInspection`.
+            fn backend_physical_evidence_inspections(&self) -> __sdk::__query_builder::Table<BackendPhysicalEvidenceInspection>;
+        }
 
-impl backend_physical_evidence_inspectionsQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_physical_evidence_inspections(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendPhysicalEvidenceInspection> {
-        __sdk::__query_builder::Table::new("backend_physical_evidence_inspections")
-    }
-}
+        impl backend_physical_evidence_inspectionsQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_physical_evidence_inspections(&self) -> __sdk::__query_builder::Table<BackendPhysicalEvidenceInspection> {
+                __sdk::__query_builder::Table::new("backend_physical_evidence_inspections")
+            }
+        }
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::built_settlement_cover_type::BuiltSettlementCover;
 use super::cropland_cover_type::CroplandCover;
@@ -16,8 +21,12 @@ pub enum DirectHistoricalVegetationCover {
     Cropland(CroplandCover),
 
     Pasture(PastureCover),
+
 }
+
+
 
 impl __sdk::InModule for DirectHistoricalVegetationCover {
     type Module = super::RemoteModule;
 }
+

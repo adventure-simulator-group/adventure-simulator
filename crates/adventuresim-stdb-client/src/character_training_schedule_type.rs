@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::schedule_allocation_type::ScheduleAllocation;
 
@@ -14,9 +19,11 @@ pub struct CharacterTrainingSchedule {
     pub travel: ScheduleAllocation,
 }
 
+
 impl __sdk::InModule for CharacterTrainingSchedule {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `CharacterTrainingSchedule`.
 ///
@@ -34,6 +41,7 @@ impl __sdk::__query_builder::HasCols for CharacterTrainingSchedule {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             downtime: __sdk::__query_builder::Col::new(table_name, "downtime"),
             travel: __sdk::__query_builder::Col::new(table_name, "travel"),
+
         }
     }
 }
@@ -50,8 +58,10 @@ impl __sdk::__query_builder::HasIxCols for CharacterTrainingSchedule {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterTrainingScheduleIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterTrainingSchedule {}
+

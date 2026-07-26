@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<EnterMissionArgs> for super::Reducer {
         Self::EnterMission {
             character_id: args.character_id,
             server: args.server,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for EnterMissionArgs {
@@ -35,8 +41,10 @@ pub trait enter_mission {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`enter_mission:enter_mission_then`] to run a callback after the reducer completes.
-    fn enter_mission(&self, character_id: u64, server: __sdk::Identity) -> __sdk::Result<()> {
-        self.enter_mission_then(character_id, server, |_, _| {})
+    fn enter_mission(&self, character_id: u64,
+server: __sdk::Identity,
+) -> __sdk::Result<()> {
+        self.enter_mission_then(character_id, server,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `enter_mission` to run as soon as possible,
@@ -48,13 +56,11 @@ pub trait enter_mission {
     fn enter_mission_then(
         &self,
         character_id: u64,
-        server: __sdk::Identity,
+server: __sdk::Identity,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -62,20 +68,13 @@ impl enter_mission for super::RemoteReducers {
     fn enter_mission_then(
         &self,
         character_id: u64,
-        server: __sdk::Identity,
+server: __sdk::Identity,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            EnterMissionArgs {
-                character_id,
-                server,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(EnterMissionArgs { character_id, server,  }, callback)
     }
 }
+

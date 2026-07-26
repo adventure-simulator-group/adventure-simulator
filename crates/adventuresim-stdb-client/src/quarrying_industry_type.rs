@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::production_scale_type::ProductionScale;
 use super::quarry_commodity_type::QuarryCommodity;
@@ -14,6 +19,8 @@ pub struct QuarryingIndustry {
     pub scale: ProductionScale,
 }
 
+
 impl __sdk::InModule for QuarryingIndustry {
     type Module = super::RemoteModule;
 }
+

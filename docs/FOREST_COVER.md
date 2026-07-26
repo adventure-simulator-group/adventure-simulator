@@ -61,20 +61,28 @@ The resulting rasters are 1000-by-1000-pixel
 one-degree, EPSG:4326, `RasterPixelIsArea`, single-band UInt8 GeoTIFFs. This
 fixed 0.001-degree grid is approximately 100 m at European latitudes and makes
 the prepared format deterministic. They live in the Git-ignored
-`target/world-data-sources/raw/forest-cover/` directory. That directory must
-also contain `forest-cover-manifest.json` with exactly this version marker:
+`target/world-data-sources/raw/forest-cover/` directory. A locally prepared
+directory contains `forest-cover-manifest.json` with this version marker:
 
 ```json
 {"format":"adventuresim-copernicus-forest-2018-v1"}
 ```
 
-The marker identifies the source year, resolution, aggregation rule, and class
-mapping described here so a raw, stale, or differently prepared byte raster is
-not silently interpreted under this contract. Each used degree tile requires a
-pair named for its southwest corner:
+The pinned, externally inventoried world-data release uses the reviewed
+`adventuresim-copernicus-forest-2018-v2` marker. V2 changes the distribution
+identity, not the raster interpretation: both accepted markers require the
+same source year, resolution, aggregation rule, class mapping, filenames, and
+strict GeoTIFF validation described here. Other markers and unknown manifest
+fields remain rejected. The local initializer continues to emit v1 and verify
+its separate `source-inventory.json`; pinned-release v2 integrity is supplied
+by the release descriptor and per-file bundle inventory.
 
-The marker is not a content inventory; `source-inventory.json` separately pins
-every prepared TCD/DLT tile by checked size and SHA-256.
+Each used degree tile requires a pair named for its southwest corner:
+
+The marker itself is not a content inventory. Local v1 preparation uses
+`source-inventory.json`; pinned v2 installation is bound by the verified
+world-data release inventory. Both pin every TCD/DLT tile by checked size and
+SHA-256 outside the marker.
 
 - `TCD_N48_E002.tif`
 - `DLT_N48_E002.tif`

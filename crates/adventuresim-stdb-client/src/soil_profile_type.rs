@@ -2,16 +2,21 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::cation_exchange_capacity_type::CationExchangeCapacity;
+use super::wrb_reference_group_type::WrbReferenceGroup;
+use super::surface_lithology_type::SurfaceLithology;
+use super::soil_properties_type::SoilProperties;
 use super::soil_acidity_type::SoilAcidity;
+use super::cation_exchange_capacity_type::CationExchangeCapacity;
+use super::soil_fertility_type::SoilFertility;
 use super::soil_basis_points_type::SoilBasisPoints;
 use super::soil_evidence_type::SoilEvidence;
-use super::soil_fertility_type::SoilFertility;
-use super::soil_properties_type::SoilProperties;
-use super::surface_lithology_type::SurfaceLithology;
-use super::wrb_reference_group_type::WrbReferenceGroup;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -26,6 +31,8 @@ pub struct SoilProfile {
     pub evidence: SoilEvidence,
 }
 
+
 impl __sdk::InModule for SoilProfile {
     type Module = super::RemoteModule;
 }
+

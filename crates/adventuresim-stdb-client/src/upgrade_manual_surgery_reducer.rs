@@ -2,16 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct UpgradeManualSurgeryArgs {}
+pub(super) struct UpgradeManualSurgeryArgs {
+    }
 
 impl From<UpgradeManualSurgeryArgs> for super::Reducer {
     fn from(args: UpgradeManualSurgeryArgs) -> Self {
         Self::UpgradeManualSurgery
-    }
+}
 }
 
 impl __sdk::InModule for UpgradeManualSurgeryArgs {
@@ -29,8 +36,8 @@ pub trait upgrade_manual_surgery {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`upgrade_manual_surgery:upgrade_manual_surgery_then`] to run a callback after the reducer completes.
-    fn upgrade_manual_surgery(&self) -> __sdk::Result<()> {
-        self.upgrade_manual_surgery_then(|_, _| {})
+    fn upgrade_manual_surgery(&self, ) -> __sdk::Result<()> {
+        self.upgrade_manual_surgery_then( |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `upgrade_manual_surgery` to run as soon as possible,
@@ -41,26 +48,22 @@ pub trait upgrade_manual_surgery {
     ///  and its status can be observed with the `callback`.
     fn upgrade_manual_surgery_then(
         &self,
-
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl upgrade_manual_surgery for super::RemoteReducers {
     fn upgrade_manual_surgery_then(
         &self,
-
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(UpgradeManualSurgeryArgs {}, callback)
+        self.imp.invoke_reducer_with_callback(UpgradeManualSurgeryArgs {  }, callback)
     }
 }
+

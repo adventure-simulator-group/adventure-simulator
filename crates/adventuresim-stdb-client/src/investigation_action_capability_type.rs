@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -29,9 +35,11 @@ pub struct InvestigationActionCapability {
     pub active: bool,
 }
 
+
 impl __sdk::InModule for InvestigationActionCapability {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `InvestigationActionCapability`.
 ///
@@ -55,8 +63,7 @@ pub struct InvestigationActionCapabilityCols {
     pub safe_result_on_success: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub consequence_json: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub required_action_id: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
-    pub alternate_route_action_id:
-        __sdk::__query_builder::Col<InvestigationActionCapability, String>,
+    pub alternate_route_action_id: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub active: __sdk::__query_builder::Col<InvestigationActionCapability, bool>,
 }
 
@@ -75,27 +82,16 @@ impl __sdk::__query_builder::HasCols for InvestigationActionCapability {
             target_id: __sdk::__query_builder::Col::new(table_name, "target_id"),
             target_terrain: __sdk::__query_builder::Col::new(table_name, "target_terrain"),
             seed: __sdk::__query_builder::Col::new(table_name, "seed"),
-            evidence_age_origin_minute: __sdk::__query_builder::Col::new(
-                table_name,
-                "evidence_age_origin_minute",
-            ),
+            evidence_age_origin_minute: __sdk::__query_builder::Col::new(table_name, "evidence_age_origin_minute"),
             uncertainty_bps: __sdk::__query_builder::Col::new(table_name, "uncertainty_bps"),
             safe_summary: __sdk::__query_builder::Col::new(table_name, "safe_summary"),
-            known_prerequisites: __sdk::__query_builder::Col::new(
-                table_name,
-                "known_prerequisites",
-            ),
-            safe_result_on_success: __sdk::__query_builder::Col::new(
-                table_name,
-                "safe_result_on_success",
-            ),
+            known_prerequisites: __sdk::__query_builder::Col::new(table_name, "known_prerequisites"),
+            safe_result_on_success: __sdk::__query_builder::Col::new(table_name, "safe_result_on_success"),
             consequence_json: __sdk::__query_builder::Col::new(table_name, "consequence_json"),
             required_action_id: __sdk::__query_builder::Col::new(table_name, "required_action_id"),
-            alternate_route_action_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "alternate_route_action_id",
-            ),
+            alternate_route_action_id: __sdk::__query_builder::Col::new(table_name, "alternate_route_action_id"),
             active: __sdk::__query_builder::Col::new(table_name, "active"),
+
         }
     }
 }
@@ -115,12 +111,11 @@ impl __sdk::__query_builder::HasIxCols for InvestigationActionCapability {
         InvestigationActionCapabilityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(
-                table_name,
-                "owner_character_id",
-            ),
+            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationActionCapability {}
+

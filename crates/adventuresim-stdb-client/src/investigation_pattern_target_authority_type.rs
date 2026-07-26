@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,9 +25,11 @@ pub struct InvestigationPatternTargetAuthority {
     pub presence_version: u64,
 }
 
+
 impl __sdk::InModule for InvestigationPatternTargetAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `InvestigationPatternTargetAuthority`.
 ///
@@ -34,8 +42,7 @@ pub struct InvestigationPatternTargetAuthorityCols {
     pub age_band: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
     pub sex: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
     pub profession: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
-    pub expected_settlement_id:
-        __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
+    pub expected_settlement_id: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
     pub expected_location: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
     pub presence_version: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, u64>,
 }
@@ -51,12 +58,10 @@ impl __sdk::__query_builder::HasCols for InvestigationPatternTargetAuthority {
             age_band: __sdk::__query_builder::Col::new(table_name, "age_band"),
             sex: __sdk::__query_builder::Col::new(table_name, "sex"),
             profession: __sdk::__query_builder::Col::new(table_name, "profession"),
-            expected_settlement_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "expected_settlement_id",
-            ),
+            expected_settlement_id: __sdk::__query_builder::Col::new(table_name, "expected_settlement_id"),
             expected_location: __sdk::__query_builder::Col::new(table_name, "expected_location"),
             presence_version: __sdk::__query_builder::Col::new(table_name, "presence_version"),
+
         }
     }
 }
@@ -75,8 +80,10 @@ impl __sdk::__query_builder::HasIxCols for InvestigationPatternTargetAuthority {
         InvestigationPatternTargetAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             cohort_id: __sdk::__query_builder::IxCol::new(table_name, "cohort_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationPatternTargetAuthority {}
+

@@ -2,10 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::route_risk_severity_type::RouteRiskSeverity;
 use super::route_seasonal_hazard_type::RouteSeasonalHazard;
+use super::route_risk_severity_type::RouteRiskSeverity;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,6 +19,8 @@ pub struct RouteSeasonalRisk {
     pub severity: RouteRiskSeverity,
 }
 
+
 impl __sdk::InModule for RouteSeasonalRisk {
     type Module = super::RemoteModule;
 }
+

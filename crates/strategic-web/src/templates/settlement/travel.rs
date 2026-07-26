@@ -799,6 +799,10 @@ fn camp_fire_is_lit(
 }
 
 /// The transient strategic location between planned travel legs.
+fn camp_forage_href(has_active_character: bool) -> Option<&'static str> {
+    has_active_character.then_some("/forage?return_to=/camp")
+}
+
 pub fn camp_page(
     party: &Party,
     journey: Option<&PartyJourney>,
@@ -817,6 +821,7 @@ pub fn camp_page(
     logged_in_as: Option<&str>,
 ) -> Markup {
     let camp_fire_lit = camp_fire_is_lit(journey, itinerary);
+    let forage_href = camp_forage_href(active_character.is_some());
     let content = html! {
         aside class="left-sidebar map-rest-sidebar" {
             div class="map-rest-sidebar-content" {
@@ -824,6 +829,9 @@ pub fn camp_page(
                 p { "The party has made camp between travel legs." }
                 p class="text-muted small-copy" { "Destination: " (destination_name) }
                 p class="text-muted small-copy" { (format_journey_time(party.camp_remaining_minutes)) " remaining" }
+                @if let Some(href) = forage_href {
+                    a class="btn btn-secondary" href=(href) { "Forage nearby" }
+                }
             }))
             @if !camp_destinations.is_empty() {
                 (sidebar_section("Destinations", html! {
@@ -1000,6 +1008,12 @@ fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camp_foraging_affordance_is_discoverable_and_returns_to_camp() {
+        assert_eq!(camp_forage_href(true), Some("/forage?return_to=/camp"));
+        assert_eq!(camp_forage_href(false), None);
+    }
     use crate::spacetimedb::*;
     use crate::templates::settlement::test_support::*;
 

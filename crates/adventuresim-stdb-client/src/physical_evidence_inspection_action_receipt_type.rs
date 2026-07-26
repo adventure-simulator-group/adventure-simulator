@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,17 +19,18 @@ pub struct PhysicalEvidenceInspectionActionReceipt {
     pub topic_id: String,
 }
 
+
 impl __sdk::InModule for PhysicalEvidenceInspectionActionReceipt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PhysicalEvidenceInspectionActionReceipt`.
 ///
 /// Provides typed access to columns for query building.
 pub struct PhysicalEvidenceInspectionActionReceiptCols {
     pub action_id: __sdk::__query_builder::Col<PhysicalEvidenceInspectionActionReceipt, String>,
-    pub owner_character_id:
-        __sdk::__query_builder::Col<PhysicalEvidenceInspectionActionReceipt, u64>,
+    pub owner_character_id: __sdk::__query_builder::Col<PhysicalEvidenceInspectionActionReceipt, u64>,
     pub evidence_id: __sdk::__query_builder::Col<PhysicalEvidenceInspectionActionReceipt, String>,
     pub topic_id: __sdk::__query_builder::Col<PhysicalEvidenceInspectionActionReceipt, String>,
 }
@@ -36,6 +43,7 @@ impl __sdk::__query_builder::HasCols for PhysicalEvidenceInspectionActionReceipt
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
             evidence_id: __sdk::__query_builder::Col::new(table_name, "evidence_id"),
             topic_id: __sdk::__query_builder::Col::new(table_name, "topic_id"),
+
         }
     }
 }
@@ -52,8 +60,10 @@ impl __sdk::__query_builder::HasIxCols for PhysicalEvidenceInspectionActionRecei
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PhysicalEvidenceInspectionActionReceiptIxCols {
             action_id: __sdk::__query_builder::IxCol::new(table_name, "action_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PhysicalEvidenceInspectionActionReceipt {}
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,8 +26,8 @@ impl From<PerformSocialActionArgs> for super::Reducer {
             target_id: args.target_id,
             source_id: args.source_id,
             action_kind: args.action_kind,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for PerformSocialActionArgs {
@@ -39,14 +45,12 @@ pub trait perform_social_action {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`perform_social_action:perform_social_action_then`] to run a callback after the reducer completes.
-    fn perform_social_action(
-        &self,
-        actor_id: u64,
-        target_id: u64,
-        source_id: String,
-        action_kind: String,
-    ) -> __sdk::Result<()> {
-        self.perform_social_action_then(actor_id, target_id, source_id, action_kind, |_, _| {})
+    fn perform_social_action(&self, actor_id: u64,
+target_id: u64,
+source_id: String,
+action_kind: String,
+) -> __sdk::Result<()> {
+        self.perform_social_action_then(actor_id, target_id, source_id, action_kind,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `perform_social_action` to run as soon as possible,
@@ -58,15 +62,13 @@ pub trait perform_social_action {
     fn perform_social_action_then(
         &self,
         actor_id: u64,
-        target_id: u64,
-        source_id: String,
-        action_kind: String,
+target_id: u64,
+source_id: String,
+action_kind: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -74,24 +76,15 @@ impl perform_social_action for super::RemoteReducers {
     fn perform_social_action_then(
         &self,
         actor_id: u64,
-        target_id: u64,
-        source_id: String,
-        action_kind: String,
+target_id: u64,
+source_id: String,
+action_kind: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            PerformSocialActionArgs {
-                actor_id,
-                target_id,
-                source_id,
-                action_kind,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(PerformSocialActionArgs { actor_id, target_id, source_id, action_kind,  }, callback)
     }
 }
+

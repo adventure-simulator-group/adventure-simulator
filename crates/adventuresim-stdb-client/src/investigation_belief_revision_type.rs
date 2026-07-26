@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,9 +25,11 @@ pub struct InvestigationBeliefRevision {
     pub recorded_at: u64,
 }
 
+
 impl __sdk::InModule for InvestigationBeliefRevision {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `InvestigationBeliefRevision`.
 ///
@@ -53,6 +61,7 @@ impl __sdk::__query_builder::HasCols for InvestigationBeliefRevision {
             provenance_label: __sdk::__query_builder::Col::new(table_name, "provenance_label"),
             supersedes: __sdk::__query_builder::Col::new(table_name, "supersedes"),
             recorded_at: __sdk::__query_builder::Col::new(table_name, "recorded_at"),
+
         }
     }
 }
@@ -70,12 +79,11 @@ impl __sdk::__query_builder::HasIxCols for InvestigationBeliefRevision {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InvestigationBeliefRevisionIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            owner_character_id: __sdk::__query_builder::IxCol::new(
-                table_name,
-                "owner_character_id",
-            ),
+            owner_character_id: __sdk::__query_builder::IxCol::new(table_name, "owner_character_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationBeliefRevision {}
+

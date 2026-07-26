@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::soil_water_regime_type::SoilWaterRegime;
 
@@ -12,6 +17,8 @@ pub struct HistoricalWetland {
     pub water_regime: SoilWaterRegime,
 }
 
+
 impl __sdk::InModule for HistoricalWetland {
     type Module = super::RemoteModule;
 }
+

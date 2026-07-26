@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::case_site_id_type::CaseSiteId;
 use super::hostile_group_disposition_type::HostileGroupDisposition;
@@ -15,14 +20,16 @@ pub struct HostileGroupAuthority {
     pub enemy_type: String,
     pub enemy_count: u32,
     pub difficulty: i32,
-    pub drop_item_id: Option<String>,
+    pub drop_item_id: Option::<String>,
     pub drop_quantity: u32,
     pub disposition: HostileGroupDisposition,
 }
 
+
 impl __sdk::InModule for HostileGroupAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `HostileGroupAuthority`.
 ///
@@ -33,7 +40,7 @@ pub struct HostileGroupAuthorityCols {
     pub enemy_type: __sdk::__query_builder::Col<HostileGroupAuthority, String>,
     pub enemy_count: __sdk::__query_builder::Col<HostileGroupAuthority, u32>,
     pub difficulty: __sdk::__query_builder::Col<HostileGroupAuthority, i32>,
-    pub drop_item_id: __sdk::__query_builder::Col<HostileGroupAuthority, Option<String>>,
+    pub drop_item_id: __sdk::__query_builder::Col<HostileGroupAuthority, Option::<String>>,
     pub drop_quantity: __sdk::__query_builder::Col<HostileGroupAuthority, u32>,
     pub disposition: __sdk::__query_builder::Col<HostileGroupAuthority, HostileGroupDisposition>,
 }
@@ -50,6 +57,7 @@ impl __sdk::__query_builder::HasCols for HostileGroupAuthority {
             drop_item_id: __sdk::__query_builder::Col::new(table_name, "drop_item_id"),
             drop_quantity: __sdk::__query_builder::Col::new(table_name, "drop_quantity"),
             disposition: __sdk::__query_builder::Col::new(table_name, "disposition"),
+
         }
     }
 }
@@ -68,8 +76,10 @@ impl __sdk::__query_builder::HasIxCols for HostileGroupAuthority {
         HostileGroupAuthorityIxCols {
             case_site_id: __sdk::__query_builder::IxCol::new(table_name, "case_site_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for HostileGroupAuthority {}
+

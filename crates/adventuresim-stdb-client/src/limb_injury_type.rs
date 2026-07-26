@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::limb_region_type::LimbRegion;
 
@@ -18,16 +23,18 @@ pub struct LimbInjury {
     pub bandaged: bool,
     pub stitched: bool,
     pub stitch_quality: f32,
-    pub splint_owner_id: Option<u64>,
-    pub splint_inventory_item_id: Option<u64>,
+    pub splint_owner_id: Option::<u64>,
+    pub splint_inventory_item_id: Option::<u64>,
     pub infection_exposure: f32,
     pub infection_checks: u32,
-    pub infection_origin_minute: Option<u64>,
+    pub infection_origin_minute: Option::<u64>,
 }
+
 
 impl __sdk::InModule for LimbInjury {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `LimbInjury`.
 ///
@@ -42,11 +49,11 @@ pub struct LimbInjuryCols {
     pub bandaged: __sdk::__query_builder::Col<LimbInjury, bool>,
     pub stitched: __sdk::__query_builder::Col<LimbInjury, bool>,
     pub stitch_quality: __sdk::__query_builder::Col<LimbInjury, f32>,
-    pub splint_owner_id: __sdk::__query_builder::Col<LimbInjury, Option<u64>>,
-    pub splint_inventory_item_id: __sdk::__query_builder::Col<LimbInjury, Option<u64>>,
+    pub splint_owner_id: __sdk::__query_builder::Col<LimbInjury, Option::<u64>>,
+    pub splint_inventory_item_id: __sdk::__query_builder::Col<LimbInjury, Option::<u64>>,
     pub infection_exposure: __sdk::__query_builder::Col<LimbInjury, f32>,
     pub infection_checks: __sdk::__query_builder::Col<LimbInjury, u32>,
-    pub infection_origin_minute: __sdk::__query_builder::Col<LimbInjury, Option<u64>>,
+    pub infection_origin_minute: __sdk::__query_builder::Col<LimbInjury, Option::<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for LimbInjury {
@@ -63,16 +70,11 @@ impl __sdk::__query_builder::HasCols for LimbInjury {
             stitched: __sdk::__query_builder::Col::new(table_name, "stitched"),
             stitch_quality: __sdk::__query_builder::Col::new(table_name, "stitch_quality"),
             splint_owner_id: __sdk::__query_builder::Col::new(table_name, "splint_owner_id"),
-            splint_inventory_item_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "splint_inventory_item_id",
-            ),
+            splint_inventory_item_id: __sdk::__query_builder::Col::new(table_name, "splint_inventory_item_id"),
             infection_exposure: __sdk::__query_builder::Col::new(table_name, "infection_exposure"),
             infection_checks: __sdk::__query_builder::Col::new(table_name, "infection_checks"),
-            infection_origin_minute: __sdk::__query_builder::Col::new(
-                table_name,
-                "infection_origin_minute",
-            ),
+            infection_origin_minute: __sdk::__query_builder::Col::new(table_name, "infection_origin_minute"),
+
         }
     }
 }
@@ -91,8 +93,10 @@ impl __sdk::__query_builder::HasIxCols for LimbInjury {
         LimbInjuryIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for LimbInjury {}
+

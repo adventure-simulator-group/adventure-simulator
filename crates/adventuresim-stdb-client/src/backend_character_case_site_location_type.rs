@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::case_site_id_type::CaseSiteId;
 
@@ -13,9 +18,11 @@ pub struct BackendCharacterCaseSiteLocation {
     pub case_site_id: CaseSiteId,
 }
 
+
 impl __sdk::InModule for BackendCharacterCaseSiteLocation {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `BackendCharacterCaseSiteLocation`.
 ///
@@ -31,6 +38,8 @@ impl __sdk::__query_builder::HasCols for BackendCharacterCaseSiteLocation {
         BackendCharacterCaseSiteLocationCols {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
+
         }
     }
 }
+

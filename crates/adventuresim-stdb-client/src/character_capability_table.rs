@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::character_capability_type::CharacterCapability;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_capability`.
 ///
@@ -31,9 +36,7 @@ pub trait CharacterCapabilityTableAccess {
 impl CharacterCapabilityTableAccess for super::RemoteTables {
     fn character_capability(&self) -> CharacterCapabilityTableHandle<'_> {
         CharacterCapabilityTableHandle {
-            imp: self
-                .imp
-                .get_table::<CharacterCapability>("character_capability"),
+            imp: self.imp.get_table::<CharacterCapability>("character_capability"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for CharacterCapabilityTableHandle<'ctx> {
     type Row = CharacterCapability;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = CharacterCapability> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = CharacterCapability> + '_ { self.imp.iter() }
 
     type InsertCallbackId = CharacterCapabilityInsertCallbackId;
 
@@ -97,38 +96,39 @@ impl<'ctx> __sdk::TableWithPrimaryKey for CharacterCapabilityTableHandle<'ctx> {
     }
 }
 
-/// Access to the `character_id` unique index on the table `character_capability`,
-/// which allows point queries on the field of the same name
-/// via the [`CharacterCapabilityCharacterIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.character_capability().character_id().find(...)`.
-pub struct CharacterCapabilityCharacterIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<CharacterCapability, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> CharacterCapabilityTableHandle<'ctx> {
-    /// Get a handle on the `character_id` unique index on the table `character_capability`.
-    pub fn character_id(&self) -> CharacterCapabilityCharacterIdUnique<'ctx> {
-        CharacterCapabilityCharacterIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("character_id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `character_id` unique index on the table `character_capability`,
+        /// which allows point queries on the field of the same name
+        /// via the [`CharacterCapabilityCharacterIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.character_capability().character_id().find(...)`.
+        pub struct CharacterCapabilityCharacterIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<CharacterCapability, u64>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> CharacterCapabilityCharacterIdUnique<'ctx> {
-    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<CharacterCapability> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> CharacterCapabilityTableHandle<'ctx> {
+            /// Get a handle on the `character_id` unique index on the table `character_capability`.
+            pub fn character_id(&self) -> CharacterCapabilityCharacterIdUnique<'ctx> {
+                CharacterCapabilityCharacterIdUnique {
+                    imp: self.imp.get_unique_constraint::<u64>("character_id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> CharacterCapabilityCharacterIdUnique<'ctx> {
+            /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &u64) -> Option<CharacterCapability> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
     let _table = client_cache.get_or_make_table::<CharacterCapability>("character_capability");
     _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
@@ -138,24 +138,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<CharacterCapability>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<CharacterCapability>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<CharacterCapability>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `CharacterCapability`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait character_capabilityQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `CharacterCapability`.
-    fn character_capability(&self) -> __sdk::__query_builder::Table<CharacterCapability>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `CharacterCapability`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait character_capabilityQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `CharacterCapability`.
+            fn character_capability(&self) -> __sdk::__query_builder::Table<CharacterCapability>;
+        }
 
-impl character_capabilityQueryTableAccess for __sdk::QueryTableAccessor {
-    fn character_capability(&self) -> __sdk::__query_builder::Table<CharacterCapability> {
-        __sdk::__query_builder::Table::new("character_capability")
-    }
-}
+        impl character_capabilityQueryTableAccess for __sdk::QueryTableAccessor {
+            fn character_capability(&self) -> __sdk::__query_builder::Table<CharacterCapability> {
+                __sdk::__query_builder::Table::new("character_capability")
+            }
+        }
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,8 +24,8 @@ impl From<ClaimSimulationRunArgs> for super::Reducer {
             bootstrap_token: args.bootstrap_token,
             nonce: args.nonce,
             policy_seed: args.policy_seed,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for ClaimSimulationRunArgs {
@@ -37,13 +43,11 @@ pub trait claim_simulation_run {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`claim_simulation_run:claim_simulation_run_then`] to run a callback after the reducer completes.
-    fn claim_simulation_run(
-        &self,
-        bootstrap_token: String,
-        nonce: String,
-        policy_seed: u64,
-    ) -> __sdk::Result<()> {
-        self.claim_simulation_run_then(bootstrap_token, nonce, policy_seed, |_, _| {})
+    fn claim_simulation_run(&self, bootstrap_token: String,
+nonce: String,
+policy_seed: u64,
+) -> __sdk::Result<()> {
+        self.claim_simulation_run_then(bootstrap_token, nonce, policy_seed,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `claim_simulation_run` to run as soon as possible,
@@ -55,14 +59,12 @@ pub trait claim_simulation_run {
     fn claim_simulation_run_then(
         &self,
         bootstrap_token: String,
-        nonce: String,
-        policy_seed: u64,
+nonce: String,
+policy_seed: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -70,22 +72,14 @@ impl claim_simulation_run for super::RemoteReducers {
     fn claim_simulation_run_then(
         &self,
         bootstrap_token: String,
-        nonce: String,
-        policy_seed: u64,
+nonce: String,
+policy_seed: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            ClaimSimulationRunArgs {
-                bootstrap_token,
-                nonce,
-                policy_seed,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(ClaimSimulationRunArgs { bootstrap_token, nonce, policy_seed,  }, callback)
     }
 }
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,8 +24,8 @@ impl From<CreateStartingCharacterArgs> for super::Reducer {
             generator_version: args.generator_version,
             seed: args.seed,
             slot: args.slot,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for CreateStartingCharacterArgs {
@@ -37,13 +43,11 @@ pub trait create_starting_character {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`create_starting_character:create_starting_character_then`] to run a callback after the reducer completes.
-    fn create_starting_character(
-        &self,
-        generator_version: u16,
-        seed: String,
-        slot: u8,
-    ) -> __sdk::Result<()> {
-        self.create_starting_character_then(generator_version, seed, slot, |_, _| {})
+    fn create_starting_character(&self, generator_version: u16,
+seed: String,
+slot: u8,
+) -> __sdk::Result<()> {
+        self.create_starting_character_then(generator_version, seed, slot,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `create_starting_character` to run as soon as possible,
@@ -55,14 +59,12 @@ pub trait create_starting_character {
     fn create_starting_character_then(
         &self,
         generator_version: u16,
-        seed: String,
-        slot: u8,
+seed: String,
+slot: u8,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -70,22 +72,14 @@ impl create_starting_character for super::RemoteReducers {
     fn create_starting_character_then(
         &self,
         generator_version: u16,
-        seed: String,
-        slot: u8,
+seed: String,
+slot: u8,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            CreateStartingCharacterArgs {
-                generator_version,
-                seed,
-                slot,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(CreateStartingCharacterArgs { generator_version, seed, slot,  }, callback)
     }
 }
+

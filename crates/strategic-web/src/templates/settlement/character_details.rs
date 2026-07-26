@@ -202,6 +202,7 @@ pub fn party_personal_page(
         active_character.id
     ));
     let location_path = location.base_path();
+    let foraging_href = format!("/forage?return_to={location_path}");
     let schedule_action = format!("{location_path}/party/{}/schedule", active_character.id);
     let social_path = location.preserve_building(format!(
         "{location_path}/party/{}/social",
@@ -263,6 +264,8 @@ pub fn party_personal_page(
         skill_actions: CharacterSheetActions {
             cooking_href: Some(&cooking_href),
             cooking_open,
+            foraging_href: Some(&foraging_href),
+            foraging_open: false,
         },
         location_path: &location_path,
         center_before: html! {},

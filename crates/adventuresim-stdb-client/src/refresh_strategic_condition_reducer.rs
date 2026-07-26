@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,8 +20,8 @@ impl From<RefreshStrategicConditionArgs> for super::Reducer {
     fn from(args: RefreshStrategicConditionArgs) -> Self {
         Self::RefreshStrategicCondition {
             character_id: args.character_id,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for RefreshStrategicConditionArgs {
@@ -33,8 +39,9 @@ pub trait refresh_strategic_condition {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`refresh_strategic_condition:refresh_strategic_condition_then`] to run a callback after the reducer completes.
-    fn refresh_strategic_condition(&self, character_id: u64) -> __sdk::Result<()> {
-        self.refresh_strategic_condition_then(character_id, |_, _| {})
+    fn refresh_strategic_condition(&self, character_id: u64,
+) -> __sdk::Result<()> {
+        self.refresh_strategic_condition_then(character_id,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `refresh_strategic_condition` to run as soon as possible,
@@ -47,11 +54,9 @@ pub trait refresh_strategic_condition {
         &self,
         character_id: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -60,13 +65,11 @@ impl refresh_strategic_condition for super::RemoteReducers {
         &self,
         character_id: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(RefreshStrategicConditionArgs { character_id }, callback)
+        self.imp.invoke_reducer_with_callback(RefreshStrategicConditionArgs { character_id,  }, callback)
     }
 }
+

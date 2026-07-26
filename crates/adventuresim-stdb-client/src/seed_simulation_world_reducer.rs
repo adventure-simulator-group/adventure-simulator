@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,8 +18,10 @@ pub(super) struct SeedSimulationWorldArgs {
 
 impl From<SeedSimulationWorldArgs> for super::Reducer {
     fn from(args: SeedSimulationWorldArgs) -> Self {
-        Self::SeedSimulationWorld { nonce: args.nonce }
-    }
+        Self::SeedSimulationWorld {
+            nonce: args.nonce,
+}
+}
 }
 
 impl __sdk::InModule for SeedSimulationWorldArgs {
@@ -31,8 +39,9 @@ pub trait seed_simulation_world {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`seed_simulation_world:seed_simulation_world_then`] to run a callback after the reducer completes.
-    fn seed_simulation_world(&self, nonce: String) -> __sdk::Result<()> {
-        self.seed_simulation_world_then(nonce, |_, _| {})
+    fn seed_simulation_world(&self, nonce: String,
+) -> __sdk::Result<()> {
+        self.seed_simulation_world_then(nonce,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `seed_simulation_world` to run as soon as possible,
@@ -45,11 +54,9 @@ pub trait seed_simulation_world {
         &self,
         nonce: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -58,13 +65,11 @@ impl seed_simulation_world for super::RemoteReducers {
         &self,
         nonce: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(SeedSimulationWorldArgs { nonce }, callback)
+        self.imp.invoke_reducer_with_callback(SeedSimulationWorldArgs { nonce,  }, callback)
     }
 }
+

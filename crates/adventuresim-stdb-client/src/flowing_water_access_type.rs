@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::river_access_type::RiverAccess;
 use super::river_and_canal_access_type::RiverAndCanalAccess;
@@ -13,8 +18,12 @@ pub enum FlowingWaterAccess {
     River(RiverAccess),
 
     RiverAndCanal(RiverAndCanalAccess),
+
 }
+
+
 
 impl __sdk::InModule for FlowingWaterAccess {
     type Module = super::RemoteModule;
 }
+

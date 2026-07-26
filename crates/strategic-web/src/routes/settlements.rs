@@ -132,6 +132,26 @@ mod building_query_tests {
         assert_eq!(merchant_service_location("herbalist"), None);
         assert_eq!(merchant_service_location("../inn"), None);
     }
+
+    #[test]
+    fn settlement_entry_activates_activity_without_a_local_server_bypass() {
+        let source = include_str!("settlements.rs").replace('\r', "");
+        let entry = source
+            .rsplit("async fn show_settlement_location")
+            .next()
+            .and_then(|tail| tail.split("async fn settlement_map").next())
+            .expect("settlement entry route");
+        assert!(entry.contains(".call("));
+        assert!(entry.contains("\"ensure_settlement_activity\""));
+        assert!(!entry.contains("is_local()"));
+
+        let offers = source
+            .split("async fn service_quest_offers")
+            .nth(1)
+            .and_then(|tail| tail.split("fn service_quest_greeting").next())
+            .expect("service quest offers route");
+        assert!(!offers.contains("ensure_settlement_activity"));
+    }
 }
 
 use super::AppState;
@@ -817,26 +837,36 @@ async fn show_settlement_location(
     session: Session,
 ) -> Html<String> {
     let settlement_literal = sql_string_literal(&id);
+    let settlement = state
+        .db
+        .query_one::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {settlement_literal}"
+        ))
+        .await;
+    let settlement = match settlement {
+        Ok(Some(settlement)) => settlement,
+        Ok(None) => return Html("<h1>Settlement not found</h1>".to_string()),
+        Err(error) => {
+            tracing::error!(%error, settlement_id = %id, "failed to load settlement");
+            return Html("<h1>Settlement data unavailable</h1>".to_string());
+        }
+    };
+    if let Err(error) = state
+        .db
+        .call("ensure_settlement_activity", &[json!(id.clone())])
+        .await
+    {
+        tracing::warn!(%error, settlement_id = %id, "failed to activate settlement activity");
+    }
     let alias_sql =
         format!("SELECT * FROM settlement_alias WHERE settlement_id = {settlement_literal}");
     let description_sql =
         format!("SELECT * FROM settlement_description WHERE settlement_id = {settlement_literal}");
-    let (settlements, aliases, descriptions, active_character) = tokio::join!(
-        state.db.query::<Settlement>("SELECT * FROM settlement"),
+    let (aliases, descriptions, active_character) = tokio::join!(
         state.db.query::<SettlementAlias>(&alias_sql),
         state.db.query::<SettlementDescription>(&description_sql),
         get_active_character(&state, session.character_id_u64()),
     );
-    let settlements = match settlements {
-        Ok(settlements) => settlements,
-        Err(error) => {
-            tracing::error!(%error, settlement_id = %id, "failed to load settlements");
-            return Html("<h1>Settlement data unavailable</h1>".to_string());
-        }
-    };
-    let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
-        return Html("<h1>Settlement not found</h1>".to_string());
-    };
     let party_members = get_active_party_members(
         &state,
         active_character.as_ref().map(|(character, _)| character),
@@ -865,7 +895,7 @@ async fn show_settlement_location(
     descriptions.sort_by(|left, right| left.id.cmp(&right.id));
     Html(
         settlement_overview_page(
-            settlement,
+            &settlement,
             &aliases,
             &descriptions,
             active_character.as_ref().map(|(character, _)| character),
@@ -2090,12 +2120,6 @@ async fn service_quest_offers(
     Path(id): Path<String>,
     session: Session,
 ) -> Json<ServiceActivityResponse> {
-    if state.db.is_local() {
-        let _ = state
-            .db
-            .call("ensure_settlement_activity", &[json!(id.clone())])
-            .await;
-    }
     let settlements: Vec<Settlement> = state
         .db
         .query("SELECT * FROM settlement")
@@ -2702,9 +2726,9 @@ async fn render_party_personal(
         }
         None => 0.0,
     };
-    let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
+    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", character_id)
         .await
-        .map_or(0.0, |notoriety| notoriety.value);
+        .map_or(0.0, |virtue| virtue.value);
     // Authoritative personality is private. Ordinary pages render only
     // observer-specific beliefs through the dedicated social route.
     let personality: Option<CharacterPersonality> = None;
@@ -2766,7 +2790,7 @@ async fn render_party_personal(
             combat_profile,
             activity_preview,
             religious_demand.as_ref(),
-            notoriety,
+            virtue,
             personality.as_ref(),
             &medical,
             can_examine,
@@ -3706,9 +3730,9 @@ async fn render_party_stats(
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
-    let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
+    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", character_id)
         .await
-        .map_or(0.0, |notoriety| notoriety.value);
+        .map_or(0.0, |virtue| virtue.value);
     let personality: Option<CharacterPersonality> = None;
     let medical = medical_presentation(&state, active_character.id, character_id).await;
     let injuries = state
@@ -3748,7 +3772,7 @@ async fn render_party_stats(
             religion.as_deref(),
             active_party.as_ref(),
             selected_party.as_ref(),
-            notoriety,
+            virtue,
             personality.as_ref(),
             &medical,
             can_examine,

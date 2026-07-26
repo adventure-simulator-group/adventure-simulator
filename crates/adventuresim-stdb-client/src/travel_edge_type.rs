@@ -2,12 +2,17 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::edge_endpoint_type::EdgeEndpoint;
-use super::route_terrain_type::RouteTerrain;
-use super::travel_edge_provenance_type::TravelEdgeProvenance;
 use super::travel_route_type::TravelRoute;
+use super::edge_endpoint_type::EdgeEndpoint;
+use super::travel_edge_provenance_type::TravelEdgeProvenance;
+use super::route_terrain_type::RouteTerrain;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -17,7 +22,7 @@ pub struct TravelEdge {
     pub to_node_id: u64,
     pub route: TravelRoute,
     pub provenance: TravelEdgeProvenance,
-    pub toll_at: Option<EdgeEndpoint>,
+    pub toll_at: Option::<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
     pub terrain: RouteTerrain,
@@ -26,9 +31,11 @@ pub struct TravelEdge {
     pub sources: String,
 }
 
+
 impl __sdk::InModule for TravelEdge {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `TravelEdge`.
 ///
@@ -39,7 +46,7 @@ pub struct TravelEdgeCols {
     pub to_node_id: __sdk::__query_builder::Col<TravelEdge, u64>,
     pub route: __sdk::__query_builder::Col<TravelEdge, TravelRoute>,
     pub provenance: __sdk::__query_builder::Col<TravelEdge, TravelEdgeProvenance>,
-    pub toll_at: __sdk::__query_builder::Col<TravelEdge, Option<EdgeEndpoint>>,
+    pub toll_at: __sdk::__query_builder::Col<TravelEdge, Option::<EdgeEndpoint>>,
     pub length_m: __sdk::__query_builder::Col<TravelEdge, u32>,
     pub slope_multiplier: __sdk::__query_builder::Col<TravelEdge, f32>,
     pub terrain: __sdk::__query_builder::Col<TravelEdge, RouteTerrain>,
@@ -64,6 +71,7 @@ impl __sdk::__query_builder::HasCols for TravelEdge {
             certainty: __sdk::__query_builder::Col::new(table_name, "certainty"),
             section: __sdk::__query_builder::Col::new(table_name, "section"),
             sources: __sdk::__query_builder::Col::new(table_name, "sources"),
+
         }
     }
 }
@@ -84,8 +92,10 @@ impl __sdk::__query_builder::HasIxCols for TravelEdge {
             from_node_id: __sdk::__query_builder::IxCol::new(table_name, "from_node_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             to_node_id: __sdk::__query_builder::IxCol::new(table_name, "to_node_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for TravelEdge {}
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,9 +28,11 @@ pub struct BackendDialoguePrompt {
     pub owner_character_id: u64,
 }
 
+
 impl __sdk::InModule for BackendDialoguePrompt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `BackendDialoguePrompt`.
 ///
@@ -59,12 +67,11 @@ impl __sdk::__query_builder::HasCols for BackendDialoguePrompt {
             min_choices: __sdk::__query_builder::Col::new(table_name, "min_choices"),
             max_choices: __sdk::__query_builder::Col::new(table_name, "max_choices"),
             state: __sdk::__query_builder::Col::new(table_name, "state"),
-            resolved_choice_ids_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "resolved_choice_ids_json",
-            ),
+            resolved_choice_ids_json: __sdk::__query_builder::Col::new(table_name, "resolved_choice_ids_json"),
             source_refs_json: __sdk::__query_builder::Col::new(table_name, "source_refs_json"),
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
+
         }
     }
 }
+

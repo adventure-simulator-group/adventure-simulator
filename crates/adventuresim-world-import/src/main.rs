@@ -22,12 +22,12 @@ use adventuresim_world_schema::{
     WrbReferenceGroup,
 };
 use clap::Parser;
+use reqwest::{Url, blocking::Client};
 use serde_json::{Value, json};
 
 const WORLD_YEAR: i32 = 1544;
-// `spacetime call` transports reducer arguments on the command line. Keep a
-// safety margin below Windows' 32,767-character process command-line limit.
-const MAX_REDUCER_ARGUMENT_CHARS: usize = 24_000;
+/// Conservative upper bound for one complete JSON reducer-call body.
+const MAX_REDUCER_REQUEST_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Parser)]
 #[command(about = "Compile source datasets into the Adventure Simulator strategic world")]
@@ -217,17 +217,13 @@ fn print_world_summary(world: &CompiledWorld) {
 }
 
 fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<()> {
+    let client = HttpReducerClient::from_args(args)?;
     let sources = manifest_audit_markdown(world)?;
-    call_reducer(
-        args,
-        "begin_world_data_import",
-        &[
-            json!(world.metadata.schema_version),
-            json!(artifact_id),
-            json!(world.metadata.manifest_digest),
-            json!(sources),
-        ],
-    )?;
+    let begin_arguments = begin_import_arguments(world, artifact_id, sources);
+    ensure_request_body_budget("begin_world_data_import", &begin_arguments)?;
+    client
+        .call("begin_world_data_import", &begin_arguments)
+        .map_err(HttpReducerCallError::into_error)?;
 
     for (label, reducer, batches) in [
         (
@@ -271,11 +267,16 @@ fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<(
                 index + 1,
                 batch.len()
             );
-            call_reducer(args, reducer, &[Value::Array(batch)])?;
+            execute_http_batch_adaptively(&batch, &mut |rows| {
+                client.call(reducer, &[Value::Array(rows.to_vec())])
+            })
+            .map_err(HttpReducerCallError::into_error)?;
         }
         println!("Loaded {total} {label}.");
     }
-    call_reducer(args, "finish_world_data_import", &[json!(artifact_id)])?;
+    client
+        .call("finish_world_data_import", &[json!(artifact_id)])
+        .map_err(HttpReducerCallError::into_error)?;
     Ok(())
 }
 
@@ -295,12 +296,10 @@ fn manifest_audit_markdown(world: &CompiledWorld) -> Result<String> {
             canonical,
         );
         output.push_str(&section);
-        if !adventuresim_world_schema::valid_sources_markdown(&output)
-            || serde_json::to_string(&output)?.encode_utf16().count() > MAX_REDUCER_ARGUMENT_CHARS
-        {
-            return Err(Error::Validation(format!(
-                "complete serialized source-manifest audit exceeds the {MAX_REDUCER_ARGUMENT_CHARS}-character reducer transport budget; refusing to omit or truncate operational notices"
-            )));
+        if !adventuresim_world_schema::valid_sources_markdown(&output) {
+            return Err(Error::Validation(
+                "source-manifest audit Markdown is invalid".into(),
+            ));
         }
     }
     if !adventuresim_world_schema::valid_sources_markdown(&output) {
@@ -309,6 +308,15 @@ fn manifest_audit_markdown(world: &CompiledWorld) -> Result<String> {
         ));
     }
     Ok(output)
+}
+
+fn begin_import_arguments(world: &CompiledWorld, artifact_id: &str, sources: String) -> Vec<Value> {
+    vec![
+        json!(world.metadata.schema_version),
+        json!(artifact_id),
+        json!(world.metadata.manifest_digest),
+        json!(sources),
+    ]
 }
 
 fn serialize_batches<T>(
@@ -322,32 +330,87 @@ fn serialize_batches<T>(
         .collect::<Result<Vec<_>>>()?;
     let mut batches = Vec::new();
     let mut batch = Vec::new();
-    let mut code_units = 2;
+    // A batch reducer receives one argument: the row array. Account for both
+    // the inner and outer JSON array delimiters in the complete HTTP body.
+    let mut body_bytes = 4;
     for row in rows {
         let encoded = row.to_string();
-        let row_code_units = encoded.encode_utf16().count();
-        if row_code_units + 2 > MAX_REDUCER_ARGUMENT_CHARS {
+        let row_bytes = encoded.len();
+        if row_bytes + 4 > MAX_REDUCER_REQUEST_BYTES {
             return Err(Error::Validation(format!(
-                "a serialized import row requires {} UTF-16 code units; maximum is {}",
-                row_code_units + 2,
-                MAX_REDUCER_ARGUMENT_CHARS
+                "a serialized import row requires {} UTF-8 HTTP request bytes; maximum is {}",
+                row_bytes + 4,
+                MAX_REDUCER_REQUEST_BYTES
             )));
         }
-        let row_code_units = row_code_units + usize::from(!batch.is_empty());
+        let row_bytes = row_bytes + usize::from(!batch.is_empty());
         if !batch.is_empty()
-            && (batch.len() == batch_size
-                || code_units + row_code_units > MAX_REDUCER_ARGUMENT_CHARS)
+            && (batch.len() == batch_size || body_bytes + row_bytes > MAX_REDUCER_REQUEST_BYTES)
         {
             batches.push(std::mem::take(&mut batch));
-            code_units = 2;
+            body_bytes = 4;
         }
-        code_units += row_code_units;
+        body_bytes += row_bytes;
         batch.push(row);
     }
     if !batch.is_empty() {
         batches.push(batch);
     }
     Ok(batches)
+}
+
+#[cfg(test)]
+fn execute_batch_adaptively<T, E>(
+    rows: &[T],
+    execute: &mut impl FnMut(&[T]) -> std::result::Result<(), E>,
+) -> std::result::Result<(), E> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    match execute(rows) {
+        Ok(()) => Ok(()),
+        Err(error) if rows.len() == 1 => Err(error),
+        Err(_) => {
+            let midpoint = rows.len() / 2;
+            eprintln!(
+                "Reducer call for {} rows failed; retrying as batches of {} and {} rows.",
+                rows.len(),
+                midpoint,
+                rows.len() - midpoint
+            );
+            execute_batch_adaptively(&rows[..midpoint], execute)?;
+            execute_batch_adaptively(&rows[midpoint..], execute)
+        }
+    }
+}
+
+/// Retry only a response that unambiguously says the submitted payload was too
+/// large. Other HTTP failures are reducer/authentication failures, not a hint
+/// to replay an import under smaller batches.
+fn execute_http_batch_adaptively<T>(
+    rows: &[T],
+    execute: &mut impl FnMut(&[T]) -> std::result::Result<(), HttpReducerCallError>,
+) -> std::result::Result<(), HttpReducerCallError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    match execute(rows) {
+        Ok(()) => Ok(()),
+        Err(error) if rows.len() == 1 || !error.is_payload_too_large() => Err(error),
+        Err(_) => {
+            let midpoint = rows.len() / 2;
+            eprintln!(
+                "Reducer rejected a {}-row HTTP payload as too large; retrying as batches of {} and {} rows.",
+                rows.len(),
+                midpoint,
+                rows.len() - midpoint
+            );
+            execute_http_batch_adaptively(&rows[..midpoint], execute)?;
+            execute_http_batch_adaptively(&rows[midpoint..], execute)
+        }
+    }
 }
 
 fn normalize_variant_keys(value: Value) -> Value {
@@ -1097,18 +1160,173 @@ fn encode_settlement_description(description: &SettlementDescriptionImport) -> R
     }))
 }
 
-fn call_reducer(args: &Args, reducer: &str, arguments: &[Value]) -> Result<()> {
-    let status = Command::new(&args.spacetime)
-        .args(["call", "--server", &args.server, &args.database, reducer])
-        .args(arguments.iter().map(Value::to_string))
-        .status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Error::Spacetime {
-            reducer: reducer.into(),
-            status: status.to_string(),
+fn json_body_bytes(arguments: &[Value]) -> Result<usize> {
+    Ok(serde_json::to_vec(arguments)?.len())
+}
+
+fn ensure_request_body_budget(reducer: &str, arguments: &[Value]) -> Result<()> {
+    let body_bytes = json_body_bytes(arguments)?;
+    if body_bytes > MAX_REDUCER_REQUEST_BYTES {
+        return Err(Error::Validation(format!(
+            "reducer {reducer} request is {body_bytes} bytes; maximum HTTP request body is {MAX_REDUCER_REQUEST_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+enum HttpReducerCallError {
+    PayloadTooLarge { reducer: String, body: String },
+    Failed { reducer: String, status: String },
+}
+
+impl HttpReducerCallError {
+    fn is_payload_too_large(&self) -> bool {
+        matches!(self, Self::PayloadTooLarge { .. })
+    }
+
+    fn into_error(self) -> Error {
+        match self {
+            Self::PayloadTooLarge { reducer, body } => Error::Spacetime {
+                reducer,
+                status: format!("HTTP 413 Payload Too Large: {body}"),
+            },
+            Self::Failed { reducer, status } => Error::Spacetime { reducer, status },
+        }
+    }
+}
+
+/// One authenticated, blocking HTTP reducer client for the entire import.
+/// Reading the login token once preserves the importer identity between begin,
+/// every resumable batch, and final validation.
+struct HttpReducerClient {
+    http: Client,
+    base_url: Url,
+    database: String,
+    token: String,
+}
+
+impl HttpReducerClient {
+    fn from_args(args: &Args) -> Result<Self> {
+        let output = Command::new(&args.spacetime)
+            .args(["login", "show", "--token"])
+            .output()?;
+        if !output.status.success() {
+            return Err(Error::Validation(
+                "could not read the SpacetimeDB login token; run `spacetime login` and retry"
+                    .into(),
+            ));
+        }
+        let token = parse_spacetime_login_token(&output.stdout)?;
+        Self::new(&args.server, &args.database, token)
+    }
+
+    fn new(server: &str, database: &str, token: String) -> Result<Self> {
+        let mut base_url = Url::parse(server).map_err(|error| {
+            Error::Validation(format!(
+                "invalid SpacetimeDB server URL {server:?}: {error}"
+            ))
+        })?;
+        if !matches!(base_url.scheme(), "http" | "https")
+            || base_url.cannot_be_a_base()
+            || base_url.query().is_some()
+            || base_url.fragment().is_some()
+        {
+            return Err(Error::Validation(format!(
+                "SpacetimeDB server URL {server:?} must be an http(s) base URL without a query or fragment"
+            )));
+        }
+        if !base_url.path().ends_with('/') {
+            base_url.set_path(&format!("{}/", base_url.path()));
+        }
+        Ok(Self {
+            http: Client::new(),
+            base_url,
+            database: database.into(),
+            token,
         })
+    }
+
+    fn reducer_url(&self, reducer: &str) -> Result<Url> {
+        let mut url = self.base_url.clone();
+        let mut segments = url.path_segments_mut().map_err(|_| {
+            Error::Validation("SpacetimeDB server URL cannot accept path segments".into())
+        })?;
+        segments.pop_if_empty();
+        segments.extend(["v1", "database", &self.database, "call", reducer]);
+        drop(segments);
+        Ok(url)
+    }
+
+    fn call(
+        &self,
+        reducer: &str,
+        arguments: &[Value],
+    ) -> std::result::Result<(), HttpReducerCallError> {
+        ensure_request_body_budget(reducer, arguments).map_err(|error| {
+            HttpReducerCallError::Failed {
+                reducer: reducer.into(),
+                status: error.to_string(),
+            }
+        })?;
+        let response = self
+            .http
+            .post(
+                self.reducer_url(reducer)
+                    .map_err(|error| HttpReducerCallError::Failed {
+                        reducer: reducer.into(),
+                        status: error.to_string(),
+                    })?,
+            )
+            .bearer_auth(&self.token)
+            .json(arguments)
+            .send()
+            .map_err(|error| HttpReducerCallError::Failed {
+                reducer: reducer.into(),
+                status: error.to_string(),
+            })?;
+        let status = response.status();
+        if status.is_success() {
+            Ok(())
+        } else {
+            let body = response.text().unwrap_or_else(|error| error.to_string());
+            if status.as_u16() == 413 {
+                Err(HttpReducerCallError::PayloadTooLarge {
+                    reducer: reducer.into(),
+                    body,
+                })
+            } else {
+                Err(HttpReducerCallError::Failed {
+                    reducer: reducer.into(),
+                    status: format!("HTTP {status}: {body}"),
+                })
+            }
+        }
+    }
+}
+
+fn parse_spacetime_login_token(output: &[u8]) -> Result<String> {
+    let output = std::str::from_utf8(output).map_err(|error| {
+        Error::Validation(format!(
+            "spacetime login returned a non-UTF-8 token response: {error}"
+        ))
+    })?;
+    let tokens = output
+        .split_ascii_whitespace()
+        .filter(|candidate| {
+            candidate.starts_with("eyJ")
+                && candidate.split('.').count() == 3
+                && candidate
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        })
+        .collect::<Vec<_>>();
+    match tokens.as_slice() {
+        [token] => Ok((*token).to_owned()),
+        _ => Err(Error::Validation(
+            "SpacetimeDB CLI did not return exactly one login token; run `spacetime login` and retry"
+                .into(),
+        )),
     }
 }
 
@@ -1192,9 +1410,11 @@ mod tests {
     use clap::Parser;
 
     use super::{
-        Args, MAX_REDUCER_ARGUMENT_CHARS, default_output, encode_settlement,
-        encode_settlement_description, encode_travel_edge, manifest_audit_markdown,
-        serialize_batches,
+        Args, HttpReducerCallError, HttpReducerClient, MAX_REDUCER_REQUEST_BYTES,
+        begin_import_arguments, default_output, encode_settlement, encode_settlement_description,
+        encode_travel_edge, ensure_request_body_budget, execute_batch_adaptively,
+        execute_http_batch_adaptively, json_body_bytes, manifest_audit_markdown,
+        parse_spacetime_login_token, serialize_batches,
     };
 
     #[test]
@@ -1307,13 +1527,81 @@ mod tests {
             assert_ne!(audit, manifest_audit_markdown(&changed).unwrap());
         }
         let mut oversized = world.clone();
-        oversized.metadata.sources[0].required_notices = vec!["\\".repeat(13_000)];
-        assert!(
-            manifest_audit_markdown(&oversized)
-                .unwrap_err()
-                .to_string()
-                .contains("refusing to omit or truncate")
+        oversized.metadata.sources[0].required_notices = vec!["\\".repeat(17_000)];
+        assert!(manifest_audit_markdown(&oversized).is_err());
+    }
+
+    #[test]
+    fn begin_import_budget_includes_all_reducer_arguments() {
+        let sources = "x".repeat(MAX_REDUCER_REQUEST_BYTES);
+        let oversized = begin_import_arguments(
+            &CompiledWorld {
+                metadata: WorldMetadata {
+                    schema_version: WORLD_SCHEMA_VERSION,
+                    inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
+                    spatial_grid: SpatialGridSpec::default(),
+                    world_year: 1544,
+                    manifest_digest: "a".repeat(64),
+                    sources: vec![],
+                    road_types: vec![],
+                },
+                nodes: vec![],
+                edges: vec![],
+                settlements: vec![],
+                settlement_aliases: vec![],
+                settlement_descriptions: vec![],
+                report: WorldBuildReport::default(),
+            },
+            &"b".repeat(64),
+            sources,
         );
+        assert!(ensure_request_body_budget("begin_world_data_import", &oversized).is_err());
+
+        let normal = begin_import_arguments(
+            &CompiledWorld {
+                metadata: WorldMetadata {
+                    schema_version: WORLD_SCHEMA_VERSION,
+                    inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
+                    spatial_grid: SpatialGridSpec::default(),
+                    world_year: 1544,
+                    manifest_digest: "a".repeat(64),
+                    sources: vec![],
+                    road_types: vec![],
+                },
+                nodes: vec![],
+                edges: vec![],
+                settlements: vec![],
+                settlement_aliases: vec![],
+                settlement_descriptions: vec![],
+                report: WorldBuildReport::default(),
+            },
+            &"b".repeat(64),
+            "- Valid source note.".into(),
+        );
+        assert!(ensure_request_body_budget("begin_world_data_import", &normal).is_ok());
+
+        let accepted = begin_import_arguments(
+            &CompiledWorld {
+                metadata: WorldMetadata {
+                    schema_version: WORLD_SCHEMA_VERSION,
+                    inference_rules_version: CURRENT_INFERENCE_RULES_VERSION,
+                    spatial_grid: SpatialGridSpec::default(),
+                    world_year: 1544,
+                    manifest_digest: "a".repeat(64),
+                    sources: vec![],
+                    road_types: vec![],
+                },
+                nodes: vec![],
+                edges: vec![],
+                settlements: vec![],
+                settlement_aliases: vec![],
+                settlement_descriptions: vec![],
+                report: WorldBuildReport::default(),
+            },
+            &"b".repeat(64),
+            "## [Fixture](https://example.invalid)\n\nContent status: **reproducible**\n\n```json\n{}\n```\n\n".into(),
+        );
+        ensure_request_body_budget("begin_world_data_import", &accepted).unwrap();
     }
 
     #[test]
@@ -1632,30 +1920,195 @@ mod tests {
     }
 
     #[test]
-    fn batches_are_bounded_for_windows_process_arguments() {
-        let rows = vec!["x".repeat(1_000); 100];
-        let batches = serialize_batches(&rows, 100, |row| {
+    fn batches_are_bounded_for_utf8_http_request_bodies() {
+        let rows = vec!["x".repeat(1_000); 600];
+        let batches = serialize_batches(&rows, 1_000, |row| {
             serde_json::to_value(row).map_err(adventuresim_world_import::Error::from)
         })
         .unwrap();
         assert!(batches.len() > 1);
         assert!(batches.iter().all(|batch| {
-            serde_json::Value::Array(batch.clone())
-                .to_string()
-                .encode_utf16()
-                .count()
-                <= MAX_REDUCER_ARGUMENT_CHARS
+            json_body_bytes(&[serde_json::Value::Array(batch.clone())]).unwrap()
+                <= MAX_REDUCER_REQUEST_BYTES
         }));
     }
 
     #[test]
-    fn rejects_a_single_row_that_exceeds_the_windows_command_line_bound() {
-        let row = "😀".repeat(MAX_REDUCER_ARGUMENT_CHARS / 2);
+    fn batches_use_utf8_bytes_not_utf16_code_units() {
+        let row = "😀".repeat(80_000);
+        let batches = serialize_batches(&[row], 100, |row| {
+            serde_json::to_value(row).map_err(adventuresim_world_import::Error::from)
+        })
+        .unwrap();
+        assert_eq!(batches.len(), 1);
+        assert!(
+            json_body_bytes(&[serde_json::Value::Array(batches[0].clone())]).unwrap()
+                <= MAX_REDUCER_REQUEST_BYTES
+        );
+    }
+
+    #[test]
+    fn rejects_a_single_row_that_exceeds_the_http_body_bound() {
+        let row = "😀".repeat(MAX_REDUCER_REQUEST_BYTES / 4);
         let error = serialize_batches(&[row], 100, |row| {
             serde_json::to_value(row).map_err(adventuresim_world_import::Error::from)
         })
         .unwrap_err();
-        assert!(error.to_string().contains("UTF-16 code units"));
+        assert!(error.to_string().contains("UTF-8 HTTP request bytes"));
+    }
+
+    #[test]
+    fn http_transport_uses_escaped_reducer_url_and_json_array_body() {
+        let client = HttpReducerClient::new(
+            "http://localhost:3000/api",
+            "world data/1544",
+            "not-a-real-token".into(),
+        )
+        .unwrap();
+        assert_eq!(
+            client.reducer_url("import settlements").unwrap().as_str(),
+            "http://localhost:3000/api/v1/database/world%20data%2F1544/call/import%20settlements"
+        );
+        let arguments = [serde_json::json!([{ "name": "Münster" }])];
+        assert_eq!(
+            json_body_bytes(&arguments).unwrap(),
+            "[[{\"name\":\"Münster\"}]]".len()
+        );
+        assert_eq!(client.token, "not-a-real-token");
+    }
+
+    #[test]
+    fn login_token_parser_selects_one_jwt_without_retaining_cli_text() {
+        assert_eq!(
+            parse_spacetime_login_token(b"Logged in as importer\neyJabc.def-ghi.jkl_mno\n")
+                .unwrap(),
+            "eyJabc.def-ghi.jkl_mno"
+        );
+        assert!(parse_spacetime_login_token(b"no token").is_err());
+        assert!(parse_spacetime_login_token(b"eyJa.b.c eyJd.e.f").is_err());
+    }
+
+    #[test]
+    fn adaptive_batch_execution_preserves_the_ordinary_success_path() {
+        let rows = [1, 2, 3, 4];
+        let mut calls = Vec::new();
+
+        execute_batch_adaptively(&rows, &mut |batch| {
+            calls.push(batch.to_vec());
+            Ok::<_, &'static str>(())
+        })
+        .unwrap();
+
+        assert_eq!(calls, vec![vec![1, 2, 3, 4]]);
+    }
+
+    #[test]
+    fn adaptive_batch_execution_bisects_failures_in_source_order() {
+        let rows = [1, 2, 3, 4];
+        let mut calls = Vec::new();
+        let mut completed = Vec::new();
+
+        execute_batch_adaptively(&rows, &mut |batch| {
+            calls.push(batch.to_vec());
+            if batch.len() > 1 {
+                Err("batch too large")
+            } else {
+                completed.push(batch[0]);
+                Ok(())
+            }
+        })
+        .unwrap();
+
+        assert_eq!(
+            calls,
+            vec![
+                vec![1, 2, 3, 4],
+                vec![1, 2],
+                vec![1],
+                vec![2],
+                vec![3, 4],
+                vec![3],
+                vec![4],
+            ]
+        );
+        assert_eq!(completed, rows);
+    }
+
+    #[test]
+    fn adaptive_batch_execution_propagates_the_exact_single_row_failure() {
+        let rows = [1, 2, 3, 4];
+        let mut calls = Vec::new();
+
+        let error = execute_batch_adaptively(&rows, &mut |batch| {
+            calls.push(batch.to_vec());
+            if batch.len() > 1 {
+                Err("batch too large")
+            } else if batch[0] == 3 {
+                Err("row 3 failed exactly")
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "row 3 failed exactly");
+        assert_eq!(
+            calls,
+            vec![
+                vec![1, 2, 3, 4],
+                vec![1, 2],
+                vec![1],
+                vec![2],
+                vec![3, 4],
+                vec![3],
+            ]
+        );
+    }
+
+    #[test]
+    fn http_adaptive_batch_execution_bisects_only_http_413_responses() {
+        let rows = [1, 2, 3, 4];
+        let mut calls = Vec::new();
+        execute_http_batch_adaptively(&rows, &mut |batch| {
+            calls.push(batch.to_vec());
+            if batch.len() > 1 {
+                Err(HttpReducerCallError::PayloadTooLarge {
+                    reducer: "import_settlements".into(),
+                    body: "payload too large".into(),
+                })
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            calls,
+            vec![
+                vec![1, 2, 3, 4],
+                vec![1, 2],
+                vec![1],
+                vec![2],
+                vec![3, 4],
+                vec![3],
+                vec![4],
+            ]
+        );
+    }
+
+    #[test]
+    fn http_adaptive_batch_execution_does_not_retry_non_size_failures() {
+        let rows = [1, 2, 3, 4];
+        let mut calls = Vec::new();
+        let error = execute_http_batch_adaptively(&rows, &mut |batch| {
+            calls.push(batch.to_vec());
+            Err(HttpReducerCallError::Failed {
+                reducer: "import_settlements".into(),
+                status: "HTTP 401 Unauthorized: token expired".into(),
+            })
+        })
+        .unwrap_err();
+        assert!(matches!(error, HttpReducerCallError::Failed { .. }));
+        assert_eq!(calls, vec![vec![1, 2, 3, 4]]);
     }
 
     #[test]

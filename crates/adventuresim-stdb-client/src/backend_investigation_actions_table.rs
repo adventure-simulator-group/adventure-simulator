@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::backend_investigation_action_type::BackendInvestigationAction;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_investigation_actions`.
 ///
@@ -31,9 +36,7 @@ pub trait BackendInvestigationActionsTableAccess {
 impl BackendInvestigationActionsTableAccess for super::RemoteTables {
     fn backend_investigation_actions(&self) -> BackendInvestigationActionsTableHandle<'_> {
         BackendInvestigationActionsTableHandle {
-            imp: self
-                .imp
-                .get_table::<BackendInvestigationAction>("backend_investigation_actions"),
+            imp: self.imp.get_table::<BackendInvestigationAction>("backend_investigation_actions"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendInvestigationActionsTableHandle<'ctx> {
     type Row = BackendInvestigationAction;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = BackendInvestigationAction> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = BackendInvestigationAction> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendInvestigationActionsInsertCallbackId;
 
@@ -82,8 +81,8 @@ impl<'ctx> __sdk::Table for BackendInvestigationActionsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache
-        .get_or_make_table::<BackendInvestigationAction>("backend_investigation_actions");
+
+        let _table = client_cache.get_or_make_table::<BackendInvestigationAction>("backend_investigation_actions");
 }
 
 #[doc(hidden)]
@@ -91,28 +90,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<BackendInvestigationAction>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<BackendInvestigationAction>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<BackendInvestigationAction>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `BackendInvestigationAction`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_investigation_actionsQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `BackendInvestigationAction`.
-    fn backend_investigation_actions(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendInvestigationAction>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `BackendInvestigationAction`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_investigation_actionsQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `BackendInvestigationAction`.
+            fn backend_investigation_actions(&self) -> __sdk::__query_builder::Table<BackendInvestigationAction>;
+        }
 
-impl backend_investigation_actionsQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_investigation_actions(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendInvestigationAction> {
-        __sdk::__query_builder::Table::new("backend_investigation_actions")
-    }
-}
+        impl backend_investigation_actionsQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_investigation_actions(&self) -> __sdk::__query_builder::Table<BackendInvestigationAction> {
+                __sdk::__query_builder::Table::new("backend_investigation_actions")
+            }
+        }
+

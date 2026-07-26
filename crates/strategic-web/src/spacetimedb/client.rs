@@ -246,12 +246,6 @@ impl SpacetimeClient {
         self
     }
 
-    /// Whether this client points at the local development database.
-    pub fn is_local(&self) -> bool {
-        let base = self.base_url.to_ascii_lowercase();
-        base.contains("localhost") || base.contains("127.0.0.1") || base.contains("[::1]")
-    }
-
     /// Return monotonic SQL counters. Take a snapshot before and after one
     /// controlled request, then call `after.delta(before)`. This is safe for
     /// concurrent requests; it deliberately does not destructively reset a

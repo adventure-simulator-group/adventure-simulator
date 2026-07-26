@@ -688,3 +688,7 @@ quiet road layer and the final routing road mask; both identities are recorded.
 Jung v1.1 wetland posterior/categorical pixels are bounded to playable coverage;
 water remains impassable, roads take precedence, and other wetland cells use the
 distinct slow terrain surface.
+The final terrain pack is also the single authority for exact 1 km cultivated
+state. Strategic-web may attest a bounded current-location sample through its
+authenticated digest-pinned gateway; reducers re-derive location and reject
+direct, stale, or mismatched attestations.

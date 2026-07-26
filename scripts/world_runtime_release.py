@@ -63,6 +63,9 @@ def sha256(path: Path) -> str:
 def bytes_sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
+def valid_sha256(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
 
 def safe_relative(value: str) -> str:
     path = PurePosixPath(value)
@@ -107,7 +110,7 @@ def validate_runtime_sources(repository: Path) -> tuple[dict[str, object], dict[
             fail("compiled world contains an invalid source manifest entry")
 
     map_manifest = load_json(repository / SOURCE_PATHS["strategic-map/strategic-map-v1.json"])
-    if map_manifest.get("schema") != 4 or map_manifest.get("year") != YEAR:
+    if map_manifest.get("schema") != 5 or map_manifest.get("year") != YEAR:
         fail("strategic map has an unsupported schema or world year")
     tiles = map_manifest.get("tiles")
     if not isinstance(tiles, dict) or tiles.get("format") != "avif":
@@ -117,13 +120,33 @@ def validate_runtime_sources(repository: Path) -> tuple[dict[str, object], dict[
         fail("strategic map tile pack does not match its manifest")
 
     terrain = load_json(repository / SOURCE_PATHS["strategic-map/terrain-routing-v2.json"])
-    if terrain.get("schema") != 4 or terrain.get("purpose") != "final":
-        fail("terrain routing package is not the final schema-4 runtime pack")
+    if terrain.get("schema") != 5 or terrain.get("purpose") != "final":
+        fail("terrain routing package is not the final schema-5 runtime pack")
+    if (
+        terrain.get("cultivation_grid_crs") != "EPSG:3035"
+        or terrain.get("cultivation_grid_resolution_m") != 1000
+        or not isinstance(terrain.get("cultivation_rules_version"), int)
+        or terrain.get("cultivation_rules_version", 0) < 1
+        or not isinstance(terrain.get("cultivated_square_count"), int)
+        or terrain.get("cultivated_square_count", -1) < 0
+        or not valid_sha256(terrain.get("cultivation_source_sha256", ""))
+    ):
+        fail("terrain routing package has an invalid cultivation contract")
     terrain_pack = repository / SOURCE_PATHS["strategic-map/terrain-routing-v2.pack"]
     if terrain.get("content_sha256") != sha256(terrain_pack):
         fail("terrain routing pack does not match its manifest")
     if map_manifest.get("terrain_package_sha256") != terrain.get("package_sha256"):
         fail("strategic map and terrain routing package are incoherent")
+    cultivation = map_manifest.get("cultivation")
+    if (
+        not isinstance(cultivation, dict)
+        or cultivation.get("grid_crs") != terrain.get("cultivation_grid_crs")
+        or cultivation.get("grid_resolution_m") != terrain.get("cultivation_grid_resolution_m")
+        or cultivation.get("rules_version") != terrain.get("cultivation_rules_version")
+        or cultivation.get("source_sha256") != terrain.get("cultivation_source_sha256")
+        or cultivation.get("square_count") != terrain.get("cultivated_square_count")
+    ):
+        fail("strategic map and terrain cultivation identities are incoherent")
     return world, map_manifest
 
 

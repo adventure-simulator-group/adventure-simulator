@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::cooking_method_type::CookingMethod;
 
@@ -11,8 +16,8 @@ use super::cooking_method_type::CookingMethod;
 pub(super) struct CookFoodArgs {
     pub character_id: u64,
     pub method: CookingMethod,
-    pub inventory_item_ids: Vec<u64>,
-    pub quantities: Vec<u32>,
+    pub inventory_item_ids: Vec::<u64>,
+    pub quantities: Vec::<u32>,
 }
 
 impl From<CookFoodArgs> for super::Reducer {
@@ -22,8 +27,8 @@ impl From<CookFoodArgs> for super::Reducer {
             method: args.method,
             inventory_item_ids: args.inventory_item_ids,
             quantities: args.quantities,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for CookFoodArgs {
@@ -41,20 +46,12 @@ pub trait cook_food {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`cook_food:cook_food_then`] to run a callback after the reducer completes.
-    fn cook_food(
-        &self,
-        character_id: u64,
-        method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    ) -> __sdk::Result<()> {
-        self.cook_food_then(
-            character_id,
-            method,
-            inventory_item_ids,
-            quantities,
-            |_, _| {},
-        )
+    fn cook_food(&self, character_id: u64,
+method: CookingMethod,
+inventory_item_ids: Vec::<u64>,
+quantities: Vec::<u32>,
+) -> __sdk::Result<()> {
+        self.cook_food_then(character_id, method, inventory_item_ids, quantities,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `cook_food` to run as soon as possible,
@@ -66,15 +63,13 @@ pub trait cook_food {
     fn cook_food_then(
         &self,
         character_id: u64,
-        method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
+method: CookingMethod,
+inventory_item_ids: Vec::<u64>,
+quantities: Vec::<u32>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -82,24 +77,15 @@ impl cook_food for super::RemoteReducers {
     fn cook_food_then(
         &self,
         character_id: u64,
-        method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
+method: CookingMethod,
+inventory_item_ids: Vec::<u64>,
+quantities: Vec::<u32>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            CookFoodArgs {
-                character_id,
-                method,
-                inventory_item_ids,
-                quantities,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(CookFoodArgs { character_id, method, inventory_item_ids, quantities,  }, callback)
     }
 }
+

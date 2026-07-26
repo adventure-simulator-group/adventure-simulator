@@ -64,3 +64,10 @@ mental, trained Cooking skill for the elapsed cooking time. A character can
 also apprentice as a cook through the inn's ordinary profession dialogue;
 apprenticeship and later independent practice follow the same progression and
 payment rules as the other non-religious settlement professions.
+# Foraged food
+
+Raw wild foods gathered through current-vicinity foraging enter personal
+inventory through the same validated non-fungible food-lot path as other food.
+Watercress and seaweed extend the catalog for wet-ground and coast foraging.
+Their authoritative mass, calories, value, and contamination follow the normal
+food definition. Foraging does not synthesize processed goods.

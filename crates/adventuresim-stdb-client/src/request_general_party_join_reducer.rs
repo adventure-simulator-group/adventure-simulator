@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<RequestGeneralPartyJoinArgs> for super::Reducer {
         Self::RequestGeneralPartyJoin {
             character_id: args.character_id,
             target_party_id: args.target_party_id,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for RequestGeneralPartyJoinArgs {
@@ -35,12 +41,10 @@ pub trait request_general_party_join {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`request_general_party_join:request_general_party_join_then`] to run a callback after the reducer completes.
-    fn request_general_party_join(
-        &self,
-        character_id: u64,
-        target_party_id: String,
-    ) -> __sdk::Result<()> {
-        self.request_general_party_join_then(character_id, target_party_id, |_, _| {})
+    fn request_general_party_join(&self, character_id: u64,
+target_party_id: String,
+) -> __sdk::Result<()> {
+        self.request_general_party_join_then(character_id, target_party_id,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `request_general_party_join` to run as soon as possible,
@@ -52,13 +56,11 @@ pub trait request_general_party_join {
     fn request_general_party_join_then(
         &self,
         character_id: u64,
-        target_party_id: String,
+target_party_id: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -66,20 +68,13 @@ impl request_general_party_join for super::RemoteReducers {
     fn request_general_party_join_then(
         &self,
         character_id: u64,
-        target_party_id: String,
+target_party_id: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            RequestGeneralPartyJoinArgs {
-                character_id,
-                target_party_id,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(RequestGeneralPartyJoinArgs { character_id, target_party_id,  }, callback)
     }
 }
+

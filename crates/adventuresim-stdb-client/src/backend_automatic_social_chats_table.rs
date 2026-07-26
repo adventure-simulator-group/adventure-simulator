@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::automatic_social_chat_type::AutomaticSocialChat;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_automatic_social_chats`.
 ///
@@ -31,9 +36,7 @@ pub trait BackendAutomaticSocialChatsTableAccess {
 impl BackendAutomaticSocialChatsTableAccess for super::RemoteTables {
     fn backend_automatic_social_chats(&self) -> BackendAutomaticSocialChatsTableHandle<'_> {
         BackendAutomaticSocialChatsTableHandle {
-            imp: self
-                .imp
-                .get_table::<AutomaticSocialChat>("backend_automatic_social_chats"),
+            imp: self.imp.get_table::<AutomaticSocialChat>("backend_automatic_social_chats"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendAutomaticSocialChatsTableHandle<'ctx> {
     type Row = AutomaticSocialChat;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = AutomaticSocialChat> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = AutomaticSocialChat> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendAutomaticSocialChatsInsertCallbackId;
 
@@ -82,8 +81,8 @@ impl<'ctx> __sdk::Table for BackendAutomaticSocialChatsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table =
-        client_cache.get_or_make_table::<AutomaticSocialChat>("backend_automatic_social_chats");
+
+        let _table = client_cache.get_or_make_table::<AutomaticSocialChat>("backend_automatic_social_chats");
 }
 
 #[doc(hidden)]
@@ -91,24 +90,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<AutomaticSocialChat>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<AutomaticSocialChat>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<AutomaticSocialChat>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `AutomaticSocialChat`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_automatic_social_chatsQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `AutomaticSocialChat`.
-    fn backend_automatic_social_chats(&self) -> __sdk::__query_builder::Table<AutomaticSocialChat>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `AutomaticSocialChat`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_automatic_social_chatsQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `AutomaticSocialChat`.
+            fn backend_automatic_social_chats(&self) -> __sdk::__query_builder::Table<AutomaticSocialChat>;
+        }
 
-impl backend_automatic_social_chatsQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_automatic_social_chats(&self) -> __sdk::__query_builder::Table<AutomaticSocialChat> {
-        __sdk::__query_builder::Table::new("backend_automatic_social_chats")
-    }
-}
+        impl backend_automatic_social_chatsQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_automatic_social_chats(&self) -> __sdk::__query_builder::Table<AutomaticSocialChat> {
+                __sdk::__query_builder::Table::new("backend_automatic_social_chats")
+            }
+        }
+

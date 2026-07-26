@@ -2,12 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct RegisterStrategicGatewayArgs {
-    pub terrain_package_digest: Option<String>,
+    pub terrain_package_digest: Option::<String>,
     pub terrain_schema: u32,
 }
 
@@ -16,8 +22,8 @@ impl From<RegisterStrategicGatewayArgs> for super::Reducer {
         Self::RegisterStrategicGateway {
             terrain_package_digest: args.terrain_package_digest,
             terrain_schema: args.terrain_schema,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for RegisterStrategicGatewayArgs {
@@ -35,12 +41,10 @@ pub trait register_strategic_gateway {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`register_strategic_gateway:register_strategic_gateway_then`] to run a callback after the reducer completes.
-    fn register_strategic_gateway(
-        &self,
-        terrain_package_digest: Option<String>,
-        terrain_schema: u32,
-    ) -> __sdk::Result<()> {
-        self.register_strategic_gateway_then(terrain_package_digest, terrain_schema, |_, _| {})
+    fn register_strategic_gateway(&self, terrain_package_digest: Option::<String>,
+terrain_schema: u32,
+) -> __sdk::Result<()> {
+        self.register_strategic_gateway_then(terrain_package_digest, terrain_schema,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `register_strategic_gateway` to run as soon as possible,
@@ -51,35 +55,26 @@ pub trait register_strategic_gateway {
     ///  and its status can be observed with the `callback`.
     fn register_strategic_gateway_then(
         &self,
-        terrain_package_digest: Option<String>,
-        terrain_schema: u32,
+        terrain_package_digest: Option::<String>,
+terrain_schema: u32,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl register_strategic_gateway for super::RemoteReducers {
     fn register_strategic_gateway_then(
         &self,
-        terrain_package_digest: Option<String>,
-        terrain_schema: u32,
+        terrain_package_digest: Option::<String>,
+terrain_schema: u32,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            RegisterStrategicGatewayArgs {
-                terrain_package_digest,
-                terrain_schema,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(RegisterStrategicGatewayArgs { terrain_package_digest, terrain_schema,  }, callback)
     }
 }
+

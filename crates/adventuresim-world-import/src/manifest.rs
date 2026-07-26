@@ -17,6 +17,7 @@ use crate::{Error, Result};
 const MAX_TEXT: usize = 4_096;
 const MAX_NOTICES: usize = 12;
 const MAX_SIDECAR_BYTES: u64 = 1024 * 1024;
+const MAX_FOREST_INVENTORY_FILES: usize = 4_096;
 const VIABUNDUS_RECORD: &str = "https://zenodo.org/api/records/16611998";
 const VIABUNDUS_FILES: [&str; 5] = [
     "alternativenames.csv",
@@ -291,10 +292,33 @@ pub(crate) fn hyde35() -> SourceProvenance {
 
 pub(crate) fn forest(directory: &Path) -> Result<SourceProvenance> {
     let marker = directory.join("forest-cover-manifest.json");
-    let reason = if marker.is_file() {
-        "the preparation-format marker is present, but consumed raster tiles are not inventoried and content-pinned"
+    let format = if marker.is_file() {
+        let bytes = fs::read(&marker)?;
+        Some(crate::sources::forest_cover::validate_prepared_forest_manifest(&bytes, &marker)?)
     } else {
-        "forest preparation marker and consumed raster inventory are absent"
+        None
+    };
+    let (content_identity, notes) = if format
+        == Some(crate::sources::forest_cover::PREPARED_FOREST_FORMAT_V2)
+    {
+        (
+            SourceContentIdentity::PreparedSnapshotSha256 {
+                sha256: forest_inventory_sha256(directory)?,
+            },
+            "[Copernicus HRL Forest 2018](https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a), exact pinned-bundle prepared snapshot modified for settlement sampling; a future upstream Process API response is not claimed to be byte-identical.",
+        )
+    } else {
+        (
+            SourceContentIdentity::ReleaseBlocked {
+                reason: if marker.is_file() {
+                    "the local v1 preparation is not bound to the pinned external release descriptor"
+                } else {
+                    "forest preparation marker and consumed raster inventory are absent"
+                }
+                .into(),
+            },
+            "[Copernicus HRL Forest 2018](https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a), local v1 preparation modified for settlement sampling; locally inventoried bytes are not asserted to match the pinned external release or a future upstream Process API response.",
+        )
     };
     Ok(source(
         "clms-forest-2018",
@@ -319,11 +343,44 @@ pub(crate) fn forest(directory: &Path) -> Result<SourceProvenance> {
         SourceTemporalCoverage::ModernProxy { year: 2018 },
         "copernicus-forest-aggregation",
         1,
-        SourceContentIdentity::ReleaseBlocked {
-            reason: reason.into(),
-        },
-        "[Copernicus HRL Forest 2018](https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a), modified for settlement sampling.",
+        content_identity,
+        notes,
     ))
+}
+
+fn forest_inventory_sha256(directory: &Path) -> Result<String> {
+    let mut files = fs::read_dir(directory)?
+        .map(|entry| {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                return Err(Error::Validation(
+                    "forest v2 snapshot contains a non-file entry".into(),
+                ));
+            }
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| Error::Validation("forest v2 filename is not UTF-8".into()))?;
+            Ok((name, entry.path()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    if files.is_empty() || files.len() > MAX_FOREST_INVENTORY_FILES {
+        return Err(Error::Validation(
+            "forest v2 snapshot file count is empty or exceeds its bound".into(),
+        ));
+    }
+    let mut digest = Sha256::new();
+    digest.update(b"adventuresim-forest-prepared-inventory-v1");
+    for (name, path) in files {
+        let size = fs::metadata(&path)?.len();
+        let file_sha256 = sha256_file(&path)?;
+        digest.update((name.len() as u64).to_le_bytes());
+        digest.update(name.as_bytes());
+        digest.update(size.to_le_bytes());
+        digest.update(file_sha256.as_bytes());
+    }
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 pub(crate) fn jung(directory: &Path) -> Result<SourceProvenance> {
@@ -963,6 +1020,57 @@ mod tests {
             digest(1544, SpatialGridSpec::default(), &[fixture()]).unwrap(),
             "15a7e55b24a287a50439cd773aa64a7c2bed6faac72714fc0896697853cd5db6"
         );
+    }
+
+    #[test]
+    fn forest_metadata_distinguishes_local_v1_and_pinned_v2() {
+        let root = std::env::temp_dir().join(format!(
+            "adventuresim-forest-manifest-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        fs::write(
+            root.join("forest-cover-manifest.json"),
+            br#"{"format":"adventuresim-copernicus-forest-2018-v1"}"#,
+        )
+        .unwrap();
+        let local = forest(&root).unwrap();
+        assert!(matches!(
+            local.content_identity,
+            SourceContentIdentity::ReleaseBlocked { .. }
+        ));
+        assert!(local.notes_markdown.contains("local v1 preparation"));
+
+        fs::write(
+            root.join("forest-cover-manifest.json"),
+            br#"{"format":"adventuresim-copernicus-forest-2018-v2"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("TCD_N53_E009.tif"), b"tcd").unwrap();
+        fs::write(root.join("DLT_N53_E009.tif"), b"dlt").unwrap();
+        let pinned = forest(&root).unwrap();
+        let SourceContentIdentity::PreparedSnapshotSha256 { sha256: first } =
+            pinned.content_identity
+        else {
+            panic!("v2 must retain an exact prepared-snapshot identity");
+        };
+        assert!(pinned.notes_markdown.contains("exact pinned-bundle"));
+        assert!(
+            pinned
+                .notes_markdown
+                .contains("not claimed to be byte-identical")
+        );
+
+        fs::write(root.join("TCD_N53_E009.tif"), b"changed").unwrap();
+        let SourceContentIdentity::PreparedSnapshotSha256 { sha256: second } =
+            forest(&root).unwrap().content_identity
+        else {
+            panic!("v2 must retain an exact prepared-snapshot identity");
+        };
+        assert_ne!(first, second);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

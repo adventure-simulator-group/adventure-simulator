@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,8 +26,8 @@ impl From<RequestPartyActionArgs> for super::Reducer {
             action_kind: args.action_kind,
             summary: args.summary,
             payload: args.payload,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for RequestPartyActionArgs {
@@ -39,14 +45,12 @@ pub trait request_party_action {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`request_party_action:request_party_action_then`] to run a callback after the reducer completes.
-    fn request_party_action(
-        &self,
-        requester_id: u64,
-        action_kind: String,
-        summary: String,
-        payload: String,
-    ) -> __sdk::Result<()> {
-        self.request_party_action_then(requester_id, action_kind, summary, payload, |_, _| {})
+    fn request_party_action(&self, requester_id: u64,
+action_kind: String,
+summary: String,
+payload: String,
+) -> __sdk::Result<()> {
+        self.request_party_action_then(requester_id, action_kind, summary, payload,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `request_party_action` to run as soon as possible,
@@ -58,15 +62,13 @@ pub trait request_party_action {
     fn request_party_action_then(
         &self,
         requester_id: u64,
-        action_kind: String,
-        summary: String,
-        payload: String,
+action_kind: String,
+summary: String,
+payload: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -74,24 +76,15 @@ impl request_party_action for super::RemoteReducers {
     fn request_party_action_then(
         &self,
         requester_id: u64,
-        action_kind: String,
-        summary: String,
-        payload: String,
+action_kind: String,
+summary: String,
+payload: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            RequestPartyActionArgs {
-                requester_id,
-                action_kind,
-                summary,
-                payload,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(RequestPartyActionArgs { requester_id, action_kind, summary, payload,  }, callback)
     }
 }
+

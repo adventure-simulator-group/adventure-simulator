@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,9 +21,11 @@ pub struct PartyItemCondition {
     pub tier_5: f32,
 }
 
+
 impl __sdk::InModule for PartyItemCondition {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PartyItemCondition`.
 ///
@@ -35,15 +43,13 @@ impl __sdk::__query_builder::HasCols for PartyItemCondition {
     type Cols = PartyItemConditionCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PartyItemConditionCols {
-            party_inventory_item_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "party_inventory_item_id",
-            ),
+            party_inventory_item_id: __sdk::__query_builder::Col::new(table_name, "party_inventory_item_id"),
             tier_1: __sdk::__query_builder::Col::new(table_name, "tier_1"),
             tier_2: __sdk::__query_builder::Col::new(table_name, "tier_2"),
             tier_3: __sdk::__query_builder::Col::new(table_name, "tier_3"),
             tier_4: __sdk::__query_builder::Col::new(table_name, "tier_4"),
             tier_5: __sdk::__query_builder::Col::new(table_name, "tier_5"),
+
         }
     }
 }
@@ -59,12 +65,11 @@ impl __sdk::__query_builder::HasIxCols for PartyItemCondition {
     type IxCols = PartyItemConditionIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyItemConditionIxCols {
-            party_inventory_item_id: __sdk::__query_builder::IxCol::new(
-                table_name,
-                "party_inventory_item_id",
-            ),
+            party_inventory_item_id: __sdk::__query_builder::IxCol::new(table_name, "party_inventory_item_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PartyItemCondition {}
+

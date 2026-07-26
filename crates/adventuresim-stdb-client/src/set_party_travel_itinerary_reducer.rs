@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +28,8 @@ impl From<SetPartyTravelItineraryArgs> for super::Reducer {
             travel_at_night: args.travel_at_night,
             automatic_camp_duration: args.automatic_camp_duration,
             fixed_camp_minutes: args.fixed_camp_minutes,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for SetPartyTravelItineraryArgs {
@@ -41,22 +47,13 @@ pub trait set_party_travel_itinerary {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`set_party_travel_itinerary:set_party_travel_itinerary_then`] to run a callback after the reducer completes.
-    fn set_party_travel_itinerary(
-        &self,
-        character_id: u64,
-        walking_minutes_per_day: u16,
-        travel_at_night: bool,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
-    ) -> __sdk::Result<()> {
-        self.set_party_travel_itinerary_then(
-            character_id,
-            walking_minutes_per_day,
-            travel_at_night,
-            automatic_camp_duration,
-            fixed_camp_minutes,
-            |_, _| {},
-        )
+    fn set_party_travel_itinerary(&self, character_id: u64,
+walking_minutes_per_day: u16,
+travel_at_night: bool,
+automatic_camp_duration: bool,
+fixed_camp_minutes: u16,
+) -> __sdk::Result<()> {
+        self.set_party_travel_itinerary_then(character_id, walking_minutes_per_day, travel_at_night, automatic_camp_duration, fixed_camp_minutes,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `set_party_travel_itinerary` to run as soon as possible,
@@ -68,16 +65,14 @@ pub trait set_party_travel_itinerary {
     fn set_party_travel_itinerary_then(
         &self,
         character_id: u64,
-        walking_minutes_per_day: u16,
-        travel_at_night: bool,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
+walking_minutes_per_day: u16,
+travel_at_night: bool,
+automatic_camp_duration: bool,
+fixed_camp_minutes: u16,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -85,26 +80,16 @@ impl set_party_travel_itinerary for super::RemoteReducers {
     fn set_party_travel_itinerary_then(
         &self,
         character_id: u64,
-        walking_minutes_per_day: u16,
-        travel_at_night: bool,
-        automatic_camp_duration: bool,
-        fixed_camp_minutes: u16,
+walking_minutes_per_day: u16,
+travel_at_night: bool,
+automatic_camp_duration: bool,
+fixed_camp_minutes: u16,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            SetPartyTravelItineraryArgs {
-                character_id,
-                walking_minutes_per_day,
-                travel_at_night,
-                automatic_camp_duration,
-                fixed_camp_minutes,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(SetPartyTravelItineraryArgs { character_id, walking_minutes_per_day, travel_at_night, automatic_camp_duration, fixed_camp_minutes,  }, callback)
     }
 }
+

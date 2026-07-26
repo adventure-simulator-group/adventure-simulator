@@ -246,6 +246,7 @@ just compile-world      # Build base terrain, then compile the 1544 world
 just build-strategic-map # Build base, world, and final map/terrain artifacts
 just normalise-viabundus # Compatibility alias for compile-world
 just load-world         # Load it into a published local SpacetimeDB module
+just load-world http://127.0.0.1:24610 adventuresim-dev-example # Load an isolated profile database
 ```
 
 `just test` runs the strategic browser tests and the native Rust test suites,
@@ -321,6 +322,10 @@ importer and is intentionally ignored by Git. `just init-world-data` installs
 the reviewed Viabundus component together with HYDE and the other
 source-separated inputs. Its component inventory records the source URLs,
 sizes, and SHA-256 checksums, including `viabundus/.viabundus-source.json`.
+The bundle intentionally installs only the five importer CSVs. A strategic-map
+rebuild additionally requires the upstream supplementary `water-1500.csv`;
+after bundle installation, run `python scripts/init_viabundus.py --force` to
+install the complete Viabundus CSV set before `just build-strategic-map`.
 
 Most developers do not need these compiler inputs at all: `just load-world`
 automatically installs the separately pinned compiled runtime bundle and loads
@@ -361,7 +366,8 @@ from the canonical strategic database and map geometry is not persisted in
 SpacetimeDB. Run this command whenever the initialized Viabundus release or map
 package schema changes. The elevation and forest directories default to
 `target/world-data-sources/raw/elevation/` and
-`target/world-data-sources/raw/forest-cover/`; use the generator's explicit
+`target/world-data-sources/raw/forest-cover/`, and HYDE defaults to
+`target/world-data-sources/raw/hyde35-land-use/`; use the generator's explicit
 directory flags when regenerating from another reviewed installation.
 
 The offline compiler lives in `adventuresim-world-import` behind its opt-in
@@ -420,7 +426,7 @@ bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
 `representative_paper_tile_has_deterministic_png_preview_hook` test with the
 `strategic-map-renderer` feature.
 
-The deployment manifest is schema 4 with renderer revision 9. It contains only
+The deployment manifest is schema 5 with renderer revision 10. It contains only
 bounds, attribution/source metadata, coverage counts, the tile index, and
 content digests; source roads, water rings, elevation cells/contours, and
 forest regions stay in the offline compiler and are not shipped to
@@ -442,8 +448,23 @@ unstructured Markdown `sources` field for future debugging; it is persisted but
 not currently displayed. `just load-world` first verifies or downloads the
 pinned approximately 60 MiB runtime archive when its files are absent, then
 sends `target/world-1544.json` in bounded batches to a published local module.
+The importer reads `spacetime login show --token` once and keeps one
+authenticated HTTP reducer client for the complete import, so batches are no
+longer constrained by the Windows command-line limit. Each complete JSON
+reducer request is conservatively capped at 512 KiB (and still respects
+`--batch-size`). A server HTTP 413 (`Payload Too Large`) is retried by
+bisection in source order; authentication, authorization, transport, and
+reducer-validation failures are reported once without replaying their batches.
+The token is neither printed nor written to disk. Import ownership remains
+the authenticated login identity for begin, every batch, and finish, and the
+existing finalization validation remains authoritative.
 The same archive installs the AVIF map and final terrain-routing package, so a
 fresh checkout does not need the 26 GiB source bundle or a geospatial rebuild.
+World loading persists canonical map and settlement facts only; it deliberately
+does not pre-generate settlement populations, services, quests, incidents, or
+recruitment. The first player-facing visit to a settlement materializes that
+settlement's derived activity and service state, so complete `just load-world`
+before serving the browser rather than competing with normal gameplay queries.
 Run it after
 `just publish-reset`, without `_seed-world`, when using the historical world.
 Interrupted loads can be resumed without recompiling by loading the identical

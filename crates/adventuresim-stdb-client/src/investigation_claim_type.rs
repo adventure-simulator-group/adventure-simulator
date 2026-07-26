@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -21,9 +27,11 @@ pub struct InvestigationClaim {
     pub conflict_group: String,
 }
 
+
 impl __sdk::InModule for InvestigationClaim {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `InvestigationClaim`.
 ///
@@ -59,6 +67,7 @@ impl __sdk::__query_builder::HasCols for InvestigationClaim {
             public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
             safe_source_label: __sdk::__query_builder::Col::new(table_name, "safe_source_label"),
             conflict_group: __sdk::__query_builder::Col::new(table_name, "conflict_group"),
+
         }
     }
 }
@@ -77,8 +86,10 @@ impl __sdk::__query_builder::HasIxCols for InvestigationClaim {
         InvestigationClaimIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationClaim {}
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::objective_continuity_kind_type::ObjectiveContinuityKind;
 
@@ -16,16 +21,18 @@ pub struct ObjectiveContinuityGuard {
     pub kind: ObjectiveContinuityKind,
     pub site_id: String,
     pub subject_id: String,
-    pub custody_version: Option<u32>,
+    pub custody_version: Option::<u32>,
     pub started_at_minute: u64,
     pub through_minute: u64,
-    pub broken_at_minute: Option<u64>,
+    pub broken_at_minute: Option::<u64>,
     pub completed: bool,
 }
+
 
 impl __sdk::InModule for ObjectiveContinuityGuard {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `ObjectiveContinuityGuard`.
 ///
@@ -38,10 +45,10 @@ pub struct ObjectiveContinuityGuardCols {
     pub kind: __sdk::__query_builder::Col<ObjectiveContinuityGuard, ObjectiveContinuityKind>,
     pub site_id: __sdk::__query_builder::Col<ObjectiveContinuityGuard, String>,
     pub subject_id: __sdk::__query_builder::Col<ObjectiveContinuityGuard, String>,
-    pub custody_version: __sdk::__query_builder::Col<ObjectiveContinuityGuard, Option<u32>>,
+    pub custody_version: __sdk::__query_builder::Col<ObjectiveContinuityGuard, Option::<u32>>,
     pub started_at_minute: __sdk::__query_builder::Col<ObjectiveContinuityGuard, u64>,
     pub through_minute: __sdk::__query_builder::Col<ObjectiveContinuityGuard, u64>,
-    pub broken_at_minute: __sdk::__query_builder::Col<ObjectiveContinuityGuard, Option<u64>>,
+    pub broken_at_minute: __sdk::__query_builder::Col<ObjectiveContinuityGuard, Option::<u64>>,
     pub completed: __sdk::__query_builder::Col<ObjectiveContinuityGuard, bool>,
 }
 
@@ -61,6 +68,7 @@ impl __sdk::__query_builder::HasCols for ObjectiveContinuityGuard {
             through_minute: __sdk::__query_builder::Col::new(table_name, "through_minute"),
             broken_at_minute: __sdk::__query_builder::Col::new(table_name, "broken_at_minute"),
             completed: __sdk::__query_builder::Col::new(table_name, "completed"),
+
         }
     }
 }
@@ -79,8 +87,10 @@ impl __sdk::__query_builder::HasIxCols for ObjectiveContinuityGuard {
         ObjectiveContinuityGuardIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for ObjectiveContinuityGuard {}
+

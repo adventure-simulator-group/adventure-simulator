@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,13 +28,15 @@ pub struct LocalProblemAuthority {
     pub ends_at: u64,
     pub mitigation_bps: u16,
     pub incident_count: u16,
-    pub resolved_at: Option<u64>,
+    pub resolved_at: Option::<u64>,
     pub opaque_case_ref: String,
 }
+
 
 impl __sdk::InModule for LocalProblemAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `LocalProblemAuthority`.
 ///
@@ -49,7 +57,7 @@ pub struct LocalProblemAuthorityCols {
     pub ends_at: __sdk::__query_builder::Col<LocalProblemAuthority, u64>,
     pub mitigation_bps: __sdk::__query_builder::Col<LocalProblemAuthority, u16>,
     pub incident_count: __sdk::__query_builder::Col<LocalProblemAuthority, u16>,
-    pub resolved_at: __sdk::__query_builder::Col<LocalProblemAuthority, Option<u64>>,
+    pub resolved_at: __sdk::__query_builder::Col<LocalProblemAuthority, Option::<u64>>,
     pub opaque_case_ref: __sdk::__query_builder::Col<LocalProblemAuthority, String>,
 }
 
@@ -60,21 +68,12 @@ impl __sdk::__query_builder::HasCols for LocalProblemAuthority {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             scope_key: __sdk::__query_builder::Col::new(table_name, "scope_key"),
             scope_json: __sdk::__query_builder::Col::new(table_name, "scope_json"),
-            consequence_mechanism: __sdk::__query_builder::Col::new(
-                table_name,
-                "consequence_mechanism",
-            ),
+            consequence_mechanism: __sdk::__query_builder::Col::new(table_name, "consequence_mechanism"),
             symptom: __sdk::__query_builder::Col::new(table_name, "symptom"),
             buy_bps: __sdk::__query_builder::Col::new(table_name, "buy_bps"),
             sell_penalty_bps: __sdk::__query_builder::Col::new(table_name, "sell_penalty_bps"),
-            encounter_frequency_bps: __sdk::__query_builder::Col::new(
-                table_name,
-                "encounter_frequency_bps",
-            ),
-            encounter_archetype: __sdk::__query_builder::Col::new(
-                table_name,
-                "encounter_archetype",
-            ),
+            encounter_frequency_bps: __sdk::__query_builder::Col::new(table_name, "encounter_frequency_bps"),
+            encounter_archetype: __sdk::__query_builder::Col::new(table_name, "encounter_archetype"),
             disease_intensity: __sdk::__query_builder::Col::new(table_name, "disease_intensity"),
             disease_id: __sdk::__query_builder::Col::new(table_name, "disease_id"),
             starts_at: __sdk::__query_builder::Col::new(table_name, "starts_at"),
@@ -83,6 +82,7 @@ impl __sdk::__query_builder::HasCols for LocalProblemAuthority {
             incident_count: __sdk::__query_builder::Col::new(table_name, "incident_count"),
             resolved_at: __sdk::__query_builder::Col::new(table_name, "resolved_at"),
             opaque_case_ref: __sdk::__query_builder::Col::new(table_name, "opaque_case_ref"),
+
         }
     }
 }
@@ -101,8 +101,10 @@ impl __sdk::__query_builder::HasIxCols for LocalProblemAuthority {
         LocalProblemAuthorityIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             scope_key: __sdk::__query_builder::IxCol::new(table_name, "scope_key"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for LocalProblemAuthority {}
+

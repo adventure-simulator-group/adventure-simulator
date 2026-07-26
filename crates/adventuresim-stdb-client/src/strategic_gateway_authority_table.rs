@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::strategic_gateway_authority_type::StrategicGatewayAuthority;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `strategic_gateway_authority`.
 ///
@@ -31,9 +36,7 @@ pub trait StrategicGatewayAuthorityTableAccess {
 impl StrategicGatewayAuthorityTableAccess for super::RemoteTables {
     fn strategic_gateway_authority(&self) -> StrategicGatewayAuthorityTableHandle<'_> {
         StrategicGatewayAuthorityTableHandle {
-            imp: self
-                .imp
-                .get_table::<StrategicGatewayAuthority>("strategic_gateway_authority"),
+            imp: self.imp.get_table::<StrategicGatewayAuthority>("strategic_gateway_authority"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for StrategicGatewayAuthorityTableHandle<'ctx> {
     type Row = StrategicGatewayAuthority;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = StrategicGatewayAuthority> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = StrategicGatewayAuthority> + '_ { self.imp.iter() }
 
     type InsertCallbackId = StrategicGatewayAuthorityInsertCallbackId;
 
@@ -97,40 +96,40 @@ impl<'ctx> __sdk::TableWithPrimaryKey for StrategicGatewayAuthorityTableHandle<'
     }
 }
 
-/// Access to the `id` unique index on the table `strategic_gateway_authority`,
-/// which allows point queries on the field of the same name
-/// via the [`StrategicGatewayAuthorityIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.strategic_gateway_authority().id().find(...)`.
-pub struct StrategicGatewayAuthorityIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<StrategicGatewayAuthority, u8>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> StrategicGatewayAuthorityTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `strategic_gateway_authority`.
-    pub fn id(&self) -> StrategicGatewayAuthorityIdUnique<'ctx> {
-        StrategicGatewayAuthorityIdUnique {
-            imp: self.imp.get_unique_constraint::<u8>("id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `id` unique index on the table `strategic_gateway_authority`,
+        /// which allows point queries on the field of the same name
+        /// via the [`StrategicGatewayAuthorityIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.strategic_gateway_authority().id().find(...)`.
+        pub struct StrategicGatewayAuthorityIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<StrategicGatewayAuthority, u8>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> StrategicGatewayAuthorityIdUnique<'ctx> {
-    /// Find the subscribed row whose `id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u8) -> Option<StrategicGatewayAuthority> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> StrategicGatewayAuthorityTableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `strategic_gateway_authority`.
+            pub fn id(&self) -> StrategicGatewayAuthorityIdUnique<'ctx> {
+                StrategicGatewayAuthorityIdUnique {
+                    imp: self.imp.get_unique_constraint::<u8>("id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> StrategicGatewayAuthorityIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &u8) -> Option<StrategicGatewayAuthority> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table =
-        client_cache.get_or_make_table::<StrategicGatewayAuthority>("strategic_gateway_authority");
+
+    let _table = client_cache.get_or_make_table::<StrategicGatewayAuthority>("strategic_gateway_authority");
     _table.add_unique_constraint::<u8>("id", |row| &row.id);
 }
 
@@ -139,28 +138,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<StrategicGatewayAuthority>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<StrategicGatewayAuthority>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<StrategicGatewayAuthority>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `StrategicGatewayAuthority`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait strategic_gateway_authorityQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `StrategicGatewayAuthority`.
-    fn strategic_gateway_authority(
-        &self,
-    ) -> __sdk::__query_builder::Table<StrategicGatewayAuthority>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `StrategicGatewayAuthority`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait strategic_gateway_authorityQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `StrategicGatewayAuthority`.
+            fn strategic_gateway_authority(&self) -> __sdk::__query_builder::Table<StrategicGatewayAuthority>;
+        }
 
-impl strategic_gateway_authorityQueryTableAccess for __sdk::QueryTableAccessor {
-    fn strategic_gateway_authority(
-        &self,
-    ) -> __sdk::__query_builder::Table<StrategicGatewayAuthority> {
-        __sdk::__query_builder::Table::new("strategic_gateway_authority")
-    }
-}
+        impl strategic_gateway_authorityQueryTableAccess for __sdk::QueryTableAccessor {
+            fn strategic_gateway_authority(&self) -> __sdk::__query_builder::Table<StrategicGatewayAuthority> {
+                __sdk::__query_builder::Table::new("strategic_gateway_authority")
+            }
+        }
+

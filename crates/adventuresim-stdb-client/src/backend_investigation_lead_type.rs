@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -28,9 +34,11 @@ pub struct BackendInvestigationLead {
     pub recorded_at: u64,
 }
 
+
 impl __sdk::InModule for BackendInvestigationLead {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `BackendInvestigationLead`.
 ///
@@ -49,8 +57,7 @@ pub struct BackendInvestigationLeadCols {
     pub longitude_e_7: __sdk::__query_builder::Col<BackendInvestigationLead, i32>,
     pub witness_name: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
     pub witness_description: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
-    pub witness_occupation_or_relationship:
-        __sdk::__query_builder::Col<BackendInvestigationLead, String>,
+    pub witness_occupation_or_relationship: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
     pub expected_location: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
     pub current_learned_location: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
     pub contradiction_group: __sdk::__query_builder::Col<BackendInvestigationLead, String>,
@@ -74,25 +81,15 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationLead {
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             witness_name: __sdk::__query_builder::Col::new(table_name, "witness_name"),
-            witness_description: __sdk::__query_builder::Col::new(
-                table_name,
-                "witness_description",
-            ),
-            witness_occupation_or_relationship: __sdk::__query_builder::Col::new(
-                table_name,
-                "witness_occupation_or_relationship",
-            ),
+            witness_description: __sdk::__query_builder::Col::new(table_name, "witness_description"),
+            witness_occupation_or_relationship: __sdk::__query_builder::Col::new(table_name, "witness_occupation_or_relationship"),
             expected_location: __sdk::__query_builder::Col::new(table_name, "expected_location"),
-            current_learned_location: __sdk::__query_builder::Col::new(
-                table_name,
-                "current_learned_location",
-            ),
-            contradiction_group: __sdk::__query_builder::Col::new(
-                table_name,
-                "contradiction_group",
-            ),
+            current_learned_location: __sdk::__query_builder::Col::new(table_name, "current_learned_location"),
+            contradiction_group: __sdk::__query_builder::Col::new(table_name, "contradiction_group"),
             corrected_by: __sdk::__query_builder::Col::new(table_name, "corrected_by"),
             recorded_at: __sdk::__query_builder::Col::new(table_name, "recorded_at"),
+
         }
     }
 }
+
