@@ -70,12 +70,21 @@ Bounded uniform-grid indexes measure exact point-to-line-segment distance
 without scanning every feature for every square. Suitability strongly prefers
 settlement proximity, gives roads only short-range influence, prefers an access
 band near water rather than banks, requires at least 75% of sixteen explicit
-within-square samples to be dry non-wetland land, penalizes 15-degree
-slopes/local relief, and weakly penalizes modern canopy. Soil is deliberately
-omitted: the current SoilGrids stage exposes settlement samples rather than a
-bounded map-wide raster, and expanding that compiler surface is
-disproportionate to this allocator. Impossible coastal/usable-land quotas fail
-the build instead of silently losing area.
+within-square samples to be non-water passable land, penalizes 15-degree
+slopes/local relief, and weakly penalizes modern canopy. HYDE's observed
+historical cropland takes precedence over Jung potential-natural wetland
+vegetation because the latter describes the uncultivated counterfactual;
+mapped water remains ineligible. A HYDE cell clipped by the playable boundary
+may request more area than the arbitrary boundary can
+represent with complete, usable canonical squares. Rules version 2
+deterministically saturates only those clipped edge cells at their usable-square
+capacity, including zero, and reports the omitted area. Un-clipped cells may
+saturate only when canonical-grid/raster discretization is at most 2 km² and
+at most 5% of the cell quota. Larger coastal or usable-land
+contradictions still fail the build. Soil is deliberately omitted:
+the current SoilGrids stage exposes settlement samples rather than a bounded
+map-wide raster, and expanding that compiler surface is disproportionate to
+this allocator.
 
 The selected square IDs, HYDE source digest, rules version, residual, and
 counts determine the final terrain package identity. Exact square boundaries

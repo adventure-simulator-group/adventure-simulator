@@ -532,7 +532,7 @@ fn cultivated_land(
                 continue;
             }
             let native = terrain.cell(latitude, longitude)?;
-            let mut dry_passable_samples = 0u16;
+            let mut non_water_samples = 0u16;
             for sample_row in 0..4 {
                 for sample_column in 0..4 {
                     let sample = ProjectedCoordinate::from_meters(
@@ -543,18 +543,14 @@ fn cultivated_land(
                     if terrain
                         .cell(sample_latitude, sample_longitude)?
                         .is_some_and(|cell| {
-                            !matches!(
-                                cell.surface,
-                                adventuresim_terrain::Surface::Water
-                                    | adventuresim_terrain::Surface::Wetland
-                            )
+                            !matches!(cell.surface, adventuresim_terrain::Surface::Water)
                         })
                     {
-                        dry_passable_samples += 1;
+                        non_water_samples += 1;
                     }
                 }
             }
-            let usable_land = square_is_usable(dry_passable_samples, 16);
+            let usable_land = square_is_usable(non_water_samples, 16);
             let elevation_samples = [
                 (latitude, longitude),
                 (latitude + 0.0045, longitude),
@@ -596,20 +592,31 @@ fn cultivated_land(
     let (hyde, source_sha256) = adventuresim_world_import::hyde_crop_cells(hyde_dir, YEAR, BOUNDS)?;
     let quotas = hyde
         .into_iter()
-        .map(|cell| HydeCropQuota {
-            cell: (cell.row, cell.column),
-            crop_km2: cell.crop_km2
-                * ((cell.bounds[2].min(BOUNDS[2]) - cell.bounds[0].max(BOUNDS[0]))
-                    / (cell.bounds[2] - cell.bounds[0]))
-                    .clamp(0.0, 1.0)
-                * ((cell.bounds[3].min(BOUNDS[3]) - cell.bounds[1].max(BOUNDS[1]))
-                    / (cell.bounds[3] - cell.bounds[1]))
-                    .clamp(0.0, 1.0),
+        .map(|cell| {
+            let longitude_fraction = ((cell.bounds[2].min(BOUNDS[2])
+                - cell.bounds[0].max(BOUNDS[0]))
+                / (cell.bounds[2] - cell.bounds[0]))
+                .clamp(0.0, 1.0);
+            let latitude_fraction = ((cell.bounds[3].min(BOUNDS[3])
+                - cell.bounds[1].max(BOUNDS[1]))
+                / (cell.bounds[3] - cell.bounds[1]))
+                .clamp(0.0, 1.0);
+            HydeCropQuota {
+                cell: (cell.row, cell.column),
+                crop_km2: cell.crop_km2 * longitude_fraction * latitude_fraction,
+                boundary_clipped: longitude_fraction < 1.0 || latitude_fraction < 1.0,
+            }
         })
         .collect::<Vec<_>>();
     let allocation = allocate(&candidates, &quotas)?;
     if allocation.residual_km2.abs() >= 0.500_001 {
         return Err("cultivation quota rounding residual exceeded 0.5 km2".into());
+    }
+    if allocation.capacity_limited_km2 > 0 {
+        eprintln!(
+            "Cultivation capacity omitted {} km2 that cannot be represented by usable canonical squares under the bounded grid rules",
+            allocation.capacity_limited_km2
+        );
     }
     let polygons = allocation
         .cells
