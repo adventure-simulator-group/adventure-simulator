@@ -1,4 +1,12 @@
 # Management
+The current implementation mixes ordinary quantity stacks, whole-unit alcohol
+and soap, and quantity-one food lots with floating conserved fields. The
+accepted future model keeps integer object quantity plus optional fixed-point
+measured state, including container tare mass/value and identical personal and
+party invariants. See
+[`docs/MEASURED_INVENTORY.md`](../../docs/MEASURED_INVENTORY.md). It is an
+architecture and rollout plan, not yet the production inventory schema.
+
 Food uses the same collapsed-parent disclosure pattern as coin in the browser,
 but the rows below `Food` are non-fungible quantity-one lots, including edible
 herbalist ingredients such as garlic and sage. Each lot retains age, preparation,

@@ -1,5 +1,11 @@
 # Food and cooking
 
+This page describes current production behavior. The accepted replacement for
+floating conserved food-lot mass, nutrition, and value is the integer
+quantity-plus-measured-state architecture in
+[`MEASURED_INVENTORY.md`](MEASURED_INVENTORY.md). That schema has not yet been
+rolled out; until it is, the behavior below remains authoritative.
+
 Food is authoritative strategic inventory. `ItemKind::Food` identifies ordinary
 foods, while edible herbalist ingredients may retain `Ingredient`. Every
 acquisition creates one independent quantity-one `food_lot` per purchased or
