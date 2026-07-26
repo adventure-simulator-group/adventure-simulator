@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,9 +26,11 @@ pub struct LocalProblemReceipt {
     pub learned_at: u64,
 }
 
+
 impl __sdk::InModule for LocalProblemReceipt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `LocalProblemReceipt`.
 ///
@@ -51,17 +59,12 @@ impl __sdk::__query_builder::HasCols for LocalProblemReceipt {
             problem_id: __sdk::__query_builder::Col::new(table_name, "problem_id"),
             opaque_case_ref: __sdk::__query_builder::Col::new(table_name, "opaque_case_ref"),
             source_npc_id: __sdk::__query_builder::Col::new(table_name, "source_npc_id"),
-            discovery_session_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "discovery_session_id",
-            ),
+            discovery_session_id: __sdk::__query_builder::Col::new(table_name, "discovery_session_id"),
             contact_npc_id: __sdk::__query_builder::Col::new(table_name, "contact_npc_id"),
-            expected_location_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "expected_location_id",
-            ),
+            expected_location_id: __sdk::__query_builder::Col::new(table_name, "expected_location_id"),
             safe_summary: __sdk::__query_builder::Col::new(table_name, "safe_summary"),
             learned_at: __sdk::__query_builder::Col::new(table_name, "learned_at"),
+
         }
     }
 }
@@ -82,8 +85,10 @@ impl __sdk::__query_builder::HasIxCols for LocalProblemReceipt {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for LocalProblemReceipt {}
+

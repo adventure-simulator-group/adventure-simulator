@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::backend_investigation_case_summary_type::BackendInvestigationCaseSummary;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_investigation_cases`.
 ///
@@ -31,9 +36,7 @@ pub trait BackendInvestigationCasesTableAccess {
 impl BackendInvestigationCasesTableAccess for super::RemoteTables {
     fn backend_investigation_cases(&self) -> BackendInvestigationCasesTableHandle<'_> {
         BackendInvestigationCasesTableHandle {
-            imp: self
-                .imp
-                .get_table::<BackendInvestigationCaseSummary>("backend_investigation_cases"),
+            imp: self.imp.get_table::<BackendInvestigationCaseSummary>("backend_investigation_cases"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendInvestigationCasesTableHandle<'ctx> {
     type Row = BackendInvestigationCaseSummary;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = BackendInvestigationCaseSummary> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = BackendInvestigationCaseSummary> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendInvestigationCasesInsertCallbackId;
 
@@ -82,8 +81,8 @@ impl<'ctx> __sdk::Table for BackendInvestigationCasesTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache
-        .get_or_make_table::<BackendInvestigationCaseSummary>("backend_investigation_cases");
+
+        let _table = client_cache.get_or_make_table::<BackendInvestigationCaseSummary>("backend_investigation_cases");
 }
 
 #[doc(hidden)]
@@ -94,28 +93,23 @@ pub(super) fn parse_table_update(
         __sdk::InternalError::failed_parse(
             "TableUpdate<BackendInvestigationCaseSummary>",
             "TableUpdate",
-        )
-        .with_cause(e)
-        .into()
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `BackendInvestigationCaseSummary`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_investigation_casesQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `BackendInvestigationCaseSummary`.
-    fn backend_investigation_cases(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendInvestigationCaseSummary>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `BackendInvestigationCaseSummary`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_investigation_casesQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `BackendInvestigationCaseSummary`.
+            fn backend_investigation_cases(&self) -> __sdk::__query_builder::Table<BackendInvestigationCaseSummary>;
+        }
 
-impl backend_investigation_casesQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_investigation_cases(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendInvestigationCaseSummary> {
-        __sdk::__query_builder::Table::new("backend_investigation_cases")
-    }
-}
+        impl backend_investigation_casesQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_investigation_cases(&self) -> __sdk::__query_builder::Table<BackendInvestigationCaseSummary> {
+                __sdk::__query_builder::Table::new("backend_investigation_cases")
+            }
+        }
+

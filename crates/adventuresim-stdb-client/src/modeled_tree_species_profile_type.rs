@@ -2,16 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::modeled_tree_species_type::ModeledTreeSpecies;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ModeledTreeSpeciesProfile {
-    pub candidates: Vec<ModeledTreeSpecies>,
+    pub candidates: Vec::<ModeledTreeSpecies>,
 }
+
 
 impl __sdk::InModule for ModeledTreeSpeciesProfile {
     type Module = super::RemoteModule;
 }
+

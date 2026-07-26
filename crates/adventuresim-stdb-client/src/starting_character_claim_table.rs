@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::starting_character_claim_type::StartingCharacterClaim;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `starting_character_claim`.
 ///
@@ -31,9 +36,7 @@ pub trait StartingCharacterClaimTableAccess {
 impl StartingCharacterClaimTableAccess for super::RemoteTables {
     fn starting_character_claim(&self) -> StartingCharacterClaimTableHandle<'_> {
         StartingCharacterClaimTableHandle {
-            imp: self
-                .imp
-                .get_table::<StartingCharacterClaim>("starting_character_claim"),
+            imp: self.imp.get_table::<StartingCharacterClaim>("starting_character_claim"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for StartingCharacterClaimTableHandle<'ctx> {
     type Row = StartingCharacterClaim;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = StartingCharacterClaim> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = StartingCharacterClaim> + '_ { self.imp.iter() }
 
     type InsertCallbackId = StartingCharacterClaimInsertCallbackId;
 
@@ -97,70 +96,70 @@ impl<'ctx> __sdk::TableWithPrimaryKey for StartingCharacterClaimTableHandle<'ctx
     }
 }
 
-/// Access to the `request_key` unique index on the table `starting_character_claim`,
-/// which allows point queries on the field of the same name
-/// via the [`StartingCharacterClaimRequestKeyUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.starting_character_claim().request_key().find(...)`.
-pub struct StartingCharacterClaimRequestKeyUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<StartingCharacterClaim, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> StartingCharacterClaimTableHandle<'ctx> {
-    /// Get a handle on the `request_key` unique index on the table `starting_character_claim`.
-    pub fn request_key(&self) -> StartingCharacterClaimRequestKeyUnique<'ctx> {
-        StartingCharacterClaimRequestKeyUnique {
-            imp: self.imp.get_unique_constraint::<String>("request_key"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `request_key` unique index on the table `starting_character_claim`,
+        /// which allows point queries on the field of the same name
+        /// via the [`StartingCharacterClaimRequestKeyUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.starting_character_claim().request_key().find(...)`.
+        pub struct StartingCharacterClaimRequestKeyUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<StartingCharacterClaim, String>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> StartingCharacterClaimRequestKeyUnique<'ctx> {
-    /// Find the subscribed row whose `request_key` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<StartingCharacterClaim> {
-        self.imp.find(col_val)
-    }
-}
-
-/// Access to the `character_id` unique index on the table `starting_character_claim`,
-/// which allows point queries on the field of the same name
-/// via the [`StartingCharacterClaimCharacterIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.starting_character_claim().character_id().find(...)`.
-pub struct StartingCharacterClaimCharacterIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<StartingCharacterClaim, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> StartingCharacterClaimTableHandle<'ctx> {
-    /// Get a handle on the `character_id` unique index on the table `starting_character_claim`.
-    pub fn character_id(&self) -> StartingCharacterClaimCharacterIdUnique<'ctx> {
-        StartingCharacterClaimCharacterIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("character_id"),
-            phantom: std::marker::PhantomData,
+        impl<'ctx> StartingCharacterClaimTableHandle<'ctx> {
+            /// Get a handle on the `request_key` unique index on the table `starting_character_claim`.
+            pub fn request_key(&self) -> StartingCharacterClaimRequestKeyUnique<'ctx> {
+                StartingCharacterClaimRequestKeyUnique {
+                    imp: self.imp.get_unique_constraint::<String>("request_key"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
         }
-    }
-}
 
-impl<'ctx> StartingCharacterClaimCharacterIdUnique<'ctx> {
-    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<StartingCharacterClaim> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> StartingCharacterClaimRequestKeyUnique<'ctx> {
+            /// Find the subscribed row whose `request_key` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &String) -> Option<StartingCharacterClaim> {
+                self.imp.find(col_val)
+            }
+        }
+        
+        /// Access to the `character_id` unique index on the table `starting_character_claim`,
+        /// which allows point queries on the field of the same name
+        /// via the [`StartingCharacterClaimCharacterIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.starting_character_claim().character_id().find(...)`.
+        pub struct StartingCharacterClaimCharacterIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<StartingCharacterClaim, u64>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+        }
 
+        impl<'ctx> StartingCharacterClaimTableHandle<'ctx> {
+            /// Get a handle on the `character_id` unique index on the table `starting_character_claim`.
+            pub fn character_id(&self) -> StartingCharacterClaimCharacterIdUnique<'ctx> {
+                StartingCharacterClaimCharacterIdUnique {
+                    imp: self.imp.get_unique_constraint::<u64>("character_id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<'ctx> StartingCharacterClaimCharacterIdUnique<'ctx> {
+            /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &u64) -> Option<StartingCharacterClaim> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table =
-        client_cache.get_or_make_table::<StartingCharacterClaim>("starting_character_claim");
+
+    let _table = client_cache.get_or_make_table::<StartingCharacterClaim>("starting_character_claim");
     _table.add_unique_constraint::<String>("request_key", |row| &row.request_key);
     _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
@@ -170,24 +169,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<StartingCharacterClaim>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<StartingCharacterClaim>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<StartingCharacterClaim>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `StartingCharacterClaim`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait starting_character_claimQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `StartingCharacterClaim`.
-    fn starting_character_claim(&self) -> __sdk::__query_builder::Table<StartingCharacterClaim>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `StartingCharacterClaim`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait starting_character_claimQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `StartingCharacterClaim`.
+            fn starting_character_claim(&self) -> __sdk::__query_builder::Table<StartingCharacterClaim>;
+        }
 
-impl starting_character_claimQueryTableAccess for __sdk::QueryTableAccessor {
-    fn starting_character_claim(&self) -> __sdk::__query_builder::Table<StartingCharacterClaim> {
-        __sdk::__query_builder::Table::new("starting_character_claim")
-    }
-}
+        impl starting_character_claimQueryTableAccess for __sdk::QueryTableAccessor {
+            fn starting_character_claim(&self) -> __sdk::__query_builder::Table<StartingCharacterClaim> {
+                __sdk::__query_builder::Table::new("starting_character_claim")
+            }
+        }
+

@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::party_leader_vote_type::PartyLeaderVote;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `party_leader_vote`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for PartyLeaderVoteTableHandle<'ctx> {
     type Row = PartyLeaderVote;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = PartyLeaderVote> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = PartyLeaderVote> + '_ { self.imp.iter() }
 
     type InsertCallbackId = PartyLeaderVoteInsertCallbackId;
 
@@ -95,38 +96,39 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PartyLeaderVoteTableHandle<'ctx> {
     }
 }
 
-/// Access to the `id` unique index on the table `party_leader_vote`,
-/// which allows point queries on the field of the same name
-/// via the [`PartyLeaderVoteIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.party_leader_vote().id().find(...)`.
-pub struct PartyLeaderVoteIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PartyLeaderVote, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PartyLeaderVoteTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `party_leader_vote`.
-    pub fn id(&self) -> PartyLeaderVoteIdUnique<'ctx> {
-        PartyLeaderVoteIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `id` unique index on the table `party_leader_vote`,
+        /// which allows point queries on the field of the same name
+        /// via the [`PartyLeaderVoteIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.party_leader_vote().id().find(...)`.
+        pub struct PartyLeaderVoteIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<PartyLeaderVote, String>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> PartyLeaderVoteIdUnique<'ctx> {
-    /// Find the subscribed row whose `id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<PartyLeaderVote> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> PartyLeaderVoteTableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `party_leader_vote`.
+            pub fn id(&self) -> PartyLeaderVoteIdUnique<'ctx> {
+                PartyLeaderVoteIdUnique {
+                    imp: self.imp.get_unique_constraint::<String>("id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> PartyLeaderVoteIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &String) -> Option<PartyLeaderVote> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
     let _table = client_cache.get_or_make_table::<PartyLeaderVote>("party_leader_vote");
     _table.add_unique_constraint::<String>("id", |row| &row.id);
 }
@@ -136,24 +138,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<PartyLeaderVote>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PartyLeaderVote>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<PartyLeaderVote>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `PartyLeaderVote`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait party_leader_voteQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `PartyLeaderVote`.
-    fn party_leader_vote(&self) -> __sdk::__query_builder::Table<PartyLeaderVote>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `PartyLeaderVote`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait party_leader_voteQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `PartyLeaderVote`.
+            fn party_leader_vote(&self) -> __sdk::__query_builder::Table<PartyLeaderVote>;
+        }
 
-impl party_leader_voteQueryTableAccess for __sdk::QueryTableAccessor {
-    fn party_leader_vote(&self) -> __sdk::__query_builder::Table<PartyLeaderVote> {
-        __sdk::__query_builder::Table::new("party_leader_vote")
-    }
-}
+        impl party_leader_voteQueryTableAccess for __sdk::QueryTableAccessor {
+            fn party_leader_vote(&self) -> __sdk::__query_builder::Table<PartyLeaderVote> {
+                __sdk::__query_builder::Table::new("party_leader_vote")
+            }
+        }
+

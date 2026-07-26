@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<RemovePartyMemberArgs> for super::Reducer {
         Self::RemovePartyMember {
             actor_character_id: args.actor_character_id,
             member_character_id: args.member_character_id,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for RemovePartyMemberArgs {
@@ -35,12 +41,10 @@ pub trait remove_party_member {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`remove_party_member:remove_party_member_then`] to run a callback after the reducer completes.
-    fn remove_party_member(
-        &self,
-        actor_character_id: u64,
-        member_character_id: u64,
-    ) -> __sdk::Result<()> {
-        self.remove_party_member_then(actor_character_id, member_character_id, |_, _| {})
+    fn remove_party_member(&self, actor_character_id: u64,
+member_character_id: u64,
+) -> __sdk::Result<()> {
+        self.remove_party_member_then(actor_character_id, member_character_id,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `remove_party_member` to run as soon as possible,
@@ -52,13 +56,11 @@ pub trait remove_party_member {
     fn remove_party_member_then(
         &self,
         actor_character_id: u64,
-        member_character_id: u64,
+member_character_id: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -66,20 +68,13 @@ impl remove_party_member for super::RemoteReducers {
     fn remove_party_member_then(
         &self,
         actor_character_id: u64,
-        member_character_id: u64,
+member_character_id: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            RemovePartyMemberArgs {
-                actor_character_id,
-                member_character_id,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(RemovePartyMemberArgs { actor_character_id, member_character_id,  }, callback)
     }
 }
+

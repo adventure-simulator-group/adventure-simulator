@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,8 +26,8 @@ impl From<PerformInvestigationActionArgs> for super::Reducer {
             action_id: args.action_id,
             method: args.method,
             expected_version: args.expected_version,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for PerformInvestigationActionArgs {
@@ -39,20 +45,12 @@ pub trait perform_investigation_action {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`perform_investigation_action:perform_investigation_action_then`] to run a callback after the reducer completes.
-    fn perform_investigation_action(
-        &self,
-        actor_id: u64,
-        action_id: String,
-        method: String,
-        expected_version: u32,
-    ) -> __sdk::Result<()> {
-        self.perform_investigation_action_then(
-            actor_id,
-            action_id,
-            method,
-            expected_version,
-            |_, _| {},
-        )
+    fn perform_investigation_action(&self, actor_id: u64,
+action_id: String,
+method: String,
+expected_version: u32,
+) -> __sdk::Result<()> {
+        self.perform_investigation_action_then(actor_id, action_id, method, expected_version,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `perform_investigation_action` to run as soon as possible,
@@ -64,15 +62,13 @@ pub trait perform_investigation_action {
     fn perform_investigation_action_then(
         &self,
         actor_id: u64,
-        action_id: String,
-        method: String,
-        expected_version: u32,
+action_id: String,
+method: String,
+expected_version: u32,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -80,24 +76,15 @@ impl perform_investigation_action for super::RemoteReducers {
     fn perform_investigation_action_then(
         &self,
         actor_id: u64,
-        action_id: String,
-        method: String,
-        expected_version: u32,
+action_id: String,
+method: String,
+expected_version: u32,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            PerformInvestigationActionArgs {
-                actor_id,
-                action_id,
-                method,
-                expected_version,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(PerformInvestigationActionArgs { actor_id, action_id, method, expected_version,  }, callback)
     }
 }
+

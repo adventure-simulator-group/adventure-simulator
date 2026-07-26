@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,9 +21,11 @@ pub struct SettlementNpcPresence {
     pub is_default: bool,
 }
 
+
 impl __sdk::InModule for SettlementNpcPresence {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `SettlementNpcPresence`.
 ///
@@ -41,6 +49,7 @@ impl __sdk::__query_builder::HasCols for SettlementNpcPresence {
             start_minute: __sdk::__query_builder::Col::new(table_name, "start_minute"),
             end_minute: __sdk::__query_builder::Col::new(table_name, "end_minute"),
             is_default: __sdk::__query_builder::Col::new(table_name, "is_default"),
+
         }
     }
 }
@@ -61,8 +70,10 @@ impl __sdk::__query_builder::HasIxCols for SettlementNpcPresence {
             location_id: __sdk::__query_builder::IxCol::new(table_name, "location_id"),
             npc_id: __sdk::__query_builder::IxCol::new(table_name, "npc_id"),
             settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for SettlementNpcPresence {}
+

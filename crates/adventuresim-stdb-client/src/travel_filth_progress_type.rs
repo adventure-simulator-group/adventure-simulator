@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -11,9 +17,11 @@ pub struct TravelFilthProgress {
     pub remainder_numerator: u16,
 }
 
+
 impl __sdk::InModule for TravelFilthProgress {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `TravelFilthProgress`.
 ///
@@ -28,10 +36,8 @@ impl __sdk::__query_builder::HasCols for TravelFilthProgress {
     fn cols(table_name: &'static str) -> Self::Cols {
         TravelFilthProgressCols {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
-            remainder_numerator: __sdk::__query_builder::Col::new(
-                table_name,
-                "remainder_numerator",
-            ),
+            remainder_numerator: __sdk::__query_builder::Col::new(table_name, "remainder_numerator"),
+
         }
     }
 }
@@ -48,8 +54,10 @@ impl __sdk::__query_builder::HasIxCols for TravelFilthProgress {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         TravelFilthProgressIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for TravelFilthProgress {}
+

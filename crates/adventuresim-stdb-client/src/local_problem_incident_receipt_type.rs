@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,9 +20,11 @@ pub struct LocalProblemIncidentReceipt {
     pub learned_at: u64,
 }
 
+
 impl __sdk::InModule for LocalProblemIncidentReceipt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `LocalProblemIncidentReceipt`.
 ///
@@ -38,6 +46,7 @@ impl __sdk::__query_builder::HasCols for LocalProblemIncidentReceipt {
             problem_id: __sdk::__query_builder::Col::new(table_name, "problem_id"),
             incident_id: __sdk::__query_builder::Col::new(table_name, "incident_id"),
             learned_at: __sdk::__query_builder::Col::new(table_name, "learned_at"),
+
         }
     }
 }
@@ -56,8 +65,10 @@ impl __sdk::__query_builder::HasIxCols for LocalProblemIncidentReceipt {
         LocalProblemIncidentReceiptIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for LocalProblemIncidentReceipt {}
+

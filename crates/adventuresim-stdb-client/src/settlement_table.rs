@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::drought_profile_type::DroughtProfile;
-use super::elevation_meters_type::ElevationMeters;
-use super::forest_cover_type::ForestCover;
-use super::historical_vegetation_type::HistoricalVegetation;
-use super::inferred_industry_profile_type::InferredIndustryProfile;
-use super::land_use_profile_type::LandUseProfile;
-use super::potential_vegetation_type::PotentialVegetation;
-use super::settlement_category_type::SettlementCategory;
-use super::settlement_economy_profile_type::SettlementEconomyProfile;
-use super::settlement_hydrology_type::SettlementHydrology;
-use super::settlement_language_profile_type::SettlementLanguageProfile;
-use super::settlement_religious_status_type::SettlementReligiousStatus;
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::settlement_type::Settlement;
+use super::elevation_meters_type::ElevationMeters;
+use super::land_use_profile_type::LandUseProfile;
+use super::forest_cover_type::ForestCover;
+use super::potential_vegetation_type::PotentialVegetation;
+use super::historical_vegetation_type::HistoricalVegetation;
+use super::tree_species_profile_type::TreeSpeciesProfile;
 use super::soil_profile_type::SoilProfile;
 use super::surface_geology_type::SurfaceGeology;
-use super::tree_species_profile_type::TreeSpeciesProfile;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use super::settlement_religious_status_type::SettlementReligiousStatus;
+use super::settlement_language_profile_type::SettlementLanguageProfile;
+use super::drought_profile_type::DroughtProfile;
+use super::settlement_hydrology_type::SettlementHydrology;
+use super::inferred_industry_profile_type::InferredIndustryProfile;
+use super::settlement_economy_profile_type::SettlementEconomyProfile;
+use super::settlement_category_type::SettlementCategory;
 
 /// Table handle for the table `settlement`.
 ///
@@ -59,12 +64,8 @@ impl<'ctx> __sdk::Table for SettlementTableHandle<'ctx> {
     type Row = Settlement;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = Settlement> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = Settlement> + '_ { self.imp.iter() }
 
     type InsertCallbackId = SettlementInsertCallbackId;
 
@@ -110,38 +111,39 @@ impl<'ctx> __sdk::TableWithPrimaryKey for SettlementTableHandle<'ctx> {
     }
 }
 
-/// Access to the `id` unique index on the table `settlement`,
-/// which allows point queries on the field of the same name
-/// via the [`SettlementIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.settlement().id().find(...)`.
-pub struct SettlementIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<Settlement, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> SettlementTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `settlement`.
-    pub fn id(&self) -> SettlementIdUnique<'ctx> {
-        SettlementIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `id` unique index on the table `settlement`,
+        /// which allows point queries on the field of the same name
+        /// via the [`SettlementIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.settlement().id().find(...)`.
+        pub struct SettlementIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<Settlement, String>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> SettlementIdUnique<'ctx> {
-    /// Find the subscribed row whose `id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<Settlement> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> SettlementTableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `settlement`.
+            pub fn id(&self) -> SettlementIdUnique<'ctx> {
+                SettlementIdUnique {
+                    imp: self.imp.get_unique_constraint::<String>("id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> SettlementIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &String) -> Option<Settlement> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
     let _table = client_cache.get_or_make_table::<Settlement>("settlement");
     _table.add_unique_constraint::<String>("id", |row| &row.id);
 }
@@ -151,24 +153,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<Settlement>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<Settlement>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<Settlement>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `Settlement`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait settlementQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `Settlement`.
-    fn settlement(&self) -> __sdk::__query_builder::Table<Settlement>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `Settlement`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait settlementQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `Settlement`.
+            fn settlement(&self) -> __sdk::__query_builder::Table<Settlement>;
+        }
 
-impl settlementQueryTableAccess for __sdk::QueryTableAccessor {
-    fn settlement(&self) -> __sdk::__query_builder::Table<Settlement> {
-        __sdk::__query_builder::Table::new("settlement")
-    }
-}
+        impl settlementQueryTableAccess for __sdk::QueryTableAccessor {
+            fn settlement(&self) -> __sdk::__query_builder::Table<Settlement> {
+                __sdk::__query_builder::Table::new("settlement")
+            }
+        }
+

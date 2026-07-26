@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::case_site_id_type::CaseSiteId;
 
@@ -13,6 +18,8 @@ pub struct JourneyCaseSiteEndpoint {
     pub name: String,
 }
 
+
 impl __sdk::InModule for JourneyCaseSiteEndpoint {
     type Module = super::RemoteModule;
 }
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<SetPartyCampFatiguePercentArgs> for super::Reducer {
         Self::SetPartyCampFatiguePercent {
             character_id: args.character_id,
             fatigue_percent: args.fatigue_percent,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for SetPartyCampFatiguePercentArgs {
@@ -35,12 +41,10 @@ pub trait set_party_camp_fatigue_percent {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`set_party_camp_fatigue_percent:set_party_camp_fatigue_percent_then`] to run a callback after the reducer completes.
-    fn set_party_camp_fatigue_percent(
-        &self,
-        character_id: u64,
-        fatigue_percent: u8,
-    ) -> __sdk::Result<()> {
-        self.set_party_camp_fatigue_percent_then(character_id, fatigue_percent, |_, _| {})
+    fn set_party_camp_fatigue_percent(&self, character_id: u64,
+fatigue_percent: u8,
+) -> __sdk::Result<()> {
+        self.set_party_camp_fatigue_percent_then(character_id, fatigue_percent,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `set_party_camp_fatigue_percent` to run as soon as possible,
@@ -52,13 +56,11 @@ pub trait set_party_camp_fatigue_percent {
     fn set_party_camp_fatigue_percent_then(
         &self,
         character_id: u64,
-        fatigue_percent: u8,
+fatigue_percent: u8,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -66,20 +68,13 @@ impl set_party_camp_fatigue_percent for super::RemoteReducers {
     fn set_party_camp_fatigue_percent_then(
         &self,
         character_id: u64,
-        fatigue_percent: u8,
+fatigue_percent: u8,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            SetPartyCampFatiguePercentArgs {
-                character_id,
-                fatigue_percent,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(SetPartyCampFatiguePercentArgs { character_id, fatigue_percent,  }, callback)
     }
 }
+

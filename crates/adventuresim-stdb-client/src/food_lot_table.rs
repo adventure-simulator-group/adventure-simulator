@@ -2,9 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::food_lot_type::FoodLot;
 use super::food_preparation_type::FoodPreparation;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `food_lot`.
 ///
@@ -45,12 +50,8 @@ impl<'ctx> __sdk::Table for FoodLotTableHandle<'ctx> {
     type Row = FoodLot;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = FoodLot> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = FoodLot> + '_ { self.imp.iter() }
 
     type InsertCallbackId = FoodLotInsertCallbackId;
 
@@ -96,38 +97,39 @@ impl<'ctx> __sdk::TableWithPrimaryKey for FoodLotTableHandle<'ctx> {
     }
 }
 
-/// Access to the `id` unique index on the table `food_lot`,
-/// which allows point queries on the field of the same name
-/// via the [`FoodLotIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.food_lot().id().find(...)`.
-pub struct FoodLotIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<FoodLot, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> FoodLotTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `food_lot`.
-    pub fn id(&self) -> FoodLotIdUnique<'ctx> {
-        FoodLotIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `id` unique index on the table `food_lot`,
+        /// which allows point queries on the field of the same name
+        /// via the [`FoodLotIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.food_lot().id().find(...)`.
+        pub struct FoodLotIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<FoodLot, u64>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> FoodLotIdUnique<'ctx> {
-    /// Find the subscribed row whose `id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<FoodLot> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> FoodLotTableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `food_lot`.
+            pub fn id(&self) -> FoodLotIdUnique<'ctx> {
+                FoodLotIdUnique {
+                    imp: self.imp.get_unique_constraint::<u64>("id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> FoodLotIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &u64) -> Option<FoodLot> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
     let _table = client_cache.get_or_make_table::<FoodLot>("food_lot");
     _table.add_unique_constraint::<u64>("id", |row| &row.id);
 }
@@ -137,24 +139,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<FoodLot>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<FoodLot>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<FoodLot>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `FoodLot`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait food_lotQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `FoodLot`.
-    fn food_lot(&self) -> __sdk::__query_builder::Table<FoodLot>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `FoodLot`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait food_lotQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `FoodLot`.
+            fn food_lot(&self) -> __sdk::__query_builder::Table<FoodLot>;
+        }
 
-impl food_lotQueryTableAccess for __sdk::QueryTableAccessor {
-    fn food_lot(&self) -> __sdk::__query_builder::Table<FoodLot> {
-        __sdk::__query_builder::Table::new("food_lot")
-    }
-}
+        impl food_lotQueryTableAccess for __sdk::QueryTableAccessor {
+            fn food_lot(&self) -> __sdk::__query_builder::Table<FoodLot> {
+                __sdk::__query_builder::Table::new("food_lot")
+            }
+        }
+

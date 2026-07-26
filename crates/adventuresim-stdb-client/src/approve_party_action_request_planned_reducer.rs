@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::journey_route_plan_type::JourneyRoutePlan;
 
@@ -20,8 +25,8 @@ impl From<ApprovePartyActionRequestPlannedArgs> for super::Reducer {
             leader_id: args.leader_id,
             request_id: args.request_id,
             route: args.route,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for ApprovePartyActionRequestPlannedArgs {
@@ -39,13 +44,11 @@ pub trait approve_party_action_request_planned {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`approve_party_action_request_planned:approve_party_action_request_planned_then`] to run a callback after the reducer completes.
-    fn approve_party_action_request_planned(
-        &self,
-        leader_id: u64,
-        request_id: u64,
-        route: JourneyRoutePlan,
-    ) -> __sdk::Result<()> {
-        self.approve_party_action_request_planned_then(leader_id, request_id, route, |_, _| {})
+    fn approve_party_action_request_planned(&self, leader_id: u64,
+request_id: u64,
+route: JourneyRoutePlan,
+) -> __sdk::Result<()> {
+        self.approve_party_action_request_planned_then(leader_id, request_id, route,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `approve_party_action_request_planned` to run as soon as possible,
@@ -57,14 +60,12 @@ pub trait approve_party_action_request_planned {
     fn approve_party_action_request_planned_then(
         &self,
         leader_id: u64,
-        request_id: u64,
-        route: JourneyRoutePlan,
+request_id: u64,
+route: JourneyRoutePlan,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -72,22 +73,14 @@ impl approve_party_action_request_planned for super::RemoteReducers {
     fn approve_party_action_request_planned_then(
         &self,
         leader_id: u64,
-        request_id: u64,
-        route: JourneyRoutePlan,
+request_id: u64,
+route: JourneyRoutePlan,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            ApprovePartyActionRequestPlannedArgs {
-                leader_id,
-                request_id,
-                route,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(ApprovePartyActionRequestPlannedArgs { leader_id, request_id, route,  }, callback)
     }
 }
+

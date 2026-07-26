@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,9 +20,11 @@ pub struct CharacterFamiliarity {
     pub joint_minute_anchor: u64,
 }
 
+
 impl __sdk::InModule for CharacterFamiliarity {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `CharacterFamiliarity`.
 ///
@@ -37,10 +45,8 @@ impl __sdk::__query_builder::HasCols for CharacterFamiliarity {
             low_id: __sdk::__query_builder::Col::new(table_name, "low_id"),
             high_id: __sdk::__query_builder::Col::new(table_name, "high_id"),
             shared_minutes: __sdk::__query_builder::Col::new(table_name, "shared_minutes"),
-            joint_minute_anchor: __sdk::__query_builder::Col::new(
-                table_name,
-                "joint_minute_anchor",
-            ),
+            joint_minute_anchor: __sdk::__query_builder::Col::new(table_name, "joint_minute_anchor"),
+
         }
     }
 }
@@ -61,8 +67,10 @@ impl __sdk::__query_builder::HasIxCols for CharacterFamiliarity {
             high_id: __sdk::__query_builder::IxCol::new(table_name, "high_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             low_id: __sdk::__query_builder::IxCol::new(table_name, "low_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterFamiliarity {}
+

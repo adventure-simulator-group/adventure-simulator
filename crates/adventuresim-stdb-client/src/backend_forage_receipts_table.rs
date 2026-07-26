@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::backend_forage_receipt_type::BackendForageReceipt;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_forage_receipts`.
 ///
@@ -31,9 +36,7 @@ pub trait BackendForageReceiptsTableAccess {
 impl BackendForageReceiptsTableAccess for super::RemoteTables {
     fn backend_forage_receipts(&self) -> BackendForageReceiptsTableHandle<'_> {
         BackendForageReceiptsTableHandle {
-            imp: self
-                .imp
-                .get_table::<BackendForageReceipt>("backend_forage_receipts"),
+            imp: self.imp.get_table::<BackendForageReceipt>("backend_forage_receipts"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendForageReceiptsTableHandle<'ctx> {
     type Row = BackendForageReceipt;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = BackendForageReceipt> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = BackendForageReceipt> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendForageReceiptsInsertCallbackId;
 
@@ -82,7 +81,8 @@ impl<'ctx> __sdk::Table for BackendForageReceiptsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<BackendForageReceipt>("backend_forage_receipts");
+
+        let _table = client_cache.get_or_make_table::<BackendForageReceipt>("backend_forage_receipts");
 }
 
 #[doc(hidden)]
@@ -90,24 +90,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<BackendForageReceipt>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<BackendForageReceipt>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<BackendForageReceipt>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `BackendForageReceipt`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_forage_receiptsQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `BackendForageReceipt`.
-    fn backend_forage_receipts(&self) -> __sdk::__query_builder::Table<BackendForageReceipt>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `BackendForageReceipt`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_forage_receiptsQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `BackendForageReceipt`.
+            fn backend_forage_receipts(&self) -> __sdk::__query_builder::Table<BackendForageReceipt>;
+        }
 
-impl backend_forage_receiptsQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_forage_receipts(&self) -> __sdk::__query_builder::Table<BackendForageReceipt> {
-        __sdk::__query_builder::Table::new("backend_forage_receipts")
-    }
-}
+        impl backend_forage_receiptsQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_forage_receipts(&self) -> __sdk::__query_builder::Table<BackendForageReceipt> {
+                __sdk::__query_builder::Table::new("backend_forage_receipts")
+            }
+        }
+

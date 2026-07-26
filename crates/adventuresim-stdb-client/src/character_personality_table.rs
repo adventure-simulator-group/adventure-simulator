@@ -2,17 +2,22 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::character_personality_type::CharacterPersonality;
-use super::conscience_type::Conscience;
-use super::conviction_type::Conviction;
-use super::drive_type::Drive;
-use super::hygiene_type::Hygiene;
 use super::nerve_type::Nerve;
+use super::drive_type::Drive;
 use super::outlook_type::Outlook;
-use super::self_regard_type::SelfRegard;
 use super::sociability_type::Sociability;
+use super::conscience_type::Conscience;
+use super::self_regard_type::SelfRegard;
+use super::conviction_type::Conviction;
+use super::hygiene_type::Hygiene;
 use super::temperance_type::Temperance;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_personality`.
 ///
@@ -40,9 +45,7 @@ pub trait CharacterPersonalityTableAccess {
 impl CharacterPersonalityTableAccess for super::RemoteTables {
     fn character_personality(&self) -> CharacterPersonalityTableHandle<'_> {
         CharacterPersonalityTableHandle {
-            imp: self
-                .imp
-                .get_table::<CharacterPersonality>("character_personality"),
+            imp: self.imp.get_table::<CharacterPersonality>("character_personality"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -55,12 +58,8 @@ impl<'ctx> __sdk::Table for CharacterPersonalityTableHandle<'ctx> {
     type Row = CharacterPersonality;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = CharacterPersonality> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = CharacterPersonality> + '_ { self.imp.iter() }
 
     type InsertCallbackId = CharacterPersonalityInsertCallbackId;
 
@@ -106,38 +105,39 @@ impl<'ctx> __sdk::TableWithPrimaryKey for CharacterPersonalityTableHandle<'ctx> 
     }
 }
 
-/// Access to the `character_id` unique index on the table `character_personality`,
-/// which allows point queries on the field of the same name
-/// via the [`CharacterPersonalityCharacterIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.character_personality().character_id().find(...)`.
-pub struct CharacterPersonalityCharacterIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<CharacterPersonality, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> CharacterPersonalityTableHandle<'ctx> {
-    /// Get a handle on the `character_id` unique index on the table `character_personality`.
-    pub fn character_id(&self) -> CharacterPersonalityCharacterIdUnique<'ctx> {
-        CharacterPersonalityCharacterIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("character_id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `character_id` unique index on the table `character_personality`,
+        /// which allows point queries on the field of the same name
+        /// via the [`CharacterPersonalityCharacterIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.character_personality().character_id().find(...)`.
+        pub struct CharacterPersonalityCharacterIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<CharacterPersonality, u64>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> CharacterPersonalityCharacterIdUnique<'ctx> {
-    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<CharacterPersonality> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> CharacterPersonalityTableHandle<'ctx> {
+            /// Get a handle on the `character_id` unique index on the table `character_personality`.
+            pub fn character_id(&self) -> CharacterPersonalityCharacterIdUnique<'ctx> {
+                CharacterPersonalityCharacterIdUnique {
+                    imp: self.imp.get_unique_constraint::<u64>("character_id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> CharacterPersonalityCharacterIdUnique<'ctx> {
+            /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &u64) -> Option<CharacterPersonality> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
     let _table = client_cache.get_or_make_table::<CharacterPersonality>("character_personality");
     _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
@@ -147,24 +147,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<CharacterPersonality>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<CharacterPersonality>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<CharacterPersonality>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `CharacterPersonality`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait character_personalityQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `CharacterPersonality`.
-    fn character_personality(&self) -> __sdk::__query_builder::Table<CharacterPersonality>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `CharacterPersonality`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait character_personalityQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `CharacterPersonality`.
+            fn character_personality(&self) -> __sdk::__query_builder::Table<CharacterPersonality>;
+        }
 
-impl character_personalityQueryTableAccess for __sdk::QueryTableAccessor {
-    fn character_personality(&self) -> __sdk::__query_builder::Table<CharacterPersonality> {
-        __sdk::__query_builder::Table::new("character_personality")
-    }
-}
+        impl character_personalityQueryTableAccess for __sdk::QueryTableAccessor {
+            fn character_personality(&self) -> __sdk::__query_builder::Table<CharacterPersonality> {
+                __sdk::__query_builder::Table::new("character_personality")
+            }
+        }
+

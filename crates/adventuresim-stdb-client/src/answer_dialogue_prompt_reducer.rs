@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -24,8 +30,8 @@ impl From<AnswerDialoguePromptArgs> for super::Reducer {
             action_id: args.action_id,
             expected_revision: args.expected_revision,
             catalog_revision: args.catalog_revision,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for AnswerDialoguePromptArgs {
@@ -43,24 +49,14 @@ pub trait answer_dialogue_prompt {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`answer_dialogue_prompt:answer_dialogue_prompt_then`] to run a callback after the reducer completes.
-    fn answer_dialogue_prompt(
-        &self,
-        character_id: u64,
-        prompt_row_id: String,
-        choice_ids_json: String,
-        action_id: String,
-        expected_revision: u64,
-        catalog_revision: String,
-    ) -> __sdk::Result<()> {
-        self.answer_dialogue_prompt_then(
-            character_id,
-            prompt_row_id,
-            choice_ids_json,
-            action_id,
-            expected_revision,
-            catalog_revision,
-            |_, _| {},
-        )
+    fn answer_dialogue_prompt(&self, character_id: u64,
+prompt_row_id: String,
+choice_ids_json: String,
+action_id: String,
+expected_revision: u64,
+catalog_revision: String,
+) -> __sdk::Result<()> {
+        self.answer_dialogue_prompt_then(character_id, prompt_row_id, choice_ids_json, action_id, expected_revision, catalog_revision,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `answer_dialogue_prompt` to run as soon as possible,
@@ -72,17 +68,15 @@ pub trait answer_dialogue_prompt {
     fn answer_dialogue_prompt_then(
         &self,
         character_id: u64,
-        prompt_row_id: String,
-        choice_ids_json: String,
-        action_id: String,
-        expected_revision: u64,
-        catalog_revision: String,
+prompt_row_id: String,
+choice_ids_json: String,
+action_id: String,
+expected_revision: u64,
+catalog_revision: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -90,28 +84,17 @@ impl answer_dialogue_prompt for super::RemoteReducers {
     fn answer_dialogue_prompt_then(
         &self,
         character_id: u64,
-        prompt_row_id: String,
-        choice_ids_json: String,
-        action_id: String,
-        expected_revision: u64,
-        catalog_revision: String,
+prompt_row_id: String,
+choice_ids_json: String,
+action_id: String,
+expected_revision: u64,
+catalog_revision: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            AnswerDialoguePromptArgs {
-                character_id,
-                prompt_row_id,
-                choice_ids_json,
-                action_id,
-                expected_revision,
-                catalog_revision,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(AnswerDialoguePromptArgs { character_id, prompt_row_id, choice_ids_json, action_id, expected_revision, catalog_revision,  }, callback)
     }
 }
+

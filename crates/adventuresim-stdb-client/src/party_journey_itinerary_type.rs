@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::journey_camp_interval_type::JourneyCampInterval;
 
@@ -10,23 +15,23 @@ use super::journey_camp_interval_type::JourneyCampInterval;
 #[sats(crate = __lib)]
 pub struct PartyJourneyItinerary {
     pub party_id: String,
-    pub actual_camp_intervals: Vec<JourneyCampInterval>,
-    pub forecast_camp_intervals: Vec<JourneyCampInterval>,
+    pub actual_camp_intervals: Vec::<JourneyCampInterval>,
+    pub forecast_camp_intervals: Vec::<JourneyCampInterval>,
 }
+
 
 impl __sdk::InModule for PartyJourneyItinerary {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PartyJourneyItinerary`.
 ///
 /// Provides typed access to columns for query building.
 pub struct PartyJourneyItineraryCols {
     pub party_id: __sdk::__query_builder::Col<PartyJourneyItinerary, String>,
-    pub actual_camp_intervals:
-        __sdk::__query_builder::Col<PartyJourneyItinerary, Vec<JourneyCampInterval>>,
-    pub forecast_camp_intervals:
-        __sdk::__query_builder::Col<PartyJourneyItinerary, Vec<JourneyCampInterval>>,
+    pub actual_camp_intervals: __sdk::__query_builder::Col<PartyJourneyItinerary, Vec::<JourneyCampInterval>>,
+    pub forecast_camp_intervals: __sdk::__query_builder::Col<PartyJourneyItinerary, Vec::<JourneyCampInterval>>,
 }
 
 impl __sdk::__query_builder::HasCols for PartyJourneyItinerary {
@@ -34,14 +39,9 @@ impl __sdk::__query_builder::HasCols for PartyJourneyItinerary {
     fn cols(table_name: &'static str) -> Self::Cols {
         PartyJourneyItineraryCols {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
-            actual_camp_intervals: __sdk::__query_builder::Col::new(
-                table_name,
-                "actual_camp_intervals",
-            ),
-            forecast_camp_intervals: __sdk::__query_builder::Col::new(
-                table_name,
-                "forecast_camp_intervals",
-            ),
+            actual_camp_intervals: __sdk::__query_builder::Col::new(table_name, "actual_camp_intervals"),
+            forecast_camp_intervals: __sdk::__query_builder::Col::new(table_name, "forecast_camp_intervals"),
+
         }
     }
 }
@@ -58,8 +58,10 @@ impl __sdk::__query_builder::HasIxCols for PartyJourneyItinerary {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyJourneyItineraryIxCols {
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PartyJourneyItinerary {}
+

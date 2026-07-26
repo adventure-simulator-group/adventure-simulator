@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::case_site_id_type::CaseSiteId;
 
@@ -15,9 +20,11 @@ pub struct PartyCaseSiteTracking {
     pub tracked_at: u64,
 }
 
+
 impl __sdk::InModule for PartyCaseSiteTracking {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PartyCaseSiteTracking`.
 ///
@@ -34,12 +41,10 @@ impl __sdk::__query_builder::HasCols for PartyCaseSiteTracking {
     fn cols(table_name: &'static str) -> Self::Cols {
         PartyCaseSiteTrackingCols {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
-            observer_character_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "observer_character_id",
-            ),
+            observer_character_id: __sdk::__query_builder::Col::new(table_name, "observer_character_id"),
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
             tracked_at: __sdk::__query_builder::Col::new(table_name, "tracked_at"),
+
         }
     }
 }
@@ -56,8 +61,10 @@ impl __sdk::__query_builder::HasIxCols for PartyCaseSiteTracking {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyCaseSiteTrackingIxCols {
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PartyCaseSiteTracking {}
+

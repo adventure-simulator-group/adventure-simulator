@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::committed_cut_type::CommittedCut;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_committed_cuts`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendCommittedCutsTableHandle<'ctx> {
     type Row = CommittedCut;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = CommittedCut> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = CommittedCut> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendCommittedCutsInsertCallbackId;
 
@@ -80,7 +81,8 @@ impl<'ctx> __sdk::Table for BackendCommittedCutsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<CommittedCut>("backend_committed_cuts");
+
+        let _table = client_cache.get_or_make_table::<CommittedCut>("backend_committed_cuts");
 }
 
 #[doc(hidden)]
@@ -88,24 +90,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<CommittedCut>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<CommittedCut>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<CommittedCut>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `CommittedCut`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_committed_cutsQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `CommittedCut`.
-    fn backend_committed_cuts(&self) -> __sdk::__query_builder::Table<CommittedCut>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `CommittedCut`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_committed_cutsQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `CommittedCut`.
+            fn backend_committed_cuts(&self) -> __sdk::__query_builder::Table<CommittedCut>;
+        }
 
-impl backend_committed_cutsQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_committed_cuts(&self) -> __sdk::__query_builder::Table<CommittedCut> {
-        __sdk::__query_builder::Table::new("backend_committed_cuts")
-    }
-}
+        impl backend_committed_cutsQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_committed_cuts(&self) -> __sdk::__query_builder::Table<CommittedCut> {
+                __sdk::__query_builder::Table::new("backend_committed_cuts")
+            }
+        }
+

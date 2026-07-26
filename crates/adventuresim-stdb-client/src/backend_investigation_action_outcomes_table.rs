@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_investigation_action_outcomes`.
 ///
@@ -25,19 +30,13 @@ pub struct BackendInvestigationActionOutcomesTableHandle<'ctx> {
 pub trait BackendInvestigationActionOutcomesTableAccess {
     #[allow(non_snake_case)]
     /// Obtain a [`BackendInvestigationActionOutcomesTableHandle`], which mediates access to the table `backend_investigation_action_outcomes`.
-    fn backend_investigation_action_outcomes(
-        &self,
-    ) -> BackendInvestigationActionOutcomesTableHandle<'_>;
+    fn backend_investigation_action_outcomes(&self) -> BackendInvestigationActionOutcomesTableHandle<'_>;
 }
 
 impl BackendInvestigationActionOutcomesTableAccess for super::RemoteTables {
-    fn backend_investigation_action_outcomes(
-        &self,
-    ) -> BackendInvestigationActionOutcomesTableHandle<'_> {
+    fn backend_investigation_action_outcomes(&self) -> BackendInvestigationActionOutcomesTableHandle<'_> {
         BackendInvestigationActionOutcomesTableHandle {
-            imp: self.imp.get_table::<BackendInvestigationActionOutcome>(
-                "backend_investigation_action_outcomes",
-            ),
+            imp: self.imp.get_table::<BackendInvestigationActionOutcome>("backend_investigation_action_outcomes"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -50,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendInvestigationActionOutcomesTableHandle<'ctx> 
     type Row = BackendInvestigationActionOutcome;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = BackendInvestigationActionOutcome> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = BackendInvestigationActionOutcome> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendInvestigationActionOutcomesInsertCallbackId;
 
@@ -86,9 +81,8 @@ impl<'ctx> __sdk::Table for BackendInvestigationActionOutcomesTableHandle<'ctx> 
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<BackendInvestigationActionOutcome>(
-        "backend_investigation_action_outcomes",
-    );
+
+        let _table = client_cache.get_or_make_table::<BackendInvestigationActionOutcome>("backend_investigation_action_outcomes");
 }
 
 #[doc(hidden)]
@@ -99,28 +93,23 @@ pub(super) fn parse_table_update(
         __sdk::InternalError::failed_parse(
             "TableUpdate<BackendInvestigationActionOutcome>",
             "TableUpdate",
-        )
-        .with_cause(e)
-        .into()
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `BackendInvestigationActionOutcome`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_investigation_action_outcomesQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `BackendInvestigationActionOutcome`.
-    fn backend_investigation_action_outcomes(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendInvestigationActionOutcome>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `BackendInvestigationActionOutcome`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_investigation_action_outcomesQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `BackendInvestigationActionOutcome`.
+            fn backend_investigation_action_outcomes(&self) -> __sdk::__query_builder::Table<BackendInvestigationActionOutcome>;
+        }
 
-impl backend_investigation_action_outcomesQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_investigation_action_outcomes(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendInvestigationActionOutcome> {
-        __sdk::__query_builder::Table::new("backend_investigation_action_outcomes")
-    }
-}
+        impl backend_investigation_action_outcomesQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_investigation_action_outcomes(&self) -> __sdk::__query_builder::Table<BackendInvestigationActionOutcome> {
+                __sdk::__query_builder::Table::new("backend_investigation_action_outcomes")
+            }
+        }
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,9 +28,11 @@ pub struct DialoguePrompt {
     pub source_refs_json: String,
 }
 
+
 impl __sdk::InModule for DialoguePrompt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `DialoguePrompt`.
 ///
@@ -60,11 +68,9 @@ impl __sdk::__query_builder::HasCols for DialoguePrompt {
             min_choices: __sdk::__query_builder::Col::new(table_name, "min_choices"),
             max_choices: __sdk::__query_builder::Col::new(table_name, "max_choices"),
             state: __sdk::__query_builder::Col::new(table_name, "state"),
-            resolved_choice_ids_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "resolved_choice_ids_json",
-            ),
+            resolved_choice_ids_json: __sdk::__query_builder::Col::new(table_name, "resolved_choice_ids_json"),
             source_refs_json: __sdk::__query_builder::Col::new(table_name, "source_refs_json"),
+
         }
     }
 }
@@ -85,8 +91,10 @@ impl __sdk::__query_builder::HasIxCols for DialoguePrompt {
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             session_id: __sdk::__query_builder::IxCol::new(table_name, "session_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for DialoguePrompt {}
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::water_distance_meters_type::WaterDistanceMeters;
 
@@ -12,8 +17,12 @@ pub enum MarineWaterAccess {
     Tidal(WaterDistanceMeters),
 
     OpenCoast(WaterDistanceMeters),
+
 }
+
+
 
 impl __sdk::InModule for MarineWaterAccess {
     type Module = super::RemoteModule;
 }
+

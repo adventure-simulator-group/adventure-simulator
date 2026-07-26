@@ -2,10 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::derived_historical_vegetation_type::DerivedHistoricalVegetation;
 use super::direct_historical_vegetation_type::DirectHistoricalVegetation;
+use super::derived_historical_vegetation_type::DerivedHistoricalVegetation;
 use super::fallback_historical_vegetation_type::FallbackHistoricalVegetation;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -16,8 +21,12 @@ pub enum HistoricalVegetation {
     Derived(DerivedHistoricalVegetation),
 
     Fallback(FallbackHistoricalVegetation),
+
 }
+
+
 
 impl __sdk::InModule for HistoricalVegetation {
     type Module = super::RemoteModule;
 }
+

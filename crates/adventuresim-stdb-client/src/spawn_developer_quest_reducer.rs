@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,8 +24,8 @@ impl From<SpawnDeveloperQuestArgs> for super::Reducer {
             character_id: args.character_id,
             definition_json: args.definition_json,
             allow_implausible: args.allow_implausible,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for SpawnDeveloperQuestArgs {
@@ -37,13 +43,11 @@ pub trait spawn_developer_quest {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`spawn_developer_quest:spawn_developer_quest_then`] to run a callback after the reducer completes.
-    fn spawn_developer_quest(
-        &self,
-        character_id: u64,
-        definition_json: String,
-        allow_implausible: bool,
-    ) -> __sdk::Result<()> {
-        self.spawn_developer_quest_then(character_id, definition_json, allow_implausible, |_, _| {})
+    fn spawn_developer_quest(&self, character_id: u64,
+definition_json: String,
+allow_implausible: bool,
+) -> __sdk::Result<()> {
+        self.spawn_developer_quest_then(character_id, definition_json, allow_implausible,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `spawn_developer_quest` to run as soon as possible,
@@ -55,14 +59,12 @@ pub trait spawn_developer_quest {
     fn spawn_developer_quest_then(
         &self,
         character_id: u64,
-        definition_json: String,
-        allow_implausible: bool,
+definition_json: String,
+allow_implausible: bool,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -70,22 +72,14 @@ impl spawn_developer_quest for super::RemoteReducers {
     fn spawn_developer_quest_then(
         &self,
         character_id: u64,
-        definition_json: String,
-        allow_implausible: bool,
+definition_json: String,
+allow_implausible: bool,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            SpawnDeveloperQuestArgs {
-                character_id,
-                definition_json,
-                allow_implausible,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(SpawnDeveloperQuestArgs { character_id, definition_json, allow_implausible,  }, callback)
     }
 }
+

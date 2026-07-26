@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,15 +16,17 @@ pub struct BackendDialogueParticipant {
     pub id: String,
     pub session_id: String,
     pub role: String,
-    pub character_id: Option<u64>,
+    pub character_id: Option::<u64>,
     pub actor_id: String,
     pub display_name: String,
     pub owner_character_id: u64,
 }
 
+
 impl __sdk::InModule for BackendDialogueParticipant {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `BackendDialogueParticipant`.
 ///
@@ -27,7 +35,7 @@ pub struct BackendDialogueParticipantCols {
     pub id: __sdk::__query_builder::Col<BackendDialogueParticipant, String>,
     pub session_id: __sdk::__query_builder::Col<BackendDialogueParticipant, String>,
     pub role: __sdk::__query_builder::Col<BackendDialogueParticipant, String>,
-    pub character_id: __sdk::__query_builder::Col<BackendDialogueParticipant, Option<u64>>,
+    pub character_id: __sdk::__query_builder::Col<BackendDialogueParticipant, Option::<u64>>,
     pub actor_id: __sdk::__query_builder::Col<BackendDialogueParticipant, String>,
     pub display_name: __sdk::__query_builder::Col<BackendDialogueParticipant, String>,
     pub owner_character_id: __sdk::__query_builder::Col<BackendDialogueParticipant, u64>,
@@ -44,6 +52,8 @@ impl __sdk::__query_builder::HasCols for BackendDialogueParticipant {
             actor_id: __sdk::__query_builder::Col::new(table_name, "actor_id"),
             display_name: __sdk::__query_builder::Col::new(table_name, "display_name"),
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
+
         }
     }
 }
+

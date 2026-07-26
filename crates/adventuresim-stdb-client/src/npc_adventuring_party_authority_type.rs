@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,9 +21,11 @@ pub struct NpcAdventuringPartyAuthority {
     pub available_at: u64,
 }
 
+
 impl __sdk::InModule for NpcAdventuringPartyAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `NpcAdventuringPartyAuthority`.
 ///
@@ -38,12 +46,10 @@ impl __sdk::__query_builder::HasCols for NpcAdventuringPartyAuthority {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
-            member_npc_ids_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "member_npc_ids_json",
-            ),
+            member_npc_ids_json: __sdk::__query_builder::Col::new(table_name, "member_npc_ids_json"),
             capability: __sdk::__query_builder::Col::new(table_name, "capability"),
             available_at: __sdk::__query_builder::Col::new(table_name, "available_at"),
+
         }
     }
 }
@@ -62,8 +68,10 @@ impl __sdk::__query_builder::HasIxCols for NpcAdventuringPartyAuthority {
         NpcAdventuringPartyAuthorityIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for NpcAdventuringPartyAuthority {}
+

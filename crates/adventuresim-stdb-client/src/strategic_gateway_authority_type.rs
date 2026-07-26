@@ -2,20 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct StrategicGatewayAuthority {
     pub id: u8,
     pub identity: __sdk::Identity,
-    pub terrain_package_digest: Option<String>,
+    pub terrain_package_digest: Option::<String>,
     pub terrain_schema: u32,
 }
+
 
 impl __sdk::InModule for StrategicGatewayAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `StrategicGatewayAuthority`.
 ///
@@ -23,8 +31,7 @@ impl __sdk::InModule for StrategicGatewayAuthority {
 pub struct StrategicGatewayAuthorityCols {
     pub id: __sdk::__query_builder::Col<StrategicGatewayAuthority, u8>,
     pub identity: __sdk::__query_builder::Col<StrategicGatewayAuthority, __sdk::Identity>,
-    pub terrain_package_digest:
-        __sdk::__query_builder::Col<StrategicGatewayAuthority, Option<String>>,
+    pub terrain_package_digest: __sdk::__query_builder::Col<StrategicGatewayAuthority, Option::<String>>,
     pub terrain_schema: __sdk::__query_builder::Col<StrategicGatewayAuthority, u32>,
 }
 
@@ -34,11 +41,9 @@ impl __sdk::__query_builder::HasCols for StrategicGatewayAuthority {
         StrategicGatewayAuthorityCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             identity: __sdk::__query_builder::Col::new(table_name, "identity"),
-            terrain_package_digest: __sdk::__query_builder::Col::new(
-                table_name,
-                "terrain_package_digest",
-            ),
+            terrain_package_digest: __sdk::__query_builder::Col::new(table_name, "terrain_package_digest"),
             terrain_schema: __sdk::__query_builder::Col::new(table_name, "terrain_schema"),
+
         }
     }
 }
@@ -55,8 +60,10 @@ impl __sdk::__query_builder::HasIxCols for StrategicGatewayAuthority {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         StrategicGatewayAuthorityIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for StrategicGatewayAuthority {}
+

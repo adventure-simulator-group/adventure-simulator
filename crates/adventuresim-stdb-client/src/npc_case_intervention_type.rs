@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -27,9 +33,11 @@ pub struct NpcCaseIntervention {
     pub public_story_markdown: String,
 }
 
+
 impl __sdk::InModule for NpcCaseIntervention {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `NpcCaseIntervention`.
 ///
@@ -70,19 +78,14 @@ impl __sdk::__query_builder::HasCols for NpcCaseIntervention {
             strategy: __sdk::__query_builder::Col::new(table_name, "strategy"),
             route: __sdk::__query_builder::Col::new(table_name, "route"),
             lead_summary: __sdk::__query_builder::Col::new(table_name, "lead_summary"),
-            preparation_summary: __sdk::__query_builder::Col::new(
-                table_name,
-                "preparation_summary",
-            ),
+            preparation_summary: __sdk::__query_builder::Col::new(table_name, "preparation_summary"),
             action_plan_json: __sdk::__query_builder::Col::new(table_name, "action_plan_json"),
             outcome: __sdk::__query_builder::Col::new(table_name, "outcome"),
             mitigation_bps: __sdk::__query_builder::Col::new(table_name, "mitigation_bps"),
             next_retry_at: __sdk::__query_builder::Col::new(table_name, "next_retry_at"),
             safe_summary: __sdk::__query_builder::Col::new(table_name, "safe_summary"),
-            public_story_markdown: __sdk::__query_builder::Col::new(
-                table_name,
-                "public_story_markdown",
-            ),
+            public_story_markdown: __sdk::__query_builder::Col::new(table_name, "public_story_markdown"),
+
         }
     }
 }
@@ -103,8 +106,10 @@ impl __sdk::__query_builder::HasIxCols for NpcCaseIntervention {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             started_at: __sdk::__query_builder::IxCol::new(table_name, "started_at"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for NpcCaseIntervention {}
+

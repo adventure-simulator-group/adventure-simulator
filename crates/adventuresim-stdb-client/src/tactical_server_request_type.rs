@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,9 +21,11 @@ pub struct TacticalServerRequest {
     pub required_enemy_kills: u32,
 }
 
+
 impl __sdk::InModule for TacticalServerRequest {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `TacticalServerRequest`.
 ///
@@ -40,10 +48,8 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             requested_by: __sdk::__query_builder::Col::new(table_name, "requested_by"),
-            required_enemy_kills: __sdk::__query_builder::Col::new(
-                table_name,
-                "required_enemy_kills",
-            ),
+            required_enemy_kills: __sdk::__query_builder::Col::new(table_name, "required_enemy_kills"),
+
         }
     }
 }
@@ -62,8 +68,10 @@ impl __sdk::__query_builder::HasIxCols for TacticalServerRequest {
         TacticalServerRequestIxCols {
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             mission_id: __sdk::__query_builder::IxCol::new(table_name, "mission_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for TacticalServerRequest {}
+

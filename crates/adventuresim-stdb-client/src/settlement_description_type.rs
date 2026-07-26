@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::settlement_description_kind_type::SettlementDescriptionKind;
 
@@ -12,13 +17,15 @@ pub struct SettlementDescription {
     pub id: String,
     pub settlement_id: String,
     pub kind: SettlementDescriptionKind,
-    pub language: Option<String>,
+    pub language: Option::<String>,
     pub body: String,
 }
+
 
 impl __sdk::InModule for SettlementDescription {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `SettlementDescription`.
 ///
@@ -27,7 +34,7 @@ pub struct SettlementDescriptionCols {
     pub id: __sdk::__query_builder::Col<SettlementDescription, String>,
     pub settlement_id: __sdk::__query_builder::Col<SettlementDescription, String>,
     pub kind: __sdk::__query_builder::Col<SettlementDescription, SettlementDescriptionKind>,
-    pub language: __sdk::__query_builder::Col<SettlementDescription, Option<String>>,
+    pub language: __sdk::__query_builder::Col<SettlementDescription, Option::<String>>,
     pub body: __sdk::__query_builder::Col<SettlementDescription, String>,
 }
 
@@ -40,6 +47,7 @@ impl __sdk::__query_builder::HasCols for SettlementDescription {
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
             language: __sdk::__query_builder::Col::new(table_name, "language"),
             body: __sdk::__query_builder::Col::new(table_name, "body"),
+
         }
     }
 }
@@ -58,8 +66,10 @@ impl __sdk::__query_builder::HasIxCols for SettlementDescription {
         SettlementDescriptionIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for SettlementDescription {}
+

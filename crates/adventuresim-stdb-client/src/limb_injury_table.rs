@@ -2,9 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::limb_injury_type::LimbInjury;
 use super::limb_region_type::LimbRegion;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `limb_injury`.
 ///
@@ -45,12 +50,8 @@ impl<'ctx> __sdk::Table for LimbInjuryTableHandle<'ctx> {
     type Row = LimbInjury;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = LimbInjury> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = LimbInjury> + '_ { self.imp.iter() }
 
     type InsertCallbackId = LimbInjuryInsertCallbackId;
 
@@ -96,38 +97,39 @@ impl<'ctx> __sdk::TableWithPrimaryKey for LimbInjuryTableHandle<'ctx> {
     }
 }
 
-/// Access to the `id` unique index on the table `limb_injury`,
-/// which allows point queries on the field of the same name
-/// via the [`LimbInjuryIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.limb_injury().id().find(...)`.
-pub struct LimbInjuryIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<LimbInjury, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> LimbInjuryTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `limb_injury`.
-    pub fn id(&self) -> LimbInjuryIdUnique<'ctx> {
-        LimbInjuryIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `id` unique index on the table `limb_injury`,
+        /// which allows point queries on the field of the same name
+        /// via the [`LimbInjuryIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.limb_injury().id().find(...)`.
+        pub struct LimbInjuryIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<LimbInjury, String>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> LimbInjuryIdUnique<'ctx> {
-    /// Find the subscribed row whose `id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<LimbInjury> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> LimbInjuryTableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `limb_injury`.
+            pub fn id(&self) -> LimbInjuryIdUnique<'ctx> {
+                LimbInjuryIdUnique {
+                    imp: self.imp.get_unique_constraint::<String>("id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> LimbInjuryIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &String) -> Option<LimbInjury> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
     let _table = client_cache.get_or_make_table::<LimbInjury>("limb_injury");
     _table.add_unique_constraint::<String>("id", |row| &row.id);
 }
@@ -137,24 +139,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<LimbInjury>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<LimbInjury>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<LimbInjury>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `LimbInjury`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait limb_injuryQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `LimbInjury`.
-    fn limb_injury(&self) -> __sdk::__query_builder::Table<LimbInjury>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `LimbInjury`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait limb_injuryQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `LimbInjury`.
+            fn limb_injury(&self) -> __sdk::__query_builder::Table<LimbInjury>;
+        }
 
-impl limb_injuryQueryTableAccess for __sdk::QueryTableAccessor {
-    fn limb_injury(&self) -> __sdk::__query_builder::Table<LimbInjury> {
-        __sdk::__query_builder::Table::new("limb_injury")
-    }
-}
+        impl limb_injuryQueryTableAccess for __sdk::QueryTableAccessor {
+            fn limb_injury(&self) -> __sdk::__query_builder::Table<LimbInjury> {
+                __sdk::__query_builder::Table::new("limb_injury")
+            }
+        }
+

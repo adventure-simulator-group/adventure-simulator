@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::backend_local_chat_message_type::BackendLocalChatMessage;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_local_chat_messages`.
 ///
@@ -31,9 +36,7 @@ pub trait BackendLocalChatMessagesTableAccess {
 impl BackendLocalChatMessagesTableAccess for super::RemoteTables {
     fn backend_local_chat_messages(&self) -> BackendLocalChatMessagesTableHandle<'_> {
         BackendLocalChatMessagesTableHandle {
-            imp: self
-                .imp
-                .get_table::<BackendLocalChatMessage>("backend_local_chat_messages"),
+            imp: self.imp.get_table::<BackendLocalChatMessage>("backend_local_chat_messages"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendLocalChatMessagesTableHandle<'ctx> {
     type Row = BackendLocalChatMessage;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = BackendLocalChatMessage> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = BackendLocalChatMessage> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendLocalChatMessagesInsertCallbackId;
 
@@ -82,8 +81,8 @@ impl<'ctx> __sdk::Table for BackendLocalChatMessagesTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table =
-        client_cache.get_or_make_table::<BackendLocalChatMessage>("backend_local_chat_messages");
+
+        let _table = client_cache.get_or_make_table::<BackendLocalChatMessage>("backend_local_chat_messages");
 }
 
 #[doc(hidden)]
@@ -91,27 +90,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<BackendLocalChatMessage>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<BackendLocalChatMessage>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<BackendLocalChatMessage>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `BackendLocalChatMessage`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_local_chat_messagesQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `BackendLocalChatMessage`.
-    fn backend_local_chat_messages(&self)
-    -> __sdk::__query_builder::Table<BackendLocalChatMessage>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `BackendLocalChatMessage`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_local_chat_messagesQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `BackendLocalChatMessage`.
+            fn backend_local_chat_messages(&self) -> __sdk::__query_builder::Table<BackendLocalChatMessage>;
+        }
 
-impl backend_local_chat_messagesQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_local_chat_messages(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendLocalChatMessage> {
-        __sdk::__query_builder::Table::new("backend_local_chat_messages")
-    }
-}
+        impl backend_local_chat_messagesQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_local_chat_messages(&self) -> __sdk::__query_builder::Table<BackendLocalChatMessage> {
+                __sdk::__query_builder::Table::new("backend_local_chat_messages")
+            }
+        }
+

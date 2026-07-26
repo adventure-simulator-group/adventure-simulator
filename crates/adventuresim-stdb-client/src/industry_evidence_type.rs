@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::derived_industry_type::DerivedIndustry;
 use super::fallback_industry_type::FallbackIndustry;
@@ -13,8 +18,12 @@ pub enum IndustryEvidence {
     Derived(DerivedIndustry),
 
     Fallback(FallbackIndustry),
+
 }
+
+
 
 impl __sdk::InModule for IndustryEvidence {
     type Module = super::RemoteModule;
 }
+

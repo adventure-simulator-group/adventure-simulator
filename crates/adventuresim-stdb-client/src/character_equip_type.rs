@@ -2,41 +2,49 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CharacterEquip {
     pub character_id: u64,
-    pub left_hand_item_id: Option<u64>,
-    pub right_hand_item_id: Option<u64>,
-    pub left_arm_armor_id: Option<u64>,
-    pub right_arm_armor_id: Option<u64>,
-    pub left_leg_armor_id: Option<u64>,
-    pub right_leg_armor_id: Option<u64>,
-    pub head_armor_id: Option<u64>,
-    pub chest_armor_id: Option<u64>,
-    pub stomach_armor_id: Option<u64>,
+    pub left_hand_item_id: Option::<u64>,
+    pub right_hand_item_id: Option::<u64>,
+    pub left_arm_armor_id: Option::<u64>,
+    pub right_arm_armor_id: Option::<u64>,
+    pub left_leg_armor_id: Option::<u64>,
+    pub right_leg_armor_id: Option::<u64>,
+    pub head_armor_id: Option::<u64>,
+    pub chest_armor_id: Option::<u64>,
+    pub stomach_armor_id: Option::<u64>,
 }
+
 
 impl __sdk::InModule for CharacterEquip {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `CharacterEquip`.
 ///
 /// Provides typed access to columns for query building.
 pub struct CharacterEquipCols {
     pub character_id: __sdk::__query_builder::Col<CharacterEquip, u64>,
-    pub left_hand_item_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
-    pub right_hand_item_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
-    pub left_arm_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
-    pub right_arm_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
-    pub left_leg_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
-    pub right_leg_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
-    pub head_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
-    pub chest_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
-    pub stomach_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option<u64>>,
+    pub left_hand_item_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
+    pub right_hand_item_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
+    pub left_arm_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
+    pub right_arm_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
+    pub left_leg_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
+    pub right_leg_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
+    pub head_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
+    pub chest_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
+    pub stomach_armor_id: __sdk::__query_builder::Col<CharacterEquip, Option::<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterEquip {
@@ -53,6 +61,7 @@ impl __sdk::__query_builder::HasCols for CharacterEquip {
             head_armor_id: __sdk::__query_builder::Col::new(table_name, "head_armor_id"),
             chest_armor_id: __sdk::__query_builder::Col::new(table_name, "chest_armor_id"),
             stomach_armor_id: __sdk::__query_builder::Col::new(table_name, "stomach_armor_id"),
+
         }
     }
 }
@@ -69,8 +78,10 @@ impl __sdk::__query_builder::HasIxCols for CharacterEquip {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterEquipIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterEquip {}
+

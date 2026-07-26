@@ -2,36 +2,43 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
+use super::character_type::Character;
 use super::character_attributes_type::CharacterAttributes;
 use super::character_limbs_type::CharacterLimbs;
 use super::character_skills_type::CharacterSkills;
 use super::character_stats_type::CharacterStats;
-use super::character_type::Character;
 use super::connected_player_item_type::ConnectedPlayerItem;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ConnectedPlayer {
     pub character: Character,
-    pub items: Vec<ConnectedPlayerItem>,
+    pub items: Vec::<ConnectedPlayerItem>,
     pub skills: CharacterSkills,
     pub stats: CharacterStats,
     pub attrs: CharacterAttributes,
     pub limbs: CharacterLimbs,
 }
 
+
 impl __sdk::InModule for ConnectedPlayer {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `ConnectedPlayer`.
 ///
 /// Provides typed access to columns for query building.
 pub struct ConnectedPlayerCols {
     pub character: __sdk::__query_builder::Col<ConnectedPlayer, Character>,
-    pub items: __sdk::__query_builder::Col<ConnectedPlayer, Vec<ConnectedPlayerItem>>,
+    pub items: __sdk::__query_builder::Col<ConnectedPlayer, Vec::<ConnectedPlayerItem>>,
     pub skills: __sdk::__query_builder::Col<ConnectedPlayer, CharacterSkills>,
     pub stats: __sdk::__query_builder::Col<ConnectedPlayer, CharacterStats>,
     pub attrs: __sdk::__query_builder::Col<ConnectedPlayer, CharacterAttributes>,
@@ -48,6 +55,8 @@ impl __sdk::__query_builder::HasCols for ConnectedPlayer {
             stats: __sdk::__query_builder::Col::new(table_name, "stats"),
             attrs: __sdk::__query_builder::Col::new(table_name, "attrs"),
             limbs: __sdk::__query_builder::Col::new(table_name, "limbs"),
+
         }
     }
 }
+

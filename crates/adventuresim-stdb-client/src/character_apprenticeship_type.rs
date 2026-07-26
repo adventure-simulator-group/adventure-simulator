@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,15 +16,17 @@ pub struct CharacterApprenticeship {
     pub id: u64,
     pub character_id: u64,
     pub service_id: String,
-    pub religion_id: Option<String>,
+    pub religion_id: Option::<String>,
     pub started_minute: u64,
     pub apprenticeship_minutes_accrued: u64,
     pub practice_minutes_accrued: u64,
 }
 
+
 impl __sdk::InModule for CharacterApprenticeship {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `CharacterApprenticeship`.
 ///
@@ -27,7 +35,7 @@ pub struct CharacterApprenticeshipCols {
     pub id: __sdk::__query_builder::Col<CharacterApprenticeship, u64>,
     pub character_id: __sdk::__query_builder::Col<CharacterApprenticeship, u64>,
     pub service_id: __sdk::__query_builder::Col<CharacterApprenticeship, String>,
-    pub religion_id: __sdk::__query_builder::Col<CharacterApprenticeship, Option<String>>,
+    pub religion_id: __sdk::__query_builder::Col<CharacterApprenticeship, Option::<String>>,
     pub started_minute: __sdk::__query_builder::Col<CharacterApprenticeship, u64>,
     pub apprenticeship_minutes_accrued: __sdk::__query_builder::Col<CharacterApprenticeship, u64>,
     pub practice_minutes_accrued: __sdk::__query_builder::Col<CharacterApprenticeship, u64>,
@@ -42,14 +50,9 @@ impl __sdk::__query_builder::HasCols for CharacterApprenticeship {
             service_id: __sdk::__query_builder::Col::new(table_name, "service_id"),
             religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
             started_minute: __sdk::__query_builder::Col::new(table_name, "started_minute"),
-            apprenticeship_minutes_accrued: __sdk::__query_builder::Col::new(
-                table_name,
-                "apprenticeship_minutes_accrued",
-            ),
-            practice_minutes_accrued: __sdk::__query_builder::Col::new(
-                table_name,
-                "practice_minutes_accrued",
-            ),
+            apprenticeship_minutes_accrued: __sdk::__query_builder::Col::new(table_name, "apprenticeship_minutes_accrued"),
+            practice_minutes_accrued: __sdk::__query_builder::Col::new(table_name, "practice_minutes_accrued"),
+
         }
     }
 }
@@ -68,8 +71,10 @@ impl __sdk::__query_builder::HasIxCols for CharacterApprenticeship {
         CharacterApprenticeshipIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterApprenticeship {}
+

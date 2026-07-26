@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,9 +20,11 @@ pub struct InvestigationTestimonyBundle {
     pub stages_json: String,
 }
 
+
 impl __sdk::InModule for InvestigationTestimonyBundle {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `InvestigationTestimonyBundle`.
 ///
@@ -38,6 +46,7 @@ impl __sdk::__query_builder::HasCols for InvestigationTestimonyBundle {
             witness_ref: __sdk::__query_builder::Col::new(table_name, "witness_ref"),
             reliability_json: __sdk::__query_builder::Col::new(table_name, "reliability_json"),
             stages_json: __sdk::__query_builder::Col::new(table_name, "stages_json"),
+
         }
     }
 }
@@ -54,8 +63,10 @@ impl __sdk::__query_builder::HasIxCols for InvestigationTestimonyBundle {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InvestigationTestimonyBundleIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationTestimonyBundle {}
+

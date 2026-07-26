@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::hostile_resolution_kind_type::HostileResolutionKind;
 
@@ -11,15 +16,17 @@ use super::hostile_resolution_kind_type::HostileResolutionKind;
 pub struct OutcomeSourceAuthority {
     pub id: String,
     pub battle_id: String,
-    pub mission_id: Option<String>,
-    pub hostile_group_id: Option<String>,
+    pub mission_id: Option::<String>,
+    pub hostile_group_id: Option::<String>,
     pub resolution: HostileResolutionKind,
     pub party_id: String,
 }
 
+
 impl __sdk::InModule for OutcomeSourceAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `OutcomeSourceAuthority`.
 ///
@@ -27,8 +34,8 @@ impl __sdk::InModule for OutcomeSourceAuthority {
 pub struct OutcomeSourceAuthorityCols {
     pub id: __sdk::__query_builder::Col<OutcomeSourceAuthority, String>,
     pub battle_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, String>,
-    pub mission_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, Option<String>>,
-    pub hostile_group_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, Option<String>>,
+    pub mission_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, Option::<String>>,
+    pub hostile_group_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, Option::<String>>,
     pub resolution: __sdk::__query_builder::Col<OutcomeSourceAuthority, HostileResolutionKind>,
     pub party_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, String>,
 }
@@ -43,6 +50,7 @@ impl __sdk::__query_builder::HasCols for OutcomeSourceAuthority {
             hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
             resolution: __sdk::__query_builder::Col::new(table_name, "resolution"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+
         }
     }
 }
@@ -61,8 +69,10 @@ impl __sdk::__query_builder::HasIxCols for OutcomeSourceAuthority {
         OutcomeSourceAuthorityIxCols {
             battle_id: __sdk::__query_builder::IxCol::new(table_name, "battle_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for OutcomeSourceAuthority {}
+

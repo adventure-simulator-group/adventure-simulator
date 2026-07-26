@@ -2,15 +2,21 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct PurchaseFromHerbalistArgs {
     pub patient_id: u64,
     pub settlement_id: String,
-    pub item_ids: Vec<String>,
-    pub quantities: Vec<u32>,
+    pub item_ids: Vec::<String>,
+    pub quantities: Vec::<u32>,
 }
 
 impl From<PurchaseFromHerbalistArgs> for super::Reducer {
@@ -20,8 +26,8 @@ impl From<PurchaseFromHerbalistArgs> for super::Reducer {
             settlement_id: args.settlement_id,
             item_ids: args.item_ids,
             quantities: args.quantities,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for PurchaseFromHerbalistArgs {
@@ -39,20 +45,12 @@ pub trait purchase_from_herbalist {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`purchase_from_herbalist:purchase_from_herbalist_then`] to run a callback after the reducer completes.
-    fn purchase_from_herbalist(
-        &self,
-        patient_id: u64,
-        settlement_id: String,
-        item_ids: Vec<String>,
-        quantities: Vec<u32>,
-    ) -> __sdk::Result<()> {
-        self.purchase_from_herbalist_then(
-            patient_id,
-            settlement_id,
-            item_ids,
-            quantities,
-            |_, _| {},
-        )
+    fn purchase_from_herbalist(&self, patient_id: u64,
+settlement_id: String,
+item_ids: Vec::<String>,
+quantities: Vec::<u32>,
+) -> __sdk::Result<()> {
+        self.purchase_from_herbalist_then(patient_id, settlement_id, item_ids, quantities,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `purchase_from_herbalist` to run as soon as possible,
@@ -64,15 +62,13 @@ pub trait purchase_from_herbalist {
     fn purchase_from_herbalist_then(
         &self,
         patient_id: u64,
-        settlement_id: String,
-        item_ids: Vec<String>,
-        quantities: Vec<u32>,
+settlement_id: String,
+item_ids: Vec::<String>,
+quantities: Vec::<u32>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -80,24 +76,15 @@ impl purchase_from_herbalist for super::RemoteReducers {
     fn purchase_from_herbalist_then(
         &self,
         patient_id: u64,
-        settlement_id: String,
-        item_ids: Vec<String>,
-        quantities: Vec<u32>,
+settlement_id: String,
+item_ids: Vec::<String>,
+quantities: Vec::<u32>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            PurchaseFromHerbalistArgs {
-                patient_id,
-                settlement_id,
-                item_ids,
-                quantities,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(PurchaseFromHerbalistArgs { patient_id, settlement_id, item_ids, quantities,  }, callback)
     }
 }
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,9 +25,11 @@ pub struct QuestGenerationAuthority {
     pub factor_trace_json: String,
 }
 
+
 impl __sdk::InModule for QuestGenerationAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `QuestGenerationAuthority`.
 ///
@@ -49,13 +57,11 @@ impl __sdk::__query_builder::HasCols for QuestGenerationAuthority {
             settlement_name: __sdk::__query_builder::Col::new(table_name, "settlement_name"),
             seed: __sdk::__query_builder::Col::new(table_name, "seed"),
             catalog_revision: __sdk::__query_builder::Col::new(table_name, "catalog_revision"),
-            context_snapshot_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "context_snapshot_json",
-            ),
+            context_snapshot_json: __sdk::__query_builder::Col::new(table_name, "context_snapshot_json"),
             context_commitment: __sdk::__query_builder::Col::new(table_name, "context_commitment"),
             manifest_json: __sdk::__query_builder::Col::new(table_name, "manifest_json"),
             factor_trace_json: __sdk::__query_builder::Col::new(table_name, "factor_trace_json"),
+
         }
     }
 }
@@ -78,8 +84,10 @@ impl __sdk::__query_builder::HasIxCols for QuestGenerationAuthority {
             public_case_id: __sdk::__query_builder::IxCol::new(table_name, "public_case_id"),
             seed: __sdk::__query_builder::IxCol::new(table_name, "seed"),
             settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for QuestGenerationAuthority {}
+

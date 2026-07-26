@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,15 +16,17 @@ pub struct BackendForageReceipt {
     pub character_id: u64,
     pub request_id: String,
     pub elapsed_minutes: u64,
-    pub yielded_item_ids: Vec<String>,
-    pub yielded_quantities: Vec<u16>,
+    pub yielded_item_ids: Vec::<String>,
+    pub yielded_quantities: Vec::<u16>,
     pub interrupted: bool,
     pub legal_outcome: String,
 }
 
+
 impl __sdk::InModule for BackendForageReceipt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `BackendForageReceipt`.
 ///
@@ -27,8 +35,8 @@ pub struct BackendForageReceiptCols {
     pub character_id: __sdk::__query_builder::Col<BackendForageReceipt, u64>,
     pub request_id: __sdk::__query_builder::Col<BackendForageReceipt, String>,
     pub elapsed_minutes: __sdk::__query_builder::Col<BackendForageReceipt, u64>,
-    pub yielded_item_ids: __sdk::__query_builder::Col<BackendForageReceipt, Vec<String>>,
-    pub yielded_quantities: __sdk::__query_builder::Col<BackendForageReceipt, Vec<u16>>,
+    pub yielded_item_ids: __sdk::__query_builder::Col<BackendForageReceipt, Vec::<String>>,
+    pub yielded_quantities: __sdk::__query_builder::Col<BackendForageReceipt, Vec::<u16>>,
     pub interrupted: __sdk::__query_builder::Col<BackendForageReceipt, bool>,
     pub legal_outcome: __sdk::__query_builder::Col<BackendForageReceipt, String>,
 }
@@ -44,6 +52,8 @@ impl __sdk::__query_builder::HasCols for BackendForageReceipt {
             yielded_quantities: __sdk::__query_builder::Col::new(table_name, "yielded_quantities"),
             interrupted: __sdk::__query_builder::Col::new(table_name, "interrupted"),
             legal_outcome: __sdk::__query_builder::Col::new(table_name, "legal_outcome"),
+
         }
     }
 }
+

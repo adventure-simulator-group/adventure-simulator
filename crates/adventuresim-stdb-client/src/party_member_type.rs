@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,13 +16,15 @@ pub struct PartyMember {
     pub id: u64,
     pub party_id: String,
     pub character_id: u64,
-    pub role: Option<String>,
-    pub recruitment_role_id: Option<u64>,
+    pub role: Option::<String>,
+    pub recruitment_role_id: Option::<u64>,
 }
+
 
 impl __sdk::InModule for PartyMember {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PartyMember`.
 ///
@@ -25,8 +33,8 @@ pub struct PartyMemberCols {
     pub id: __sdk::__query_builder::Col<PartyMember, u64>,
     pub party_id: __sdk::__query_builder::Col<PartyMember, String>,
     pub character_id: __sdk::__query_builder::Col<PartyMember, u64>,
-    pub role: __sdk::__query_builder::Col<PartyMember, Option<String>>,
-    pub recruitment_role_id: __sdk::__query_builder::Col<PartyMember, Option<u64>>,
+    pub role: __sdk::__query_builder::Col<PartyMember, Option::<String>>,
+    pub recruitment_role_id: __sdk::__query_builder::Col<PartyMember, Option::<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for PartyMember {
@@ -37,10 +45,8 @@ impl __sdk::__query_builder::HasCols for PartyMember {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             role: __sdk::__query_builder::Col::new(table_name, "role"),
-            recruitment_role_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "recruitment_role_id",
-            ),
+            recruitment_role_id: __sdk::__query_builder::Col::new(table_name, "recruitment_role_id"),
+
         }
     }
 }
@@ -61,8 +67,10 @@ impl __sdk::__query_builder::HasIxCols for PartyMember {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PartyMember {}
+

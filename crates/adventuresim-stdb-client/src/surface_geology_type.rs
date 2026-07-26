@@ -2,10 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::inferred_geologic_setting_type::InferredGeologicSetting;
 use super::mapped_surface_geology_type::MappedSurfaceGeology;
+use super::inferred_geologic_setting_type::InferredGeologicSetting;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,8 +18,12 @@ pub enum SurfaceGeology {
     Mapped(MappedSurfaceGeology),
 
     Inferred(InferredGeologicSetting),
+
 }
+
+
 
 impl __sdk::InModule for SurfaceGeology {
     type Module = super::RemoteModule;
 }
+

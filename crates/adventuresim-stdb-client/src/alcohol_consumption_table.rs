@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::alcohol_consumption_type::AlcoholConsumption;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `alcohol_consumption`.
 ///
@@ -31,9 +36,7 @@ pub trait AlcoholConsumptionTableAccess {
 impl AlcoholConsumptionTableAccess for super::RemoteTables {
     fn alcohol_consumption(&self) -> AlcoholConsumptionTableHandle<'_> {
         AlcoholConsumptionTableHandle {
-            imp: self
-                .imp
-                .get_table::<AlcoholConsumption>("alcohol_consumption"),
+            imp: self.imp.get_table::<AlcoholConsumption>("alcohol_consumption"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for AlcoholConsumptionTableHandle<'ctx> {
     type Row = AlcoholConsumption;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = AlcoholConsumption> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = AlcoholConsumption> + '_ { self.imp.iter() }
 
     type InsertCallbackId = AlcoholConsumptionInsertCallbackId;
 
@@ -97,38 +96,39 @@ impl<'ctx> __sdk::TableWithPrimaryKey for AlcoholConsumptionTableHandle<'ctx> {
     }
 }
 
-/// Access to the `id` unique index on the table `alcohol_consumption`,
-/// which allows point queries on the field of the same name
-/// via the [`AlcoholConsumptionIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.alcohol_consumption().id().find(...)`.
-pub struct AlcoholConsumptionIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<AlcoholConsumption, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> AlcoholConsumptionTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `alcohol_consumption`.
-    pub fn id(&self) -> AlcoholConsumptionIdUnique<'ctx> {
-        AlcoholConsumptionIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `id` unique index on the table `alcohol_consumption`,
+        /// which allows point queries on the field of the same name
+        /// via the [`AlcoholConsumptionIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.alcohol_consumption().id().find(...)`.
+        pub struct AlcoholConsumptionIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<AlcoholConsumption, String>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> AlcoholConsumptionIdUnique<'ctx> {
-    /// Find the subscribed row whose `id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<AlcoholConsumption> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> AlcoholConsumptionTableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `alcohol_consumption`.
+            pub fn id(&self) -> AlcoholConsumptionIdUnique<'ctx> {
+                AlcoholConsumptionIdUnique {
+                    imp: self.imp.get_unique_constraint::<String>("id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> AlcoholConsumptionIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &String) -> Option<AlcoholConsumption> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+
     let _table = client_cache.get_or_make_table::<AlcoholConsumption>("alcohol_consumption");
     _table.add_unique_constraint::<String>("id", |row| &row.id);
 }
@@ -138,24 +138,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<AlcoholConsumption>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<AlcoholConsumption>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<AlcoholConsumption>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `AlcoholConsumption`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait alcohol_consumptionQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `AlcoholConsumption`.
-    fn alcohol_consumption(&self) -> __sdk::__query_builder::Table<AlcoholConsumption>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `AlcoholConsumption`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait alcohol_consumptionQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `AlcoholConsumption`.
+            fn alcohol_consumption(&self) -> __sdk::__query_builder::Table<AlcoholConsumption>;
+        }
 
-impl alcohol_consumptionQueryTableAccess for __sdk::QueryTableAccessor {
-    fn alcohol_consumption(&self) -> __sdk::__query_builder::Table<AlcoholConsumption> {
-        __sdk::__query_builder::Table::new("alcohol_consumption")
-    }
-}
+        impl alcohol_consumptionQueryTableAccess for __sdk::QueryTableAccessor {
+            fn alcohol_consumption(&self) -> __sdk::__query_builder::Table<AlcoholConsumption> {
+                __sdk::__query_builder::Table::new("alcohol_consumption")
+            }
+        }
+

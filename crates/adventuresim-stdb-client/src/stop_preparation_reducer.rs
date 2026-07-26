@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<StopPreparationArgs> for super::Reducer {
         Self::StopPreparation {
             actor_id: args.actor_id,
             administration_id: args.administration_id,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for StopPreparationArgs {
@@ -35,8 +41,10 @@ pub trait stop_preparation {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`stop_preparation:stop_preparation_then`] to run a callback after the reducer completes.
-    fn stop_preparation(&self, actor_id: u64, administration_id: u64) -> __sdk::Result<()> {
-        self.stop_preparation_then(actor_id, administration_id, |_, _| {})
+    fn stop_preparation(&self, actor_id: u64,
+administration_id: u64,
+) -> __sdk::Result<()> {
+        self.stop_preparation_then(actor_id, administration_id,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `stop_preparation` to run as soon as possible,
@@ -48,13 +56,11 @@ pub trait stop_preparation {
     fn stop_preparation_then(
         &self,
         actor_id: u64,
-        administration_id: u64,
+administration_id: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -62,20 +68,13 @@ impl stop_preparation for super::RemoteReducers {
     fn stop_preparation_then(
         &self,
         actor_id: u64,
-        administration_id: u64,
+administration_id: u64,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            StopPreparationArgs {
-                actor_id,
-                administration_id,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(StopPreparationArgs { actor_id, administration_id,  }, callback)
     }
 }
+

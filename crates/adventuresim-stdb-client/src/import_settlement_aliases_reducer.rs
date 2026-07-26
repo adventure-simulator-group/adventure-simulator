@@ -2,22 +2,27 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::settlement_alias_batch_row_type::SettlementAliasBatchRow;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ImportSettlementAliasesArgs {
-    pub aliases: Vec<SettlementAliasBatchRow>,
+    pub aliases: Vec::<SettlementAliasBatchRow>,
 }
 
 impl From<ImportSettlementAliasesArgs> for super::Reducer {
     fn from(args: ImportSettlementAliasesArgs) -> Self {
         Self::ImportSettlementAliases {
             aliases: args.aliases,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for ImportSettlementAliasesArgs {
@@ -35,11 +40,9 @@ pub trait import_settlement_aliases {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`import_settlement_aliases:import_settlement_aliases_then`] to run a callback after the reducer completes.
-    fn import_settlement_aliases(
-        &self,
-        aliases: Vec<SettlementAliasBatchRow>,
-    ) -> __sdk::Result<()> {
-        self.import_settlement_aliases_then(aliases, |_, _| {})
+    fn import_settlement_aliases(&self, aliases: Vec::<SettlementAliasBatchRow>,
+) -> __sdk::Result<()> {
+        self.import_settlement_aliases_then(aliases,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `import_settlement_aliases` to run as soon as possible,
@@ -50,28 +53,24 @@ pub trait import_settlement_aliases {
     ///  and its status can be observed with the `callback`.
     fn import_settlement_aliases_then(
         &self,
-        aliases: Vec<SettlementAliasBatchRow>,
+        aliases: Vec::<SettlementAliasBatchRow>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl import_settlement_aliases for super::RemoteReducers {
     fn import_settlement_aliases_then(
         &self,
-        aliases: Vec<SettlementAliasBatchRow>,
+        aliases: Vec::<SettlementAliasBatchRow>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(ImportSettlementAliasesArgs { aliases }, callback)
+        self.imp.invoke_reducer_with_callback(ImportSettlementAliasesArgs { aliases,  }, callback)
     }
 }
+

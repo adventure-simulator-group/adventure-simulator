@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::inventory_quantity_target_type::InventoryQuantityTarget;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `inventory_quantity_target`.
 ///
@@ -31,9 +36,7 @@ pub trait InventoryQuantityTargetTableAccess {
 impl InventoryQuantityTargetTableAccess for super::RemoteTables {
     fn inventory_quantity_target(&self) -> InventoryQuantityTargetTableHandle<'_> {
         InventoryQuantityTargetTableHandle {
-            imp: self
-                .imp
-                .get_table::<InventoryQuantityTarget>("inventory_quantity_target"),
+            imp: self.imp.get_table::<InventoryQuantityTarget>("inventory_quantity_target"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for InventoryQuantityTargetTableHandle<'ctx> {
     type Row = InventoryQuantityTarget;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = InventoryQuantityTarget> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = InventoryQuantityTarget> + '_ { self.imp.iter() }
 
     type InsertCallbackId = InventoryQuantityTargetInsertCallbackId;
 
@@ -97,40 +96,40 @@ impl<'ctx> __sdk::TableWithPrimaryKey for InventoryQuantityTargetTableHandle<'ct
     }
 }
 
-/// Access to the `id` unique index on the table `inventory_quantity_target`,
-/// which allows point queries on the field of the same name
-/// via the [`InventoryQuantityTargetIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.inventory_quantity_target().id().find(...)`.
-pub struct InventoryQuantityTargetIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<InventoryQuantityTarget, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> InventoryQuantityTargetTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `inventory_quantity_target`.
-    pub fn id(&self) -> InventoryQuantityTargetIdUnique<'ctx> {
-        InventoryQuantityTargetIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("id"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `id` unique index on the table `inventory_quantity_target`,
+        /// which allows point queries on the field of the same name
+        /// via the [`InventoryQuantityTargetIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.inventory_quantity_target().id().find(...)`.
+        pub struct InventoryQuantityTargetIdUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<InventoryQuantityTarget, String>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> InventoryQuantityTargetIdUnique<'ctx> {
-    /// Find the subscribed row whose `id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<InventoryQuantityTarget> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> InventoryQuantityTargetTableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `inventory_quantity_target`.
+            pub fn id(&self) -> InventoryQuantityTargetIdUnique<'ctx> {
+                InventoryQuantityTargetIdUnique {
+                    imp: self.imp.get_unique_constraint::<String>("id"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
 
+        impl<'ctx> InventoryQuantityTargetIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &String) -> Option<InventoryQuantityTarget> {
+                self.imp.find(col_val)
+            }
+        }
+        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table =
-        client_cache.get_or_make_table::<InventoryQuantityTarget>("inventory_quantity_target");
+
+    let _table = client_cache.get_or_make_table::<InventoryQuantityTarget>("inventory_quantity_target");
     _table.add_unique_constraint::<String>("id", |row| &row.id);
 }
 
@@ -139,24 +138,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<InventoryQuantityTarget>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<InventoryQuantityTarget>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<InventoryQuantityTarget>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `InventoryQuantityTarget`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait inventory_quantity_targetQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `InventoryQuantityTarget`.
-    fn inventory_quantity_target(&self) -> __sdk::__query_builder::Table<InventoryQuantityTarget>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `InventoryQuantityTarget`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait inventory_quantity_targetQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `InventoryQuantityTarget`.
+            fn inventory_quantity_target(&self) -> __sdk::__query_builder::Table<InventoryQuantityTarget>;
+        }
 
-impl inventory_quantity_targetQueryTableAccess for __sdk::QueryTableAccessor {
-    fn inventory_quantity_target(&self) -> __sdk::__query_builder::Table<InventoryQuantityTarget> {
-        __sdk::__query_builder::Table::new("inventory_quantity_target")
-    }
-}
+        impl inventory_quantity_targetQueryTableAccess for __sdk::QueryTableAccessor {
+            fn inventory_quantity_target(&self) -> __sdk::__query_builder::Table<InventoryQuantityTarget> {
+                __sdk::__query_builder::Table::new("inventory_quantity_target")
+            }
+        }
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::recruitment_requirements_type::RecruitmentRequirements;
 
@@ -17,9 +22,11 @@ pub struct PartyRecruitmentRole {
     pub weapon_precision: f32,
 }
 
+
 impl __sdk::InModule for PartyRecruitmentRole {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `PartyRecruitmentRole`.
 ///
@@ -43,6 +50,7 @@ impl __sdk::__query_builder::HasCols for PartyRecruitmentRole {
             requirements: __sdk::__query_builder::Col::new(table_name, "requirements"),
             quantity: __sdk::__query_builder::Col::new(table_name, "quantity"),
             weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
+
         }
     }
 }
@@ -61,8 +69,10 @@ impl __sdk::__query_builder::HasIxCols for PartyRecruitmentRole {
         PartyRecruitmentRoleIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for PartyRecruitmentRole {}
+

@@ -2,10 +2,15 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::potential_vegetation_class_type::PotentialVegetationClass;
 use super::potential_vegetation_posterior_type::PotentialVegetationPosterior;
+use super::potential_vegetation_class_type::PotentialVegetationClass;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,8 +20,12 @@ pub enum PotentialVegetation {
     Categorical(PotentialVegetationClass),
 
     Inferred(PotentialVegetationClass),
+
 }
+
+
 
 impl __sdk::InModule for PotentialVegetation {
     type Module = super::RemoteModule;
 }
+

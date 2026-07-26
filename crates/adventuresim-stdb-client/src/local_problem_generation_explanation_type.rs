@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -11,9 +17,11 @@ pub struct LocalProblemGenerationExplanation {
     pub explanation_json: String,
 }
 
+
 impl __sdk::InModule for LocalProblemGenerationExplanation {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `LocalProblemGenerationExplanation`.
 ///
@@ -29,6 +37,7 @@ impl __sdk::__query_builder::HasCols for LocalProblemGenerationExplanation {
         LocalProblemGenerationExplanationCols {
             problem_id: __sdk::__query_builder::Col::new(table_name, "problem_id"),
             explanation_json: __sdk::__query_builder::Col::new(table_name, "explanation_json"),
+
         }
     }
 }
@@ -45,8 +54,10 @@ impl __sdk::__query_builder::HasIxCols for LocalProblemGenerationExplanation {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         LocalProblemGenerationExplanationIxCols {
             problem_id: __sdk::__query_builder::IxCol::new(table_name, "problem_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for LocalProblemGenerationExplanation {}
+

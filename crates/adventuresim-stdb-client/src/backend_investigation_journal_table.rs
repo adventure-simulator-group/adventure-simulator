@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::backend_investigation_journal_entry_type::BackendInvestigationJournalEntry;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_investigation_journal`.
 ///
@@ -31,9 +36,7 @@ pub trait BackendInvestigationJournalTableAccess {
 impl BackendInvestigationJournalTableAccess for super::RemoteTables {
     fn backend_investigation_journal(&self) -> BackendInvestigationJournalTableHandle<'_> {
         BackendInvestigationJournalTableHandle {
-            imp: self
-                .imp
-                .get_table::<BackendInvestigationJournalEntry>("backend_investigation_journal"),
+            imp: self.imp.get_table::<BackendInvestigationJournalEntry>("backend_investigation_journal"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendInvestigationJournalTableHandle<'ctx> {
     type Row = BackendInvestigationJournalEntry;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = BackendInvestigationJournalEntry> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = BackendInvestigationJournalEntry> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendInvestigationJournalInsertCallbackId;
 
@@ -82,8 +81,8 @@ impl<'ctx> __sdk::Table for BackendInvestigationJournalTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache
-        .get_or_make_table::<BackendInvestigationJournalEntry>("backend_investigation_journal");
+
+        let _table = client_cache.get_or_make_table::<BackendInvestigationJournalEntry>("backend_investigation_journal");
 }
 
 #[doc(hidden)]
@@ -94,28 +93,23 @@ pub(super) fn parse_table_update(
         __sdk::InternalError::failed_parse(
             "TableUpdate<BackendInvestigationJournalEntry>",
             "TableUpdate",
-        )
-        .with_cause(e)
-        .into()
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `BackendInvestigationJournalEntry`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_investigation_journalQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `BackendInvestigationJournalEntry`.
-    fn backend_investigation_journal(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendInvestigationJournalEntry>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `BackendInvestigationJournalEntry`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_investigation_journalQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `BackendInvestigationJournalEntry`.
+            fn backend_investigation_journal(&self) -> __sdk::__query_builder::Table<BackendInvestigationJournalEntry>;
+        }
 
-impl backend_investigation_journalQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_investigation_journal(
-        &self,
-    ) -> __sdk::__query_builder::Table<BackendInvestigationJournalEntry> {
-        __sdk::__query_builder::Table::new("backend_investigation_journal")
-    }
-}
+        impl backend_investigation_journalQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_investigation_journal(&self) -> __sdk::__query_builder::Table<BackendInvestigationJournalEntry> {
+                __sdk::__query_builder::Table::new("backend_investigation_journal")
+            }
+        }
+

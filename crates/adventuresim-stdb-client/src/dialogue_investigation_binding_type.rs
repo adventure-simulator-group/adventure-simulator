@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,14 +22,16 @@ pub struct DialogueInvestigationBinding {
     pub source_scope: String,
     pub case_id: String,
     pub objective_id: String,
-    pub expected_custody_version: Option<u32>,
+    pub expected_custody_version: Option::<u32>,
     pub issued_revision: u64,
     pub consumed_by: String,
 }
 
+
 impl __sdk::InModule for DialogueInvestigationBinding {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `DialogueInvestigationBinding`.
 ///
@@ -38,8 +46,7 @@ pub struct DialogueInvestigationBindingCols {
     pub source_scope: __sdk::__query_builder::Col<DialogueInvestigationBinding, String>,
     pub case_id: __sdk::__query_builder::Col<DialogueInvestigationBinding, String>,
     pub objective_id: __sdk::__query_builder::Col<DialogueInvestigationBinding, String>,
-    pub expected_custody_version:
-        __sdk::__query_builder::Col<DialogueInvestigationBinding, Option<u32>>,
+    pub expected_custody_version: __sdk::__query_builder::Col<DialogueInvestigationBinding, Option::<u32>>,
     pub issued_revision: __sdk::__query_builder::Col<DialogueInvestigationBinding, u64>,
     pub consumed_by: __sdk::__query_builder::Col<DialogueInvestigationBinding, String>,
 }
@@ -52,20 +59,15 @@ impl __sdk::__query_builder::HasCols for DialogueInvestigationBinding {
             session_id: __sdk::__query_builder::Col::new(table_name, "session_id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
-            intended_recipient_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "intended_recipient_id",
-            ),
+            intended_recipient_id: __sdk::__query_builder::Col::new(table_name, "intended_recipient_id"),
             action_family: __sdk::__query_builder::Col::new(table_name, "action_family"),
             source_scope: __sdk::__query_builder::Col::new(table_name, "source_scope"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             objective_id: __sdk::__query_builder::Col::new(table_name, "objective_id"),
-            expected_custody_version: __sdk::__query_builder::Col::new(
-                table_name,
-                "expected_custody_version",
-            ),
+            expected_custody_version: __sdk::__query_builder::Col::new(table_name, "expected_custody_version"),
             issued_revision: __sdk::__query_builder::Col::new(table_name, "issued_revision"),
             consumed_by: __sdk::__query_builder::Col::new(table_name, "consumed_by"),
+
         }
     }
 }
@@ -84,8 +86,10 @@ impl __sdk::__query_builder::HasIxCols for DialogueInvestigationBinding {
         DialogueInvestigationBindingIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             session_id: __sdk::__query_builder::IxCol::new(table_name, "session_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for DialogueInvestigationBinding {}
+

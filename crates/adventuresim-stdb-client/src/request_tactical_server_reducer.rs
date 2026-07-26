@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,8 +24,8 @@ impl From<RequestTacticalServerArgs> for super::Reducer {
             character_id: args.character_id,
             mission_id: args.mission_id,
             scene_key: args.scene_key,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for RequestTacticalServerArgs {
@@ -37,13 +43,11 @@ pub trait request_tactical_server {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`request_tactical_server:request_tactical_server_then`] to run a callback after the reducer completes.
-    fn request_tactical_server(
-        &self,
-        character_id: u64,
-        mission_id: String,
-        scene_key: String,
-    ) -> __sdk::Result<()> {
-        self.request_tactical_server_then(character_id, mission_id, scene_key, |_, _| {})
+    fn request_tactical_server(&self, character_id: u64,
+mission_id: String,
+scene_key: String,
+) -> __sdk::Result<()> {
+        self.request_tactical_server_then(character_id, mission_id, scene_key,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `request_tactical_server` to run as soon as possible,
@@ -55,14 +59,12 @@ pub trait request_tactical_server {
     fn request_tactical_server_then(
         &self,
         character_id: u64,
-        mission_id: String,
-        scene_key: String,
+mission_id: String,
+scene_key: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -70,22 +72,14 @@ impl request_tactical_server for super::RemoteReducers {
     fn request_tactical_server_then(
         &self,
         character_id: u64,
-        mission_id: String,
-        scene_key: String,
+mission_id: String,
+scene_key: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            RequestTacticalServerArgs {
-                character_id,
-                mission_id,
-                scene_key,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(RequestTacticalServerArgs { character_id, mission_id, scene_key,  }, callback)
     }
 }
+

@@ -2,22 +2,27 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::settlement_import_type::SettlementImport;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ImportSettlementsArgs {
-    pub settlements: Vec<SettlementImport>,
+    pub settlements: Vec::<SettlementImport>,
 }
 
 impl From<ImportSettlementsArgs> for super::Reducer {
     fn from(args: ImportSettlementsArgs) -> Self {
         Self::ImportSettlements {
             settlements: args.settlements,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for ImportSettlementsArgs {
@@ -35,8 +40,9 @@ pub trait import_settlements {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`import_settlements:import_settlements_then`] to run a callback after the reducer completes.
-    fn import_settlements(&self, settlements: Vec<SettlementImport>) -> __sdk::Result<()> {
-        self.import_settlements_then(settlements, |_, _| {})
+    fn import_settlements(&self, settlements: Vec::<SettlementImport>,
+) -> __sdk::Result<()> {
+        self.import_settlements_then(settlements,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `import_settlements` to run as soon as possible,
@@ -47,28 +53,24 @@ pub trait import_settlements {
     ///  and its status can be observed with the `callback`.
     fn import_settlements_then(
         &self,
-        settlements: Vec<SettlementImport>,
+        settlements: Vec::<SettlementImport>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl import_settlements for super::RemoteReducers {
     fn import_settlements_then(
         &self,
-        settlements: Vec<SettlementImport>,
+        settlements: Vec::<SettlementImport>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(ImportSettlementsArgs { settlements }, callback)
+        self.imp.invoke_reducer_with_callback(ImportSettlementsArgs { settlements,  }, callback)
     }
 }
+

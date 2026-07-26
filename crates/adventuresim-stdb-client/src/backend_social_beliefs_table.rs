@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::social_belief_type::SocialBelief;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_social_beliefs`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for BackendSocialBeliefsTableHandle<'ctx> {
     type Row = SocialBelief;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = SocialBelief> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = SocialBelief> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BackendSocialBeliefsInsertCallbackId;
 
@@ -80,7 +81,8 @@ impl<'ctx> __sdk::Table for BackendSocialBeliefsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<SocialBelief>("backend_social_beliefs");
+
+        let _table = client_cache.get_or_make_table::<SocialBelief>("backend_social_beliefs");
 }
 
 #[doc(hidden)]
@@ -88,24 +90,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<SocialBelief>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<SocialBelief>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<SocialBelief>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `SocialBelief`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait backend_social_beliefsQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `SocialBelief`.
-    fn backend_social_beliefs(&self) -> __sdk::__query_builder::Table<SocialBelief>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `SocialBelief`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait backend_social_beliefsQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `SocialBelief`.
+            fn backend_social_beliefs(&self) -> __sdk::__query_builder::Table<SocialBelief>;
+        }
 
-impl backend_social_beliefsQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_social_beliefs(&self) -> __sdk::__query_builder::Table<SocialBelief> {
-        __sdk::__query_builder::Table::new("backend_social_beliefs")
-    }
-}
+        impl backend_social_beliefsQueryTableAccess for __sdk::QueryTableAccessor {
+            fn backend_social_beliefs(&self) -> __sdk::__query_builder::Table<SocialBelief> {
+                __sdk::__query_builder::Table::new("backend_social_beliefs")
+            }
+        }
+

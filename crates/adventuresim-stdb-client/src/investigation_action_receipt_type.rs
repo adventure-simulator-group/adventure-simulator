@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,9 +20,11 @@ pub struct InvestigationActionReceipt {
     pub applied_at: u64,
 }
 
+
 impl __sdk::InModule for InvestigationActionReceipt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `InvestigationActionReceipt`.
 ///
@@ -38,6 +46,7 @@ impl __sdk::__query_builder::HasCols for InvestigationActionReceipt {
             action_kind: __sdk::__query_builder::Col::new(table_name, "action_kind"),
             canonical_payload: __sdk::__query_builder::Col::new(table_name, "canonical_payload"),
             applied_at: __sdk::__query_builder::Col::new(table_name, "applied_at"),
+
         }
     }
 }
@@ -54,8 +63,10 @@ impl __sdk::__query_builder::HasIxCols for InvestigationActionReceipt {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InvestigationActionReceiptIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationActionReceipt {}
+

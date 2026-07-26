@@ -2,16 +2,21 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::conscience_type::Conscience;
-use super::conviction_type::Conviction;
-use super::drive_type::Drive;
-use super::hygiene_type::Hygiene;
 use super::nerve_type::Nerve;
+use super::drive_type::Drive;
 use super::outlook_type::Outlook;
-use super::self_regard_type::SelfRegard;
 use super::sociability_type::Sociability;
+use super::conscience_type::Conscience;
+use super::self_regard_type::SelfRegard;
+use super::conviction_type::Conviction;
+use super::hygiene_type::Hygiene;
 use super::temperance_type::Temperance;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -29,9 +34,11 @@ pub struct CharacterPersonality {
     pub temperance: Temperance,
 }
 
+
 impl __sdk::InModule for CharacterPersonality {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `CharacterPersonality`.
 ///
@@ -63,6 +70,7 @@ impl __sdk::__query_builder::HasCols for CharacterPersonality {
             conviction: __sdk::__query_builder::Col::new(table_name, "conviction"),
             hygiene: __sdk::__query_builder::Col::new(table_name, "hygiene"),
             temperance: __sdk::__query_builder::Col::new(table_name, "temperance"),
+
         }
     }
 }
@@ -79,8 +87,10 @@ impl __sdk::__query_builder::HasIxCols for CharacterPersonality {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterPersonalityIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CharacterPersonality {}
+

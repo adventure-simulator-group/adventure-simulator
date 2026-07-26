@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<BeginApprenticeshipArgs> for super::Reducer {
         Self::BeginApprenticeship {
             character_id: args.character_id,
             service_id: args.service_id,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for BeginApprenticeshipArgs {
@@ -35,8 +41,10 @@ pub trait begin_apprenticeship {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`begin_apprenticeship:begin_apprenticeship_then`] to run a callback after the reducer completes.
-    fn begin_apprenticeship(&self, character_id: u64, service_id: String) -> __sdk::Result<()> {
-        self.begin_apprenticeship_then(character_id, service_id, |_, _| {})
+    fn begin_apprenticeship(&self, character_id: u64,
+service_id: String,
+) -> __sdk::Result<()> {
+        self.begin_apprenticeship_then(character_id, service_id,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `begin_apprenticeship` to run as soon as possible,
@@ -48,13 +56,11 @@ pub trait begin_apprenticeship {
     fn begin_apprenticeship_then(
         &self,
         character_id: u64,
-        service_id: String,
+service_id: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -62,20 +68,13 @@ impl begin_apprenticeship for super::RemoteReducers {
     fn begin_apprenticeship_then(
         &self,
         character_id: u64,
-        service_id: String,
+service_id: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            BeginApprenticeshipArgs {
-                character_id,
-                service_id,
-            },
-            callback,
-        )
+        self.imp.invoke_reducer_with_callback(BeginApprenticeshipArgs { character_id, service_id,  }, callback)
     }
 }
+

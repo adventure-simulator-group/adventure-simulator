@@ -2,16 +2,23 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct BackfillItemValuesArgs {}
+pub(super) struct BackfillItemValuesArgs {
+    }
 
 impl From<BackfillItemValuesArgs> for super::Reducer {
     fn from(args: BackfillItemValuesArgs) -> Self {
         Self::BackfillItemValues
-    }
+}
 }
 
 impl __sdk::InModule for BackfillItemValuesArgs {
@@ -29,8 +36,8 @@ pub trait backfill_item_values {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`backfill_item_values:backfill_item_values_then`] to run a callback after the reducer completes.
-    fn backfill_item_values(&self) -> __sdk::Result<()> {
-        self.backfill_item_values_then(|_, _| {})
+    fn backfill_item_values(&self, ) -> __sdk::Result<()> {
+        self.backfill_item_values_then( |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `backfill_item_values` to run as soon as possible,
@@ -41,26 +48,22 @@ pub trait backfill_item_values {
     ///  and its status can be observed with the `callback`.
     fn backfill_item_values_then(
         &self,
-
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
 impl backfill_item_values for super::RemoteReducers {
     fn backfill_item_values_then(
         &self,
-
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(BackfillItemValuesArgs {}, callback)
+        self.imp.invoke_reducer_with_callback(BackfillItemValuesArgs {  }, callback)
     }
 }
+

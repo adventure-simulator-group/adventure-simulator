@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,9 +24,11 @@ pub struct LocalChatMessage {
     pub created_micros: i64,
 }
 
+
 impl __sdk::InModule for LocalChatMessage {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `LocalChatMessage`.
 ///
@@ -50,6 +58,7 @@ impl __sdk::__query_builder::HasCols for LocalChatMessage {
             sender_name: __sdk::__query_builder::Col::new(table_name, "sender_name"),
             body: __sdk::__query_builder::Col::new(table_name, "body"),
             created_micros: __sdk::__query_builder::Col::new(table_name, "created_micros"),
+
         }
     }
 }
@@ -70,8 +79,10 @@ impl __sdk::__query_builder::HasIxCols for LocalChatMessage {
             audience_party_id: __sdk::__query_builder::IxCol::new(table_name, "audience_party_id"),
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for LocalChatMessage {}
+

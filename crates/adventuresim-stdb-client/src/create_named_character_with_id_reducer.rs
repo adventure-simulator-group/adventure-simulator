@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<CreateNamedCharacterWithIdArgs> for super::Reducer {
         Self::CreateNamedCharacterWithId {
             id: args.id,
             name: args.name,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for CreateNamedCharacterWithIdArgs {
@@ -35,8 +41,10 @@ pub trait create_named_character_with_id {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`create_named_character_with_id:create_named_character_with_id_then`] to run a callback after the reducer completes.
-    fn create_named_character_with_id(&self, id: u64, name: String) -> __sdk::Result<()> {
-        self.create_named_character_with_id_then(id, name, |_, _| {})
+    fn create_named_character_with_id(&self, id: u64,
+name: String,
+) -> __sdk::Result<()> {
+        self.create_named_character_with_id_then(id, name,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `create_named_character_with_id` to run as soon as possible,
@@ -48,13 +56,11 @@ pub trait create_named_character_with_id {
     fn create_named_character_with_id_then(
         &self,
         id: u64,
-        name: String,
+name: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -62,15 +68,13 @@ impl create_named_character_with_id for super::RemoteReducers {
     fn create_named_character_with_id_then(
         &self,
         id: u64,
-        name: String,
+name: String,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(CreateNamedCharacterWithIdArgs { id, name }, callback)
+        self.imp.invoke_reducer_with_callback(CreateNamedCharacterWithIdArgs { id, name,  }, callback)
     }
 }
+
