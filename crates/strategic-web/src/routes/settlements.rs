@@ -42,6 +42,7 @@ const BUILDINGS: &[&str] = &[
 struct BuildingQuery {
     building: Option<String>,
     cook: Option<bool>,
+    forage: Option<bool>,
     social_feedback: Option<String>,
 }
 
@@ -2773,6 +2774,19 @@ async fn render_party_personal(
         .query::<ItemDefinition>("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let foraging_dialog = if building.forage.unwrap_or(false) {
+        Some(
+            crate::routes::foraging::activity_dialog(
+                state,
+                &active_character,
+                &location
+                    .preserve_building(format!("{}/party/{character_id}", location.base_path(),)),
+            )
+            .await,
+        )
+    } else {
+        None
+    };
     Html(
         party_personal_page(
             &location,
@@ -2804,6 +2818,7 @@ async fn render_party_personal(
             dialog,
             surgery_open,
             social_open,
+            foraging_dialog,
         )
         .into_string(),
     )

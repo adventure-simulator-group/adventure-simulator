@@ -4,7 +4,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
-use maud::{DOCTYPE, html};
+use maud::{DOCTYPE, Markup, html};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -318,6 +318,70 @@ async fn environment(
         "cultivated": environment.cultivated,
     });
     Ok((environment, attestation))
+}
+
+pub(crate) async fn activity_dialog(
+    state: &AppState,
+    character: &Character,
+    return_to: &str,
+) -> Markup {
+    let outcome = environment(state, character).await;
+    let (environment, unavailable) = match outcome {
+        Ok((environment, _)) => (Some(environment), None),
+        Err(error) => (None, Some(error)),
+    };
+    let resources = environment
+        .as_ref()
+        .map(|environment| {
+            adventuresim_core::foraging::FORAGE_RESOURCES
+                .iter()
+                .filter(|resource| adventuresim_core::foraging::available(resource, *environment))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let illegal =
+        environment.is_some_and(|environment| environment.settlement || environment.cultivated);
+    html! {
+        div class="character-action-overlay" data-character-action-dialog data-initial-focus="#forage-targets" {
+            a class="character-action-backdrop" href=(return_to) aria-label="Close foraging dialog" {}
+            section class="character-action-dialog forage-dialog" role="dialog" aria-modal="true"
+                aria-labelledby="forage-title" aria-describedby="forage-description" tabindex="-1" {
+                header class="character-action-dialog-header" {
+                    h2 id="forage-title" { "Forage nearby" }
+                    a class="character-action-dialog-close" href=(return_to) aria-label="Close foraging dialog" { "×" }
+                }
+                p id="forage-description" { "Search only the character's immediate vicinity. Multiple targets share the selected time." }
+                @if let Some(reason) = unavailable {
+                    p role="alert" class="badge badge-danger" { (reason) }
+                } @else {
+                    @if illegal {
+                        p role="alert" class="badge badge-warning" { "Foraging here is illegal. One Stealth check is made when the search completes; failure costs 1 Virtue." }
+                    }
+                    form method="post" action="/forage" {
+                        input type="hidden" name="return_to" value=(return_to);
+                        p id="forage-target-limit" class="text-muted small-copy" { "Choose at most eight targets. Every selected target shares the same search time." }
+                        fieldset id="forage-targets" aria-describedby="forage-target-limit" {
+                            legend { "Targets" }
+                            @for resource in resources {
+                                label class="inventory-row" {
+                                    input type="checkbox" name="target" value=(resource.item_id);
+                                    span { (resource.name) " · " (format!("{:?}", resource.rarity)) }
+                                }
+                            }
+                        }
+                        label for="forage-hours" { "Search plan" }
+                        input id="forage-hours" name="hours" type="range" min="1" max="24" value="4"
+                            oninput="this.nextElementSibling.value=this.value + ' hours'";
+                        output { "4 hours" }
+                        div class="modal-actions" {
+                            button class="btn btn-primary" type="submit" { "Begin search" }
+                            a class="btn btn-secondary character-action-dialog-close" href=(return_to) { "Cancel" }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 async fn menu(
