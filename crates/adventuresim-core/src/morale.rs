@@ -54,8 +54,7 @@ pub fn mastery_enjoyment_after_interval(
         starting * (1.0 - elapsed_minutes as f32 / duration_minutes as f32).clamp(0.0, 1.0)
     };
     MASTERY_ENJOYMENT_LIMIT
-        - (MASTERY_ENJOYMENT_LIMIT - decayed)
-            * (-excess / MASTERY_ENJOYMENT_EFOLD_HOURS).exp()
+        - (MASTERY_ENJOYMENT_LIMIT - decayed) * (-excess / MASTERY_ENJOYMENT_EFOLD_HOURS).exp()
 }
 
 pub fn mastery_enjoyment_decay(age_minutes: u64, duration_minutes: u64) -> f32 {
@@ -356,15 +355,12 @@ mod tests {
             duration,
         );
         assert!((combined_sources - sequential_sources).abs() < 0.0001);
-        let partially_aged =
-            mastery_enjoyment_after_interval(2.0, 0.01, duration / 2, duration);
+        let partially_aged = mastery_enjoyment_after_interval(2.0, 0.01, duration / 2, duration);
         let decayed = 1.0;
         let expected = MASTERY_ENJOYMENT_LIMIT
-            - (MASTERY_ENJOYMENT_LIMIT - decayed)
-                * (-0.01 / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
+            - (MASTERY_ENJOYMENT_LIMIT - decayed) * (-0.01 / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
         let frozen_then_awarded = MASTERY_ENJOYMENT_LIMIT
-            - (MASTERY_ENJOYMENT_LIMIT - 2.0)
-                * (-0.01 / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
+            - (MASTERY_ENJOYMENT_LIMIT - 2.0) * (-0.01 / MASTERY_ENJOYMENT_EFOLD_HOURS).exp();
         assert!((partially_aged - expected).abs() < 0.0001);
         assert!(partially_aged < frozen_then_awarded);
         assert_eq!(
