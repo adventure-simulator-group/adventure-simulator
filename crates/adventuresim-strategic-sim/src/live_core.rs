@@ -18,6 +18,7 @@ use adventuresim_stdb_client::*;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::mpsc,
     time::Duration,
 };
@@ -43,6 +44,7 @@ use adventuresim_stdb_client::{
     character_death_table::CharacterDeathTableAccess,
     character_equip_table::CharacterEquipTableAccess,
     character_illness_status_table::CharacterIllnessStatusTableAccess,
+    character_needs_table::CharacterNeedsTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess, character_time_table::CharacterTimeTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
@@ -53,7 +55,7 @@ use adventuresim_stdb_client::{
     contract_status_type::ContractStatus,
     create_named_character_with_id_reducer::create_named_character_with_id,
     ensure_settlement_activity_reducer::ensure_settlement_activity, equip_item_reducer::equip_item,
-    finalize_merchant_trade_reducer::finalize_merchant_trade,
+    finalize_merchant_trade_reducer::finalize_merchant_trade, food_lot_table::FoodLotTableAccess,
     inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
     party_inventory_item_table::PartyInventoryItemTableAccess,
@@ -88,8 +90,8 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 /// a long quest leg to require many daily camps.
 const MAX_CAMPS_PER_LEG: u32 = 512;
 const MAX_DEFEAT_RETRIES: u32 = 2;
-/// Natural recovery is one percent per day without physiology, so a character
-/// reduced to zero may legitimately need roughly one hundred days.
+/// Long but survivable illnesses and injuries can require many daily rests;
+/// keep the policy bounded well beyond ordinary convalescence.
 const MAX_RECOVERY_ACTIONS: u32 = 128;
 const MAX_CORE_LOOP_WORK: u64 = 100_000;
 const MAX_CORE_TRACE_EVENTS: usize = 100_000;
@@ -107,6 +109,8 @@ pub struct CoreLoopConfig {
     pub run_nonce: String,
     pub use_imported_world: bool,
     pub expected_world_manifest_digest: Option<String>,
+    /// Immutable, public-safe diagnostic artifact written if the run fails.
+    pub failure_output: Option<PathBuf>,
 }
 
 impl CoreLoopConfig {
@@ -323,6 +327,144 @@ pub struct CoreLoopReport {
     pub npc_intervention_stories_markdown: String,
 }
 
+const MAX_FAILURE_TRACE_EVENTS: usize = 64;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreLoopFailureAgent {
+    pub agent_id: u32,
+    pub character_id: u64,
+    pub alive: bool,
+    pub condition_status: String,
+    pub hunger: f32,
+    pub thirst: f32,
+    pub food_days: f32,
+    pub water_days: f32,
+    pub visible_food_kcal: f32,
+    pub visible_water_ml: f32,
+    pub personal_gold_coin: u64,
+    pub settlement_id: Option<String>,
+    pub settlement_services: Vec<String>,
+    pub visible_herbalist_quote: Option<u64>,
+    pub visible_inn_full_board_cost: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreLoopFailureArtifact {
+    pub schema_version: u32,
+    pub category: String,
+    pub message: String,
+    pub metrics: CoreLoopMetrics,
+    pub total_event_count: u64,
+    pub trace_truncated: bool,
+    pub trace: Vec<CoreLoopEvent>,
+    pub final_agents: Vec<CoreLoopFailureAgent>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct FailureDraft {
+    metrics: CoreLoopMetrics,
+    total_event_count: u64,
+    trace_truncated: bool,
+    trace: Vec<CoreLoopEvent>,
+    final_agents: Vec<CoreLoopFailureAgent>,
+}
+
+#[derive(Clone)]
+struct FailureRecorder {
+    output: Option<PathBuf>,
+    draft: std::sync::Arc<std::sync::Mutex<FailureDraft>>,
+}
+
+impl FailureRecorder {
+    fn new(output: Option<PathBuf>) -> Self {
+        Self {
+            output,
+            draft: Default::default(),
+        }
+    }
+
+    fn update(&self, draft: FailureDraft) {
+        if let Ok(mut current) = self.draft.lock() {
+            *current = draft;
+        }
+    }
+
+    fn write(&self, error: &str) -> Result<(), String> {
+        let Some(path) = &self.output else {
+            return Ok(());
+        };
+        let (category, message) = safe_core_loop_failure(error);
+        let draft = self
+            .draft
+            .lock()
+            .map_err(|_| "failure diagnostic state was unavailable".to_string())?
+            .clone();
+        let artifact = CoreLoopFailureArtifact {
+            schema_version: 1,
+            category: category.into(),
+            message: message.into(),
+            metrics: draft.metrics,
+            total_event_count: draft.total_event_count,
+            trace_truncated: draft.trace_truncated,
+            trace: draft.trace,
+            final_agents: draft.final_agents,
+        };
+        let bytes = serde_json::to_vec_pretty(&artifact).map_err(|error| error.to_string())?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        use std::io::Write as _;
+        options
+            .open(path)
+            .and_then(|mut file| {
+                file.write_all(&bytes)?;
+                file.write_all(b"\n")
+            })
+            .map_err(|error| format!("could not write failure diagnostic: {error}"))
+    }
+}
+
+fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
+    if error.contains("Not enough coin") || error.contains("afford") {
+        (
+            "insufficient_visible_resources",
+            "The NPC could not afford a player-visible action.",
+        )
+    } else if error.contains("bound exhausted") || error.contains("made no progress") {
+        (
+            "bounded_progress_exhausted",
+            "The NPC exhausted a bounded action loop without making enough progress.",
+        )
+    } else if error.contains("timed out") || error.contains("connection") {
+        (
+            "authoritative_backend_unavailable",
+            "The authoritative backend did not complete the requested operation.",
+        )
+    } else if error.contains("refusing") || error.contains("manifest") {
+        (
+            "invalid_run_environment",
+            "The disposable simulation environment failed validation.",
+        )
+    } else {
+        (
+            "core_loop_error",
+            "The authoritative core loop stopped before completion.",
+        )
+    }
+}
+
+fn bounded_failure_trace(
+    trace: &[CoreLoopEvent],
+    total_event_count: u64,
+) -> (Vec<CoreLoopEvent>, bool) {
+    let start = trace.len().saturating_sub(MAX_FAILURE_TRACE_EVENTS);
+    (
+        trace[start..].to_vec(),
+        total_event_count > MAX_FAILURE_TRACE_EVENTS as u64,
+    )
+}
+
 pub fn render_npc_intervention_stories(
     rows: impl IntoIterator<Item = BackendNpcCaseIntervention>,
 ) -> String {
@@ -359,6 +501,7 @@ struct LiveRunner {
     medically_paused_schedules: HashSet<u64>,
     npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
     simulation_run_nonce: String,
+    failure_recorder: FailureRecorder,
 }
 
 const SMITHING_DECISION_SCALE: f32 = 1_000.0;
@@ -418,14 +561,20 @@ fn choose_medical_action(
 fn affordable_medical_rest_venue(
     inn_available: bool,
     temple_available: bool,
+    temple_supplies_cover_day: bool,
     purse: u64,
     committed_cost: u64,
 ) -> Option<bool> {
-    if temple_available && purse >= committed_cost {
+    if temple_available && temple_supplies_cover_day && purse >= committed_cost {
         return Some(false);
     }
     let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440)?;
     (inn_available && purse >= committed_cost.saturating_add(inn_cost)).then_some(true)
+}
+
+fn temple_supplies_cover_one_day(visible_food_kcal: f32, visible_water_ml: f32) -> bool {
+    visible_food_kcal >= adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
+        && visible_water_ml >= adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY
 }
 
 fn observable_herbalist_stocks_medication(
@@ -810,13 +959,97 @@ impl LiveRunner {
                 detail,
             });
         }
+        self.capture_failure_diagnostics();
     }
 
     fn call(&mut self, result: Result<(), String>) -> Result<(), String> {
         if result.is_err() {
             self.metrics.reducer_failures += 1;
+            self.capture_failure_diagnostics();
         }
         result
+    }
+
+    fn capture_failure_diagnostics(&self) {
+        let (trace, trace_truncated) = bounded_failure_trace(&self.trace, self.sequence);
+        let final_agents = self
+            .character_ids
+            .iter()
+            .enumerate()
+            .filter_map(|(agent, character_id)| {
+                self.public_failure_agent(agent as u32, *character_id)
+            })
+            .collect();
+        self.failure_recorder.update(FailureDraft {
+            metrics: self.metrics.clone(),
+            total_event_count: self.sequence,
+            trace_truncated,
+            trace,
+            final_agents,
+        });
+    }
+
+    fn public_failure_agent(
+        &self,
+        agent_id: u32,
+        character_id: u64,
+    ) -> Option<CoreLoopFailureAgent> {
+        let character = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == character_id)?;
+        let condition = self
+            .connection
+            .db
+            .character_strategic_condition()
+            .iter()
+            .find(|row| row.character_id == character_id)?;
+        let (visible_food_kcal, visible_water_ml) = self.visible_rest_supplies(character_id);
+        let settlement = character
+            .current_settlement_id
+            .as_deref()
+            .and_then(|settlement_id| {
+                self.connection
+                    .db
+                    .settlement()
+                    .iter()
+                    .find(|row| row.id == settlement_id)
+            });
+        let mut settlement_services = settlement.as_ref().map_or_else(Vec::new, |row| {
+            row.economy
+                .services
+                .iter()
+                .map(|service| format!("{service:?}"))
+                .collect()
+        });
+        settlement_services.sort();
+        let settlement_id = character.current_settlement_id.clone();
+        let visible_herbalist_quote = settlement_id
+            .as_deref()
+            .and_then(|id| self.observable_medical_quote(character_id, id));
+        let visible_inn_full_board_cost = settlement
+            .is_some_and(|row| row.economy.services.contains(&SettlementService::Inn))
+            .then(|| adventuresim_core::strategic_economy::inn_full_board_cost(1_440))
+            .flatten();
+        Some(CoreLoopFailureAgent {
+            agent_id,
+            character_id,
+            alive: character.alive,
+            condition_status: condition.status,
+            hunger: condition.hunger,
+            thirst: condition.thirst,
+            food_days: condition.food_days,
+            water_days: condition.water_days,
+            visible_food_kcal,
+            visible_water_ml,
+            personal_gold_coin: self.personal_gold(character_id),
+            settlement_id,
+            settlement_services,
+            visible_herbalist_quote,
+            visible_inn_full_board_cost,
+        })
     }
 
     fn settlement_rest_at_inn(&self, character_id: u64) -> Result<bool, String> {
@@ -1072,6 +1305,77 @@ impl LiveRunner {
             .sum()
     }
 
+    /// Total concrete food energy and water volume visible to the character
+    /// for a non-inn rest. Public food lots expose nutrition, while public
+    /// needs and party state expose physiological, carried, and pooled water.
+    fn visible_rest_supplies(&self, character_id: u64) -> (f32, f32) {
+        let Some(character) = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == character_id)
+        else {
+            return (0.0, 0.0);
+        };
+        let party_id = character.party_id;
+        let personal_ids = self
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| row.character_id == character_id)
+            .map(|row| row.id)
+            .collect::<HashSet<_>>();
+        let party_ids = party_id.as_deref().map_or_else(HashSet::new, |party_id| {
+            self.connection
+                .db
+                .party_inventory_item()
+                .iter()
+                .filter(|row| row.party_id == party_id)
+                .map(|row| row.id)
+                .collect()
+        });
+        let stored_food_kcal = self
+            .connection
+            .db
+            .food_lot()
+            .iter()
+            .filter(|lot| {
+                lot.inventory_item_id
+                    .is_some_and(|id| personal_ids.contains(&id))
+                    || lot
+                        .party_inventory_item_id
+                        .is_some_and(|id| party_ids.contains(&id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum::<f32>();
+        let needs = self
+            .connection
+            .db
+            .character_needs()
+            .iter()
+            .find(|row| row.character_id == character_id);
+        let physiological_food = needs
+            .as_ref()
+            .map_or(0.0, |row| row.food_balance_kcal.max(0.0));
+        let personal_water = needs.as_ref().map_or(0.0, |row| {
+            row.water_balance_ml.max(0.0) + row.carried_water_ml.max(0.0)
+        });
+        let party_water = party_id.as_deref().map_or(0.0, |party_id| {
+            self.connection
+                .db
+                .party()
+                .iter()
+                .find(|row| row.id == party_id)
+                .map_or(0.0, |row| row.pooled_water_ml.max(0.0))
+        });
+        (
+            physiological_food + stored_food_kcal,
+            personal_water + party_water,
+        )
+    }
+
     /// Reproduce the herbalist storefront/reducer quote from the same item
     /// definition and gateway-projected local-problem modifier visible to a
     /// player. No local-problem authority or infection state is transported.
@@ -1133,22 +1437,26 @@ impl LiveRunner {
             .settlement()
             .iter()
             .find(|row| row.id == settlement_id)?;
-        if settlement
-            .economy
-            .services
-            .contains(&SettlementService::Temple)
-        {
-            Some(quote)
-        } else if settlement
-            .economy
-            .services
-            .contains(&SettlementService::Inn)
-        {
+        let (food_kcal, water_ml) = self.visible_rest_supplies(character_id);
+        let at_inn = affordable_medical_rest_venue(
+            settlement
+                .economy
+                .services
+                .contains(&SettlementService::Inn),
+            settlement
+                .economy
+                .services
+                .contains(&SettlementService::Temple),
+            temple_supplies_cover_one_day(food_kcal, water_ml),
+            u64::MAX,
+            quote,
+        )?;
+        if at_inn {
             quote.checked_add(adventuresim_core::strategic_economy::inn_full_board_cost(
                 1_440,
             )?)
         } else {
-            None
+            Some(quote)
         }
     }
 
@@ -1287,21 +1595,46 @@ impl LiveRunner {
                             )
                         })
                 });
-            let natural_rest_venue =
-                affordable_medical_rest_venue(inn_available, temple_available, purse, 0);
-            let required_rest_cost = if temple_available {
-                Some(0)
-            } else if inn_available {
-                adventuresim_core::strategic_economy::inn_full_board_cost(1_440)
-            } else {
-                None
-            };
-            let observable_care_total = observable_quote
-                .zip(required_rest_cost)
-                .and_then(|(quote, rest)| quote.checked_add(rest));
+            let (visible_food_kcal, visible_water_ml) = self.visible_rest_supplies(character_id);
+            let temple_supplies_cover_day =
+                temple_supplies_cover_one_day(visible_food_kcal, visible_water_ml);
+            let natural_rest_venue = affordable_medical_rest_venue(
+                inn_available,
+                temple_available,
+                temple_supplies_cover_day,
+                purse,
+                0,
+            );
             let medicated_rest_venue = observable_quote.and_then(|quote| {
-                affordable_medical_rest_venue(inn_available, temple_available, purse, quote)
+                affordable_medical_rest_venue(
+                    inn_available,
+                    temple_available,
+                    temple_supplies_cover_day,
+                    purse,
+                    quote,
+                )
             });
+            let required_rest_cost = medicated_rest_venue
+                .or(natural_rest_venue)
+                .map(|at_inn| {
+                    if at_inn {
+                        adventuresim_core::strategic_economy::inn_full_board_cost(1_440)
+                    } else {
+                        Some(0)
+                    }
+                })
+                .flatten();
+            let observable_care_total =
+                observable_quote
+                    .zip(medicated_rest_venue)
+                    .and_then(|(quote, at_inn)| {
+                        let rest = if at_inn {
+                            adventuresim_core::strategic_economy::inn_full_board_cost(1_440)?
+                        } else {
+                            0
+                        };
+                        quote.checked_add(rest)
+                    });
             let (choice, reason) = choose_medical_action(
                 &condition.status,
                 symptomatic,
@@ -1316,7 +1649,7 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::MedicalDecision,
                 format!(
-                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};care_affordable={};action={choice:?};reason={reason}",
+                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_supplies_cover_day={temple_supplies_cover_day};care_affordable={};action={choice:?};reason={reason}",
                     condition.status,
                     settlement.as_deref().unwrap_or("none"),
                     observable_quote.map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
@@ -2516,6 +2849,22 @@ pub fn run_core_loop_with_npc_policy(
     config: CoreLoopConfig,
     npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
 ) -> Result<CoreLoopReport, String> {
+    let failure_recorder = FailureRecorder::new(config.failure_output.clone());
+    let result =
+        run_core_loop_with_npc_policy_inner(config, npc_strategy_policy, failure_recorder.clone());
+    if let Err(error) = &result
+        && let Err(diagnostic_error) = failure_recorder.write(error)
+    {
+        return Err(format!("{error}; {diagnostic_error}"));
+    }
+    result
+}
+
+fn run_core_loop_with_npc_policy_inner(
+    config: CoreLoopConfig,
+    npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
+    failure_recorder: FailureRecorder,
+) -> Result<CoreLoopReport, String> {
     config.validate()?;
     let bootstrap_token =
         bootstrap_token_from_environment(std::env::var(BOOTSTRAP_TOKEN_ENV).ok())?;
@@ -2557,10 +2906,12 @@ pub fn run_core_loop_with_npc_policy(
         .add_query(|query| query.from.character_death())
         .add_query(|query| query.from.character_equip())
         .add_query(|query| query.from.character_illness_status())
+        .add_query(|query| query.from.character_needs())
         .add_query(|query| query.from.character_strategic_condition())
         .add_query(|query| query.from.character_time())
         .add_query(|query| query.from.character_training_schedule())
         .add_query(|query| query.from.inventory_item())
+        .add_query(|query| query.from.food_lot())
         .add_query(|query| query.from.item())
         .add_query(|query| query.from.item_condition())
         .add_query(|query| query.from.party())
@@ -2603,6 +2954,7 @@ pub fn run_core_loop_with_npc_policy(
         medically_paused_schedules: HashSet::new(),
         npc_strategy_policy,
         simulation_run_nonce: config.run_nonce.clone(),
+        failure_recorder,
     };
     if runner
         .connection
@@ -3153,6 +3505,7 @@ mod tests {
             run_nonce: "unit-test-nonce-0001".into(),
             use_imported_world: false,
             expected_world_manifest_digest: None,
+            failure_output: None,
         };
         assert!(config.validate().is_err());
         config.host = "http://127.0.0.1:3000".into();
@@ -3272,12 +3625,23 @@ mod tests {
 
     #[test]
     fn medical_rest_venue_accounts_for_visible_inn_cost() {
-        assert_eq!(affordable_medical_rest_venue(true, false, 7, 5), Some(true));
-        assert_eq!(affordable_medical_rest_venue(true, false, 6, 5), None);
         assert_eq!(
-            affordable_medical_rest_venue(true, true, 5, 5),
+            affordable_medical_rest_venue(true, false, false, 7, 5),
+            Some(true)
+        );
+        assert_eq!(
+            affordable_medical_rest_venue(true, false, false, 6, 5),
+            None
+        );
+        assert_eq!(
+            affordable_medical_rest_venue(true, true, true, 5, 5),
             Some(false),
             "the free temple is preferred when both public venues exist"
+        );
+        assert_eq!(
+            affordable_medical_rest_venue(true, true, false, 7, 5),
+            Some(true),
+            "an inn is required when visible supplies do not cover a temple rest"
         );
     }
 

@@ -169,6 +169,37 @@ class JustTaskTests(unittest.TestCase):
             self.assertEqual(metadata["status"], "cleanup_failed")
             self.assertEqual(metadata["run_status"], "completed")
 
+    @mock.patch.object(just_tasks, "executable", side_effect=lambda name: name)
+    def test_simulation_indexes_public_failure_artifact(self, _executable):
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(just_tasks.subprocess, "run") as cleanup:
+            cleanup.return_value.returncode = 0
+            output = Path(temporary) / "run"
+
+            def run(command, **_kwargs):
+                if "core-loop" in command:
+                    (output / "failure.json").write_text(
+                        json.dumps({
+                            "schema_version": 1,
+                            "category": "bounded_progress_exhausted",
+                        }),
+                        encoding="utf-8",
+                    )
+                    return 9
+                return 0
+
+            with mock.patch.object(just_tasks, "run", side_effect=run):
+                self.assertEqual(just_tasks.strategic_sim(
+                    "1", "2", "3", "4", "2", "http://localhost:3000",
+                    just_tasks.MODULE_DIR, output,
+                ), 9)
+            metadata = json.loads((output / "launcher.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["status"], "simulator_failed")
+            self.assertEqual(metadata["failure_artifact"], "failure.json")
+            self.assertEqual(
+                metadata["failure_category"], "bounded_progress_exhausted"
+            )
+
     def test_simulation_refuses_existing_output_directory(self):
         with tempfile.TemporaryDirectory() as temporary:
             self.assertEqual(just_tasks.strategic_sim(

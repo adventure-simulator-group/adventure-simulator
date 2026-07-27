@@ -117,6 +117,9 @@ enum Command {
         expected_world_manifest_digest: Option<String>,
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Public-safe diagnostic JSON created only if the core loop fails.
+        #[arg(long)]
+        failure_output: Option<PathBuf>,
         /// Markdown anthology persisted from authoritative server intervention rows.
         #[arg(long, default_value = "npc-adventurer-stories.md")]
         npc_stories_output: PathBuf,
@@ -283,6 +286,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         imported_world,
         expected_world_manifest_digest,
         output,
+        failure_output,
         npc_stories_output,
         npc_strategy_policy,
         npc_endpoint,
@@ -292,11 +296,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } = command
     {
         if let Some(json_output) = &output {
-            validate_distinct_output_paths(&[json_output, &npc_stories_output])?;
-            if json_output.exists() || npc_stories_output.exists() {
+            let mut paths = vec![json_output.as_path(), npc_stories_output.as_path()];
+            if let Some(failure_output) = &failure_output {
+                paths.push(failure_output.as_path());
+            }
+            validate_distinct_output_paths(&paths)?;
+            if json_output.exists()
+                || npc_stories_output.exists()
+                || failure_output.as_ref().is_some_and(|path| path.exists())
+            {
                 return Err("core-loop outputs already exist; use new output paths".into());
             }
-        } else if npc_stories_output.exists() {
+        } else if npc_stories_output.exists()
+            || failure_output.as_ref().is_some_and(|path| path.exists())
+        {
             return Err("NPC stories output already exists; use a new output path".into());
         }
         let policy: Option<Box<dyn QuestPolicy>> = match npc_strategy_policy {
@@ -323,6 +336,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 run_nonce,
                 use_imported_world: imported_world,
                 expected_world_manifest_digest,
+                failure_output,
             },
             policy,
         )?;
