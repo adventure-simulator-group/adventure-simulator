@@ -84,9 +84,12 @@ four distinct axes across the expanded thirteen-axis behavioral catalog.
 Mirth, Courtship, Transparency, and Self-knowledge join the existing axes.
 Presentation and Inclination are always assigned outside that sparse count;
 private Sex supplies demographic truth and never participates in attraction.
-Inclination is Men/Either/Women/Neither. Presentation is
-Masculine/Ambiguous/Feminine. Masculine and Feminine presentation are normally
-learned on contact; Ambiguous presentation requires an Insight discovery check.
+The displayed inclination traits are Attracted to men, Attracted to men and
+women, Attracted to women, and Attracted to neither. Apparent gender identity
+is Man/Ambiguous/Woman. Man and Woman are normally learned on contact;
+Ambiguous identity requires an Insight discovery check. Deliberately presenting
+traits that differ from a character's true traits is reserved for a broader
+Deception-based feature.
 
 Each actual personality discovery check conserves 0.25 real training hours.
 An Open subject awards all of it to the observer's Insight; a Neutral subject

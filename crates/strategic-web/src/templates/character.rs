@@ -726,9 +726,9 @@ fn candidate_personality(spec: &StartingCharacterSpec) -> CharacterPersonality {
             StartingSex::Male => Sex::Male,
         },
         presentation: match spec.personality.presentation {
-            StartingPresentation::Masculine => Presentation::Masculine,
+            StartingPresentation::Man => Presentation::Man,
             StartingPresentation::Ambiguous => Presentation::Ambiguous,
-            StartingPresentation::Feminine => Presentation::Feminine,
+            StartingPresentation::Woman => Presentation::Woman,
         },
         inclination: match spec.personality.inclination {
             StartingInclination::Men => Inclination::Men,

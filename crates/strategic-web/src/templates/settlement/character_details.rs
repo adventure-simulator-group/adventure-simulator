@@ -907,34 +907,22 @@ fn personality_tags(
         _ => {}
     }
     tags.push(match personality.presentation {
-        Masculine => (
-            "Masculine",
-            "Masculine presentation; normally apparent on contact.",
-        ),
+        Man => ("Man", "Apparently a man; normally apparent on contact."),
         Ambiguous => (
             "Ambiguous",
-            "Ambiguous presentation; compatible with an Either inclination.",
+            "Ambiguous presentation; compatible with attraction to men and women.",
         ),
-        Feminine => (
-            "Feminine",
-            "Feminine presentation; normally apparent on contact.",
-        ),
+        Woman => ("Woman", "Apparently a woman; normally apparent on contact."),
     });
     tags.push(match personality.inclination {
-        Men => (
-            "Inclined toward men",
-            "Romantic interest favors masculine presentation.",
-        ),
+        Men => ("Attracted to men", "Romantic interest favors men."),
         Either => (
-            "Inclined either way",
-            "Romantic interest accepts any presentation.",
+            "Attracted to men and women",
+            "Romantic interest includes men and women.",
         ),
-        Women => (
-            "Inclined toward women",
-            "Romantic interest favors feminine presentation.",
-        ),
+        Women => ("Attracted to women", "Romantic interest favors women."),
         Neither => (
-            "Inclined toward neither",
+            "Attracted to neither",
             "No gender-directed romantic interest.",
         ),
     });
@@ -964,7 +952,7 @@ mod personality_tests {
         let tags = personality_tags(&personality);
         assert_eq!(
             tags.iter().map(|tag| tag.0).collect::<Vec<_>>(),
-            ["Brave", "Cruel", "Masculine", "Inclined toward women"]
+            ["Brave", "Cruel", "Man", "Attracted to women"]
         );
     }
 

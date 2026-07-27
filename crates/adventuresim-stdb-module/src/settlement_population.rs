@@ -22,9 +22,9 @@ pub enum NpcSex {
 }
 #[derive(Clone, Copy, Debug, SpacetimeType)]
 pub enum NpcPresentation {
-    Masculine,
+    Man,
     Ambiguous,
-    Feminine,
+    Woman,
 }
 
 #[derive(Clone, Debug)]
@@ -185,10 +185,10 @@ fn npc_presentation(id: &str, sex: NpcSex) -> NpcPresentation {
         population::stable_hash(&format!("{id}:presentation")) % 100,
     ) {
         (_, 0..=3) => NpcPresentation::Ambiguous,
-        (NpcSex::Female, 4) => NpcPresentation::Masculine,
-        (NpcSex::Male, 4) => NpcPresentation::Feminine,
-        (NpcSex::Female, _) => NpcPresentation::Feminine,
-        (NpcSex::Male, _) => NpcPresentation::Masculine,
+        (NpcSex::Female, 4) => NpcPresentation::Man,
+        (NpcSex::Male, 4) => NpcPresentation::Woman,
+        (NpcSex::Female, _) => NpcPresentation::Woman,
+        (NpcSex::Male, _) => NpcPresentation::Man,
     }
 }
 
@@ -452,11 +452,11 @@ mod tests {
             let id = format!("npc:test:{index}");
             female_cross_or_ambiguous += usize::from(!matches!(
                 npc_presentation(&id, NpcSex::Female),
-                NpcPresentation::Feminine
+                NpcPresentation::Woman
             ));
             male_cross_or_ambiguous += usize::from(!matches!(
                 npc_presentation(&id, NpcSex::Male),
-                NpcPresentation::Masculine
+                NpcPresentation::Man
             ));
         }
         assert!((40..160).contains(&female_cross_or_ambiguous));

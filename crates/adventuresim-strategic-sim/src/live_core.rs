@@ -566,9 +566,9 @@ fn live_personality(character_id: u64, p: &crate::Personality) -> CharacterPerso
             crate::Inclination::Neither => adventuresim_stdb_client::Inclination::Neither,
         },
         presentation: match p.presentation {
-            crate::Presentation::Masculine => adventuresim_stdb_client::Presentation::Masculine,
+            crate::Presentation::Man => adventuresim_stdb_client::Presentation::Man,
             crate::Presentation::Ambiguous => adventuresim_stdb_client::Presentation::Ambiguous,
-            crate::Presentation::Feminine => adventuresim_stdb_client::Presentation::Feminine,
+            crate::Presentation::Woman => adventuresim_stdb_client::Presentation::Woman,
         },
         sex: match p.sex {
             crate::Sex::Female => adventuresim_stdb_client::Sex::Female,
