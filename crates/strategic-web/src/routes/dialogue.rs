@@ -17,6 +17,9 @@ pub fn routes() -> Router<AppState> {
         .route("/api/dialogue/topic", post(topic))
         .route("/api/dialogue/answer", post(answer))
         .route("/api/dialogue/join", post(join))
+        .route("/api/dialogue/insight", post(witness_insight))
+        .route("/api/dialogue/approach", post(witness_approach))
+        .route("/api/dialogue/spend-time", post(spend_time))
         .route(
             "/api/settlements/{settlement_id}/locations/{location_id}/npcs",
             get(location_npcs),
@@ -61,6 +64,18 @@ struct TopicRow {
     topic_id: String,
     label: String,
     source_ref_json: String,
+}
+
+#[derive(Deserialize)]
+struct WitnessSocialRow {
+    npc_id: String,
+    affinity_band: String,
+    familiarity_band: String,
+    morale_band: String,
+    insight_available: bool,
+    pressure_cue: String,
+    last_outcome: String,
+    available_approaches_json: String,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -112,6 +127,18 @@ struct ConversationView {
     events: Vec<EventView>,
     topics: Vec<TopicView>,
     open_prompt: Option<PromptView>,
+    witness_social: Option<WitnessSocialView>,
+}
+#[derive(Serialize)]
+struct WitnessSocialView {
+    npc_id: String,
+    affinity: String,
+    familiarity: String,
+    morale: String,
+    insight_available: bool,
+    pressure_cue: String,
+    last_outcome: String,
+    available_approaches: Vec<String>,
 }
 #[derive(Serialize)]
 struct EventView {
@@ -434,6 +461,25 @@ async fn build_view(
                 .collect(),
         }
     });
+    let witness_social = state
+        .db
+        .query_one::<WitnessSocialRow>(&format!(
+            "SELECT * FROM backend_dialogue_witness_capabilities WHERE session_id = {} AND observer_character_id = {character_id}",
+            sql_string_literal(session_id),
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .map(|social| WitnessSocialView {
+            npc_id: social.npc_id,
+            affinity: social.affinity_band,
+            familiarity: social.familiarity_band,
+            morale: social.morale_band,
+            insight_available: social.insight_available,
+            pressure_cue: social.pressure_cue,
+            last_outcome: social.last_outcome,
+            available_approaches: serde_json::from_str(&social.available_approaches_json)
+                .unwrap_or_default(),
+        });
     Ok(ConversationView {
         session_id: session.id,
         revision: session.revision,
@@ -442,6 +488,7 @@ async fn build_view(
         events,
         topics,
         open_prompt,
+        witness_social,
     })
 }
 
@@ -618,6 +665,107 @@ async fn join(
                 json!(request.action_id),
                 json!(request.expected_revision),
                 json!(adventuresim_dialogue::CATALOG_DIGEST),
+            ],
+        )
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
+    Ok(Json(
+        build_view(&state, character_id, &request.session_id).await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct WitnessActionRequest {
+    session_id: String,
+    action_id: String,
+    expected_revision: u64,
+}
+
+async fn witness_insight(
+    State(state): State<AppState>,
+    session: Session,
+    Json(request): Json<WitnessActionRequest>,
+) -> Result<Json<ConversationView>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    state
+        .db
+        .call(
+            "diagnose_dialogue_witness",
+            &[
+                json!(character_id),
+                json!(&request.session_id),
+                json!(request.action_id),
+                json!(request.expected_revision),
+            ],
+        )
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
+    Ok(Json(
+        build_view(&state, character_id, &request.session_id).await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct WitnessApproachRequest {
+    session_id: String,
+    approach: String,
+    action_id: String,
+    expected_revision: u64,
+}
+
+async fn witness_approach(
+    State(state): State<AppState>,
+    session: Session,
+    Json(request): Json<WitnessApproachRequest>,
+) -> Result<Json<ConversationView>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    if !matches!(
+        request.approach.as_str(),
+        "listen" | "reassure" | "invoke_duty" | "bluff"
+    ) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    state
+        .db
+        .call(
+            "approach_dialogue_witness",
+            &[
+                json!(character_id),
+                json!(&request.session_id),
+                json!(request.approach),
+                json!(request.action_id),
+                json!(request.expected_revision),
+            ],
+        )
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
+    Ok(Json(
+        build_view(&state, character_id, &request.session_id).await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SpendTimeRequest {
+    session_id: String,
+    action_id: String,
+    expected_revision: u64,
+}
+
+async fn spend_time(
+    State(state): State<AppState>,
+    session: Session,
+    Json(request): Json<SpendTimeRequest>,
+) -> Result<Json<ConversationView>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    state
+        .db
+        .call(
+            "spend_dialogue_time_with_witness",
+            &[
+                json!(character_id),
+                json!(&request.session_id),
+                json!(request.action_id),
+                json!(request.expected_revision),
             ],
         )
         .await

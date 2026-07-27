@@ -4624,6 +4624,21 @@ body.chat-resizing {
 .settlement-chat-messages [data-chat-channel="guild"] { color: var(--chat-guild-color); }
 .settlement-chat-messages [data-chat-channel="info"] { color: var(--chat-info-color); }
 
+.dialogue-witness-social {
+  margin-block: .45rem;
+  padding: .55rem;
+  border: 1px solid color-mix(in srgb, var(--chat-local-color) 35%, transparent);
+  background: color-mix(in srgb, var(--panel-bg, #1d1812) 88%, transparent);
+}
+
+.dialogue-witness-social :is(p) { margin: 0 0 .35rem; }
+
+.dialogue-witness-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
 .chat-system-message {
   font-style: italic;
 }

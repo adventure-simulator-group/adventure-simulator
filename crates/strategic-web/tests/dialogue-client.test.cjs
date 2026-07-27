@@ -37,6 +37,16 @@ test("client renders only persisted authoritative views and enforces prompt boun
   assert.match(source, /choices\.length\s*<\s*prompt\.min_choices/);
 });
 
+test("witness social controls use observer-safe projections and authoritative routes", () => {
+  assert.match(source, /view\.witness_social/);
+  assert.match(source, /api\/dialogue\/spend-time/);
+  assert.match(source, /api\/dialogue\/insight/);
+  assert.match(source, /api\/dialogue\/approach/);
+  assert.match(source, /expected_revision:\s*binding\.revision/);
+  assert.match(source, /possible pressure, though it may have nothing to do with this account/);
+  assert.doesNotMatch(source, /has_bound_concern|diagnosis_correct|success_chance|target_transparency/);
+});
+
 test("dialogue does not expose the removed diagnosis and medication examination flow", () => {
   assert.doesNotMatch(source, /view\.examination/);
   assert.doesNotMatch(source, /data-dialogue-medication/);

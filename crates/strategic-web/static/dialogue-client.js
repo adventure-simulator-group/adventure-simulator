@@ -101,6 +101,88 @@
     if (prompt.mode !== "YesNo") { const submit = document.createElement("button"); submit.type = "submit"; submit.className = "btn btn-small"; submit.textContent = "Answer"; group.append(submit); }
     form.append(group); messages.append(form);
   };
+  const renderWitnessSocial = (social, binding) => {
+    if (!social) return;
+    const panel = document.createElement("section");
+    panel.className = "dialogue-witness-social";
+    panel.dataset.dialogueScripted = "true";
+    panel.setAttribute("aria-label", "Conversation approach");
+    const summary = document.createElement("p");
+    summary.className = "dialogue-witness-social-summary";
+    summary.textContent = `Relationship: ${social.affinity.replaceAll("_", " ")} · Familiarity: ${social.familiarity.replaceAll("_", " ")} · Demeanor: ${social.morale.replaceAll("_", " ")}`;
+    panel.append(summary);
+    if (social.pressure_cue && social.pressure_cue !== "unexamined") {
+      const cue = document.createElement("p");
+      cue.className = "dialogue-witness-cue";
+      cue.textContent = social.pressure_cue === "possible_pressure"
+        ? "You sense possible pressure, though it may have nothing to do with this account."
+        : "You notice no clear pressure signal.";
+      panel.append(cue);
+    }
+    if (social.last_outcome) {
+      const feedback = document.createElement("p");
+      feedback.className = "dialogue-witness-feedback";
+      feedback.setAttribute("role", "status");
+      feedback.textContent = ({
+        testimony_released: "They decide to say more.",
+        clarified: "They clarify that their concern is unrelated.",
+        rapport_improved: "The approach improves the conversation.",
+        did_not_land: "The approach does not land.",
+        spent_time: "Time together makes the conversation more familiar.",
+      })[social.last_outcome] || "The conversation shifts.";
+      panel.append(feedback);
+    }
+    const controls = document.createElement("div");
+    controls.className = "dialogue-witness-actions";
+    const invoke = (path, payload, label) => {
+      controls.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+      request(path, payload).then((view) => {
+        if (dialogueResponseIsCurrent(binding, selectionGeneration, chat.dataset.localChatSubject || "", currentView)) render(view);
+      }).catch((error) => {
+        if (dialogueResponseIsCurrent(binding, selectionGeneration, chat.dataset.localChatSubject || "", currentView)) {
+          window.reportStrategicError(error, label);
+          controls.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+        }
+      });
+    };
+    const button = (label, handler, disabled = false) => {
+      const control = document.createElement("button");
+      control.type = "button";
+      control.className = "btn btn-small";
+      control.textContent = label;
+      control.disabled = disabled;
+      control.addEventListener("click", handler, { signal });
+      controls.append(control);
+    };
+    button("Spend time (30 min)", () => invoke("/api/dialogue/spend-time", {
+      session_id: binding.sessionId,
+      action_id: actionId(),
+      expected_revision: binding.revision,
+    }, "spend time with witness"));
+    button("Read demeanor (10 min)", () => invoke("/api/dialogue/insight", {
+      session_id: binding.sessionId,
+      action_id: actionId(),
+      expected_revision: binding.revision,
+    }, "read witness demeanor"), !social.insight_available);
+    const labels = {
+      listen: "Listen",
+      reassure: "Reassure",
+      invoke_duty: "Invoke duty",
+      bluff: "Bluff",
+    };
+    Object.entries(labels).forEach(([approach, label]) => button(
+      `${label} (30 min)`,
+      () => invoke("/api/dialogue/approach", {
+        session_id: binding.sessionId,
+        approach,
+        action_id: actionId(),
+        expected_revision: binding.revision,
+      }, `${label.toLowerCase()} approach`),
+      !social.available_approaches.includes(approach),
+    ));
+    panel.append(controls);
+    messages.append(panel);
+  };
   // Topics are exposed by highlighted phrases in dialogue, not by guessing
   // hidden topic labels in the free-text box.
   const activeCandidates = () => currentView?.open_prompt?.choices || [];
@@ -143,6 +225,7 @@
       messages.append(row);
     });
     renderPrompt(view.open_prompt);
+    renderWitnessSocial(view.witness_social, binding);
     refreshCompletion();
     messages.scrollTop = messages.scrollHeight;
   };

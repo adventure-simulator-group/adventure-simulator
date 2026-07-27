@@ -12,6 +12,24 @@ success chance, reliability, or whether unease is bound to undisclosed
 testimony. A successful approach to a benign concern can produce clarification
 without creating a factual claim.
 
+Each fresh NPC encounter issues a private, dialogue-session-scoped witness
+social capability for that participant. The gateway projects only qualitative
+relationship, familiarity, demeanor, the fallible pressure cue, safe outcome
+wording, and currently available actions. Hidden concern binding, diagnostic
+correctness, personality fit, checks, rolls, and chances remain private.
+Reading demeanor spends ten strategic minutes; spending time or attempting
+Listen, Reassure, Invoke duty, or Bluff spends thirty. Insight and each
+approach have their own durable 24-hour observer/NPC cooldown, and action
+receipts make retries idempotent across reconnects.
+
+A successful approach releases only propositions authored as withheld for the
+exact referred witness. Release is persisted through the ordinary generated
+claim pipeline and appended once to the authoritative dialogue transcript.
+The same success against a benign concern records clarification without
+creating a claim. Both paths may still change private NPC morale and
+directional affinity, so those social results cannot reveal which path was
+bound to quest authority.
+
 ## Persistent settlement actors
 
 Settlement dialogue is authorized against persistent `settlement_npc` identities and
