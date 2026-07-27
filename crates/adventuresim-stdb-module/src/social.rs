@@ -380,6 +380,13 @@ pub fn backend_dialogue_witness_capabilities(
                     )
                 })
                 .collect::<Vec<_>>();
+            let insight_available = witness_action_available(
+                ctx,
+                capability.observer_character_id,
+                &capability.npc_id,
+                "insight",
+                now,
+            );
             Some(BackendDialogueWitnessCapability {
                 observer_character_id: capability.observer_character_id,
                 session_id: capability.session_id,
@@ -389,13 +396,7 @@ pub fn backend_dialogue_witness_capabilities(
                     relationship.as_ref().map_or(0, |row| row.shared_minutes),
                 ),
                 morale_band: morale_band(state.as_ref().map_or(0.0, |row| row.morale_anchor)),
-                insight_available: witness_action_available(
-                    ctx,
-                    capability.observer_character_id,
-                    &capability.npc_id,
-                    "insight",
-                    now,
-                ),
+                insight_available,
                 pressure_cue: capability.insight_state,
                 last_outcome: capability.last_outcome,
                 available_approaches_json: serde_json::to_string(&actions)
