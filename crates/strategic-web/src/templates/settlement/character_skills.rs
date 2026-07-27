@@ -227,42 +227,38 @@ pub(super) fn character_summary_icons(
     }
 
     if let Some(capability) = capability {
-        let armor = if capability.full_armor {
-            Some(("Full armor", "breastplate"))
+        let (armor_label, icon) = if capability.full_armor {
+            ("Full armor", "armor-coverage-full")
         } else if capability.three_quarter_armor {
-            Some(("Three-quarter armor", "layered-armor"))
+            ("Three-quarter armor", "armor-coverage-three-quarter")
         } else if capability.half_armor {
-            Some(("Half armor", "chain-mail"))
+            ("Half armor", "armor-coverage-half")
         } else if capability.quarter_armor {
-            Some(("Quarter armor", "armor-vest"))
+            ("Quarter armor", "armor-coverage-quarter")
         } else {
-            None
+            ("No armor", "armor-coverage-0")
         };
-        if let Some((armor_label, icon)) = armor {
-            let dodge =
-                finite_rank(Skill::Dodge.capped_rank_for_aptitude(
-                    view.effective_skill_hours(Skill::Dodge),
-                    leg_agility,
-                ));
-            let block =
-                finite_rank(Skill::Block.capped_rank_for_aptitude(
-                    view.effective_skill_hours(Skill::Block),
-                    arm_agility,
-                ));
-            let (defense, rank) = if block > dodge {
-                ("Block", block)
-            } else {
-                ("Dodge", dodge)
-            };
-            let label = format!("{armor_label} — {defense} {rank:.1}");
-            let tooltip = format!("{label}\nDodge — {dodge:.1}\nBlock — {block:.1}");
-            icons.push(SummaryIcon {
-                label,
-                tooltip,
-                rank,
-                kind: SummaryIconKind::Mask(format!("/static/icons/game/{icon}.svg")),
-            });
-        }
+        let dodge = finite_rank(
+            Skill::Dodge
+                .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Dodge), leg_agility),
+        );
+        let block = finite_rank(
+            Skill::Block
+                .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Block), arm_agility),
+        );
+        let (defense, rank) = if block > dodge {
+            ("Block", block)
+        } else {
+            ("Dodge", dodge)
+        };
+        let label = format!("{armor_label} — {defense} {rank:.1}");
+        let tooltip = format!("{label}\nDodge — {dodge:.1}\nBlock — {block:.1}");
+        icons.push(SummaryIcon {
+            label,
+            tooltip,
+            rank,
+            kind: SummaryIconKind::Mask(format!("/static/icons/game/{icon}.png")),
+        });
     }
 
     let social_entries = [
@@ -2337,6 +2333,29 @@ mod tests {
         assert!(armor.label.contains("Block"));
         assert!(armor.tooltip.contains("Dodge —"));
         assert!(armor.tooltip.contains("Block —"));
+        assert_eq!(
+            armor.kind,
+            SummaryIconKind::Mask("/static/icons/game/armor-coverage-quarter.png".to_owned())
+        );
+    }
+
+    #[test]
+    fn summary_uses_outline_silhouette_for_no_armor() {
+        let icons = character_summary_icons(
+            Some(&CharacterCapability::default()),
+            Some(&test_attributes(5.0)),
+            Some(&CharacterSkills::default()),
+            CombatTrainingProfile::default(),
+            None,
+        );
+        let armor = icons
+            .iter()
+            .find(|icon| icon.label.starts_with("No armor"))
+            .unwrap();
+        assert_eq!(
+            armor.kind,
+            SummaryIconKind::Mask("/static/icons/game/armor-coverage-0.png".to_owned())
+        );
     }
 
     #[test]

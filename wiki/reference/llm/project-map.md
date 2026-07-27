@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1297)
+## Files (1302)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -942,6 +942,11 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/anvil.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/arm-bandage.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/arm.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/armor-coverage-0.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/game/armor-coverage-full.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/game/armor-coverage-half.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/game/armor-coverage-quarter.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/game/armor-coverage-three-quarter.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/game/armor-cuisses.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/armor-vest.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/awareness.svg` — Vector UI or texture asset.

@@ -146,9 +146,12 @@ The rank meter is a five-segment display using the same yellow-green, yellow, or
 Character summaries use that same five-color rank progression on compact,
 keyboard-focusable icons. Equipped hands contribute one icon for every unique
 weapon leaf they exercise, including every leaf of a hybrid weapon. Armor
-contributes one icon for the highest equipped coverage tier and uses the
-stronger healthy Dodge or Block rank for its color. These combat and armor
-icons always precede non-combat skills.
+contributes one silhouette icon for the highest equipped coverage tier,
+including an outlined unarmored silhouette at zero coverage, and uses the
+stronger healthy Dodge or Block rank for its color. The quarter, half,
+three-quarter, and full silhouettes progressively fill the body regions
+protected by that armor. These combat and armor icons always precede
+non-combat skills.
 
 An exact non-combat skill appears in the summary at healthy rank 3 or higher.
 Expandable families remain one icon: Social and context-free Terrain use their
