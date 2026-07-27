@@ -3,6 +3,7 @@
 //! Files under `content/quests` are sorted, validated, embedded, and hashed by
 //! `build.rs`. Deployment never reads loose data files.
 
+use adventuresim_dialogue::{Condition, FactContext, SourceRef};
 use adventuresim_world_schema::BestiaryCategory;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -37,6 +38,45 @@ pub struct CatalogDocument {
     pub relations: Vec<WeightedRelation>,
     #[serde(default)]
     pub bridges: Vec<BridgeDefinition>,
+    #[serde(default)]
+    pub dialogue_variants: Vec<QuestDialogueVariant>,
+}
+
+/// Presentation-only response variants for generated quest wording. They use
+/// ordinary dialogue conditions and priority selection, but cannot carry
+/// effects or mutate any generated-case authority.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuestDialogueVariant {
+    pub id: String,
+    pub kind: QuestDialogueVariantKind,
+    pub priority: i32,
+    #[serde(default)]
+    pub conditions: Condition,
+    pub template: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestDialogueVariantKind {
+    Referral,
+    Testimony,
+}
+
+impl QuestDialogueVariant {
+    pub fn render(&self, values: &BTreeMap<String, String>) -> Result<String, String> {
+        let mut rendered = self.template.clone();
+        for (name, value) in values {
+            if value.chars().count() > 512 || value.chars().any(char::is_control) {
+                return Err(format!("invalid dialogue variant value {name}"));
+            }
+            rendered = rendered.replace(&format!("{{{name}}}"), value);
+        }
+        if rendered.contains('{') || rendered.contains('}') || rendered.chars().count() > 1024 {
+            return Err("quest dialogue variant has unresolved or oversized template".into());
+        }
+        Ok(rendered)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -260,6 +300,7 @@ pub struct Catalog {
     descriptions: BTreeMap<String, DescriptionDefinition>,
     templates: BTreeMap<String, TemplateDefinition>,
     relations: BTreeMap<String, WeightedRelation>,
+    dialogue_variant_sources: BTreeMap<String, SourceRef>,
 }
 
 impl Catalog {
@@ -270,10 +311,60 @@ impl Catalog {
         let mut descriptions = BTreeMap::new();
         let mut templates = BTreeMap::new();
         let mut relations = BTreeMap::new();
+        // Variant IDs are source-map keys. Establish their catalog-wide
+        // uniqueness before any source indexing or response validation.
+        let mut dialogue_variant_ids = BTreeSet::new();
+        for variant in documents
+            .iter()
+            .flat_map(|document| &document.dialogue_variants)
+        {
+            if !dialogue_variant_ids.insert(variant.id.clone()) {
+                return Err(format!("duplicate quest dialogue variant {}", variant.id));
+            }
+        }
+        // Unit fixtures can compile catalog documents without a source-map
+        // payload. Production builds still require a source entry when a
+        // selected variant is persisted by strategic dialogue.
+        let source_map: Vec<SourceRef> =
+            serde_json::from_str::<Option<Vec<SourceRef>>>(QUEST_DIALOGUE_VARIANT_SOURCE_MAP_JSON)
+                .map_err(|_| "invalid generated quest dialogue source map")?
+                .unwrap_or_default();
+        let mut dialogue_variant_sources = BTreeMap::new();
+        for source in source_map {
+            if let Some(id) = source
+                .path
+                .split('.')
+                .nth(1)
+                .and_then(|index| index.parse::<usize>().ok())
+                .and_then(|index| {
+                    documents
+                        .get(source.document)
+                        .and_then(|document| document.dialogue_variants.get(index))
+                })
+                .map(|variant| variant.id.clone())
+            {
+                dialogue_variant_sources.insert(id, source);
+            }
+        }
         let mut consequence_ids = BTreeSet::new();
         let mut bridges = BTreeSet::new();
         let mut monster_ids = BTreeSet::new();
         for document in &documents {
+            for (index, variant) in document.dialogue_variants.iter().enumerate() {
+                if variant.template.chars().count() > 1024 || variant.template.trim().is_empty() {
+                    return Err(format!(
+                        "quest dialogue variant {} has invalid template",
+                        variant.id
+                    ));
+                }
+                if document.dialogue_variants[index + 1..].iter().any(|other| {
+                    variant.kind == other.kind
+                        && variant.priority == other.priority
+                        && variant.conditions == other.conditions
+                }) {
+                    return Err(format!("ambiguous quest dialogue variant {}", variant.id));
+                }
+            }
             for bridge in &document.bridges {
                 if !bridges.insert(bridge.id.clone()) {
                     return Err(format!("duplicate bridge {}", bridge.id));
@@ -445,6 +536,7 @@ impl Catalog {
             descriptions,
             templates,
             relations,
+            dialogue_variant_sources,
         })
     }
 
@@ -546,6 +638,38 @@ impl Catalog {
                     .flat_map(|document| &document.consequences)
                     .find(|item| item.family == family && item.causes.iter().any(|id| id == "*"))
             })
+    }
+
+    /// Select one authoritative presentation variant. Equal highest priority is
+    /// rejected rather than depending on source-file order.
+    pub fn dialogue_variant(
+        &self,
+        kind: QuestDialogueVariantKind,
+        facts: &FactContext,
+    ) -> Result<Option<&QuestDialogueVariant>, String> {
+        let eligible = self
+            .documents
+            .iter()
+            .flat_map(|document| &document.dialogue_variants)
+            .filter(|variant| variant.kind == kind && facts.matches(&variant.conditions))
+            .collect::<Vec<_>>();
+        let Some(priority) = eligible.iter().map(|variant| variant.priority).max() else {
+            return Ok(None);
+        };
+        let winners = eligible
+            .into_iter()
+            .filter(|variant| variant.priority == priority)
+            .collect::<Vec<_>>();
+        if winners.len() != 1 {
+            return Err(format!(
+                "ambiguous quest dialogue variant for {kind:?} at priority {priority}"
+            ));
+        }
+        Ok(winners.into_iter().next())
+    }
+
+    pub fn dialogue_variant_source(&self, variant: &QuestDialogueVariant) -> Option<&SourceRef> {
+        self.dialogue_variant_sources.get(&variant.id)
     }
 }
 
@@ -694,6 +818,76 @@ mod tests {
     }
 
     #[test]
+    fn quest_variant_uses_profession_not_organization_identity() {
+        let catalog = catalog();
+        let profession = FactContext {
+            facts: BTreeMap::from([(
+                adventuresim_dialogue::FactKey::ParticipantProfession {
+                    role: "player".into(),
+                },
+                adventuresim_dialogue::FactValue::Text("merchant".into()),
+            )]),
+        };
+        let organization = FactContext {
+            facts: BTreeMap::from([(
+                adventuresim_dialogue::FactKey::ParticipantOrganization {
+                    role: "player".into(),
+                },
+                adventuresim_dialogue::FactValue::Text("merchant_guild".into()),
+            )]),
+        };
+        assert_eq!(
+            catalog
+                .dialogue_variant(QuestDialogueVariantKind::Referral, &profession)
+                .unwrap()
+                .unwrap()
+                .id,
+            "referral-merchant"
+        );
+        assert_eq!(
+            catalog
+                .dialogue_variant(QuestDialogueVariantKind::Referral, &organization)
+                .unwrap()
+                .unwrap()
+                .id,
+            "referral-guild"
+        );
+    }
+
+    #[test]
+    fn quest_variant_template_has_compiler_source_span() {
+        let catalog = catalog();
+        let variant = catalog
+            .documents
+            .iter()
+            .flat_map(|document| &document.dialogue_variants)
+            .find(|variant| variant.id == "referral-default")
+            .unwrap();
+        let source = catalog.dialogue_variant_source(variant).unwrap();
+        assert_eq!(source.file, "content/quests/investigation.yaml");
+        assert!(source.line > 1);
+        assert!(source.path.ends_with(".template"));
+    }
+
+    #[test]
+    fn nonidentity_testimony_variant_renders_safe_presentation_text() {
+        let catalog = catalog();
+        let variant = catalog
+            .dialogue_variant(QuestDialogueVariantKind::Testimony, &FactContext::default())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            variant
+                .render(&BTreeMap::from([(
+                    "testimony".into(),
+                    "I saw a lantern.".into()
+                )]))
+                .unwrap(),
+            "The witness says: I saw a lantern."
+        );
+    }
+
+    #[test]
     fn every_relation_keeps_plausibility_and_curation_separate() {
         for document in &catalog().documents {
             for relation in &document.relations {
@@ -738,6 +932,24 @@ mod tests {
             crate::quest_catalog_validation::validate_documents(&layered, &files)
                 .unwrap_err()
                 .contains("cannot compose")
+        );
+    }
+
+    #[test]
+    fn catalog_rejects_duplicate_dialogue_variant_ids_before_source_lookup() {
+        let mut documents = catalog().documents.clone();
+        let variants = documents
+            .iter_mut()
+            .find_map(|document| {
+                (!document.dialogue_variants.is_empty()).then_some(&mut document.dialogue_variants)
+            })
+            .expect("embedded quest catalog has dialogue variants");
+        let duplicate = variants[0].clone();
+        variants.push(duplicate);
+        assert!(
+            Catalog::compile(documents)
+                .unwrap_err()
+                .contains("duplicate quest dialogue variant")
         );
     }
 

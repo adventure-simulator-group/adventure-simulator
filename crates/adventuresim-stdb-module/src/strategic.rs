@@ -5912,6 +5912,8 @@ pub fn start_dialogue(
             .session_id()
             .filter(&session.id)
             .count() as u32;
+        let (fragments_json, source_refs_json) =
+            render_quest_referral_variant(ctx, &session, character_id, &delivery)?;
         ctx.db.dialogue_event().insert(DialogueEvent {
             id: format!("{}:event:{sequence}", session.id),
             gateway_bucket: 0,
@@ -5919,8 +5921,8 @@ pub fn start_dialogue(
             sequence,
             response_id: "generated-referral".into(),
             speaker_role,
-            fragments_json: delivery.fragments_json,
-            source_refs_json: "[]".into(),
+            fragments_json,
+            source_refs_json,
             created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
         crate::investigation::receive_local_problem_rumor(
@@ -5932,6 +5934,54 @@ pub fn start_dialogue(
     }
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
+}
+
+/// Select presentation-only quest referral prose after the same authoritative
+/// session facts used by ordinary dialogue have been revalidated. The receipt,
+/// contact, and generated case remain the authority; variants cannot affect
+/// any of them.
+fn render_quest_referral_variant(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    character_id: u64,
+    delivery: &crate::local_problem::LocalProblemRumorDelivery,
+) -> Result<(String, String), String> {
+    let facts = dialogue_fact_context(ctx, session, character_id)?;
+    let catalog = adventuresim_core::quest_catalog::catalog();
+    let Some(variant) = catalog.dialogue_variant(
+        adventuresim_core::quest_catalog::QuestDialogueVariantKind::Referral,
+        &facts,
+    )?
+    else {
+        return Ok((delivery.fragments_json.clone(), "[]".into()));
+    };
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&delivery.receipt_id)
+        .ok_or("Rumor delivery receipt disappeared")?;
+    let contact = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&receipt.contact_npc_id)
+        .ok_or("Rumor referral contact is unavailable")?;
+    let mut values = std::collections::BTreeMap::new();
+    values.insert("summary".into(), receipt.safe_summary);
+    values.insert("contact_name".into(), contact.name);
+    values.insert("contact_profession".into(), contact.profession);
+    values.insert("contact_location".into(), receipt.expected_location_id);
+    let text = variant.render(&values)?;
+    let fragments = vec![adventuresim_dialogue::Fragment::Text { value: text }];
+    let json = serde_json::to_string(&fragments)
+        .map_err(|_| "Could not encode generated referral dialogue")?;
+    let source = catalog
+        .dialogue_variant_source(variant)
+        .ok_or("Quest dialogue variant has no compiler source mapping")?;
+    let sources = serde_json::to_string(&vec![source])
+        .map_err(|_| "Could not encode generated referral source")?;
+    Ok((json, sources))
 }
 
 #[reducer]
@@ -6186,10 +6236,39 @@ fn dialogue_fact_context(
                 crate::organization::effective_presented_organization(ctx, id)
             {
                 result.facts.insert(
-                    FactKey::ParticipantProfession {
+                    FactKey::ParticipantOrganization {
                         role: participant.role.clone(),
                     },
-                    FactValue::Text(organization_id),
+                    FactValue::Text(organization_id.clone()),
+                );
+                // Presentation is current and locally recognized before it
+                // reaches this branch, so neither identity fact can leak a
+                // hidden, expired, or unrecognized membership.
+                if let Some(profession) =
+                    adventuresim_core::organization::organization(&organization_id)
+                        .and_then(|organization| organization.starting_role.as_ref())
+                        .map(|role| role.profession.id().to_owned())
+                {
+                    result.facts.insert(
+                        FactKey::ParticipantProfession {
+                            role: participant.role.clone(),
+                        },
+                        FactValue::Text(profession),
+                    );
+                }
+            }
+            if let Some(religion) = ctx
+                .db
+                .character_condition()
+                .character_id()
+                .find(id)
+                .and_then(|condition| condition.religion_id)
+            {
+                result.facts.insert(
+                    FactKey::ParticipantReligion {
+                        role: participant.role.clone(),
+                    },
+                    FactValue::Text(religion),
                 );
             }
             if let Some(character) = ctx.db.character().id().find(id) {
@@ -6635,13 +6714,23 @@ fn dialogue_runtime_bindings(
             &session.settlement_id,
             &session.location_id,
         )? {
-            let testimony = selected_witness
+            let mut testimony_parts = selected_witness
                 .testimony
                 .iter()
-                .map(|draft| draft.spoken_text.trim())
+                .map(|draft| draft.spoken_text.trim().to_owned())
                 .filter(|text| !text.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ");
+                .collect::<Vec<_>>();
+            if let Some(variant) = adventuresim_core::quest_catalog::catalog().dialogue_variant(
+                adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
+                &dialogue_fact_context(ctx, session, character_id)?,
+            )? {
+                for testimony in &mut testimony_parts {
+                    let mut values = std::collections::BTreeMap::new();
+                    values.insert("testimony".into(), testimony.clone());
+                    *testimony = variant.render(&values)?;
+                }
+            }
+            let testimony = testimony_parts.join(" ");
             if testimony.is_empty() || testimony.len() > 4_096 {
                 return Err("Generated witness testimony is unavailable or too large".into());
             }
@@ -6683,11 +6772,30 @@ fn receive_referred_testimony(
         &session.location_id,
     )?
     .ok_or("Addressed NPC is not the exact referred witness here")?;
+    // Select once before the claim/lead pipeline runs. Only the observer's
+    // wording is changed; proposition IDs, reliability, destinations, and all
+    // authority remain those in the validated manifest.
+    let presentation_texts = if let Some(variant) = adventuresim_core::quest_catalog::catalog()
+        .dialogue_variant(
+            adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
+            &dialogue_fact_context(ctx, session, character_id)?,
+        )? {
+        let mut texts = Vec::with_capacity(witness.testimony.len());
+        for draft in &witness.testimony {
+            let mut values = std::collections::BTreeMap::new();
+            values.insert("testimony".into(), draft.spoken_text.clone());
+            texts.push(variant.render(&values)?);
+        }
+        Some(texts)
+    } else {
+        None
+    };
     crate::investigation::persist_generated_testimony(
         ctx,
         character_id,
         &generated,
         &witness,
+        presentation_texts.as_deref(),
         action_id,
     )
 }
@@ -7411,28 +7519,43 @@ pub fn choose_dialogue_topic(
         .filter(&session_id)
         .count() as u32;
     for (offset, turn) in response.turns.iter().enumerate() {
-        let source_refs: Vec<_> = turn
-            .fragments
-            .iter()
-            .enumerate()
-            .map(|(fragment, authored)| {
-                let field = match authored {
-                    adventuresim_dialogue::Fragment::Text { .. } => "value",
-                    adventuresim_dialogue::Fragment::Topic { .. } => "label",
-                    adventuresim_dialogue::Fragment::PeriodClaim { .. } => "value",
-                    adventuresim_dialogue::Fragment::AuthoritativeExplanation { .. } => "value",
-                    adventuresim_dialogue::Fragment::Runtime { .. } => "slot",
-                };
-                adventuresim_dialogue::source_for_fragment(
-                    &session.conversation_id,
-                    &topic.id,
-                    &response.id,
-                    offset,
-                    fragment,
-                    field,
-                )
-            })
-            .collect();
+        let source_refs: Vec<_> =
+            turn.fragments
+                .iter()
+                .enumerate()
+                .map(|(fragment, authored)| {
+                    if matches!(
+                        authored,
+                        adventuresim_dialogue::Fragment::Runtime {
+                            slot: adventuresim_dialogue::RuntimeSlot::Testimony
+                        }
+                    ) {
+                        if let Ok(Some(variant)) = adventuresim_core::quest_catalog::catalog()
+                            .dialogue_variant(
+                            adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
+                            &facts,
+                        ) {
+                            return adventuresim_core::quest_catalog::catalog()
+                                .dialogue_variant_source(variant);
+                        }
+                    }
+                    let field = match authored {
+                        adventuresim_dialogue::Fragment::Text { .. } => "value",
+                        adventuresim_dialogue::Fragment::Topic { .. } => "label",
+                        adventuresim_dialogue::Fragment::PeriodClaim { .. } => "value",
+                        adventuresim_dialogue::Fragment::AuthoritativeExplanation { .. } => "value",
+                        adventuresim_dialogue::Fragment::Runtime { .. } => "slot",
+                    };
+                    adventuresim_dialogue::source_for_fragment(
+                        &session.conversation_id,
+                        &topic.id,
+                        &response.id,
+                        offset,
+                        fragment,
+                        field,
+                    )
+                })
+                .collect();
         ctx.db.dialogue_event().insert(DialogueEvent {
             id: format!("{session_id}:event:{}", sequence + offset as u32),
             gateway_bucket: 0,

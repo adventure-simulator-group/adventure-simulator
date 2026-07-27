@@ -17,7 +17,9 @@ const ROOT_KEYS: &[&str] = &[
     "consequences",
     "relations",
     "bridges",
+    "dialogue_variants",
 ];
+const DIALOGUE_VARIANT_KEYS: &[&str] = &["id", "kind", "priority", "conditions", "template"];
 const MONSTER_KEYS: &[&str] = &[
     "id",
     "name",
@@ -301,6 +303,48 @@ fn optional_list_strings(
     }
 }
 
+fn validate_dialogue_condition(value: &Value, at: &str) -> Result<(), String> {
+    let condition = object(value, at)?;
+    match string(condition, "op", at)? {
+        "always" => Ok(()),
+        "all" | "any" => array(
+            condition
+                .get("conditions")
+                .ok_or_else(|| format!("{at}.conditions: missing"))?,
+            at,
+        )?
+        .iter()
+        .enumerate()
+        .try_for_each(|(index, child)| {
+            validate_dialogue_condition(child, &format!("{at}.conditions[{index}]"))
+        }),
+        "not" => validate_dialogue_condition(
+            condition
+                .get("condition")
+                .ok_or_else(|| format!("{at}.condition: missing"))?,
+            &format!("{at}.condition"),
+        ),
+        "fact" => {
+            let key = object(
+                condition
+                    .get("key")
+                    .ok_or_else(|| format!("{at}.key: missing"))?,
+                &format!("{at}.key"),
+            )?;
+            // The runtime deserializes this into the shared dialogue
+            // `Condition`, which is the authoritative vocabulary check. Keep
+            // this structural validator vocabulary-neutral so quest variants
+            // retain parity as new safe dialogue facts are introduced.
+            let _kind = string(key, "kind", &format!("{at}.key"))?;
+            if !condition.contains_key("equals") {
+                return Err(format!("{at}.equals: missing"));
+            }
+            Ok(())
+        }
+        other => Err(format!("{at}.op: unknown dialogue condition {other}")),
+    }
+}
+
 #[derive(Clone)]
 struct DemographicRule {
     demographic: String,
@@ -407,6 +451,7 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                     "consequences" => CONSEQUENCE_KEYS,
                     "relations" => RELATION_KEYS,
                     "bridges" => BRIDGE_KEYS,
+                    "dialogue_variants" => DIALOGUE_VARIANT_KEYS,
                     _ => unreachable!(),
                 };
                 keys(item, allowed, &at)?;
@@ -1048,6 +1093,21 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             || string(item, "lead_summary", &at)?.trim().is_empty()
                         {
                             return Err(format!("{at}: bridge prose must not be empty"));
+                        }
+                    }
+                    "dialogue_variants" => {
+                        enum_value(
+                            string(item, "kind", &at)?,
+                            &["referral", "testimony"],
+                            &format!("{at}.kind"),
+                        )?;
+                        signed(item, "priority", -10_000, 10_000, &at)?;
+                        let template = nonempty_string(item, "template", &at)?;
+                        if template.len() > 1024 {
+                            return Err(format!("{at}.template: too long"));
+                        }
+                        if let Some(condition) = item.get("conditions") {
+                            validate_dialogue_condition(condition, &format!("{at}.conditions"))?;
                         }
                     }
                     "relations" => {

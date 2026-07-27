@@ -58,7 +58,8 @@ Choices may contain `result_turns`; these are appended to the durable transcript
 only after the prompt resolves and its effects succeed.
 
 Conditions are a typed tree: `always`, `all`, `any`, `not`, and `fact`. Fact keys
-are allowlisted in `FactKey`; participant profession, familiarity, clothing,
+are allowlisted in `FactKey`; participant profession, organization, religion,
+familiarity, clothing,
 service role, location, time period, quest state, and flags are supported. New
 world facts require a Rust resolver change. Never put executable code, SQL, or
 client-trusted effects in content. Effects are likewise a closed enum. A client
@@ -97,7 +98,11 @@ per-character topic knowledge. All raw dialogue rows are private; fail-closed
 gateway views are the only subscription surface, and the trusted web process
 additionally filters them to the selected character. Each player participant
 receives a projection row; nonparticipants receive none. The authored
-condition/effect catalog is never sent to browsers. Reducers verify gateway
+condition/effect catalog is never sent to browsers. Player organization facts
+come only from a current, locally recognized presented organization. The player
+profession is that organization's canonical `starting_role.profession`, rather
+than its organization ID; religion comes from authoritative profession-of-faith
+state. Reducers verify gateway
 authority, same-party membership, shared settlement, role cardinality, catalog
 and session revisions, topic eligibility, and stable choice IDs. Every NPC role
 is bound to a real persistent NPC, and every mutation revalidates each NPC's
