@@ -616,11 +616,11 @@ mod tests {
         assert!(tooltip.contains("Injury is touchy"));
         assert_eq!(
             perceived_trait(crate::spacetimedb::BeliefAxis::Inclination, 1),
-            ("Inclination", "Either")
+            ("Inclination", "Attracted to men and women")
         );
         assert_eq!(
             perceived_trait(crate::spacetimedb::BeliefAxis::Inclination, 3),
-            ("Inclination", "Neither")
+            ("Inclination", "Attracted to neither")
         );
         assert_eq!(
             perceived_trait(crate::spacetimedb::BeliefAxis::Conscience, 2),

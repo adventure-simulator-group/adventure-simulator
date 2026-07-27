@@ -146,9 +146,9 @@ pub enum Inclination {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Presentation {
-    Masculine,
+    Man,
     Ambiguous,
-    Feminine,
+    Woman,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -195,7 +195,7 @@ impl Personality {
             transparency: Transparency::Neutral,
             self_knowledge: SelfKnowledge::Neutral,
             inclination: Inclination::Women,
-            presentation: Presentation::Masculine,
+            presentation: Presentation::Man,
             sex: Sex::Male,
         }
     }
@@ -565,10 +565,10 @@ fn generated_personality(rng: &mut StableRng) -> Personality {
     };
     p.presentation = match (p.sex, rng.next_u64() % 100) {
         (_, 0..=3) => Presentation::Ambiguous,
-        (Sex::Female, 4) => Presentation::Masculine,
-        (Sex::Male, 4) => Presentation::Feminine,
-        (Sex::Female, _) => Presentation::Feminine,
-        (Sex::Male, _) => Presentation::Masculine,
+        (Sex::Female, 4) => Presentation::Man,
+        (Sex::Male, 4) => Presentation::Woman,
+        (Sex::Female, _) => Presentation::Woman,
+        (Sex::Male, _) => Presentation::Man,
     };
     p.inclination = match rng.next_u64() % 100 {
         0 => Inclination::Neither,

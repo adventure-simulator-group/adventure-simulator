@@ -162,9 +162,9 @@ pub enum StartingSex {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StartingPresentation {
-    Masculine,
+    Man,
     Ambiguous,
-    Feminine,
+    Woman,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -520,10 +520,10 @@ fn personality_with_demographics(
     let sex = generated_sex(seed, tier, slot);
     let presentation = match (sex, tier_hash("presentation", seed, tier, slot) % 100) {
         (_, 0..=3) => StartingPresentation::Ambiguous,
-        (StartingSex::Female, 4) => StartingPresentation::Masculine,
-        (StartingSex::Male, 4) => StartingPresentation::Feminine,
-        (StartingSex::Female, _) => StartingPresentation::Feminine,
-        (StartingSex::Male, _) => StartingPresentation::Masculine,
+        (StartingSex::Female, 4) => StartingPresentation::Man,
+        (StartingSex::Male, 4) => StartingPresentation::Woman,
+        (StartingSex::Female, _) => StartingPresentation::Woman,
+        (StartingSex::Male, _) => StartingPresentation::Man,
     };
     let inclination = match tier_hash("inclination", seed, tier, slot) % 100 {
         0 => StartingInclination::Neither,

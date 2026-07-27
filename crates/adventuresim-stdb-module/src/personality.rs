@@ -89,9 +89,9 @@ pub enum Inclination {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum Presentation {
-    Masculine,
+    Man,
     Ambiguous,
-    Feminine,
+    Woman,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum Sex {
@@ -168,7 +168,7 @@ impl CharacterPersonality {
             transparency: Transparency::Neutral,
             self_knowledge: SelfKnowledge::Neutral,
             sex: Sex::Male,
-            presentation: Presentation::Masculine,
+            presentation: Presentation::Man,
             inclination: Inclination::Women,
         }
     }
@@ -315,10 +315,10 @@ pub fn random_personality(
     let presentation_roll = random() % 100;
     result.presentation = match (result.sex, presentation_roll) {
         (_, 0..=3) => Presentation::Ambiguous,
-        (Sex::Female, 4) => Presentation::Masculine,
-        (Sex::Male, 4) => Presentation::Feminine,
-        (Sex::Female, _) => Presentation::Feminine,
-        (Sex::Male, _) => Presentation::Masculine,
+        (Sex::Female, 4) => Presentation::Man,
+        (Sex::Male, 4) => Presentation::Woman,
+        (Sex::Female, _) => Presentation::Woman,
+        (Sex::Male, _) => Presentation::Man,
     };
     // Direction is generated from demographic sex rather than the public
     // presentation signal. The signal is the only field attraction consumes.

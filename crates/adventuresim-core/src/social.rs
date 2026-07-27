@@ -104,13 +104,13 @@ impl PersonalityAxis {
             (Self::Transparency, 2) => Some("Guarded"),
             (Self::SelfKnowledge, 1) => Some("Introspective"),
             (Self::SelfKnowledge, 2) => Some("Self-deceiving"),
-            (Self::Inclination, 0) => Some("Men"),
-            (Self::Inclination, 1) => Some("Either"),
-            (Self::Inclination, 2) => Some("Women"),
-            (Self::Inclination, 3) => Some("Neither"),
-            (Self::Presentation, 0) => Some("Masculine"),
+            (Self::Inclination, 0) => Some("Attracted to men"),
+            (Self::Inclination, 1) => Some("Attracted to men and women"),
+            (Self::Inclination, 2) => Some("Attracted to women"),
+            (Self::Inclination, 3) => Some("Attracted to neither"),
+            (Self::Presentation, 0) => Some("Man"),
             (Self::Presentation, 1) => Some("Ambiguous"),
-            (Self::Presentation, 2) => Some("Feminine"),
+            (Self::Presentation, 2) => Some("Woman"),
             _ => None,
         }
     }
@@ -271,17 +271,17 @@ pub enum Inclination {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Presentation {
-    Masculine,
+    Man,
     Ambiguous,
-    Feminine,
+    Woman,
 }
 
 /// Ambiguous presentation is compatible only with `Either`; a directional
 /// preference requires an unambiguous signal.
 pub const fn inclination_accepts(inclination: Inclination, presentation: Presentation) -> bool {
     match inclination {
-        Inclination::Men => matches!(presentation, Presentation::Masculine),
-        Inclination::Women => matches!(presentation, Presentation::Feminine),
+        Inclination::Men => matches!(presentation, Presentation::Man),
+        Inclination::Women => matches!(presentation, Presentation::Woman),
         Inclination::Either => true,
         Inclination::Neither => false,
     }
@@ -897,33 +897,33 @@ mod tests {
     fn attraction_gate_and_rarity_bonus_are_fail_closed() {
         assert!(!mutually_attracted(
             Inclination::Neither,
-            Presentation::Masculine,
+            Presentation::Man,
             Inclination::Women,
-            Presentation::Feminine,
+            Presentation::Woman,
         ));
         assert_eq!(
             flirt_charm_modifier(
                 Inclination::Neither,
-                Presentation::Masculine,
+                Presentation::Man,
                 Inclination::Women,
-                Presentation::Feminine,
+                Presentation::Woman,
                 Courtship::Amorous,
             ),
             None
         );
         let same = flirt_charm_modifier(
             Inclination::Men,
-            Presentation::Masculine,
+            Presentation::Man,
             Inclination::Men,
-            Presentation::Masculine,
+            Presentation::Man,
             Courtship::Neutral,
         )
         .unwrap();
         let other = flirt_charm_modifier(
             Inclination::Women,
-            Presentation::Masculine,
+            Presentation::Man,
             Inclination::Men,
-            Presentation::Feminine,
+            Presentation::Woman,
             Courtship::Neutral,
         )
         .unwrap();
@@ -947,9 +947,9 @@ mod tests {
         assert!(
             flirt_charm_modifier(
                 Inclination::Women,
-                Presentation::Masculine,
+                Presentation::Man,
                 Inclination::Men,
-                Presentation::Feminine,
+                Presentation::Woman,
                 Courtship::Amorous,
             )
             .unwrap()

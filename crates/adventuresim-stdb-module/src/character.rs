@@ -1381,9 +1381,9 @@ fn insert_character_with_origin(
             StartingSex::Male => crate::personality::Sex::Male,
         };
         personality.presentation = match starting.expect("checked above").personality.presentation {
-            StartingPresentation::Masculine => crate::personality::Presentation::Masculine,
+            StartingPresentation::Man => crate::personality::Presentation::Man,
             StartingPresentation::Ambiguous => crate::personality::Presentation::Ambiguous,
-            StartingPresentation::Feminine => crate::personality::Presentation::Feminine,
+            StartingPresentation::Woman => crate::personality::Presentation::Woman,
         };
         personality.inclination = match starting.expect("checked above").personality.inclination {
             StartingInclination::Men => crate::personality::Inclination::Men,

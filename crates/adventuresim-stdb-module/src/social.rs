@@ -595,9 +595,9 @@ fn observe_presentation_on_contact(ctx: &ReducerContext, observer_id: u64, subje
         .find(observer_id)
         .map_or(0, |time| time.minutes);
     let truth = match personality.presentation {
-        crate::personality::Presentation::Masculine => 0,
+        crate::personality::Presentation::Man => 0,
         crate::personality::Presentation::Ambiguous => 1,
-        crate::personality::Presentation::Feminine => 2,
+        crate::personality::Presentation::Woman => 2,
     };
     if personality.presentation != crate::personality::Presentation::Ambiguous {
         upsert_belief(
@@ -1017,9 +1017,9 @@ fn personality_truth(ctx: &ReducerContext, target_id: u64, axis: PersonalityAxis
             crate::personality::Inclination::Neither => 3,
         },
         PersonalityAxis::Presentation => match p.presentation {
-            crate::personality::Presentation::Masculine => 0,
+            crate::personality::Presentation::Man => 0,
             crate::personality::Presentation::Ambiguous => 1,
-            crate::personality::Presentation::Feminine => 2,
+            crate::personality::Presentation::Woman => 2,
         },
     })
 }
@@ -1051,9 +1051,9 @@ fn core_inclination(value: crate::personality::Inclination) -> CoreInclination {
 
 fn core_presentation(value: crate::personality::Presentation) -> CorePresentation {
     match value {
-        crate::personality::Presentation::Masculine => CorePresentation::Masculine,
+        crate::personality::Presentation::Man => CorePresentation::Man,
         crate::personality::Presentation::Ambiguous => CorePresentation::Ambiguous,
-        crate::personality::Presentation::Feminine => CorePresentation::Feminine,
+        crate::personality::Presentation::Woman => CorePresentation::Woman,
     }
 }
 
@@ -1712,7 +1712,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         .map_or(0, |v| v.minutes);
     let mut viewer_personality = crate::personality::personality_or_neutral(ctx, VIEWER);
     viewer_personality.sex = crate::personality::Sex::Male;
-    viewer_personality.presentation = crate::personality::Presentation::Masculine;
+    viewer_personality.presentation = crate::personality::Presentation::Man;
     viewer_personality.inclination = crate::personality::Inclination::Women;
     ctx.db
         .character_personality()
@@ -1725,7 +1725,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     personality.mirth = crate::personality::Mirth::Merry;
     personality.courtship = crate::personality::Courtship::Amorous;
     personality.sex = crate::personality::Sex::Female;
-    personality.presentation = crate::personality::Presentation::Feminine;
+    personality.presentation = crate::personality::Presentation::Woman;
     personality.inclination = crate::personality::Inclination::Men;
     ctx.db
         .character_personality()

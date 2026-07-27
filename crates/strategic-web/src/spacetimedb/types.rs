@@ -370,9 +370,9 @@ personality_axis!(Inclination {
     Neither
 });
 personality_axis!(Presentation {
-    Masculine,
+    Man,
     Ambiguous,
-    Feminine
+    Woman
 });
 personality_axis!(Sex { Female, Male });
 
@@ -418,7 +418,7 @@ impl CharacterPersonality {
             transparency: Transparency::Neutral,
             self_knowledge: SelfKnowledge::Neutral,
             sex: Sex::Male,
-            presentation: Presentation::Masculine,
+            presentation: Presentation::Man,
             inclination: Inclination::Women,
         }
     }
