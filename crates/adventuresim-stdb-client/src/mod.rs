@@ -89,6 +89,8 @@ pub mod backend_settlement_npc_relationships_table;
 pub mod backend_settlement_npcs_table;
 pub mod backend_social_addresses_table;
 pub mod backend_social_beliefs_table;
+pub mod backend_social_chat_receipt_type;
+pub mod backend_social_chat_receipts_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_solo_parties_reducer;
@@ -163,6 +165,7 @@ pub mod character_type;
 pub mod character_virtue_table;
 pub mod character_virtue_type;
 pub mod charcoal_burning_industry_type;
+pub mod chat_with_party_member_reducer;
 pub mod choose_dialogue_topic_reducer;
 pub mod claim_simulation_run_reducer;
 pub mod clear_organization_presentation_reducer;
@@ -584,6 +587,7 @@ pub mod sociability_type;
 pub mod social_action_cooldown_type;
 pub mod social_address_type;
 pub mod social_belief_type;
+pub mod social_chat_receipt_type;
 pub mod social_interaction_type;
 pub mod soil_acidity_type;
 pub mod soil_basis_points_type;
@@ -595,7 +599,6 @@ pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
 pub mod spawn_developer_quest_reducer;
-pub mod spend_dialogue_time_with_witness_reducer;
 pub mod spend_time_with_settlement_npc_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
@@ -751,6 +754,8 @@ pub use backend_settlement_npc_relationships_table::*;
 pub use backend_settlement_npcs_table::*;
 pub use backend_social_addresses_table::*;
 pub use backend_social_beliefs_table::*;
+pub use backend_social_chat_receipt_type::BackendSocialChatReceipt;
+pub use backend_social_chat_receipts_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
@@ -825,6 +830,7 @@ pub use character_type::Character;
 pub use character_virtue_table::*;
 pub use character_virtue_type::CharacterVirtue;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
+pub use chat_with_party_member_reducer::chat_with_party_member;
 pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use clear_organization_presentation_reducer::clear_organization_presentation;
@@ -1246,6 +1252,7 @@ pub use sociability_type::Sociability;
 pub use social_action_cooldown_type::SocialActionCooldown;
 pub use social_address_type::SocialAddress;
 pub use social_belief_type::SocialBelief;
+pub use social_chat_receipt_type::SocialChatReceipt;
 pub use social_interaction_type::SocialInteraction;
 pub use soil_acidity_type::SoilAcidity;
 pub use soil_basis_points_type::SoilBasisPoints;
@@ -1257,7 +1264,6 @@ pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
 pub use spawn_developer_quest_reducer::spawn_developer_quest;
-pub use spend_dialogue_time_with_witness_reducer::spend_dialogue_time_with_witness;
 pub use spend_time_with_settlement_npc_reducer::spend_time_with_settlement_npc;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
@@ -1416,6 +1422,12 @@ pub enum Reducer {
         character_id: u64,
         item_id: String,
         by_quantity: i32,
+    },
+    ChatWithPartyMember {
+        actor_id: u64,
+        target_id: u64,
+        requested_minutes: u64,
+        action_id: String,
     },
     ChooseDialogueTopic {
         character_id: u64,
@@ -1844,15 +1856,11 @@ pub enum Reducer {
         definition_json: String,
         allow_implausible: bool,
     },
-    SpendDialogueTimeWithWitness {
-        observer_character_id: u64,
-        session_id: String,
-        action_id: String,
-        expected_revision: u64,
-    },
     SpendTimeWithSettlementNpc {
         actor_id: u64,
         npc_id: String,
+        requested_minutes: u64,
+        action_id: String,
     },
     StageInvestigationLead {
         character_id: u64,
@@ -2003,6 +2011,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::BootstrapDevelopmentWorld { .. } => "bootstrap_development_world",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
+            Reducer::ChatWithPartyMember { .. } => "chat_with_party_member",
             Reducer::ChooseDialogueTopic { .. } => "choose_dialogue_topic",
             Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
             Reducer::ClearOrganizationPresentation { .. } => "clear_organization_presentation",
@@ -2095,7 +2104,6 @@ impl __sdk::Reducer for Reducer {
                 "simulate_contract_issuer_interaction"
             }
             Reducer::SpawnDeveloperQuest { .. } => "spawn_developer_quest",
-            Reducer::SpendDialogueTimeWithWitness { .. } => "spend_dialogue_time_with_witness",
             Reducer::SpendTimeWithSettlementNpc { .. } => "spend_time_with_settlement_npc",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
@@ -2266,6 +2274,17 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 item_id: item_id.clone(),
                 by_quantity: by_quantity.clone(),
+}),
+            Reducer::ChatWithPartyMember{
+                actor_id,
+                target_id,
+                requested_minutes,
+                action_id,
+}             => __sats::bsatn::to_vec(&chat_with_party_member_reducer::ChatWithPartyMemberArgs {
+                actor_id: actor_id.clone(),
+                target_id: target_id.clone(),
+                requested_minutes: requested_minutes.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::ChooseDialogueTopic{
                 character_id,
@@ -3033,23 +3052,16 @@ Reducer::BeginWorldDataImport{
                 definition_json: definition_json.clone(),
                 allow_implausible: allow_implausible.clone(),
 }),
-            Reducer::SpendDialogueTimeWithWitness{
-                observer_character_id,
-                session_id,
-                action_id,
-                expected_revision,
-}             => __sats::bsatn::to_vec(&spend_dialogue_time_with_witness_reducer::SpendDialogueTimeWithWitnessArgs {
-                observer_character_id: observer_character_id.clone(),
-                session_id: session_id.clone(),
-                action_id: action_id.clone(),
-                expected_revision: expected_revision.clone(),
-}),
             Reducer::SpendTimeWithSettlementNpc{
                 actor_id,
                 npc_id,
+                requested_minutes,
+                action_id,
 }             => __sats::bsatn::to_vec(&spend_time_with_settlement_npc_reducer::SpendTimeWithSettlementNpcArgs {
                 actor_id: actor_id.clone(),
                 npc_id: npc_id.clone(),
+                requested_minutes: requested_minutes.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::StageInvestigationLead{
                 character_id,
@@ -3309,6 +3321,7 @@ pub struct DbUpdate {
     backend_settlement_npcs: __sdk::TableUpdate<SettlementNpc>,
     backend_social_addresses: __sdk::TableUpdate<SocialAddress>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
+    backend_social_chat_receipts: __sdk::TableUpdate<BackendSocialChatReceipt>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -3536,6 +3549,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_social_beliefs" => db_update.backend_social_beliefs.append(
                     backend_social_beliefs_table::parse_table_update(table_update)?,
+                ),
+                "backend_social_chat_receipts" => db_update.backend_social_chat_receipts.append(
+                    backend_social_chat_receipts_table::parse_table_update(table_update)?,
                 ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -4204,6 +4220,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_social_beliefs",
             &self.backend_social_beliefs,
         );
+        diff.backend_social_chat_receipts = cache.apply_diff_to_table::<BackendSocialChatReceipt>(
+            "backend_social_chat_receipts",
+            &self.backend_social_chat_receipts,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
         diff.party = cache.apply_diff_to_table::<Party>("party", &self.party);
@@ -4340,6 +4360,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_social_chat_receipts" => db_update
+                    .backend_social_chat_receipts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -4672,6 +4695,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_social_chat_receipts" => db_update
+                    .backend_social_chat_receipts
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4939,6 +4965,7 @@ pub struct AppliedDiff<'r> {
     backend_settlement_npcs: __sdk::TableAppliedDiff<'r, SettlementNpc>,
     backend_social_addresses: __sdk::TableAppliedDiff<'r, SocialAddress>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
+    backend_social_chat_receipts: __sdk::TableAppliedDiff<'r, BackendSocialChatReceipt>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -5204,6 +5231,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SocialBelief>(
             "backend_social_beliefs",
             &self.backend_social_beliefs,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendSocialChatReceipt>(
+            "backend_social_chat_receipts",
+            &self.backend_social_chat_receipts,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -6208,6 +6240,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_settlement_npcs_table::register_table(client_cache);
         backend_social_addresses_table::register_table(client_cache);
         backend_social_beliefs_table::register_table(client_cache);
+        backend_social_chat_receipts_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -6316,6 +6349,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_settlement_npcs",
         "backend_social_addresses",
         "backend_social_beliefs",
+        "backend_social_chat_receipts",
         "battle_loot_item",
         "battle_participant",
         "battle_result",

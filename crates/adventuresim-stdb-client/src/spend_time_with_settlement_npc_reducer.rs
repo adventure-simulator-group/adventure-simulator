@@ -9,6 +9,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct SpendTimeWithSettlementNpcArgs {
     pub actor_id: u64,
     pub npc_id: String,
+    pub requested_minutes: u64,
+    pub action_id: String,
 }
 
 impl From<SpendTimeWithSettlementNpcArgs> for super::Reducer {
@@ -16,6 +18,8 @@ impl From<SpendTimeWithSettlementNpcArgs> for super::Reducer {
         Self::SpendTimeWithSettlementNpc {
             actor_id: args.actor_id,
             npc_id: args.npc_id,
+            requested_minutes: args.requested_minutes,
+            action_id: args.action_id,
         }
     }
 }
@@ -35,8 +39,20 @@ pub trait spend_time_with_settlement_npc {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`spend_time_with_settlement_npc:spend_time_with_settlement_npc_then`] to run a callback after the reducer completes.
-    fn spend_time_with_settlement_npc(&self, actor_id: u64, npc_id: String) -> __sdk::Result<()> {
-        self.spend_time_with_settlement_npc_then(actor_id, npc_id, |_, _| {})
+    fn spend_time_with_settlement_npc(
+        &self,
+        actor_id: u64,
+        npc_id: String,
+        requested_minutes: u64,
+        action_id: String,
+    ) -> __sdk::Result<()> {
+        self.spend_time_with_settlement_npc_then(
+            actor_id,
+            npc_id,
+            requested_minutes,
+            action_id,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `spend_time_with_settlement_npc` to run as soon as possible,
@@ -49,6 +65,8 @@ pub trait spend_time_with_settlement_npc {
         &self,
         actor_id: u64,
         npc_id: String,
+        requested_minutes: u64,
+        action_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -63,6 +81,8 @@ impl spend_time_with_settlement_npc for super::RemoteReducers {
         &self,
         actor_id: u64,
         npc_id: String,
+        requested_minutes: u64,
+        action_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,7 +91,12 @@ impl spend_time_with_settlement_npc for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            SpendTimeWithSettlementNpcArgs { actor_id, npc_id },
+            SpendTimeWithSettlementNpcArgs {
+                actor_id,
+                npc_id,
+                requested_minutes,
+                action_id,
+            },
             callback,
         )
     }

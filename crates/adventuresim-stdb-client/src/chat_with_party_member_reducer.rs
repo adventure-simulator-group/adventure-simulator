@@ -6,67 +6,67 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SpendDialogueTimeWithWitnessArgs {
-    pub observer_character_id: u64,
-    pub session_id: String,
+pub(super) struct ChatWithPartyMemberArgs {
+    pub actor_id: u64,
+    pub target_id: u64,
+    pub requested_minutes: u64,
     pub action_id: String,
-    pub expected_revision: u64,
 }
 
-impl From<SpendDialogueTimeWithWitnessArgs> for super::Reducer {
-    fn from(args: SpendDialogueTimeWithWitnessArgs) -> Self {
-        Self::SpendDialogueTimeWithWitness {
-            observer_character_id: args.observer_character_id,
-            session_id: args.session_id,
+impl From<ChatWithPartyMemberArgs> for super::Reducer {
+    fn from(args: ChatWithPartyMemberArgs) -> Self {
+        Self::ChatWithPartyMember {
+            actor_id: args.actor_id,
+            target_id: args.target_id,
+            requested_minutes: args.requested_minutes,
             action_id: args.action_id,
-            expected_revision: args.expected_revision,
         }
     }
 }
 
-impl __sdk::InModule for SpendDialogueTimeWithWitnessArgs {
+impl __sdk::InModule for ChatWithPartyMemberArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `spend_dialogue_time_with_witness`.
+/// Extension trait for access to the reducer `chat_with_party_member`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait spend_dialogue_time_with_witness {
-    /// Request that the remote module invoke the reducer `spend_dialogue_time_with_witness` to run as soon as possible.
+pub trait chat_with_party_member {
+    /// Request that the remote module invoke the reducer `chat_with_party_member` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`spend_dialogue_time_with_witness:spend_dialogue_time_with_witness_then`] to run a callback after the reducer completes.
-    fn spend_dialogue_time_with_witness(
+    /// /// Use [`chat_with_party_member:chat_with_party_member_then`] to run a callback after the reducer completes.
+    fn chat_with_party_member(
         &self,
-        observer_character_id: u64,
-        session_id: String,
+        actor_id: u64,
+        target_id: u64,
+        requested_minutes: u64,
         action_id: String,
-        expected_revision: u64,
     ) -> __sdk::Result<()> {
-        self.spend_dialogue_time_with_witness_then(
-            observer_character_id,
-            session_id,
+        self.chat_with_party_member_then(
+            actor_id,
+            target_id,
+            requested_minutes,
             action_id,
-            expected_revision,
             |_, _| {},
         )
     }
 
-    /// Request that the remote module invoke the reducer `spend_dialogue_time_with_witness` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `chat_with_party_member` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn spend_dialogue_time_with_witness_then(
+    fn chat_with_party_member_then(
         &self,
-        observer_character_id: u64,
-        session_id: String,
+        actor_id: u64,
+        target_id: u64,
+        requested_minutes: u64,
         action_id: String,
-        expected_revision: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -76,13 +76,13 @@ pub trait spend_dialogue_time_with_witness {
     ) -> __sdk::Result<()>;
 }
 
-impl spend_dialogue_time_with_witness for super::RemoteReducers {
-    fn spend_dialogue_time_with_witness_then(
+impl chat_with_party_member for super::RemoteReducers {
+    fn chat_with_party_member_then(
         &self,
-        observer_character_id: u64,
-        session_id: String,
+        actor_id: u64,
+        target_id: u64,
+        requested_minutes: u64,
         action_id: String,
-        expected_revision: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -91,11 +91,11 @@ impl spend_dialogue_time_with_witness for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            SpendDialogueTimeWithWitnessArgs {
-                observer_character_id,
-                session_id,
+            ChatWithPartyMemberArgs {
+                actor_id,
+                target_id,
+                requested_minutes,
                 action_id,
-                expected_revision,
             },
             callback,
         )
