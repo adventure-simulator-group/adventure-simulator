@@ -3381,7 +3381,7 @@ fn party_action_skills(
             actor.terrain_forest_hours,
             &actor_attributes,
         ),
-        action::Terrain::Hills => skill_bps(
+        action::Terrain::Hills | action::Terrain::Underground => skill_bps(
             Skill::TerrainHills,
             actor.terrain_hills_hours,
             &actor_attributes,
@@ -3391,7 +3391,7 @@ fn party_action_skills(
             actor.terrain_urban_hours,
             &actor_attributes,
         ),
-        _ => skill_bps(
+        action::Terrain::Plains | action::Terrain::Road | action::Terrain::Marsh => skill_bps(
             Skill::TerrainPlains,
             actor.terrain_plains_hours,
             &actor_attributes,
@@ -3413,13 +3413,13 @@ fn party_action_skills(
                     skills.terrain_forest_hours,
                     &attributes,
                 ),
-                action::Terrain::Hills => {
+                action::Terrain::Hills | action::Terrain::Underground => {
                     skill_bps(Skill::TerrainHills, skills.terrain_hills_hours, &attributes)
                 }
                 action::Terrain::Settlement | action::Terrain::Ruins => {
                     skill_bps(Skill::TerrainUrban, skills.terrain_urban_hours, &attributes)
                 }
-                _ => skill_bps(
+                action::Terrain::Plains | action::Terrain::Road | action::Terrain::Marsh => skill_bps(
                     Skill::TerrainPlains,
                     skills.terrain_plains_hours,
                     &attributes,

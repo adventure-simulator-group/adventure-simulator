@@ -130,6 +130,31 @@ pub struct BoundedProgressResolution {
     pub guaranteed_by_attempt: u32,
 }
 
+/// Selects the skill that governs an investigation action.
+///
+/// Terrain expertise is reserved for reading and recovering physical tracks.
+/// Other field actions are observation problems unless they explicitly combine
+/// observation with stealth.
+pub const fn primary_skill_bps(
+    kind: InvestigationActionKind,
+    skills: SkillContribution,
+) -> u16 {
+    match kind {
+        InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks => {
+            skills.terrain_bps
+        }
+        InvestigationActionKind::LayAmbush => {
+            ((skills.awareness_bps as u32 + skills.stealth_bps as u32) / 2) as u16
+        }
+        InvestigationActionKind::InspectSite
+        | InvestigationActionKind::SearchArea
+        | InvestigationActionKind::LocateContact
+        | InvestigationActionKind::Watch
+        | InvestigationActionKind::Patrol
+        | InvestigationActionKind::ApproachLead => skills.awareness_bps,
+    }
+}
+
 pub fn prerequisites(kind: InvestigationActionKind) -> ActionPrerequisites {
     use InvestigationActionKind as K;
     ActionPrerequisites {
@@ -205,15 +230,7 @@ pub fn resolve(input: ResolutionInput) -> Resolution {
         (_, TimeOfDay::Night) => -700,
         _ => 0,
     };
-    let primary = match input.kind {
-        InvestigationActionKind::Watch
-        | InvestigationActionKind::Patrol
-        | InvestigationActionKind::LocateContact => input.skills.awareness_bps,
-        InvestigationActionKind::LayAmbush => {
-            (u32::from(input.skills.awareness_bps) + u32::from(input.skills.stealth_bps)) as u16 / 2
-        }
-        _ => input.skills.terrain_bps,
-    };
+    let primary = primary_skill_bps(input.kind, input.skills);
     let assistance = input.skills.assistance_bps.min(2_000);
     let effective = (i32::from(primary)
         + i32::from(assistance)
@@ -367,6 +384,31 @@ mod tests {
         let a = resolve(input(InvestigationActionKind::SearchArea));
         assert_eq!(a, resolve(input(InvestigationActionKind::SearchArea)));
         assert_ne!(a, resolve(input(InvestigationActionKind::FollowTracks)));
+    }
+
+    #[test]
+    fn only_track_actions_are_governed_by_terrain_skill() {
+        let skills = input(InvestigationActionKind::FollowTracks).skills;
+        for kind in [
+            InvestigationActionKind::FollowTracks,
+            InvestigationActionKind::ReacquireTracks,
+        ] {
+            assert_eq!(primary_skill_bps(kind, skills), skills.terrain_bps);
+        }
+        for kind in [
+            InvestigationActionKind::InspectSite,
+            InvestigationActionKind::SearchArea,
+            InvestigationActionKind::LocateContact,
+            InvestigationActionKind::Watch,
+            InvestigationActionKind::Patrol,
+            InvestigationActionKind::ApproachLead,
+        ] {
+            assert_eq!(primary_skill_bps(kind, skills), skills.awareness_bps);
+        }
+        assert_eq!(
+            primary_skill_bps(InvestigationActionKind::LayAmbush, skills),
+            5_500
+        );
     }
 
     #[test]
