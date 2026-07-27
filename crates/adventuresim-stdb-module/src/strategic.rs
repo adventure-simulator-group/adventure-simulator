@@ -6717,6 +6717,10 @@ fn dialogue_runtime_bindings(
             let mut testimony_parts = selected_witness
                 .testimony
                 .iter()
+                .filter(|draft| {
+                    draft.delivery
+                        == adventuresim_core::quest_generation::TestimonyDelivery::Volunteered
+                })
                 .map(|draft| draft.spoken_text.trim().to_owned())
                 .filter(|text| !text.is_empty())
                 .collect::<Vec<_>>();

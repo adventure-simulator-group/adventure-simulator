@@ -417,6 +417,7 @@ pub struct GeneratedArea {
 pub struct TestimonyDraft {
     pub proposition_id: String,
     pub reliability: Reliability,
+    pub delivery: TestimonyDelivery,
     pub truthful_text: String,
     pub spoken_text: String,
     pub destination_stage: String,
@@ -425,6 +426,13 @@ pub struct TestimonyDraft {
     pub corrects_proposition_id: Option<String>,
     /// Exact authored witnesses this account explicitly refers the observer to.
     pub referred_witness_ids: Vec<WitnessId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestimonyDelivery {
+    Volunteered,
+    Withheld,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2495,6 +2503,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 TestimonyDraft {
                     proposition_id: description_prop.clone(),
                     reliability,
+                    delivery: TestimonyDelivery::Volunteered,
                     truthful_text: true_statement.clone(),
                     // Presentation and grant shape cannot reveal reliability.
                     // Private authority still binds the proposition to the
@@ -2512,6 +2521,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 TestimonyDraft {
                     proposition_id: pattern_prop.clone(),
                     reliability,
+                    delivery: TestimonyDelivery::Withheld,
                     truthful_text: pattern_truth.clone(),
                     spoken_text: uncorroborated_pattern_claim,
                     destination_stage: "textual".into(),
@@ -2522,6 +2532,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 TestimonyDraft {
                     proposition_id: correction_prop.clone(),
                     reliability: Reliability::Truthful,
+                    delivery: TestimonyDelivery::Volunteered,
                     truthful_text: format!(
                         "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
                     ),
@@ -2548,6 +2559,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             testimony: vec![TestimonyDraft {
                 proposition_id: description_prop.clone(),
                 reliability: Reliability::Truthful,
+                delivery: TestimonyDelivery::Volunteered,
                 truthful_text: "The earlier location does not fit the tracks; they lead elsewhere."
                     .into(),
                 spoken_text: format!(

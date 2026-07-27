@@ -5954,6 +5954,11 @@ pub(crate) fn persist_generated_testimony(
     let generation_context = validated_authority.context;
     let mut corrected_capability_ids = BTreeSet::new();
     for (index, draft) in projection_plan.iter().enumerate() {
+        if draft.delivery
+            == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
+        {
+            continue;
+        }
         let (receipt_id, mut pipeline) =
             adventuresim_core::quest_generation::generated_testimony_pipeline(
                 &generation_context,
