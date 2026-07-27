@@ -13,7 +13,6 @@ pub struct BackendDialogueWitnessCapability {
     pub affinity_band: String,
     pub familiarity_band: String,
     pub morale_band: String,
-    pub insight_available: bool,
     pub pressure_cue: String,
     pub last_outcome: String,
     pub available_approaches_json: String,
@@ -33,7 +32,6 @@ pub struct BackendDialogueWitnessCapabilityCols {
     pub affinity_band: __sdk::__query_builder::Col<BackendDialogueWitnessCapability, String>,
     pub familiarity_band: __sdk::__query_builder::Col<BackendDialogueWitnessCapability, String>,
     pub morale_band: __sdk::__query_builder::Col<BackendDialogueWitnessCapability, String>,
-    pub insight_available: __sdk::__query_builder::Col<BackendDialogueWitnessCapability, bool>,
     pub pressure_cue: __sdk::__query_builder::Col<BackendDialogueWitnessCapability, String>,
     pub last_outcome: __sdk::__query_builder::Col<BackendDialogueWitnessCapability, String>,
     pub available_approaches_json:
@@ -53,7 +51,6 @@ impl __sdk::__query_builder::HasCols for BackendDialogueWitnessCapability {
             affinity_band: __sdk::__query_builder::Col::new(table_name, "affinity_band"),
             familiarity_band: __sdk::__query_builder::Col::new(table_name, "familiarity_band"),
             morale_band: __sdk::__query_builder::Col::new(table_name, "morale_band"),
-            insight_available: __sdk::__query_builder::Col::new(table_name, "insight_available"),
             pressure_cue: __sdk::__query_builder::Col::new(table_name, "pressure_cue"),
             last_outcome: __sdk::__query_builder::Col::new(table_name, "last_outcome"),
             available_approaches_json: __sdk::__query_builder::Col::new(

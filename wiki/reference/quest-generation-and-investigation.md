@@ -11,9 +11,10 @@ describes provenance rather than sincerity. The same visible wording, source
 shape, confidence band, and destination class must remain compatible with
 truthful, mistaken, partial, evasive, and deceptive private states.
 
-Insight therefore produces only a fallible pressure cue. A cue may be present
-for a quest-bound concern or for a benign concern, and may be absent in either
-case. It never declares a lie, changes a proposition, or grants navigation.
+Hearing quest testimony automatically produces a fallible passive Insight
+pressure cue. A cue may be present for a quest-bound concern or for a benign
+concern, and may be absent in either case. It never declares a lie, changes a
+proposition, or grants navigation.
 Every primary witness volunteers the same reliability-neutral public pattern
 account. A separate private pattern detail may or may not exist, sampled
 independently from reliability; its presence never changes the initial
@@ -30,9 +31,9 @@ affect resolution, while browser projections remain qualitative.
 Ordinary timed chat is available from the normal social menu rather than the
 quest transcript. It may improve or strain morale and affinity and always
 builds familiarity, but it never diagnoses pressure or releases testimony.
-Insight and the quest-specific Listen, Reassure, Invoke duty, and Bluff
-approaches remain available only in an active dialogue session after their
-observer-specific prerequisites are met.
+The passive Insight impression and quest-specific Listen, Reassure, Invoke
+duty, and Bluff approaches remain available only in an active dialogue session
+after their observer-specific prerequisites are met.
 
 Field action skills are deliberately narrow. `FollowTracks` and
 `ReacquireTracks` use the matching Terrain skill; other investigation actions

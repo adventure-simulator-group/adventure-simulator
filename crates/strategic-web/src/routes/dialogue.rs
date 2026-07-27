@@ -17,7 +17,6 @@ pub fn routes() -> Router<AppState> {
         .route("/api/dialogue/topic", post(topic))
         .route("/api/dialogue/answer", post(answer))
         .route("/api/dialogue/join", post(join))
-        .route("/api/dialogue/insight", post(witness_insight))
         .route("/api/dialogue/approach", post(witness_approach))
         .route(
             "/api/settlements/{settlement_id}/locations/{location_id}/npcs",
@@ -72,7 +71,6 @@ struct TopicRow {
 #[derive(Deserialize)]
 struct WitnessSocialRow {
     npc_id: String,
-    insight_available: bool,
     pressure_cue: String,
     last_outcome: String,
     available_approaches_json: String,
@@ -163,7 +161,6 @@ struct ConversationView {
 #[derive(Serialize)]
 struct WitnessSocialView {
     npc_id: String,
-    insight_available: bool,
     pressure_cue: String,
     last_outcome: String,
     available_approaches: Vec<String>,
@@ -721,7 +718,6 @@ async fn build_view(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .map(|social| WitnessSocialView {
             npc_id: social.npc_id,
-            insight_available: social.insight_available,
             pressure_cue: social.pressure_cue,
             last_outcome: social.last_outcome,
             available_approaches: serde_json::from_str(&social.available_approaches_json)
@@ -912,37 +908,6 @@ async fn join(
                 json!(request.action_id),
                 json!(request.expected_revision),
                 json!(adventuresim_dialogue::CATALOG_DIGEST),
-            ],
-        )
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
-    Ok(Json(
-        build_view(&state, character_id, &request.session_id).await?,
-    ))
-}
-
-#[derive(Deserialize)]
-struct WitnessActionRequest {
-    session_id: String,
-    action_id: String,
-    expected_revision: u64,
-}
-
-async fn witness_insight(
-    State(state): State<AppState>,
-    session: Session,
-    Json(request): Json<WitnessActionRequest>,
-) -> Result<Json<ConversationView>, StatusCode> {
-    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
-    state
-        .db
-        .call(
-            "diagnose_dialogue_witness",
-            &[
-                json!(character_id),
-                json!(&request.session_id),
-                json!(request.action_id),
-                json!(request.expected_revision),
             ],
         )
         .await

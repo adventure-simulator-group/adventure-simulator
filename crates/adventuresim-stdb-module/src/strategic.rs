@@ -8113,7 +8113,8 @@ fn apply_dialogue_effect(
             crate::organization::join_organization(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
-            receive_referred_testimony(ctx, character_id, session, &live_npc, action_id)
+            receive_referred_testimony(ctx, character_id, session, &live_npc, action_id)?;
+            crate::social::passively_assess_dialogue_witness(ctx, character_id, &session.id)
         }
         adventuresim_dialogue::Effect::InvestigationAction { action } => {
             apply_dialogue_investigation_action(
@@ -19663,5 +19664,26 @@ mod developer_quest_source_tests {
             .next()
             .unwrap();
         assert!(materializer.contains("&generated.custody"));
+    }
+
+    #[test]
+    fn hearing_referred_testimony_triggers_passive_insight_after_persistence() {
+        let source = include_str!("strategic.rs");
+        let effect = source
+            .split("adventuresim_dialogue::Effect::ReceiveReferredTestimony =>")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("adventuresim_dialogue::Effect::InvestigationAction")
+                    .next()
+            })
+            .expect("referred testimony dialogue effect");
+        let receive = effect
+            .find("receive_referred_testimony")
+            .expect("authoritative testimony persistence");
+        let assess = effect
+            .find("passively_assess_dialogue_witness")
+            .expect("passive Insight assessment");
+        assert!(receive < assess);
+        assert!(effect.contains("?;"));
     }
 }

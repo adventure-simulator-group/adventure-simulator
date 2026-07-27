@@ -280,7 +280,6 @@ pub struct BackendDialogueWitnessCapability {
     pub affinity_band: String,
     pub familiarity_band: String,
     pub morale_band: String,
-    pub insight_available: bool,
     pub pressure_cue: String,
     pub last_outcome: String,
     pub available_approaches_json: String,
@@ -573,13 +572,6 @@ pub fn backend_dialogue_witness_capabilities(
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            let insight_available = witness_action_available(
-                ctx,
-                capability.observer_character_id,
-                &capability.npc_id,
-                "insight",
-                now,
-            );
             Some(BackendDialogueWitnessCapability {
                 observer_character_id: capability.observer_character_id,
                 session_id: capability.session_id,
@@ -594,7 +586,6 @@ pub fn backend_dialogue_witness_capabilities(
                         now.saturating_sub(row.morale_anchor_minute),
                     )
                 })),
-                insight_available,
                 pressure_cue: capability.insight_state,
                 last_outcome: capability.last_outcome,
                 available_approaches_json: serde_json::to_string(&actions)
@@ -1142,6 +1133,48 @@ pub(crate) fn ensure_dialogue_witness_capability(
     Ok(())
 }
 
+fn assess_witness_capability(
+    ctx: &ReducerContext,
+    observer_character_id: u64,
+    capability: &mut DialogueWitnessCapability,
+) -> Result<(), String> {
+    let insight = crate::condition::mental_check(ctx, observer_character_id, Skill::Insight)?;
+    let has_unreleased_concern = capability.has_bound_concern && !capability.bound_released;
+    let cue = diagnose_witness_pressure(
+        has_unreleased_concern,
+        insight,
+        (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32,
+    );
+    capability.insight_state = match cue {
+        WitnessPressureCue::NoClearSignal => "no_clear_signal",
+        WitnessPressureCue::PossiblePressure => "possible_pressure",
+    }
+    .into();
+    capability.diagnosis_correct =
+        Some(matches!(cue, WitnessPressureCue::PossiblePressure) == has_unreleased_concern);
+    Ok(())
+}
+
+pub(crate) fn passively_assess_dialogue_witness(
+    ctx: &ReducerContext,
+    observer_character_id: u64,
+    session_id: &str,
+) -> Result<(), String> {
+    let id = format!("{session_id}:{observer_character_id}");
+    let mut capability = ctx
+        .db
+        .dialogue_witness_capability()
+        .id()
+        .find(&id)
+        .ok_or("Dialogue has no witness social capability")?;
+    if capability.insight_state != "unexamined" {
+        return Ok(());
+    }
+    assess_witness_capability(ctx, observer_character_id, &mut capability)?;
+    ctx.db.dialogue_witness_capability().id().update(capability);
+    Ok(())
+}
+
 fn witness_approach(value: &str) -> Result<WitnessApproach, String> {
     match value {
         "listen" => Ok(WitnessApproach::Listen),
@@ -1351,66 +1384,6 @@ fn apply_witness_relationship_outcome(
 }
 
 #[reducer]
-pub fn diagnose_dialogue_witness(
-    ctx: &ReducerContext,
-    observer_character_id: u64,
-    session_id: String,
-    action_id: String,
-    expected_revision: u64,
-) -> Result<(), String> {
-    crate::strategic::require_strategic_gateway(ctx)?;
-    crate::strategic::require_strategic_character_authority(ctx, observer_character_id)?;
-    let receipt_id = format!("{session_id}:{action_id}");
-    if witness_social_action_replayed(ctx, &receipt_id, observer_character_id, "insight")? {
-        return Ok(());
-    }
-    let (session, mut capability, now) = require_witness_social_action(
-        ctx,
-        observer_character_id,
-        &session_id,
-        &action_id,
-        expected_revision,
-        "insight",
-    )?;
-    let insight = crate::condition::mental_check(ctx, observer_character_id, Skill::Insight)?;
-    let roll = (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32;
-    let unreleased_bound_concern = capability.has_bound_concern && !capability.bound_released;
-    let cue = diagnose_witness_pressure(unreleased_bound_concern, insight, roll);
-    capability.insight_state = match cue {
-        WitnessPressureCue::NoClearSignal => "no_clear_signal",
-        WitnessPressureCue::PossiblePressure => "possible_pressure",
-    }
-    .into();
-    capability.diagnosis_correct =
-        Some(matches!(cue, WitnessPressureCue::PossiblePressure) == unreleased_bound_concern);
-    if !crate::time::advance_investigation_time(
-        ctx,
-        observer_character_id,
-        SOCIAL_RESPONSE_MINUTES,
-    )? {
-        return Err("Actor could not complete the observation".into());
-    }
-    let after = now.saturating_add(SOCIAL_RESPONSE_MINUTES);
-    apply_witness_relationship_outcome(
-        ctx,
-        observer_character_id,
-        &capability.npc_id,
-        after,
-        SOCIAL_RESPONSE_MINUTES,
-        0.0,
-        0.0,
-        &format!("npc-morale-insight:{receipt_id}"),
-        "insight_observation",
-    )?;
-    ctx.db
-        .dialogue_witness_capability()
-        .id()
-        .update(capability.clone());
-    finish_witness_social_action(ctx, session, capability, action_id, "insight", after);
-    Ok(())
-}
-
-#[reducer]
 pub fn approach_dialogue_witness(
     ctx: &ReducerContext,
     observer_character_id: u64,
@@ -1503,8 +1476,10 @@ pub fn approach_dialogue_witness(
             &action_id,
         )?;
         capability.bound_released = true;
-        capability.insight_state = "unexamined".into();
-        capability.diagnosis_correct = None;
+        // Hearing the newly released account produces the same passive,
+        // fallible observation as the initial account. It is part of this
+        // five-minute approach, not a second timed action.
+        assess_witness_capability(ctx, observer_character_id, &mut capability)?;
         "testimony_released"
     } else if outcome.offered_clarification {
         "clarified"
@@ -3495,18 +3470,37 @@ mod contract_tests {
     }
 
     #[test]
-    fn witness_and_manual_social_responses_share_five_authoritative_minutes() {
+    fn manual_witness_responses_use_five_authoritative_minutes() {
         let source = include_str!("social.rs");
         let witness = source
-            .split("pub fn diagnose_dialogue_witness")
+            .split("pub fn approach_dialogue_witness")
             .nth(1)
-            .and_then(|tail| tail.split("fn perform_social_action_authoritative").next())
-            .expect("witness reducers");
-        assert_eq!(witness.matches("advance_investigation_time(").count(), 2);
-        assert_eq!(witness.matches("SOCIAL_RESPONSE_MINUTES").count(), 6);
+            .and_then(|tail| tail.split("/// Canonical pair-presence history").next())
+            .expect("witness approach reducer");
+        assert_eq!(witness.matches("advance_investigation_time(").count(), 1);
+        assert_eq!(witness.matches("SOCIAL_RESPONSE_MINUTES").count(), 3);
         assert!(!witness.contains("saturating_add(10)"));
         assert!(!witness.contains("saturating_add(30)"));
         assert_eq!(adventuresim_core::social::SOCIAL_RESPONSE_MINUTES, 5);
+    }
+
+    #[test]
+    fn witness_insight_is_passive_persisted_and_untimed() {
+        let source = include_str!("social.rs");
+        let assessment = source
+            .split("fn assess_witness_capability")
+            .nth(1)
+            .and_then(|tail| tail.split("fn witness_approach").next())
+            .expect("passive witness assessment");
+        assert!(assessment.contains("mental_check(ctx, observer_character_id, Skill::Insight)"));
+        assert!(assessment.contains("ctx.random::<u64>()"));
+        assert!(assessment.contains("diagnose_witness_pressure"));
+        assert!(assessment.contains("capability.insight_state != \"unexamined\""));
+        assert!(assessment.contains("dialogue_witness_capability()"));
+        assert!(!assessment.contains("advance_investigation_time"));
+        assert!(!assessment.contains("SOCIAL_RESPONSE_MINUTES"));
+        assert!(!assessment.contains("WitnessSocialActionReceipt"));
+        assert!(!assessment.contains("WitnessSocialCooldown"));
     }
 
     #[test]
@@ -3617,12 +3611,15 @@ mod contract_tests {
     #[test]
     fn witness_confrontation_requires_observer_owned_basis_and_release_clears_concern() {
         let source = include_str!("social.rs");
-        let diagnose = source
-            .split("pub fn diagnose_dialogue_witness")
+        let assessment = source
+            .split("fn assess_witness_capability")
             .nth(1)
-            .and_then(|tail| tail.split("pub fn approach_dialogue_witness").next())
-            .expect("witness diagnosis reducer");
-        assert!(diagnose.contains("capability.has_bound_concern && !capability.bound_released"));
+            .and_then(|tail| {
+                tail.split("pub(crate) fn passively_assess_dialogue_witness")
+                    .next()
+            })
+            .expect("witness passive assessment");
+        assert!(assessment.contains("capability.has_bound_concern && !capability.bound_released"));
         let approach = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)
@@ -3630,7 +3627,9 @@ mod contract_tests {
             .expect("witness approach reducer");
         assert!(approach.contains("observer_has_witness_approach_basis"));
         assert!(source.contains("observer_has_witness_approach_basis_view"));
-        assert!(approach.contains("capability.diagnosis_correct = None"));
+        assert!(approach.contains("capability.bound_released = true"));
+        assert!(approach.contains("assess_witness_capability("));
+        assert!(!approach.contains("capability.insight_state = \"unexamined\""));
         assert!(source.contains("investigation_evidence_knowledge"));
         assert!(source.contains("investigation_belief"));
         assert!(approach.contains("current_morale"));

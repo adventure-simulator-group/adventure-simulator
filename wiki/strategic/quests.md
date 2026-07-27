@@ -7,8 +7,9 @@ about the cause.
 
 Investigation skills answer different questions. Bestiary narrows which
 creatures fit received descriptions and successfully interpreted physical
-clues. Terrain follows and recovers tracks. Insight notices possible pressure
-without certifying truth, while Charm, Command, and Deception offer
+clues. Terrain follows and recovers tracks. Hearing testimony passively uses
+Insight to notice possible pressure without certifying truth, while Charm,
+Command, and Deception offer
 personality-sensitive ways to pursue what a witness has not volunteered.
 Witnesses do not always have quest information withheld, and the wording of an
 initial or released account does not identify its reliability. A character

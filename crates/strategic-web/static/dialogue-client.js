@@ -111,8 +111,8 @@
       const cue = document.createElement("p");
       cue.className = "dialogue-witness-cue";
       cue.textContent = social.pressure_cue === "possible_pressure"
-        ? "You sense possible pressure, though it may have nothing to do with this account."
-        : "You notice no clear pressure signal.";
+        ? "Insight: You sense possible pressure, though it may have nothing to do with this account."
+        : "Insight: You notice no clear pressure signal.";
       panel.append(cue);
     }
     if (social.last_outcome) {
@@ -130,7 +130,7 @@
     if (social.available_approaches.length < 4) {
       const guidance = document.createElement("p");
       guidance.className = "dialogue-witness-guidance text-muted";
-      guidance.textContent = "Greyed approaches require a possible-pressure cue or relevant contradiction or evidence, and must be off cooldown.";
+      guidance.textContent = "Greyed approaches require a passive possible-pressure impression or relevant contradiction or evidence, and must be off cooldown.";
       panel.append(guidance);
     }
     const controls = document.createElement("div");
@@ -170,16 +170,6 @@
       control.addEventListener("click", handler, { signal });
       controls.append(control);
     };
-    button({
-      label: "Read demeanor",
-      icon: "awareness",
-      description: "Study posture and speech for signs of pressure. Uses Insight.",
-      unavailableDescription: "Unavailable until this observation's cooldown ends.",
-    }, () => invoke("/api/dialogue/insight", {
-      session_id: binding.sessionId,
-      action_id: actionId(),
-      expected_revision: binding.revision,
-    }, "read witness demeanor"), !social.insight_available);
     const approaches = {
       listen: {
         label: "Listen",

@@ -41,15 +41,17 @@ test("witness social controls use observer-safe projections and authoritative ro
   assert.match(source, /view\.witness_social/);
   assert.doesNotMatch(source, /api\/dialogue\/spend-time/);
   assert.doesNotMatch(source, /Spend time \(30 min\)/);
-  assert.match(source, /api\/dialogue\/insight/);
+  assert.doesNotMatch(source, /api\/dialogue\/insight/);
   assert.match(source, /api\/dialogue\/approach/);
   assert.match(source, /expected_revision:\s*binding\.revision/);
-  assert.match(source, /possible pressure, though it may have nothing to do with this account/);
+  assert.match(source, /Insight: You sense possible pressure, though it may have nothing to do with this account/);
+  assert.match(source, /Insight: You notice no clear pressure signal/);
   assert.doesNotMatch(source, /Relationship:|Familiarity:|Demeanor:/);
   assert.doesNotMatch(source, /has_bound_concern|diagnosis_correct|success_chance|target_transparency/);
   assert.match(source, /visibleLabel\.textContent = label/);
   assert.doesNotMatch(source, /\(10 min\)|\(30 min\)/);
-  assert.match(source, /icon: "awareness"/);
+  assert.doesNotMatch(source, /Read demeanor/);
+  assert.doesNotMatch(source, /icon: "awareness"/);
   assert.match(source, /icon: "human-ear"/);
   assert.match(source, /icon: "rose"/);
   assert.match(source, /icon: "crown"/);
@@ -58,8 +60,7 @@ test("witness social controls use observer-safe projections and authoritative ro
   assert.match(source, /iconHelp\.dataset\.strategicTooltip = tooltip/);
   assert.match(source, /control\.dataset\.strategicTooltip = tooltip/);
   assert.match(source, /`\$\{label\}\. \$\{description\} Takes 5 minutes\.`/);
-  assert.match(source, /Greyed approaches require a possible-pressure cue or relevant contradiction or evidence/);
-  assert.match(source, /Unavailable until this observation's cooldown ends/);
+  assert.match(source, /Greyed approaches require a passive possible-pressure impression or relevant contradiction or evidence/);
   assert.match(source, /Unavailable until you establish a basis for the approach and its cooldown ends/);
 });
 

@@ -207,7 +207,6 @@ pub mod derived_historical_vegetation_cover_type;
 pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
-pub mod diagnose_dialogue_witness_reducer;
 pub mod dialogue_action_type;
 pub mod dialogue_answer_type;
 pub mod dialogue_event_type;
@@ -872,7 +871,6 @@ pub use derived_historical_vegetation_cover_type::DerivedHistoricalVegetationCov
 pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMethod;
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
-pub use diagnose_dialogue_witness_reducer::diagnose_dialogue_witness;
 pub use dialogue_action_type::DialogueAction;
 pub use dialogue_answer_type::DialogueAnswer;
 pub use dialogue_event_type::DialogueEvent;
@@ -1510,12 +1508,6 @@ pub enum Reducer {
         inventory_item_id: u64,
         quantity: u32,
     },
-    DiagnoseDialogueWitness {
-        observer_character_id: u64,
-        session_id: String,
-        action_id: String,
-        expected_revision: u64,
-    },
     DisbandParty {
         leader_id: u64,
         party_id: String,
@@ -2028,7 +2020,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::DeleteRecruitmentRole { .. } => "delete_recruitment_role",
             Reducer::DeleteSavedRecruitmentRole { .. } => "delete_saved_recruitment_role",
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
-            Reducer::DiagnoseDialogueWitness { .. } => "diagnose_dialogue_witness",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
             Reducer::DiscoverInvestigationLead { .. } => "discover_investigation_lead",
@@ -2431,17 +2422,6 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 quantity: quantity.clone(),
-}),
-            Reducer::DiagnoseDialogueWitness{
-                observer_character_id,
-                session_id,
-                action_id,
-                expected_revision,
-}             => __sats::bsatn::to_vec(&diagnose_dialogue_witness_reducer::DiagnoseDialogueWitnessArgs {
-                observer_character_id: observer_character_id.clone(),
-                session_id: session_id.clone(),
-                action_id: action_id.clone(),
-                expected_revision: expected_revision.clone(),
 }),
             Reducer::DisbandParty{
                 leader_id,
