@@ -5911,6 +5911,7 @@ pub(crate) fn persist_generated_testimony(
     witness: &adventuresim_core::quest_generation::WitnessBinding,
     presentation_texts: Option<&[String]>,
     dialogue_action_id: &str,
+    withheld_only: bool,
 ) -> Result<(), String> {
     if !generated
         .witnesses
@@ -5954,9 +5955,9 @@ pub(crate) fn persist_generated_testimony(
     let generation_context = validated_authority.context;
     let mut corrected_capability_ids = BTreeSet::new();
     for (index, draft) in projection_plan.iter().enumerate() {
-        if draft.delivery
-            == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
-        {
+        let is_withheld = draft.delivery
+            == adventuresim_core::quest_generation::TestimonyDelivery::Withheld;
+        if is_withheld != withheld_only {
             continue;
         }
         let (receipt_id, mut pipeline) =

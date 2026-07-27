@@ -5932,6 +5932,12 @@ pub fn start_dialogue(
             format!("receive-rumor:{character_id}:{}", receipt.id),
         )?;
     }
+    crate::social::ensure_dialogue_witness_capability(
+        ctx,
+        &session,
+        character_id,
+        &npc_actor_id,
+    )?;
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
 }
@@ -6067,7 +6073,7 @@ pub fn join_dialogue_session(
     Ok(())
 }
 
-fn require_session_member(
+pub(crate) fn require_session_member(
     ctx: &ReducerContext,
     session_id: &str,
     character_id: u64,
@@ -6801,7 +6807,124 @@ fn receive_referred_testimony(
         &witness,
         presentation_texts.as_deref(),
         action_id,
+        false,
     )
+}
+
+pub(crate) fn dialogue_referred_witness(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    npc_id: &str,
+) -> Result<
+    Option<(
+        adventuresim_core::quest_generation::GeneratedCase,
+        adventuresim_core::quest_generation::WitnessBinding,
+    )>,
+    String,
+> {
+    let Some(delivery) = ctx
+        .db
+        .local_problem_rumor_delivery()
+        .session_id()
+        .filter(&session.id)
+        .find(|delivery| delivery.character_id == character_id)
+    else {
+        return Ok(None);
+    };
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&delivery.receipt_id)
+        .ok_or("Rumor delivery receipt disappeared")?;
+    referred_generated_witness(
+        ctx,
+        character_id,
+        &receipt.opaque_case_ref,
+        npc_id,
+        &session.settlement_id,
+        &session.location_id,
+    )
+}
+
+pub(crate) fn release_referred_withheld_testimony(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    npc_id: &str,
+    action_id: &str,
+) -> Result<(), String> {
+    let (generated, witness) = dialogue_referred_witness(ctx, character_id, session, npc_id)?
+        .ok_or("Dialogue has no bound witness testimony")?;
+    let variant = adventuresim_core::quest_catalog::catalog().dialogue_variant(
+        adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
+        &dialogue_fact_context(ctx, session, character_id)?,
+    )?;
+    let mut presentation_texts = Vec::with_capacity(witness.testimony.len());
+    for draft in &witness.testimony {
+        let text = if let Some(variant) = variant {
+            let mut values = std::collections::BTreeMap::new();
+            values.insert("testimony".into(), draft.spoken_text.clone());
+            variant.render(&values)?
+        } else {
+            draft.spoken_text.clone()
+        };
+        presentation_texts.push(text);
+    }
+    let released = witness
+        .testimony
+        .iter()
+        .enumerate()
+        .filter(|(_, draft)| {
+            draft.delivery
+                == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
+        })
+        .map(|(index, _)| presentation_texts[index].trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if released.is_empty() || released.chars().count() > 4_096 {
+        return Err("Bound witness testimony is unavailable or too large".into());
+    }
+    crate::investigation::persist_generated_testimony(
+        ctx,
+        character_id,
+        &generated,
+        &witness,
+        Some(&presentation_texts),
+        action_id,
+        true,
+    )?;
+    let speaker_role = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .find(|participant| participant.actor_id == npc_id)
+        .map(|participant| participant.role)
+        .ok_or("Witness dialogue participant disappeared")?;
+    let sequence = ctx
+        .db
+        .dialogue_event()
+        .session_id()
+        .filter(&session.id)
+        .count() as u32;
+    ctx.db.dialogue_event().insert(DialogueEvent {
+        id: format!("{}:event:{sequence}", session.id),
+        gateway_bucket: 0,
+        session_id: session.id.clone(),
+        sequence,
+        response_id: "witness-social-release".into(),
+        speaker_role,
+        fragments_json: serde_json::to_string(&vec![adventuresim_dialogue::Fragment::Text {
+            value: released,
+        }])
+        .map_err(|_| "Could not encode released witness testimony")?,
+        source_refs_json: "[null]".into(),
+        created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+    });
+    Ok(())
 }
 
 fn resolve_dialogue_fragments(
