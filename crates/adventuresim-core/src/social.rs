@@ -857,7 +857,11 @@ pub struct WitnessApproachOutcome {
 /// by companion social actions. Personality changes the private effective
 /// check, but the returned outcome contains no trait, DC, chance, or roll.
 pub fn resolve_witness_approach(input: WitnessApproachInput) -> WitnessApproachOutcome {
-    let personality_fit = match (input.approach, input.target_transparency, input.target_mirth) {
+    let personality_fit = match (
+        input.approach,
+        input.target_transparency,
+        input.target_mirth,
+    ) {
         (WitnessApproach::Listen, Transparency::Open, _) => 0.6,
         (WitnessApproach::Listen, Transparency::Guarded, _) => -0.6,
         (WitnessApproach::Reassure, _, Mirth::Merry) => 0.45,
@@ -936,14 +940,7 @@ mod tests {
                 roll: 0.55,
             })
         };
-        assert!(
-            attempt(
-                WitnessApproach::Listen,
-                Transparency::Open,
-                Mirth::Neutral
-            )
-            .succeeded
-        );
+        assert!(attempt(WitnessApproach::Listen, Transparency::Open, Mirth::Neutral).succeeded);
         assert!(
             !attempt(
                 WitnessApproach::Listen,
@@ -952,22 +949,8 @@ mod tests {
             )
             .succeeded
         );
-        assert!(
-            attempt(
-                WitnessApproach::Reassure,
-                Transparency::Neutral,
-                Mirth::Merry
-            )
-            .succeeded
-        );
-        assert!(
-            !attempt(
-                WitnessApproach::Reassure,
-                Transparency::Neutral,
-                Mirth::Grave
-            )
-            .succeeded
-        );
+        assert!(attempt(WitnessApproach::Reassure, Transparency::Open, Mirth::Merry).succeeded);
+        assert!(!attempt(WitnessApproach::Reassure, Transparency::Open, Mirth::Grave).succeeded);
     }
 
     #[test]

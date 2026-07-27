@@ -135,10 +135,7 @@ pub struct BoundedProgressResolution {
 /// Terrain expertise is reserved for reading and recovering physical tracks.
 /// Other field actions are observation problems unless they explicitly combine
 /// observation with stealth.
-pub const fn primary_skill_bps(
-    kind: InvestigationActionKind,
-    skills: SkillContribution,
-) -> u16 {
+pub const fn primary_skill_bps(kind: InvestigationActionKind, skills: SkillContribution) -> u16 {
     match kind {
         InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks => {
             skills.terrain_bps

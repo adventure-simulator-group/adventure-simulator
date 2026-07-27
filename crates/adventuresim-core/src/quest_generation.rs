@@ -5265,13 +5265,19 @@ mod tests {
                 .is_some()
         );
         let mistaken = account_style_candidates(Reliability::Mistaken, Circumstance::RoadJourney);
-        assert!(
-            mistaken
-                .iter()
-                .find(|c| c.value == AccountStyle::TracksAndMovement)
-                .unwrap()
-                .impossible
-                .is_some()
+        let mistaken_tracks = mistaken
+            .iter()
+            .find(|candidate| candidate.value == AccountStyle::TracksAndMovement)
+            .unwrap();
+        let truthful_tracks =
+            account_style_candidates(Reliability::Truthful, Circumstance::RoadJourney)
+                .into_iter()
+                .find(|candidate| candidate.value == AccountStyle::TracksAndMovement)
+                .unwrap();
+        assert_eq!(
+            (mistaken_tracks.weight, mistaken_tracks.impossible),
+            (truthful_tracks.weight, truthful_tracks.impossible),
+            "account wording must not reveal hidden reliability"
         );
         assert_ne!(
             reliability_candidates(
