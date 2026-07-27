@@ -3610,7 +3610,7 @@ mod tests {
     #[test]
     fn account_presentation_candidates_do_not_encode_reliability() {
         for circumstance in [
-            Circumstance::DirectSight,
+            Circumstance::SecretRiversideMeeting,
             Circumstance::NightWindow,
             Circumstance::RoadJourney,
         ] {
