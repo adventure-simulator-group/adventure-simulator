@@ -346,6 +346,7 @@ pub(super) fn npc_location_id(service_id: &str) -> &str {
         "weapons" => "forge",
         "armor" => "armoury",
         "clothing" => "tailor",
+        "religion" => "church",
         other => other,
     }
 }
@@ -354,7 +355,7 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
     html! {
         nav class="settlement-npc-strip" aria-label="People here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
-            span class="text-muted" data-npc-loading { "Finding the people hereâ€¦" }
+            span class="text-muted" data-npc-loading { "Finding the people here…" }
         }
     }
 }
@@ -722,6 +723,11 @@ mod tests {
         assert!(chat.contains("data-local-chat-location=\"market\""));
         assert!(chat.contains("data-dialogue-catalog-revision"));
         assert!(!chat.contains("lubeck:merchants"));
+        assert_eq!(npc_location_id("religion"), "church");
+        assert_eq!(npc_location_id("inn"), "inn");
+        let church_strip = npc_portrait_strip("lubeck", "church").into_string();
+        assert!(church_strip.contains("Finding the people here…"));
+        assert!(!church_strip.contains("â"));
     }
 
     #[test]
