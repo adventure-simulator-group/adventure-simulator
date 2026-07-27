@@ -15,6 +15,7 @@ pub struct SettlementNpcSocialState {
     pub mirth: Mirth,
     pub morale_anchor: f32,
     pub morale_anchor_minute: u64,
+    pub private_entropy: u64,
 }
 
 impl __sdk::InModule for SettlementNpcSocialState {
@@ -30,6 +31,7 @@ pub struct SettlementNpcSocialStateCols {
     pub mirth: __sdk::__query_builder::Col<SettlementNpcSocialState, Mirth>,
     pub morale_anchor: __sdk::__query_builder::Col<SettlementNpcSocialState, f32>,
     pub morale_anchor_minute: __sdk::__query_builder::Col<SettlementNpcSocialState, u64>,
+    pub private_entropy: __sdk::__query_builder::Col<SettlementNpcSocialState, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for SettlementNpcSocialState {
@@ -44,6 +46,7 @@ impl __sdk::__query_builder::HasCols for SettlementNpcSocialState {
                 table_name,
                 "morale_anchor_minute",
             ),
+            private_entropy: __sdk::__query_builder::Col::new(table_name, "private_entropy"),
         }
     }
 }

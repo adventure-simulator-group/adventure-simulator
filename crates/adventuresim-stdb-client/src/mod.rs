@@ -27,6 +27,8 @@ pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
 pub mod backend_automatic_social_chats_table;
+pub mod backend_bestiary_deduction_type;
+pub mod backend_bestiary_deductions_table;
 pub mod backend_case_battle_type;
 pub mod backend_case_battles_table;
 pub mod backend_case_site_pin_type;
@@ -311,6 +313,9 @@ pub mod investigation_action_receipt_type;
 pub mod investigation_area_authority_type;
 pub mod investigation_belief_revision_type;
 pub mod investigation_belief_type;
+pub mod investigation_bestiary_deduction_type;
+pub mod investigation_bestiary_diagnostic_receipt_type;
+pub mod investigation_bestiary_report_receipt_type;
 pub mod investigation_case_authority_type;
 pub mod investigation_claim_type;
 pub mod investigation_event_authority_type;
@@ -551,6 +556,7 @@ pub mod settlement_economy_profile_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
 pub mod settlement_language_profile_type;
+pub mod settlement_npc_morale_event_type;
 pub mod settlement_npc_presence_table;
 pub mod settlement_npc_presence_type;
 pub mod settlement_npc_relationship_type;
@@ -683,6 +689,8 @@ pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backend_automatic_social_chats_table::*;
+pub use backend_bestiary_deduction_type::BackendBestiaryDeduction;
+pub use backend_bestiary_deductions_table::*;
 pub use backend_case_battle_type::BackendCaseBattle;
 pub use backend_case_battles_table::*;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
@@ -967,6 +975,9 @@ pub use investigation_action_receipt_type::InvestigationActionReceipt;
 pub use investigation_area_authority_type::InvestigationAreaAuthority;
 pub use investigation_belief_revision_type::InvestigationBeliefRevision;
 pub use investigation_belief_type::InvestigationBelief;
+pub use investigation_bestiary_deduction_type::InvestigationBestiaryDeduction;
+pub use investigation_bestiary_diagnostic_receipt_type::InvestigationBestiaryDiagnosticReceipt;
+pub use investigation_bestiary_report_receipt_type::InvestigationBestiaryReportReceipt;
 pub use investigation_case_authority_type::InvestigationCaseAuthority;
 pub use investigation_claim_type::InvestigationClaim;
 pub use investigation_event_authority_type::InvestigationEventAuthority;
@@ -1207,6 +1218,7 @@ pub use settlement_economy_profile_type::SettlementEconomyProfile;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
 pub use settlement_language_profile_type::SettlementLanguageProfile;
+pub use settlement_npc_morale_event_type::SettlementNpcMoraleEvent;
 pub use settlement_npc_presence_table::*;
 pub use settlement_npc_presence_type::SettlementNpcPresence;
 pub use settlement_npc_relationship_type::SettlementNpcRelationship;
@@ -3263,6 +3275,7 @@ pub struct DbUpdate {
     alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
     backend_automatic_social_chats: __sdk::TableUpdate<AutomaticSocialChat>,
+    backend_bestiary_deductions: __sdk::TableUpdate<BackendBestiaryDeduction>,
     backend_case_battles: __sdk::TableUpdate<BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
@@ -3384,6 +3397,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         backend_automatic_social_chats_table::parse_table_update(table_update)?,
                     )
                 }
+                "backend_bestiary_deductions" => db_update.backend_bestiary_deductions.append(
+                    backend_bestiary_deductions_table::parse_table_update(table_update)?,
+                ),
                 "backend_case_battles" => db_update.backend_case_battles.append(
                     backend_case_battles_table::parse_table_update(table_update)?,
                 ),
@@ -4040,6 +4056,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_automatic_social_chats",
             &self.backend_automatic_social_chats,
         );
+        diff.backend_bestiary_deductions = cache.apply_diff_to_table::<BackendBestiaryDeduction>(
+            "backend_bestiary_deductions",
+            &self.backend_bestiary_deductions,
+        );
         diff.backend_case_battles = cache.apply_diff_to_table::<BackendCaseBattle>(
             "backend_case_battles",
             &self.backend_case_battles,
@@ -4218,6 +4238,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_automatic_social_chats" => db_update
                     .backend_automatic_social_chats
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_bestiary_deductions" => db_update
+                    .backend_bestiary_deductions
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_case_battles" => db_update
                     .backend_case_battles
@@ -4547,6 +4570,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_automatic_social_chats" => db_update
                     .backend_automatic_social_chats
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_bestiary_deductions" => db_update
+                    .backend_bestiary_deductions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_case_battles" => db_update
                     .backend_case_battles
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4871,6 +4897,7 @@ pub struct AppliedDiff<'r> {
     alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
     backend_automatic_social_chats: __sdk::TableAppliedDiff<'r, AutomaticSocialChat>,
+    backend_bestiary_deductions: __sdk::TableAppliedDiff<'r, BackendBestiaryDeduction>,
     backend_case_battles: __sdk::TableAppliedDiff<'r, BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
@@ -5007,6 +5034,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<AutomaticSocialChat>(
             "backend_automatic_social_chats",
             &self.backend_automatic_social_chats,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendBestiaryDeduction>(
+            "backend_bestiary_deductions",
+            &self.backend_bestiary_deductions,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendCaseBattle>(
@@ -6142,6 +6174,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
         backend_automatic_social_chats_table::register_table(client_cache);
+        backend_bestiary_deductions_table::register_table(client_cache);
         backend_case_battles_table::register_table(client_cache);
         backend_case_site_pins_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
@@ -6249,6 +6282,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "alcohol_consumption",
         "autoresolve_report",
         "backend_automatic_social_chats",
+        "backend_bestiary_deductions",
         "backend_case_battles",
         "backend_case_site_pins",
         "backend_character_affinities",
