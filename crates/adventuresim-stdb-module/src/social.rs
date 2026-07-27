@@ -255,6 +255,9 @@ pub struct DialogueWitnessClaim {
     pub claim_order: u32,
     pub proposition_id: String,
     pub displayed_text: String,
+    pub charm_response: Option<String>,
+    pub command_response: Option<String>,
+    pub bluff_response: Option<String>,
     pub claim_is_factually_accurate: bool,
     pub demeanor_truth_signal: f32,
     pub assessment_direction: String,
@@ -288,6 +291,9 @@ pub struct BackendDialogueWitnessClaim {
     pub claim_order: u32,
     pub challenge_token: String,
     pub displayed_text: String,
+    pub charm_response: Option<String>,
+    pub command_response: Option<String>,
+    pub bluff_response: Option<String>,
     pub assessment_direction: String,
     pub assessment_strength: f32,
     pub resolved: bool,
@@ -429,6 +435,9 @@ pub fn backend_dialogue_witness_claims(ctx: &ViewContext) -> Vec<BackendDialogue
                 claim_order: claim.claim_order,
                 challenge_token: claim.challenge_token,
                 displayed_text: claim.displayed_text,
+                charm_response: claim.charm_response,
+                command_response: claim.command_response,
+                bluff_response: claim.bluff_response,
                 assessment_direction: claim.assessment_direction,
                 assessment_strength: claim.assessment_strength.clamp(0.0, 1.0),
                 resolved: claim.resolved,
@@ -1016,6 +1025,9 @@ fn persist_claim_assessments(
                 claim_order: claim_order as u32,
                 proposition_id: claim.proposition_id,
                 displayed_text: claim.displayed_text,
+                charm_response: claim.charm_response,
+                command_response: claim.command_response,
+                bluff_response: claim.bluff_response,
                 claim_is_factually_accurate: claim.claim_is_factually_accurate,
                 demeanor_truth_signal: claim.demeanor_truth_signal,
                 assessment_direction: assessment_direction(assessment.direction).into(),
@@ -1111,7 +1123,7 @@ fn require_witness_social_action(
     session_id: &str,
     action_id: &str,
     expected_revision: u64,
-    _action_kind: &str,
+    action_kind: &str,
     challenge_token: &str,
 ) -> Result<
     (
@@ -1168,6 +1180,15 @@ fn require_witness_social_action(
             .any(|event| event.sequence == claim.event_sequence)
     {
         return Err("Witness claim challenge is unavailable".into());
+    }
+    let response_is_authored = match action_kind {
+        "charm" => claim.charm_response.is_some(),
+        "command" => claim.command_response.is_some(),
+        "bluff" => claim.bluff_response.is_some(),
+        _ => false,
+    };
+    if !response_is_authored {
+        return Err("That response is not authored for this claim".into());
     }
     let now = ctx
         .db

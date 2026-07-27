@@ -6920,6 +6920,9 @@ pub(crate) fn dialogue_referred_witness(
 pub(crate) struct ReferredTestimonyClaim {
     pub proposition_id: String,
     pub displayed_text: String,
+    pub charm_response: Option<String>,
+    pub command_response: Option<String>,
+    pub bluff_response: Option<String>,
     pub claim_is_factually_accurate: bool,
     pub demeanor_truth_signal: f32,
 }
@@ -6944,14 +6947,18 @@ pub(crate) fn referred_testimony_claims(
                 == withheld
         })
         .map(|draft| {
-            // The surrounding testimony variant remains ordinary dialogue text;
-            // only the exact atomic claim supplied to its `{testimony}` slot is
-            // challengeable.
-            let displayed_text = draft.spoken_text.trim().to_owned();
+            // The exact interactive substring and its optional responses are
+            // authored with private testimony authority. The gateway later
+            // requires this substring in the persisted utterance and fails
+            // closed rather than sentence-splitting.
+            let displayed_text = draft.challenge_text.clone();
             let authority = adventuresim_core::quest_generation::testimony_claim_authority(draft);
             Ok(ReferredTestimonyClaim {
                 proposition_id: draft.proposition_id.clone(),
                 displayed_text,
+                charm_response: draft.challenge_responses.charm.clone(),
+                command_response: draft.challenge_responses.command.clone(),
+                bluff_response: draft.challenge_responses.bluff.clone(),
                 claim_is_factually_accurate: authority.factually_accurate,
                 demeanor_truth_signal: authority.demeanor_truth_signal,
             })

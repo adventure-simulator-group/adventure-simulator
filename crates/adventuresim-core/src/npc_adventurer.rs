@@ -775,6 +775,12 @@ mod tests {
                 delivery: crate::quest_generation::TestimonyDelivery::Withheld,
                 truthful_text: "WITHHELD_CANARY".into(),
                 spoken_text: "WITHHELD_CANARY".into(),
+                challenge_text: "WITHHELD_CANARY".into(),
+                challenge_responses: crate::quest_generation::TestimonyChallengeResponses {
+                    charm: Some("CANARY_CHARM".into()),
+                    command: Some("CANARY_COMMAND".into()),
+                    bluff: Some("CANARY_BLUFF".into()),
+                },
                 destination_stage: "textual".into(),
                 site_id: None,
                 corrects_proposition_id: None,

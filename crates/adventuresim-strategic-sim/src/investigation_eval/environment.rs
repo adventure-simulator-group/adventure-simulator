@@ -975,6 +975,12 @@ mod tests {
             delivery: qg::TestimonyDelivery::Withheld,
             truthful_text: "WITHHELD_CANARY".into(),
             spoken_text: "WITHHELD_CANARY".into(),
+            challenge_text: "WITHHELD_CANARY".into(),
+            challenge_responses: qg::TestimonyChallengeResponses {
+                charm: Some("CANARY_CHARM".into()),
+                command: None,
+                bluff: None,
+            },
             destination_stage: "textual".into(),
             site_id: None,
             corrects_proposition_id: None,

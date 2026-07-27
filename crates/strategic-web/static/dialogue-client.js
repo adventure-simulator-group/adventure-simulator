@@ -127,12 +127,11 @@
     }
     const controls = document.createElement("div");
     controls.className = "dialogue-claim-actions";
-    const concise = claim.value.length > 96 ? `${claim.value.slice(0, 93)}…` : claim.value;
     const approaches = [
-      { approach: "charm", label: "Charm", icon: "rose", description: "Gently invite a fuller answer. Low risk and leverage.", line: `“Would you tell me more of ‘${concise}’?”` },
-      { approach: "command", label: "Command", icon: "crown", description: "Demand a direct answer. Medium risk and leverage; always strains affinity.", line: `“Speak plainly: was it truly ‘${concise}’?”` },
-      { approach: "bluff", label: "Bluff", icon: "conversation", description: "Feign contrary knowledge to force an answer. High risk and leverage.", line: `“Others tell it differently. Explain ‘${concise}’.”` },
-    ];
+      claim.charm_response && { approach: "charm", label: "Charm", icon: "rose", description: "A low-risk, low-leverage appeal.", line: claim.charm_response },
+      claim.command_response && { approach: "command", label: "Command", icon: "crown", description: "A medium-risk demand that always strains affinity.", line: claim.command_response },
+      claim.bluff_response && { approach: "bluff", label: "Bluff", icon: "conversation", description: "A high-risk, high-leverage deception.", line: claim.bluff_response },
+    ].filter(Boolean);
     approaches.forEach(({ approach, label, icon, description, line }) => {
       const control = document.createElement("button");
       control.type = "button";

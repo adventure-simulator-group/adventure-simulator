@@ -415,12 +415,26 @@ pub struct GeneratedArea {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestimonyChallengeResponses {
+    pub charm: Option<String>,
+    pub command: Option<String>,
+    pub bluff: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestimonyDraft {
     pub proposition_id: String,
     pub reliability: Reliability,
     pub delivery: TestimonyDelivery,
     pub truthful_text: String,
     pub spoken_text: String,
+    /// Exact server-authored substring that may be questioned in dialogue.
+    /// It must occur once within `spoken_text`; punctuation and surrounding
+    /// narration deliberately remain outside the interactive claim.
+    pub challenge_text: String,
+    /// Required claim-specific lines authored alongside the testimony.
+    /// The client has no generic fallback.
+    pub challenge_responses: TestimonyChallengeResponses,
     pub destination_stage: String,
     pub site_id: Option<SiteId>,
     /// Proposition superseded by this claim. Set only on the later correction.
@@ -1951,6 +1965,7 @@ fn ambiguous_report_description(v: ReportDescription) -> &'static str {
         .as_str()
 }
 
+#[cfg(test)]
 fn ambiguous_visual_claim(v: ReportDescription, place: &str) -> String {
     format!(
         "It looked like {}, near {place}.",
@@ -2561,19 +2576,60 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     } else {
         secondary_site_kind
     };
-    let presented_location_statement = match account_style {
-        AccountStyle::VisualClaim => {
-            ambiguous_visual_claim(description, label(presented_site_kind))
-        }
-        AccountStyle::HeardOnly => format!(
-            "I only heard it moving near {}; I never saw it clearly.",
-            label(presented_site_kind)
-        ),
-        AccountStyle::TracksAndMovement => format!(
-            "Its trail and movement seemed to point toward {}.",
-            label(presented_site_kind)
-        ),
-    };
+    let (presented_location_statement, presented_location_challenge, presented_location_responses) =
+        match account_style {
+            AccountStyle::VisualClaim => {
+                let claim = format!(
+                    "{}, near {}",
+                    ambiguous_report_description(description),
+                    label(presented_site_kind)
+                );
+                (
+                    format!("It looked like {claim}."),
+                    claim,
+                    TestimonyChallengeResponses {
+                        charm: Some("Your eye was keen. What made the shape seem so?".into()),
+                        command: Some("Name what you truly saw, without embellishment.".into()),
+                        bluff: Some("That shape was seen elsewhere; amend your account.".into()),
+                    },
+                )
+            }
+            AccountStyle::HeardOnly => {
+                let claim = format!("something moving near {}", label(presented_site_kind));
+                (
+                    format!("I only heard {claim}; I never saw it clearly."),
+                    claim,
+                    TestimonyChallengeResponses {
+                        charm: Some("Describe the sound as carefully as you can.".into()),
+                        command: Some(
+                            "Tell me exactly what you heard and from which direction.".into(),
+                        ),
+                        bluff: Some(
+                            "Others heard a different sound there; account for that.".into(),
+                        ),
+                    },
+                )
+            }
+            AccountStyle::TracksAndMovement => {
+                let claim = format!(
+                    "The trail and movement seemed to point toward {}",
+                    label(presented_site_kind)
+                );
+                (
+                    format!("{claim}."),
+                    claim,
+                    TestimonyChallengeResponses {
+                        charm: Some("Help me follow how those signs led you that way.".into()),
+                        command: Some(
+                            "Separate the tracks you saw from the course you inferred.".into(),
+                        ),
+                        bluff: Some(
+                            "That trail turns elsewhere on my map; explain your route.".into(),
+                        ),
+                    },
+                )
+            }
+        };
     let true_statement = format!(
         "I saw signs pointing toward {}, but I could not identify the culprit.",
         label(site)
@@ -2665,6 +2721,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             // Private authority still binds the proposition to the
             // place the witness actually believes they described.
             spoken_text: presented_location_statement,
+            challenge_text: presented_location_challenge,
+            challenge_responses: presented_location_responses,
             destination_stage: "route_segment".into(),
             site_id: Some(if reliability == Reliability::Truthful {
                 finale_site.clone()
@@ -2680,6 +2738,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             delivery: TestimonyDelivery::Volunteered,
             truthful_text: pattern_truth.clone(),
             spoken_text: uncorroborated_pattern_claim,
+            challenge_text: "I cannot tell which details matter".into(),
+            challenge_responses: TestimonyChallengeResponses {
+                charm: Some("Take your time—which detail first suggested a pattern?".into()),
+                command: Some("Separate what you observed from what you merely suppose.".into()),
+                bluff: Some("I know which detail matters; tell me what you withheld.".into()),
+            },
             destination_stage: "textual".into(),
             site_id: None,
             corrects_proposition_id: None,
@@ -2695,6 +2759,14 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             spoken_text: format!(
                 "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. You may examine it yourself."
             ),
+            challenge_text: format!(
+                "{primary_evidence_reference} worth inspecting at {evidence_site_label}"
+            ),
+            challenge_responses: TestimonyChallengeResponses {
+                charm: Some("Show me how you came upon that clue.".into()),
+                command: Some("State exactly where and when you found it.".into()),
+                bluff: Some("The site was searched already; tell me what I will find.".into()),
+            },
             destination_stage: "exact_believed".into(),
             site_id: Some(evidence_site.clone()),
             corrects_proposition_id: None,
@@ -2708,6 +2780,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             delivery: TestimonyDelivery::Withheld,
             truthful_text: pattern_truth.clone(),
             spoken_text: format!("What I held back is this: {pattern_truth}"),
+            challenge_text: pattern_truth.trim_end_matches('.').into(),
+            challenge_responses: TestimonyChallengeResponses {
+                charm: Some("Thank you for saying it. What else attends that detail?".into()),
+                command: Some("Give the whole account now.".into()),
+                bluff: Some("That confirms what I heard elsewhere; continue.".into()),
+            },
             destination_stage: "textual".into(),
             site_id: None,
             corrects_proposition_id: None,
@@ -2747,6 +2825,17 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     "Those tracks turn away from {} and continue beyond it.",
                     label(secondary_site_kind)
                 ),
+                challenge_text: format!(
+                    "tracks turn away from {} and continue beyond it",
+                    label(secondary_site_kind)
+                ),
+                challenge_responses: TestimonyChallengeResponses {
+                    charm: Some("Help me understand where the tracks turned.".into()),
+                    command: Some("Point out their exact course.".into()),
+                    bluff: Some(
+                        "I followed part of that trail already; complete the route.".into(),
+                    ),
+                },
                 destination_stage: "route_segment".into(),
                 site_id: Some(finale_site.clone()),
                 corrects_proposition_id: Some(description_prop.clone()),
@@ -3614,6 +3703,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         .map(|(index, witness)| (witness.id.clone(), index))
         .collect::<BTreeMap<_, _>>();
     let mut referral_edges = BTreeMap::<WitnessId, BTreeSet<WitnessId>>::new();
+    let mut authored_challenge_responses = BTreeSet::<String>::new();
     for (source_index, witness) in case.witnesses.iter().enumerate() {
         if witness.npc_id.is_empty()
             || witness.expected_location.is_empty()
@@ -3632,6 +3722,55 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 "{} has no initially visible testimony",
                 witness.id.0
             ));
+        }
+        for draft in &witness.testimony {
+            let challenge = draft.challenge_text.as_str();
+            let normalized_claim = challenge
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            if challenge.is_empty() || challenge != challenge.trim() {
+                errors.push(format!(
+                    "{} testimony challenge text must be nonempty and already trimmed",
+                    witness.id.0
+                ));
+            } else if draft.spoken_text.match_indices(challenge).count() != 1 {
+                errors.push(format!(
+                    "{} projected testimony must contain its exact challenge text once",
+                    witness.id.0
+                ));
+            }
+            for response in [
+                &draft.challenge_responses.charm,
+                &draft.challenge_responses.command,
+                &draft.challenge_responses.bluff,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let normalized = response
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase();
+                if response.is_empty() || response != response.trim() {
+                    errors.push(format!(
+                        "{} has an empty or untrimmed authored challenge response",
+                        witness.id.0
+                    ));
+                } else if !normalized_claim.is_empty() && normalized.contains(&normalized_claim) {
+                    errors.push(format!(
+                        "{} authored challenge response repeats its claim text",
+                        witness.id.0
+                    ));
+                } else if !authored_challenge_responses.insert(normalized) {
+                    errors.push(format!(
+                        "{} reuses authored challenge response text",
+                        witness.id.0
+                    ));
+                }
+            }
         }
         for draft in witness
             .testimony
@@ -4543,6 +4682,103 @@ mod tests {
                 .iter()
                 .any(|error| { error.contains("cyclic or backward witness referral") })
         );
+    }
+
+    #[test]
+    fn challenge_boundaries_and_optional_authored_responses_validate() {
+        let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let first = &generated.witnesses[0].testimony[0];
+        assert_eq!(
+            first
+                .spoken_text
+                .match_indices(&first.challenge_text)
+                .count(),
+            1
+        );
+
+        generated.witnesses[0].testimony[0].challenge_responses = TestimonyChallengeResponses {
+            charm: None,
+            command: None,
+            bluff: None,
+        };
+        validate(&generated).unwrap();
+
+        let duplicate = generated.witnesses[0].testimony[1]
+            .challenge_responses
+            .charm
+            .clone()
+            .expect("generated response");
+        generated.witnesses[0].testimony[2]
+            .challenge_responses
+            .bluff = Some(duplicate);
+        assert!(
+            validate(&generated)
+                .unwrap_err()
+                .iter()
+                .any(|error| error.contains("reuses authored challenge response text"))
+        );
+    }
+
+    #[test]
+    fn challenge_validation_rejects_padded_challenge_text() {
+        let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        generated.witnesses[0].testimony[0].challenge_text =
+            format!(" {} ", generated.witnesses[0].testimony[0].challenge_text);
+        assert!(
+            validate(&generated)
+                .unwrap_err()
+                .iter()
+                .any(|error| error.contains("challenge text must be nonempty and already trimmed"))
+        );
+    }
+
+    #[test]
+    fn challenge_validation_rejects_response_containing_normalized_claim_text() {
+        let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let normalized_claim = generated.witnesses[0].testimony[0]
+            .challenge_text
+            .to_uppercase();
+        generated.witnesses[0].testimony[0]
+            .challenge_responses
+            .charm = Some(format!("Press further about {normalized_claim}"));
+        assert!(
+            validate(&generated)
+                .unwrap_err()
+                .iter()
+                .any(|error| error.contains("challenge response repeats its claim text"))
+        );
+    }
+
+    #[test]
+    fn generated_claim_boundaries_exclude_narration_and_punctuation() {
+        let generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let primary = &generated.witnesses[0].testimony;
+        assert_eq!(
+            primary[1].challenge_text,
+            "I cannot tell which details matter"
+        );
+        assert!(primary[2].spoken_text.starts_with("I noticed "));
+        assert!(!primary[2].challenge_text.starts_with("I noticed "));
+        assert!(
+            primary[2]
+                .spoken_text
+                .ends_with(". You may examine it yourself.")
+        );
+        assert!(!primary[2].challenge_text.ends_with('.'));
+
+        let visual = (0..100)
+            .find_map(|seed| {
+                let generated =
+                    generate(&context(seed, TemplateFamily::RecurringDepredation)).ok()?;
+                let draft = generated.witnesses[0].testimony[0].clone();
+                draft
+                    .spoken_text
+                    .starts_with("It looked like ")
+                    .then_some(draft)
+            })
+            .expect("golden range includes a visual claim");
+        assert!(!visual.challenge_text.starts_with("It looked like "));
+        assert!(!visual.challenge_text.ends_with('.'));
     }
 
     #[test]

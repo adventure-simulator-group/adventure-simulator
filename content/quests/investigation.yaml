@@ -13,7 +13,7 @@
     {"id":"referral-guild","kind":"referral","priority":20,"conditions":{"op":"fact","key":{"kind":"participant_organization","role":"player"},"equals":"merchant_guild"},"template":"As one recognized by the guild, you should hear this: {summary} Ask {contact_name} at {contact_location}."},
     {"id":"referral-faith","kind":"referral","priority":10,"conditions":{"op":"fact","key":{"kind":"participant_religion","role":"player"},"equals":"roman_catholic"},"template":"For conscience's sake: {summary} Ask {contact_name} at {contact_location}."},
     {"id":"referral-default","kind":"referral","priority":0,"conditions":{"op":"always"},"template":"{summary} Ask {contact_name}, a {contact_profession}, at {contact_location}."},
-    {"id":"testimony-default","kind":"testimony","priority":0,"conditions":{"op":"always"},"template":"The witness says: {testimony}"}
+    {"id":"testimony-default","kind":"testimony","priority":0,"conditions":{"op":"always"},"template":"{testimony}"}
   ],
   "witness_demographics": [
     {"id":"child","label":"child","match_rules":[{"priority":100,"age_bands":["child","adolescent"],"sexes":[],"professions":[],"local_roles":[],"fallback":false}]},

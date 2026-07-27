@@ -196,7 +196,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=counterparty-portraits-1-claim-challenges-1" defer {}
+                    script src="/static/dialogue-client.js?v=counterparty-portraits-1-claim-challenges-2" defer {}
                     script src="/static/social-menu.js?v=timed-chat-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
                     script src="/static/developer-quest-editor.js?v=typed-editor-1" defer {}

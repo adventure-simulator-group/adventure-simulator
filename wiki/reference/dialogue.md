@@ -10,6 +10,11 @@ observer. The gateway exposes only an opaque challenge token, the exact
 displayed claim boundary, and a bounded `unknown`, `likely_false`, or
 `likely_true` presentation signal. It never exposes reliability, canonical
 truth, proposition identity, rolls, thresholds, or correctness.
+The testimony draft separately authors the exact challengeable substring and
+may author any subset of Charm, Command, and Bluff lines. Present lines must be
+nonempty and unique; the client has no generic fallback. Surrounding narration
+and punctuation remain ordinary text, and speaker attribution replaces
+redundant phrases such as “The witness says.”
 Insight reads demeanor rather than acting as supernatural fact detection:
 sincere mistakes lean the same way as sincere accurate testimony, deliberate
 deception leans the other way, and evasive or partly truthful accounts have no

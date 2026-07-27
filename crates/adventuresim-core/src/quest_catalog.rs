@@ -889,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn nonidentity_testimony_variant_renders_safe_presentation_text() {
+    fn testimony_variant_does_not_repeat_speaker_attribution() {
         let catalog = catalog();
         let variant = catalog
             .dialogue_variant(QuestDialogueVariantKind::Testimony, &FactContext::default())
@@ -902,7 +902,7 @@ mod tests {
                     "I saw a lantern.".into()
                 )]))
                 .unwrap(),
-            "The witness says: I saw a lantern."
+            "I saw a lantern."
         );
     }
 

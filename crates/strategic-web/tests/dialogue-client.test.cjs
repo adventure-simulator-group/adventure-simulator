@@ -56,6 +56,11 @@ test("atomic witness claims use observer-safe projections and authoritative resp
   assert.match(source, /Bluff/);
   assert.match(source, /Takes 5 minutes/);
   assert.match(source, /Affinity \$\{sign\}/);
+  assert.match(source, /claim\.charm_response/);
+  assert.match(source, /claim\.command_response/);
+  assert.match(source, /claim\.bluff_response/);
+  assert.match(source, /\]\.filter\(Boolean\)/);
+  assert.doesNotMatch(source, /Would you tell me more of|Speak plainly: was it truly|Others tell it differently/);
   assert.doesNotMatch(source, /pressure_cue|possible-pressure|cooldown|available_approaches/);
   assert.doesNotMatch(source, /has_bound_concern|diagnosis_correct|success_chance|target_transparency|proposition_id|reliability|truthful_text/);
 });
