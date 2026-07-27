@@ -12,7 +12,7 @@ use adventuresim_core::{
 use adventuresim_world_schema::OfficialReligion;
 use axum::{
     Form, Json, Router,
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, rejection::FormRejection},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -5139,7 +5139,7 @@ async fn rest(
     State(state): State<AppState>,
     Path((id, kind)): Path<(String, String)>,
     session: Session,
-    Form(form): Form<RestForm>,
+    form: Result<Form<RestForm>, FormRejection>,
 ) -> Response {
     let at_inn = match kind.as_str() {
         "inn" => true,
@@ -5148,6 +5148,20 @@ async fn rest(
     };
     let Some(character_id) = session.character_id_u64() else {
         return Html("<h1>Choose a character first</h1>".to_string()).into_response();
+    };
+    let form = match form {
+        Ok(Form(form)) => form,
+        Err(error) => {
+            tracing::warn!(
+                character_id,
+                requested_settlement_id_length = id.len(),
+                service = kind.as_str(),
+                rejection_status = %error.status(),
+                error = %error,
+                "settlement rest form extraction rejected request"
+            );
+            return error.into_response();
+        }
     };
     let settlements: Vec<Settlement> = state
         .db
@@ -5171,6 +5185,22 @@ async fn rest(
     let requested_minutes = match settlement_rest_minutes(&form) {
         Ok(minutes) => minutes,
         Err(message) => {
+            let unit = match form.unit.as_str() {
+                "hours" => "hours",
+                "days" => "days",
+                _ => "unknown",
+            };
+            tracing::warn!(
+                character_id,
+                requested_settlement_id = %id,
+                requested_minutes = ?form.requested_minutes,
+                at_inn,
+                service = kind.as_str(),
+                unit,
+                duration_length = form.duration.len(),
+                reason = message,
+                "settlement rest duration validation rejected request"
+            );
             return (
                 axum::http::StatusCode::BAD_REQUEST,
                 Html(
@@ -7268,6 +7298,79 @@ mod rest_form_tests {
             "You do not have enough coin for that inn stay."
         );
         assert!(!safe_rest_error("private injury authority 123").contains("123"));
+    }
+
+    #[test]
+    fn rest_form_extraction_failures_are_logged_without_request_contents() {
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn rest(")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn query_single").next())
+            .expect("settlement rest handler");
+        let extraction = handler
+            .split("let form = match form")
+            .nth(1)
+            .and_then(|tail| tail.split("let settlements").next())
+            .expect("form extraction branch");
+        assert!(extraction.contains("tracing::warn!("));
+        for field in [
+            "character_id",
+            "requested_settlement_id_length = id.len()",
+            "service = kind.as_str()",
+            "rejection_status = %error.status()",
+            "error = %error",
+        ] {
+            assert!(extraction.contains(field), "{field}");
+        }
+        assert!(extraction.contains("return error.into_response()"));
+        assert!(!extraction.contains("requested_settlement_id = %id"));
+        assert!(!extraction.contains("form.duration"));
+        assert!(!extraction.contains("request body"));
+        assert!(
+            handler.find("let Some(character_id)") < handler.find("let form = match form"),
+            "authentication precedes malformed-form warning"
+        );
+    }
+
+    #[test]
+    fn rest_duration_validation_logs_bounded_metadata_before_safe_notice() {
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn rest(")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn query_single").next())
+            .expect("settlement rest handler");
+        let validation = handler
+            .split("let requested_minutes = match settlement_rest_minutes(&form)")
+            .nth(1)
+            .and_then(|tail| tail.split("let before_character").next())
+            .expect("rest duration validation branch");
+        let warning = validation.find("tracing::warn!(").expect("warning");
+        let safe_notice = validation
+            .find("strategic_notice_page(")
+            .expect("safe notice");
+        assert!(warning < safe_notice);
+        for field in [
+            "character_id",
+            "requested_settlement_id = %id",
+            "requested_minutes = ?form.requested_minutes",
+            "at_inn",
+            "service = kind.as_str()",
+            "duration_length = form.duration.len()",
+            "reason = message",
+        ] {
+            assert!(validation[..safe_notice].contains(field), "{field}");
+        }
+        for category in [
+            "\"hours\" => \"hours\"",
+            "\"days\" => \"days\"",
+            "_ => \"unknown\"",
+        ] {
+            assert!(validation[..safe_notice].contains(category), "{category}");
+        }
+        assert!(!validation.contains("duration = %form.duration"));
+        assert!(!validation.contains("unit = %form.unit"));
     }
 
     #[test]
