@@ -47,6 +47,16 @@ test("witness social controls use observer-safe projections and authoritative ro
   assert.match(source, /possible pressure, though it may have nothing to do with this account/);
   assert.doesNotMatch(source, /Relationship:|Familiarity:|Demeanor:/);
   assert.doesNotMatch(source, /has_bound_concern|diagnosis_correct|success_chance|target_transparency/);
+  assert.match(source, /visibleLabel\.textContent = `\$\{label\} \(5 min\)`/);
+  assert.doesNotMatch(source, /\(10 min\)|\(30 min\)/);
+  assert.match(source, /icon: "awareness"/);
+  assert.match(source, /icon: "human-ear"/);
+  assert.match(source, /icon: "rose"/);
+  assert.match(source, /icon: "crown"/);
+  assert.match(source, /icon: "conversation"/);
+  assert.match(source, /iconHelp\.dataset\.strategicTooltip = description/);
+  assert.match(source, /control\.dataset\.strategicTooltip = description/);
+  assert.match(source, /`\$\{label\}\. \$\{description\} Takes 5 minutes\.`/);
 });
 
 test("dialogue does not expose the removed diagnosis and medication examination flow", () => {

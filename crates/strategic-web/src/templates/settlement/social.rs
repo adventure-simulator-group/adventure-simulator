@@ -72,6 +72,23 @@ fn social_actions(
     .collect()
 }
 
+fn social_action_label(
+    action: adventuresim_core::social::SocialActionKind,
+    shares_concern: bool,
+) -> &'static str {
+    use adventuresim_core::social::SocialActionKind;
+    match action {
+        SocialActionKind::Reflect => "Reflect",
+        SocialActionKind::Listen => "Listen",
+        SocialActionKind::Commiserate if shares_concern => "Commiserate",
+        SocialActionKind::Commiserate => "Feign sympathy",
+        SocialActionKind::LightenMood => "Joke",
+        SocialActionKind::Rally => "Rally",
+        SocialActionKind::Reframe => "Reframe",
+        SocialActionKind::Flirt => "Flirt",
+    }
+}
+
 fn perceived_trait(
     axis: crate::spacetimedb::BeliefAxis,
     value: i8,
@@ -292,11 +309,19 @@ pub fn party_social_dialog(
                                       @let action_shares_concern = action != adventuresim_core::social::SocialActionKind::Commiserate || shares_concern;
                                       @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
                                       @let description = action.description(topic, action_shares_concern);
+                                      @let label = social_action_label(action, action_shares_concern);
                                     form method="post" action=(&social_href) {
                                         input type="hidden" name="source_id" value=(&source.id);
                                         button type="submit" name="action_kind" value=(value) class="social-action"
-                                            aria-label=(description) title=(description) data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
-                                            (decorative_game_icon(icon))
+                                            aria-label=(format!("{}. {}. Takes {} minutes.", label, description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES))
+                                            data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
+                                            span class="social-action-icon"
+                                                data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
+                                                (decorative_game_icon(icon))
+                                            }
+                                            span class="social-action-label" {
+                                                (label) " (" (adventuresim_core::social::SOCIAL_RESPONSE_MINUTES) " min)"
+                                            }
                                         }
                                     }
                                     }
@@ -604,6 +629,29 @@ mod tests {
         assert!(feedback_markup.contains("class=\"social-feedback social-feedback-error\""));
         assert!(feedback_markup.contains("role=\"alert\""));
         assert!(feedback_markup.contains("That approach needs time"));
+
+        let response_social = SocialPresentation::default();
+        let response_source = CharacterMoraleSource {
+            id: "fresh-concern".into(),
+            character_id: target.id,
+            kind: "defeat".into(),
+            label: "Another defeat".into(),
+            magnitude: -2.0,
+        };
+        let response_markup = party_social_dialog(
+            &location,
+            &target,
+            &actor,
+            &[response_source],
+            &response_social,
+        )
+        .into_string();
+        assert!(response_markup.contains("class=\"social-action-icon\""));
+        assert!(response_markup.contains("class=\"social-action-label\">Listen (5 min)</span>"));
+        assert!(response_markup.contains("data-strategic-tooltip=\"Ask how they feel"));
+        assert!(!response_markup.contains(
+            "class=\"social-action\" aria-label=\"Ask how they feel about the defeat\" title="
+        ));
     }
 
     #[test]
@@ -622,6 +670,14 @@ mod tests {
         assert_eq!(
             social_actions(true, SocialTopic::Defeat, true, true),
             vec![("inner-self", SocialActionKind::Reflect, "reflect")]
+        );
+        assert_eq!(
+            social_action_label(SocialActionKind::Listen, false),
+            "Listen"
+        );
+        assert_eq!(
+            social_action_label(SocialActionKind::Commiserate, false),
+            "Feign sympathy"
         );
         assert_eq!(
             social_actions(false, SocialTopic::Hunger, false, false).len(),

@@ -21,8 +21,8 @@ pressure cue, safe outcome wording, and currently available quest approaches.
 Relationship, familiarity, and demeanor remain in the normal social popup.
 Hidden concern binding, diagnostic correctness, personality fit, checks, rolls,
 and chances remain private.
-Reading demeanor spends ten strategic minutes; attempting Listen, Reassure,
-Invoke duty, or Bluff spends thirty. Insight and each
+Reading demeanor and attempting Listen, Reassure, Invoke duty, or Bluff each
+spend five strategic minutes. Insight and each
 approach have their own durable 24-hour observer/NPC cooldown, and action
 receipts make retries idempotent across reconnects.
 

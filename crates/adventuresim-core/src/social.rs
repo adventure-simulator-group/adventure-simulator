@@ -10,6 +10,7 @@ pub const AFFINITY_MIN: f32 = -100.0;
 pub const AFFINITY_MAX: f32 = 100.0;
 pub const AFFINITY_HALF_LIFE_MINUTES: u64 = 30 * 24 * 60;
 pub const SOCIAL_COOLDOWN_MINUTES: u64 = 24 * 60;
+pub const SOCIAL_RESPONSE_MINUTES: u64 = 5;
 pub const DISCOVERY_TRAINING_HOURS: f32 = 0.25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

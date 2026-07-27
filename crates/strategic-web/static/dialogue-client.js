@@ -140,34 +140,67 @@
         }
       });
     };
-    const button = (label, handler, disabled = false) => {
+    const button = ({ label, icon, description }, handler, disabled = false) => {
       const control = document.createElement("button");
       control.type = "button";
-      control.className = "btn btn-small";
-      control.textContent = label;
+      control.className = "social-action dialogue-witness-action";
+      control.setAttribute("aria-label", `${label}. ${description} Takes 5 minutes.`);
+      control.dataset.strategicTooltip = description;
       control.disabled = disabled;
+      const iconHelp = document.createElement("span");
+      iconHelp.className = "social-action-icon";
+      iconHelp.dataset.strategicTooltip = description;
+      const iconMask = document.createElement("span");
+      iconMask.className = "game-icon";
+      iconMask.style.setProperty("--game-icon", `url('/static/icons/game/${icon}.svg')`);
+      iconMask.setAttribute("aria-hidden", "true");
+      const visibleLabel = document.createElement("span");
+      visibleLabel.className = "social-action-label";
+      visibleLabel.textContent = `${label} (5 min)`;
+      iconHelp.append(iconMask);
+      control.append(iconHelp, visibleLabel);
       control.addEventListener("click", handler, { signal });
       controls.append(control);
     };
-    button("Read demeanor (10 min)", () => invoke("/api/dialogue/insight", {
+    button({
+      label: "Read demeanor",
+      icon: "awareness",
+      description: "Study posture and speech for signs of pressure. Uses Insight.",
+    }, () => invoke("/api/dialogue/insight", {
       session_id: binding.sessionId,
       action_id: actionId(),
       expected_revision: binding.revision,
     }, "read witness demeanor"), !social.insight_available);
-    const labels = {
-      listen: "Listen",
-      reassure: "Reassure",
-      invoke_duty: "Invoke duty",
-      bluff: "Bluff",
+    const approaches = {
+      listen: {
+        label: "Listen",
+        icon: "human-ear",
+        description: "Give them space to explain what is troubling them. Uses Insight.",
+      },
+      reassure: {
+        label: "Reassure",
+        icon: "rose",
+        description: "Put them at ease so they feel safe enough to speak. Uses Charm.",
+      },
+      invoke_duty: {
+        label: "Invoke duty",
+        icon: "crown",
+        description: "Appeal to their responsibility to tell you what they know. Uses Command.",
+      },
+      bluff: {
+        label: "Bluff",
+        icon: "conversation",
+        description: "Mislead them into revealing more than they intended. Uses Deception.",
+      },
     };
-    Object.entries(labels).forEach(([approach, label]) => button(
-      `${label} (30 min)`,
+    Object.entries(approaches).forEach(([approach, presentation]) => button(
+      presentation,
       () => invoke("/api/dialogue/approach", {
         session_id: binding.sessionId,
         approach,
         action_id: actionId(),
         expected_revision: binding.revision,
-      }, `${label.toLowerCase()} approach`),
+      }, `${presentation.label.toLowerCase()} approach`),
       !social.available_approaches.includes(approach),
     ));
     panel.append(controls);

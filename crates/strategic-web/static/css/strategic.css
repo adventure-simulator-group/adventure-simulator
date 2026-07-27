@@ -3420,10 +3420,12 @@ button.party-portrait-action {
 .social-source-context p { margin: 0.3rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
 .social-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.45rem 0.6rem; border-top: 1px solid var(--border-color); background: color-mix(in srgb, var(--panel-bg) 75%, black); }
 .social-actions form { margin: 0; }
-.social-action { display: grid; width: 2rem; height: 2rem; padding: 0.3rem; place-items: center; border: 1px solid var(--border-color); border-radius: 0.3rem; background: var(--panel-bg); color: var(--text); cursor: pointer; }
+.social-action { display: inline-flex; width: auto; min-height: 2rem; padding: 0.3rem 0.55rem; align-items: center; gap: 0.4rem; border: 1px solid var(--border-color); border-radius: 0.3rem; background: var(--panel-bg); color: var(--text); cursor: pointer; }
 .social-action:hover,
 .social-action:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.social-action-icon { display: inline-grid; flex: 0 0 auto; place-items: center; cursor: help; }
 .social-action .game-icon { width: 1.15rem; height: 1.15rem; }
+.social-action-label { white-space: nowrap; }
 .social-unavailable { color: var(--danger); }
 
 .fervor-meter {
@@ -4714,6 +4716,8 @@ body.chat-resizing {
   flex-wrap: wrap;
   gap: .35rem;
 }
+
+.dialogue-witness-action:disabled { cursor: not-allowed; opacity: .45; }
 
 .chat-system-message {
   font-style: italic;

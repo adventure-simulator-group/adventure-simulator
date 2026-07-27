@@ -4,15 +4,15 @@ use adventuresim_core::skill::Skill;
 use adventuresim_core::social::{
     AFFINITY_MAX, AFFINITY_MIN, CasualChatDisposition, CasualChatInput, Courtship as CoreCourtship,
     Inclination as CoreInclination, Mirth as CoreMirth, PersonalityAxis,
-    Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES, SelfKnowledge as CoreSelfKnowledge,
-    SocialActionKind, SocialAttempt, SocialTopic, Transparency as CoreTransparency,
-    WitnessApproach, WitnessApproachInput, WitnessPressureCue, actor_allows_social_action,
-    affinity_gain, axis_for_topic, canonical_cooldown_id, canonical_pair,
-    choose_automatic_social_action, command_gravitas_modifier, diagnose_witness_pressure,
-    diagnosed_axis, diagnosis_for_axis, discovery_training_split, flirt_charm_modifier,
-    humor_charm_modifier, incompatible_flirt_outcome, resolve_casual_chat, resolve_social_attempt,
-    resolve_witness_approach, self_knowledge_insight_modifier, settle_affinity,
-    should_replace_belief, social_source_eligible, topic_for_source_kind,
+    Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES, SOCIAL_RESPONSE_MINUTES,
+    SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt, SocialTopic,
+    Transparency as CoreTransparency, WitnessApproach, WitnessApproachInput, WitnessPressureCue,
+    actor_allows_social_action, affinity_gain, axis_for_topic, canonical_cooldown_id,
+    canonical_pair, choose_automatic_social_action, command_gravitas_modifier,
+    diagnose_witness_pressure, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
+    flirt_charm_modifier, humor_charm_modifier, incompatible_flirt_outcome, resolve_casual_chat,
+    resolve_social_attempt, resolve_witness_approach, self_knowledge_insight_modifier,
+    settle_affinity, should_replace_belief, social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -1383,16 +1383,20 @@ pub fn diagnose_dialogue_witness(
     .into();
     capability.diagnosis_correct =
         Some(matches!(cue, WitnessPressureCue::PossiblePressure) == unreleased_bound_concern);
-    if !crate::time::advance_investigation_time(ctx, observer_character_id, 10)? {
+    if !crate::time::advance_investigation_time(
+        ctx,
+        observer_character_id,
+        SOCIAL_RESPONSE_MINUTES,
+    )? {
         return Err("Actor could not complete the observation".into());
     }
-    let after = now.saturating_add(10);
+    let after = now.saturating_add(SOCIAL_RESPONSE_MINUTES);
     apply_witness_relationship_outcome(
         ctx,
         observer_character_id,
         &capability.npc_id,
         after,
-        10,
+        SOCIAL_RESPONSE_MINUTES,
         0.0,
         0.0,
         &format!("npc-morale-insight:{receipt_id}"),
@@ -1471,16 +1475,20 @@ pub fn approach_dialogue_witness(
         has_bound_concern: capability.has_bound_concern && !capability.bound_released,
         roll: (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32,
     });
-    if !crate::time::advance_investigation_time(ctx, observer_character_id, 30)? {
+    if !crate::time::advance_investigation_time(
+        ctx,
+        observer_character_id,
+        SOCIAL_RESPONSE_MINUTES,
+    )? {
         return Err("Actor could not complete the conversation".into());
     }
-    let after = now.saturating_add(30);
+    let after = now.saturating_add(SOCIAL_RESPONSE_MINUTES);
     apply_witness_relationship_outcome(
         ctx,
         observer_character_id,
         &capability.npc_id,
         after,
-        30,
+        SOCIAL_RESPONSE_MINUTES,
         outcome.morale_delta,
         outcome.affinity_delta,
         &format!("npc-morale-approach:{receipt_id}"),
@@ -2635,7 +2643,7 @@ pub fn perform_social_action(
     action_kind: String,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
-    perform_social_action_authoritative(ctx, actor_id, target_id, source_id, action_kind)
+    perform_social_action_authoritative(ctx, actor_id, target_id, source_id, action_kind, true)
 }
 
 fn perform_social_action_authoritative(
@@ -2644,6 +2652,7 @@ fn perform_social_action_authoritative(
     target_id: u64,
     source_id: String,
     action_kind: String,
+    consume_time: bool,
 ) -> Result<(), String> {
     let action = parse_action(&action_kind)?;
     let is_self = actor_id == target_id;
@@ -2663,6 +2672,9 @@ fn perform_social_action_authoritative(
         .find(target_id)
         .ok_or("Target not found")?;
     validate_social_pair(ctx, &actor, &target, is_self)?;
+    if consume_time && !is_self {
+        crate::time::synchronize_party_activity_time(ctx, &[actor_id, target_id], actor_id)?;
+    }
     let actor_personality = crate::personality::personality_or_neutral(ctx, actor_id);
     if !actor_allows_social_action(
         action,
@@ -2800,6 +2812,30 @@ fn perform_social_action_authoritative(
             sensitivity: sensitivity(ctx, target_id, topic),
             roll: social_roll,
         })
+    };
+    if consume_time {
+        let participants = if is_self {
+            vec![actor_id]
+        } else {
+            vec![actor_id, target_id]
+        };
+        for participant in participants {
+            if !crate::time::advance_character_wait_time(ctx, participant, SOCIAL_RESPONSE_MINUTES)?
+            {
+                return Err("Every participant must complete the social response".into());
+            }
+        }
+    }
+    let now = if consume_time {
+        ctx.db
+            .character_time()
+            .character_id()
+            .find(target_id)
+            .map_or(now.saturating_add(SOCIAL_RESPONSE_MINUTES), |time| {
+                time.minutes
+            })
+    } else {
+        now
     };
     let before = ctx
         .db
@@ -3000,6 +3036,7 @@ pub(crate) fn apply_automatic_social_chats(
             target_id,
             source_id,
             action.reducer_value().into(),
+            false,
         )?;
     }
     Ok(())
@@ -3430,6 +3467,7 @@ mod contract_tests {
             .expect("automatic social implementation");
         assert!(!automatic.contains("let _ = perform_social_action_authoritative"));
         assert!(automatic.contains("perform_social_action_authoritative("));
+        assert!(automatic.contains("false,"));
         assert!(automatic.contains(")?;"));
         assert!(!automatic.contains("\"listen\".into()"));
 
@@ -3449,6 +3487,26 @@ mod contract_tests {
             .expect("familiarity mutation");
         assert!(event < familiarity);
         assert!(action[event..].contains(")?;"));
+        assert!(action.contains("if consume_time"));
+        assert!(action.contains("SOCIAL_RESPONSE_MINUTES"));
+        assert!(source.contains(
+            "perform_social_action_authoritative(ctx, actor_id, target_id, source_id, action_kind, true)"
+        ));
+    }
+
+    #[test]
+    fn witness_and_manual_social_responses_share_five_authoritative_minutes() {
+        let source = include_str!("social.rs");
+        let witness = source
+            .split("pub fn diagnose_dialogue_witness")
+            .nth(1)
+            .and_then(|tail| tail.split("fn perform_social_action_authoritative").next())
+            .expect("witness reducers");
+        assert_eq!(witness.matches("advance_investigation_time(").count(), 2);
+        assert_eq!(witness.matches("SOCIAL_RESPONSE_MINUTES").count(), 6);
+        assert!(!witness.contains("saturating_add(10)"));
+        assert!(!witness.contains("saturating_add(30)"));
+        assert_eq!(adventuresim_core::social::SOCIAL_RESPONSE_MINUTES, 5);
     }
 
     #[test]

@@ -12,7 +12,10 @@ icon beside its heading opens the observer-specific morale sources, beliefs,
 and available social actions in a modal dialog without replacing either
 character rail. The icon remains inset while that dialog is open; the privacy
 boundary remains the active observer's beliefs rather than authoritative
-personality state.
+personality state. Manual response buttons show a response-specific icon and
+short label; hovering the icon explains the contextual approach, skill, and
+risk. Every manual response spends five strategic minutes. Automatic responses
+occur within already-consumed downtime and do not advance the clock again.
 
 Living, co-located companions show an observer-specific Party Rail badge for
 each current actionable negative source row that this character has not yet
