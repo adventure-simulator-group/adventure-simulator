@@ -5,13 +5,13 @@ use adventuresim_core::social::{
     AFFINITY_MAX, AFFINITY_MIN, Courtship as CoreCourtship, Inclination as CoreInclination,
     Mirth as CoreMirth, PersonalityAxis, Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES,
     SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt, SocialTopic,
-    Transparency as CoreTransparency, actor_allows_social_action, affinity_gain, axis_for_topic,
-    canonical_cooldown_id, canonical_pair, choose_automatic_social_action,
-    command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
+    Transparency as CoreTransparency, WitnessApproach, WitnessApproachInput, WitnessPressureCue,
+    actor_allows_social_action, affinity_gain, axis_for_topic, canonical_cooldown_id,
+    canonical_pair, choose_automatic_social_action, command_gravitas_modifier,
+    diagnose_witness_pressure, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
     flirt_charm_modifier, humor_charm_modifier, incompatible_flirt_outcome, resolve_social_attempt,
-    self_knowledge_insight_modifier, settle_affinity, should_replace_belief,
-    social_source_eligible, topic_for_source_kind, WitnessApproach, WitnessApproachInput,
-    WitnessPressureCue, diagnose_witness_pressure, resolve_witness_approach,
+    resolve_witness_approach, self_knowledge_insight_modifier, settle_affinity,
+    should_replace_belief, social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -20,8 +20,8 @@ use crate::condition::{character_morale_source__view, morale_event};
 use crate::strategic::strategic_gateway_authority__view;
 use crate::{
     character_attributes, character_capability, character_morale_source, character_personality,
-    character_skills, character_strategic_condition, character_time, dialogue_session, settlement_npc,
-    settlement_npc_presence,
+    character_skills, character_strategic_condition, character_time, dialogue_session,
+    settlement_npc, settlement_npc_presence,
 };
 
 pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
@@ -270,10 +270,7 @@ pub fn backend_settlement_npc_relationships(
             Some(BackendSettlementNpcRelationship {
                 observer_character_id: relationship.observer_character_id,
                 npc_id: relationship.npc_id,
-                affinity_band: relationship_band(settle_affinity(
-                    relationship.affinity_anchor,
-                    0,
-                )),
+                affinity_band: relationship_band(settle_affinity(relationship.affinity_anchor, 0)),
                 familiarity_band: familiarity_band(relationship.shared_minutes),
                 morale_band: morale_band(state.morale_anchor),
             })
@@ -294,8 +291,7 @@ fn witness_social_action_replayed(
     let Some(receipt) = ctx.db.witness_social_action_receipt().id().find(receipt_id) else {
         return Ok(false);
     };
-    if receipt.observer_character_id == observer_character_id
-        && receipt.action_kind == action_kind
+    if receipt.observer_character_id == observer_character_id && receipt.action_kind == action_kind
     {
         Ok(true)
     } else {
@@ -483,10 +479,7 @@ pub fn spend_time_with_settlement_npc(
     let mut state = ensure_settlement_npc_social_state(ctx, &npc_id, after);
     state.morale_anchor = (state.morale_anchor + 0.5).min(25.0);
     state.morale_anchor_minute = after;
-    ctx.db
-        .settlement_npc_social_state()
-        .npc_id()
-        .update(state);
+    ctx.db.settlement_npc_social_state().npc_id().update(state);
     let id = format!("{actor_id}:{npc_id}");
     let mut relationship = ctx
         .db
@@ -533,16 +526,23 @@ pub(crate) fn ensure_dialogue_witness_capability(
     npc_id: &str,
 ) -> Result<(), String> {
     let id = format!("{}:{observer_character_id}", session.id);
-    if ctx.db.dialogue_witness_capability().id().find(&id).is_some() {
+    if ctx
+        .db
+        .dialogue_witness_capability()
+        .id()
+        .find(&id)
+        .is_some()
+    {
         return Ok(());
     }
-    let has_bound_concern = crate::strategic::dialogue_referred_witness(ctx, observer_character_id, session, npc_id)?
-        .is_some_and(|(_, witness)| {
-            witness.testimony.iter().any(|draft| {
-                draft.delivery
-                    == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
-            })
-        });
+    let has_bound_concern =
+        crate::strategic::dialogue_referred_witness(ctx, observer_character_id, session, npc_id)?
+            .is_some_and(|(_, witness)| {
+                witness.testimony.iter().any(|draft| {
+                    draft.delivery
+                        == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
+                })
+            });
     ctx.db
         .dialogue_witness_capability()
         .insert(DialogueWitnessCapability {
@@ -611,7 +611,9 @@ fn require_witness_social_action(
 > {
     if action_id.is_empty()
         || action_id.len() > 100
-        || action_id.chars().any(|character| character.is_control() || character == ':')
+        || action_id
+            .chars()
+            .any(|character| character.is_control() || character == ':')
     {
         return Err("Invalid witness social action ID".into());
     }
@@ -625,8 +627,7 @@ fn require_witness_social_action(
     {
         return Err("Witness social action was already applied".into());
     }
-    let session =
-        crate::strategic::require_session_member(ctx, session_id, observer_character_id)?;
+    let session = crate::strategic::require_session_member(ctx, session_id, observer_character_id)?;
     if session.revision != expected_revision {
         return Err("Witness social action used a stale session revision".into());
     }
@@ -642,9 +643,16 @@ fn require_witness_social_action(
         .character_id()
         .find(observer_character_id)
         .map_or(0, |time| time.minutes);
-    if let Some(cooldown) = ctx.db.witness_social_cooldown().id().find(
-        &witness_social_cooldown_id(observer_character_id, &capability.npc_id, action_kind),
-    ) && cooldown.available_at_minute > now
+    if let Some(cooldown) = ctx
+        .db
+        .witness_social_cooldown()
+        .id()
+        .find(&witness_social_cooldown_id(
+            observer_character_id,
+            &capability.npc_id,
+            action_kind,
+        ))
+        && cooldown.available_at_minute > now
     {
         return Err("That witness approach is still on cooldown".into());
     }
@@ -736,7 +744,10 @@ fn apply_witness_relationship_outcome(
         .find(&id)
         .is_some()
     {
-        ctx.db.settlement_npc_relationship().id().update(relationship);
+        ctx.db
+            .settlement_npc_relationship()
+            .id()
+            .update(relationship);
     } else {
         ctx.db.settlement_npc_relationship().insert(relationship);
     }
@@ -772,9 +783,8 @@ pub fn diagnose_dialogue_witness(
         WitnessPressureCue::PossiblePressure => "possible_pressure",
     }
     .into();
-    capability.diagnosis_correct = Some(
-        matches!(cue, WitnessPressureCue::PossiblePressure) == capability.has_bound_concern,
-    );
+    capability.diagnosis_correct =
+        Some(matches!(cue, WitnessPressureCue::PossiblePressure) == capability.has_bound_concern);
     if !crate::time::advance_investigation_time(ctx, observer_character_id, 10)? {
         return Err("Actor could not complete the observation".into());
     }
@@ -808,12 +818,7 @@ pub fn approach_dialogue_witness(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::strategic::require_strategic_character_authority(ctx, observer_character_id)?;
     let receipt_id = format!("{session_id}:{action_id}");
-    if witness_social_action_replayed(
-        ctx,
-        &receipt_id,
-        observer_character_id,
-        &approach_kind,
-    )? {
+    if witness_social_action_replayed(ctx, &receipt_id, observer_character_id, &approach_kind)? {
         return Ok(());
     }
     let approach = witness_approach(&approach_kind)?;
@@ -838,15 +843,18 @@ pub fn approach_dialogue_witness(
             now.saturating_sub(relationship.affinity_anchor_minute),
         )
     });
-    let skill_check =
-        crate::condition::mental_check(ctx, observer_character_id, witness_approach_skill(approach))?;
+    let skill_check = crate::condition::mental_check(
+        ctx,
+        observer_character_id,
+        witness_approach_skill(approach),
+    )?;
     let outcome = resolve_witness_approach(WitnessApproachInput {
         approach,
         skill_check,
         affinity,
-        familiarity_hours: relationship
-            .as_ref()
-            .map_or(0.0, |relationship| relationship.shared_minutes as f32 / 60.0),
+        familiarity_hours: relationship.as_ref().map_or(0.0, |relationship| {
+            relationship.shared_minutes as f32 / 60.0
+        }),
         pressure_diagnosis_correct: capability.diagnosis_correct,
         target_transparency: core_transparency(state.transparency),
         target_mirth: core_mirth(state.mirth),
@@ -888,14 +896,7 @@ pub fn approach_dialogue_witness(
         .dialogue_witness_capability()
         .id()
         .update(capability.clone());
-    finish_witness_social_action(
-        ctx,
-        session,
-        capability,
-        action_id,
-        &approach_kind,
-        after,
-    );
+    finish_witness_social_action(ctx, session, capability, action_id, &approach_kind, after);
     Ok(())
 }
 
@@ -910,12 +911,7 @@ pub fn spend_dialogue_time_with_witness(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::strategic::require_strategic_character_authority(ctx, observer_character_id)?;
     let receipt_id = format!("{session_id}:{action_id}");
-    if witness_social_action_replayed(
-        ctx,
-        &receipt_id,
-        observer_character_id,
-        "spend_time",
-    )? {
+    if witness_social_action_replayed(ctx, &receipt_id, observer_character_id, "spend_time")? {
         return Ok(());
     }
     if action_id.is_empty()
@@ -939,10 +935,7 @@ pub fn spend_dialogue_time_with_witness(
         .ok_or("Dialogue has no witness social capability")?;
     spend_time_with_settlement_npc(ctx, observer_character_id, capability.npc_id.clone())?;
     capability.last_outcome = "spent_time".into();
-    ctx.db
-        .dialogue_witness_capability()
-        .id()
-        .update(capability);
+    ctx.db.dialogue_witness_capability().id().update(capability);
     session.revision = session.revision.saturating_add(1);
     ctx.db.dialogue_session().id().update(session.clone());
     ctx.db

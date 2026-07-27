@@ -3424,11 +3424,13 @@ fn party_action_skills(
                 action::Terrain::Settlement | action::Terrain::Ruins => {
                     skill_bps(Skill::TerrainUrban, skills.terrain_urban_hours, &attributes)
                 }
-                action::Terrain::Plains | action::Terrain::Road | action::Terrain::Marsh => skill_bps(
-                    Skill::TerrainPlains,
-                    skills.terrain_plains_hours,
-                    &attributes,
-                ),
+                action::Terrain::Plains | action::Terrain::Road | action::Terrain::Marsh => {
+                    skill_bps(
+                        Skill::TerrainPlains,
+                        skills.terrain_plains_hours,
+                        &attributes,
+                    )
+                }
             } / 4;
             assistance = assistance.saturating_add(contribution).min(2_000);
         }
@@ -5955,8 +5957,8 @@ pub(crate) fn persist_generated_testimony(
     let generation_context = validated_authority.context;
     let mut corrected_capability_ids = BTreeSet::new();
     for (index, draft) in projection_plan.iter().enumerate() {
-        let is_withheld = draft.delivery
-            == adventuresim_core::quest_generation::TestimonyDelivery::Withheld;
+        let is_withheld =
+            draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld;
         if is_withheld != withheld_only {
             continue;
         }

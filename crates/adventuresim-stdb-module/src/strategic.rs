@@ -5932,12 +5932,7 @@ pub fn start_dialogue(
             format!("receive-rumor:{character_id}:{}", receipt.id),
         )?;
     }
-    crate::social::ensure_dialogue_witness_capability(
-        ctx,
-        &session,
-        character_id,
-        &npc_actor_id,
-    )?;
+    crate::social::ensure_dialogue_witness_capability(ctx, &session, character_id, &npc_actor_id)?;
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
 }
@@ -6877,8 +6872,7 @@ pub(crate) fn release_referred_withheld_testimony(
         .iter()
         .enumerate()
         .filter(|(_, draft)| {
-            draft.delivery
-                == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
+            draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
         })
         .map(|(index, _)| presentation_texts[index].trim())
         .filter(|text| !text.is_empty())
