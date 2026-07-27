@@ -128,6 +128,9 @@ mod building_query_tests {
 
     #[test]
     fn merchant_offer_routes_accept_only_bound_storefront_services() {
+        let source = include_str!("settlements.rs");
+        assert!(source.contains("\"/settlements/{id}/storefront/{service_id}/offer\""));
+        assert!(!source.contains("\"/settlements/{id}/{service_id}/offer\""));
         assert_eq!(merchant_service_location("merchants"), Some("market"));
         assert_eq!(merchant_service_location("weapons"), Some("forge"));
         assert_eq!(merchant_service_location("armor"), Some("armoury"));

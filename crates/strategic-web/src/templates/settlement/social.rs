@@ -907,6 +907,11 @@ mod tests {
         assert!(css.contains("66%, 74%"));
         assert!(!css.contains("left: -7rem;"));
         assert!(css.contains(".smith-wares-scroll .trade-inventory-table"));
+        assert!(css.contains(".inn-rest-panel"));
+        assert!(css.contains("max-height: 52%;"));
+        assert!(css.contains(".inn-rest-panel > .rest-service-menu"));
+        assert!(css.contains(".service-inventory-area .smith-wares-scroll"));
+        assert!(css.contains("overflow-y: auto;"));
         assert!(css.contains("--inventory-merchant-action-overhang"));
         assert!(css.contains("--inventory-merchant-scrollbar-reserve: 8px;"));
         assert!(css.contains("padding-left: var(--inventory-merchant-scrollbar-reserve);"));
