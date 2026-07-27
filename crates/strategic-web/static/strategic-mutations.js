@@ -2,6 +2,8 @@
   let generation = 0;
   let pending;
   const SAFE_NOTICE_SELECTOR = "[data-strategic-safe-message]";
+  const mutationFormAction = (form, submitter) =>
+    submitter?.hasAttribute?.("formaction") ? submitter.formAction : form.action;
 
   const extractStrategicNoticeMessage = (root) => {
     const message = root?.querySelector?.(SAFE_NOTICE_SELECTOR)?.textContent
@@ -30,7 +32,11 @@
   };
 
   if (typeof module !== "undefined") {
-    module.exports = { extractStrategicNoticeMessage, safeStrategicErrorMessage };
+    module.exports = {
+      extractStrategicNoticeMessage,
+      mutationFormAction,
+      safeStrategicErrorMessage,
+    };
   }
   if (typeof document === "undefined") return;
 
@@ -145,7 +151,7 @@
     const form = event.target.closest?.("#strategic-page form[method='post' i]");
     if (!form || event.defaultPrevented) return;
     const submitter = event.submitter;
-    const url = new URL(submitter?.formAction || form.action, location.href);
+    const url = new URL(mutationFormAction(form, submitter), location.href);
     if (hardBoundary(form, url)) return;
     event.preventDefault();
     event.stopImmediatePropagation();

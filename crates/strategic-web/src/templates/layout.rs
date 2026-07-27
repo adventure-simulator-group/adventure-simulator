@@ -184,7 +184,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/strategic-navigation.js?v=soft-navigation-1" defer {}
-                    script src="/static/strategic-mutations.js?v=safe-notice-errors-1" defer {}
+                    script src="/static/strategic-mutations.js?v=formaction-override-1" defer {}
                     script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
@@ -730,7 +730,7 @@ mod tests {
         assert!(markup.contains("/static/live-regions.js?v=persistent-rest-refresh-2"));
         assert!(markup.contains("id=\"strategic-page\""));
         assert!(markup.contains("/static/strategic-navigation.js"));
-        assert!(markup.contains("/static/strategic-mutations.js?v=safe-notice-errors-1\" defer"));
+        assert!(markup.contains("/static/strategic-mutations.js?v=formaction-override-1\" defer"));
         assert_eq!(markup.matches("/static/training-schedule.js").count(), 1);
         assert_eq!(markup.matches("/static/immediate-activity.js").count(), 1);
         assert!(markup.contains("/static/training-schedule.js?v=apprentice-system-1\" defer"));

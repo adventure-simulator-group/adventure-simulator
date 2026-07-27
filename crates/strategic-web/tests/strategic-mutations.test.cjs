@@ -4,11 +4,34 @@ const fs = require("node:fs");
 
 const {
   extractStrategicNoticeMessage,
+  mutationFormAction,
   safeStrategicErrorMessage,
 } = require("../static/strategic-mutations.js");
 
 const headers = (contentType) => ({
   get: (name) => name.toLowerCase() === "content-type" ? contentType : null,
+});
+
+test("mutation action uses only an explicit submitter formaction override", () => {
+  const form = { action: "https://game.example/settlements/ironforge/rest/inn" };
+  const firefoxDefault = {
+    formAction: "https://game.example/settlements/ironforge/inn",
+    hasAttribute: () => false,
+  };
+  assert.equal(mutationFormAction(form, firefoxDefault), form.action);
+  assert.equal(mutationFormAction(form, null), form.action);
+
+  const explicit = {
+    formAction: "https://game.example/settlements/ironforge/rest/temple",
+    hasAttribute: (name) => name === "formaction",
+  };
+  assert.equal(mutationFormAction(form, explicit), explicit.formAction);
+
+  const explicitEmpty = {
+    formAction: "https://game.example/settlements/ironforge/inn",
+    hasAttribute: (name) => name === "formaction",
+  };
+  assert.equal(mutationFormAction(form, explicitEmpty), explicitEmpty.formAction);
 });
 
 test("extracts only the dedicated bounded strategic notice message", () => {
