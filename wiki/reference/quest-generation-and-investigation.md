@@ -14,8 +14,10 @@ truthful, mistaken, partial, evasive, and deceptive private states.
 Insight therefore produces only a fallible pressure cue. A cue may be present
 for a quest-bound concern or for a benign concern, and may be absent in either
 case. It never declares a lie, changes a proposition, or grants navigation.
-Withholding is sampled independently from reliability, so a primary witness
-may have nothing quest-bound left to reveal. Confrontation approaches become
+Every primary witness volunteers the same reliability-neutral public pattern
+account. A separate private pattern detail may or may not exist, sampled
+independently from reliability; its presence never changes the initial
+dialogue's text, cardinality, order, or source. Confrontation approaches become
 available only after that observer has a possible-pressure cue or relevant
 contradiction/evidence knowledge. Once bound testimony is released, later
 Insight checks treat the witness as benign.

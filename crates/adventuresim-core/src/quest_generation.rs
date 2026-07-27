@@ -593,6 +593,18 @@ pub fn generated_testimony_projection_plan(
     }
 }
 
+/// The complete authored testimony visible on first contact, in presentation
+/// order. Withheld details remain private manifest authority and cannot change
+/// the initial dialogue's text, cardinality, ordering, or source.
+pub fn initial_testimony_projection(witness: &WitnessBinding) -> Vec<(usize, &TestimonyDraft)> {
+    witness
+        .testimony
+        .iter()
+        .enumerate()
+        .filter(|(_, draft)| draft.delivery == TestimonyDelivery::Volunteered)
+        .collect()
+}
+
 pub fn transition_referred_contact_action(
     states: &mut [ReferredContactActionState],
     owner_character_id: u64,
@@ -2493,6 +2505,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let description_prop = scoped_id(&prefix, "proposition", "description");
     let correction_prop = scoped_id(&prefix, "proposition", "location:corrected");
     let pattern_prop = scoped_id(&prefix, "proposition", "attack-pattern");
+    let private_pattern_prop = scoped_id(&prefix, "proposition", "private-pattern-detail");
     let pattern_evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "attack-pattern"));
     let pattern_truth = match attack_pattern {
         AttackPattern::Nightly => "The incidents cluster after nightfall.".to_owned(),
@@ -2512,20 +2525,16 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             "The incidents have no reliable time, place, or victim schedule.".to_owned()
         }
     };
-    // Released presentation cannot identify hidden reliability, even to a
-    // player who knows every authored line and generation rule.
+    // Every primary witness volunteers this reliability-neutral account. The
+    // optional exact detail is a separate private concern, so its existence
+    // cannot change any part of the initial dialogue projection.
     let uncorroborated_pattern_claim =
-        "There may be a pattern, but I am not prepared to say which details matter.".to_owned();
-    let pattern_delivery = if hash(
+        "There may be a pattern, but I cannot tell which details matter.".to_owned();
+    let has_private_pattern_detail = hash(
         context.observer_entropy_hi ^ context.observer_entropy_lo.rotate_left(17),
-        "testimony-delivery:primary-pattern",
+        "testimony-concern:private-pattern-detail",
     ) % 2
-        == 0
-    {
-        TestimonyDelivery::Withheld
-    } else {
-        TestimonyDelivery::Volunteered
-    };
+        == 0;
     let evidence_site_label = if family == TemplateFamily::RecurringDepredation {
         "the latest incident site"
     } else {
@@ -2570,6 +2579,65 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             is_true_location: false,
         },
     ];
+    let mut primary_testimony = vec![
+        TestimonyDraft {
+            proposition_id: description_prop.clone(),
+            reliability,
+            delivery: TestimonyDelivery::Volunteered,
+            truthful_text: true_statement.clone(),
+            // Presentation and grant shape cannot reveal reliability.
+            // Private authority still binds the proposition to the
+            // place the witness actually believes they described.
+            spoken_text: presented_location_statement,
+            destination_stage: "route_segment".into(),
+            site_id: Some(if reliability == Reliability::Truthful {
+                finale_site.clone()
+            } else {
+                decoy_site.clone()
+            }),
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![witness2.clone()],
+        },
+        TestimonyDraft {
+            proposition_id: pattern_prop.clone(),
+            reliability,
+            delivery: TestimonyDelivery::Volunteered,
+            truthful_text: pattern_truth.clone(),
+            spoken_text: uncorroborated_pattern_claim,
+            destination_stage: "textual".into(),
+            site_id: None,
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![],
+        },
+        TestimonyDraft {
+            proposition_id: correction_prop.clone(),
+            reliability: Reliability::Truthful,
+            delivery: TestimonyDelivery::Volunteered,
+            truthful_text: format!(
+                "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
+            ),
+            spoken_text: format!(
+                "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. You may examine it yourself."
+            ),
+            destination_stage: "exact_believed".into(),
+            site_id: Some(evidence_site.clone()),
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![],
+        },
+    ];
+    if has_private_pattern_detail {
+        primary_testimony.push(TestimonyDraft {
+            proposition_id: private_pattern_prop,
+            reliability: Reliability::Truthful,
+            delivery: TestimonyDelivery::Withheld,
+            truthful_text: pattern_truth.clone(),
+            spoken_text: format!("What I held back is this: {pattern_truth}"),
+            destination_stage: "textual".into(),
+            site_id: None,
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![],
+        });
+    }
     let witnesses = vec![
         WitnessBinding {
             id: witness1.clone(),
@@ -2581,52 +2649,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             expected_location: primary.expected_location.clone(),
             expected_location_label: primary.expected_location_label.clone(),
             visible_description: primary.visible_description.clone(),
-            testimony: vec![
-                TestimonyDraft {
-                    proposition_id: description_prop.clone(),
-                    reliability,
-                    delivery: TestimonyDelivery::Volunteered,
-                    truthful_text: true_statement.clone(),
-                    // Presentation and grant shape cannot reveal reliability.
-                    // Private authority still binds the proposition to the
-                    // place the witness actually believes they described.
-                    spoken_text: presented_location_statement,
-                    destination_stage: "route_segment".into(),
-                    site_id: Some(if reliability == Reliability::Truthful {
-                        finale_site.clone()
-                    } else {
-                        decoy_site.clone()
-                    }),
-                    corrects_proposition_id: None,
-                    referred_witness_ids: vec![witness2.clone()],
-                },
-                TestimonyDraft {
-                    proposition_id: pattern_prop.clone(),
-                    reliability,
-                    delivery: pattern_delivery,
-                    truthful_text: pattern_truth.clone(),
-                    spoken_text: uncorroborated_pattern_claim,
-                    destination_stage: "textual".into(),
-                    site_id: None,
-                    corrects_proposition_id: None,
-                    referred_witness_ids: vec![],
-                },
-                TestimonyDraft {
-                    proposition_id: correction_prop.clone(),
-                    reliability: Reliability::Truthful,
-                    delivery: TestimonyDelivery::Volunteered,
-                    truthful_text: format!(
-                        "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
-                    ),
-                    spoken_text: format!(
-                        "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. You may examine it yourself."
-                    ),
-                    destination_stage: "exact_believed".into(),
-                    site_id: Some(evidence_site.clone()),
-                    corrects_proposition_id: None,
-                    referred_witness_ids: vec![],
-                },
-            ],
+            testimony: primary_testimony,
         },
         WitnessBinding {
             id: witness2.clone(),
@@ -3523,6 +3546,32 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         {
             errors.push(format!("{} lacks persistent referral data", witness.id.0));
         }
+        if witness.testimony.is_empty()
+            || !witness
+                .testimony
+                .iter()
+                .any(|draft| draft.delivery == TestimonyDelivery::Volunteered)
+        {
+            errors.push(format!(
+                "{} has no initially visible testimony",
+                witness.id.0
+            ));
+        }
+        for draft in witness
+            .testimony
+            .iter()
+            .filter(|draft| draft.delivery == TestimonyDelivery::Withheld)
+        {
+            if draft.destination_stage != "textual"
+                || draft.site_id.is_some()
+                || !draft.referred_witness_ids.is_empty()
+            {
+                errors.push(format!(
+                    "{} hides route authority behind a private concern",
+                    witness.id.0
+                ));
+            }
+        }
         for referred in witness
             .testimony
             .iter()
@@ -3970,45 +4019,100 @@ mod tests {
     }
 
     #[test]
-    fn withholding_and_visible_presentations_overlap_hidden_reliability_states() {
-        let mut delivery_states = BTreeSet::new();
-        let mut truthful_initial = BTreeSet::new();
-        let mut nontruthful_initial = BTreeSet::new();
-        let mut truthful_released = BTreeSet::new();
-        let mut nontruthful_released = BTreeSet::new();
-        let mut truthful_sources = BTreeSet::new();
-        let mut nontruthful_sources = BTreeSet::new();
-        for seed in 0..4_096 {
-            let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
-            let primary = &generated.witnesses[0];
-            let reliability = primary.testimony[0].reliability;
-            let truthful = reliability == Reliability::Truthful;
-            let pattern = &primary.testimony[1];
-            delivery_states.insert((truthful, pattern.delivery));
-            let initial = &primary.testimony[0];
-            assert_eq!(initial.destination_stage, "route_segment");
-            if truthful {
-                truthful_initial.insert(initial.spoken_text.clone());
-                truthful_sources.insert(primary.npc_id.clone());
-            } else {
-                nontruthful_initial.insert(initial.spoken_text.clone());
-                nontruthful_sources.insert(primary.npc_id.clone());
+    fn private_concern_never_changes_complete_initial_dialogue_shape() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            for seed in 0..256 {
+                let mut visible_outputs = BTreeSet::new();
+                let mut concern_states = BTreeSet::new();
+                for entropy in 0..64 {
+                    let mut source = context(seed, family);
+                    source.observer_entropy_hi = entropy;
+                    source.observer_entropy_lo = entropy.rotate_left(29);
+                    let generated = generate(&source).unwrap();
+                    validate(&generated).unwrap();
+                    let primary = &generated.witnesses[0];
+                    let visible = initial_testimony_projection(primary)
+                        .into_iter()
+                        .map(|(index, draft)| {
+                            (
+                                primary.npc_id.clone(),
+                                primary.display_name.clone(),
+                                index,
+                                draft.spoken_text.clone(),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    assert_eq!(visible.len(), 3);
+                    assert_eq!(visible[1].2, 1);
+                    assert_eq!(
+                        primary.testimony[1].delivery,
+                        TestimonyDelivery::Volunteered
+                    );
+                    visible_outputs.insert(visible);
+                    concern_states.insert(
+                        primary
+                            .testimony
+                            .iter()
+                            .any(|draft| draft.delivery == TestimonyDelivery::Withheld),
+                    );
+                }
+                assert_eq!(
+                    visible_outputs.len(),
+                    1,
+                    "observer-private concern entropy changed the full initial output"
+                );
+                assert_eq!(concern_states, BTreeSet::from([false, true]));
             }
-            if pattern.delivery == TestimonyDelivery::Withheld {
-                if truthful {
-                    truthful_released.insert(pattern.spoken_text.clone());
-                } else {
-                    nontruthful_released.insert(pattern.spoken_text.clone());
+        }
+    }
+
+    #[test]
+    fn private_concern_is_reliability_independent_and_pipeline_solvable() {
+        use crate::investigation::process_report;
+
+        let mut concern_reliability_states = BTreeSet::new();
+        let mut checked_private_route_guard = false;
+        for seed in 0..4_096 {
+            let source = context(seed, TemplateFamily::RecurringDepredation);
+            let generated = generate(&source).unwrap();
+            let primary = &generated.witnesses[0];
+            let truthful = primary.testimony[0].reliability == Reliability::Truthful;
+            let concern = primary
+                .testimony
+                .iter()
+                .position(|draft| draft.delivery == TestimonyDelivery::Withheld);
+            concern_reliability_states.insert((truthful, concern.is_some()));
+            if let Some(index) = concern {
+                let (_, pipeline) = generated_testimony_pipeline(
+                    &source,
+                    17,
+                    &generated,
+                    primary,
+                    index,
+                    source.now_minute,
+                )
+                .unwrap();
+                let (_, _, claim) = process_report(pipeline).unwrap();
+                assert!(claim.is_some());
+                if !checked_private_route_guard {
+                    let mut invalid = generated.clone();
+                    invalid.witnesses[0].testimony[index].site_id =
+                        Some(invalid.sites[0].id.clone());
+                    assert!(validate(&invalid).unwrap_err().iter().any(|error| {
+                        error.contains("hides route authority behind a private concern")
+                    }));
+                    checked_private_route_guard = true;
                 }
             }
         }
-        assert!(delivery_states.contains(&(true, TestimonyDelivery::Volunteered)));
-        assert!(delivery_states.contains(&(true, TestimonyDelivery::Withheld)));
-        assert!(delivery_states.contains(&(false, TestimonyDelivery::Volunteered)));
-        assert!(delivery_states.contains(&(false, TestimonyDelivery::Withheld)));
-        assert!(!truthful_initial.is_disjoint(&nontruthful_initial));
-        assert!(!truthful_released.is_disjoint(&nontruthful_released));
-        assert!(!truthful_sources.is_disjoint(&nontruthful_sources));
+        assert!(checked_private_route_guard);
+        assert_eq!(
+            concern_reliability_states,
+            BTreeSet::from([(false, false), (false, true), (true, false), (true, true)])
+        );
     }
 
     #[test]

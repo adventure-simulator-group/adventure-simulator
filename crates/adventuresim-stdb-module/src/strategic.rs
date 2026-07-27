@@ -6715,14 +6715,12 @@ fn dialogue_runtime_bindings(
             &session.settlement_id,
             &session.location_id,
         )? {
-            let mut testimony_parts = selected_witness
-                .testimony
-                .iter()
-                .filter(|draft| {
-                    draft.delivery
-                        == adventuresim_core::quest_generation::TestimonyDelivery::Volunteered
-                })
-                .map(|draft| draft.spoken_text.trim().to_owned())
+            let mut testimony_parts =
+                adventuresim_core::quest_generation::initial_testimony_projection(
+                    &selected_witness,
+                )
+                .into_iter()
+                .map(|(_, draft)| draft.spoken_text.trim().to_owned())
                 .filter(|text| !text.is_empty())
                 .collect::<Vec<_>>();
             if let Some(variant) = adventuresim_core::quest_catalog::catalog().dialogue_variant(
