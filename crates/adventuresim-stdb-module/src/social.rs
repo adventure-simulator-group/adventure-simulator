@@ -19,7 +19,8 @@ use crate::condition::{character_morale_source__view, morale_event};
 use crate::strategic::strategic_gateway_authority__view;
 use crate::{
     character_attributes, character_capability, character_morale_source, character_personality,
-    character_skills, character_strategic_condition, character_time,
+    character_skills, character_strategic_condition, character_time, settlement_npc,
+    settlement_npc_presence,
 };
 
 pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
