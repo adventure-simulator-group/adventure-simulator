@@ -51,7 +51,7 @@ The complete authoring and validation contract is documented in
 
 For deterministic multi-year NPC balance experiments and replay commands, see
 [`strategic-simulation.md`](strategic-simulation.md), `just strategic-sim`, and
-`just test-strategic-sim`. The isolated `just strategic-sim-core-loop` command
+`just test-strategic-sim`. The isolated `just strategic-sim-core-loop <new-output-dir>` command
 also evaluates the authoritative server-side NPC adventurer system and writes a
 Markdown quest-story log. Its default policy is scripted; optional provider
 mode requires explicit network consent and reads a key only from the named
@@ -64,8 +64,10 @@ controls as a player. With a local strategic server running, invoke
 Playwright's Chromium browser (`npx playwright install chromium`) and reads the
 model credential from `OPENAI_API_KEY` by default.
 The opt-in authoritative integration driver is
-`just strategic-sim-core-loop`; the recipe creates, claims, and deletes its own
-  nonce-named loopback database, compiles a one-run bootstrap capability in
+`just strategic-sim-core-loop-world <new-output-dir>` loads the pinned
+`target/world-1544.json` rather than sample/renderer data and is preferred for
+gameplay evaluation. Both recipes create, claim, and delete their own
+  nonce-named loopback database, compile a one-run bootstrap capability in
   memory, and accepts no host, database, or capability override.
 
 The current strategic/tactical boundaries and tactical lifecycle are documented

@@ -79,6 +79,7 @@ use adventuresim_stdb_client::{
     travel_to_settlement_reducer::travel_to_settlement,
     update_training_schedule_reducer::update_training_schedule,
     withdraw_party_inventory_item_reducer::withdraw_party_inventory_item,
+    world_data_import_table::WorldDataImportTableAccess,
 };
 
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -103,6 +104,8 @@ pub struct CoreLoopConfig {
     pub duration_days: u32,
     pub party_size: u32,
     pub run_nonce: String,
+    pub use_imported_world: bool,
+    pub expected_world_manifest_digest: Option<String>,
 }
 
 impl CoreLoopConfig {
@@ -139,6 +142,21 @@ impl CoreLoopConfig {
                 .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
         {
             return Err("run_nonce must be 16..=96 ASCII alphanumeric/dash characters".into());
+        }
+        if self.use_imported_world {
+            let digest = self
+                .expected_world_manifest_digest
+                .as_deref()
+                .ok_or("imported-world mode requires an expected manifest digest")?;
+            if digest.len() != 64
+                || !digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            {
+                return Err("expected world manifest digest must be 64 lowercase hex".into());
+            }
+        } else if self.expected_world_manifest_digest.is_some() {
+            return Err("fixture mode cannot claim an expected world manifest".into());
         }
         Ok(())
     }
@@ -287,6 +305,9 @@ pub struct CoreLoopReport {
     pub database: String,
     pub run_nonce: String,
     pub deployment_identity_note: String,
+    pub world_artifact_id: Option<String>,
+    pub world_manifest_digest: Option<String>,
+    pub starting_settlement_id: String,
     pub profiles: Vec<AgentProfile>,
     pub metrics: CoreLoopMetrics,
     pub trace: Vec<CoreLoopEvent>,
@@ -2308,6 +2329,7 @@ pub fn run_core_loop_with_npc_policy(
         .add_query(|query| query.from.settlement())
         .add_query(|query| query.from.settlement_smith())
         .add_query(|query| query.from.simulation_run())
+        .add_query(|query| query.from.world_data_import())
         .subscribe();
     connection.run_threaded();
     connected_rx
@@ -2345,9 +2367,32 @@ pub fn run_core_loop_with_npc_policy(
         .next()
         .is_some()
         || runner.connection.db.character().iter().next().is_some()
-        || runner.connection.db.settlement().iter().next().is_some()
     {
         return Err("refusing reused or populated simulation database".into());
+    }
+    let world_import = runner.connection.db.world_data_import().iter().next();
+    if config.use_imported_world {
+        let imported = world_import
+            .as_ref()
+            .filter(|import| import.completed)
+            .ok_or("full-world mode requires a completed world_data_import")?;
+        if Some(imported.manifest_digest.as_str())
+            != config.expected_world_manifest_digest.as_deref()
+        {
+            return Err(
+                "imported world manifest does not match the pinned expected manifest".into(),
+            );
+        }
+        if imported.artifact_id.trim().is_empty()
+            || imported.manifest_digest.len() != 64
+            || runner.connection.db.settlement().iter().next().is_none()
+        {
+            return Err(
+                "completed world_data_import has invalid provenance or no settlements".into(),
+            );
+        }
+    } else if world_import.is_some() || runner.connection.db.settlement().iter().next().is_some() {
+        return Err("fixture mode refuses imported or pre-existing settlement state".into());
     }
     let result = reducer_call!(runner, "claim_simulation_run", |cb| runner
         .connection
@@ -2388,12 +2433,21 @@ pub fn run_core_loop_with_npc_policy(
     gateway_subscription_rx
         .recv_timeout(ACTION_TIMEOUT)
         .map_err(|_| "gateway subscription timed out".to_string())??;
-    let result = reducer_call!(runner, "seed_simulation_world", |cb| runner
+    if !config.use_imported_world {
+        let result = reducer_call!(runner, "seed_simulation_world", |cb| runner
+            .connection
+            .reducers
+            .seed_simulation_world_then(config.run_nonce.clone(), cb));
+        runner.call(result)?;
+    }
+    let starting_settlement_id = runner
         .connection
-        .reducers
-        .seed_simulation_world_then(config.run_nonce.clone(), cb));
-    runner.call(result)?;
-    let mut shared_settlement: Option<String> = None;
+        .db
+        .settlement()
+        .iter()
+        .map(|settlement| settlement.id)
+        .min()
+        .ok_or("simulation world has no starting settlement")?;
     for (agent, character_id) in runner.character_ids.clone().into_iter().enumerate() {
         let name = format!("sim-{}-{agent}", config.seed);
         let result = reducer_call!(runner, "create_named_character_with_id", |cb| runner
@@ -2401,17 +2455,7 @@ pub fn run_core_loop_with_npc_policy(
             .reducers
             .create_named_character_with_id_then(character_id, name.clone(), cb));
         runner.call(result)?;
-        let settlement = match &shared_settlement {
-            Some(settlement) => settlement.clone(),
-            None => {
-                let settlement = runner
-                    .party_for(character_id)?
-                    .current_settlement_id
-                    .ok_or("fresh character has no settlement")?;
-                shared_settlement = Some(settlement.clone());
-                settlement
-            }
-        };
+        let settlement = starting_settlement_id.clone();
         let profile = runner.profiles[agent].clone();
         let attributes = live_attributes(character_id, &profile);
         let skills = live_skills(character_id, &profile);
@@ -2758,6 +2802,11 @@ pub fn run_core_loop_with_npc_policy(
         database: config.database,
         run_nonce: config.run_nonce,
         deployment_identity_note: "server origin, database, and claimed run nonce identify this deployment; the SDK does not expose a deployed module binary digest".into(),
+        world_artifact_id: world_import.as_ref().map(|import| import.artifact_id.clone()),
+        world_manifest_digest: world_import
+            .as_ref()
+            .map(|import| import.manifest_digest.clone()),
+        starting_settlement_id,
         profiles: runner.profiles,
         metrics: runner.metrics,
         trace: runner.trace,
@@ -2856,6 +2905,8 @@ mod tests {
             duration_days: 1,
             party_size: 2,
             run_nonce: "unit-test-nonce-0001".into(),
+            use_imported_world: false,
+            expected_world_manifest_digest: None,
         };
         assert!(config.validate().is_err());
         config.host = "http://127.0.0.1:3000".into();

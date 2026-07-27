@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import ctypes
 from ctypes import wintypes
+import hashlib
+import json
 import os
 from pathlib import Path
 import secrets
@@ -251,33 +253,147 @@ def refuse(message: str) -> int:
     return 2
 
 
+def verified_world_identity(world_input: Path) -> tuple[str, str]:
+    expected_world = (ROOT / "target" / "world-1544.json").resolve()
+    if world_input.resolve() != expected_world:
+        raise RuntimeError(
+            f"full-world simulation requires authoritative artifact {expected_world}"
+        )
+    lock = json.loads((ROOT / "world-runtime-release.lock.json").read_text(encoding="utf-8"))
+    record = next(
+        (
+            item
+            for item in lock.get("files", [])
+            if item.get("destination") == "target/world-1544.json"
+        ),
+        None,
+    )
+    if record is None:
+        raise RuntimeError("world runtime lock does not pin target/world-1544.json")
+    artifact = expected_world.read_bytes()
+    sha256 = hashlib.sha256(artifact).hexdigest()
+    if len(artifact) != record.get("size") or sha256 != record.get("sha256"):
+        raise RuntimeError("target/world-1544.json does not match the pinned runtime release")
+    document = json.loads(artifact)
+    manifest_digest = document.get("metadata", {}).get("manifest_digest")
+    if not isinstance(manifest_digest, str) or len(manifest_digest) != 64:
+        raise RuntimeError("pinned world artifact has no valid manifest digest")
+    return sha256, manifest_digest
+
+
 def strategic_sim(
     seed: str, population: str, cycles: str, duration_days: str, party_size: str,
-    spacetime_url: str, module_dir: Path,
+    spacetime_url: str, module_dir: Path, output_dir: Path,
+    world_input: Path | None = None,
 ) -> int:
+    output_dir = output_dir.resolve()
+    if output_dir.exists():
+        return refuse(f"Refusing to overwrite simulation output directory: {output_dir}")
+    output_dir.mkdir(parents=True)
     token = secrets.token_hex(32)
     nonce = f"{time.time_ns()}-{os.getpid()}-{secrets.token_hex(4)}"
     database = f"adventuresim-sim-{nonce}"
+    metadata_path = output_dir / "launcher.json"
+    metadata = {
+        "format_version": 1,
+        "database": database,
+        "run_nonce": nonce,
+        "spacetime_url": spacetime_url,
+        "world_mode": "compiled_world_1544" if world_input else "fixture",
+        "world_input": str(world_input.resolve()) if world_input else None,
+        "status": "starting",
+    }
+    world_sha256 = None
+    world_manifest_digest = None
+    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     environment = os.environ.copy()
     environment["ADVENTURESIM_SIM_BOOTSTRAP_TOKEN"] = token
+    import_environment = os.environ.copy()
+    import_environment.pop("ADVENTURESIM_SIM_BOOTSTRAP_TOKEN", None)
+    result_code = 1
+    cleanup_failed = False
+    spacetime_executable = None
+    stage = "world_validation" if world_input is not None else "publish"
     try:
+        if world_input is not None:
+            world_sha256, world_manifest_digest = verified_world_identity(world_input)
+            metadata["world_sha256"] = world_sha256
+            metadata["expected_world_manifest_digest"] = world_manifest_digest
+        stage = "publish"
+        spacetime_executable = executable("spacetime")
         code = run(
-            [executable("spacetime"), "publish", "--server", spacetime_url, database],
+            [spacetime_executable, "publish", "--server", spacetime_url, database],
             cwd=module_dir, env=environment,
         )
         if code:
-            return code
-        return run([
-            executable("cargo"), "run", "-p", "adventuresim-strategic-sim", "--", "core-loop",
-            "--host", spacetime_url, "--database", database, "--run-nonce", nonce,
-            "--seed", seed, "--population", population, "--cycles", cycles,
-            "--duration-days", duration_days, "--party-size", party_size,
-        ], env=environment)
+            metadata["status"] = "publish_failed"
+            result_code = code
+        elif world_input is not None:
+            stage = "world_import"
+            expected_world = world_input.resolve()
+            code = run([
+                executable("cargo"), "run", "--package", "adventuresim-world-import",
+                "--bin", "adventuresim-world-import", "--", "--input", str(expected_world),
+                "--load", "--server", spacetime_url, "--database", database,
+            ], env=import_environment)
+            if code:
+                metadata["status"] = "world_import_failed"
+                result_code = code
+            else:
+                stage = "simulator"
+                command = [
+                    executable("cargo"), "run", "-p", "adventuresim-strategic-sim", "--",
+                    "core-loop", "--host", spacetime_url, "--database", database,
+                    "--run-nonce", nonce, "--seed", seed, "--population", population,
+                    "--cycles", cycles, "--duration-days", duration_days,
+                    "--party-size", party_size, "--output", str(output_dir / "report.json"),
+                    "--npc-stories-output", str(output_dir / "npc-adventurer-stories.md"),
+                    "--imported-world", "--expected-world-manifest-digest",
+                    world_manifest_digest,
+                ]
+                result_code = run(command, env=environment)
+                metadata["status"] = (
+                    "completed" if result_code == 0 else "simulator_failed"
+                )
+        else:
+            stage = "simulator"
+            command = [
+                executable("cargo"), "run", "-p", "adventuresim-strategic-sim", "--",
+                "core-loop", "--host", spacetime_url, "--database", database,
+                "--run-nonce", nonce, "--seed", seed, "--population", population,
+                "--cycles", cycles, "--duration-days", duration_days,
+                "--party-size", party_size, "--output", str(output_dir / "report.json"),
+                "--npc-stories-output", str(output_dir / "npc-adventurer-stories.md"),
+            ]
+            result_code = run(command, env=environment)
+            metadata["status"] = "completed" if result_code == 0 else "simulator_failed"
+    except Exception:
+        metadata["status"] = f"{stage}_failed"
+        raise
     finally:
-        subprocess.run(
-            [executable("spacetime"), "delete", "--yes", "--server", spacetime_url, database],
-            cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        try:
+            cleanup_executable = spacetime_executable or executable("spacetime")
+            cleanup = subprocess.run(
+                [
+                    cleanup_executable,
+                    "delete",
+                    "--yes",
+                    "--server",
+                    spacetime_url,
+                    database,
+                ],
+                cwd=ROOT,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            cleanup_failed = cleanup.returncode != 0
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            cleanup_failed = True
+        if cleanup_failed:
+            metadata["run_status"] = metadata["status"]
+            metadata["status"] = "cleanup_failed"
+        metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    return 1 if cleanup_failed and result_code == 0 else result_code
 
 
 def sync_tree(source: Path, destination: Path, *, clear: bool) -> None:
@@ -391,8 +507,10 @@ def parser() -> argparse.ArgumentParser:
     simulation.add_argument("cycles")
     simulation.add_argument("duration_days")
     simulation.add_argument("party_size")
+    simulation.add_argument("output_dir")
     simulation.add_argument("--spacetime-url", default=SPACETIME_URL)
     simulation.add_argument("--module-dir", default=str(MODULE_DIR))
+    simulation.add_argument("--world-input")
     commands.add_parser("win-dev")
     return result
 
@@ -425,7 +543,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "strategic-sim-core-loop":
             return strategic_sim(
                 args.seed, args.population, args.cycles, args.duration_days, args.party_size,
-                args.spacetime_url, Path(args.module_dir),
+                args.spacetime_url, Path(args.module_dir), Path(args.output_dir),
+                Path(args.world_input) if args.world_input else None,
             )
         if args.command == "win-dev":
             return win_dev()

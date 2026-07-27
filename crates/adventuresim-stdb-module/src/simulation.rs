@@ -8,7 +8,7 @@ use crate::time::{character_time, world_clock};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
     ScheduleAllocation, character_attributes, character_skills, character_training_schedule,
-    infection_episode, party_authority, settlement,
+    infection_episode, party_authority, settlement, world_data_import,
 };
 
 /// Ordinary module builds deliberately contain no simulation capability. The
@@ -87,9 +87,19 @@ pub fn claim_simulation_run(
     }
     if ctx.db.character().iter().next().is_some()
         || ctx.db.party_authority().iter().next().is_some()
-        || ctx.db.settlement().iter().next().is_some()
     {
-        return Err("Simulation claim requires a freshly published empty database".into());
+        return Err("Simulation claim refuses player-bearing character or party state".into());
+    }
+    let imported_world_ready = ctx
+        .db
+        .world_data_import()
+        .id()
+        .find(0)
+        .is_some_and(|import| import.completed);
+    if ctx.db.settlement().iter().next().is_some() && !imported_world_ready {
+        return Err(
+            "Simulation claim permits settlements only from a completed world-data import".into(),
+        );
     }
     ctx.db.simulation_run().insert(SimulationRun {
         id: 0,
@@ -430,6 +440,23 @@ mod tests {
         simulation_religion_hours_valid, valid_simulation_clock_advance,
     };
     use adventuresim_world_schema::ReligionHours;
+
+    #[test]
+    fn claim_checks_bootstrap_capability_before_world_freshness() {
+        let source = include_str!("simulation.rs");
+        let claim = source
+            .split("pub fn claim_simulation_run")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn owned_run")
+            .next()
+            .unwrap();
+        let authorization = claim.find("simulation_bootstrap_authorized").unwrap();
+        let character_guard = claim.find("ctx.db.character()").unwrap();
+        let imported_world_guard = claim.find("world_data_import()").unwrap();
+        assert!(authorization < character_guard);
+        assert!(authorization < imported_world_guard);
+    }
 
     #[test]
     fn simulation_rejects_invalid_individual_religion_fields() {

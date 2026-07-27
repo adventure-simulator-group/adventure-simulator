@@ -605,6 +605,42 @@ pub fn initial_testimony_projection(witness: &WitnessBinding) -> Vec<(usize, &Te
         .collect()
 }
 
+/// Testimony a player-like actor can legitimately hear by starting with the
+/// public primary contact and following referrals disclosed by volunteered
+/// statements. Withheld statements and unreferenced secondary witnesses never
+/// enter the projection.
+pub fn player_visible_testimony_sequence(
+    generated: &GeneratedCase,
+) -> Vec<(&WitnessBinding, &TestimonyDraft)> {
+    let Some(primary) = generated.witnesses.first() else {
+        return Vec::new();
+    };
+    let mut visible_witnesses = BTreeSet::from([primary.id.clone()]);
+    let mut delivered_witnesses = BTreeSet::new();
+    let mut output = Vec::new();
+    loop {
+        let Some(witness) = generated.witnesses.iter().find(|witness| {
+            visible_witnesses.contains(&witness.id) && !delivered_witnesses.contains(&witness.id)
+        }) else {
+            break;
+        };
+        delivered_witnesses.insert(witness.id.clone());
+        for (_, statement) in initial_testimony_projection(witness) {
+            for referred in &statement.referred_witness_ids {
+                if generated
+                    .witnesses
+                    .iter()
+                    .any(|candidate| candidate.id == *referred)
+                {
+                    visible_witnesses.insert(referred.clone());
+                }
+            }
+            output.push((witness, statement));
+        }
+    }
+    output
+}
+
 pub fn transition_referred_contact_action(
     states: &mut [ReferredContactActionState],
     owner_character_id: u64,
@@ -2485,17 +2521,22 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "corroborating"));
     let npc1 = primary.npc_id.clone();
     let npc2 = secondary.npc_id.clone();
+    let presented_site_kind = if reliability == Reliability::Truthful {
+        site
+    } else {
+        secondary_site_kind
+    };
     let presented_location_statement = match account_style {
         AccountStyle::VisualClaim => {
-            ambiguous_visual_claim(description, label(secondary_site_kind))
+            ambiguous_visual_claim(description, label(presented_site_kind))
         }
         AccountStyle::HeardOnly => format!(
             "I only heard it moving near {}; I never saw it clearly.",
-            label(secondary_site_kind)
+            label(presented_site_kind)
         ),
         AccountStyle::TracksAndMovement => format!(
             "Its trail and movement seemed to point toward {}.",
-            label(secondary_site_kind)
+            label(presented_site_kind)
         ),
     };
     let true_statement = format!(
@@ -5093,6 +5134,29 @@ mod tests {
             .unwrap();
         assert_eq!(adult.weight.plausibility, 2);
         assert_eq!(adult.bridge, Some("child_at_adult_venue"));
+    }
+
+    #[test]
+    fn truthful_spoken_location_matches_its_bound_site() {
+        for seed in 0..128 {
+            let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
+            let statement = &generated.witnesses[0].testimony[0];
+            if statement.reliability != Reliability::Truthful {
+                continue;
+            }
+            let site_id = statement.site_id.as_ref().unwrap();
+            let site = generated
+                .sites
+                .iter()
+                .find(|candidate| candidate.id == *site_id)
+                .unwrap();
+            assert!(
+                statement.spoken_text.contains(&site.safe_label),
+                "truthful spoken site {:?} did not match bound site {:?}",
+                statement.spoken_text,
+                site.safe_label
+            );
+        }
     }
 
     #[test]

@@ -462,6 +462,21 @@ impl Catalog {
                 {
                     return Err(format!("invalid or duplicate consequence {}", item.id));
                 }
+                for cause in &item.causes {
+                    let compatible = match item.encounter_archetype.as_deref() {
+                        Some("undead") => matches!(cause.as_str(), "ghoul" | "skeleton"),
+                        Some("goblins") => cause == "goblin",
+                        Some("bandits") => matches!(cause.as_str(), "bandit" | "smuggler"),
+                        Some(_) => false,
+                        None => true,
+                    };
+                    if !compatible {
+                        return Err(format!(
+                            "consequence {} maps cause {cause} to an incompatible encounter archetype",
+                            item.id
+                        ));
+                    }
+                }
             }
             for item in &document.relations {
                 if relations.insert(item.id.clone(), item.clone()).is_some() {
@@ -954,6 +969,22 @@ mod tests {
             Catalog::compile(documents)
                 .unwrap_err()
                 .contains("duplicate quest dialogue variant")
+        );
+    }
+
+    #[test]
+    fn catalog_rejects_cause_incompatible_encounter_archetypes() {
+        let mut documents = catalog().documents.clone();
+        let consequence = documents
+            .iter_mut()
+            .flat_map(|document| &mut document.consequences)
+            .find(|item| item.causes.iter().any(|cause| cause == "wolf"))
+            .unwrap();
+        consequence.encounter_archetype = Some("goblins".into());
+        assert!(
+            Catalog::compile(documents)
+                .unwrap_err()
+                .contains("incompatible encounter archetype")
         );
     }
 

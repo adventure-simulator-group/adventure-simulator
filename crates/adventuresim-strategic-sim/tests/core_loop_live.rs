@@ -25,6 +25,8 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
         party_size: 2,
         run_nonce: std::env::var("ADVENTURESIM_SIM_NONCE")
             .expect("set ADVENTURESIM_SIM_NONCE to the launcher's nonce"),
+        use_imported_world: false,
+        expected_world_manifest_digest: None,
     };
     let report = run_core_loop(config.clone()).expect("authoritative core loop should complete");
 

@@ -563,7 +563,19 @@ fn render_public_story(
     )
     .unwrap();
     event_at = event_at.saturating_add(15);
-    for witness in &generated.witnesses {
+    let visible_testimony =
+        adventuresim_core::quest_generation::player_visible_testimony_sequence(generated);
+    let mut visible_witnesses = Vec::new();
+    for (witness, _) in &visible_testimony {
+        if !visible_witnesses.iter().any(
+            |candidate: &&adventuresim_core::quest_generation::WitnessBinding| {
+                candidate.id == witness.id
+            },
+        ) {
+            visible_witnesses.push(*witness);
+        }
+    }
+    for witness in visible_witnesses {
         writeln!(story).unwrap();
         writeln!(
             story,
@@ -571,7 +583,10 @@ fn render_public_story(
             witness.display_name
         )
         .unwrap();
-        for statement in &witness.testimony {
+        for (_, statement) in visible_testimony
+            .iter()
+            .filter(|(candidate, _)| candidate.id == witness.id)
+        {
             writeln!(story).unwrap();
             writeln!(
                 story,
@@ -975,6 +990,8 @@ mod tests {
         assert!(renderer.contains("route result"));
         assert!(renderer.contains("intends to try"));
         assert!(renderer.contains("World minute {completed_at}: result"));
+        assert!(renderer.contains("player_visible_testimony_sequence(generated)"));
+        assert!(!renderer.contains("for witness in &generated.witnesses"));
         for private_term in [
             "canonical_case_id",
             "canonical cause",
