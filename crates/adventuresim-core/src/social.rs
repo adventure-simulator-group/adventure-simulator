@@ -775,6 +775,123 @@ pub fn diagnosed_axis(
     (belief, confidence)
 }
 
+/// Observer-facing result of listening for a witness's pressure point.
+///
+/// This is intentionally not a truth or lie verdict. Both results are possible
+/// whether or not the witness has a quest-bound concern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WitnessPressureCue {
+    NoClearSignal,
+    PossiblePressure,
+}
+
+pub fn diagnose_witness_pressure(
+    has_bound_concern: bool,
+    insight_check: f32,
+    roll: f32,
+) -> WitnessPressureCue {
+    let insight = insight_check.clamp(0.0, 5.0);
+    let cue_chance = if has_bound_concern {
+        0.35 + insight * 0.1
+    } else {
+        0.25 - insight * 0.02
+    };
+    if roll.clamp(0.0, 1.0) < cue_chance.clamp(0.1, 0.85) {
+        WitnessPressureCue::PossiblePressure
+    } else {
+        WitnessPressureCue::NoClearSignal
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WitnessApproach {
+    Listen,
+    Reassure,
+    InvokeDuty,
+    Bluff,
+}
+
+impl WitnessApproach {
+    pub const fn skill_name(self) -> &'static str {
+        match self {
+            Self::Listen => "Insight",
+            Self::Reassure => "Charm",
+            Self::InvokeDuty => "Command",
+            Self::Bluff => "Deception",
+        }
+    }
+
+    const fn social_action(self) -> SocialActionKind {
+        match self {
+            Self::Listen => SocialActionKind::Listen,
+            Self::Reassure => SocialActionKind::LightenMood,
+            Self::InvokeDuty => SocialActionKind::Rally,
+            Self::Bluff => SocialActionKind::Reframe,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WitnessApproachInput {
+    pub approach: WitnessApproach,
+    pub skill_check: f32,
+    pub affinity: f32,
+    pub familiarity_hours: f32,
+    pub pressure_diagnosis_correct: Option<bool>,
+    pub target_transparency: Transparency,
+    pub target_mirth: Mirth,
+    pub has_bound_concern: bool,
+    pub roll: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WitnessApproachOutcome {
+    pub succeeded: bool,
+    pub released_bound_testimony: bool,
+    pub offered_clarification: bool,
+    pub morale_delta: f32,
+    pub affinity_delta: f32,
+}
+
+/// Resolve a witness approach through the same relationship/morale curve used
+/// by companion social actions. Personality changes the private effective
+/// check, but the returned outcome contains no trait, DC, chance, or roll.
+pub fn resolve_witness_approach(input: WitnessApproachInput) -> WitnessApproachOutcome {
+    let personality_fit = match (input.approach, input.target_transparency, input.target_mirth) {
+        (WitnessApproach::Listen, Transparency::Open, _) => 0.6,
+        (WitnessApproach::Listen, Transparency::Guarded, _) => -0.6,
+        (WitnessApproach::Reassure, _, Mirth::Merry) => 0.45,
+        (WitnessApproach::Reassure, _, Mirth::Grave) => -0.45,
+        (WitnessApproach::InvokeDuty, Transparency::Open, _) => -0.3,
+        (WitnessApproach::InvokeDuty, Transparency::Guarded, _) => 0.25,
+        (WitnessApproach::Bluff, Transparency::Open, _) => 0.25,
+        (WitnessApproach::Bluff, Transparency::Guarded, _) => -0.35,
+        _ => 0.0,
+    };
+    let sensitivity = match input.target_transparency {
+        Transparency::Open => 0.2,
+        Transparency::Neutral => 0.5,
+        Transparency::Guarded => 0.85,
+    };
+    let outcome = resolve_social_attempt(SocialAttempt {
+        action: input.approach.social_action(),
+        topic: SocialTopic::Defeat,
+        skill_check: input.skill_check + personality_fit,
+        affinity: input.affinity,
+        familiarity_hours: input.familiarity_hours,
+        diagnosis_correct: input.pressure_diagnosis_correct,
+        sensitivity,
+        roll: input.roll,
+    });
+    WitnessApproachOutcome {
+        succeeded: outcome.succeeded,
+        released_bound_testimony: outcome.succeeded && input.has_bound_concern,
+        offered_clarification: outcome.succeeded && !input.has_bound_concern,
+        morale_delta: outcome.morale_delta,
+        affinity_delta: outcome.affinity_delta,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -788,6 +905,87 @@ mod tests {
             assert_eq!(once.signum(), start.signum());
             assert!(once.abs() < start.abs());
         }
+    }
+
+    #[test]
+    fn witness_pressure_cues_overlap_concern_states() {
+        for has_concern in [false, true] {
+            assert_eq!(
+                diagnose_witness_pressure(has_concern, 3.0, 0.0),
+                WitnessPressureCue::PossiblePressure
+            );
+            assert_eq!(
+                diagnose_witness_pressure(has_concern, 3.0, 0.99),
+                WitnessPressureCue::NoClearSignal
+            );
+        }
+    }
+
+    #[test]
+    fn witness_personality_changes_which_approach_lands() {
+        let attempt = |approach, target_transparency, target_mirth| {
+            resolve_witness_approach(WitnessApproachInput {
+                approach,
+                skill_check: 2.5,
+                affinity: 0.0,
+                familiarity_hours: 0.0,
+                pressure_diagnosis_correct: None,
+                target_transparency,
+                target_mirth,
+                has_bound_concern: true,
+                roll: 0.55,
+            })
+        };
+        assert!(
+            attempt(
+                WitnessApproach::Listen,
+                Transparency::Open,
+                Mirth::Neutral
+            )
+            .succeeded
+        );
+        assert!(
+            !attempt(
+                WitnessApproach::Listen,
+                Transparency::Guarded,
+                Mirth::Neutral
+            )
+            .succeeded
+        );
+        assert!(
+            attempt(
+                WitnessApproach::Reassure,
+                Transparency::Neutral,
+                Mirth::Merry
+            )
+            .succeeded
+        );
+        assert!(
+            !attempt(
+                WitnessApproach::Reassure,
+                Transparency::Neutral,
+                Mirth::Grave
+            )
+            .succeeded
+        );
+    }
+
+    #[test]
+    fn benign_pressure_never_releases_bound_testimony() {
+        let outcome = resolve_witness_approach(WitnessApproachInput {
+            approach: WitnessApproach::Listen,
+            skill_check: 5.0,
+            affinity: 100.0,
+            familiarity_hours: 100.0,
+            pressure_diagnosis_correct: Some(true),
+            target_transparency: Transparency::Open,
+            target_mirth: Mirth::Neutral,
+            has_bound_concern: false,
+            roll: 0.0,
+        });
+        assert!(outcome.succeeded);
+        assert!(!outcome.released_bound_testimony);
+        assert!(outcome.offered_clarification);
     }
 
     #[test]
