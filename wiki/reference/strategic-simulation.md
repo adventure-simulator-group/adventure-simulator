@@ -110,7 +110,15 @@ fixture seeds one deterministic influenza episode behind the same claimed-run ca
 other simulator-only setup. Policy observes only public condition and the narrow public
 symptomatic/critical signal, buys a fixed concrete preparation, and invokes the generic administration
 reducer without reading infection identity, crafting, diagnosing, or selecting an effect by disease.
-It rests in bounded one-day steps until ready. While recovery is active it authoritatively replaces the saved
+The policy reproduces the player-visible herbalist quote from the public item definition, visible
+storefront stock, and the gateway-projected local-problem trade modifier. Affordability includes the
+visible cost of the required one-day rest venue, preferring a free temple to a paid inn. An affordable symptomatic character buys a course;
+an unaffordable character, a settlement without an herbalist, or a nonsymptomatic convalescent
+instead takes bounded one-day natural recovery. Equipment maintenance retains one locally quoted
+course as an emergency reserve rather than consuming every coin before a later symptom becomes
+visible. It rests in bounded one-day steps until ready. Before each choice, the trace records public
+condition, symptomatic status, settlement, purse, quote, affordability, action, and reason. While
+recovery is active it authoritatively replaces the saved
 personality schedule with pure rest, then restores that profile schedule after recovery so labor or
 thievery cannot interrupt convalescence with an incident. Quests remain suppressed while a member is unsafe. Reports audit
 diagnosis attempts/results, crafting or purchases, medication equips, treatment gold and time,
