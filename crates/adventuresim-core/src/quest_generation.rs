@@ -217,6 +217,7 @@ pub struct BestiaryEvidenceImplication {
     pub support_bps: u16,
     /// Hidden fixed-point Bestiary threshold, where 1,000 is a check of 1.0.
     pub lore_difficulty_milli: u16,
+    pub diagnostic_kind: Option<String>,
     pub interpretation: String,
 }
 
@@ -1073,6 +1074,7 @@ fn evidence_presentation(
                         category: implication.category,
                         support_bps: implication.support_bps,
                         lore_difficulty_milli: implication.lore_difficulty_milli,
+                        diagnostic_kind: implication.diagnostic_kind.clone(),
                         interpretation: implication.interpretation.clone(),
                     })
                     .collect(),

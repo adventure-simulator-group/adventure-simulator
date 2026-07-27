@@ -174,6 +174,10 @@ pub struct BestiaryImplicationDefinition {
     pub category: BestiaryCategory,
     pub support_bps: u16,
     pub lore_difficulty_milli: u16,
+    /// Optional bounded clue understood by the threat-ranking system. It is
+    /// learned only after both the physical and Bestiary checks succeed.
+    #[serde(default)]
+    pub diagnostic_kind: Option<String>,
     pub interpretation: String,
 }
 

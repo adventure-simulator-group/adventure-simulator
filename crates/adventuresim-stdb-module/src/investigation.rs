@@ -220,6 +220,7 @@ pub struct PhysicalEvidenceInspectionActionReceipt {
 struct PersistedBestiaryLoreResult {
     category: BestiaryCategory,
     support_bps: u16,
+    diagnostic_kind: Option<String>,
     interpretation: String,
 }
 
@@ -230,6 +231,9 @@ fn parse_bestiary_lore_results(payload: &str) -> Result<Vec<PersistedBestiaryLor
     if results.iter().any(|result| {
         !categories.insert(result.category)
             || result.support_bps > 10_000
+            || result.diagnostic_kind.as_ref().is_some_and(|kind| {
+                adventuresim_core::bestiary::EvidenceKind::try_new(kind).is_err()
+            })
             || result.interpretation.trim().is_empty()
             || result.interpretation.len() > 1_024
     }) {
@@ -275,6 +279,7 @@ fn successful_bestiary_lore_results(
         .map(|implication| PersistedBestiaryLoreResult {
             category: implication.category,
             support_bps: implication.support_bps,
+            diagnostic_kind: implication.diagnostic_kind.clone(),
             interpretation: implication.interpretation.clone(),
         })
         .collect()
@@ -6719,6 +6724,7 @@ mod tests {
         let first_results = serde_json::to_string(&vec![PersistedBestiaryLoreResult {
             category: BestiaryCategory::Beast,
             support_bps: 10_000,
+            diagnostic_kind: Some("pawprints".into()),
             interpretation: "This appears to be a canine print.".into(),
         }])
         .unwrap();
@@ -6740,11 +6746,13 @@ mod tests {
                 PersistedBestiaryLoreResult {
                     category: BestiaryCategory::Beast,
                     support_bps: 10_000,
+                    diagnostic_kind: Some("pawprints".into()),
                     interpretation: "This duplicate must not create another chip.".into(),
                 },
                 PersistedBestiaryLoreResult {
                     category: BestiaryCategory::Werekin,
                     support_bps: 6_500,
+                    diagnostic_kind: Some("pawprints".into()),
                     interpretation: "The print could have been made by a transformed werekin."
                         .into(),
                 },
@@ -6800,6 +6808,7 @@ mod tests {
             vec![PersistedBestiaryLoreResult {
                 category: BestiaryCategory::Beast,
                 support_bps: 10_000,
+                diagnostic_kind: Some("pawprints".into()),
                 interpretation: "Must remain private because physical inspection failed.".into(),
             }],
         )
@@ -6815,12 +6824,14 @@ mod tests {
                 category: BestiaryCategory::Beast,
                 support_bps: 10_000,
                 lore_difficulty_milli: 1_000,
+                diagnostic_kind: Some("pawprints".into()),
                 interpretation: "This appears to be a canine print.".into(),
             },
             BestiaryEvidenceImplication {
                 category: BestiaryCategory::Werekin,
                 support_bps: 6_500,
                 lore_difficulty_milli: 2_000,
+                diagnostic_kind: Some("pawprints".into()),
                 interpretation: "A transformed werekin is possible.".into(),
             },
         ];
@@ -6839,6 +6850,7 @@ mod tests {
         let serialized = serde_json::to_string(&PersistedBestiaryLoreResult {
             category: BestiaryCategory::Beast,
             support_bps: 10_000,
+            diagnostic_kind: Some("pawprints".into()),
             interpretation: "This appears to be a canine print.".into(),
         })
         .unwrap();
