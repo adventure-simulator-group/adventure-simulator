@@ -20,14 +20,15 @@ use crate::character::{character, character__view};
 use crate::condition::{character_morale_source__view, morale_event};
 use crate::investigation::{investigation_belief__view, investigation_evidence_knowledge__view};
 use crate::strategic::{
-    dialogue_session__view, quest_generation_authority__view, strategic_gateway_authority__view,
+    dialogue_event__view, dialogue_session__view, quest_generation_authority__view,
+    strategic_gateway_authority__view,
 };
 use crate::time::character_time__view;
 use crate::{
     character_attributes, character_capability, character_morale_source, character_personality,
-    character_skills, character_strategic_condition, character_time, dialogue_session,
-    investigation_belief, investigation_evidence_knowledge, quest_generation_authority,
-    settlement_npc, settlement_npc_presence,
+    character_skills, character_strategic_condition, character_time, dialogue_event,
+    dialogue_session, investigation_belief, investigation_evidence_knowledge,
+    quest_generation_authority, settlement_npc, settlement_npc_presence,
 };
 
 pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
@@ -489,6 +490,19 @@ fn observer_has_witness_approach_basis(
     conflict_counts.into_values().any(|count| count >= 2)
 }
 
+fn witness_quest_dialogue_engaged(
+    ctx: &ReducerContext,
+    capability: &DialogueWitnessCapability,
+) -> bool {
+    !capability.public_case_id.is_empty()
+        && ctx
+            .db
+            .dialogue_event()
+            .session_id()
+            .filter(&capability.session_id)
+            .any(|event| event.response_id == "hear-referred-testimony")
+}
+
 #[view(accessor = backend_dialogue_witness_capabilities, public)]
 pub fn backend_dialogue_witness_capabilities(
     ctx: &ViewContext,
@@ -507,6 +521,16 @@ pub fn backend_dialogue_witness_capabilities(
                 .id()
                 .find(&capability.session_id)?;
             if session.state != "active" {
+                return None;
+            }
+            if capability.public_case_id.is_empty()
+                || !ctx
+                    .db
+                    .dialogue_event()
+                    .session_id()
+                    .filter(&capability.session_id)
+                    .any(|event| event.response_id == "hear-referred-testimony")
+            {
                 return None;
             }
             let now = ctx
@@ -1188,6 +1212,11 @@ fn require_witness_social_action(
         .id()
         .find(&format!("{session_id}:{observer_character_id}"))
         .ok_or("Dialogue has no witness social capability")?;
+    if !witness_quest_dialogue_engaged(ctx, &capability) {
+        return Err(
+            "Witness approaches are available only after hearing this quest testimony".into(),
+        );
+    }
     let now = ctx
         .db
         .character_time()
@@ -3547,6 +3576,26 @@ mod contract_tests {
         assert!(source.contains("investigation_evidence_knowledge"));
         assert!(source.contains("investigation_belief"));
         assert!(approach.contains("current_morale"));
+    }
+
+    #[test]
+    fn witness_controls_require_current_session_quest_testimony() {
+        let source = include_str!("social.rs");
+        let projection = source
+            .split("pub fn backend_dialogue_witness_capabilities")
+            .nth(1)
+            .and_then(|tail| tail.split("fn witness_social_cooldown_id").next())
+            .expect("witness projection");
+        assert!(projection.contains("capability.public_case_id.is_empty()"));
+        assert!(projection.contains("event.response_id == \"hear-referred-testimony\""));
+
+        let requirement = source
+            .split("fn require_witness_social_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn finish_witness_social_action").next())
+            .expect("witness action requirement");
+        assert!(requirement.contains("witness_quest_dialogue_engaged"));
+        assert!(requirement.contains("only after hearing this quest testimony"));
     }
 
     #[test]

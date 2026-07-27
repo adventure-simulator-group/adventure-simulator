@@ -45,6 +45,7 @@ test("witness social controls use observer-safe projections and authoritative ro
   assert.match(source, /api\/dialogue\/approach/);
   assert.match(source, /expected_revision:\s*binding\.revision/);
   assert.match(source, /possible pressure, though it may have nothing to do with this account/);
+  assert.doesNotMatch(source, /Relationship:|Familiarity:|Demeanor:/);
   assert.doesNotMatch(source, /has_bound_concern|diagnosis_correct|success_chance|target_transparency/);
 });
 

@@ -72,9 +72,6 @@ struct TopicRow {
 #[derive(Deserialize)]
 struct WitnessSocialRow {
     npc_id: String,
-    affinity_band: String,
-    familiarity_band: String,
-    morale_band: String,
     insight_available: bool,
     pressure_cue: String,
     last_outcome: String,
@@ -166,9 +163,6 @@ struct ConversationView {
 #[derive(Serialize)]
 struct WitnessSocialView {
     npc_id: String,
-    affinity: String,
-    familiarity: String,
-    morale: String,
     insight_available: bool,
     pressure_cue: String,
     last_outcome: String,
@@ -727,9 +721,6 @@ async fn build_view(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .map(|social| WitnessSocialView {
             npc_id: social.npc_id,
-            affinity: social.affinity_band,
-            familiarity: social.familiarity_band,
-            morale: social.morale_band,
             insight_available: social.insight_available,
             pressure_cue: social.pressure_cue,
             last_outcome: social.last_outcome,

@@ -107,10 +107,6 @@
     panel.className = "dialogue-witness-social";
     panel.dataset.dialogueScripted = "true";
     panel.setAttribute("aria-label", "Conversation approach");
-    const summary = document.createElement("p");
-    summary.className = "dialogue-witness-social-summary";
-    summary.textContent = `Relationship: ${social.affinity.replaceAll("_", " ")} · Familiarity: ${social.familiarity.replaceAll("_", " ")} · Demeanor: ${social.morale.replaceAll("_", " ")}`;
-    panel.append(summary);
     if (social.pressure_cue && social.pressure_cue !== "unexamined") {
       const cue = document.createElement("p");
       cue.className = "dialogue-witness-cue";
