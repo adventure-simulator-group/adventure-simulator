@@ -14,6 +14,17 @@ truthful, mistaken, partial, evasive, and deceptive private states.
 Insight therefore produces only a fallible pressure cue. A cue may be present
 for a quest-bound concern or for a benign concern, and may be absent in either
 case. It never declares a lie, changes a proposition, or grants navigation.
+Withholding is sampled independently from reliability, so a primary witness
+may have nothing quest-bound left to reveal. Confrontation approaches become
+available only after that observer has a possible-pressure cue or relevant
+contradiction/evidence knowledge. Once bound testimony is released, later
+Insight checks treat the witness as benign.
+
+Persistent NPC personality and starting morale are sampled once from
+server-private entropy and stored; public NPC IDs do not determine them. Named
+morale-event rows preserve why morale changes. Current settled morale,
+relationship affinity, familiarity, personality, and the chosen approach all
+affect resolution, while browser projections remain qualitative.
 
 Field action skills are deliberately narrow. `FollowTracks` and
 `ReacquireTracks` use the matching Terrain skill; other investigation actions
@@ -516,26 +527,21 @@ each authored atomic category implication against the inspecting character's
 effective Bestiary knowledge. It never substitutes the party's best expert and
 never consults the hidden threat.
 
-Successful category results persist on one canonical observer-owned inspection
-record: category, support basis points, and interpretation. A repeated reducer
-action ID is an idempotent no-op. A later inspection keeps the original
-physical pass/failure, narration, and timestamp, then rechecks current Bestiary
-knowledge and monotonically adds newly successful categories. It never removes
-knowledge or creates another conversation row. A failed physical observation
-can never gain Bestiary results.
+Successful checks persist only observer-owned diagnostic-kind receipts and
+safe interpretations. A failed physical observation creates no diagnostic
+receipt. Generated testimony similarly creates an observer-owned report
+receipt only after the private manifest is revalidated and the testimony is
+actually received. Neither receipt can be supplied by the browser.
 
-The evidence conversation labels these results `Bestiary check(s) succeeded:`.
-Support colors interpolate continuously from pure red at 0%, through pure
-yellow at 50%, to pure green at 100%. Text labels and percentages accompany
-the color. The same structured successes are copied into the single durable
-investigation-journal notice and remain visible after leaving the evidence
-site. Each result is keyboard focusable. Pointer hover and keyboard focus use
-the document-level strategic tooltip layer, with viewport collision handling
-and `aria-describedby`, to list the current enemy types covered by that
-category, separated into main and secondary type relationships. Clicking a
-result pins the tooltip. Hovering or focusing an enemy type within it reveals
-only strengths and weaknesses derived from mechanics consumed by current
-combat; category-level generalizations and unimplemented folklore are omitted.
+Whenever either input changes, the server calls the shared `infer_threats` and
+`qualitative_deductions` functions using only that observer's received reports,
+learned diagnostics, and the public regional context. It persists a deduplicated
+set of possible monster kinds with `strong`, `plausible`, or `weak` support and
+safe provenance. The journal and evidence conversation show those qualitative
+candidates and their sources. Raw scores, basis points, percentages, hidden
+thresholds, failed checks, canonical cause, and hidden evidence IDs never cross
+the gateway. Identical visible report and diagnostic inputs therefore produce
+identical deductions regardless of the hidden cause.
 
 The SpacetimeDB module currently sets `test = false`, so ordinary Cargo tests
 cannot instantiate a reducer database harness. Narrow pure tests cover action

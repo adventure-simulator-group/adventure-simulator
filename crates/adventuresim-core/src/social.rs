@@ -837,6 +837,9 @@ pub struct WitnessApproachInput {
     pub skill_check: f32,
     pub affinity: f32,
     pub familiarity_hours: f32,
+    /// Current settled NPC morale in the ordinary -100..=100 strategic range.
+    /// It contributes at most +/-0.12 chance before the common clamp.
+    pub current_morale: f32,
     pub pressure_diagnosis_correct: Option<bool>,
     pub target_transparency: Transparency,
     pub target_mirth: Mirth,
@@ -877,10 +880,11 @@ pub fn resolve_witness_approach(input: WitnessApproachInput) -> WitnessApproachO
         Transparency::Neutral => 0.5,
         Transparency::Guarded => 0.85,
     };
+    let morale_fit = input.current_morale.clamp(-100.0, 100.0) / 100.0 * 1.5;
     let outcome = resolve_social_attempt(SocialAttempt {
         action: input.approach.social_action(),
         topic: SocialTopic::Defeat,
-        skill_check: input.skill_check + personality_fit,
+        skill_check: input.skill_check + personality_fit + morale_fit,
         affinity: input.affinity,
         familiarity_hours: input.familiarity_hours,
         diagnosis_correct: input.pressure_diagnosis_correct,
@@ -933,6 +937,7 @@ mod tests {
                 skill_check: 2.5,
                 affinity: 0.0,
                 familiarity_hours: 0.0,
+                current_morale: 0.0,
                 pressure_diagnosis_correct: None,
                 target_transparency,
                 target_mirth,
@@ -960,6 +965,7 @@ mod tests {
             skill_check: 5.0,
             affinity: 100.0,
             familiarity_hours: 100.0,
+            current_morale: 0.0,
             pressure_diagnosis_correct: Some(true),
             target_transparency: Transparency::Open,
             target_mirth: Mirth::Neutral,
@@ -969,6 +975,26 @@ mod tests {
         assert!(outcome.succeeded);
         assert!(!outcome.released_bound_testimony);
         assert!(outcome.offered_clarification);
+    }
+
+    #[test]
+    fn settled_witness_morale_mechanically_changes_the_same_approach() {
+        let attempt = |current_morale| {
+            resolve_witness_approach(WitnessApproachInput {
+                approach: WitnessApproach::Reassure,
+                skill_check: 2.5,
+                affinity: 0.0,
+                familiarity_hours: 0.0,
+                current_morale,
+                pressure_diagnosis_correct: Some(true),
+                target_transparency: Transparency::Neutral,
+                target_mirth: Mirth::Neutral,
+                has_bound_concern: true,
+                roll: 0.5,
+            })
+        };
+        assert!(attempt(100.0).succeeded);
+        assert!(!attempt(-100.0).succeeded);
     }
 
     #[test]

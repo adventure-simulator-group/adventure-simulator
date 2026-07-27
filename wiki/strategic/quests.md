@@ -10,6 +10,12 @@ creatures fit received descriptions and successfully interpreted physical
 clues. Terrain follows and recovers tracks. Insight notices possible pressure
 without certifying truth, while Charm, Command, and Deception offer
 personality-sensitive ways to pursue what a witness has not volunteered.
+Witnesses do not always have quest information withheld, and the wording of an
+initial or released account does not identify its reliability. A character
+must first notice possible pressure or learn a relevant contradiction/clue
+before trying confrontation approaches. Time together builds familiarity and
+affinity; the NPC's privately sampled personality and current morale also
+matter.
 
 Tracks are followed as a short sequence rather than one all-or-nothing check.
 Each successful section contributes a physical finding before the final section
@@ -50,9 +56,10 @@ another person, a place, or a suspicious event. Tracks, wounds, objects, and
 other evidence may support several interpretations until a character has
 enough relevant knowledge.
 
-Bestiary knowledge can identify physical implications without revealing the
-canonical enemy automatically. Failure remains private: the journal records
-safe successful observations rather than hidden thresholds or failed checks.
+Bestiary combines reports a character has actually received with diagnostic
+clues that character successfully learned. The evidence view and journal list
+possible monster kinds with qualitative support and provenance. Failure,
+numeric scores, and the canonical enemy remain private.
 
 Different routes may reach the same finale. A failed lead does not delete an
 independent route, and a later correction does not rewrite what the character
