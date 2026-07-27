@@ -19,10 +19,13 @@ pub fn routes() -> Router<AppState> {
         .route("/api/dialogue/join", post(join))
         .route("/api/dialogue/insight", post(witness_insight))
         .route("/api/dialogue/approach", post(witness_approach))
-        .route("/api/dialogue/spend-time", post(spend_time))
         .route(
             "/api/settlements/{settlement_id}/locations/{location_id}/npcs",
             get(location_npcs),
+        )
+        .route(
+            "/api/settlements/{settlement_id}/locations/{location_id}/npcs/{npc_id}/social",
+            get(npc_social).post(chat_with_npc),
         )
 }
 
@@ -116,6 +119,34 @@ struct NpcView {
     initials: String,
     description: String,
     is_default: bool,
+}
+
+#[derive(Deserialize)]
+struct NpcSocialRelationshipRow {
+    affinity_band: String,
+    familiarity_band: String,
+    morale_band: String,
+}
+
+#[derive(Deserialize)]
+struct SocialChatReceiptRow {
+    outcome: String,
+}
+
+#[derive(Serialize)]
+struct NpcSocialView {
+    npc_id: String,
+    name: String,
+    affinity: String,
+    familiarity: String,
+    morale: String,
+    last_outcome: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NpcChatRequest {
+    requested_minutes: u64,
+    action_id: String,
 }
 
 #[derive(Serialize)]
@@ -334,6 +365,156 @@ async fn location_npcs(
     }).collect::<Vec<_>>();
     views.sort_by_key(|view| (!view.is_default, view.name.clone()));
     Ok(Json(views))
+}
+
+async fn available_social_npc(
+    state: &AppState,
+    character_id: u64,
+    settlement_id: &str,
+    location_id: &str,
+    npc_id: &str,
+) -> Result<SettlementNpcRow, StatusCode> {
+    let character = state
+        .db
+        .query_one::<crate::spacetimedb::Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    if character.current_settlement_id.as_deref() != Some(settlement_id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let settlement = state
+        .db
+        .query_one::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(settlement_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if !npc_location_is_navigable(&settlement.economy, &settlement.category, location_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let npc = state
+        .db
+        .query_one::<SettlementNpcRow>(&format!(
+            "SELECT * FROM backend_settlement_npcs WHERE id = {}",
+            sql_string_literal(npc_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .filter(|npc| npc.home_settlement_id == settlement_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let minute = state
+        .db
+        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
+            "SELECT * FROM character_time WHERE character_id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .map_or(720, |time| time.minutes)
+        % 1_440;
+    let present = state
+        .db
+        .query::<NpcPresenceRow>(&format!(
+            "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
+            sql_string_literal(npc_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .into_iter()
+        .any(|presence| {
+            presence.settlement_id == settlement_id
+                && presence.location_id == location_id
+                && u64::from(presence.start_minute) <= minute
+                && minute < u64::from(presence.end_minute)
+        });
+    present.then_some(npc).ok_or(StatusCode::CONFLICT)
+}
+
+async fn npc_social_view(
+    state: &AppState,
+    character_id: u64,
+    npc: SettlementNpcRow,
+    last_outcome: Option<String>,
+) -> Result<NpcSocialView, StatusCode> {
+    let relationship = state
+        .db
+        .query_one::<NpcSocialRelationshipRow>(&format!(
+            "SELECT * FROM backend_settlement_npc_relationships WHERE observer_character_id = {character_id} AND npc_id = {}",
+            sql_string_literal(&npc.id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(NpcSocialView {
+        npc_id: npc.id,
+        name: npc.name,
+        affinity: relationship
+            .as_ref()
+            .map_or_else(|| "reserved".into(), |row| row.affinity_band.clone()),
+        familiarity: relationship
+            .as_ref()
+            .map_or_else(|| "new".into(), |row| row.familiarity_band.clone()),
+        morale: relationship
+            .as_ref()
+            .map_or_else(|| "uncertain".into(), |row| row.morale_band.clone()),
+        last_outcome,
+    })
+}
+
+async fn npc_social(
+    State(state): State<AppState>,
+    Path((settlement_id, location_id, npc_id)): Path<(String, String, String)>,
+    session: Session,
+) -> Result<Json<NpcSocialView>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    let npc =
+        available_social_npc(&state, character_id, &settlement_id, &location_id, &npc_id).await?;
+    Ok(Json(
+        npc_social_view(&state, character_id, npc, None).await?,
+    ))
+}
+
+async fn chat_with_npc(
+    State(state): State<AppState>,
+    Path((settlement_id, location_id, npc_id)): Path<(String, String, String)>,
+    session: Session,
+    Json(request): Json<NpcChatRequest>,
+) -> Result<Json<NpcSocialView>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    if !(15..=8 * 60).contains(&request.requested_minutes) || request.requested_minutes % 15 != 0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let npc =
+        available_social_npc(&state, character_id, &settlement_id, &location_id, &npc_id).await?;
+    state
+        .db
+        .call(
+            "spend_time_with_settlement_npc",
+            &[
+                json!(character_id),
+                json!(&npc_id),
+                json!(request.requested_minutes),
+                json!(&request.action_id),
+            ],
+        )
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
+    let receipt = state
+        .db
+        .query_one::<SocialChatReceiptRow>(&format!(
+            "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {character_id}",
+            sql_string_literal(&format!("{character_id}:{}", request.action_id))
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(Json(
+        npc_social_view(&state, character_id, npc, Some(receipt.outcome)).await?,
+    ))
 }
 
 async fn build_view(
@@ -733,37 +914,6 @@ async fn witness_approach(
                 json!(character_id),
                 json!(&request.session_id),
                 json!(request.approach),
-                json!(request.action_id),
-                json!(request.expected_revision),
-            ],
-        )
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
-    Ok(Json(
-        build_view(&state, character_id, &request.session_id).await?,
-    ))
-}
-
-#[derive(Deserialize)]
-struct SpendTimeRequest {
-    session_id: String,
-    action_id: String,
-    expected_revision: u64,
-}
-
-async fn spend_time(
-    State(state): State<AppState>,
-    session: Session,
-    Json(request): Json<SpendTimeRequest>,
-) -> Result<Json<ConversationView>, StatusCode> {
-    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
-    state
-        .db
-        .call(
-            "spend_dialogue_time_with_witness",
-            &[
-                json!(character_id),
-                json!(&request.session_id),
                 json!(request.action_id),
                 json!(request.expected_revision),
             ],

@@ -143,6 +143,11 @@ pub fn party_social_dialog(
         location.base_path(),
         selected.id
     ));
+    let chat_href = location.preserve_building(format!(
+        "{}/party/{}/social/chat",
+        location.base_path(),
+        selected.id
+    ));
     let affinity_label = match social.affinity {
         value if value >= 50.0 => "Devoted",
         value if value >= 15.0 => "Warm",
@@ -179,6 +184,28 @@ pub fn party_social_dialog(
                 }
             }
             @if !is_self {
+                (sidebar_section("Spend time together", html! {
+                    form class="social-chat-activity" method="post" action=(&chat_href)
+                        data-social-chat-form data-chat-start-minutes="30" {
+                        label for=(format!("social-chat-duration-{}", selected.id)) {
+                            strong { "Chat" }
+                            span class="text-muted small-copy" {
+                                "An ordinary conversation can strengthen or strain the relationship."
+                            }
+                        }
+                        div class="social-chat-duration" {
+                            input id=(format!("social-chat-duration-{}", selected.id))
+                                type="range" name="requested_minutes" min="15" max="480" step="15"
+                                value="30" data-social-chat-duration
+                                aria-label=(format!("Time spent chatting with {}", selected.name))
+                                aria-valuetext="30 minutes";
+                            output for=(format!("social-chat-duration-{}", selected.id))
+                                data-social-chat-output { "30 minutes" }
+                        }
+                        button type="submit" class="btn btn-primary btn-small"
+                            data-social-chat-submit { "Chat for 30 minutes" }
+                    }
+                }))
                 form class="automatic-social-chat" method="post" action=(&automatic_href) {
                     label {
                         input type="checkbox" name="enabled" value="true"

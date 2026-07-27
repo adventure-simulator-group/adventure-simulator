@@ -128,7 +128,6 @@
         clarified: "They clarify that their concern is unrelated.",
         rapport_improved: "The approach improves the conversation.",
         did_not_land: "The approach does not land.",
-        spent_time: "Time together makes the conversation more familiar.",
       })[social.last_outcome] || "The conversation shifts.";
       panel.append(feedback);
     }
@@ -154,11 +153,6 @@
       control.addEventListener("click", handler, { signal });
       controls.append(control);
     };
-    button("Spend time (30 min)", () => invoke("/api/dialogue/spend-time", {
-      session_id: binding.sessionId,
-      action_id: actionId(),
-      expected_revision: binding.revision,
-    }, "spend time with witness"));
     button("Read demeanor (10 min)", () => invoke("/api/dialogue/insight", {
       session_id: binding.sessionId,
       action_id: actionId(),
@@ -341,7 +335,7 @@
     currentView = null;
     messages?.querySelectorAll("[data-dialogue-scripted]").forEach((node) => node.remove());
     refreshCompletion();
-    npcStrip?.querySelectorAll("button").forEach((candidate) => {
+    npcStrip?.querySelectorAll(".settlement-npc-portrait").forEach((candidate) => {
       const active = candidate === button;
       candidate.classList.toggle("active", active);
       candidate.setAttribute("aria-pressed", String(active));
@@ -351,7 +345,8 @@
       const placeholder = document.createElement("div"); placeholder.className = npc.initials ? "visual-stage-placeholder" : "visual-stage-placeholder npc-portrait-silhouette"; placeholder.setAttribute("aria-hidden", "true"); placeholder.textContent = npc.initials || "";
       const heading = document.createElement("h2"); heading.textContent = npc.name;
       const description = document.createElement("p"); description.textContent = npc.description;
-      npcDescription.replaceChildren(placeholder, heading, description);
+      const social = document.createElement("button"); social.type = "button"; social.className = "npc-social-summary"; social.dataset.openNpcSocial = npc.id; social.textContent = "Morale and relationship"; social.setAttribute("aria-label", `Open social menu for ${npc.name}`);
+      npcDescription.replaceChildren(placeholder, heading, description, social);
     }
     begin();
   };
@@ -368,10 +363,13 @@
       const face = document.createElement("span"); face.className = npc.initials ? "party-portrait-face" : "party-portrait-face npc-portrait-silhouette"; face.setAttribute("aria-hidden", "true"); face.textContent = npc.initials || "";
       const name = document.createElement("span"); name.className = "party-portrait-name settlement-npc-name"; name.textContent = npc.name;
       portrait.append(face, name); button.append(portrait); button.addEventListener("click", () => selectNpc(npc, button));
+      const social = document.createElement("button"); social.type = "button"; social.className = "settlement-npc-social-button"; social.dataset.openNpcSocial = npc.id; social.setAttribute("aria-label", `Open social menu for ${npc.name}`); social.title = `Social — ${npc.name}`;
+      const socialIcon = document.createElement("span"); socialIcon.className = "stat-icon"; socialIcon.style.setProperty("--stat-icon", "url('/static/icons/game/conversation.svg')"); socialIcon.setAttribute("aria-hidden", "true"); social.append(socialIcon);
+      const shell = document.createElement("span"); shell.className = "settlement-npc-portrait-shell"; shell.append(button, social); button._socialShell = shell;
       button.addEventListener("keydown", (event) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); const offset = event.key === 'ArrowRight' ? 1 : -1; buttons[(buttons.indexOf(button) + offset + buttons.length) % buttons.length].focus(); });
       return button;
     });
-    npcStrip.replaceChildren(...buttons);
+    npcStrip.replaceChildren(...buttons.map((button) => button._socialShell));
     const defaultIndex = Math.max(0, people.findIndex((npc) => npc.is_default));
     selectNpc(people[defaultIndex], buttons[defaultIndex]);
   };

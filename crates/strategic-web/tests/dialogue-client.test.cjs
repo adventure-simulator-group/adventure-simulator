@@ -39,7 +39,8 @@ test("client renders only persisted authoritative views and enforces prompt boun
 
 test("witness social controls use observer-safe projections and authoritative routes", () => {
   assert.match(source, /view\.witness_social/);
-  assert.match(source, /api\/dialogue\/spend-time/);
+  assert.doesNotMatch(source, /api\/dialogue\/spend-time/);
+  assert.doesNotMatch(source, /Spend time \(30 min\)/);
   assert.match(source, /api\/dialogue\/insight/);
   assert.match(source, /api\/dialogue\/approach/);
   assert.match(source, /expected_revision:\s*binding\.revision/);
@@ -72,6 +73,9 @@ test("settlement NPCs reuse the circular party portrait structure", () => {
   assert.match(source, /party-portrait-face/);
   assert.match(source, /party-portrait-name settlement-npc-name/);
   assert.match(source, /portrait\.append\(face, name\)/);
+  assert.match(source, /data\.openNpcSocial|dataset\.openNpcSocial/);
+  assert.match(source, /settlement-npc-social-button/);
+  assert.match(source, /npc-social-summary/);
 });
 
 test("NPCs without initials use the neutral person silhouette without losing their accessible name", () => {

@@ -1908,6 +1908,8 @@ body.character-action-dialog-open { overflow: hidden; }
 .character-action-backdrop {
   position: absolute;
   inset: 0;
+  padding: 0;
+  border: 0;
   background: rgb(0 0 0 / 72%);
 }
 .character-action-dialog {
@@ -1959,6 +1961,30 @@ body.character-action-dialog-open { overflow: hidden; }
 .cooking-dialog { width: min(76rem, 100%); padding: 0; }
 .cooking-dialog > .character-action-dialog-header { padding: 1rem 1rem 0; }
 .social-dialog { width: min(40rem, 100%); }
+.social-chat-activity {
+  display: grid;
+  gap: .7rem;
+}
+.social-chat-activity label {
+  display: grid;
+  gap: .2rem;
+}
+.social-chat-duration {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  gap: .75rem;
+  align-items: center;
+}
+.social-chat-duration input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.social-chat-duration output {
+  min-width: 7.5rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
 .automatic-social-chat {
   display: flex;
   align-items: center;
@@ -2354,6 +2380,51 @@ body.character-action-dialog-open { overflow: hidden; }
   padding: 0;
   cursor: pointer;
   font: inherit;
+}
+
+.settlement-npc-portrait-shell {
+  position: relative;
+  display: inline-grid;
+}
+
+.settlement-npc-social-button {
+  position: absolute;
+  z-index: 2;
+  right: -.35rem;
+  bottom: .85rem;
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: .25rem;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  place-items: center;
+  background: var(--tactile-background);
+  box-shadow: var(--tactile-shadow);
+  color: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(.2rem);
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.settlement-npc-portrait-shell:hover .settlement-npc-social-button,
+.settlement-npc-portrait-shell:focus-within .settlement-npc-social-button {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.settlement-npc-social-button .stat-icon { width: 1rem; height: 1rem; }
+.settlement-npc-social-button:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+
+.npc-social-summary {
+  justify-self: center;
+  padding: .35rem .65rem;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: var(--tactile-background);
+  color: inherit;
+  cursor: pointer;
 }
 
 .settlement-npc-portrait:is(.active, [aria-pressed="true"]) .party-portrait-initial {

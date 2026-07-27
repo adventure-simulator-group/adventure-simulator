@@ -313,6 +313,10 @@ pub fn routes() -> Router<AppState> {
             get(party_social).post(perform_social_action),
         )
         .route(
+            "/locations/{kind}/{id}/party/{character_id}/social/chat",
+            post(chat_with_party_member),
+        )
+        .route(
             "/locations/{kind}/{id}/party/{character_id}/social/automatic",
             post(set_automatic_social_chat),
         )
@@ -4484,6 +4488,16 @@ struct SocialActionForm {
 }
 
 #[derive(Deserialize)]
+struct CasualChatForm {
+    requested_minutes: u64,
+}
+
+#[derive(Deserialize)]
+struct BackendSocialChatReceiptRow {
+    outcome: String,
+}
+
+#[derive(Deserialize)]
 struct AutomaticSocialChatForm {
     enabled: Option<String>,
 }
@@ -4569,6 +4583,75 @@ async fn perform_social_action(
     .into_response()
 }
 
+fn casual_chat_action_id(actor_id: u64, target_id: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("chat-{actor_id}-{target_id}-{nanos:x}")
+}
+
+fn valid_casual_chat_minutes(minutes: u64) -> bool {
+    (15..=8 * 60).contains(&minutes) && minutes % 15 == 0
+}
+
+async fn chat_with_party_member(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+    Form(form): Form<CasualChatForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return (StatusCode::UNAUTHORIZED, "Choose a character first").into_response();
+    };
+    if !valid_casual_chat_minutes(form.requested_minutes) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Choose 15 minutes to 8 hours in 15-minute increments",
+        )
+            .into_response();
+    }
+    let action_id = casual_chat_action_id(actor_id, &target_id.to_string());
+    let result = state
+        .db
+        .call(
+            "chat_with_party_member",
+            &[
+                json!(actor_id),
+                json!(target_id),
+                json!(form.requested_minutes),
+                json!(&action_id),
+            ],
+        )
+        .await;
+    let feedback = match result {
+        Ok(()) => state
+            .db
+            .query_one::<BackendSocialChatReceiptRow>(&format!(
+                "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {actor_id}",
+                sql_string_literal(&format!("{actor_id}:{action_id}"))
+            ))
+            .await
+            .ok()
+            .flatten()
+            .map_or("chat_unavailable", |row| match row.outcome.as_str() {
+                "positive" => "chat_positive",
+                "mixed" => "chat_mixed",
+                "negative" => "chat_negative",
+                _ => "chat_unavailable",
+            }),
+        Err(error) => {
+            tracing::warn!(%error, actor_id, target_id, "casual party chat rejected");
+            "chat_unavailable"
+        }
+    };
+    Redirect::to(&building.append_to(format!(
+        "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
+    )))
+    .into_response()
+}
+
 fn social_action_error_feedback(error: &str) -> &'static str {
     if error.contains("needs time before it can be tried again") {
         "cooldown"
@@ -4631,6 +4714,22 @@ fn social_feedback(value: Option<&str>) -> Option<crate::templates::settlement::
         }),
         Some("unavailable") => Some(SocialFeedback {
             message: "The social action could not be completed right now.",
+            is_error: true,
+        }),
+        Some("chat_positive") => Some(SocialFeedback {
+            message: "The conversation brings you closer.",
+            is_error: false,
+        }),
+        Some("chat_mixed") => Some(SocialFeedback {
+            message: "The conversation has warm moments and awkward ones.",
+            is_error: false,
+        }),
+        Some("chat_negative") => Some(SocialFeedback {
+            message: "The conversation leaves some friction between you.",
+            is_error: false,
+        }),
+        Some("chat_unavailable") => Some(SocialFeedback {
+            message: "The conversation could not be completed right now.",
             is_error: true,
         }),
         _ => None,

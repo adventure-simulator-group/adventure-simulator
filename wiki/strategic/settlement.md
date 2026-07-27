@@ -165,6 +165,13 @@ the full skill rail separately shows injury-adjusted current performance.
 Recruitment recommendation matching continues to use the existing capability
 projection; the icon summary is presentation only.
 
+Portrait social affordances open the normal social popup for party members and
+present settlement NPCs. The selected person's morale/relationship area opens
+the same popup. Its ordinary **Chat** activity has a 30-minute default and a
+15-minute duration slider up to eight hours. Quest-specific demeanor reading
+and confrontation approaches are not duplicated there: they appear only while
+the corresponding quest dialogue is active.
+
 A living active character with Physiology 2 or better sees the selected
 character's Physiology surface as a passive, durable notebook derived from
 actual shared-presence spans. It shows quantized Humour readings, recognizable

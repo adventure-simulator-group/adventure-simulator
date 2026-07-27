@@ -17,10 +17,18 @@ social capability for that participant. The gateway projects only qualitative
 relationship, familiarity, demeanor, the fallible pressure cue, safe outcome
 wording, and currently available actions. Hidden concern binding, diagnostic
 correctness, personality fit, checks, rolls, and chances remain private.
-Reading demeanor spends ten strategic minutes; spending time or attempting
-Listen, Reassure, Invoke duty, or Bluff spends thirty. Insight and each
+Reading demeanor spends ten strategic minutes; attempting Listen, Reassure,
+Invoke duty, or Bluff spends thirty. Insight and each
 approach have their own durable 24-hour observer/NPC cooldown, and action
 receipts make retries idempotent across reconnects.
+
+Ordinary conversation is deliberately outside the quest dialogue controls.
+The normal social menu offers a duration-selectable chat with a present local;
+quest-specific Insight and confrontation approaches appear only in the
+relevant active dialogue session. Casual chat can still change that NPC's
+private morale, directional affinity, and familiarity, so time spent getting
+to know someone can affect a later confrontation without revealing whether
+they have quest information.
 
 A successful approach releases only propositions authored as withheld for the
 exact referred witness. Release is persisted through the ordinary generated
