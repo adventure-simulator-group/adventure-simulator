@@ -5,14 +5,28 @@ const test = require("node:test");
 
 const source = fs.readFileSync(path.join(__dirname, "../static/cooking.js"), "utf8");
 const inventoryBrowserSource = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
-const template = fs.readFileSync(path.join(__dirname, "../src/templates/settlement.rs"), "utf8");
+const template = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/trade.rs"), "utf8");
 
 test("cooking stages inventory rows into a bounded pot draft", () => {
   assert.match(source, /data-cooking-stage/);
   assert.match(source, /data-cooking-unstage/);
   assert.match(source, /const staged = new Map\(\)/);
-  assert.match(source, /Math\.min\(entry\.available, entry\.quantity \+ 1\)/);
+  assert.match(source, /Math\.min\(entry\.available, entry\.quantity \+ amountStep\)/);
   assert.match(source, /\.join\(","\)/);
+});
+
+test("preview explains retained-food exceptions and quality inputs", () => {
+  assert.match(source, /bake: 30/);
+  assert.match(source, /15% calories lost to drippings/);
+  assert.match(source, /below 2% of ingredient mass: quality drops one tier/);
+  assert.match(source, /eaten now; leftovers are discarded/);
+  assert.match(source, /stewWaterMl/);
+  assert.match(source, /kg water included in flavor mass/);
+  assert.match(source, /culinaryFatMass < mass \* panFatRatio/);
+  assert.match(source, /flavor score/);
+  assert.match(template, /data-cooking-preview/);
+  assert.match(template, /data-culinary-fat/);
+  assert.match(template, /data-pan-fat-ratio/);
 });
 
 test("cook exposes the shared duration formula to hover and accessibility", () => {

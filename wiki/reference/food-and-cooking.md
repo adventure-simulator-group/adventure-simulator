@@ -10,9 +10,10 @@ Food is authoritative strategic inventory. `ItemKind::Food` identifies ordinary
 foods, while edible herbalist ingredients may retain `Ingredient`. Every
 acquisition creates one independent quantity-one `food_lot` per purchased or
 found unit; food lots never merge merely because item IDs match. The inventory
-row identifies the batch, while mass, calories, value, and fractional ingredient
-provenance live on the lot. Partly eaten lots retain quantity one and scale all
-four conserved properties together with their fixed-point remaining amount.
+row identifies the batch, while mass, calories, value, quality, five flavor
+potencies, and fractional ingredient provenance live on the lot. Partly eaten
+lots retain quantity one and scale every extensive property (including flavor)
+together with their fixed-point remaining amount; quality remains unchanged.
 Transfers and sales therefore
 move a complete remaining batch rather than manufacturing rounded sub-units.
 Food definitions are validated before either personal or party inventory is
@@ -24,7 +25,10 @@ The standard meal provides 3,000 kcal, so two meals cover the ordinary
 6,000-kcal daily demand.
 
 The public lot records its inventory link, display name, preparation method,
-ingredient provenance, mass, useful calories, value, and creation minute. A
+ingredient provenance, quality, salty/spicy/sweet/sour/savory potency, mass,
+useful calories, value, and creation minute. Quality uses the same name colors
+as equipment and food tooltips use the plain label `Quality N`. Merchant
+catalog quality is copied to every acquired lot. A
 separate private row anchors microbial concentration and exponential growth.
 Growth is evaluated lazily from strategic time and bounded; there is no spoilage
 tick. Initial loads are deterministic server-random log-scale samples. Raw meat
@@ -57,13 +61,19 @@ center shows a placeholder cooking scene, Cook and Cancel, and a horizontal
 icon row for pan-fry, stew, roast/skewer, and bake. Roast is always available.
 Pan-fry requires a pan, stew a pot plus water, and bake a portable oven. Stew
 draws pooled party water before carried water. Tools are retained. Inns sell
-the food ingredients and reusable implements needed by this interface.
+the food ingredients and reusable implements needed by this interface. The
+preview reports estimated duration and flavor score and calls out roast calorie
+loss, a fatless pan, and stew disposal; the reducer remains authoritative.
 
 Duration is method setup plus the slowest ingredient's safety/doneness time plus
 square-root batch scaling. The reducer preflights actor, state, selections,
 tools, water, and arithmetic before mutation. It advances neutral strategic
-time, consumes inputs, creates a derived meal, and immediately attempts to eat
-it up to the one-day fullness cap. Only the registered strategic gateway may
+time, and consumes inputs. Pan-fry, roast, and bake create a carried derived
+food lot; cooking no longer also eats those meals. Stew is the sole exception:
+soup is immediately eaten up to the one-day fullness cap because it cannot be
+carried, and any remainder is discarded. Consumed stew water contributes its
+milliliters divided by 1,000 to finished mass before flavor scoring and
+contamination dilution. Only the registered strategic gateway may
 invoke eating or cooking, and tactical actors are rejected. Cooking advances its
 safe time prefix before consuming supplies: a terminal interruption commits the
 elapsed time and terminal event, leaves ingredients and water untouched, and
@@ -77,8 +87,33 @@ payment rules as the other non-religious settlement professions.
 The authoritative Cooking check includes the documented one-pass Knife
 transfer after direct Cooking study. Each rank removes 6% of setup and batch
 overhead, to a maximum 30%; ingredient safety time is never shortened. Useful
-calorie retention rises from 95% at rank zero to 99% at rank five, while meal
-quality scales derived market value from 95% to 110% of ingredient value.
+calorie retention rises from 95% at rank zero to 99% at rank five. Roasting
+then retains 85% of those calories to represent rendered fat dripping from the
+skewer. Baking has 30 minutes of setup, compared with 5 for pan-fry, 12 for
+stew, and 7 for roast.
+
+Flavor potency is measured in mass-equivalent kilograms: one gram of salt
+contributes enough salty potency for 100 grams of food. The shared objective
+for an active flavor is potency equal to finished food mass. Flavors below
+target score linearly (`5 * ratio`); excess is punished quadratically
+(`5 / ratio²`). Each method has a fixed target mask, and an omitted required
+flavor scores zero rather than disappearing from the equal-weight average.
+Pan-fry and roast score salty, spicy, and savory flavors; stew also
+scores sour. Baking deterministically scores the stronger of sweet and savory,
+alongside any salt or spice, allowing both pies and savory bread. These shared
+method rules are the future insertion point for character preference modifiers.
+
+The continuous Cooking check first maps to a discrete chef tier:
+`floor(check)`, with checks below 1 occupying novice tier 1. Final meal quality
+is the lower of that chef tier and floored aggregate flavor score, with tier 1
+as the five-tier item-system floor. Pan-frying subtracts one tier, never below
+1, unless actually staged ingredients tagged `culinary_fat` comprise at least
+2% of selected ingredient mass; merely owning or adding a trace of butter or
+lard does not count. Quality tiers multiply derived market
+value by 0.80, 0.90, 1.00, 1.15, or 1.35. The catalog includes low-calorie
+seasonings (salt, mustard, horseradish, vinegar, garlic, and sage), sweet and
+sour ingredients (honey and sour cherries), naturally savory meat and
+mushrooms, and calorie-dense butter and lard.
 `cooked_meal` is a terminal preparation state and cannot be selected as an
 ingredient. This prevents repeated cooking from compounding the value or
 nutrition multiplier.

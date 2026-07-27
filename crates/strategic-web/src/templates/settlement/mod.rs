@@ -41,7 +41,7 @@ pub use trade::{
     party_inventory_page, party_pool_page, religion_page,
 };
 pub(in crate::templates) use trade::{
-    inventory_footer_controls, item_name_with_quality, transfer_glyph,
+    inventory_footer_controls, item_name_with_food_lot, item_name_with_quality, transfer_glyph,
 };
 pub(crate) use travel::{
     CampTravelDestination, map_destination_detail, map_destination_list_with_rest,

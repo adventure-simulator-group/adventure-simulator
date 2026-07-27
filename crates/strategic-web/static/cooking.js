@@ -1,5 +1,5 @@
 (() => {
-  const setup = { "pan-fry": 5, stew: 12, roast: 7, bake: 15 };
+  const setup = { "pan-fry": 5, stew: 12, roast: 7, bake: 30 };
   const fullAmount = 1_000_000;
   const amountStep = 250_000;
 
@@ -42,10 +42,12 @@
       const ids = form.querySelector("[data-cooking-ids]");
       const amounts = form.querySelector("[data-cooking-amounts]");
       const empty = form.querySelector("[data-cooking-pot-empty]");
+      const preview = form.querySelector("[data-cooking-preview]");
       const potBrowser = form.querySelector('[data-inventory-browser="cooking-pot-left"]');
       const potBody = potBrowser?.querySelector("tbody");
       const inventoryBrowser = form.querySelector('[data-inventory-browser="cooking-inventory-right"]');
       const staged = new Map();
+      const panFatRatio = Math.max(0, Number(form.dataset.panFatRatio) || 0.02);
 
       const update = () => {
         const method = form.querySelector("[data-cooking-method]:checked");
@@ -63,8 +65,53 @@
           const slowest = Math.max(...values.map((value) => value.safety));
           const batch = Math.ceil(Math.sqrt(Math.max(0, mass - 0.5)) * 8);
           const duration = setup[method.value] + slowest + batch;
-          reason = `Cooking time: ${duration} minutes`;
+          const stewWaterMl = method.value === "stew"
+            ? 500 + values.reduce((sum, value) => sum + value.quantity / fullAmount, 0) * 100
+            : 0;
+          const finishedMass = mass + stewWaterMl / 1000;
+          const totals = ["salty", "spicy", "sweet", "sour", "savory"].reduce((result, flavor) => {
+            result[flavor] = values.reduce(
+              (sum, value) => sum + value[flavor] * value.quantity / value.available,
+              0,
+            );
+            return result;
+          }, {});
+          let active = Object.entries(totals);
+          if (method.value === "bake") {
+            const baked = totals.sweet >= totals.savory ? "sweet" : "savory";
+            active = active.filter(([flavor]) => ["salty", "spicy", baked].includes(flavor));
+          } else if (method.value === "stew") {
+            active = active.filter(([flavor]) => ["salty", "spicy", "sour", "savory"].includes(flavor));
+          } else {
+            active = active.filter(([flavor]) => ["salty", "spicy", "savory"].includes(flavor));
+          }
+          const scores = active.map(([, value]) => {
+            const ratio = value / finishedMass;
+            return ratio <= 1 ? 5 * ratio : 5 / (ratio * ratio);
+          });
+          const flavorQuality = scores.length
+            ? scores.reduce((sum, score) => sum + score, 0) / scores.length
+            : 1;
+          const culinaryFatMass = values.reduce(
+            (sum, value) => sum + (value.culinaryFat
+              ? value.mass * value.quantity / value.available
+              : 0),
+            0,
+          );
+          const notes = [
+            `${duration} min before chef-speed adjustment`,
+            `flavor score ${formatNumber(flavorQuality)}/5`,
+            "final quality is capped by Cooking skill",
+          ];
+          if (method.value === "roast") notes.push("15% calories lost to drippings");
+          if (method.value === "pan-fry" && culinaryFatMass < mass * panFatRatio) {
+            notes.push("staged culinary fat is below 2% of ingredient mass: quality drops one tier");
+          }
+          if (method.value === "stew") notes.push("eaten now; leftovers are discarded");
+          if (method.value === "stew") notes.push(`${formatNumber(stewWaterMl / 1000)} kg water included in flavor mass`);
+          reason = notes.join(" · ");
         }
+        if (preview) preview.textContent = reason;
         submit.disabled = !method || values.length === 0;
         submit.title = reason;
         submit.setAttribute("aria-label", submit.disabled ? `Cook unavailable. ${reason}` : `Cook. ${reason}`);
@@ -159,6 +206,12 @@
             available,
             mass: Math.max(0, Number(stage.dataset.mass) || 0),
             safety: Math.max(0, Number(stage.dataset.safety) || 0),
+            culinaryFat: stage.dataset.culinaryFat === "true",
+            salty: Math.max(0, Number(stage.dataset.salty) || 0),
+            spicy: Math.max(0, Number(stage.dataset.spicy) || 0),
+            sweet: Math.max(0, Number(stage.dataset.sweet) || 0),
+            sour: Math.max(0, Number(stage.dataset.sour) || 0),
+            savory: Math.max(0, Number(stage.dataset.savory) || 0),
             value: Math.max(0, Number(sourceRow.querySelector(".inventory-gold")?.textContent) || 0),
             quantity: 0,
             sourceRow,

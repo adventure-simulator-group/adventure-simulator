@@ -11,6 +11,7 @@ function fixture() {
       <main>
         <input type="radio" data-cooking-method value="roast" checked>
         <form><input data-cooking-ids><input data-cooking-amounts>
+          <p data-cooking-preview></p>
           <button type="submit" data-cook-submit disabled>Cook</button></form>
       </main>
       <aside class="right-sidebar">
@@ -46,6 +47,8 @@ test("ingredients transfer between inventory and pot and drive the cooking form"
   assert.equal(form.querySelector("[data-cooking-pot-id='42'] .inventory-count").textContent, "0.25");
   assert.match(form.querySelector("[data-cooking-source='42'] .inventory-count").textContent, /-0.25/);
   assert.equal(form.querySelector("[data-cook-submit]").disabled, false);
+  assert.match(form.querySelector("[data-cooking-preview]").textContent, /flavor score 0\/5/);
+  assert.match(form.querySelector("[data-cooking-preview]").textContent, /15% calories lost/);
   assert.equal(form.querySelector("[data-cooking-pot-empty]").hidden, true);
 
   const unstage = form.querySelector("[data-cooking-unstage]");

@@ -2,7 +2,8 @@ use maud::{Markup, html};
 
 use super::trade::service_page;
 use crate::spacetimedb::{
-    Character, CharacterCondition, CharacterLimbs, CharacterStats, InventoryItem, Settlement,
+    Character, CharacterCondition, CharacterLimbs, CharacterStats, FoodLot, InventoryItem,
+    Settlement,
 };
 use crate::templates::decorative_game_icon;
 
@@ -111,6 +112,7 @@ pub fn rest_result_page(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     logged_in_as: Option<&str>,
     at_inn: bool,
@@ -126,6 +128,7 @@ pub fn rest_result_page(
         active_character,
         inventory,
         items,
+        food_lots,
         party_members,
         logged_in_as,
         None,

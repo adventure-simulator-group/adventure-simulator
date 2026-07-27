@@ -1535,10 +1535,36 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
 .service-inventory-area {
   flex: 1;
   min-height: 0;
+  overflow: visible;
 }
 
 .service-inventory-area .sidebar-section {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
   margin-bottom: 0;
+}
+
+.service-inventory-area .smith-wares-scroll {
+  flex: 1 1 auto;
+}
+
+.inn-rest-panel {
+  flex: 0 1 48%;
+  min-height: min(17rem, 48%);
+  max-height: 52%;
+  margin-top: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-top: 3px double var(--border-color);
+  background: var(--bg-secondary);
+  scrollbar-gutter: stable;
+}
+
+.inn-rest-panel > .rest-service-menu {
+  min-height: 100%;
+  border-top: 0;
 }
 
 .service-left-sidebar .sidebar-header {
@@ -4966,6 +4992,14 @@ body.chat-resizing {
     flex: 0 0 auto;
     height: auto;
     min-height: 0;
+  }
+  .service-left-sidebar .service-inventory-area .sidebar-section {
+    height: auto;
+  }
+  .inn-rest-panel {
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
   }
   .party-portrait-overlay {
     right: 0.5rem;

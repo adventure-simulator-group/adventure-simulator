@@ -3,9 +3,9 @@ use maud::{Markup, html};
 use super::{
     character_details::religion_name,
     context::LocationView,
-    trade::{item_name_with_quality, trade_inventory_table_header},
+    trade::{item_name_with_food_lot, trade_inventory_table_header},
 };
-use crate::spacetimedb::{Character, InventoryItem};
+use crate::spacetimedb::{Character, FoodLot, InventoryItem};
 use crate::templates::{decorative_game_icon, item_display_name, item_type_icon, sidebar_section};
 
 #[derive(Debug, Clone, Default)]
@@ -433,6 +433,7 @@ pub(super) fn inventory_rail(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     trade_action: Option<(&str, &str)>,
     _show_repair: bool,
 ) -> Markup {
@@ -450,11 +451,13 @@ pub(super) fn inventory_rail(
                     tbody {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
+                        @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                         @let item_name = item_display_name(&item.item_id);
                         tr class=(if trade_action.is_some() { "trade-inventory-row" } else { "trade-inventory-row inventory-row-readonly" }) {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                             td class="inventory-item-name" {
-                                (item_name_with_quality(&item.item_id, definition))
+                                (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
                                 @if let Some((action, tooltip)) = trade_action {
                                 button type="button" class="trade-transfer trade-transfer-left" disabled
                                     aria-label=(format!("{action} {item_name}"))
@@ -904,6 +907,11 @@ mod tests {
         assert!(css.contains("66%, 74%"));
         assert!(!css.contains("left: -7rem;"));
         assert!(css.contains(".smith-wares-scroll .trade-inventory-table"));
+        assert!(css.contains(".inn-rest-panel"));
+        assert!(css.contains("max-height: 52%;"));
+        assert!(css.contains(".inn-rest-panel > .rest-service-menu"));
+        assert!(css.contains(".service-inventory-area .smith-wares-scroll"));
+        assert!(css.contains("overflow-y: auto;"));
         assert!(css.contains("--inventory-merchant-action-overhang"));
         assert!(css.contains("--inventory-merchant-scrollbar-reserve: 8px;"));
         assert!(css.contains("padding-left: var(--inventory-merchant-scrollbar-reserve);"));

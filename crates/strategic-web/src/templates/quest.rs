@@ -6,7 +6,7 @@ use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseSitePin, BackendInvestigationAction, BattleLootItem,
+    AutoresolveReport, BackendCaseSitePin, BackendInvestigationAction, BattleLootItem, FoodLot,
     InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
 };
 use crate::{
@@ -260,6 +260,7 @@ pub fn quest_location_enemy_page(
     pooled: &[PartyInventoryItem],
     stake: u64,
     items: &[ItemDefinition],
+    food_lots: &[FoodLot],
     targets: &[InventoryQuantityTarget],
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -351,11 +352,13 @@ pub fn quest_location_enemy_page(
                     (InventoryBrowser { namespace: "quest-party-right", show_quantities: true, show_equipped: false, show_condition: false, optional_columns: InventoryColumnSet::All, rows: html! {
                             @for entry in pooled {
                                 @let definition = items.iter().find(|item| item.id == entry.item_id);
+                                @let food_lot = food_lots.iter().find(|lot| lot.party_inventory_item_id == Some(entry.id));
+                                @let display_name = food_lot.map_or_else(|| item_display_name(&entry.item_id), |lot| lot.display_name.clone());
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
                                 @let target = inventory_target(targets, &entry.item_id);
                                 tr class="trade-inventory-row" data-target=(target) {
                                     td class="inventory-item-type" { (item_type_icon(&entry.item_id)) }
-                                    td class="inventory-item-name" { (super::settlement::item_name_with_quality(&entry.item_id, definition)) }
+                                    td class="inventory-item-name" { (super::settlement::item_name_with_food_lot(&entry.item_id, &display_name, definition, food_lot)) }
                                     td class="inventory-count" { (entry.quantity) }
                                     td class="inventory-weight" { (definition.map_or_else(|| "—".to_string(), |item| item.weight.to_string())) }
                                     td class="inventory-gold" { (u64::from(value) * u64::from(entry.quantity)) }
