@@ -10,7 +10,9 @@ use adventuresim_core::{
     },
     strategic_time::MINUTES_PER_DAY,
 };
-use adventuresim_world_schema::{BestiaryCategory, OfficialReligion};
+use adventuresim_world_schema::{
+    BestiaryCategory, OfficialReligion, OralLanguage, WrittenLanguage,
+};
 use maud::{Markup, html};
 
 use super::character_health::stat_icon;
@@ -18,7 +20,482 @@ use crate::spacetimedb::{
     CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, CharacterStats,
     CharacterTrainingSchedule, OrganizationMembership, ScheduleAllocation, Settlement,
 };
-use crate::templates::{game_icon, religion_icon, sidebar_section};
+use crate::templates::{
+    game_icon, religion_icon, religion_icon_path, sidebar_section, stat_icon_path,
+};
+
+const SUMMARY_SKILL_THRESHOLD: f32 = 3.0;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum SummaryIconKind {
+    Mask(String),
+    Monogram {
+        text: &'static str,
+        germanic_style: bool,
+        written: bool,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct SummaryIcon {
+    pub(super) label: String,
+    pub(super) tooltip: String,
+    pub(super) rank: f32,
+    pub(super) kind: SummaryIconKind,
+}
+
+fn finite_rank(rank: f32) -> f32 {
+    if rank.is_finite() {
+        rank.clamp(0.0, 5.0)
+    } else {
+        0.0
+    }
+}
+
+pub(super) fn skill_rank_tier(rank: f32) -> u8 {
+    let rank = finite_rank(rank);
+    if rank <= 0.0 {
+        0
+    } else {
+        rank.ceil().clamp(1.0, 5.0) as u8
+    }
+}
+
+fn social_family_rank(skills: &CharacterSkills, aptitude: f32) -> f32 {
+    [
+        (Skill::Insight, skills.insight_hours),
+        (Skill::Charm, skills.charm_hours),
+        (Skill::Command, skills.command_hours),
+        (Skill::Deception, skills.deception_hours),
+    ]
+    .into_iter()
+    .map(|(skill, hours)| skill.capped_rank_for_aptitude(hours, aptitude))
+    .map(finite_rank)
+    .sum::<f32>()
+        / 4.0
+}
+
+fn terrain_family_rank(skills: &CharacterSkills, aptitude: f32) -> f32 {
+    [
+        Skill::TerrainPlains,
+        Skill::TerrainForest,
+        Skill::TerrainHills,
+        Skill::TerrainUrban,
+    ]
+    .into_iter()
+    .map(|skill| {
+        skill.capped_rank_for_aptitude(
+            CharacterSkillHours(skills).effective_skill_hours(skill),
+            aptitude,
+        )
+    })
+    .map(finite_rank)
+    .sum::<f32>()
+        / 4.0
+}
+
+fn strongest_oral_language(skills: &CharacterSkills) -> OralLanguage {
+    OralLanguage::ALL
+        .into_iter()
+        .max_by(|left, right| {
+            skills
+                .oral_languages
+                .effective(*left)
+                .total_cmp(&skills.oral_languages.effective(*right))
+        })
+        .unwrap_or(OralLanguage::EastCentral)
+}
+
+fn strongest_written_language(skills: &CharacterSkills) -> WrittenLanguage {
+    WrittenLanguage::ALL
+        .into_iter()
+        .max_by(|left, right| {
+            skills
+                .written_languages
+                .effective(*left)
+                .total_cmp(&skills.written_languages.effective(*right))
+        })
+        .unwrap_or(WrittenLanguage::German)
+}
+
+fn primary_religion(
+    skills: &CharacterSkills,
+    context: Option<OfficialReligion>,
+) -> OfficialReligion {
+    context.unwrap_or_else(|| {
+        OfficialReligion::ALL
+            .into_iter()
+            .max_by(|left, right| {
+                skills
+                    .religion_hours
+                    .effective(*left)
+                    .total_cmp(&skills.religion_hours.effective(*right))
+            })
+            .unwrap_or(OfficialReligion::RomanCatholic)
+    })
+}
+
+fn summary_mask_icon(
+    label: impl Into<String>,
+    tooltip: impl Into<String>,
+    rank: f32,
+    category: &str,
+    icon: &str,
+) -> SummaryIcon {
+    SummaryIcon {
+        label: label.into(),
+        tooltip: tooltip.into(),
+        rank: finite_rank(rank),
+        kind: SummaryIconKind::Mask(stat_icon_path(category, icon)),
+    }
+}
+
+fn qualifying_tooltip(family: &str, entries: &[(&str, f32)]) -> String {
+    let mut tooltip = family.to_owned();
+    for (label, rank) in entries {
+        tooltip.push_str(&format!("\n{label} — {:.1}", finite_rank(*rank)));
+    }
+    tooltip
+}
+
+fn push_standalone_summary_icon(
+    icons: &mut Vec<SummaryIcon>,
+    skills: &CharacterSkills,
+    label: &'static str,
+    icon: &'static str,
+    skill: Skill,
+    aptitude: f32,
+) {
+    let rank = finite_rank(skill.capped_rank_for_aptitude(
+        CharacterSkillHours(skills).effective_skill_hours(skill),
+        aptitude,
+    ));
+    if rank >= SUMMARY_SKILL_THRESHOLD {
+        let text = format!("{label} — {rank:.1}");
+        icons.push(summary_mask_icon(&text, &text, rank, "skills", icon));
+    }
+}
+
+/// Compact character-sheet summary based on healthy aptitude-capped ranks.
+/// Injuries are deliberately ignored, matching recruitment-summary semantics.
+/// The equipped profile selects combat leaves, while the shared family helpers
+/// keep aggregation identical to the expandable skill rail.
+pub(super) fn character_summary_icons(
+    capability: Option<&CharacterCapability>,
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    combat_profile: CombatTrainingProfile,
+    religion_context: Option<OfficialReligion>,
+) -> Vec<SummaryIcon> {
+    let (Some(attributes), Some(skills)) = (attributes, skills) else {
+        return Vec::new();
+    };
+    let intelligence = finite_rank(attributes.intelligence);
+    let instinct = finite_rank(attributes.instinct);
+    let arm_agility =
+        finite_rank((attributes.left_arm_agility + attributes.right_arm_agility) * 0.5);
+    let leg_agility =
+        finite_rank((attributes.left_leg_agility + attributes.right_leg_agility) * 0.5);
+    let all_agility = finite_rank(
+        (attributes.left_arm_agility
+            + attributes.right_arm_agility
+            + attributes.left_leg_agility
+            + attributes.right_leg_agility)
+            * 0.25,
+    );
+    let view = CharacterSkillHours(skills);
+    let mut icons = Vec::new();
+
+    for (weight, (label, icon, skill)) in combat_profile.weights()[..9].iter().copied().zip([
+        ("Polearm", "spear-hook", Skill::Polearm),
+        ("Axe", "battle-axe", Skill::Axe),
+        ("Bludgeon", "flanged-mace", Skill::Bludgeon),
+        ("Sword", "sword", Skill::Sword),
+        ("Knife", "bowie-knife", Skill::Knife),
+        ("Bow", "bow-arrow", Skill::Bow),
+        ("Crossbow", "crossbow", Skill::Crossbow),
+        ("Firearm", "musket", Skill::Firearm),
+        ("Throw", "throwing-ball", Skill::Throw),
+    ]) {
+        if weight > 0.0 {
+            let rank = finite_rank(
+                skill.capped_rank_for_aptitude(view.effective_skill_hours(skill), arm_agility),
+            );
+            let label = format!("{label} — {rank:.1}");
+            icons.push(summary_mask_icon(&label, &label, rank, "skills", icon));
+        }
+    }
+
+    if let Some(capability) = capability {
+        let (armor_label, icon) = if capability.full_armor {
+            ("Full armor", "armor-coverage-full")
+        } else if capability.three_quarter_armor {
+            ("Three-quarter armor", "armor-coverage-three-quarter")
+        } else if capability.half_armor {
+            ("Half armor", "armor-coverage-half")
+        } else if capability.quarter_armor {
+            ("Quarter armor", "armor-coverage-quarter")
+        } else {
+            ("No armor", "armor-coverage-0")
+        };
+        let dodge = finite_rank(
+            Skill::Dodge
+                .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Dodge), leg_agility),
+        );
+        let block = finite_rank(
+            Skill::Block
+                .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Block), arm_agility),
+        );
+        let (defense, rank) = if block > dodge {
+            ("Block", block)
+        } else {
+            ("Dodge", dodge)
+        };
+        let label = format!("{armor_label} — {defense} {rank:.1}");
+        let tooltip = format!("{label}\nDodge — {dodge:.1}\nBlock — {block:.1}");
+        icons.push(SummaryIcon {
+            label,
+            tooltip,
+            rank,
+            kind: SummaryIconKind::Mask(format!("/static/icons/game/{icon}.png")),
+        });
+    }
+
+    let social_entries = [
+        (
+            "Insight",
+            finite_rank(
+                Skill::Insight
+                    .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Insight), instinct),
+            ),
+        ),
+        (
+            "Charm",
+            finite_rank(
+                Skill::Charm
+                    .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Charm), instinct),
+            ),
+        ),
+        (
+            "Command",
+            finite_rank(
+                Skill::Command
+                    .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Command), instinct),
+            ),
+        ),
+        (
+            "Deception",
+            finite_rank(
+                Skill::Deception.capped_rank_for_aptitude(
+                    view.effective_skill_hours(Skill::Deception),
+                    instinct,
+                ),
+            ),
+        ),
+    ];
+    let qualifying_social = social_entries
+        .into_iter()
+        .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
+        .collect::<Vec<_>>();
+    if !qualifying_social.is_empty() {
+        let rank = finite_rank(social_family_rank(skills, instinct));
+        icons.push(summary_mask_icon(
+            format!("Social — {rank:.1}"),
+            qualifying_tooltip("Social", &qualifying_social),
+            rank,
+            "skills",
+            "social",
+        ));
+    }
+
+    push_standalone_summary_icon(
+        &mut icons,
+        skills,
+        "Physiology",
+        "physiology",
+        Skill::Physiology,
+        intelligence,
+    );
+    push_standalone_summary_icon(
+        &mut icons,
+        skills,
+        "Cooking",
+        "cooking",
+        Skill::Cooking,
+        intelligence,
+    );
+
+    let primary = primary_religion(skills, religion_context);
+    let religion_entries = OfficialReligion::ALL
+        .into_iter()
+        .map(|religion| {
+            (
+                religion.label(),
+                finite_rank(Skill::Religion.capped_rank_for_aptitude(
+                    skills.religion_hours.effective(religion),
+                    intelligence,
+                )),
+            )
+        })
+        .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
+        .collect::<Vec<_>>();
+    if !religion_entries.is_empty() {
+        let rank = finite_rank(
+            Skill::Religion
+                .capped_rank_for_aptitude(skills.religion_hours.effective(primary), intelligence),
+        );
+        icons.push(SummaryIcon {
+            label: format!("{} religion — {rank:.1}", primary.label()),
+            tooltip: qualifying_tooltip("Religion", &religion_entries),
+            rank,
+            kind: SummaryIconKind::Mask(religion_icon_path(Some(primary.religion_id())).into()),
+        });
+    }
+
+    let bestiary_entries = BestiaryCategory::ALL
+        .into_iter()
+        .map(|category| {
+            (
+                category.label(),
+                finite_rank(Skill::Bestiary.capped_rank_for_aptitude(
+                    skills.bestiary_hours.effective(category),
+                    intelligence,
+                )),
+            )
+        })
+        .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
+        .collect::<Vec<_>>();
+    if !bestiary_entries.is_empty() {
+        let rank =
+            finite_rank(Skill::Bestiary.capped_rank_for_aptitude(
+                skills.bestiary_hours.aggregate_effective(),
+                intelligence,
+            ));
+        icons.push(summary_mask_icon(
+            format!("Bestiary — {rank:.1}"),
+            qualifying_tooltip("Bestiary", &bestiary_entries),
+            rank,
+            "bestiary",
+            "bestiary",
+        ));
+    }
+
+    let oral_entries = OralLanguage::ALL
+        .into_iter()
+        .map(|language| {
+            (
+                language.descriptor().english,
+                finite_rank((skills.oral_languages.effective(language) / 1000.0).min(instinct)),
+            )
+        })
+        .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
+        .collect::<Vec<_>>();
+    if !oral_entries.is_empty() {
+        let strongest = strongest_oral_language(skills);
+        let rank = finite_rank((skills.oral_languages.effective(strongest) / 1000.0).min(instinct));
+        icons.push(SummaryIcon {
+            label: format!("Oral languages — {rank:.1}"),
+            tooltip: qualifying_tooltip("Oral languages", &oral_entries),
+            rank,
+            kind: SummaryIconKind::Monogram {
+                text: "O",
+                germanic_style: false,
+                written: false,
+            },
+        });
+    }
+
+    let written_entries = WrittenLanguage::ALL
+        .into_iter()
+        .map(|language| {
+            (
+                language.descriptor().english,
+                finite_rank(
+                    (skills.written_languages.effective(language) / 1000.0).min(intelligence),
+                ),
+            )
+        })
+        .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
+        .collect::<Vec<_>>();
+    if !written_entries.is_empty() {
+        let strongest = strongest_written_language(skills);
+        let rank =
+            finite_rank((skills.written_languages.effective(strongest) / 1000.0).min(intelligence));
+        icons.push(SummaryIcon {
+            label: format!("Written languages — {rank:.1}"),
+            tooltip: qualifying_tooltip("Written languages", &written_entries),
+            rank,
+            kind: SummaryIconKind::Monogram {
+                text: "W",
+                germanic_style: false,
+                written: true,
+            },
+        });
+    }
+
+    push_standalone_summary_icon(
+        &mut icons,
+        skills,
+        "Stealth",
+        "stealth",
+        Skill::Stealth,
+        all_agility,
+    );
+
+    let terrain_entries = [
+        ("Plains", Skill::TerrainPlains),
+        ("Forest", Skill::TerrainForest),
+        ("Hills", Skill::TerrainHills),
+        ("Urban", Skill::TerrainUrban),
+    ]
+    .into_iter()
+    .map(|(label, skill)| {
+        (
+            label,
+            finite_rank(
+                skill.capped_rank_for_aptitude(view.effective_skill_hours(skill), intelligence),
+            ),
+        )
+    })
+    .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
+    .collect::<Vec<_>>();
+    if !terrain_entries.is_empty() {
+        let rank = finite_rank(terrain_family_rank(skills, intelligence));
+        icons.push(summary_mask_icon(
+            format!("Terrain — {rank:.1}"),
+            qualifying_tooltip("Terrain", &terrain_entries),
+            rank,
+            "terrain",
+            "terrain",
+        ));
+    }
+
+    push_standalone_summary_icon(
+        &mut icons,
+        skills,
+        "Anatomy",
+        "surgeon",
+        Skill::Anatomy,
+        intelligence,
+    );
+    push_standalone_summary_icon(
+        &mut icons,
+        skills,
+        "Tailoring",
+        "sewing-needle",
+        Skill::Tailoring,
+        arm_agility,
+    );
+    push_standalone_summary_icon(
+        &mut icons,
+        skills,
+        "Smithing",
+        "smithing",
+        Skill::Smithing,
+        arm_agility,
+    );
+    icons
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct ActivityPreviewRates {
@@ -580,16 +1057,7 @@ fn terrain_skill_rows(
             skills.terrain_urban_hours,
         ),
     ];
-    let rank = entries
-        .iter()
-        .map(|entry| {
-            entry.2.capped_rank_for_aptitude(
-                CharacterSkillHours(skills).effective_skill_hours(entry.2),
-                aptitude,
-            )
-        })
-        .sum::<f32>()
-        / 4.0;
+    let rank = terrain_family_rank(skills, aptitude);
     let average_hours = entries
         .iter()
         .map(|entry| finite_hours(entry.3))
@@ -700,16 +1168,7 @@ fn oral_language_tooltip(
 }
 
 fn oral_language_family_tooltip(skills: &CharacterSkills) -> SkillTooltip {
-    use adventuresim_world_schema::OralLanguage;
-    let strongest = OralLanguage::ALL
-        .into_iter()
-        .max_by(|left, right| {
-            skills
-                .oral_languages
-                .effective(*left)
-                .total_cmp(&skills.oral_languages.effective(*right))
-        })
-        .unwrap_or(OralLanguage::EastCentral);
+    let strongest = strongest_oral_language(skills);
     let mut tooltip = oral_language_tooltip(skills, strongest);
     tooltip.name = "Oral languages".into();
     tooltip
@@ -733,16 +1192,7 @@ fn written_language_tooltip(
 }
 
 fn written_language_family_tooltip(skills: &CharacterSkills) -> SkillTooltip {
-    use adventuresim_world_schema::WrittenLanguage;
-    let strongest = WrittenLanguage::ALL
-        .into_iter()
-        .max_by(|left, right| {
-            skills
-                .written_languages
-                .effective(*left)
-                .total_cmp(&skills.written_languages.effective(*right))
-        })
-        .unwrap_or(WrittenLanguage::German);
+    let strongest = strongest_written_language(skills);
     let mut tooltip = written_language_tooltip(skills, strongest);
     tooltip.name = "Written languages".into();
     tooltip
@@ -761,17 +1211,7 @@ fn religion_skill_rows(
     }) {
         return html! {};
     }
-    let primary = training_religion.unwrap_or_else(|| {
-        OfficialReligion::ALL
-            .into_iter()
-            .max_by(|left, right| {
-                skills
-                    .religion_hours
-                    .effective(*left)
-                    .total_cmp(&skills.religion_hours.effective(*right))
-            })
-            .unwrap_or(OfficialReligion::RomanCatholic)
-    });
+    let primary = primary_religion(skills, training_religion);
     let primary_id = primary.religion_id();
     let primary_effective = skills.religion_hours.effective(primary);
     let has_details = OfficialReligion::ALL.into_iter().any(|religion| {
@@ -975,11 +1415,7 @@ fn social_skill_rows(
     if entries.iter().all(|entry| entry.3 <= 0.0) {
         return html! {};
     }
-    let rank = entries
-        .iter()
-        .map(|entry| entry.2.capped_rank_for_aptitude(entry.3, aptitude))
-        .sum::<f32>()
-        / entries.len() as f32;
+    let rank = social_family_rank(skills, aptitude);
     let effective_rank = rank * health.clamp(0.0, 1.0);
     let average_hours = entries
         .iter()
@@ -1830,6 +2266,183 @@ mod tests {
             left_leg_agility: value,
             right_leg_agility: value,
         }
+    }
+
+    #[test]
+    fn healthy_summary_orders_unique_weapon_leaves_before_armor_and_noncombat() {
+        let skills = CharacterSkills {
+            sword_hours: 50_000.0,
+            knife_hours: 50_000.0,
+            block_hours: 50_000.0,
+            command_hours: 50_000.0,
+            ..Default::default()
+        };
+        let profile = CombatTrainingProfile {
+            weapons: adventuresim_core::equipment::WeaponSkillDistribution {
+                sword: 1.0,
+                knife: 1.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let capability = CharacterCapability {
+            full_armor: true,
+            ..Default::default()
+        };
+        let icons = character_summary_icons(
+            Some(&capability),
+            Some(&test_attributes(5.0)),
+            Some(&skills),
+            profile,
+            None,
+        );
+        assert!(icons[0].label.starts_with("Sword —"));
+        assert!(icons[1].label.starts_with("Knife —"));
+        assert!(icons[2].label.starts_with("Full armor — Block"));
+        assert!(icons[3].label.starts_with("Social —"));
+        assert_eq!(
+            icons
+                .iter()
+                .filter(|icon| icon.label.starts_with("Sword —"))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn summary_armor_uses_the_stronger_healthy_defense() {
+        let skills = CharacterSkills {
+            dodge_hours: 100.0,
+            block_hours: 50_000.0,
+            ..Default::default()
+        };
+        let icons = character_summary_icons(
+            Some(&CharacterCapability {
+                quarter_armor: true,
+                ..Default::default()
+            }),
+            Some(&test_attributes(5.0)),
+            Some(&skills),
+            CombatTrainingProfile::default(),
+            None,
+        );
+        let armor = icons
+            .iter()
+            .find(|icon| icon.label.starts_with("Quarter armor"))
+            .unwrap();
+        assert!(armor.label.contains("Block"));
+        assert!(armor.tooltip.contains("Dodge —"));
+        assert!(armor.tooltip.contains("Block —"));
+        assert_eq!(
+            armor.kind,
+            SummaryIconKind::Mask("/static/icons/game/armor-coverage-quarter.png".to_owned())
+        );
+    }
+
+    #[test]
+    fn summary_uses_outline_silhouette_for_no_armor() {
+        let icons = character_summary_icons(
+            Some(&CharacterCapability::default()),
+            Some(&test_attributes(5.0)),
+            Some(&CharacterSkills::default()),
+            CombatTrainingProfile::default(),
+            None,
+        );
+        let armor = icons
+            .iter()
+            .find(|icon| icon.label.starts_with("No armor"))
+            .unwrap();
+        assert_eq!(
+            armor.kind,
+            SummaryIconKind::Mask("/static/icons/game/armor-coverage-0.png".to_owned())
+        );
+    }
+
+    #[test]
+    fn summary_groups_only_qualifying_noncombat_leaves() {
+        let skills = CharacterSkills {
+            insight_hours: 50_000.0,
+            charm_hours: 1.0,
+            command_hours: 50_000.0,
+            ..Default::default()
+        };
+        let icons = character_summary_icons(
+            None,
+            Some(&test_attributes(5.0)),
+            Some(&skills),
+            CombatTrainingProfile::default(),
+            None,
+        );
+        let social = icons
+            .iter()
+            .find(|icon| icon.label.starts_with("Social —"))
+            .unwrap();
+        assert!(social.tooltip.contains("Insight —"));
+        assert!(social.tooltip.contains("Command —"));
+        assert!(!social.tooltip.contains("Charm —"));
+        assert_eq!(social.rank, social_family_rank(&skills, 5.0));
+    }
+
+    #[test]
+    fn summary_religion_uses_the_contextual_primary_icon_and_shared_score() {
+        let skills = CharacterSkills {
+            religion_hours: adventuresim_world_schema::ReligionHours {
+                roman_catholic: 50_000.0,
+                lutheran: 50_000.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let icons = character_summary_icons(
+            None,
+            Some(&test_attributes(5.0)),
+            Some(&skills),
+            CombatTrainingProfile::default(),
+            Some(OfficialReligion::Lutheran),
+        );
+        let religion = icons
+            .iter()
+            .find(|icon| icon.label.contains("religion"))
+            .unwrap();
+        assert!(religion.label.starts_with("Lutheran"));
+        assert!(matches!(
+            &religion.kind,
+            SummaryIconKind::Mask(path) if path.contains("luther-rose")
+        ));
+        assert_eq!(
+            primary_religion(&skills, Some(OfficialReligion::Lutheran)),
+            OfficialReligion::Lutheran
+        );
+    }
+
+    #[test]
+    fn summary_missing_or_nonfinite_inputs_degrade_safely() {
+        assert!(
+            character_summary_icons(None, None, None, CombatTrainingProfile::default(), None)
+                .is_empty()
+        );
+        let skills = CharacterSkills {
+            sword_hours: f32::NAN,
+            command_hours: f32::INFINITY,
+            ..Default::default()
+        };
+        let icons = character_summary_icons(
+            None,
+            Some(&test_attributes(f32::NAN)),
+            Some(&skills),
+            CombatTrainingProfile {
+                weapons: adventuresim_core::equipment::WeaponSkillDistribution {
+                    sword: 1.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        );
+        assert_eq!(icons.len(), 1);
+        assert_eq!(icons[0].rank, 0.0);
+        assert!(!icons[0].label.contains("NaN"));
+        assert!(!icons[0].label.contains("inf"));
     }
 
     #[test]

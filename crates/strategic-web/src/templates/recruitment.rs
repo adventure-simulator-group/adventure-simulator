@@ -1,3 +1,4 @@
+use adventuresim_core::strategic_schedule::CombatTrainingProfile;
 use maud::{Markup, html};
 
 use crate::spacetimedb::{
@@ -21,6 +22,7 @@ pub struct RecruitmentApplicant {
     pub attributes: Option<CharacterAttributes>,
     pub skills: Option<CharacterSkills>,
     pub limbs: Option<CharacterLimbs>,
+    pub combat_profile: CombatTrainingProfile,
     pub contribution: PartyCheckSummary,
     pub medical: crate::medical::MedicalPresentation,
 }
@@ -360,7 +362,16 @@ fn role_requests_detail(
                                 }
                             }
                             template data-applicant-left-template {
-                                (character_stats_panel(&applicant.character, applicant.capability.as_ref(), applicant.attributes.as_ref(), applicant.skills.as_ref(), applicant.limbs.as_ref(), &applicant.medical))
+                                (character_stats_panel(
+                                    &applicant.character,
+                                    applicant.capability.as_ref(),
+                                    applicant.attributes.as_ref(),
+                                    applicant.skills.as_ref(),
+                                    applicant.limbs.as_ref(),
+                                    &applicant.medical,
+                                    applicant.combat_profile,
+                                    None,
+                                ))
                             }
                             template data-applicant-center-template {
                                 (character_visual_preview(&applicant.character))

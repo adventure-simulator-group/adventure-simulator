@@ -14,12 +14,15 @@ use crate::spacetimedb::{
     OrganizationMembership, OrganizationPresentation, Outlook, Presentation, SelfKnowledge,
     SelfRegard, Sex, Sociability, Temperance, Transparency,
 };
-use adventuresim_core::skill::Skill;
 use adventuresim_core::starting_character::{
     StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
     StartingPresentation, StartingSex, StartingSlot,
 };
-use adventuresim_core::strategic_schedule::CombatTrainingProfile;
+use adventuresim_core::{
+    equipment::weapon_skill_distribution_for_item,
+    skill::Skill,
+    strategic_schedule::{CombatTrainingProfile, EquippedCombatItem},
+};
 
 /// List all characters and select the adventurer who enters the strategic layer.
 pub fn characters_list_page(characters: &[Character], current_character_id: Option<u64>) -> Markup {
@@ -289,7 +292,7 @@ pub fn character_candidates_page(
         limbs: Some(&candidate.limbs),
         personality: Some(&candidate.personality),
         medical: &medical,
-        combat_profile: CombatTrainingProfile::default(),
+        combat_profile: candidate.combat_profile,
         religion_id: candidate.religion_id.as_deref(),
         training_religion_id: None,
         virtue: 0.0,
@@ -375,6 +378,7 @@ struct CandidatePresentation {
     religion_id: Option<String>,
     organization_memberships: Vec<OrganizationMembership>,
     organization_presentation: Option<OrganizationPresentation>,
+    combat_profile: CombatTrainingProfile,
 }
 
 impl From<&StartingCharacterSpec> for CandidatePresentation {
@@ -470,6 +474,31 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             .filter(|item| item.equipped.is_some())
             .map(|item| item.item_id.as_str())
             .collect::<Vec<_>>();
+        let combat_profile = CombatTrainingProfile::from_equipped_hands(
+            spec.inventory
+                .iter()
+                .filter(|item| {
+                    matches!(
+                        item.equipped,
+                        Some(StartingSlot::LeftHand | StartingSlot::RightHand)
+                    )
+                })
+                .map(|item| {
+                    let shield = matches!(
+                        item.item_id.as_str(),
+                        "buckler" | "targe" | "heater_shield" | "round_shield" | "pavise"
+                    );
+                    EquippedCombatItem {
+                        weapons: if shield {
+                            Default::default()
+                        } else {
+                            weapon_skill_distribution_for_item(&item.item_id)
+                        },
+                        shield,
+                        balance: 1.0,
+                    }
+                }),
+        );
         let has = |choices: &[&str]| equipped_item_ids.iter().any(|item| choices.contains(item));
         let ranged = has(&[
             "self_bow",
@@ -670,6 +699,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             religion_id: spec.religion_id.clone(),
             organization_memberships,
             organization_presentation,
+            combat_profile,
         }
     }
 }

@@ -6405,7 +6405,10 @@ async fn get_character_capability(
         .next()
 }
 
-async fn get_combat_training_profile(state: &AppState, character_id: u64) -> CombatTrainingProfile {
+pub(crate) async fn get_combat_training_profile(
+    state: &AppState,
+    character_id: u64,
+) -> CombatTrainingProfile {
     let Some(equip) = query_single::<CharacterEquip>(state, "character_equip", character_id).await
     else {
         return CombatTrainingProfile::default();

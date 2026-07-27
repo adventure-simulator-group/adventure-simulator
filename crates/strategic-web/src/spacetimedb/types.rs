@@ -1007,7 +1007,7 @@ fn legacy_weapon_precision(requirements: RecruitmentRequirements) -> f32 {
     )
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CharacterCapability {
     pub character_id: u64,
     pub melee: bool,
@@ -1031,50 +1031,6 @@ pub struct CharacterCapability {
     pub command: f32,
     pub religion: f32,
     pub weapon_precision: f32,
-}
-
-impl CharacterCapability {
-    pub fn summary_tags(&self) -> Vec<String> {
-        let mut tags = Vec::new();
-        for (enabled, label) in [
-            (self.melee, "Melee"),
-            (self.ranged, "Ranged"),
-            (self.heavy, "Heavy"),
-        ] {
-            if enabled {
-                tags.push(label.into());
-            }
-        }
-        if let Some(label) =
-            adventuresim_core::capability::weapon_precision_tier_label(self.weapon_precision)
-        {
-            tags.push(label.into());
-        }
-        if self.full_armor {
-            tags.push("Full armor".into());
-        } else if self.three_quarter_armor {
-            tags.push("3/4 armor".into());
-        } else if self.half_armor {
-            tags.push("1/2 armor".into());
-        } else if self.quarter_armor {
-            tags.push("1/4 armor".into());
-        }
-        for (value, label) in [
-            (self.athletics, "Athletics"),
-            (self.endurance, "Endurance"),
-            (self.physiology, "Physiology"),
-            (self.surgery, "Surgery"),
-            (self.command, "Command"),
-            (self.religion, "Religion"),
-        ] {
-            if adventuresim_core::capability::rating(value)
-                >= adventuresim_core::capability::DEFAULT_NUMERIC_REQUIREMENT
-            {
-                tags.push(label.into());
-            }
-        }
-        tags
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
