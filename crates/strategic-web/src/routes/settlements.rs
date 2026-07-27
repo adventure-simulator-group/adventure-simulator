@@ -5200,6 +5200,10 @@ async fn rest(
             .await;
     let before_notoriety =
         query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
+    let character_settlement_id = before_character
+        .as_ref()
+        .and_then(|(character, _)| character.current_settlement_id.as_deref())
+        .unwrap_or("<none>");
     if let Err(error) = state
         .db
         .call(
@@ -5208,6 +5212,16 @@ async fn rest(
         )
         .await
     {
+        tracing::warn!(
+            character_id,
+            requested_settlement_id = %id,
+            character_settlement_id,
+            requested_minutes,
+            at_inn,
+            service = kind.as_str(),
+            error = %error,
+            "settlement rest reducer rejected request"
+        );
         return (
             StatusCode::BAD_REQUEST,
             Html(
@@ -7254,6 +7268,39 @@ mod rest_form_tests {
             "You do not have enough coin for that inn stay."
         );
         assert!(!safe_rest_error("private injury authority 123").contains("123"));
+    }
+
+    #[test]
+    fn rest_reducer_rejections_are_logged_before_the_sanitized_notice() {
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn rest(")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn query_single").next())
+            .expect("settlement rest handler");
+        let reducer_error = handler
+            .split("if let Err(error)")
+            .nth(1)
+            .expect("rest reducer error branch");
+        let warning = reducer_error.find("tracing::warn!(").expect("warning");
+        let sanitization = reducer_error
+            .find("safe_rest_error(&error.to_string())")
+            .expect("safe response");
+        assert!(warning < sanitization);
+        for field in [
+            "character_id",
+            "requested_settlement_id = %id",
+            "character_settlement_id",
+            "requested_minutes",
+            "at_inn",
+            "service = kind.as_str()",
+            "error = %error",
+        ] {
+            assert!(reducer_error[..sanitization].contains(field), "{field}");
+        }
+        assert!(handler.contains("character.current_settlement_id.as_deref()"));
+        assert!(handler.contains(".unwrap_or(\"<none>\")"));
+        assert!(reducer_error.contains("settlement rest reducer rejected request"));
     }
 
     #[test]
