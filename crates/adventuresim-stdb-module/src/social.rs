@@ -17,7 +17,8 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 
 use crate::character::{character, character__view};
 use crate::condition::{character_morale_source__view, morale_event};
-use crate::strategic::strategic_gateway_authority__view;
+use crate::strategic::{dialogue_session__view, strategic_gateway_authority__view};
+use crate::time::character_time__view;
 use crate::{
     character_attributes, character_capability, character_morale_source, character_personality,
     character_skills, character_strategic_condition, character_time, dialogue_session,
@@ -288,7 +289,13 @@ fn witness_social_action_replayed(
     observer_character_id: u64,
     action_kind: &str,
 ) -> Result<bool, String> {
-    let Some(receipt) = ctx.db.witness_social_action_receipt().id().find(receipt_id) else {
+    let receipt_id = receipt_id.to_owned();
+    let Some(receipt) = ctx
+        .db
+        .witness_social_action_receipt()
+        .id()
+        .find(&receipt_id)
+    else {
         return Ok(false);
     };
     if receipt.observer_character_id == observer_character_id && receipt.action_kind == action_kind
@@ -583,14 +590,6 @@ fn core_transparency(value: crate::personality::Transparency) -> CoreTransparenc
         crate::personality::Transparency::Open => CoreTransparency::Open,
         crate::personality::Transparency::Neutral => CoreTransparency::Neutral,
         crate::personality::Transparency::Guarded => CoreTransparency::Guarded,
-    }
-}
-
-fn core_mirth(value: crate::personality::Mirth) -> CoreMirth {
-    match value {
-        crate::personality::Mirth::Merry => CoreMirth::Merry,
-        crate::personality::Mirth::Neutral => CoreMirth::Neutral,
-        crate::personality::Mirth::Grave => CoreMirth::Grave,
     }
 }
 
