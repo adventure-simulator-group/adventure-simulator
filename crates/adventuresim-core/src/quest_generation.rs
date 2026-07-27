@@ -1167,13 +1167,14 @@ pub fn select_follow_up_evidence(
 }
 
 fn account_style_candidates(
-    reliability: Reliability,
+    _reliability: Reliability,
     circumstance: Circumstance,
 ) -> Vec<Candidate<AccountStyle>> {
+    // Account presentation is deliberately independent of hidden reliability.
+    // A source-aware player must not be able to classify a witness from the
+    // wording family selected for their account.
     let relation = crate::quest_catalog::catalog()
-        .relation(if reliability == Reliability::Mistaken {
-            "account.mistaken"
-        } else if circumstance == Circumstance::NightWindow {
+        .relation(if circumstance == Circumstance::NightWindow {
             "account.night_window"
         } else {
             "account.baseline"
@@ -2384,7 +2385,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "corroborating"));
     let npc1 = primary.npc_id.clone();
     let npc2 = secondary.npc_id.clone();
-    let unreliable_statement = match account_style {
+    let presented_location_statement = match account_style {
         AccountStyle::VisualClaim => {
             ambiguous_visual_claim(description, label(secondary_site_kind))
         }
@@ -2493,17 +2494,11 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     proposition_id: description_prop.clone(),
                     reliability,
                     truthful_text: true_statement.clone(),
-                    spoken_text: if reliability == Reliability::Truthful {
-                        true_statement
-                    } else {
-                        unreliable_statement
-                    },
-                    destination_stage: if reliability == Reliability::Truthful {
-                        "approximate_area"
-                    } else {
-                        "exact_believed"
-                    }
-                    .into(),
+                    // Presentation and grant shape cannot reveal reliability.
+                    // Private authority still binds the proposition to the
+                    // place the witness actually believes they described.
+                    spoken_text: presented_location_statement,
+                    destination_stage: "route_segment".into(),
                     site_id: Some(if reliability == Reliability::Truthful {
                         finale_site.clone()
                     } else {
@@ -3607,6 +3602,60 @@ mod tests {
                 !claim.to_ascii_lowercase().contains("definitely"),
                 "eyewitness prose must remain uncertain"
             );
+        }
+    }
+
+    #[test]
+    fn account_presentation_candidates_do_not_encode_reliability() {
+        for circumstance in [
+            Circumstance::DirectSight,
+            Circumstance::NightWindow,
+            Circumstance::RoadJourney,
+        ] {
+            let baseline = account_style_candidates(Reliability::Truthful, circumstance)
+                .into_iter()
+                .map(|candidate| {
+                    (
+                        candidate.id,
+                        candidate.value,
+                        candidate.weight,
+                        candidate.impossible,
+                    )
+                })
+                .collect::<Vec<_>>();
+            for reliability in [
+                Reliability::PartlyTruthful,
+                Reliability::Mistaken,
+                Reliability::Evasive,
+                Reliability::Deceptive,
+            ] {
+                let other = account_style_candidates(reliability, circumstance)
+                    .into_iter()
+                    .map(|candidate| {
+                        (
+                            candidate.id,
+                            candidate.value,
+                            candidate.weight,
+                            candidate.impossible,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(baseline, other);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_location_testimony_has_one_public_grant_shape() {
+        for seed in 0..256 {
+            let generated =
+                generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
+            let draft = &generated.witnesses[0].testimony[0];
+            assert_eq!(draft.destination_stage, "route_segment");
+            assert_eq!(draft.referred_witness_ids.len(), 1);
+            assert!(!draft.spoken_text.is_empty());
+            assert!(!draft.spoken_text.to_ascii_lowercase().contains("truthful"));
+            assert!(!draft.spoken_text.to_ascii_lowercase().contains("lying"));
         }
     }
 

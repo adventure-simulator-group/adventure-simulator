@@ -5907,7 +5907,6 @@ pub(crate) fn persist_generated_testimony(
     presentation_texts: Option<&[String]>,
     dialogue_action_id: &str,
 ) -> Result<(), String> {
-    use adventuresim_core::quest_generation::Reliability;
     if !generated
         .witnesses
         .iter()
@@ -6049,11 +6048,10 @@ pub(crate) fn persist_generated_testimony(
                 proposition_id: draft.proposition_id.clone(),
                 summary: presentation_text.clone(),
                 source_label: "the referred local witness".into(),
-                confidence_bps: if draft.reliability == Reliability::Truthful {
-                    8_000
-                } else {
-                    5_000
-                },
+                // Confidence describes provenance quality, never sincerity.
+                // Generated testimony uses one observer-facing band for every
+                // hidden reliability state.
+                confidence_bps: 6_000,
                 destination_stage: draft.destination_stage.clone(),
                 directions: if exact {
                     String::new()
