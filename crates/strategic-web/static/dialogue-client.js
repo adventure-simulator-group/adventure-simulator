@@ -127,6 +127,12 @@
       })[social.last_outcome] || "The conversation shifts.";
       panel.append(feedback);
     }
+    if (social.available_approaches.length < 4) {
+      const guidance = document.createElement("p");
+      guidance.className = "dialogue-witness-guidance text-muted";
+      guidance.textContent = "Greyed approaches require a possible-pressure cue or relevant contradiction or evidence, and must be off cooldown.";
+      panel.append(guidance);
+    }
     const controls = document.createElement("div");
     controls.className = "dialogue-witness-actions";
     const invoke = (path, payload, label) => {
@@ -140,23 +146,25 @@
         }
       });
     };
-    const button = ({ label, icon, description }, handler, disabled = false) => {
+    const button = ({ label, icon, description, unavailableDescription }, handler, disabled = false) => {
       const control = document.createElement("button");
       control.type = "button";
       control.className = "social-action dialogue-witness-action";
       control.setAttribute("aria-label", `${label}. ${description} Takes 5 minutes.`);
-      control.dataset.strategicTooltip = description;
+      const unavailable = disabled ? ` ${unavailableDescription}` : "";
+      const tooltip = `${description} Takes 5 minutes.${unavailable}`;
+      control.dataset.strategicTooltip = tooltip;
       control.disabled = disabled;
       const iconHelp = document.createElement("span");
       iconHelp.className = "social-action-icon";
-      iconHelp.dataset.strategicTooltip = description;
+      iconHelp.dataset.strategicTooltip = tooltip;
       const iconMask = document.createElement("span");
       iconMask.className = "game-icon";
       iconMask.style.setProperty("--game-icon", `url('/static/icons/game/${icon}.svg')`);
       iconMask.setAttribute("aria-hidden", "true");
       const visibleLabel = document.createElement("span");
       visibleLabel.className = "social-action-label";
-      visibleLabel.textContent = `${label} (5 min)`;
+      visibleLabel.textContent = label;
       iconHelp.append(iconMask);
       control.append(iconHelp, visibleLabel);
       control.addEventListener("click", handler, { signal });
@@ -166,6 +174,7 @@
       label: "Read demeanor",
       icon: "awareness",
       description: "Study posture and speech for signs of pressure. Uses Insight.",
+      unavailableDescription: "Unavailable until this observation's cooldown ends.",
     }, () => invoke("/api/dialogue/insight", {
       session_id: binding.sessionId,
       action_id: actionId(),
@@ -176,21 +185,25 @@
         label: "Listen",
         icon: "human-ear",
         description: "Give them space to explain what is troubling them. Uses Insight.",
+        unavailableDescription: "Unavailable until you establish a basis for the approach and its cooldown ends.",
       },
       reassure: {
         label: "Reassure",
         icon: "rose",
         description: "Put them at ease so they feel safe enough to speak. Uses Charm.",
+        unavailableDescription: "Unavailable until you establish a basis for the approach and its cooldown ends.",
       },
       invoke_duty: {
         label: "Invoke duty",
         icon: "crown",
         description: "Appeal to their responsibility to tell you what they know. Uses Command.",
+        unavailableDescription: "Unavailable until you establish a basis for the approach and its cooldown ends.",
       },
       bluff: {
         label: "Bluff",
         icon: "conversation",
         description: "Mislead them into revealing more than they intended. Uses Deception.",
+        unavailableDescription: "Unavailable until you establish a basis for the approach and its cooldown ends.",
       },
     };
     Object.entries(approaches).forEach(([approach, presentation]) => button(

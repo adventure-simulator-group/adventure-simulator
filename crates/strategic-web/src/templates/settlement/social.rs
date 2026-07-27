@@ -310,17 +310,18 @@ pub fn party_social_dialog(
                                       @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
                                       @let description = action.description(topic, action_shares_concern);
                                       @let label = social_action_label(action, action_shares_concern);
+                                      @let tooltip = format!("{}\nTakes {} minutes.\n{} · {} risk", description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" });
                                     form method="post" action=(&social_href) {
                                         input type="hidden" name="source_id" value=(&source.id);
                                         button type="submit" name="action_kind" value=(value) class="social-action"
                                             aria-label=(format!("{}. {}. Takes {} minutes.", label, description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES))
-                                            data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
+                                            data-strategic-tooltip=(&tooltip) {
                                             span class="social-action-icon"
-                                                data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
+                                                data-strategic-tooltip=(&tooltip) {
                                                 (decorative_game_icon(icon))
                                             }
                                             span class="social-action-label" {
-                                                (label) " (" (adventuresim_core::social::SOCIAL_RESPONSE_MINUTES) " min)"
+                                                (label)
                                             }
                                         }
                                     }
@@ -647,7 +648,9 @@ mod tests {
         )
         .into_string();
         assert!(response_markup.contains("class=\"social-action-icon\""));
-        assert!(response_markup.contains("class=\"social-action-label\">Listen (5 min)</span>"));
+        assert!(response_markup.contains("class=\"social-action-label\">Listen</span>"));
+        assert!(!response_markup.contains(">Listen ("));
+        assert!(response_markup.contains("Takes 5 minutes."));
         assert!(response_markup.contains("data-strategic-tooltip=\"Ask how they feel"));
         assert!(!response_markup.contains(
             "class=\"social-action\" aria-label=\"Ask how they feel about the defeat\" title="
