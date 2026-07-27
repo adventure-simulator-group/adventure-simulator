@@ -285,6 +285,24 @@ fn witness_social_cooldown_id(observer_character_id: u64, npc_id: &str, action: 
     format!("{observer_character_id}:{npc_id}:{action}")
 }
 
+fn witness_social_action_replayed(
+    ctx: &ReducerContext,
+    receipt_id: &str,
+    observer_character_id: u64,
+    action_kind: &str,
+) -> Result<bool, String> {
+    let Some(receipt) = ctx.db.witness_social_action_receipt().id().find(receipt_id) else {
+        return Ok(false);
+    };
+    if receipt.observer_character_id == observer_character_id
+        && receipt.action_kind == action_kind
+    {
+        Ok(true)
+    } else {
+        Err("Witness social action ID conflicts with another request".into())
+    }
+}
+
 fn witness_action_available(
     ctx: &ViewContext,
     observer_character_id: u64,
@@ -735,13 +753,7 @@ pub fn diagnose_dialogue_witness(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::strategic::require_strategic_character_authority(ctx, observer_character_id)?;
     let receipt_id = format!("{session_id}:{action_id}");
-    if ctx
-        .db
-        .witness_social_action_receipt()
-        .id()
-        .find(&receipt_id)
-        .is_some()
-    {
+    if witness_social_action_replayed(ctx, &receipt_id, observer_character_id, "insight")? {
         return Ok(());
     }
     let (session, mut capability, now) = require_witness_social_action(
@@ -796,13 +808,12 @@ pub fn approach_dialogue_witness(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::strategic::require_strategic_character_authority(ctx, observer_character_id)?;
     let receipt_id = format!("{session_id}:{action_id}");
-    if ctx
-        .db
-        .witness_social_action_receipt()
-        .id()
-        .find(&receipt_id)
-        .is_some()
-    {
+    if witness_social_action_replayed(
+        ctx,
+        &receipt_id,
+        observer_character_id,
+        &approach_kind,
+    )? {
         return Ok(());
     }
     let approach = witness_approach(&approach_kind)?;
@@ -899,13 +910,12 @@ pub fn spend_dialogue_time_with_witness(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::strategic::require_strategic_character_authority(ctx, observer_character_id)?;
     let receipt_id = format!("{session_id}:{action_id}");
-    if ctx
-        .db
-        .witness_social_action_receipt()
-        .id()
-        .find(&receipt_id)
-        .is_some()
-    {
+    if witness_social_action_replayed(
+        ctx,
+        &receipt_id,
+        observer_character_id,
+        "spend_time",
+    )? {
         return Ok(());
     }
     if action_id.is_empty()
@@ -2932,6 +2942,7 @@ mod contract_tests {
         assert!(requirement.contains("expected_revision"));
         assert!(requirement.contains("witness_social_action_receipt"));
         assert!(requirement.contains("witness_social_cooldown"));
+        assert!(source.contains("Witness social action ID conflicts with another request"));
         let finish = source
             .split("fn finish_witness_social_action")
             .nth(1)
