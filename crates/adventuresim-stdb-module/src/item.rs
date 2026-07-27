@@ -53,6 +53,7 @@ pub enum ItemKind {
     Armor,
     Shield,
     Clothing,
+    Container,
     Currency,
     Ingredient,
     Medication,
@@ -69,6 +70,7 @@ pub(crate) const fn economy_catalog_kind(
         ItemKind::Armor => C::Armor,
         ItemKind::Shield => C::Shield,
         ItemKind::Clothing => C::Clothing,
+        ItemKind::Container => C::Simple,
         ItemKind::Currency => C::Currency,
         ItemKind::Ingredient => C::Ingredient,
         ItemKind::Medication => C::Medication,
@@ -135,6 +137,8 @@ pub struct Item {
     pub weight: f32,
     pub slot: ItemSlot,
     pub kind: ItemKind,
+    /// Whether this definition has authored durability and receives condition rows.
+    pub repairable: bool,
     pub accuracy: f32,
     pub reach: f32,
     pub block: f32,
@@ -205,7 +209,13 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         Slot::AnyLeg => ItemSlot::AnyLeg,
     };
     match &definition.kind {
-        K::Simple | K::Container { .. } => item.kind = ItemKind::Simple,
+        K::Simple => item.kind = ItemKind::Simple,
+        K::Container {
+            slot: authored_slot,
+        } => {
+            item.kind = ItemKind::Container;
+            item.slot = slot(*authored_slot);
+        }
         K::Currency => item.kind = ItemKind::Currency,
         K::Ingredient => item.kind = ItemKind::Ingredient,
         K::Medication => item.kind = ItemKind::Medication,
@@ -288,6 +298,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         item.alcohol_potable = alcohol.potable;
     }
     if let Some(durable) = definition.capabilities.durability {
+        item.repairable = true;
         item.quality = durable.quality;
         item.durability_yield = durable.yield_j;
         item.durability_fracture = durable.fracture_j;
@@ -350,19 +361,10 @@ pub(crate) fn add_inventory_item_checked(
         return Ok(None);
     }
 
-    let kind = ctx
-        .db
-        .item()
-        .id()
-        .find(item_id.to_owned())
-        .map(|definition| definition.kind);
+    let definition = ctx.db.item().id().find(item_id.to_owned());
+    let kind = definition.as_ref().map(|definition| definition.kind);
     let food_definition = inventory_food_definition(kind, item_id)?;
-    let durable = kind.is_some_and(|kind| {
-        matches!(
-            kind,
-            ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
-        )
-    });
+    let durable = definition.is_some_and(|definition| definition.repairable);
     let food = food_definition.is_some();
     let measured = crate::inventory_amount::is_measured_item(ctx, item_id);
     // Every food unit is its own non-fungible batch. A partly consumed unit
@@ -537,12 +539,7 @@ pub fn change_inventory_item(
         .item()
         .id()
         .find(item_id.to_owned())
-        .is_some_and(|definition| {
-            matches!(
-                definition.kind,
-                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
-            )
-        });
+        .is_some_and(|definition| definition.repairable);
     if durable {
         let (add, remove) = adventuresim_core::durability::bounded_durable_change(by_quantity)
             .map_err(str::to_owned)?;
@@ -798,7 +795,7 @@ mod tests {
                 )
             })
             .collect();
-        assert_eq!(projected.len(), 55);
+        assert_eq!(projected.len(), 58);
         assert_eq!(
             projected
                 .iter()
@@ -851,6 +848,20 @@ mod tests {
                 _ => unreachable!("equipment catalog contains a non-equipment item"),
             }
         }
+    }
+
+    #[test]
+    fn projection_preserves_container_and_authored_repairability() {
+        let waterskin =
+            project_definition(adventuresim_core::item_catalog::definition("waterskin").unwrap());
+        assert_eq!(waterskin.kind, ItemKind::Container);
+        assert_eq!(waterskin.slot, ItemSlot::None);
+        assert!(!waterskin.repairable);
+
+        let sword = project_definition(
+            adventuresim_core::item_catalog::definition("arming_sword").unwrap(),
+        );
+        assert!(sword.repairable);
     }
 
     #[test]

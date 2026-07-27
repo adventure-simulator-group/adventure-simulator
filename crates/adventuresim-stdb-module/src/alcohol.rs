@@ -16,7 +16,7 @@ use crate::inventory_amount::FULL_AMOUNT_MILLIUNITS;
 
 const SURGERY_DISINFECTANT_ML: u64 = 25;
 
-pub const TAVERN_DRINK_ITEM_ID: &str = "table_wine";
+pub use adventuresim_core::item_references::TAVERN_DRINK_ITEM_ID;
 #[derive(Clone, Debug)]
 #[table(
     accessor = alcohol_consumption, public,

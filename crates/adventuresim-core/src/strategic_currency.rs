@@ -1,13 +1,6 @@
 /// Equal-value historical denominations used by the northern-German 1544
 /// setting. Exchange-rate gameplay intentionally remains deferred.
-pub const CURRENCY_IDS: [&str; 6] = [
-    "rhenish_gulden",
-    "lubeck_mark",
-    "hamburg_mark",
-    "saxon_thaler",
-    "brandenburg_groschen",
-    "danish_mark",
-];
+pub use crate::item_references::CURRENCY_IDS;
 
 pub fn is_currency_id(item_id: &str) -> bool {
     crate::item_catalog::definition(item_id)

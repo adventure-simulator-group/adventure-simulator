@@ -3,8 +3,14 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
 };
+#[path = "src/item_catalog_schema.rs"]
+mod item_catalog_schema;
+#[allow(dead_code)]
 #[path = "src/item_catalog_validation.rs"]
 mod item_catalog_validation;
+#[allow(dead_code)]
+#[path = "src/item_references.rs"]
+mod item_references;
 #[path = "src/organization_catalog_validation.rs"]
 mod organization_catalog_validation;
 #[path = "src/quest_catalog_validation.rs"]
@@ -85,6 +91,7 @@ fn compile_items(root: &Path) {
     files.sort();
     let mut documents = Vec::new();
     let mut source_files = Vec::new();
+    let mut sources = Vec::new();
     let mut digest = Sha256::new();
     for file in files {
         let relative = file
@@ -93,6 +100,10 @@ fn compile_items(root: &Path) {
             .to_string_lossy()
             .replace('\\', "/");
         let text = fs::read_to_string(&file).unwrap();
+        assert!(
+            text.len() <= item_catalog_validation::MAX_SOURCE_BYTES,
+            "{relative}: item catalog source is too large"
+        );
         digest.update(relative.as_bytes());
         digest.update([0]);
         digest.update(text.as_bytes());
@@ -100,10 +111,22 @@ fn compile_items(root: &Path) {
             .unwrap_or_else(|error| panic!("{relative}: {error}"));
         documents.push(value);
         source_files.push(relative);
+        sources.push(text);
     }
     assert!(!documents.is_empty(), "content/items contains no YAML");
-    item_catalog_validation::validate_documents(&documents, &source_files)
+    item_catalog_validation::validate_documents_with_sources(&documents, &source_files, &sources)
         .unwrap_or_else(|error| panic!("{error}"));
+    let icons = root.join("crates/strategic-web/static/icons/game");
+    for document in &documents {
+        for item in document["items"].as_array().unwrap() {
+            let id = item["id"].as_str().unwrap();
+            let icon = item["presentation"]["icon"].as_str().unwrap();
+            assert!(
+                icons.join(format!("{icon}.svg")).is_file(),
+                "item {id}.presentation.icon: missing vendored icon {icon}.svg"
+            );
+        }
+    }
     let json = serde_json::to_string(&documents).unwrap();
     let digest = format!("{:x}", digest.finalize());
     fs::write(

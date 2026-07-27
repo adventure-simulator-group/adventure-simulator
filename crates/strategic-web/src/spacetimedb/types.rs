@@ -1117,6 +1117,8 @@ pub struct ItemDefinition {
     pub slot: ItemSlot,
     pub kind: ItemKind,
     #[serde(default)]
+    pub repairable: bool,
+    #[serde(default)]
     pub accuracy: f32,
     #[serde(default)]
     pub reach: f32,
@@ -1221,6 +1223,7 @@ impl Default for ItemDefinition {
             weight: 0.0,
             slot: ItemSlot::None,
             kind: ItemKind::Simple,
+            repairable: false,
             accuracy: 0.0,
             reach: 0.0,
             block: 0.0,
@@ -1364,6 +1367,8 @@ pub enum ItemKind {
     Shield,
     #[serde(alias = "Clothing", alias = "clothing")]
     Clothing,
+    #[serde(alias = "Container", alias = "container")]
+    Container,
     #[serde(alias = "Currency", alias = "currency")]
     Currency,
     #[serde(alias = "Ingredient", alias = "ingredient")]

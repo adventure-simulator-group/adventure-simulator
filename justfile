@@ -311,7 +311,7 @@ dialogue-check:
 # Validate strict authored content. The optional target currently supports
 # `items`; the default validates every catalog with an external checker.
 content-check target="all":
-    @cargo run -p adventuresim-core --bin content-check -- {{ target }}
+    @if ("{{ target }}" -eq "all") { cargo run -p adventuresim-core --bin content-check -- all; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo run -p adventuresim-dialogue --bin dialogue-check -- check } elseif ("{{ target }}" -eq "items") { cargo run -p adventuresim-core --bin content-check -- items } else { Write-Error "unsupported content target '{{ target }}'; expected all or items"; exit 2 }
 
 test-chat:
     @node --test crates/strategic-web/tests/local-chat.test.cjs crates/strategic-web/tests/service-quests.test.cjs

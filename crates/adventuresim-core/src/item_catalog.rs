@@ -4,186 +4,10 @@
 //! `build.rs` validates and combines them; production code only reads this
 //! embedded representation and never opens loose content files.
 
-use serde::{Deserialize, Serialize};
+pub use crate::item_catalog_schema::*;
 use std::sync::OnceLock;
 
 include!(concat!(env!("OUT_DIR"), "/item_catalog.rs"));
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ItemCatalogDocument {
-    pub schema_version: u32,
-    pub items: Vec<ItemDefinition>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ItemDefinition {
-    pub id: String,
-    pub display_name: String,
-    pub weight_kg: f32,
-    pub base_value: u32,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    pub presentation: Presentation,
-    #[serde(flatten)]
-    pub kind: ItemKind,
-    #[serde(default)]
-    pub capabilities: Capabilities,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Presentation {
-    pub icon: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ItemKind {
-    Simple,
-    Currency,
-    Ingredient,
-    Medication,
-    Clothing,
-    Container {
-        slot: Slot,
-    },
-    Shield {
-        slot: Slot,
-        block: f32,
-    },
-    Armor {
-        slot: Slot,
-        coverage: f32,
-        resistance: f32,
-        padding: f32,
-        flexibility: f32,
-        range_of_motion: f32,
-    },
-    Weapon {
-        slot: Slot,
-        accuracy: f32,
-        reach_m: f32,
-        penetration: f32,
-        balance: f32,
-        precise: bool,
-        melee: bool,
-        ranged: bool,
-        damage_types: Vec<DamageType>,
-        skills: WeaponSkills,
-    },
-    Food,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Slot {
-    None,
-    LeftHolding,
-    RightHolding,
-    LeftArm,
-    RightArm,
-    LeftLeg,
-    RightLeg,
-    Chest,
-    Stomach,
-    Head,
-    AnyHolding,
-    AnyArm,
-    AnyLeg,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DamageType {
-    Blunt,
-    Slash,
-    Pierce,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WeaponSkills {
-    #[serde(default)]
-    pub polearm: f32,
-    #[serde(default)]
-    pub axe: f32,
-    #[serde(default)]
-    pub bludgeon: f32,
-    #[serde(default)]
-    pub sword: f32,
-    #[serde(default)]
-    pub knife: f32,
-    #[serde(default)]
-    pub bow: f32,
-    #[serde(default)]
-    pub crossbow: f32,
-    #[serde(default)]
-    pub firearm: f32,
-    #[serde(default)]
-    pub throw: f32,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Capabilities {
-    pub durability: Option<Durability>,
-    pub food: Option<Food>,
-    pub alcohol: Option<Alcohol>,
-    pub container: Option<Container>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Durability {
-    pub quality: u8,
-    pub yield_j: f32,
-    pub fracture_j: f32,
-    pub wear: f32,
-    pub failure_share: f32,
-    pub edge_sensitivity: f32,
-    pub handling_sensitivity: f32,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Food {
-    pub class: String,
-    pub nutrition_kcal: f32,
-    pub value_per_unit: f32,
-    pub growth_per_hour: f32,
-    pub cooking_minutes: u32,
-    pub flavors_kg: Flavors,
-    pub culinary_fat: bool,
-    pub quality: u8,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Flavors {
-    pub salty: f32,
-    pub spicy: f32,
-    pub sweet: f32,
-    pub sour: f32,
-    pub savory: f32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Alcohol {
-    pub serving_ml: u32,
-    pub abv_basis_points: u16,
-    pub net_hydration_ml: u32,
-    pub disinfectant_effectiveness: u16,
-    pub disinfectant_focused: bool,
-    pub potable: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Container {
-    pub capacity_ml: u32,
-}
 
 static CATALOG: OnceLock<Vec<ItemDefinition>> = OnceLock::new();
 
@@ -242,7 +66,7 @@ mod tests {
 
     #[test]
     fn embedded_catalog_is_sorted_unique_complete_and_revisioned() {
-        assert_eq!(catalog().len(), 110);
+        assert_eq!(catalog().len(), 113);
         assert!(revision().len() == 64 && revision().bytes().all(|b| b.is_ascii_hexdigit()));
         assert!(
             catalog()
@@ -263,7 +87,7 @@ mod tests {
             + "\n";
         assert_eq!(
             format!("{:x}", Sha256::digest(stable_ids.as_bytes())),
-            "7b430f029fa43d76c4aa22c51524bf15f06b2e9457f28eff7d5d22b62fa32c52",
+            "a4bd5f658c29042ad5a22d14a2a1235b85eba2070234cbff568cbb117d70f2fa",
             "stable-ID golden changed; review persistence and reseed impact"
         );
 
@@ -283,7 +107,7 @@ mod tests {
             counts[index] += 1;
             counts
         });
-        assert_eq!(counts, [12, 6, 11, 3, 1, 1, 5, 24, 26, 21]);
+        assert_eq!(counts, [12, 6, 11, 3, 1, 1, 5, 24, 29, 21]);
     }
 
     #[test]

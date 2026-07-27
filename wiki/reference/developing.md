@@ -3,7 +3,7 @@
 ## Item content
 
 Item YAML uses the production build validator. Run `just content-check` for all
-supported authored catalogs or `just content-check items` while iterating on
+compiled core catalogs plus dialogue, or `just content-check items` while iterating on
 `content/items/*.yaml`; see
 [Item definition authoring](item-authoring.md).
 

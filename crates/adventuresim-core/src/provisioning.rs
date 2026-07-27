@@ -2,8 +2,7 @@
 
 pub const STRATEGIC_TRAVEL_KCAL_PER_DAY: f32 = 6_000.0;
 pub const STRATEGIC_TRAVEL_WATER_ML_PER_DAY: f32 = 4_000.0;
-pub const STANDARD_TRAVEL_RATION_ID: &str = "travel_ration";
-pub const STANDARD_WATERSKIN_ID: &str = "waterskin";
+pub use crate::item_references::{STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID};
 
 pub fn shared_then_personal_units(requested: u32, shared: u32, personal: u32) -> (u32, u32) {
     let shared_used = requested.min(shared);

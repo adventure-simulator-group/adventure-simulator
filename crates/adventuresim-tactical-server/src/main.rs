@@ -359,6 +359,7 @@ fn spawn_connected_player(
 
         match item.item.kind {
             ItemKind::Simple
+            | ItemKind::Container
             | ItemKind::Clothing
             | ItemKind::Currency
             | ItemKind::Ingredient

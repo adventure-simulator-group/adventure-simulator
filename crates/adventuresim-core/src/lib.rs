@@ -22,8 +22,10 @@ pub mod inventory_measurement;
 pub mod investigation;
 pub mod investigation_action;
 pub mod item_catalog;
+pub mod item_catalog_schema;
 #[cfg(test)]
 mod item_catalog_validation;
+pub mod item_references;
 pub mod leadership;
 pub mod local_problem;
 pub mod mission;

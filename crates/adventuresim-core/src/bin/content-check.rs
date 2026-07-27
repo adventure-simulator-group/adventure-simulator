@@ -6,25 +6,21 @@ fn main() {
     }
 
     let catalog = adventuresim_core::item_catalog::catalog();
-    let mut references = vec![
-        "arrow",
-        "bandage",
-        "cooked_meal",
-        "cooking_pan",
-        "cooking_pot",
-        "portable_oven",
-        "soft_soap",
-        "splint",
-        "surgery_kit",
-        "torch",
-        "travel_ration",
-        "waterskin",
-    ];
+    let mut references = adventuresim_core::item_references::REQUIRED_GAMEPLAY_ITEM_IDS.to_vec();
     references.extend(adventuresim_core::strategic_currency::CURRENCY_IDS);
     references.extend(
         adventuresim_core::physiology::INTERVENTION_PROFILES
             .iter()
             .map(|profile| profile.preparation_id),
+    );
+    references.extend(
+        adventuresim_core::bestiary::ALL_THREATS
+            .iter()
+            .filter_map(|id| {
+                adventuresim_core::bestiary::profile(*id)
+                    .combat
+                    .loot_item_id
+            }),
     );
     if let Err(missing) = adventuresim_core::item_catalog::validate_references(references) {
         panic!("missing required gameplay item references: {missing:?}");

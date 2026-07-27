@@ -5,6 +5,13 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+const MAX_DOCUMENTS: usize = 32;
+const MAX_ITEMS: usize = 4_096;
+const MAX_STRING_BYTES: usize = 256;
+const MAX_TAGS: usize = 32;
+const MAX_DIAGNOSTICS: usize = 128;
+pub const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
+
 pub fn parse_document(text: &str) -> Result<Value, serde_json::Error> {
     serde_json::from_str::<StrictValue>(text).map(|value| value.0)
 }
@@ -78,8 +85,40 @@ impl<'de> Visitor<'de> for StrictValueVisitor {
 }
 
 pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), String> {
+    validate_documents_with_sources(documents, files, &[])
+}
+
+pub fn validate_documents_with_sources(
+    documents: &[Value],
+    files: &[String],
+    sources: &[String],
+) -> Result<(), String> {
     let mut errors = Vec::new();
     let mut ids = BTreeMap::<String, String>::new();
+    if documents.len() > MAX_DOCUMENTS {
+        errors.push(format!(
+            "item catalog: at most {MAX_DOCUMENTS} source documents are supported"
+        ));
+    }
+    for (file, source) in files.iter().zip(sources) {
+        if source.len() > MAX_SOURCE_BYTES {
+            errors.push(format!(
+                "{file}: item catalog: source exceeds {MAX_SOURCE_BYTES} bytes"
+            ));
+        }
+    }
+    let item_count: usize = documents
+        .iter()
+        .filter_map(Value::as_object)
+        .filter_map(|root| root.get("items"))
+        .filter_map(Value::as_array)
+        .map(Vec::len)
+        .sum();
+    if item_count > MAX_ITEMS {
+        errors.push(format!(
+            "item catalog: at most {MAX_ITEMS} items are supported"
+        ));
+    }
     for (document, file) in documents.iter().zip(files) {
         let Some(root) = document.as_object() else {
             errors.push(format!("{file}: catalog: root must be an object"));
@@ -104,16 +143,84 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
         for (index, item) in items.iter().enumerate() {
             validate_item(item, file, index, &mut ids, &mut errors);
         }
+        if let Err(error) = serde_json::from_value::<crate::item_catalog_schema::ItemCatalogDocument>(
+            document.clone(),
+        ) {
+            errors.push(format!(
+                "{file}: item catalog: typed schema mismatch: {error}"
+            ));
+        }
     }
+    for (kind, expected) in [
+        ("currency", crate::item_references::CURRENCY_IDS.as_slice()),
+        (
+            "medication",
+            crate::item_references::MEDICATION_IDS.as_slice(),
+        ),
+    ] {
+        let authored = documents
+            .iter()
+            .filter_map(|document| document.get("items"))
+            .filter_map(Value::as_array)
+            .flatten()
+            .filter(|item| item.get("kind").and_then(Value::as_str) == Some(kind))
+            .filter_map(|item| item.get("id").and_then(Value::as_str))
+            .collect::<BTreeSet<_>>();
+        let expected = expected.iter().copied().collect::<BTreeSet<_>>();
+        if authored != expected {
+            errors.push(format!(
+                "item catalog: {kind} IDs must match the supported gameplay registry; authored={authored:?}, expected={expected:?}"
+            ));
+        }
+    }
+    errors.truncate(MAX_DIAGNOSTICS);
     if errors.is_empty() {
         Ok(())
     } else {
+        let errors = errors
+            .into_iter()
+            .map(|error| add_source_location(error, files, sources))
+            .collect::<Vec<_>>();
         Err(format!(
             "item catalog validation failed ({} errors):\n{}",
             errors.len(),
             errors.join("\n")
         ))
     }
+}
+
+fn add_source_location(error: String, files: &[String], sources: &[String]) -> String {
+    for (index, file) in files.iter().enumerate() {
+        let prefix = format!("{file}: ");
+        if let Some(rest) = error.strip_prefix(&prefix) {
+            let Some(source) = sources.get(index) else {
+                return error;
+            };
+            let item_id = rest
+                .strip_prefix("item ")
+                .and_then(|rest| rest.split(['.', ':']).next());
+            let item_start = item_id
+                .and_then(|id| source.find(&format!("\"id\": \"{id}\"")))
+                .unwrap_or(0);
+            let field = rest
+                .split(':')
+                .next()
+                .and_then(|path| path.rsplit('.').next())
+                .unwrap_or("items");
+            let offset = source[item_start..]
+                .find(&format!("\"{field}\""))
+                .map(|offset| item_start + offset)
+                .unwrap_or(item_start);
+            let before = &source[..offset];
+            let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+            let column = before
+                .rsplit('\n')
+                .next()
+                .map_or(1, |line| line.chars().count() + 1);
+            return format!("{file}:{line}:{column}: {rest}");
+        }
+    }
+    error
 }
 
 fn validate_item(
@@ -174,6 +281,32 @@ fn validate_item(
         ));
     }
     required_string(item, "display_name", file, &path, errors);
+    if item
+        .get("display_name")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.len() > MAX_STRING_BYTES)
+    {
+        errors.push(format!(
+            "{file}: {path}.display_name: exceeds {MAX_STRING_BYTES} bytes"
+        ));
+    }
+    match item.get("tags").and_then(Value::as_array) {
+        Some(tags) if tags.len() <= MAX_TAGS => {
+            let mut unique = BTreeSet::new();
+            for tag in tags {
+                match tag.as_str() {
+                    Some(tag) if valid_id(tag) && unique.insert(tag) => {}
+                    Some(tag) if !valid_id(tag) => {
+                        errors.push(format!("{file}: {path}.tags: invalid tag {tag:?}"))
+                    }
+                    Some(tag) => errors.push(format!("{file}: {path}.tags: duplicate tag {tag:?}")),
+                    None => errors.push(format!("{file}: {path}.tags: tags must be strings")),
+                }
+            }
+        }
+        Some(_) => errors.push(format!("{file}: {path}.tags: at most {MAX_TAGS} tags")),
+        None => errors.push(format!("{file}: {path}.tags: required array")),
+    }
     finite_in(item, "weight_kg", 0.0, 10_000.0, file, &path, errors);
     if item.get("base_value").and_then(Value::as_u64).is_none() {
         errors.push(format!(
@@ -196,6 +329,13 @@ fn validate_item(
                 &format!("{path}.presentation"),
                 errors,
             );
+            if let Some(icon) = presentation.get("icon").and_then(Value::as_str) {
+                if !valid_icon_slug(icon) {
+                    errors.push(format!(
+                        "{file}: {path}.presentation.icon: must be a safe lowercase icon slug"
+                    ));
+                }
+            }
         }
         None => errors.push(format!("{file}: {path}.presentation: required object")),
     }
@@ -268,11 +408,26 @@ fn validate_item(
             "{file}: {path}.block: field is only valid for shield"
         ));
     }
+    if kind == "shield" {
+        finite_in(item, "block", f64::EPSILON, 10_000.0, file, &path, errors);
+    }
+    if kind == "armor" {
+        for field in ["coverage", "flexibility", "range_of_motion"] {
+            finite_in(item, field, 0.0, 1.0, file, &path, errors);
+        }
+        for field in ["resistance", "padding"] {
+            finite_in(item, field, 0.0, 1_000_000.0, file, &path, errors);
+        }
+    }
     if !matches!(kind, "weapon" | "armor" | "shield" | "container") && item.contains_key("slot") {
         errors.push(format!("{file}: {path}.slot: kind does not accept a slot"));
     }
-    if let Some(capabilities) = item.get("capabilities").and_then(Value::as_object) {
-        validate_capabilities(capabilities, file, &path, kind, errors);
+    if let Some(value) = item.get("capabilities") {
+        if let Some(capabilities) = value.as_object() {
+            validate_capabilities(capabilities, file, &path, kind, errors);
+        } else {
+            errors.push(format!("{file}: {path}.capabilities: must be an object"));
+        }
     }
 }
 
@@ -529,6 +684,13 @@ fn validate_capabilities(
         }
     }
     if let Some(container) = capabilities.get("container").and_then(Value::as_object) {
+        reject_unknown(
+            container,
+            &["capacity_ml"],
+            file,
+            &format!("{path}.capabilities.container"),
+            errors,
+        );
         let capacity = container
             .get("capacity_ml")
             .and_then(Value::as_u64)
@@ -552,6 +714,16 @@ fn valid_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+fn valid_icon_slug(icon: &str) -> bool {
+    !icon.is_empty()
+        && icon.len() <= 64
+        && !icon.starts_with('-')
+        && !icon.ends_with('-')
+        && icon
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 fn required_string(
@@ -690,5 +862,40 @@ mod tests {
         ] {
             assert!(error.contains(expected), "{error}");
         }
+    }
+
+    #[test]
+    fn semantic_diagnostics_include_exact_source_coordinates() {
+        let source = "{\n  \"schema_version\": 1,\n  \"items\": [{\n    \"id\": \"bad\",\n    \"display_name\": \"Bad\",\n    \"weight_kg\": -1,\n    \"base_value\": 1,\n    \"tags\": [],\n    \"presentation\": {\"icon\": \"help\"},\n    \"kind\": \"simple\"\n  }]\n}";
+        let value = parse_document(source).unwrap();
+        let error = validate_documents_with_sources(
+            &[value],
+            &["content/items/test.yaml".into()],
+            &[source.into()],
+        )
+        .unwrap_err();
+        assert!(error.contains("content/items/test.yaml:6:5: item bad.weight_kg"));
+    }
+
+    #[test]
+    fn typed_schema_rejects_integer_overflow_and_missing_required_fields() {
+        let mut item = valid_item("typed");
+        item.as_object_mut()
+            .unwrap()
+            .insert("base_value".into(), json!(u64::MAX));
+        let error =
+            validate_documents(&[document(vec![item])], &["typed.yaml".into()]).unwrap_err();
+        assert!(error.contains("typed schema mismatch"));
+    }
+
+    #[test]
+    fn mechanics_backed_kinds_are_closed_sets() {
+        let mut item = valid_item("unsupported_coin");
+        item.as_object_mut()
+            .unwrap()
+            .insert("kind".into(), json!("currency"));
+        let error =
+            validate_documents(&[document(vec![item])], &["currency.yaml".into()]).unwrap_err();
+        assert!(error.contains("currency IDs must match the supported gameplay registry"));
     }
 }

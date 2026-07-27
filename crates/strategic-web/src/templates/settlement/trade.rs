@@ -63,6 +63,7 @@ impl MerchantShop {
             crate::spacetimedb::ItemKind::Armor => C::Armor,
             crate::spacetimedb::ItemKind::Shield => C::Shield,
             crate::spacetimedb::ItemKind::Clothing => C::Clothing,
+            crate::spacetimedb::ItemKind::Container => C::Simple,
             crate::spacetimedb::ItemKind::Currency => C::Currency,
             crate::spacetimedb::ItemKind::Ingredient => C::Ingredient,
             crate::spacetimedb::ItemKind::Medication => C::Medication,
@@ -857,7 +858,7 @@ pub fn live_merchant_shop_page(
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
                         @let repair_skill = smith_skill;
-                        @let durable_item = definition.is_some_and(|definition| matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield | crate::spacetimedb::ItemKind::Clothing));
+                        @let durable_item = definition.is_some_and(|definition| definition.repairable);
                         @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else if matches!(shop, MerchantShop::Clothing) { definition.kind == crate::spacetimedb::ItemKind::Clothing } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }

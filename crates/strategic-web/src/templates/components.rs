@@ -24,6 +24,10 @@ pub fn decorative_game_icon(icon: &str) -> Markup {
 /// Exact icon name for a seeded item. Unknown/modded items get a real fallback
 /// asset rather than a URL derived from untrusted data.
 pub fn item_icon_name(item_id: &str) -> &'static str {
+    // Legacy synthetic settlement-balance rows are not catalog items.
+    if item_id == "coin" {
+        return "coins";
+    }
     adventuresim_core::item_catalog::definition(item_id)
         .map(|item| item.presentation.icon.as_str())
         .unwrap_or("help")
@@ -381,6 +385,7 @@ mod icon_tests {
             assert_eq!(item_icon_name(item), icon, "{item}");
         }
         assert_eq!(item_icon_name("modded_item"), "help");
+        assert_eq!(item_icon_name("coin"), "coins");
     }
 
     #[test]

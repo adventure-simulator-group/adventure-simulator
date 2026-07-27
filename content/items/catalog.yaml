@@ -428,7 +428,8 @@
       "weight_kg": 0.05,
       "base_value": 2,
       "tags": [
-        "food"
+        "food",
+        "stock_meat"
       ],
       "presentation": {
         "icon": "help"
@@ -750,7 +751,8 @@
       "base_value": 1,
       "tags": [
         "ingredient",
-        "food"
+        "food",
+        "stock_herbs"
       ],
       "presentation": {
         "icon": "help"
@@ -1001,7 +1003,8 @@
       "base_value": 2,
       "tags": [
         "ingredient",
-        "food"
+        "food",
+        "stock_herbs"
       ],
       "presentation": {
         "icon": "help"
@@ -1083,7 +1086,8 @@
       "weight_kg": 0.03,
       "base_value": 1,
       "tags": [
-        "food"
+        "food",
+        "stock_herbs"
       ],
       "presentation": {
         "icon": "help"
@@ -1291,7 +1295,8 @@
       "weight_kg": 0.05,
       "base_value": 1,
       "tags": [
-        "food"
+        "food",
+        "stock_meat"
       ],
       "presentation": {
         "icon": "help"
@@ -1778,7 +1783,8 @@
       "weight_kg": 0.02,
       "base_value": 1,
       "tags": [
-        "food"
+        "food",
+        "stock_herbs"
       ],
       "presentation": {
         "icon": "help"
@@ -1809,7 +1815,8 @@
       "weight_kg": 0.25,
       "base_value": 1,
       "tags": [
-        "food"
+        "food",
+        "stock_grain"
       ],
       "presentation": {
         "icon": "help"
@@ -2047,7 +2054,8 @@
       "weight_kg": 0.5,
       "base_value": 1,
       "tags": [
-        "food"
+        "food",
+        "stock_meat"
       ],
       "presentation": {
         "icon": "help"
@@ -2078,7 +2086,8 @@
       "weight_kg": 0.45,
       "base_value": 2,
       "tags": [
-        "food"
+        "food",
+        "stock_meat"
       ],
       "presentation": {
         "icon": "help"
@@ -2109,7 +2118,8 @@
       "weight_kg": 0.5,
       "base_value": 2,
       "tags": [
-        "food"
+        "food",
+        "stock_meat"
       ],
       "presentation": {
         "icon": "help"
@@ -2140,7 +2150,8 @@
       "weight_kg": 0.5,
       "base_value": 2,
       "tags": [
-        "food"
+        "food",
+        "stock_meat"
       ],
       "presentation": {
         "icon": "help"
@@ -2293,7 +2304,8 @@
       "weight_kg": 0.5,
       "base_value": 2,
       "tags": [
-        "food"
+        "food",
+        "stock_grain"
       ],
       "presentation": {
         "icon": "help"
@@ -2325,7 +2337,8 @@
       "base_value": 2,
       "tags": [
         "ingredient",
-        "food"
+        "food",
+        "stock_herbs"
       ],
       "presentation": {
         "icon": "help"
@@ -2386,7 +2399,8 @@
       "weight_kg": 0.01,
       "base_value": 1,
       "tags": [
-        "food"
+        "food",
+        "stock_herbs"
       ],
       "presentation": {
         "icon": "help"
@@ -2691,7 +2705,8 @@
       "base_value": 3,
       "tags": [
         "food",
-        "travel_provision"
+        "travel_provision",
+        "stock_grain"
       ],
       "presentation": {
         "icon": "bread"
@@ -2793,7 +2808,8 @@
       "base_value": 2,
       "tags": [
         "ingredient",
-        "food"
+        "food",
+        "stock_herbs"
       ],
       "presentation": {
         "icon": "help"
@@ -3014,7 +3030,8 @@
       "weight_kg": 0.25,
       "base_value": 1,
       "tags": [
-        "food"
+        "food",
+        "stock_herbs"
       ],
       "presentation": {
         "icon": "help"
@@ -3051,6 +3068,66 @@
         "icon": "help"
       },
       "kind": "ingredient"
+    },
+    {
+      "id": "falchion",
+      "display_name": "Falchion",
+      "weight_kg": 1.4,
+      "base_value": 24,
+      "tags": ["weapon"],
+      "presentation": {"icon": "broadsword"},
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.2,
+      "reach_m": 0.85,
+      "penetration": 0.8,
+      "balance": 0.55,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": ["slash"],
+      "skills": {"sword": 1},
+      "capabilities": {"durability": {"quality": 3, "yield_j": 55, "fracture_j": 85, "wear": 0.12, "failure_share": 0.65, "edge_sensitivity": 0.8, "handling_sensitivity": 0.5}}
+    },
+    {
+      "id": "knife",
+      "display_name": "Knife",
+      "weight_kg": 0.25,
+      "base_value": 3,
+      "tags": ["weapon"],
+      "presentation": {"icon": "plain-dagger"},
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 0.3,
+      "penetration": 0.8,
+      "balance": 0.8,
+      "precise": true,
+      "melee": true,
+      "ranged": false,
+      "damage_types": ["slash", "pierce"],
+      "skills": {"knife": 1},
+      "capabilities": {"durability": {"quality": 2, "yield_j": 35, "fracture_j": 55, "wear": 0.15, "failure_share": 0.6, "edge_sensitivity": 0.9, "handling_sensitivity": 0.4}}
+    },
+    {
+      "id": "spear",
+      "display_name": "Spear",
+      "weight_kg": 1.8,
+      "base_value": 10,
+      "tags": ["weapon"],
+      "presentation": {"icon": "spears"},
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.1,
+      "reach_m": 2.0,
+      "penetration": 1.4,
+      "balance": 0.5,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": ["pierce"],
+      "skills": {"polearm": 1},
+      "capabilities": {"durability": {"quality": 2, "yield_j": 45, "fracture_j": 70, "wear": 0.14, "failure_share": 0.65, "edge_sensitivity": 0.5, "handling_sensitivity": 0.7}}
     },
     {
       "id": "zweihander",

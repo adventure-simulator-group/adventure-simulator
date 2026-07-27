@@ -53,10 +53,14 @@ just content-check
 just content-check items
 ```
 
+The default `all` target runs the same build compilers used for item, quest,
+organization, and dialogue content. The targeted `items` form runs the item
+checker (the core build still validates its other compiled catalogs).
+
 Both commands exercise the production build-time validator. Diagnostics
 aggregate independent semantic failures where possible and identify source
-file, item ID, and field path. JSON syntax and duplicate-key errors include
-parser line and column. Validation rejects unsupported schemas, unknown fields,
+file, line, column, item ID, and field path. JSON syntax and duplicate-key
+errors use parser coordinates. Validation rejects unsupported schemas, unknown fields,
 duplicate IDs, invalid stable IDs, non-finite/out-of-range values,
 incompatible slots/stats, malformed weapon skills, and invalid durability,
 quality, food, hydration, alcohol, medication, or container metadata.

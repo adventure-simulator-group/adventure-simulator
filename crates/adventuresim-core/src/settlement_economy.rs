@@ -199,15 +199,20 @@ pub fn item_stock_category(id: &str, kind: CatalogKind) -> Option<Stock> {
             Stock::Metalwares
         }
         CatalogKind::Simple => Stock::GeneralGoods,
-        CatalogKind::Food => match id {
-            "oat_grain" | "rye_bread" | "travel_ration" => Stock::Grain,
-            "raw_venison" | "raw_fowl" | "raw_fish" | "raw_beast_meat" => Stock::Meat,
-            "garlic" | "sage" | "wild_mushrooms" | "salt" | "mustard" | "horseradish" | "honey"
-            | "vinegar" => Stock::Herbs,
-            "butter" | "lard" => Stock::Meat,
-            "sour_cherries" => Stock::GeneralGoods,
-            _ => Stock::GeneralGoods,
-        },
+        CatalogKind::Food => crate::item_catalog::definition(id)
+            .and_then(|item| {
+                [
+                    ("stock_grain", Stock::Grain),
+                    ("stock_meat", Stock::Meat),
+                    ("stock_herbs", Stock::Herbs),
+                    ("stock_general", Stock::GeneralGoods),
+                ]
+                .into_iter()
+                .find_map(|(tag, stock)| {
+                    item.tags.iter().any(|value| value == tag).then_some(stock)
+                })
+            })
+            .unwrap_or(Stock::GeneralGoods),
     })
 }
 
