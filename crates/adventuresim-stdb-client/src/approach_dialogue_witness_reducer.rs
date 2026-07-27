@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct ApproachDialogueWitnessArgs {
     pub observer_character_id: u64,
     pub session_id: String,
+    pub challenge_token: String,
     pub approach_kind: String,
     pub action_id: String,
     pub expected_revision: u64,
@@ -19,6 +20,7 @@ impl From<ApproachDialogueWitnessArgs> for super::Reducer {
         Self::ApproachDialogueWitness {
             observer_character_id: args.observer_character_id,
             session_id: args.session_id,
+            challenge_token: args.challenge_token,
             approach_kind: args.approach_kind,
             action_id: args.action_id,
             expected_revision: args.expected_revision,
@@ -45,6 +47,7 @@ pub trait approach_dialogue_witness {
         &self,
         observer_character_id: u64,
         session_id: String,
+        challenge_token: String,
         approach_kind: String,
         action_id: String,
         expected_revision: u64,
@@ -52,6 +55,7 @@ pub trait approach_dialogue_witness {
         self.approach_dialogue_witness_then(
             observer_character_id,
             session_id,
+            challenge_token,
             approach_kind,
             action_id,
             expected_revision,
@@ -69,6 +73,7 @@ pub trait approach_dialogue_witness {
         &self,
         observer_character_id: u64,
         session_id: String,
+        challenge_token: String,
         approach_kind: String,
         action_id: String,
         expected_revision: u64,
@@ -86,6 +91,7 @@ impl approach_dialogue_witness for super::RemoteReducers {
         &self,
         observer_character_id: u64,
         session_id: String,
+        challenge_token: String,
         approach_kind: String,
         action_id: String,
         expected_revision: u64,
@@ -100,6 +106,7 @@ impl approach_dialogue_witness for super::RemoteReducers {
             ApproachDialogueWitnessArgs {
                 observer_character_id,
                 session_id,
+                challenge_token,
                 approach_kind,
                 action_id,
                 expected_revision,

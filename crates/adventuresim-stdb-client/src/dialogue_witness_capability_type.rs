@@ -11,12 +11,8 @@ pub struct DialogueWitnessCapability {
     pub session_id: String,
     pub observer_character_id: u64,
     pub npc_id: String,
-    pub public_case_id: String,
     pub has_bound_concern: bool,
     pub bound_released: bool,
-    pub insight_state: String,
-    pub diagnosis_correct: Option<bool>,
-    pub last_outcome: String,
 }
 
 impl __sdk::InModule for DialogueWitnessCapability {
@@ -31,12 +27,8 @@ pub struct DialogueWitnessCapabilityCols {
     pub session_id: __sdk::__query_builder::Col<DialogueWitnessCapability, String>,
     pub observer_character_id: __sdk::__query_builder::Col<DialogueWitnessCapability, u64>,
     pub npc_id: __sdk::__query_builder::Col<DialogueWitnessCapability, String>,
-    pub public_case_id: __sdk::__query_builder::Col<DialogueWitnessCapability, String>,
     pub has_bound_concern: __sdk::__query_builder::Col<DialogueWitnessCapability, bool>,
     pub bound_released: __sdk::__query_builder::Col<DialogueWitnessCapability, bool>,
-    pub insight_state: __sdk::__query_builder::Col<DialogueWitnessCapability, String>,
-    pub diagnosis_correct: __sdk::__query_builder::Col<DialogueWitnessCapability, Option<bool>>,
-    pub last_outcome: __sdk::__query_builder::Col<DialogueWitnessCapability, String>,
 }
 
 impl __sdk::__query_builder::HasCols for DialogueWitnessCapability {
@@ -50,12 +42,8 @@ impl __sdk::__query_builder::HasCols for DialogueWitnessCapability {
                 "observer_character_id",
             ),
             npc_id: __sdk::__query_builder::Col::new(table_name, "npc_id"),
-            public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
             has_bound_concern: __sdk::__query_builder::Col::new(table_name, "has_bound_concern"),
             bound_released: __sdk::__query_builder::Col::new(table_name, "bound_released"),
-            insight_state: __sdk::__query_builder::Col::new(table_name, "insight_state"),
-            diagnosis_correct: __sdk::__query_builder::Col::new(table_name, "diagnosis_correct"),
-            last_outcome: __sdk::__query_builder::Col::new(table_name, "last_outcome"),
         }
     }
 }

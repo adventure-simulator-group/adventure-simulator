@@ -101,113 +101,99 @@
     if (prompt.mode !== "YesNo") { const submit = document.createElement("button"); submit.type = "submit"; submit.className = "btn btn-small"; submit.textContent = "Answer"; group.append(submit); }
     form.append(group); messages.append(form);
   };
-  const renderWitnessSocial = (social, binding) => {
-    if (!social) return;
+  let expandedClaimToken = null;
+  const affinityFeedback = (delta) => {
+    if (Math.abs(delta) < 0.05) return "Affinity: no change";
+    const sign = delta > 0 ? "+" : "−";
+    return `Affinity ${sign}${Math.abs(delta).toFixed(1)}`;
+  };
+  const claimResponsePanel = (claim, binding) => {
     const panel = document.createElement("section");
-    panel.className = "dialogue-witness-social";
-    panel.dataset.dialogueScripted = "true";
-    panel.setAttribute("aria-label", "Conversation approach");
-    if (social.pressure_cue && social.pressure_cue !== "unexamined") {
-      const cue = document.createElement("p");
-      cue.className = "dialogue-witness-cue";
-      cue.textContent = social.pressure_cue === "possible_pressure"
-        ? "Insight: You sense possible pressure, though it may have nothing to do with this account."
-        : "Insight: You notice no clear pressure signal.";
-      panel.append(cue);
-    }
-    if (social.last_outcome) {
+    panel.className = "dialogue-claim-responses";
+    panel.dataset.claimPanel = claim.challenge_token;
+    panel.id = `dialogue-claim-panel-${claim.challenge_token}`;
+    panel.setAttribute("aria-label", `Responses concerning ${claim.value}`);
+    const echo = document.createElement("p");
+    echo.className = "dialogue-claim-echo";
+    echo.textContent = `You: “${claim.value}?”`;
+    panel.append(echo);
+    if (claim.resolved) {
       const feedback = document.createElement("p");
-      feedback.className = "dialogue-witness-feedback";
+      feedback.className = "dialogue-claim-feedback";
       feedback.setAttribute("role", "status");
-      feedback.textContent = ({
-        testimony_released: "They decide to say more.",
-        clarified: "They clarify that their concern is unrelated.",
-        rapport_improved: "The approach improves the conversation.",
-        did_not_land: "The approach does not land.",
-      })[social.last_outcome] || "The conversation shifts.";
+      feedback.textContent = `${claim.outcome === "useful_answer" ? "They offer a useful answer." : "They do not yield on that point."} ${affinityFeedback(claim.affinity_delta)}`;
       panel.append(feedback);
-    }
-    if (social.available_approaches.length < 4) {
-      const guidance = document.createElement("p");
-      guidance.className = "dialogue-witness-guidance text-muted";
-      guidance.textContent = "Greyed approaches require a passive possible-pressure impression or relevant contradiction or evidence, and must be off cooldown.";
-      panel.append(guidance);
+      return panel;
     }
     const controls = document.createElement("div");
-    controls.className = "dialogue-witness-actions";
-    const invoke = (path, payload, label) => {
-      controls.querySelectorAll("button").forEach((button) => { button.disabled = true; });
-      request(path, payload).then((view) => {
-        if (dialogueResponseIsCurrent(binding, selectionGeneration, chat.dataset.localChatSubject || "", currentView)) render(view);
-      }).catch((error) => {
-        if (dialogueResponseIsCurrent(binding, selectionGeneration, chat.dataset.localChatSubject || "", currentView)) {
-          window.reportStrategicError(error, label);
-          controls.querySelectorAll("button").forEach((button) => { button.disabled = false; });
-        }
-      });
-    };
-    const button = ({ label, icon, description, unavailableDescription }, handler, disabled = false) => {
+    controls.className = "dialogue-claim-actions";
+    const concise = claim.value.length > 96 ? `${claim.value.slice(0, 93)}…` : claim.value;
+    const approaches = [
+      { approach: "charm", label: "Charm", icon: "rose", description: "Gently invite a fuller answer. Low risk and leverage.", line: `“Would you tell me more of ‘${concise}’?”` },
+      { approach: "command", label: "Command", icon: "crown", description: "Demand a direct answer. Medium risk and leverage; always strains affinity.", line: `“Speak plainly: was it truly ‘${concise}’?”` },
+      { approach: "bluff", label: "Bluff", icon: "conversation", description: "Feign contrary knowledge to force an answer. High risk and leverage.", line: `“Others tell it differently. Explain ‘${concise}’.”` },
+    ];
+    approaches.forEach(({ approach, label, icon, description, line }) => {
       const control = document.createElement("button");
       control.type = "button";
-      control.className = "social-action dialogue-witness-action";
-      control.setAttribute("aria-label", `${label}. ${description} Takes 5 minutes.`);
-      const unavailable = disabled ? ` ${unavailableDescription}` : "";
-      const tooltip = `${description} Takes 5 minutes.${unavailable}`;
-      control.dataset.strategicTooltip = tooltip;
-      control.disabled = disabled;
-      const iconHelp = document.createElement("span");
-      iconHelp.className = "social-action-icon";
-      iconHelp.dataset.strategicTooltip = tooltip;
+      control.className = "social-action dialogue-claim-action";
+      control.dataset.strategicTooltip = `${description} Takes 5 minutes.`;
+      control.setAttribute("aria-label", `${label}. ${line} ${description} Takes 5 minutes.`);
       const iconMask = document.createElement("span");
       iconMask.className = "game-icon";
       iconMask.style.setProperty("--game-icon", `url('/static/icons/game/${icon}.svg')`);
       iconMask.setAttribute("aria-hidden", "true");
-      const visibleLabel = document.createElement("span");
-      visibleLabel.className = "social-action-label";
-      visibleLabel.textContent = label;
-      iconHelp.append(iconMask);
-      control.append(iconHelp, visibleLabel);
-      control.addEventListener("click", handler, { signal });
+      const shortLabel = document.createElement("strong");
+      shortLabel.textContent = label;
+      const responseLine = document.createElement("span");
+      responseLine.className = "dialogue-claim-response-line";
+      responseLine.textContent = line;
+      control.append(iconMask, shortLabel, responseLine);
+      control.addEventListener("click", () => {
+        controls.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+        request("/api/dialogue/claim-response", {
+          session_id: binding.sessionId,
+          challenge_token: claim.challenge_token,
+          approach,
+          action_id: actionId(),
+          expected_revision: binding.revision,
+        }).then((view) => {
+          if (dialogueResponseIsCurrent(binding, selectionGeneration, chat.dataset.localChatSubject || "", currentView)) render(view);
+        }).catch((error) => {
+          if (dialogueResponseIsCurrent(binding, selectionGeneration, chat.dataset.localChatSubject || "", currentView)) {
+            window.reportStrategicError(error, `${label.toLowerCase()} claim response`);
+            controls.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+          }
+        });
+      }, { signal });
       controls.append(control);
-    };
-    const approaches = {
-      listen: {
-        label: "Listen",
-        icon: "human-ear",
-        description: "Give them space to explain what is troubling them. Uses Insight.",
-        unavailableDescription: "Unavailable until you establish a basis for the approach and its cooldown ends.",
-      },
-      reassure: {
-        label: "Reassure",
-        icon: "rose",
-        description: "Put them at ease so they feel safe enough to speak. Uses Charm.",
-        unavailableDescription: "Unavailable until you establish a basis for the approach and its cooldown ends.",
-      },
-      invoke_duty: {
-        label: "Invoke duty",
-        icon: "crown",
-        description: "Appeal to their responsibility to tell you what they know. Uses Command.",
-        unavailableDescription: "Unavailable until you establish a basis for the approach and its cooldown ends.",
-      },
-      bluff: {
-        label: "Bluff",
-        icon: "conversation",
-        description: "Mislead them into revealing more than they intended. Uses Deception.",
-        unavailableDescription: "Unavailable until you establish a basis for the approach and its cooldown ends.",
-      },
-    };
-    Object.entries(approaches).forEach(([approach, presentation]) => button(
-      presentation,
-      () => invoke("/api/dialogue/approach", {
-        session_id: binding.sessionId,
-        approach,
-        action_id: actionId(),
-        expected_revision: binding.revision,
-      }, `${presentation.label.toLowerCase()} approach`),
-      !social.available_approaches.includes(approach),
-    ));
+    });
     panel.append(controls);
-    messages.append(panel);
+    return panel;
+  };
+  const claimControl = (claim, binding, row) => {
+    const control = document.createElement("button");
+    control.type = "button";
+    control.className = `dialogue-claim dialogue-claim-${claim.assessment_direction}`;
+    const strength = Math.max(0, Math.min(1, claim.assessment_strength));
+    control.style.setProperty("--claim-mix", `${55 + strength * 45}%`);
+    control.style.setProperty("--claim-bg-mix", `${10 + strength * 12}%`);
+    const state = ({ unknown: "Insight is uncertain", likely_false: "Insight leans untrue", likely_true: "Insight leans true" })[claim.assessment_direction] || "Insight is uncertain";
+    control.setAttribute("aria-label", `${claim.value}. ${state}. Open responses.`);
+    control.setAttribute("aria-controls", `dialogue-claim-panel-${claim.challenge_token}`);
+    control.setAttribute("aria-expanded", String(expandedClaimToken === claim.challenge_token));
+    control.textContent = claim.value;
+    const open = () => {
+      document.querySelectorAll(".dialogue-claim-responses").forEach((panel) => panel.remove());
+      expandedClaimToken = expandedClaimToken === claim.challenge_token ? null : claim.challenge_token;
+      document.querySelectorAll(".dialogue-claim").forEach((candidate) => candidate.setAttribute("aria-expanded", "false"));
+      if (expandedClaimToken) {
+        control.setAttribute("aria-expanded", "true");
+        row.append(claimResponsePanel(claim, binding));
+      }
+    };
+    control.addEventListener("click", open, { signal });
+    return control;
   };
   // Topics are exposed by highlighted phrases in dialogue, not by guessing
   // hidden topic labels in the free-text box.
@@ -242,16 +228,24 @@
       const timestamp = document.createElement("span"); timestamp.className = "chat-timestamp"; timestamp.textContent = "[--:--] ";
       const speaker = document.createElement("strong"); speaker.textContent = `${event.speaker_name}: `;
       row.append(timestamp, speaker);
-      event.fragments.forEach(({ fragment, source }) => {
-        if (fragment.kind === "text") { row.append(document.createTextNode(fragment.value)); const edit = sourceLink(source); if (edit) row.append(edit); }
+      event.fragments.forEach(({ fragment, source, claim_segments }) => {
+        if (fragment.kind === "text") {
+          if (claim_segments) claim_segments.forEach((segment) => {
+            row.append(segment.kind === "claim" ? claimControl(segment, binding, row) : document.createTextNode(segment.value));
+          });
+          else row.append(document.createTextNode(fragment.value));
+          const edit = sourceLink(source); if (edit) row.append(edit);
+        }
         else if (fragment.kind === "period_claim") { const claim = document.createElement("q"); claim.className = "dialogue-period-claim"; claim.textContent = fragment.value; row.append(claim); const edit = sourceLink(source); if (edit) row.append(edit); }
         else if (fragment.kind === "authoritative_explanation") { const explanation = document.createElement("span"); explanation.className = "dialogue-authoritative-explanation"; explanation.dataset.reference = fragment.reference; explanation.textContent = fragment.value; row.append(explanation); const edit = sourceLink(source); if (edit) row.append(edit); }
         else if (fragment.kind === "topic") row.append(topicAnchor({ id: fragment.topic, label: fragment.label, source }, { ...binding, topicId: fragment.topic }));
       });
       messages.append(row);
+      const expanded = event.fragments.flatMap((entry) => entry.claim_segments || [])
+        .find((segment) => segment.kind === "claim" && segment.challenge_token === expandedClaimToken);
+      if (expanded) row.append(claimResponsePanel(expanded, binding));
     });
     renderPrompt(view.open_prompt);
-    renderWitnessSocial(view.witness_social, binding);
     refreshCompletion();
     messages.scrollTop = messages.scrollHeight;
   };

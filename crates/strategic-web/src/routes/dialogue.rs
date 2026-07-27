@@ -17,7 +17,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/dialogue/topic", post(topic))
         .route("/api/dialogue/answer", post(answer))
         .route("/api/dialogue/join", post(join))
-        .route("/api/dialogue/approach", post(witness_approach))
+        .route("/api/dialogue/claim-response", post(witness_approach))
         .route(
             "/api/settlements/{settlement_id}/locations/{location_id}/npcs",
             get(location_npcs),
@@ -68,12 +68,17 @@ struct TopicRow {
     source_ref_json: String,
 }
 
-#[derive(Deserialize)]
-struct WitnessSocialRow {
-    npc_id: String,
-    pressure_cue: String,
-    last_outcome: String,
-    available_approaches_json: String,
+#[derive(Clone, Deserialize)]
+struct WitnessClaimRow {
+    event_sequence: u32,
+    claim_order: u32,
+    challenge_token: String,
+    displayed_text: String,
+    assessment_direction: String,
+    assessment_strength: f32,
+    resolved: bool,
+    outcome: String,
+    affinity_delta: f32,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -156,14 +161,6 @@ struct ConversationView {
     events: Vec<EventView>,
     topics: Vec<TopicView>,
     open_prompt: Option<PromptView>,
-    witness_social: Option<WitnessSocialView>,
-}
-#[derive(Serialize)]
-struct WitnessSocialView {
-    npc_id: String,
-    pressure_cue: String,
-    last_outcome: String,
-    available_approaches: Vec<String>,
 }
 #[derive(Serialize)]
 struct EventView {
@@ -177,6 +174,23 @@ struct EventView {
 struct FragmentView {
     fragment: adventuresim_dialogue::Fragment,
     source: Option<EditSource>,
+    claim_segments: Option<Vec<ClaimSegmentView>>,
+}
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ClaimSegmentView {
+    Text {
+        value: String,
+    },
+    Claim {
+        value: String,
+        challenge_token: String,
+        assessment_direction: String,
+        assessment_strength: f32,
+        resolved: bool,
+        outcome: String,
+        affinity_delta: f32,
+    },
 }
 #[derive(Serialize)]
 struct TopicView {
@@ -583,6 +597,38 @@ async fn chat_with_npc(
     ))
 }
 
+fn claim_segments(text: &str, claims: &[WitnessClaimRow]) -> Option<Vec<ClaimSegmentView>> {
+    if claims.is_empty() {
+        return None;
+    }
+    let mut segments = Vec::new();
+    let mut remainder = text;
+    for claim in claims {
+        let (before, after) = remainder.split_once(&claim.displayed_text)?;
+        if !before.is_empty() {
+            segments.push(ClaimSegmentView::Text {
+                value: before.into(),
+            });
+        }
+        segments.push(ClaimSegmentView::Claim {
+            value: claim.displayed_text.clone(),
+            challenge_token: claim.challenge_token.clone(),
+            assessment_direction: claim.assessment_direction.clone(),
+            assessment_strength: claim.assessment_strength.clamp(0.0, 1.0),
+            resolved: claim.resolved,
+            outcome: claim.outcome.clone(),
+            affinity_delta: claim.affinity_delta,
+        });
+        remainder = after;
+    }
+    if !remainder.is_empty() {
+        segments.push(ClaimSegmentView::Text {
+            value: remainder.into(),
+        });
+    }
+    Some(segments)
+}
+
 async fn build_view(
     state: &AppState,
     character_id: u64,
@@ -616,6 +662,15 @@ async fn build_view(
         .iter()
         .map(|p| (p.role.clone(), p.display_name.clone()))
         .collect();
+    let mut claims = state
+        .db
+        .query::<WitnessClaimRow>(&format!(
+            "SELECT * FROM backend_dialogue_witness_claims WHERE session_id = {} AND observer_character_id = {character_id}",
+            sql_string_literal(session_id),
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    claims.sort_by_key(|claim| (claim.event_sequence, claim.claim_order));
     let mut events = state
         .db
         .query::<EventRow>(&format!(
@@ -636,6 +691,11 @@ async fn build_view(
                 .iter()
                 .find(|p| p.role == event.speaker_role)
                 .is_some_and(|p| p.character_id.is_some());
+            let event_claims = claims
+                .iter()
+                .filter(|claim| claim.event_sequence == event.sequence)
+                .cloned()
+                .collect::<Vec<_>>();
             EventView {
                 sequence: event.sequence,
                 speaker_name: names
@@ -647,9 +707,18 @@ async fn build_view(
                 fragments: fragments
                     .into_iter()
                     .enumerate()
-                    .map(|(index, fragment)| FragmentView {
-                        fragment,
-                        source: sources.get(index).cloned().flatten().and_then(edit_source),
+                    .map(|(index, fragment)| {
+                        let segments = match &fragment {
+                            adventuresim_dialogue::Fragment::Text { value } => {
+                                claim_segments(value, &event_claims)
+                            }
+                            _ => None,
+                        };
+                        FragmentView {
+                            fragment,
+                            source: sources.get(index).cloned().flatten().and_then(edit_source),
+                            claim_segments: segments,
+                        }
                     })
                     .collect(),
             }
@@ -708,21 +777,6 @@ async fn build_view(
                 .collect(),
         }
     });
-    let witness_social = state
-        .db
-        .query_one::<WitnessSocialRow>(&format!(
-            "SELECT * FROM backend_dialogue_witness_capabilities WHERE session_id = {} AND observer_character_id = {character_id}",
-            sql_string_literal(session_id),
-        ))
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
-        .map(|social| WitnessSocialView {
-            npc_id: social.npc_id,
-            pressure_cue: social.pressure_cue,
-            last_outcome: social.last_outcome,
-            available_approaches: serde_json::from_str(&social.available_approaches_json)
-                .unwrap_or_default(),
-        });
     Ok(ConversationView {
         session_id: session.id,
         revision: session.revision,
@@ -731,7 +785,6 @@ async fn build_view(
         events,
         topics,
         open_prompt,
-        witness_social,
     })
 }
 
@@ -920,6 +973,7 @@ async fn join(
 #[derive(Deserialize)]
 struct WitnessApproachRequest {
     session_id: String,
+    challenge_token: String,
     approach: String,
     action_id: String,
     expected_revision: u64,
@@ -931,10 +985,7 @@ async fn witness_approach(
     Json(request): Json<WitnessApproachRequest>,
 ) -> Result<Json<ConversationView>, StatusCode> {
     let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
-    if !matches!(
-        request.approach.as_str(),
-        "listen" | "reassure" | "invoke_duty" | "bluff"
-    ) {
+    if !matches!(request.approach.as_str(), "charm" | "command" | "bluff") {
         return Err(StatusCode::BAD_REQUEST);
     }
     state
@@ -944,6 +995,7 @@ async fn witness_approach(
             &[
                 json!(character_id),
                 json!(&request.session_id),
+                json!(&request.challenge_token),
                 json!(request.approach),
                 json!(request.action_id),
                 json!(request.expected_revision),
@@ -954,4 +1006,36 @@ async fn witness_approach(
     Ok(Json(
         build_view(&state, character_id, &request.session_id).await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn claim(text: &str, order: u32) -> WitnessClaimRow {
+        WitnessClaimRow {
+            event_sequence: 4,
+            claim_order: order,
+            challenge_token: format!("opaque-{order}"),
+            displayed_text: text.into(),
+            assessment_direction: "likely_true".into(),
+            assessment_strength: 0.5,
+            resolved: false,
+            outcome: String::new(),
+            affinity_delta: 0.0,
+        }
+    }
+
+    #[test]
+    fn claim_segmentation_preserves_authoritative_order_and_fails_closed() {
+        let rows = vec![claim("alone", 0), claim("a creature as tall as a tree", 1)];
+        let segments = claim_segments(
+            "I was there alone and saw a creature as tall as a tree.",
+            &rows,
+        )
+        .expect("authoritative boundaries match");
+        assert_eq!(segments.len(), 5);
+        assert!(claim_segments("I was there with company.", &rows).is_none());
+        assert!(claim_segments("A creature as tall as a tree saw me alone.", &rows).is_none());
+    }
 }

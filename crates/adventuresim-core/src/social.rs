@@ -873,104 +873,126 @@ pub fn diagnosed_axis(
     (belief, confidence)
 }
 
-/// Observer-facing result of listening for a witness's pressure point.
-///
-/// This is intentionally not a truth or lie verdict. Both results are possible
-/// whether or not the witness has a quest-bound concern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WitnessPressureCue {
-    NoClearSignal,
-    PossiblePressure,
+pub enum ClaimAssessmentDirection {
+    Unknown,
+    LikelyFalse,
+    LikelyTrue,
 }
 
-pub fn diagnose_witness_pressure(
-    has_bound_concern: bool,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClaimAssessment {
+    pub direction: ClaimAssessmentDirection,
+    /// Bounded presentation strength. This is a noisy demeanor perception, not
+    /// confidence in factual accuracy.
+    pub strength: f32,
+}
+
+/// Produce a fallible observer perception for one atomic claim.
+///
+/// Noise deliberately dominates weak checks, so any demeanor can produce any
+/// colored direction. Better Insight strengthens a non-ambiguous private
+/// demeanor signal without ever making it certain.
+pub fn assess_testimony_claim(
+    demeanor_truth_signal: f32,
     insight_check: f32,
     roll: f32,
-) -> WitnessPressureCue {
+) -> ClaimAssessment {
     let insight = insight_check.clamp(0.0, 5.0);
-    let cue_chance = if has_bound_concern {
-        0.35 + insight * 0.1
+    let noise = (roll.clamp(0.0, 1.0) * 2.0 - 1.0) * 0.75;
+    let signal = demeanor_truth_signal.clamp(-1.0, 1.0) * (0.1 + insight * 0.06) + noise;
+    let absolute = signal.abs();
+    let direction = if absolute < 0.18 {
+        ClaimAssessmentDirection::Unknown
+    } else if signal < 0.0 {
+        ClaimAssessmentDirection::LikelyFalse
     } else {
-        0.25 - insight * 0.02
+        ClaimAssessmentDirection::LikelyTrue
     };
-    if roll.clamp(0.0, 1.0) < cue_chance.clamp(0.1, 0.85) {
-        WitnessPressureCue::PossiblePressure
-    } else {
-        WitnessPressureCue::NoClearSignal
+    ClaimAssessment {
+        direction,
+        strength: ((absolute - 0.18).max(0.0) / 0.82).clamp(0.0, 1.0),
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WitnessApproach {
-    Listen,
-    Reassure,
-    InvokeDuty,
+pub enum ClaimChallengeApproach {
+    Charm,
+    Command,
     Bluff,
 }
 
-impl WitnessApproach {
+impl ClaimChallengeApproach {
     pub const fn skill_name(self) -> &'static str {
         match self {
-            Self::Listen => "Insight",
-            Self::Reassure => "Charm",
-            Self::InvokeDuty => "Command",
+            Self::Charm => "Charm",
+            Self::Command => "Command",
             Self::Bluff => "Deception",
         }
     }
 
     const fn social_action(self) -> SocialActionKind {
         match self {
-            Self::Listen => SocialActionKind::Listen,
-            Self::Reassure => SocialActionKind::LightenMood,
-            Self::InvokeDuty => SocialActionKind::Rally,
+            Self::Charm => SocialActionKind::LightenMood,
+            Self::Command => SocialActionKind::Rally,
             Self::Bluff => SocialActionKind::Reframe,
+        }
+    }
+
+    pub const fn leverage(self) -> f32 {
+        match self {
+            Self::Charm => 0.0,
+            Self::Command => 0.45,
+            Self::Bluff => 0.9,
+        }
+    }
+
+    pub const fn failure_affinity_loss(self) -> f32 {
+        match self {
+            Self::Charm => -0.8,
+            Self::Command => -1.4,
+            Self::Bluff => -2.5,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct WitnessApproachInput {
-    pub approach: WitnessApproach,
+pub struct ClaimChallengeInput {
+    pub approach: ClaimChallengeApproach,
+    pub claim_is_factually_accurate: bool,
     pub skill_check: f32,
     pub affinity: f32,
     pub familiarity_hours: f32,
     /// Current settled NPC morale in the ordinary -100..=100 strategic range.
     /// It contributes at most +/-0.12 chance before the common clamp.
     pub current_morale: f32,
-    pub pressure_diagnosis_correct: Option<bool>,
     pub target_transparency: Transparency,
     pub target_mirth: Mirth,
-    pub has_bound_concern: bool,
     pub roll: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WitnessApproachOutcome {
+pub struct ClaimChallengeOutcome {
     pub succeeded: bool,
-    pub released_bound_testimony: bool,
-    pub offered_clarification: bool,
     pub morale_delta: f32,
     pub affinity_delta: f32,
 }
 
-/// Resolve a witness approach through the same relationship/morale curve used
-/// by companion social actions. Personality changes the private effective
-/// check, but the returned outcome contains no trait, DC, chance, or roll.
-pub fn resolve_witness_approach(input: WitnessApproachInput) -> WitnessApproachOutcome {
+/// Resolve a response to one atomic claim. Truthful claims always use the same
+/// safe failed-challenge result as an insufficient check against an untrue
+/// claim, so callers cannot infer why a response failed.
+pub fn resolve_claim_challenge(input: ClaimChallengeInput) -> ClaimChallengeOutcome {
     let personality_fit = match (
         input.approach,
         input.target_transparency,
         input.target_mirth,
     ) {
-        (WitnessApproach::Listen, Transparency::Open, _) => 0.6,
-        (WitnessApproach::Listen, Transparency::Guarded, _) => -0.6,
-        (WitnessApproach::Reassure, _, Mirth::Merry) => 0.45,
-        (WitnessApproach::Reassure, _, Mirth::Grave) => -0.45,
-        (WitnessApproach::InvokeDuty, Transparency::Open, _) => -0.3,
-        (WitnessApproach::InvokeDuty, Transparency::Guarded, _) => 0.25,
-        (WitnessApproach::Bluff, Transparency::Open, _) => 0.25,
-        (WitnessApproach::Bluff, Transparency::Guarded, _) => -0.35,
+        (ClaimChallengeApproach::Charm, _, Mirth::Merry) => 0.45,
+        (ClaimChallengeApproach::Charm, _, Mirth::Grave) => -0.45,
+        (ClaimChallengeApproach::Command, Transparency::Open, _) => -0.3,
+        (ClaimChallengeApproach::Command, Transparency::Guarded, _) => 0.25,
+        (ClaimChallengeApproach::Bluff, Transparency::Open, _) => 0.25,
+        (ClaimChallengeApproach::Bluff, Transparency::Guarded, _) => -0.35,
         _ => 0.0,
     };
     let sensitivity = match input.target_transparency {
@@ -982,20 +1004,37 @@ pub fn resolve_witness_approach(input: WitnessApproachInput) -> WitnessApproachO
     let outcome = resolve_social_attempt(SocialAttempt {
         action: input.approach.social_action(),
         topic: SocialTopic::Defeat,
-        skill_check: input.skill_check + personality_fit + morale_fit,
+        skill_check: input.skill_check + personality_fit + morale_fit + input.approach.leverage(),
         affinity: input.affinity,
         familiarity_hours: input.familiarity_hours,
-        diagnosis_correct: input.pressure_diagnosis_correct,
+        diagnosis_correct: None,
         sensitivity,
         roll: input.roll,
     });
-    WitnessApproachOutcome {
-        succeeded: outcome.succeeded,
-        released_bound_testimony: outcome.succeeded && input.has_bound_concern,
-        offered_clarification: outcome.succeeded && !input.has_bound_concern,
-        morale_delta: outcome.morale_delta,
-        affinity_delta: outcome.affinity_delta,
+    let succeeded = !input.claim_is_factually_accurate && outcome.succeeded;
+    let affinity_delta = if succeeded {
+        if input.approach == ClaimChallengeApproach::Command {
+            -0.4
+        } else {
+            0.0
+        }
+    } else {
+        input.approach.failure_affinity_loss()
+    };
+    ClaimChallengeOutcome {
+        succeeded,
+        morale_delta: if succeeded {
+            outcome.morale_delta
+        } else {
+            outcome.morale_delta.min(0.0)
+        },
+        affinity_delta,
     }
+}
+
+pub fn realized_affinity_delta(current: f32, requested_delta: f32) -> f32 {
+    (current + requested_delta).clamp(AFFINITY_MIN, AFFINITY_MAX)
+        - current.clamp(AFFINITY_MIN, AFFINITY_MAX)
 }
 
 #[cfg(test)]
@@ -1083,85 +1122,94 @@ mod tests {
     }
 
     #[test]
-    fn witness_pressure_cues_overlap_concern_states() {
-        for has_concern in [false, true] {
-            assert_eq!(
-                diagnose_witness_pressure(has_concern, 3.0, 0.0),
-                WitnessPressureCue::PossiblePressure
-            );
-            assert_eq!(
-                diagnose_witness_pressure(has_concern, 3.0, 0.99),
-                WitnessPressureCue::NoClearSignal
-            );
+    fn claim_assessments_are_bounded_and_overlap_demeanor_states() {
+        for truth_signal in [-1.0, 0.0, 1.0] {
+            let low = assess_testimony_claim(truth_signal, 3.0, 0.0);
+            let high = assess_testimony_claim(truth_signal, 3.0, 1.0);
+            assert_ne!(low.direction, high.direction);
+            assert!((0.0..=1.0).contains(&low.strength));
+            assert!((0.0..=1.0).contains(&high.strength));
         }
+        assert_eq!(
+            assess_testimony_claim(1.0, 0.0, 0.43).direction,
+            ClaimAssessmentDirection::Unknown
+        );
+        let correct = |insight| {
+            (0..1_000)
+                .filter(|index| {
+                    assess_testimony_claim(1.0, insight, *index as f32 / 999.0).direction
+                        == ClaimAssessmentDirection::LikelyTrue
+                })
+                .count()
+        };
+        assert!(correct(5.0) > correct(0.0));
     }
 
     #[test]
-    fn witness_personality_changes_which_approach_lands() {
-        let attempt = |approach, target_transparency, target_mirth| {
-            resolve_witness_approach(WitnessApproachInput {
-                approach,
+    fn challenge_risk_and_leverage_increase_by_approach() {
+        assert!(
+            ClaimChallengeApproach::Charm.leverage() < ClaimChallengeApproach::Command.leverage()
+        );
+        assert!(
+            ClaimChallengeApproach::Command.leverage() < ClaimChallengeApproach::Bluff.leverage()
+        );
+        assert!(
+            ClaimChallengeApproach::Charm.failure_affinity_loss().abs()
+                < ClaimChallengeApproach::Command
+                    .failure_affinity_loss()
+                    .abs()
+        );
+        assert!(
+            ClaimChallengeApproach::Command
+                .failure_affinity_loss()
+                .abs()
+                < ClaimChallengeApproach::Bluff.failure_affinity_loss().abs()
+        );
+    }
+
+    #[test]
+    fn truthful_and_insufficient_challenges_share_safe_failure() {
+        let attempt = |claim_is_factually_accurate, roll| {
+            resolve_claim_challenge(ClaimChallengeInput {
+                approach: ClaimChallengeApproach::Charm,
+                claim_is_factually_accurate,
                 skill_check: 2.5,
                 affinity: 0.0,
                 familiarity_hours: 0.0,
                 current_morale: 0.0,
-                pressure_diagnosis_correct: None,
-                target_transparency,
-                target_mirth,
-                has_bound_concern: true,
-                roll: 0.55,
+                target_transparency: Transparency::Neutral,
+                target_mirth: Mirth::Neutral,
+                roll,
             })
         };
-        assert!(attempt(WitnessApproach::Listen, Transparency::Open, Mirth::Neutral).succeeded);
-        assert!(
-            !attempt(
-                WitnessApproach::Listen,
-                Transparency::Guarded,
-                Mirth::Neutral
-            )
-            .succeeded
-        );
-        assert!(attempt(WitnessApproach::Reassure, Transparency::Open, Mirth::Merry).succeeded);
-        assert!(!attempt(WitnessApproach::Reassure, Transparency::Open, Mirth::Grave).succeeded);
+        let truthful = attempt(true, 0.0);
+        let insufficient = attempt(false, 1.0);
+        assert!(!truthful.succeeded);
+        assert!(!insufficient.succeeded);
+        assert_eq!(truthful.affinity_delta, insufficient.affinity_delta);
     }
 
     #[test]
-    fn benign_pressure_never_releases_bound_testimony() {
-        let outcome = resolve_witness_approach(WitnessApproachInput {
-            approach: WitnessApproach::Listen,
+    fn command_always_takes_an_affinity_toll() {
+        let outcome = resolve_claim_challenge(ClaimChallengeInput {
+            approach: ClaimChallengeApproach::Command,
+            claim_is_factually_accurate: false,
             skill_check: 5.0,
             affinity: 100.0,
             familiarity_hours: 100.0,
             current_morale: 0.0,
-            pressure_diagnosis_correct: Some(true),
             target_transparency: Transparency::Open,
             target_mirth: Mirth::Neutral,
-            has_bound_concern: false,
             roll: 0.0,
         });
         assert!(outcome.succeeded);
-        assert!(!outcome.released_bound_testimony);
-        assert!(outcome.offered_clarification);
+        assert!(outcome.affinity_delta < 0.0);
     }
 
     #[test]
-    fn settled_witness_morale_mechanically_changes_the_same_approach() {
-        let attempt = |current_morale| {
-            resolve_witness_approach(WitnessApproachInput {
-                approach: WitnessApproach::Reassure,
-                skill_check: 2.5,
-                affinity: 0.0,
-                familiarity_hours: 0.0,
-                current_morale,
-                pressure_diagnosis_correct: Some(true),
-                target_transparency: Transparency::Neutral,
-                target_mirth: Mirth::Neutral,
-                has_bound_concern: true,
-                roll: 0.5,
-            })
-        };
-        assert!(attempt(100.0).succeeded);
-        assert!(!attempt(-100.0).succeeded);
+    fn realized_affinity_delta_reports_clamping() {
+        assert!((realized_affinity_delta(-99.5, -2.5) + 0.5).abs() < 0.0001);
+        assert_eq!(realized_affinity_delta(0.0, 0.0), 0.0);
     }
 
     #[test]

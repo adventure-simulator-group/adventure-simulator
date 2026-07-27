@@ -152,8 +152,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_sessions_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_topic_option_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_topic_options_table.rs` — Generated SpacetimeDB table interface.
-- `crates/adventuresim-stdb-client/src/backend_dialogue_witness_capabilities_table.rs` — Generated SpacetimeDB table interface.
-- `crates/adventuresim-stdb-client/src/backend_dialogue_witness_capability_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_dialogue_witness_claim_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_dialogue_witness_claims_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_forage_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_forage_receipts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_investigation_action_outcome_type.rs` — Generated SpacetimeDB data type.
@@ -317,6 +317,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/dialogue_session_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/dialogue_topic_option_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/dialogue_witness_capability_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_witness_claim_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_method_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_type.rs` — Generated SpacetimeDB data type.
@@ -760,7 +761,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/western_christian_arrangement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/withdraw_party_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/witness_social_action_receipt_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/witness_social_cooldown_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/woodland_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_clock_schedule_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_clock_table.rs` — Generated SpacetimeDB table interface.

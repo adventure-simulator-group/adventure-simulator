@@ -6917,6 +6917,63 @@ pub(crate) fn dialogue_referred_witness(
     )
 }
 
+pub(crate) struct ReferredTestimonyClaim {
+    pub proposition_id: String,
+    pub displayed_text: String,
+    pub claim_is_factually_accurate: bool,
+    pub demeanor_truth_signal: f32,
+}
+
+/// Recover proposition-granular presentation from private generation authority.
+/// The gateway never receives proposition IDs or reliability; only the social
+/// module converts these rows into opaque observer-scoped claim projections.
+pub(crate) fn referred_testimony_claims(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    npc_id: &str,
+    withheld: bool,
+) -> Result<(u32, Vec<ReferredTestimonyClaim>), String> {
+    let (_, witness) = dialogue_referred_witness(ctx, character_id, session, npc_id)?
+        .ok_or("Dialogue has no bound witness testimony")?;
+    let claims = witness
+        .testimony
+        .iter()
+        .filter(|draft| {
+            (draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld)
+                == withheld
+        })
+        .map(|draft| {
+            // The surrounding testimony variant remains ordinary dialogue text;
+            // only the exact atomic claim supplied to its `{testimony}` slot is
+            // challengeable.
+            let displayed_text = draft.spoken_text.trim().to_owned();
+            let authority = adventuresim_core::quest_generation::testimony_claim_authority(draft);
+            Ok(ReferredTestimonyClaim {
+                proposition_id: draft.proposition_id.clone(),
+                displayed_text,
+                claim_is_factually_accurate: authority.factually_accurate,
+                demeanor_truth_signal: authority.demeanor_truth_signal,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let response_id = if withheld {
+        "witness-social-release"
+    } else {
+        "hear-referred-testimony"
+    };
+    let event_sequence = ctx
+        .db
+        .dialogue_event()
+        .session_id()
+        .filter(&session.id)
+        .filter(|event| event.response_id == response_id)
+        .map(|event| event.sequence)
+        .max()
+        .ok_or("Heard witness claim event is unavailable")?;
+    Ok((event_sequence, claims))
+}
+
 pub(crate) fn release_referred_withheld_testimony(
     ctx: &ReducerContext,
     character_id: u64,

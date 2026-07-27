@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "dialogue-client.js"), "utf8");
+const dialogueCss = fs.readFileSync(path.join(__dirname, "..", "static", "css", "strategic.css"), "utf8");
 const {
   dialogueCompletion,
   dialogueResponseIsCurrent,
@@ -37,31 +38,26 @@ test("client renders only persisted authoritative views and enforces prompt boun
   assert.match(source, /choices\.length\s*<\s*prompt\.min_choices/);
 });
 
-test("witness social controls use observer-safe projections and authoritative routes", () => {
-  assert.match(source, /view\.witness_social/);
+test("atomic witness claims use observer-safe projections and authoritative responses", () => {
+  assert.match(source, /claim_segments/);
   assert.doesNotMatch(source, /api\/dialogue\/spend-time/);
-  assert.doesNotMatch(source, /Spend time \(30 min\)/);
   assert.doesNotMatch(source, /api\/dialogue\/insight/);
-  assert.match(source, /api\/dialogue\/approach/);
+  assert.match(source, /api\/dialogue\/claim-response/);
+  assert.match(source, /challenge_token:\s*claim\.challenge_token/);
   assert.match(source, /expected_revision:\s*binding\.revision/);
-  assert.match(source, /Insight: You sense possible pressure, though it may have nothing to do with this account/);
-  assert.match(source, /Insight: You notice no clear pressure signal/);
-  assert.doesNotMatch(source, /Relationship:|Familiarity:|Demeanor:/);
-  assert.doesNotMatch(source, /has_bound_concern|diagnosis_correct|success_chance|target_transparency/);
-  assert.match(source, /visibleLabel\.textContent = label/);
-  assert.doesNotMatch(source, /\(10 min\)|\(30 min\)/);
-  assert.doesNotMatch(source, /Read demeanor/);
-  assert.doesNotMatch(source, /icon: "awareness"/);
-  assert.match(source, /icon: "human-ear"/);
-  assert.match(source, /icon: "rose"/);
-  assert.match(source, /icon: "crown"/);
-  assert.match(source, /icon: "conversation"/);
-  assert.match(source, /const tooltip = `\$\{description\} Takes 5 minutes\.\$\{unavailable\}`/);
-  assert.match(source, /iconHelp\.dataset\.strategicTooltip = tooltip/);
-  assert.match(source, /control\.dataset\.strategicTooltip = tooltip/);
-  assert.match(source, /`\$\{label\}\. \$\{description\} Takes 5 minutes\.`/);
-  assert.match(source, /Greyed approaches require a passive possible-pressure impression or relevant contradiction or evidence/);
-  assert.match(source, /Unavailable until you establish a basis for the approach and its cooldown ends/);
+  assert.match(dialogueCss, /dialogue-claim-unknown/);
+  assert.match(dialogueCss, /dialogue-claim-likely_false/);
+  assert.match(dialogueCss, /dialogue-claim-likely_true/);
+  assert.match(source, /aria-expanded/);
+  assert.match(source, /aria-controls/);
+  assert.match(dialogueCss, /dialogue-claim-actions\s*\{[^}]*flex-direction:\s*column/s);
+  assert.match(source, /Charm/);
+  assert.match(source, /Command/);
+  assert.match(source, /Bluff/);
+  assert.match(source, /Takes 5 minutes/);
+  assert.match(source, /Affinity \$\{sign\}/);
+  assert.doesNotMatch(source, /pressure_cue|possible-pressure|cooldown|available_approaches/);
+  assert.doesNotMatch(source, /has_bound_concern|diagnosis_correct|success_chance|target_transparency|proposition_id|reliability|truthful_text/);
 });
 
 test("dialogue does not expose the removed diagnosis and medication examination flow", () => {

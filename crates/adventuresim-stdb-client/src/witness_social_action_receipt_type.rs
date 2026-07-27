@@ -12,6 +12,7 @@ pub struct WitnessSocialActionReceipt {
     pub observer_character_id: u64,
     pub action_id: String,
     pub action_kind: String,
+    pub challenge_token: String,
     pub resulting_revision: u64,
 }
 
@@ -28,6 +29,7 @@ pub struct WitnessSocialActionReceiptCols {
     pub observer_character_id: __sdk::__query_builder::Col<WitnessSocialActionReceipt, u64>,
     pub action_id: __sdk::__query_builder::Col<WitnessSocialActionReceipt, String>,
     pub action_kind: __sdk::__query_builder::Col<WitnessSocialActionReceipt, String>,
+    pub challenge_token: __sdk::__query_builder::Col<WitnessSocialActionReceipt, String>,
     pub resulting_revision: __sdk::__query_builder::Col<WitnessSocialActionReceipt, u64>,
 }
 
@@ -43,6 +45,7 @@ impl __sdk::__query_builder::HasCols for WitnessSocialActionReceipt {
             ),
             action_id: __sdk::__query_builder::Col::new(table_name, "action_id"),
             action_kind: __sdk::__query_builder::Col::new(table_name, "action_kind"),
+            challenge_token: __sdk::__query_builder::Col::new(table_name, "challenge_token"),
             resulting_revision: __sdk::__query_builder::Col::new(table_name, "resulting_revision"),
         }
     }

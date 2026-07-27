@@ -51,8 +51,8 @@ pub mod backend_dialogue_session_type;
 pub mod backend_dialogue_sessions_table;
 pub mod backend_dialogue_topic_option_type;
 pub mod backend_dialogue_topic_options_table;
-pub mod backend_dialogue_witness_capabilities_table;
-pub mod backend_dialogue_witness_capability_type;
+pub mod backend_dialogue_witness_claim_type;
+pub mod backend_dialogue_witness_claims_table;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
 pub mod backend_investigation_action_outcome_type;
@@ -216,6 +216,7 @@ pub mod dialogue_prompt_type;
 pub mod dialogue_session_type;
 pub mod dialogue_topic_option_type;
 pub mod dialogue_witness_capability_type;
+pub mod dialogue_witness_claim_type;
 pub mod direct_historical_vegetation_cover_type;
 pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
@@ -657,7 +658,6 @@ pub mod weapon_skill_distribution_type;
 pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
 pub mod witness_social_action_receipt_type;
-pub mod witness_social_cooldown_type;
 pub mod woodland_type;
 pub mod world_clock_schedule_type;
 pub mod world_clock_table;
@@ -715,8 +715,8 @@ pub use backend_dialogue_session_type::BackendDialogueSession;
 pub use backend_dialogue_sessions_table::*;
 pub use backend_dialogue_topic_option_type::BackendDialogueTopicOption;
 pub use backend_dialogue_topic_options_table::*;
-pub use backend_dialogue_witness_capabilities_table::*;
-pub use backend_dialogue_witness_capability_type::BackendDialogueWitnessCapability;
+pub use backend_dialogue_witness_claim_type::BackendDialogueWitnessClaim;
+pub use backend_dialogue_witness_claims_table::*;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
@@ -880,6 +880,7 @@ pub use dialogue_prompt_type::DialoguePrompt;
 pub use dialogue_session_type::DialogueSession;
 pub use dialogue_topic_option_type::DialogueTopicOption;
 pub use dialogue_witness_capability_type::DialogueWitnessCapability;
+pub use dialogue_witness_claim_type::DialogueWitnessClaim;
 pub use direct_historical_vegetation_cover_type::DirectHistoricalVegetationCover;
 pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMethod;
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
@@ -1321,7 +1322,6 @@ pub use weapon_skill_distribution_type::WeaponSkillDistribution;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
 pub use witness_social_action_receipt_type::WitnessSocialActionReceipt;
-pub use witness_social_cooldown_type::WitnessSocialCooldown;
 pub use woodland_type::Woodland;
 pub use world_clock_schedule_type::WorldClockSchedule;
 pub use world_clock_table::*;
@@ -1378,6 +1378,7 @@ pub enum Reducer {
     ApproachDialogueWitness {
         observer_character_id: u64,
         session_id: String,
+        challenge_token: String,
         approach_kind: String,
         action_id: String,
         expected_revision: u64,
@@ -2186,12 +2187,14 @@ impl __sdk::Reducer for Reducer {
             Reducer::ApproachDialogueWitness{
                 observer_character_id,
                 session_id,
+                challenge_token,
                 approach_kind,
                 action_id,
                 expected_revision,
 }             => __sats::bsatn::to_vec(&approach_dialogue_witness_reducer::ApproachDialogueWitnessArgs {
                 observer_character_id: observer_character_id.clone(),
                 session_id: session_id.clone(),
+                challenge_token: challenge_token.clone(),
                 approach_kind: approach_kind.clone(),
                 action_id: action_id.clone(),
                 expected_revision: expected_revision.clone(),
@@ -3281,7 +3284,7 @@ pub struct DbUpdate {
     backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableUpdate<BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableUpdate<BackendDialogueTopicOption>,
-    backend_dialogue_witness_capabilities: __sdk::TableUpdate<BackendDialogueWitnessCapability>,
+    backend_dialogue_witness_claims: __sdk::TableUpdate<BackendDialogueWitnessClaim>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
@@ -3442,11 +3445,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         backend_dialogue_topic_options_table::parse_table_update(table_update)?,
                     )
                 }
-                "backend_dialogue_witness_capabilities" => {
-                    db_update.backend_dialogue_witness_capabilities.append(
-                        backend_dialogue_witness_capabilities_table::parse_table_update(
-                            table_update,
-                        )?,
+                "backend_dialogue_witness_claims" => {
+                    db_update.backend_dialogue_witness_claims.append(
+                        backend_dialogue_witness_claims_table::parse_table_update(table_update)?,
                     )
                 }
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
@@ -4109,10 +4110,10 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_topic_options",
                 &self.backend_dialogue_topic_options,
             );
-        diff.backend_dialogue_witness_capabilities = cache
-            .apply_diff_to_table::<BackendDialogueWitnessCapability>(
-                "backend_dialogue_witness_capabilities",
-                &self.backend_dialogue_witness_capabilities,
+        diff.backend_dialogue_witness_claims = cache
+            .apply_diff_to_table::<BackendDialogueWitnessClaim>(
+                "backend_dialogue_witness_claims",
+                &self.backend_dialogue_witness_claims,
             );
         diff.backend_forage_receipts = cache.apply_diff_to_table::<BackendForageReceipt>(
             "backend_forage_receipts",
@@ -4281,8 +4282,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_topic_options" => db_update
                     .backend_dialogue_topic_options
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_dialogue_witness_capabilities" => db_update
-                    .backend_dialogue_witness_capabilities
+                "backend_dialogue_witness_claims" => db_update
+                    .backend_dialogue_witness_claims
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
@@ -4615,8 +4616,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_topic_options" => db_update
                     .backend_dialogue_topic_options
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_dialogue_witness_capabilities" => db_update
-                    .backend_dialogue_witness_capabilities
+                "backend_dialogue_witness_claims" => db_update
+                    .backend_dialogue_witness_claims
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
@@ -4918,8 +4919,7 @@ pub struct AppliedDiff<'r> {
     backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableAppliedDiff<'r, BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableAppliedDiff<'r, BackendDialogueTopicOption>,
-    backend_dialogue_witness_capabilities:
-        __sdk::TableAppliedDiff<'r, BackendDialogueWitnessCapability>,
+    backend_dialogue_witness_claims: __sdk::TableAppliedDiff<'r, BackendDialogueWitnessClaim>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
     backend_investigation_action_outcomes:
         __sdk::TableAppliedDiff<'r, BackendInvestigationActionOutcome>,
@@ -5113,9 +5113,9 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_dialogue_topic_options,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<BackendDialogueWitnessCapability>(
-            "backend_dialogue_witness_capabilities",
-            &self.backend_dialogue_witness_capabilities,
+        callbacks.invoke_table_row_callbacks::<BackendDialogueWitnessClaim>(
+            "backend_dialogue_witness_claims",
+            &self.backend_dialogue_witness_claims,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
@@ -6200,7 +6200,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_dialogue_prompts_table::register_table(client_cache);
         backend_dialogue_sessions_table::register_table(client_cache);
         backend_dialogue_topic_options_table::register_table(client_cache);
-        backend_dialogue_witness_capabilities_table::register_table(client_cache);
+        backend_dialogue_witness_claims_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
@@ -6309,7 +6309,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_dialogue_prompts",
         "backend_dialogue_sessions",
         "backend_dialogue_topic_options",
-        "backend_dialogue_witness_capabilities",
+        "backend_dialogue_witness_claims",
         "backend_forage_receipts",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",

@@ -4,46 +4,49 @@ Settlement dialogue is the markerless discovery boundary for local problems.
 Inns surface unknown unresolved symptoms; overview is fallback only when no inn
 NPC is available. Locals repeat referrals. Hidden causes and destinations stay private.
 
-Witness questioning uses the shared social resolution curve. Listening
-(Insight), reassurance (Charm), invoking duty (Command), and bluffing
-(Deception) have different private personality fits. Outcomes may adjust morale
-and directional affinity, but projections do not expose personality, DC, roll,
-success chance, reliability, or whether unease is bound to undisclosed
-testimony. A successful approach to a benign concern can produce clarification
-without creating a factual claim.
+Witness questioning uses proposition-granular authority. Hearing each atomic
+claim automatically creates a private, fallible Insight assessment for that
+observer. The gateway exposes only an opaque challenge token, the exact
+displayed claim boundary, and a bounded `unknown`, `likely_false`, or
+`likely_true` presentation signal. It never exposes reliability, canonical
+truth, proposition identity, rolls, thresholds, or correctness.
+Insight reads demeanor rather than acting as supernatural fact detection:
+sincere mistakes lean the same way as sincere accurate testimony, deliberate
+deception leans the other way, and evasive or partly truthful accounts have no
+private directional signal. Noise can still make every assessment wrong.
 
 Each fresh NPC encounter may issue a private, dialogue-session-scoped witness
 social capability for that participant, but the gateway does not project it
 until the observer actually selects and hears that witness's quest testimony
 in the current session. Generic greetings and ordinary conversation therefore
-show no witness controls. Once engaged, the dialogue projects only the fallible
-pressure cue, safe outcome wording, and currently available quest approaches.
+show no claim controls. Once engaged, each highlighted claim is a real
+accessible control, including green and uncertain claims. Activating one opens
+its local Charm, Command, and Bluff responses immediately below the utterance.
 Relationship, familiarity, and demeanor remain in the normal social popup.
 Hidden concern binding, diagnostic correctness, personality fit, checks, rolls,
 and chances remain private.
-Hearing a quest witness's testimony automatically makes a fallible passive
-Insight observation without spending additional time. Attempting Listen,
-Reassure, Invoke duty, or Bluff each spends five strategic minutes. Each
-approach has its own durable 24-hour observer/NPC cooldown, and action receipts
-make retries idempotent across reconnects.
+Hearing testimony spends no additional time for Insight. Charm is the
+lowest-risk and lowest-leverage response, Command is medium and always strains
+affinity, and Bluff is highest-risk and highest-leverage. Each response spends
+five strategic minutes. A claim can receive at most one response; other claims
+remain actionable. Action receipts and session revisions make retries
+idempotent and stale requests fail closed.
 
 Ordinary conversation is deliberately outside the quest dialogue controls.
 The normal social menu offers a duration-selectable chat with a present local;
-the passive quest-specific Insight impression and confrontation approaches
-appear only in the relevant active dialogue session after that witness's quest
-testimony is heard. Casual
+claim responses appear only in the relevant active dialogue session after that
+witness's quest testimony is heard. Casual
 chat can still change that NPC's
 private morale, directional affinity, and familiarity, so time spent getting
 to know someone can affect a later confrontation without revealing whether
 they have quest information.
 
-A successful approach releases only propositions authored as withheld for the
-exact referred witness. Release is persisted through the ordinary generated
-claim pipeline and appended once to the authoritative dialogue transcript.
-The same success against a benign concern records clarification without
-creating a claim. Both paths may still change private NPC morale and
-directional affinity, so those social results cannot reveal which path was
-bound to quest authority.
+A challenge succeeds only when that particular claim is factually inaccurate
+and its social check succeeds. Accurate claims and insufficient checks share the same safe
+failure wording. Success may release only the canonical withheld testimony
+already authored for the exact witness; released testimony follows the same
+structured claim and passive-assessment path. The response shows only the
+realized clamped affinity change, never the exact relationship value.
 
 ## Persistent settlement actors
 

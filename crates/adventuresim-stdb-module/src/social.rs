@@ -2,33 +2,31 @@
 
 use adventuresim_core::skill::Skill;
 use adventuresim_core::social::{
-    AFFINITY_MAX, AFFINITY_MIN, CasualChatDisposition, CasualChatInput, Courtship as CoreCourtship,
+    AFFINITY_MAX, AFFINITY_MIN, CasualChatDisposition, CasualChatInput, ClaimAssessmentDirection,
+    ClaimChallengeApproach, ClaimChallengeInput, Courtship as CoreCourtship,
     Inclination as CoreInclination, Mirth as CoreMirth, PersonalityAxis,
     Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES, SOCIAL_RESPONSE_MINUTES,
     SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt, SocialTopic,
-    Transparency as CoreTransparency, WitnessApproach, WitnessApproachInput, WitnessPressureCue,
-    actor_allows_social_action, affinity_gain, axis_for_topic, canonical_cooldown_id,
-    canonical_pair, choose_automatic_social_action, command_gravitas_modifier,
-    diagnose_witness_pressure, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
-    flirt_charm_modifier, humor_charm_modifier, incompatible_flirt_outcome, resolve_casual_chat,
-    resolve_social_attempt, resolve_witness_approach, self_knowledge_insight_modifier,
+    Transparency as CoreTransparency, actor_allows_social_action, affinity_gain,
+    assess_testimony_claim, axis_for_topic, canonical_cooldown_id, canonical_pair,
+    choose_automatic_social_action, command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis,
+    discovery_training_split, flirt_charm_modifier, humor_charm_modifier,
+    incompatible_flirt_outcome, realized_affinity_delta, resolve_casual_chat,
+    resolve_claim_challenge, resolve_social_attempt, self_knowledge_insight_modifier,
     settle_affinity, should_replace_belief, social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::{character, character__view};
 use crate::condition::{character_morale_source__view, morale_event};
-use crate::investigation::{investigation_belief__view, investigation_evidence_knowledge__view};
 use crate::strategic::{
-    dialogue_event__view, dialogue_session__view, quest_generation_authority__view,
-    strategic_gateway_authority__view,
+    dialogue_event__view, dialogue_session__view, strategic_gateway_authority__view,
 };
 use crate::time::character_time__view;
 use crate::{
     character_attributes, character_capability, character_morale_source, character_personality,
     character_skills, character_strategic_condition, character_time, dialogue_event,
-    dialogue_session, investigation_belief, investigation_evidence_knowledge,
-    quest_generation_authority, settlement_npc, settlement_npc_presence,
+    dialogue_session, settlement_npc, settlement_npc_presence,
 };
 
 pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
@@ -227,7 +225,7 @@ pub struct BackendSettlementNpcRelationship {
 }
 
 /// Private authority for social actions scoped to one live dialogue encounter.
-/// Hidden concern state and diagnostic correctness never cross the gateway.
+/// Hidden concern state never crosses the gateway.
 #[derive(Clone, Debug)]
 #[table(accessor = dialogue_witness_capability)]
 pub struct DialogueWitnessCapability {
@@ -238,24 +236,32 @@ pub struct DialogueWitnessCapability {
     #[index(btree)]
     pub observer_character_id: u64,
     pub npc_id: String,
-    pub public_case_id: String,
     pub has_bound_concern: bool,
     pub bound_released: bool,
-    pub insight_state: String,
-    pub diagnosis_correct: Option<bool>,
-    pub last_outcome: String,
 }
 
-/// Cross-session cooldown authority keyed by observer, NPC and approach.
+/// Private observer authority for one heard, proposition-granular claim.
 #[derive(Clone, Debug)]
-#[table(accessor = witness_social_cooldown)]
-pub struct WitnessSocialCooldown {
+#[table(accessor = dialogue_witness_claim)]
+pub struct DialogueWitnessClaim {
     #[primary_key]
-    pub id: String,
+    pub challenge_token: String,
+    #[index(btree)]
+    pub session_id: String,
+    #[index(btree)]
     pub observer_character_id: u64,
     pub npc_id: String,
-    pub action_kind: String,
-    pub available_at_minute: u64,
+    pub event_sequence: u32,
+    pub claim_order: u32,
+    pub proposition_id: String,
+    pub displayed_text: String,
+    pub claim_is_factually_accurate: bool,
+    pub demeanor_truth_signal: f32,
+    pub assessment_direction: String,
+    pub assessment_strength: f32,
+    pub resolved: bool,
+    pub outcome: String,
+    pub affinity_delta: f32,
 }
 
 /// Durable idempotency receipt for a dialogue-scoped witness social action.
@@ -269,20 +275,24 @@ pub struct WitnessSocialActionReceipt {
     pub observer_character_id: u64,
     pub action_id: String,
     pub action_kind: String,
+    pub challenge_token: String,
     pub resulting_revision: u64,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
-pub struct BackendDialogueWitnessCapability {
+pub struct BackendDialogueWitnessClaim {
     pub observer_character_id: u64,
     pub session_id: String,
     pub npc_id: String,
-    pub affinity_band: String,
-    pub familiarity_band: String,
-    pub morale_band: String,
-    pub pressure_cue: String,
-    pub last_outcome: String,
-    pub available_approaches_json: String,
+    pub event_sequence: u32,
+    pub claim_order: u32,
+    pub challenge_token: String,
+    pub displayed_text: String,
+    pub assessment_direction: String,
+    pub assessment_strength: f32,
+    pub resolved: bool,
+    pub outcome: String,
+    pub affinity_delta: f32,
 }
 
 fn relationship_band(value: f32) -> String {
@@ -362,15 +372,12 @@ pub fn backend_settlement_npc_relationships(
         .collect()
 }
 
-fn witness_social_cooldown_id(observer_character_id: u64, npc_id: &str, action: &str) -> String {
-    format!("{observer_character_id}:{npc_id}:{action}")
-}
-
 fn witness_social_action_replayed(
     ctx: &ReducerContext,
     receipt_id: &str,
     observer_character_id: u64,
     action_kind: &str,
+    challenge_token: &str,
 ) -> Result<bool, String> {
     let receipt_id = receipt_id.to_owned();
     let Some(receipt) = ctx
@@ -381,7 +388,9 @@ fn witness_social_action_replayed(
     else {
         return Ok(false);
     };
-    if receipt.observer_character_id == observer_character_id && receipt.action_kind == action_kind
+    if receipt.observer_character_id == observer_character_id
+        && receipt.action_kind == action_kind
+        && receipt.challenge_token == challenge_token
     {
         Ok(true)
     } else {
@@ -389,207 +398,42 @@ fn witness_social_action_replayed(
     }
 }
 
-fn witness_action_available(
-    ctx: &ViewContext,
-    observer_character_id: u64,
-    npc_id: &str,
-    action: &str,
-    now: u64,
-) -> bool {
-    ctx.db
-        .witness_social_cooldown()
-        .id()
-        .find(&witness_social_cooldown_id(
-            observer_character_id,
-            npc_id,
-            action,
-        ))
-        .is_none_or(|cooldown| cooldown.available_at_minute <= now)
-}
-
-fn observer_has_witness_approach_basis_view(
-    ctx: &ViewContext,
-    capability: &DialogueWitnessCapability,
-) -> bool {
-    if capability.insight_state == "possible_pressure" {
-        return true;
-    }
-    if capability.public_case_id.is_empty() {
-        return false;
-    }
-    let canonical_cases = ctx
-        .db
-        .quest_generation_authority()
-        .public_case_id()
-        .filter(&capability.public_case_id)
-        .map(|row| row.case_id)
-        .collect::<std::collections::BTreeSet<_>>();
-    if ctx
-        .db
-        .investigation_evidence_knowledge()
-        .owner_character_id()
-        .filter(capability.observer_character_id)
-        .any(|row| canonical_cases.contains(&row.case_id))
-    {
-        return true;
-    }
-    let mut conflict_counts = std::collections::BTreeMap::<String, usize>::new();
-    for belief in ctx
-        .db
-        .investigation_belief()
-        .owner_character_id()
-        .filter(capability.observer_character_id)
-        .filter(|belief| {
-            belief.case_id == capability.public_case_id && !belief.conflict_group.is_empty()
-        })
-    {
-        *conflict_counts.entry(belief.conflict_group).or_default() += 1;
-    }
-    conflict_counts.into_values().any(|count| count >= 2)
-}
-
-fn observer_has_witness_approach_basis(
-    ctx: &ReducerContext,
-    capability: &DialogueWitnessCapability,
-) -> bool {
-    if capability.insight_state == "possible_pressure" {
-        return true;
-    }
-    if capability.public_case_id.is_empty() {
-        return false;
-    }
-    let canonical_cases = ctx
-        .db
-        .quest_generation_authority()
-        .public_case_id()
-        .filter(&capability.public_case_id)
-        .map(|row| row.case_id)
-        .collect::<std::collections::BTreeSet<_>>();
-    if ctx
-        .db
-        .investigation_evidence_knowledge()
-        .owner_character_id()
-        .filter(capability.observer_character_id)
-        .any(|row| canonical_cases.contains(&row.case_id))
-    {
-        return true;
-    }
-    let mut conflict_counts = std::collections::BTreeMap::<String, usize>::new();
-    for belief in ctx
-        .db
-        .investigation_belief()
-        .owner_character_id()
-        .filter(capability.observer_character_id)
-        .filter(|belief| {
-            belief.case_id == capability.public_case_id && !belief.conflict_group.is_empty()
-        })
-    {
-        *conflict_counts.entry(belief.conflict_group).or_default() += 1;
-    }
-    conflict_counts.into_values().any(|count| count >= 2)
-}
-
-fn witness_quest_dialogue_engaged(
-    ctx: &ReducerContext,
-    capability: &DialogueWitnessCapability,
-) -> bool {
-    !capability.public_case_id.is_empty()
-        && ctx
-            .db
-            .dialogue_event()
-            .session_id()
-            .filter(&capability.session_id)
-            .any(|event| event.response_id == "hear-referred-testimony")
-}
-
-#[view(accessor = backend_dialogue_witness_capabilities, public)]
-pub fn backend_dialogue_witness_capabilities(
-    ctx: &ViewContext,
-) -> Vec<BackendDialogueWitnessCapability> {
+#[view(accessor = backend_dialogue_witness_claims, public)]
+pub fn backend_dialogue_witness_claims(ctx: &ViewContext) -> Vec<BackendDialogueWitnessClaim> {
     if !is_strategic_gateway(ctx) {
         return Vec::new();
     }
     ctx.db
-        .dialogue_witness_capability()
+        .dialogue_witness_claim()
         .observer_character_id()
         .filter(0u64..)
-        .filter_map(|capability| {
-            let session = ctx
-                .db
-                .dialogue_session()
-                .id()
-                .find(&capability.session_id)?;
+        .filter_map(|claim| {
+            let session = ctx.db.dialogue_session().id().find(&claim.session_id)?;
             if session.state != "active" {
                 return None;
             }
-            if capability.public_case_id.is_empty()
-                || !ctx
-                    .db
-                    .dialogue_event()
-                    .session_id()
-                    .filter(&capability.session_id)
-                    .any(|event| event.response_id == "hear-referred-testimony")
+            if !ctx
+                .db
+                .dialogue_event()
+                .session_id()
+                .filter(&claim.session_id)
+                .any(|event| event.sequence == claim.event_sequence)
             {
                 return None;
             }
-            let now = ctx
-                .db
-                .character_time()
-                .character_id()
-                .find(capability.observer_character_id)
-                .map_or(0, |time| time.minutes);
-            let relationship_id =
-                format!("{}:{}", capability.observer_character_id, capability.npc_id);
-            let relationship = ctx
-                .db
-                .settlement_npc_relationship()
-                .id()
-                .find(&relationship_id);
-            let state = ctx
-                .db
-                .settlement_npc_social_state()
-                .npc_id()
-                .find(&capability.npc_id);
-            let affinity = relationship.as_ref().map_or(0.0, |relationship| {
-                settle_affinity(
-                    relationship.affinity_anchor,
-                    now.saturating_sub(relationship.affinity_anchor_minute),
-                )
-            });
-            let actions = observer_has_witness_approach_basis_view(ctx, &capability)
-                .then(|| {
-                    ["listen", "reassure", "invoke_duty", "bluff"]
-                        .into_iter()
-                        .filter(|action| {
-                            witness_action_available(
-                                ctx,
-                                capability.observer_character_id,
-                                &capability.npc_id,
-                                action,
-                                now,
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            Some(BackendDialogueWitnessCapability {
-                observer_character_id: capability.observer_character_id,
-                session_id: capability.session_id,
-                npc_id: capability.npc_id,
-                affinity_band: relationship_band(affinity),
-                familiarity_band: familiarity_band(
-                    relationship.as_ref().map_or(0, |row| row.shared_minutes),
-                ),
-                morale_band: morale_band(state.as_ref().map_or(0.0, |row| {
-                    settle_affinity(
-                        row.morale_anchor,
-                        now.saturating_sub(row.morale_anchor_minute),
-                    )
-                })),
-                pressure_cue: capability.insight_state,
-                last_outcome: capability.last_outcome,
-                available_approaches_json: serde_json::to_string(&actions)
-                    .unwrap_or_else(|_| "[]".into()),
+            Some(BackendDialogueWitnessClaim {
+                observer_character_id: claim.observer_character_id,
+                session_id: claim.session_id,
+                npc_id: claim.npc_id,
+                event_sequence: claim.event_sequence,
+                claim_order: claim.claim_order,
+                challenge_token: claim.challenge_token,
+                displayed_text: claim.displayed_text,
+                assessment_direction: claim.assessment_direction,
+                assessment_strength: claim.assessment_strength.clamp(0.0, 1.0),
+                resolved: claim.resolved,
+                outcome: claim.outcome,
+                affinity_delta: claim.affinity_delta,
             })
         })
         .collect()
@@ -1106,11 +950,6 @@ pub(crate) fn ensure_dialogue_witness_capability(
     }
     let referred =
         crate::strategic::dialogue_referred_witness(ctx, observer_character_id, session, npc_id)?;
-    let public_case_id = referred
-        .as_ref()
-        .map_or_else(String::new, |(generated, _)| {
-            generated.public_case_id.clone()
-        });
     let has_bound_concern = referred.as_ref().is_some_and(|(_, witness)| {
         witness.testimony.iter().any(|draft| {
             draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
@@ -1123,35 +962,69 @@ pub(crate) fn ensure_dialogue_witness_capability(
             session_id: session.id.clone(),
             observer_character_id,
             npc_id: npc_id.into(),
-            public_case_id,
             has_bound_concern,
             bound_released: false,
-            insight_state: "unexamined".into(),
-            diagnosis_correct: None,
-            last_outcome: String::new(),
         });
     Ok(())
 }
 
-fn assess_witness_capability(
+fn assessment_direction(value: ClaimAssessmentDirection) -> &'static str {
+    match value {
+        ClaimAssessmentDirection::Unknown => "unknown",
+        ClaimAssessmentDirection::LikelyFalse => "likely_false",
+        ClaimAssessmentDirection::LikelyTrue => "likely_true",
+    }
+}
+
+fn persist_claim_assessments(
     ctx: &ReducerContext,
     observer_character_id: u64,
-    capability: &mut DialogueWitnessCapability,
+    session_id: &str,
+    npc_id: &str,
+    event_sequence: u32,
+    claims: Vec<crate::strategic::ReferredTestimonyClaim>,
 ) -> Result<(), String> {
     let insight = crate::condition::mental_check(ctx, observer_character_id, Skill::Insight)?;
-    let has_unreleased_concern = capability.has_bound_concern && !capability.bound_released;
-    let cue = diagnose_witness_pressure(
-        has_unreleased_concern,
-        insight,
-        (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32,
-    );
-    capability.insight_state = match cue {
-        WitnessPressureCue::NoClearSignal => "no_clear_signal",
-        WitnessPressureCue::PossiblePressure => "possible_pressure",
+    for (claim_order, claim) in claims.into_iter().enumerate() {
+        if ctx
+            .db
+            .dialogue_witness_claim()
+            .session_id()
+            .filter(session_id)
+            .any(|row| {
+                row.observer_character_id == observer_character_id
+                    && row.event_sequence == event_sequence
+                    && row.proposition_id == claim.proposition_id
+            })
+        {
+            continue;
+        }
+        let assessment = assess_testimony_claim(
+            claim.demeanor_truth_signal,
+            insight,
+            (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32,
+        );
+        let challenge_token = format!("{:016x}{:016x}", ctx.random::<u64>(), ctx.random::<u64>());
+        ctx.db
+            .dialogue_witness_claim()
+            .insert(DialogueWitnessClaim {
+                challenge_token,
+                session_id: session_id.into(),
+                observer_character_id,
+                npc_id: npc_id.into(),
+                event_sequence,
+                claim_order: claim_order as u32,
+                proposition_id: claim.proposition_id,
+                displayed_text: claim.displayed_text,
+                claim_is_factually_accurate: claim.claim_is_factually_accurate,
+                demeanor_truth_signal: claim.demeanor_truth_signal,
+                assessment_direction: assessment_direction(assessment.direction).into(),
+                assessment_strength: assessment.strength,
+                resolved: false,
+                outcome: String::new(),
+                affinity_delta: 0.0,
+            });
     }
-    .into();
-    capability.diagnosis_correct =
-        Some(matches!(cue, WitnessPressureCue::PossiblePressure) == has_unreleased_concern);
     Ok(())
 }
 
@@ -1160,37 +1033,67 @@ pub(crate) fn passively_assess_dialogue_witness(
     observer_character_id: u64,
     session_id: &str,
 ) -> Result<(), String> {
-    let id = format!("{session_id}:{observer_character_id}");
-    let mut capability = ctx
+    let session = crate::strategic::require_session_member(ctx, session_id, observer_character_id)?;
+    let capability = ctx
         .db
         .dialogue_witness_capability()
         .id()
-        .find(&id)
+        .find(&format!("{session_id}:{observer_character_id}"))
         .ok_or("Dialogue has no witness social capability")?;
-    if capability.insight_state != "unexamined" {
-        return Ok(());
-    }
-    assess_witness_capability(ctx, observer_character_id, &mut capability)?;
-    ctx.db.dialogue_witness_capability().id().update(capability);
-    Ok(())
+    let (event_sequence, claims) = crate::strategic::referred_testimony_claims(
+        ctx,
+        observer_character_id,
+        &session,
+        &capability.npc_id,
+        false,
+    )?;
+    persist_claim_assessments(
+        ctx,
+        observer_character_id,
+        session_id,
+        &capability.npc_id,
+        event_sequence,
+        claims,
+    )
 }
 
-fn witness_approach(value: &str) -> Result<WitnessApproach, String> {
+fn passively_assess_released_testimony(
+    ctx: &ReducerContext,
+    observer_character_id: u64,
+    session: &crate::strategic::DialogueSession,
+    npc_id: &str,
+) -> Result<(), String> {
+    let (event_sequence, claims) = crate::strategic::referred_testimony_claims(
+        ctx,
+        observer_character_id,
+        session,
+        npc_id,
+        true,
+    )?;
+    persist_claim_assessments(
+        ctx,
+        observer_character_id,
+        &session.id,
+        npc_id,
+        event_sequence,
+        claims,
+    )
+}
+
+fn witness_approach(value: &str) -> Result<ClaimChallengeApproach, String> {
     match value {
-        "listen" => Ok(WitnessApproach::Listen),
-        "reassure" => Ok(WitnessApproach::Reassure),
-        "invoke_duty" => Ok(WitnessApproach::InvokeDuty),
-        "bluff" => Ok(WitnessApproach::Bluff),
+        "charm" => Ok(ClaimChallengeApproach::Charm),
+        "command" => Ok(ClaimChallengeApproach::Command),
+        "bluff" => Ok(ClaimChallengeApproach::Bluff),
         _ => Err("Unknown witness approach".into()),
     }
 }
 
-fn witness_approach_skill(approach: WitnessApproach) -> Skill {
+fn witness_approach_skill(approach: ClaimChallengeApproach) -> Skill {
     match approach {
-        WitnessApproach::Listen => Skill::Insight,
-        WitnessApproach::Reassure => Skill::Charm,
-        WitnessApproach::InvokeDuty => Skill::Command,
-        WitnessApproach::Bluff => Skill::Deception,
+        ClaimChallengeApproach::Charm => Skill::Charm,
+        ClaimChallengeApproach::Command => Skill::Command,
+        ClaimChallengeApproach::Bluff => Skill::Deception,
     }
 }
 
@@ -1208,11 +1111,13 @@ fn require_witness_social_action(
     session_id: &str,
     action_id: &str,
     expected_revision: u64,
-    action_kind: &str,
+    _action_kind: &str,
+    challenge_token: &str,
 ) -> Result<
     (
         crate::strategic::DialogueSession,
         DialogueWitnessCapability,
+        DialogueWitnessClaim,
         u64,
     ),
     String,
@@ -1245,10 +1150,24 @@ fn require_witness_social_action(
         .id()
         .find(&format!("{session_id}:{observer_character_id}"))
         .ok_or("Dialogue has no witness social capability")?;
-    if !witness_quest_dialogue_engaged(ctx, &capability) {
-        return Err(
-            "Witness approaches are available only after hearing this quest testimony".into(),
-        );
+    let claim = ctx
+        .db
+        .dialogue_witness_claim()
+        .challenge_token()
+        .find(&challenge_token.to_owned())
+        .ok_or("Witness claim challenge is unavailable")?;
+    if claim.session_id != session_id
+        || claim.observer_character_id != observer_character_id
+        || claim.npc_id != capability.npc_id
+        || claim.resolved
+        || !ctx
+            .db
+            .dialogue_event()
+            .session_id()
+            .filter(session_id)
+            .any(|event| event.sequence == claim.event_sequence)
+    {
+        return Err("Witness claim challenge is unavailable".into());
     }
     let now = ctx
         .db
@@ -1256,52 +1175,16 @@ fn require_witness_social_action(
         .character_id()
         .find(observer_character_id)
         .map_or(0, |time| time.minutes);
-    if let Some(cooldown) = ctx
-        .db
-        .witness_social_cooldown()
-        .id()
-        .find(&witness_social_cooldown_id(
-            observer_character_id,
-            &capability.npc_id,
-            action_kind,
-        ))
-        && cooldown.available_at_minute > now
-    {
-        return Err("That witness approach is still on cooldown".into());
-    }
-    Ok((session, capability, now))
+    Ok((session, capability, claim, now))
 }
 
 fn finish_witness_social_action(
     ctx: &ReducerContext,
     mut session: crate::strategic::DialogueSession,
-    capability: DialogueWitnessCapability,
+    claim: &DialogueWitnessClaim,
     action_id: String,
     action_kind: &str,
-    now: u64,
 ) {
-    let cooldown = WitnessSocialCooldown {
-        id: witness_social_cooldown_id(
-            capability.observer_character_id,
-            &capability.npc_id,
-            action_kind,
-        ),
-        observer_character_id: capability.observer_character_id,
-        npc_id: capability.npc_id,
-        action_kind: action_kind.into(),
-        available_at_minute: now.saturating_add(SOCIAL_COOLDOWN_MINUTES),
-    };
-    if ctx
-        .db
-        .witness_social_cooldown()
-        .id()
-        .find(&cooldown.id)
-        .is_some()
-    {
-        ctx.db.witness_social_cooldown().id().update(cooldown);
-    } else {
-        ctx.db.witness_social_cooldown().insert(cooldown);
-    }
     session.revision = session.revision.saturating_add(1);
     ctx.db.dialogue_session().id().update(session.clone());
     ctx.db
@@ -1309,9 +1192,10 @@ fn finish_witness_social_action(
         .insert(WitnessSocialActionReceipt {
             id: format!("{}:{action_id}", session.id),
             session_id: session.id,
-            observer_character_id: capability.observer_character_id,
+            observer_character_id: claim.observer_character_id,
             action_id,
             action_kind: action_kind.into(),
+            challenge_token: claim.challenge_token.clone(),
             resulting_revision: session.revision,
         });
 }
@@ -1326,7 +1210,7 @@ fn apply_witness_relationship_outcome(
     affinity_delta: f32,
     morale_source_id: &str,
     morale_source_kind: &str,
-) -> Result<(), String> {
+) -> Result<f32, String> {
     let mut state = ensure_settlement_npc_social_state(ctx, npc_id, now);
     let settled_morale = settle_affinity(
         state.morale_anchor,
@@ -1363,7 +1247,8 @@ fn apply_witness_relationship_outcome(
         relationship.affinity_anchor,
         now.saturating_sub(relationship.affinity_anchor_minute),
     );
-    relationship.affinity_anchor = (current + affinity_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
+    let realized_delta = realized_affinity_delta(current, affinity_delta);
+    relationship.affinity_anchor = (current + realized_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
     relationship.affinity_anchor_minute = now;
     relationship.shared_minutes = relationship.shared_minutes.saturating_add(elapsed);
     if ctx
@@ -1380,7 +1265,7 @@ fn apply_witness_relationship_outcome(
     } else {
         ctx.db.settlement_npc_relationship().insert(relationship);
     }
-    Ok(())
+    Ok(realized_delta)
 }
 
 #[reducer]
@@ -1388,6 +1273,7 @@ pub fn approach_dialogue_witness(
     ctx: &ReducerContext,
     observer_character_id: u64,
     session_id: String,
+    challenge_token: String,
     approach_kind: String,
     action_id: String,
     expected_revision: u64,
@@ -1395,24 +1281,25 @@ pub fn approach_dialogue_witness(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::strategic::require_strategic_character_authority(ctx, observer_character_id)?;
     let receipt_id = format!("{session_id}:{action_id}");
-    if witness_social_action_replayed(ctx, &receipt_id, observer_character_id, &approach_kind)? {
+    if witness_social_action_replayed(
+        ctx,
+        &receipt_id,
+        observer_character_id,
+        &approach_kind,
+        &challenge_token,
+    )? {
         return Ok(());
     }
     let approach = witness_approach(&approach_kind)?;
-    let (session, mut capability, now) = require_witness_social_action(
+    let (session, mut capability, mut claim, now) = require_witness_social_action(
         ctx,
         observer_character_id,
         &session_id,
         &action_id,
         expected_revision,
         &approach_kind,
+        &challenge_token,
     )?;
-    if !observer_has_witness_approach_basis(ctx, &capability) {
-        return Err(
-            "A possible-pressure cue or relevant contradiction/evidence is required before confronting this witness"
-                .into(),
-        );
-    }
     let state = ensure_settlement_npc_social_state(ctx, &capability.npc_id, now);
     let relationship_id = format!("{observer_character_id}:{}", capability.npc_id);
     let relationship = ctx
@@ -1431,8 +1318,9 @@ pub fn approach_dialogue_witness(
         observer_character_id,
         witness_approach_skill(approach),
     )?;
-    let outcome = resolve_witness_approach(WitnessApproachInput {
+    let outcome = resolve_claim_challenge(ClaimChallengeInput {
         approach,
+        claim_is_factually_accurate: claim.claim_is_factually_accurate,
         skill_check,
         affinity,
         familiarity_hours: relationship.as_ref().map_or(0.0, |relationship| {
@@ -1442,10 +1330,8 @@ pub fn approach_dialogue_witness(
             state.morale_anchor,
             now.saturating_sub(state.morale_anchor_minute),
         ),
-        pressure_diagnosis_correct: capability.diagnosis_correct,
         target_transparency: core_transparency(state.transparency),
         target_mirth: core_mirth(state.mirth),
-        has_bound_concern: capability.has_bound_concern && !capability.bound_released,
         roll: (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32,
     });
     if !crate::time::advance_investigation_time(
@@ -1456,7 +1342,7 @@ pub fn approach_dialogue_witness(
         return Err("Actor could not complete the conversation".into());
     }
     let after = now.saturating_add(SOCIAL_RESPONSE_MINUTES);
-    apply_witness_relationship_outcome(
+    let affinity_delta = apply_witness_relationship_outcome(
         ctx,
         observer_character_id,
         &capability.npc_id,
@@ -1467,7 +1353,20 @@ pub fn approach_dialogue_witness(
         &format!("npc-morale-approach:{receipt_id}"),
         &format!("witness_{approach_kind}"),
     )?;
-    capability.last_outcome = if outcome.released_bound_testimony {
+    let released = outcome.succeeded && capability.has_bound_concern && !capability.bound_released;
+    claim.outcome = if outcome.succeeded {
+        "useful_answer"
+    } else {
+        "did_not_yield"
+    }
+    .into();
+    claim.affinity_delta = affinity_delta;
+    claim.resolved = true;
+    ctx.db
+        .dialogue_witness_claim()
+        .challenge_token()
+        .update(claim.clone());
+    if released {
         crate::strategic::release_referred_withheld_testimony(
             ctx,
             observer_character_id,
@@ -1476,24 +1375,18 @@ pub fn approach_dialogue_witness(
             &action_id,
         )?;
         capability.bound_released = true;
-        // Hearing the newly released account produces the same passive,
-        // fallible observation as the initial account. It is part of this
-        // five-minute approach, not a second timed action.
-        assess_witness_capability(ctx, observer_character_id, &mut capability)?;
-        "testimony_released"
-    } else if outcome.offered_clarification {
-        "clarified"
-    } else if outcome.succeeded {
-        "rapport_improved"
-    } else {
-        "did_not_land"
+        passively_assess_released_testimony(
+            ctx,
+            observer_character_id,
+            &session,
+            &capability.npc_id,
+        )?;
     }
-    .into();
     ctx.db
         .dialogue_witness_capability()
         .id()
         .update(capability.clone());
-    finish_witness_social_action(ctx, session, capability, action_id, &approach_kind, after);
+    finish_witness_social_action(ctx, session, &claim, action_id, &approach_kind);
     Ok(())
 }
 
@@ -3488,19 +3381,16 @@ mod contract_tests {
     fn witness_insight_is_passive_persisted_and_untimed() {
         let source = include_str!("social.rs");
         let assessment = source
-            .split("fn assess_witness_capability")
+            .split("fn persist_claim_assessments")
             .nth(1)
             .and_then(|tail| tail.split("fn witness_approach").next())
             .expect("passive witness assessment");
         assert!(assessment.contains("mental_check(ctx, observer_character_id, Skill::Insight)"));
         assert!(assessment.contains("ctx.random::<u64>()"));
-        assert!(assessment.contains("diagnose_witness_pressure"));
-        assert!(assessment.contains("capability.insight_state != \"unexamined\""));
-        assert!(assessment.contains("dialogue_witness_capability()"));
+        assert!(assessment.contains("assess_testimony_claim"));
+        assert!(assessment.contains("dialogue_witness_claim()"));
         assert!(!assessment.contains("advance_investigation_time"));
         assert!(!assessment.contains("SOCIAL_RESPONSE_MINUTES"));
-        assert!(!assessment.contains("WitnessSocialActionReceipt"));
-        assert!(!assessment.contains("WitnessSocialCooldown"));
     }
 
     #[test]
@@ -3518,28 +3408,30 @@ mod contract_tests {
     }
 
     #[test]
-    fn witness_capability_keeps_concern_and_diagnosis_private() {
+    fn witness_claim_projection_keeps_truth_private() {
         let source = include_str!("social.rs");
         let authority = source
-            .split("pub struct DialogueWitnessCapability")
+            .split("pub struct DialogueWitnessClaim")
             .nth(1)
-            .and_then(|tail| tail.split("pub struct WitnessSocialCooldown").next())
-            .expect("private witness capability");
-        assert!(authority.contains("has_bound_concern"));
-        assert!(authority.contains("diagnosis_correct"));
+            .and_then(|tail| tail.split("pub struct WitnessSocialActionReceipt").next())
+            .expect("private witness claim");
+        assert!(authority.contains("claim_is_factually_accurate"));
+        assert!(authority.contains("demeanor_truth_signal"));
+        assert!(authority.contains("proposition_id"));
         let projection = source
-            .split("pub struct BackendDialogueWitnessCapability")
+            .split("pub struct BackendDialogueWitnessClaim")
             .nth(1)
             .and_then(|tail| tail.split("fn relationship_band").next())
             .expect("observer-safe witness projection");
-        assert!(!projection.contains("has_bound_concern"));
-        assert!(!projection.contains("diagnosis_correct"));
+        assert!(!projection.contains("claim_is_factually_accurate"));
+        assert!(!projection.contains("demeanor_truth_signal"));
+        assert!(!projection.contains("proposition_id"));
         assert!(!projection.contains("roll"));
         assert!(!projection.contains("chance"));
     }
 
     #[test]
-    fn witness_actions_are_session_scoped_idempotent_and_cooldown_bound() {
+    fn witness_actions_are_claim_scoped_idempotent_and_revision_bound() {
         let source = include_str!("social.rs");
         let requirement = source
             .split("fn require_witness_social_action")
@@ -3549,14 +3441,14 @@ mod contract_tests {
         assert!(requirement.contains("require_session_member"));
         assert!(requirement.contains("expected_revision"));
         assert!(requirement.contains("witness_social_action_receipt"));
-        assert!(requirement.contains("witness_social_cooldown"));
+        assert!(requirement.contains("challenge_token"));
+        assert!(requirement.contains("claim.resolved"));
         assert!(source.contains("Witness social action ID conflicts with another request"));
         let finish = source
             .split("fn finish_witness_social_action")
             .nth(1)
             .and_then(|tail| tail.split("fn apply_witness_relationship_outcome").next())
             .expect("witness action finalization");
-        assert!(finish.contains("SOCIAL_COOLDOWN_MINUTES"));
         assert!(finish.contains("WitnessSocialActionReceipt"));
     }
 
@@ -3602,70 +3494,61 @@ mod contract_tests {
         let projection = source
             .split("pub fn backend_settlement_npc_relationships")
             .nth(1)
-            .and_then(|tail| tail.split("fn witness_social_cooldown_id").next())
+            .and_then(|tail| tail.split("fn witness_social_action_replayed").next())
             .expect("settlement NPC relationship projection");
         assert!(projection.contains("now.saturating_sub(relationship.affinity_anchor_minute)"));
         assert!(!projection.contains("settle_affinity(relationship.affinity_anchor, 0)"));
     }
 
     #[test]
-    fn witness_confrontation_requires_observer_owned_basis_and_release_clears_concern() {
+    fn witness_challenge_requires_owned_unresolved_claim_and_release_is_structured() {
         let source = include_str!("social.rs");
-        let assessment = source
-            .split("fn assess_witness_capability")
-            .nth(1)
-            .and_then(|tail| {
-                tail.split("pub(crate) fn passively_assess_dialogue_witness")
-                    .next()
-            })
-            .expect("witness passive assessment");
-        assert!(assessment.contains("capability.has_bound_concern && !capability.bound_released"));
         let approach = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)
             .and_then(|tail| tail.split("/// Canonical pair-presence history").next())
             .expect("witness approach reducer");
-        assert!(approach.contains("observer_has_witness_approach_basis"));
-        assert!(source.contains("observer_has_witness_approach_basis_view"));
+        assert!(approach.contains("claim.claim_is_factually_accurate"));
         assert!(approach.contains("capability.bound_released = true"));
-        assert!(approach.contains("assess_witness_capability("));
-        assert!(!approach.contains("capability.insight_state = \"unexamined\""));
-        assert!(source.contains("investigation_evidence_knowledge"));
-        assert!(source.contains("investigation_belief"));
+        assert!(approach.contains("passively_assess_released_testimony"));
+        assert!(approach.contains("claim.resolved = true"));
+        assert!(approach.contains("claim.affinity_delta = affinity_delta"));
         assert!(approach.contains("current_morale"));
     }
 
     #[test]
-    fn witness_controls_require_current_session_quest_testimony() {
+    fn witness_controls_require_a_heard_event_in_the_current_session() {
         let source = include_str!("social.rs");
         let projection = source
-            .split("pub fn backend_dialogue_witness_capabilities")
+            .split("pub fn backend_dialogue_witness_claims")
             .nth(1)
-            .and_then(|tail| tail.split("fn witness_social_cooldown_id").next())
+            .and_then(|tail| {
+                tail.split("pub(crate) fn ensure_settlement_npc_social_state")
+                    .next()
+            })
             .expect("witness projection");
-        assert!(projection.contains("capability.public_case_id.is_empty()"));
-        assert!(projection.contains("event.response_id == \"hear-referred-testimony\""));
+        assert!(projection.contains("event.sequence == claim.event_sequence"));
 
         let requirement = source
             .split("fn require_witness_social_action")
             .nth(1)
             .and_then(|tail| tail.split("fn finish_witness_social_action").next())
             .expect("witness action requirement");
-        assert!(requirement.contains("witness_quest_dialogue_engaged"));
-        assert!(requirement.contains("only after hearing this quest testimony"));
+        assert!(requirement.contains("claim.session_id != session_id"));
+        assert!(requirement.contains("claim.observer_character_id != observer_character_id"));
     }
 
     #[test]
-    fn benign_and_bound_outcomes_remain_separate_consequences() {
+    fn only_successful_untrue_claims_release_bound_testimony() {
         let source = include_str!("social.rs");
         let reducer = source
             .split("pub fn approach_dialogue_witness")
             .nth(1)
             .and_then(|tail| tail.split("/// Canonical pair-presence history").next())
             .expect("witness approach reducer");
-        assert!(reducer.contains("outcome.released_bound_testimony"));
+        assert!(reducer.contains("resolve_claim_challenge"));
+        assert!(reducer.contains("outcome.succeeded && capability.has_bound_concern"));
         assert!(reducer.contains("release_referred_withheld_testimony"));
-        assert!(reducer.contains("outcome.offered_clarification"));
-        assert!(reducer.contains("\"clarified\""));
+        assert!(reducer.contains("\"did_not_yield\""));
     }
 }

@@ -12,16 +12,18 @@ shape, confidence band, and destination class must remain compatible with
 truthful, mistaken, partial, evasive, and deceptive private states.
 
 Hearing quest testimony automatically produces a fallible passive Insight
-pressure cue. A cue may be present for a quest-bound concern or for a benign
-concern, and may be absent in either case. It never declares a lie, changes a
-proposition, or grants navigation.
+assessment for each authoritative proposition boundary. The observer-safe
+signal may be uncertain, lean untrue, or lean true; all three can be wrong and
+all three remain actionable. It never declares intent, changes a proposition,
+or reveals factual accuracy. Private accuracy and demeanor are separate:
+mistaken witnesses can look sincere, while evasive and partly truthful accounts
+have no clean directional signal.
+or grants navigation.
 Every primary witness volunteers the same reliability-neutral public pattern
 account. A separate private pattern detail may or may not exist, sampled
 independently from reliability; its presence never changes the initial
-dialogue's text, cardinality, order, or source. Confrontation approaches become
-available only after that observer has a possible-pressure cue or relevant
-contradiction/evidence knowledge. Once bound testimony is released, later
-Insight checks treat the witness as benign.
+dialogue's text, cardinality, order, or source. Atomic claim boundaries come
+from private generated testimony records, never browser sentence splitting.
 
 Persistent NPC personality and starting morale are sampled once from
 server-private entropy and stored; public NPC IDs do not determine them. Named
@@ -31,9 +33,8 @@ affect resolution, while browser projections remain qualitative.
 Ordinary timed chat is available from the normal social menu rather than the
 quest transcript. It may improve or strain morale and affinity and always
 builds familiarity, but it never diagnoses pressure or releases testimony.
-The passive Insight impression and quest-specific Listen, Reassure, Invoke
-duty, and Bluff approaches remain available only in an active dialogue session
-after their observer-specific prerequisites are met.
+Claim-specific Charm, Command, and Bluff responses remain available only in
+the active dialogue session where that observer heard the claim.
 
 Field action skills are deliberately narrow. `FollowTracks` and
 `ReacquireTracks` use the matching Terrain skill; other investigation actions

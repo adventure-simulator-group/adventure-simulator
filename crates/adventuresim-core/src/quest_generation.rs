@@ -605,6 +605,41 @@ pub fn initial_testimony_projection(witness: &WitnessBinding) -> Vec<(usize, &Te
         .collect()
 }
 
+/// Private authority used to assess and challenge an authored claim.
+///
+/// Presentation text may add framing or paraphrase the proposition, so display
+/// string equality is never authority. Accuracy and demeanor are deliberately
+/// separate: a mistaken witness can assert an inaccurate claim sincerely,
+/// while evasive or partly truthful testimony provides no clean demeanor signal.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TestimonyClaimAuthority {
+    pub factually_accurate: bool,
+    /// Signed private signal used by passive Insight: `-1` is deliberate
+    /// deception, `1` is sincere conviction, and `0` is genuinely ambiguous.
+    pub demeanor_truth_signal: f32,
+}
+
+pub const fn testimony_claim_authority(draft: &TestimonyDraft) -> TestimonyClaimAuthority {
+    match draft.reliability {
+        Reliability::Truthful => TestimonyClaimAuthority {
+            factually_accurate: true,
+            demeanor_truth_signal: 1.0,
+        },
+        Reliability::Mistaken => TestimonyClaimAuthority {
+            factually_accurate: false,
+            demeanor_truth_signal: 1.0,
+        },
+        Reliability::Evasive | Reliability::PartlyTruthful => TestimonyClaimAuthority {
+            factually_accurate: false,
+            demeanor_truth_signal: 0.0,
+        },
+        Reliability::Deceptive => TestimonyClaimAuthority {
+            factually_accurate: false,
+            demeanor_truth_signal: -1.0,
+        },
+    }
+}
+
 /// Testimony a player-like actor can legitimately hear by starting with the
 /// public primary contact and following referrals disclosed by volunteered
 /// statements. Withheld statements and unreferenced secondary witnesses never
@@ -4056,6 +4091,41 @@ mod tests {
             assert!(!draft.spoken_text.is_empty());
             assert!(!draft.spoken_text.to_ascii_lowercase().contains("truthful"));
             assert!(!draft.spoken_text.to_ascii_lowercase().contains("lying"));
+        }
+    }
+
+    #[test]
+    fn claim_authority_separates_accuracy_from_demeanor_and_ignores_presentation_wording() {
+        let generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let mut draft = generated.witnesses[0].testimony[2].clone();
+        assert_ne!(draft.spoken_text, draft.truthful_text);
+        assert_eq!(
+            testimony_claim_authority(&draft),
+            TestimonyClaimAuthority {
+                factually_accurate: true,
+                demeanor_truth_signal: 1.0,
+            }
+        );
+
+        for delivery in [TestimonyDelivery::Volunteered, TestimonyDelivery::Withheld] {
+            draft.delivery = delivery;
+            for (reliability, expected) in [
+                (Reliability::Truthful, (true, 1.0)),
+                (Reliability::Mistaken, (false, 1.0)),
+                (Reliability::Evasive, (false, 0.0)),
+                (Reliability::Deceptive, (false, -1.0)),
+                (Reliability::PartlyTruthful, (false, 0.0)),
+            ] {
+                draft.reliability = reliability;
+                let authority = testimony_claim_authority(&draft);
+                assert_eq!(
+                    (
+                        authority.factually_accurate,
+                        authority.demeanor_truth_signal
+                    ),
+                    expected
+                );
+            }
         }
     }
 

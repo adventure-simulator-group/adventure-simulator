@@ -8,15 +8,15 @@ about the cause.
 Investigation skills answer different questions. Bestiary narrows which
 creatures fit received descriptions and successfully interpreted physical
 clues. Terrain follows and recovers tracks. Hearing testimony passively uses
-Insight to notice possible pressure without certifying truth, while Charm,
-Command, and Deception offer
-personality-sensitive ways to pursue what a witness has not volunteered.
+Insight to form a fallible impression of each specific claim, while Charm,
+Command, and Deception offer increasingly risky and forceful ways to question
+that claim. Insight reads demeanor, not hidden facts: a sincere mistake can
+look sincere, and evasive or partly truthful accounts are inherently ambiguous.
 Witnesses do not always have quest information withheld, and the wording of an
 initial or released account does not identify its reliability. A character
-must first notice possible pressure or learn a relevant contradiction/clue
-before trying confrontation approaches. Time together builds familiarity and
-affinity; the NPC's privately sampled personality and current morale also
-matter.
+may question any highlighted claim, even one that looks truthful. A failed
+challenge strains affinity; Command always imposes some strain. Time together
+builds familiarity, while the NPC's private personality and morale also matter.
 
 Tracks are followed as a short sequence rather than one all-or-nothing check.
 Each successful section contributes a physical finding before the final section
