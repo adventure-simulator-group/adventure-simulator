@@ -7,6 +7,7 @@ pub const MIN_INITIAL_CONTAMINATION: f32 = 1.0e-8;
 pub const MAX_INITIAL_CONTAMINATION: f32 = 1.0e-5;
 pub const RECONTAMINATION_FLOOR: f32 = 1.0e-9;
 pub const MAX_CONTAMINATION: f32 = 1.0e9;
+pub const PAN_FRY_MIN_FAT_MASS_RATIO: f32 = 0.02;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FoodClass {
@@ -32,6 +33,58 @@ pub enum CookingMethod {
     Bake,
 }
 
+/// Flavor potency in mass-equivalent kilograms. A value of 0.1 means enough
+/// of that flavor to season 0.1 kg of food at the shared objective target.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FlavorProfile {
+    pub salty: f32,
+    pub spicy: f32,
+    pub sweet: f32,
+    pub sour: f32,
+    pub savory: f32,
+}
+
+impl FlavorProfile {
+    pub const fn new(salty: f32, spicy: f32, sweet: f32, sour: f32, savory: f32) -> Self {
+        Self {
+            salty,
+            spicy,
+            sweet,
+            sour,
+            savory,
+        }
+    }
+
+    pub fn scaled(self, factor: f32) -> Self {
+        let factor = if factor.is_finite() {
+            factor.max(0.0)
+        } else {
+            0.0
+        };
+        Self::new(
+            self.salty * factor,
+            self.spicy * factor,
+            self.sweet * factor,
+            self.sour * factor,
+            self.savory * factor,
+        )
+    }
+
+    pub fn add_assign(&mut self, other: Self) {
+        self.salty += other.salty;
+        self.spicy += other.spicy;
+        self.sweet += other.sweet;
+        self.sour += other.sour;
+        self.savory += other.savory;
+    }
+
+    pub fn valid(self) -> bool {
+        [self.salty, self.spicy, self.sweet, self.sour, self.savory]
+            .into_iter()
+            .all(|value| value.is_finite() && value >= 0.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FoodDefinition {
     pub id: &'static str,
@@ -44,6 +97,10 @@ pub struct FoodDefinition {
     pub growth_per_hour: f32,
     /// Minutes required for the ingredient to become safe/done.
     pub cooking_minutes: u32,
+    pub flavors_per_unit: FlavorProfile,
+    pub culinary_fat: bool,
+    /// Quality of catalog stock and newly acquired raw lots.
+    pub default_quality: u8,
 }
 
 pub const FOOD_CATALOG: &[FoodDefinition] = &[
@@ -56,6 +113,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 3.0,
         growth_per_hour: 0.008,
         cooking_minutes: 0,
+        flavors_per_unit: FlavorProfile::new(0.35, 0.0, 0.0, 0.0, 0.45),
+        culinary_fat: false,
+        default_quality: 3,
     },
     FoodDefinition {
         id: "oat_grain",
@@ -66,6 +126,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 1.0,
         growth_per_hour: 0.010,
         cooking_minutes: 25,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.06, 0.0, 0.08),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "rye_bread",
@@ -76,6 +139,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 2.0,
         growth_per_hour: 0.018,
         cooking_minutes: 4,
+        flavors_per_unit: FlavorProfile::new(0.22, 0.0, 0.04, 0.08, 0.16),
+        culinary_fat: false,
+        default_quality: 3,
     },
     FoodDefinition {
         id: "apple",
@@ -86,6 +152,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 0.3,
         growth_per_hour: 0.012,
         cooking_minutes: 5,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.12, 0.12, 0.0),
+        culinary_fat: false,
+        default_quality: 3,
     },
     FoodDefinition {
         id: "wild_berries",
@@ -96,6 +165,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 0.6,
         growth_per_hour: 0.020,
         cooking_minutes: 4,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.18, 0.16, 0.0),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "root_vegetables",
@@ -106,6 +178,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 0.5,
         growth_per_hour: 0.010,
         cooking_minutes: 20,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.04, 0.0, 0.12),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "hazelnuts",
@@ -116,6 +191,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 1.0,
         growth_per_hour: 0.004,
         cooking_minutes: 5,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.04, 0.0, 0.05),
+        culinary_fat: false,
+        default_quality: 3,
     },
     FoodDefinition {
         id: "garlic",
@@ -126,6 +204,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 1.0,
         growth_per_hour: 0.009,
         cooking_minutes: 3,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.25, 0.0, 0.0, 1.5),
+        culinary_fat: false,
+        default_quality: 3,
     },
     FoodDefinition {
         id: "sage",
@@ -136,6 +217,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 2.0,
         growth_per_hour: 0.008,
         cooking_minutes: 2,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.10, 0.0, 0.0, 1.0),
+        culinary_fat: false,
+        default_quality: 3,
     },
     FoodDefinition {
         id: "watercress",
@@ -146,6 +230,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 0.7,
         growth_per_hour: 0.025,
         cooking_minutes: 2,
+        flavors_per_unit: FlavorProfile::new(0.05, 0.18, 0.0, 0.06, 0.12),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "seaweed",
@@ -156,6 +243,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 0.6,
         growth_per_hour: 0.022,
         cooking_minutes: 5,
+        flavors_per_unit: FlavorProfile::new(0.28, 0.0, 0.0, 0.0, 0.18),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "wild_mushrooms",
@@ -166,6 +256,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 1.0,
         growth_per_hour: 0.030,
         cooking_minutes: 12,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.0, 0.0, 0.20),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "raw_venison",
@@ -176,6 +269,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 2.0,
         growth_per_hour: 0.090,
         cooking_minutes: 18,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.0, 0.0, 0.36),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "raw_fowl",
@@ -186,6 +282,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 2.0,
         growth_per_hour: 0.105,
         cooking_minutes: 22,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.0, 0.0, 0.32),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "raw_fish",
@@ -196,6 +295,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 1.5,
         growth_per_hour: 0.115,
         cooking_minutes: 16,
+        flavors_per_unit: FlavorProfile::new(0.08, 0.0, 0.0, 0.0, 0.34),
+        culinary_fat: false,
+        default_quality: 2,
     },
     FoodDefinition {
         id: "raw_beast_meat",
@@ -206,6 +308,9 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 1.0,
         growth_per_hour: 0.105,
         cooking_minutes: 24,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.0, 0.0, 0.30),
+        culinary_fat: false,
+        default_quality: 1,
     },
     FoodDefinition {
         id: "cooked_meal",
@@ -216,6 +321,114 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         value_per_unit: 1.0,
         growth_per_hour: 0.025,
         cooking_minutes: 0,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.0, 0.0, 0.0),
+        culinary_fat: false,
+        default_quality: 3,
+    },
+    FoodDefinition {
+        id: "salt",
+        name: "Salt",
+        class: FoodClass::Herb,
+        kcal_per_unit: 0.0,
+        mass_kg_per_unit: 0.01,
+        value_per_unit: 1.0,
+        growth_per_hour: 0.003,
+        cooking_minutes: 0,
+        // Exact calibration: 1 g salt seasons 100 g food.
+        flavors_per_unit: FlavorProfile::new(1.0, 0.0, 0.0, 0.0, 0.0),
+        culinary_fat: false,
+        default_quality: 3,
+    },
+    FoodDefinition {
+        id: "mustard",
+        name: "Mustard",
+        class: FoodClass::Herb,
+        kcal_per_unit: 8.0,
+        mass_kg_per_unit: 0.02,
+        value_per_unit: 1.0,
+        growth_per_hour: 0.008,
+        cooking_minutes: 0,
+        flavors_per_unit: FlavorProfile::new(0.10, 1.2, 0.0, 0.12, 0.08),
+        culinary_fat: false,
+        default_quality: 3,
+    },
+    FoodDefinition {
+        id: "horseradish",
+        name: "Horseradish",
+        class: FoodClass::Herb,
+        kcal_per_unit: 10.0,
+        mass_kg_per_unit: 0.03,
+        value_per_unit: 1.0,
+        growth_per_hour: 0.012,
+        cooking_minutes: 0,
+        flavors_per_unit: FlavorProfile::new(0.0, 1.4, 0.0, 0.05, 0.08),
+        culinary_fat: false,
+        default_quality: 2,
+    },
+    FoodDefinition {
+        id: "honey",
+        name: "Honey",
+        class: FoodClass::Herb,
+        kcal_per_unit: 150.0,
+        mass_kg_per_unit: 0.05,
+        value_per_unit: 2.0,
+        growth_per_hour: 0.004,
+        cooking_minutes: 0,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 1.25, 0.0, 0.0),
+        culinary_fat: false,
+        default_quality: 4,
+    },
+    FoodDefinition {
+        id: "vinegar",
+        name: "Vinegar",
+        class: FoodClass::Herb,
+        kcal_per_unit: 2.0,
+        mass_kg_per_unit: 0.03,
+        value_per_unit: 1.0,
+        growth_per_hour: 0.003,
+        cooking_minutes: 0,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.0, 1.2, 0.0),
+        culinary_fat: false,
+        default_quality: 3,
+    },
+    FoodDefinition {
+        id: "sour_cherries",
+        name: "Sour cherries",
+        class: FoodClass::Fruit,
+        kcal_per_unit: 80.0,
+        mass_kg_per_unit: 0.20,
+        value_per_unit: 1.0,
+        growth_per_hour: 0.020,
+        cooking_minutes: 3,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.12, 0.22, 0.0),
+        culinary_fat: false,
+        default_quality: 3,
+    },
+    FoodDefinition {
+        id: "butter",
+        name: "Butter",
+        class: FoodClass::Herb,
+        kcal_per_unit: 360.0,
+        mass_kg_per_unit: 0.05,
+        value_per_unit: 2.0,
+        growth_per_hour: 0.018,
+        cooking_minutes: 0,
+        flavors_per_unit: FlavorProfile::new(0.05, 0.0, 0.0, 0.0, 0.20),
+        culinary_fat: true,
+        default_quality: 3,
+    },
+    FoodDefinition {
+        id: "lard",
+        name: "Lard",
+        class: FoodClass::Herb,
+        kcal_per_unit: 450.0,
+        mass_kg_per_unit: 0.05,
+        value_per_unit: 1.0,
+        growth_per_hour: 0.012,
+        cooking_minutes: 0,
+        flavors_per_unit: FlavorProfile::new(0.0, 0.0, 0.0, 0.0, 0.18),
+        culinary_fat: true,
+        default_quality: 2,
     },
 ];
 
@@ -282,7 +495,7 @@ pub fn cooking_duration_minutes(
         CookingMethod::PanFry => 5,
         CookingMethod::Stew => 12,
         CookingMethod::Roast => 7,
-        CookingMethod::Bake => 15,
+        CookingMethod::Bake => 30,
     };
     let slowest = safety_minutes.iter().copied().max()?;
     let batch = ((total_mass_kg - 0.5).max(0.0).sqrt() * 8.0).ceil() as u32;
@@ -317,13 +530,108 @@ pub fn cooked_nutrition_retention(cooking_check: f32) -> f32 {
     0.95 + 0.008 * check
 }
 
-pub fn cooked_quality_multiplier(cooking_check: f32) -> f32 {
-    let check = if cooking_check.is_finite() {
-        cooking_check.clamp(0.0, 5.0)
+/// Method-specific retention composed with generic skill-based retention.
+pub fn method_nutrition_retention(method: CookingMethod) -> f32 {
+    match method {
+        CookingMethod::Roast => 0.85,
+        _ => 1.0,
+    }
+}
+
+pub fn quality_value_multiplier(quality: u8) -> f32 {
+    match quality.clamp(1, 5) {
+        1 => 0.80,
+        2 => 0.90,
+        3 => 1.00,
+        4 => 1.15,
+        _ => 1.35,
+    }
+}
+
+pub fn pan_fry_has_enough_fat(culinary_fat_kg: f32, ingredient_mass_kg: f32) -> bool {
+    culinary_fat_kg.is_finite()
+        && ingredient_mass_kg.is_finite()
+        && ingredient_mass_kg > 0.0
+        && culinary_fat_kg >= ingredient_mass_kg * PAN_FRY_MIN_FAT_MASS_RATIO
+}
+
+fn flavor_score(actual: f32, target: f32) -> f32 {
+    if !actual.is_finite() || !target.is_finite() || actual < 0.0 || target <= 0.0 {
+        return 0.0;
+    }
+    let ratio = actual / target;
+    if ratio <= 1.0 {
+        5.0 * ratio
+    } else {
+        5.0 / (ratio * ratio)
+    }
+}
+
+/// Shared objective flavor score. Each method has fixed required targets,
+/// including a zero score when a required flavor is absent. Baking
+/// deterministically chooses sweet or savory, whichever has greater potency.
+/// Every required flavor is weighted equally and targets potency equal to mass.
+pub fn aggregate_flavor_quality(
+    method: CookingMethod,
+    flavors: FlavorProfile,
+    mass_kg: f32,
+) -> f32 {
+    if !flavors.valid() || !mass_kg.is_finite() || mass_kg <= 0.0 {
+        return 0.0;
+    }
+    let mut active = Vec::new();
+    let push = |scores: &mut Vec<f32>, value: f32| {
+        scores.push(flavor_score(value, mass_kg));
+    };
+    match method {
+        CookingMethod::Bake if flavors.sweet >= flavors.savory => {
+            push(&mut active, flavors.salty);
+            push(&mut active, flavors.spicy);
+            push(&mut active, flavors.sweet);
+        }
+        CookingMethod::Bake => {
+            push(&mut active, flavors.salty);
+            push(&mut active, flavors.spicy);
+            push(&mut active, flavors.savory);
+        }
+        CookingMethod::Stew => {
+            push(&mut active, flavors.salty);
+            push(&mut active, flavors.spicy);
+            push(&mut active, flavors.sour);
+            push(&mut active, flavors.savory);
+        }
+        CookingMethod::PanFry | CookingMethod::Roast => {
+            push(&mut active, flavors.salty);
+            push(&mut active, flavors.spicy);
+            push(&mut active, flavors.savory);
+        }
+    }
+    active.iter().sum::<f32>() / active.len() as f32
+}
+
+/// Checks below one occupy novice tier 1 in the five-tier item system.
+pub fn chef_quality_tier(cooking_check: f32) -> u8 {
+    if cooking_check.is_finite() {
+        (cooking_check.floor() as i32).clamp(1, 5) as u8
+    } else {
+        1
+    }
+}
+
+/// Flavor is floored before the discrete chef cap. Tier 1 is the system floor.
+pub fn cooked_quality(chef_tier: u8, flavor_quality: f32, fatless_pan_fry: bool) -> u8 {
+    let flavor = if flavor_quality.is_finite() {
+        flavor_quality.clamp(0.0, 5.0)
     } else {
         0.0
     };
-    0.95 + 0.03 * check
+    let mut tier = i32::from(chef_tier.clamp(1, 5))
+        .min(flavor.floor() as i32)
+        .max(1);
+    if fatless_pan_fry {
+        tier -= 1;
+    }
+    tier.clamp(1, 5) as u8
 }
 
 /// Cooked output is terminal preparation state. Allowing it back into the
@@ -404,7 +712,7 @@ mod tests {
         );
     }
     #[test]
-    fn cooking_skill_only_reduces_overhead_and_bounds_quality() {
+    fn cooking_skill_only_reduces_overhead_and_bounds_retention() {
         let safety = [22];
         let novice =
             cooking_duration_minutes_for_check(CookingMethod::Roast, &safety, 4.0, 0.0).unwrap();
@@ -414,8 +722,8 @@ mod tests {
         assert!(master >= 22);
         assert_eq!(cooked_nutrition_retention(-1.0), 0.95);
         assert!((cooked_nutrition_retention(5.0) - 0.99).abs() < f32::EPSILON);
-        assert_eq!(cooked_quality_multiplier(f32::NAN), 0.95);
-        assert!((cooked_quality_multiplier(5.0) - 1.10).abs() < f32::EPSILON);
+        assert_eq!(method_nutrition_retention(CookingMethod::Roast), 0.85);
+        assert_eq!(method_nutrition_retention(CookingMethod::Bake), 1.0);
     }
 
     #[test]
@@ -423,9 +731,55 @@ mod tests {
         assert!(is_cookable_ingredient("hazelnuts"));
         assert!(!is_cookable_ingredient("cooked_meal"));
         let ingredient_value = 100.0;
-        let once = ingredient_value * cooked_quality_multiplier(5.0);
-        assert_eq!(once, 110.0);
+        let once = ingredient_value * quality_value_multiplier(5);
+        assert_eq!(once, 135.0);
         assert!(!is_cookable_ingredient("cooked_meal"));
+    }
+
+    #[test]
+    fn flavor_scoring_is_linear_below_and_quadratic_above_target() {
+        let exact = FlavorProfile::new(1.0, 1.0, 0.0, 0.0, 1.0);
+        let low = FlavorProfile::new(0.5, 0.5, 0.0, 0.0, 0.5);
+        let high = FlavorProfile::new(2.0, 2.0, 0.0, 0.0, 2.0);
+        assert_eq!(
+            aggregate_flavor_quality(CookingMethod::Roast, exact, 1.0),
+            5.0
+        );
+        assert_eq!(
+            aggregate_flavor_quality(CookingMethod::Roast, low, 1.0),
+            2.5
+        );
+        assert_eq!(
+            aggregate_flavor_quality(CookingMethod::Roast, high, 1.0),
+            1.25
+        );
+    }
+
+    #[test]
+    fn quality_obeys_chef_and_flavor_caps_and_fatless_penalty() {
+        assert_eq!(chef_quality_tier(0.2), 1);
+        assert_eq!(chef_quality_tier(4.8), 4);
+        assert_eq!(cooked_quality(4, 3.9, false), 3);
+        assert_eq!(cooked_quality(4, 3.9, true), 2);
+        assert_eq!(cooked_quality(1, 5.0, true), 1);
+    }
+
+    #[test]
+    fn required_flavors_do_not_disappear_when_omitted() {
+        let omitted = FlavorProfile::new(0.0, 1.0, 0.0, 0.0, 1.0);
+        let undersalted = FlavorProfile::new(0.5, 1.0, 0.0, 0.0, 1.0);
+        assert!(
+            aggregate_flavor_quality(CookingMethod::Roast, omitted, 1.0)
+                < aggregate_flavor_quality(CookingMethod::Roast, undersalted, 1.0)
+        );
+    }
+
+    #[test]
+    fn pan_fry_fat_threshold_is_inclusive_and_validated() {
+        assert!(!pan_fry_has_enough_fat(0.019, 1.0));
+        assert!(pan_fry_has_enough_fat(0.02, 1.0));
+        assert!(!pan_fry_has_enough_fat(f32::NAN, 1.0));
+        assert!(!pan_fry_has_enough_fat(1.0, 0.0));
     }
     #[test]
     fn travel_never_creates_surplus_but_meals_can() {
@@ -462,7 +816,19 @@ mod tests {
             assert!(food.value_per_unit > 0.0);
             assert!(food.growth_per_hour > 0.0);
             assert!(food.cooking_minutes > 0);
+            assert!(food.flavors_per_unit.valid());
+            assert!((1..=5).contains(&food.default_quality));
         }
+    }
+
+    #[test]
+    fn catalog_flavor_metadata_is_valid_and_salt_uses_exact_calibration() {
+        for item in FOOD_CATALOG {
+            assert!(item.flavors_per_unit.valid(), "{}", item.id);
+            assert!((1..=5).contains(&item.default_quality), "{}", item.id);
+        }
+        assert_eq!(definition("salt").unwrap().flavors_per_unit.salty, 1.0);
+        assert_eq!(definition("salt").unwrap().mass_kg_per_unit, 0.01);
     }
 
     #[test]

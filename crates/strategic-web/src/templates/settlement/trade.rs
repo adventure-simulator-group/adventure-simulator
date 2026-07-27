@@ -135,6 +135,7 @@ pub fn merchants_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -147,6 +148,7 @@ pub fn merchants_page(
         active_character,
         inventory,
         &[],
+        food_lots,
         party_members,
         logged_in_as,
         None,
@@ -161,6 +163,7 @@ pub fn religion_page(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
@@ -179,6 +182,7 @@ pub fn religion_page(
         active_character,
         inventory,
         items,
+        food_lots,
         party_members,
         logged_in_as,
         rest_default_minutes(
@@ -201,6 +205,7 @@ pub fn party_inventory_page(
     active_character: &Character,
     active_inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     selected_equip: Option<&CharacterEquip>,
     active_equip: Option<&CharacterEquip>,
@@ -211,7 +216,7 @@ pub fn party_inventory_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (party_trade_inventory_rail(selected, selected_inventory, items, active_character.id, "right", selected_equip, active_targets, selected_encumbrance))
+            (party_trade_inventory_rail(selected, selected_inventory, items, food_lots, active_character.id, "right", selected_equip, active_targets, selected_encumbrance))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
@@ -225,7 +230,7 @@ pub fn party_inventory_page(
             }
         }
         aside class="right-sidebar" {
-            (party_trade_inventory_rail(active_character, active_inventory, items, selected.id, "left", active_equip, selected_targets, active_encumbrance))
+            (party_trade_inventory_rail(active_character, active_inventory, items, food_lots, selected.id, "left", active_equip, selected_targets, active_encumbrance))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
@@ -237,6 +242,7 @@ pub fn party_discard_page(
     active_character: &Character,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
     encumbrance: EncumbranceSummary,
@@ -263,7 +269,7 @@ pub fn party_discard_page(
             }
         }
         aside class="right-sidebar" {
-            (discard_inventory_rail(active_character, inventory, items, equip, encumbrance))
+            (discard_inventory_rail(active_character, inventory, items, food_lots, equip, encumbrance))
         }
     };
     location.render_layout("Inventory", content, Some(&active_character.name))
@@ -311,7 +317,8 @@ pub(super) fn cooking_activity_dialog(
                 h2 id="cooking-dialog-title" { "Cooking" }
                 a class="character-action-dialog-close" href=(&close_href) aria-label="Close cooking dialog" { "×" }
             }
-            div class="cooking-activity" data-cooking-activity {
+            div class="cooking-activity" data-cooking-activity
+                data-pan-fat-ratio=(adventuresim_core::food::PAN_FRY_MIN_FAT_MASS_RATIO) {
             aside class="cooking-pot" aria-label="Cooking pot" {
                 (sidebar_section("Pot", html! {
                     p class="text-muted small-copy cooking-pot-empty" data-cooking-pot-empty {
@@ -338,6 +345,9 @@ pub(super) fn cooking_activity_dialog(
                     input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
                     input type="hidden" name="amounts_milliunits" value="" data-cooking-amounts;
                     div class="party-offer cooking-actions" {
+                        p class="small-copy text-muted cooking-preview" data-cooking-preview {
+                            "Choose a method and stage ingredients for a preview."
+                        }
                         a class="btn btn-secondary party-offer-cancel" href=(&close_href) { "Cancel" }
                         button type="submit" class="btn btn-primary" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
                     }
@@ -363,13 +373,19 @@ pub(super) fn cooking_activity_dialog(
                                 tr class="trade-inventory-row trade-row-player" data-cooking-source=(item.id) data-item-key=(&item.item_id) {
                                     td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                     td class="inventory-item-name" {
-                                        (item_name_with_display(&item.item_id, &display_name, definition))
+                                        (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
                                         span class="inventory-row-actions" {
                                             @if food_lot.is_some() {
                                                 @let safety = adventuresim_core::food::definition(&item.item_id).map_or(5, |food| food.cooking_minutes);
                                                 button type="button" class="trade-transfer trade-transfer-left"
                                                     data-cooking-stage=(item.id) data-cooking-name=(&display_name)
                                                     data-count=(amount) data-mass=(format!("{unit_mass:.4}")) data-safety=(safety)
+                                                    data-culinary-fat=(adventuresim_core::food::definition(&item.item_id).is_some_and(|food| food.culinary_fat))
+                                                    data-salty=(food_lot.map_or(0.0, |lot| lot.salty_kg))
+                                                    data-spicy=(food_lot.map_or(0.0, |lot| lot.spicy_kg))
+                                                    data-sweet=(food_lot.map_or(0.0, |lot| lot.sweet_kg))
+                                                    data-sour=(food_lot.map_or(0.0, |lot| lot.sour_kg))
+                                                    data-savory=(food_lot.map_or(0.0, |lot| lot.savory_kg))
                                                     data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
                                                     data-label-one=(format!("Add 0.25 {display_name} to the pot"))
                                                     data-label-target=(format!("Add {display_name} to the pot"))
@@ -508,6 +524,7 @@ pub(super) fn service_page(
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     logged_in_as: Option<&str>,
     rest_default_minutes: Option<u64>,
@@ -575,6 +592,7 @@ pub(super) fn service_page(
                     active_character,
                     inventory,
                     items,
+                    food_lots,
                     None,
                     matches!(service_id, "weapons" | "armor" | "clothing"),
                 ))
@@ -583,11 +601,12 @@ pub(super) fn service_page(
                     active_character,
                     inventory,
                     items,
+                    food_lots,
                     None,
                     true,
                 ))
             } @else if service_id == "religion" {
-                (inventory_rail(active_character, inventory, items, None, false))
+                (inventory_rail(active_character, inventory, items, food_lots, None, false))
             } @else {
                 (sidebar_section("Service", html! {
                     p class="small-copy" { (service_summary) }
@@ -612,6 +631,7 @@ fn party_trade_inventory_rail(
     character: &Character,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     recipient_id: u64,
     direction: &str,
     equip: Option<&CharacterEquip>,
@@ -629,12 +649,14 @@ fn party_trade_inventory_rail(
                         @for item in inventory {
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
+                            @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                             @let target = target_quantity(recipient_targets, &item.item_id);
                             @let item_name = item_display_name(&item.item_id);
                                 tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
                                     td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                     td class="inventory-item-name" {
-                                        (item_name_with_quality(&item.item_id, definition))
+                                        (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
                                         span class="inventory-row-actions" {
                                             @if is_equipped {
                                                 (disabled_transfer_button(direction, "Equipped items cannot be transferred"))
@@ -660,6 +682,7 @@ fn discard_inventory_rail(
     character: &Character,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     equip: Option<&CharacterEquip>,
     encumbrance: EncumbranceSummary,
 ) -> Markup {
@@ -674,11 +697,13 @@ fn discard_inventory_rail(
                         @for item in inventory {
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
+                            @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                             @let item_name = item_display_name(&item.item_id);
                             tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
-                                    (item_name_with_quality(&item.item_id, definition))
+                                    (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
                                     span class="inventory-row-actions" {
                                         @if is_equipped {
                                             (disabled_transfer_button("left", "Equipped items cannot be discarded"))
@@ -822,6 +847,7 @@ pub fn live_merchant_shop_page(
                     @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
+                        @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                         @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language), -problem_sell_penalty_bps);
@@ -833,7 +859,7 @@ pub fn live_merchant_shop_page(
                         @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else if matches!(shop, MerchantShop::Clothing) { definition.kind == crate::spacetimedb::ItemKind::Clothing } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                        td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
+                        td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
                         td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
@@ -859,12 +885,13 @@ pub fn live_merchant_shop_page(
                     @for item in pooled.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let food_lot = food_lots.iter().find(|lot| lot.party_inventory_item_id == Some(item.id));
+                        @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language), -problem_sell_penalty_bps);
                         @let target = target_quantity(party_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-party-inventory-id=(item.id) data-inventory-quantity=(item.quantity) data-target=(target) {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                            td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !is_currency { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.quantity, target)) } }
+                            td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !is_currency { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.quantity, target)) } }
                             td class="inventory-count" { (quantity_target_control(item.quantity, target, &item.item_id, true)) }
                             td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) }
                             td class="inventory-gold" { (sell_price) }
@@ -921,6 +948,7 @@ pub fn party_pool_page(
     pooled: &[PartyInventoryItem],
     stake: u64,
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
     personal_targets: &[InventoryQuantityTarget],
@@ -940,6 +968,8 @@ pub fn party_pool_page(
                     (trade_inventory_table("party-pool-left", InventoryColumnSet::All, true, false, false, html! {
                         @for item in pooled {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let food_lot = food_lots.iter().find(|lot| lot.party_inventory_item_id == Some(item.id));
+                            @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                             @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
                             @let target = target_quantity(personal_targets, &item.item_id);
                             @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
@@ -947,7 +977,7 @@ pub fn party_pool_page(
                             tr class="trade-inventory-row" {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
-                                    (item_name_with_quality(&item.item_id, definition))
+                                    (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot))
                                 span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {item_name}")) data-label-target=(format!("Withdraw {item_name} to target")) data-label-all=(format!("Withdraw all {item_name}")) title=(if value > stake { format!("Withdraw one {item_name}; {} personal coin required", value - stake) } else { format!("Withdraw one {item_name} using your stake") }) aria-label=(format!("Withdraw one {item_name}")) { (transfer_glyph(1)) } }
                                 }
                                 td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
@@ -971,6 +1001,8 @@ pub fn party_pool_page(
                     (trade_inventory_table("party-pool-right", InventoryColumnSet::All, true, true, false, html! {
                         @for item in inventory {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
+                            @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                             @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let target = target_quantity(party_targets, &item.item_id);
                             @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
@@ -978,7 +1010,7 @@ pub fn party_pool_page(
                             tr class="trade-inventory-row" {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
-                                    (item_name_with_quality(&item.item_id, definition))
+                                    (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot))
                                     span class="inventory-row-actions" {
                                         @if equipped {
                                             (disabled_transfer_button("left", "Equipped items cannot be deposited"))
@@ -1139,26 +1171,60 @@ fn item_name_with_display(
     display_name: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
+    item_name_with_display_quality(item_id, display_name, definition, None)
+}
+
+pub(in crate::templates) fn item_name_with_food_lot(
+    item_id: &str,
+    display_name: &str,
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    food_lot: Option<&FoodLot>,
+) -> Markup {
+    item_name_with_display_quality(
+        item_id,
+        display_name,
+        definition,
+        food_lot.map(|lot| lot.quality.clamp(1, 5)),
+    )
+}
+
+fn item_name_with_display_quality(
+    item_id: &str,
+    display_name: &str,
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    quality_override: Option<u8>,
+) -> Markup {
     let alcohol_group = definition
         .filter(|item| item.alcohol_serving_ml > 0)
         .map(|_| "alcohol");
-    let quality = definition
-        .filter(|item| {
-            matches!(
-                item.kind,
-                crate::spacetimedb::ItemKind::Weapon
-                    | crate::spacetimedb::ItemKind::Armor
-                    | crate::spacetimedb::ItemKind::Shield
-            )
-        })
-        .map(|item| item.quality.clamp(1, 5));
-    let label = quality.map(|quality| match quality {
-        1 => "Quality 1",
-        2 => "Quality 2",
-        3 => "Quality 3 — munition grade",
-        4 => "Quality 4 — knightly commission",
-        5 => "Quality 5 — royal or heroic commission",
-        _ => unreachable!(),
+    let food_quality =
+        quality_override.is_some() || adventuresim_core::food::definition(item_id).is_some();
+    let quality = quality_override.or_else(|| {
+        definition
+            .filter(|item| {
+                matches!(
+                    item.kind,
+                    crate::spacetimedb::ItemKind::Weapon
+                        | crate::spacetimedb::ItemKind::Armor
+                        | crate::spacetimedb::ItemKind::Shield
+                        | crate::spacetimedb::ItemKind::Food
+                ) || adventuresim_core::food::definition(item_id).is_some()
+            })
+            .map(|item| item.quality.clamp(1, 5))
+    });
+    let label = quality.map(|quality| {
+        if food_quality {
+            format!("Quality {quality}")
+        } else {
+            match quality {
+                1 => "Quality 1".to_string(),
+                2 => "Quality 2".to_string(),
+                3 => "Quality 3 — munition grade".to_string(),
+                4 => "Quality 4 — knightly commission".to_string(),
+                5 => "Quality 5 — royal or heroic commission".to_string(),
+                _ => unreachable!(),
+            }
+        }
     });
     let damage_types = definition.map(|item| {
         [
@@ -1571,10 +1637,16 @@ mod tests {
             id: 1,
             inventory_item_id: Some(9),
             party_inventory_item_id: None,
-            display_name: "Cooked meal".into(),
+            display_name: "Roasted venison".into(),
             preparation: FoodPreparation::Stewed,
             ingredient_item_ids: vec!["raw_venison".into()],
             ingredient_quantities: vec![1.0],
+            salty_kg: 0.0,
+            spicy_kg: 0.0,
+            sweet_kg: 0.0,
+            sour_kg: 0.0,
+            savory_kg: 0.36,
+            quality: 3,
             mass_kg: 25.0,
             nutrition_kcal: 5_000.0,
             total_value: 10.0,
@@ -1582,6 +1654,12 @@ mod tests {
         };
         assert_eq!(merchant_inventory_weight(None, Some(&lot)), "25");
         assert_eq!(merchant_inventory_sell_price(None, Some(&lot)), 8);
+        let rendered = item_name_with_food_lot("cooked_meal", &lot.display_name, None, Some(&lot))
+            .into_string();
+        assert!(rendered.contains("Roasted venison"));
+        assert!(rendered.contains("item-quality-3"));
+        assert!(rendered.contains("title=\"Quality 3\""));
+        assert!(!rendered.contains("munition grade"));
         lot.mass_kg = 6.25;
         lot.total_value = 2.5;
         assert_eq!(merchant_inventory_weight(None, Some(&lot)), "6.25");

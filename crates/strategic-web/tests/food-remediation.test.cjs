@@ -8,11 +8,15 @@ const food = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/food.
 const item = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/item.rs"), "utf8");
 const strategic = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/strategic.rs"), "utf8");
 const capability = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/capability.rs"), "utf8");
-const template = fs.readFileSync(path.join(root, "strategic-web/src/templates/settlement.rs"), "utf8");
+const template = [
+  "character_details.rs",
+  "character_skills.rs",
+  "trade.rs",
+].map((file) => fs.readFileSync(path.join(root, "strategic-web/src/templates/settlement", file), "utf8")).join("\n");
 const inventoryBrowser = fs.readFileSync(path.join(root, "strategic-web/static/inventory-browser.js"), "utf8");
 
 test("food acquisitions remain independent lots instead of merchant-merged stacks", () => {
-  assert.match(item, /individual = durable \|\| kind == Some\(ItemKind::Medication\) \|\| food/);
+  assert.match(item, /individual = durable \|\| kind == Some\(ItemKind::Medication\) \|\| measured/);
   assert.match(strategic, /if !durable\s*&& !food\s*&& let Some\(mut stack\)/);
   assert.match(strategic, /for _ in 0\.\.quantity \{[\s\S]*quantity: 1[\s\S]*create_party_food_lot\(ctx, row\.id, item_id, 1, minute\)/);
 });
@@ -36,16 +40,17 @@ test("interrupted cooking commits its safe time prefix without consuming inputs"
 
 test("food mass, value, and provenance are lot-authoritative", () => {
   assert.match(food, /ingredient_quantities: Vec<f32>/);
-  assert.match(food, /retain_lot_fraction\(&mut lot, 1\.0 - ratio\)/);
+  assert.match(food, /retain_lot_fraction\(&mut lot, retained\)/);
   assert.match(strategic, /Food batches must be sold as complete valid lots/);
   assert.match(capability, /food_lot\(\)[\s\S]*lot\.mass_kg\.max\(0\.0\)/);
-  assert.match(food, /consume_food_amount\(ctx, character_id, output\.id[\s\S]*refresh_character_capability\(ctx, character_id\)/);
+  assert.match(food, /if method == CookingMethod::Stew \{[\s\S]*consume_food_amount\(ctx, character_id, output\.id[\s\S]*delete_personal_food_lot\(ctx, output\.id\)/);
   assert.match(template, /merchant_inventory_sell_price\(definition, food_lot\)/);
   assert.match(template, /merchant_inventory_weight\(definition, food_lot\)/);
 });
 
 test("portrait navigation exposes cooking and all edible lots aggregate", () => {
-  assert.match(template, /party-cooking-action/);
+  assert.match(template, /label: "Open cooking menu"/);
+  assert.match(template, /cooking_href: Some\(&cooking_href\)/);
   assert.match(template, /\?cook=true/);
   assert.doesNotMatch(template, /data-character-activity="cooking"/);
   assert.match(template, /class="cooking-method-list"/);

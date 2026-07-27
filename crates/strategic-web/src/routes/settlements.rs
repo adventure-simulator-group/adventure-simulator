@@ -3566,6 +3566,7 @@ async fn party_member(
                 &active_character,
                 &active_inventory,
                 &items,
+                &food_lots,
                 &party_members,
                 active_equip.first(),
                 active_encumbrance,
@@ -3582,6 +3583,7 @@ async fn party_member(
             &active_character,
             &active_inventory,
             &items,
+            &food_lots,
             &party_members,
             selected_equip.first(),
             active_equip.first(),
@@ -3635,6 +3637,11 @@ async fn party_pool_inventory(
         ))
         .await
         .unwrap_or_default();
+    let food_lots: Vec<FoodLot> = state
+        .db
+        .query("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     let items: Vec<ItemDefinition> = state
         .db
         .query("SELECT * FROM item")
@@ -3666,6 +3673,7 @@ async fn party_pool_inventory(
             &pooled,
             stake,
             &items,
+            &food_lots,
             &members,
             equip.first(),
             &personal_targets,
@@ -5160,6 +5168,11 @@ async fn rest(
         .query::<ItemDefinition>("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let food_lots = state
+        .db
+        .query::<FoodLot>("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     let soap_preview = soap_rest_preview(
         &state,
         active_character
@@ -5178,6 +5191,7 @@ async fn rest(
                 .as_ref()
                 .map_or(&[], |(_, inventory)| inventory.as_slice()),
             &items,
+            &food_lots,
             &party_members,
             logged_in_as.as_deref(),
             at_inn,
@@ -5726,6 +5740,7 @@ type ServiceRenderer = fn(
     Option<&Character>,
     &[InventoryItem],
     &[ItemDefinition],
+    &[FoodLot],
     &[Character],
     Option<&CharacterLimbs>,
     Option<&CharacterStats>,
@@ -5773,6 +5788,7 @@ async fn merchant_shop(
             merchants_page(
                 settlement,
                 None,
+                &[],
                 &[],
                 &party_members,
                 logged_in_as.as_deref(),
@@ -6046,9 +6062,10 @@ async fn render_service_page(
             None => (0, 0),
         }
     };
-    let (party_members, items, limbs, stats, condition, equipment_recovery) = tokio::join!(
+    let (party_members, items, food_lots, limbs, stats, condition, equipment_recovery) = tokio::join!(
         get_active_party_members(&state, active_character_ref),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        state.db.query::<FoodLot>("SELECT * FROM food_lot"),
         limbs_lookup,
         stats_lookup,
         condition_lookup,
@@ -6073,6 +6090,7 @@ async fn render_service_page(
             active_character.as_ref().map(|(character, _)| character),
             &inventory,
             &items.unwrap_or_default(),
+            &food_lots.unwrap_or_default(),
             &party_members,
             limbs.as_ref(),
             stats.as_ref(),
@@ -7368,6 +7386,12 @@ mod encumbrance_tests {
             preparation: FoodPreparation::Stewed,
             ingredient_item_ids: vec!["raw_venison".into()],
             ingredient_quantities: vec![25.0],
+            salty_kg: 0.0,
+            spicy_kg: 0.0,
+            sweet_kg: 0.0,
+            sour_kg: 0.0,
+            savory_kg: 10.0,
+            quality: 3,
             mass_kg: 25.0,
             nutrition_kcal: 10_000.0,
             total_value: 25.0,

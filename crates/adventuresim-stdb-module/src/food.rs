@@ -75,6 +75,13 @@ pub struct FoodLot {
     pub ingredient_item_ids: Vec<String>,
     /// Fractional source-unit provenance is conserved when a lot is partly eaten.
     pub ingredient_quantities: Vec<f32>,
+    pub salty_kg: f32,
+    pub spicy_kg: f32,
+    pub sweet_kg: f32,
+    pub sour_kg: f32,
+    pub savory_kg: f32,
+    /// Durable quality tier shared with item craftsmanship name colors.
+    pub quality: u8,
     pub mass_kg: f32,
     pub nutrition_kcal: f32,
     pub total_value: f32,
@@ -121,6 +128,12 @@ pub fn create_personal_food_lot(
         },
         ingredient_item_ids: vec![item_id.into()],
         ingredient_quantities: vec![quantity as f32],
+        salty_kg: definition.flavors_per_unit.salty * quantity as f32,
+        spicy_kg: definition.flavors_per_unit.spicy * quantity as f32,
+        sweet_kg: definition.flavors_per_unit.sweet * quantity as f32,
+        sour_kg: definition.flavors_per_unit.sour * quantity as f32,
+        savory_kg: definition.flavors_per_unit.savory * quantity as f32,
+        quality: definition.default_quality.clamp(1, 5),
         mass_kg: definition.mass_kg_per_unit * quantity as f32,
         nutrition_kcal: definition.kcal_per_unit * quantity as f32,
         total_value: definition.value_per_unit * quantity as f32,
@@ -157,6 +170,12 @@ pub fn create_party_food_lot(
         },
         ingredient_item_ids: vec![item_id.into()],
         ingredient_quantities: vec![quantity as f32],
+        salty_kg: definition.flavors_per_unit.salty * quantity as f32,
+        spicy_kg: definition.flavors_per_unit.spicy * quantity as f32,
+        sweet_kg: definition.flavors_per_unit.sweet * quantity as f32,
+        sour_kg: definition.flavors_per_unit.sour * quantity as f32,
+        savory_kg: definition.flavors_per_unit.savory * quantity as f32,
+        quality: definition.default_quality.clamp(1, 5),
         mass_kg: definition.mass_kg_per_unit * quantity as f32,
         nutrition_kcal: definition.kcal_per_unit * quantity as f32,
         total_value: definition.value_per_unit * quantity as f32,
@@ -216,14 +235,7 @@ pub fn remove_party_lot_quantity(
         .find(|lot| lot.party_inventory_item_id == Some(inventory_item_id))
         .ok_or("Food lot metadata not found")?;
     let keep = 1.0 - removed as f32 / original as f32;
-    lot.mass_kg *= keep;
-    lot.nutrition_kcal *= keep;
-    lot.total_value *= keep;
-    lot.ingredient_quantities = retained_ingredient_quantities(
-        &lot.ingredient_quantities,
-        original.saturating_sub(removed),
-        original,
-    );
+    retain_lot_fraction(&mut lot, keep);
     ctx.db.food_lot().id().update(lot);
     Ok(())
 }
@@ -246,18 +258,15 @@ fn split_ingredient_quantities(
     (source, child)
 }
 
-fn retained_ingredient_quantities(quantities: &[f32], retained: u32, original: u32) -> Vec<f32> {
-    let ratio = retained as f32 / original as f32;
-    quantities
-        .iter()
-        .map(|quantity| food::retained_component(*quantity, ratio))
-        .collect()
-}
-
 fn retain_lot_fraction(lot: &mut FoodLot, retained: f32) {
     lot.mass_kg = food::retained_component(lot.mass_kg, retained);
     lot.nutrition_kcal = food::retained_component(lot.nutrition_kcal, retained);
     lot.total_value = food::retained_component(lot.total_value, retained);
+    lot.salty_kg = food::retained_component(lot.salty_kg, retained);
+    lot.spicy_kg = food::retained_component(lot.spicy_kg, retained);
+    lot.sweet_kg = food::retained_component(lot.sweet_kg, retained);
+    lot.sour_kg = food::retained_component(lot.sour_kg, retained);
+    lot.savory_kg = food::retained_component(lot.savory_kg, retained);
     for quantity in &mut lot.ingredient_quantities {
         *quantity = food::retained_component(*quantity, retained);
     }
@@ -320,16 +329,12 @@ pub fn split_lot(
     let mut child = source.clone();
     child.id = 0;
     child.inventory_item_id = Some(destination_inventory_id);
-    child.mass_kg = source.mass_kg * ratio;
-    child.nutrition_kcal = source.nutrition_kcal * ratio;
-    child.total_value = source.total_value * ratio;
+    retain_lot_fraction(&mut child, ratio);
     let (source_ingredients, child_ingredients) =
         split_ingredient_quantities(&source.ingredient_quantities, taken, original);
-    source.ingredient_quantities = source_ingredients;
     child.ingredient_quantities = child_ingredients;
-    source.mass_kg -= child.mass_kg;
-    source.nutrition_kcal -= child.nutrition_kcal;
-    source.total_value -= child.total_value;
+    retain_lot_fraction(&mut source, 1.0 - ratio);
+    source.ingredient_quantities = source_ingredients;
     let contamination = ctx
         .db
         .food_contamination()
@@ -360,14 +365,7 @@ pub fn remove_lot_quantity(
     }
     let mut lot = lot_for_inventory(ctx, inventory_item_id)?;
     let keep = 1.0 - removed as f32 / original as f32;
-    lot.mass_kg *= keep;
-    lot.nutrition_kcal *= keep;
-    lot.total_value *= keep;
-    lot.ingredient_quantities = retained_ingredient_quantities(
-        &lot.ingredient_quantities,
-        original.saturating_sub(removed),
-        original,
-    );
+    retain_lot_fraction(&mut lot, keep);
     ctx.db.food_lot().id().update(lot);
     Ok(())
 }
@@ -391,16 +389,12 @@ pub fn move_or_split_to_party(
     child.id = 0;
     child.inventory_item_id = None;
     child.party_inventory_item_id = Some(destination_party_id);
-    child.mass_kg *= ratio;
-    child.nutrition_kcal *= ratio;
-    child.total_value *= ratio;
+    retain_lot_fraction(&mut child, ratio);
     let (source_ingredients, child_ingredients) =
         split_ingredient_quantities(&source.ingredient_quantities, taken, original);
-    source.ingredient_quantities = source_ingredients;
     child.ingredient_quantities = child_ingredients;
-    source.mass_kg -= child.mass_kg;
-    source.nutrition_kcal -= child.nutrition_kcal;
-    source.total_value -= child.total_value;
+    retain_lot_fraction(&mut source, 1.0 - ratio);
+    source.ingredient_quantities = source_ingredients;
     let hidden = ctx
         .db
         .food_contamination()
@@ -440,16 +434,12 @@ pub fn move_or_split_to_personal(
     child.id = 0;
     child.party_inventory_item_id = None;
     child.inventory_item_id = Some(destination_inventory_id);
-    child.mass_kg *= ratio;
-    child.nutrition_kcal *= ratio;
-    child.total_value *= ratio;
+    retain_lot_fraction(&mut child, ratio);
     let (source_ingredients, child_ingredients) =
         split_ingredient_quantities(&source.ingredient_quantities, taken, original);
-    source.ingredient_quantities = source_ingredients;
     child.ingredient_quantities = child_ingredients;
-    source.mass_kg -= child.mass_kg;
-    source.nutrition_kcal -= child.nutrition_kcal;
-    source.total_value -= child.total_value;
+    retain_lot_fraction(&mut source, 1.0 - ratio);
+    source.ingredient_quantities = source_ingredients;
     let hidden = ctx
         .db
         .food_contamination()
@@ -516,6 +506,15 @@ fn cooking_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, String>
         skills.effective_skill_hours(Skill::Cooking),
         Skill::Cooking.governing_aptitude(&attributes),
     ) * limbs.head_health.clamp(0.0, 1.0))
+}
+
+fn stew_water_required_ml(amounts_milliunits: &[u32]) -> Option<f32> {
+    let total = amounts_milliunits
+        .iter()
+        .try_fold(0_u64, |sum, amount| sum.checked_add(u64::from(*amount)))?;
+    let required =
+        500.0 + total as f32 / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32 * 100.0;
+    required.is_finite().then_some(required)
 }
 
 pub fn preview_cooking(
@@ -852,20 +851,18 @@ pub fn cook_food(
         .character_id()
         .find(character_id)
         .ok_or("Character needs not found")?;
+    let stew_water_ml = if method == CookingMethod::Stew {
+        stew_water_required_ml(&amounts_milliunits).ok_or("Stew water could not be calculated")?
+    } else {
+        0.0
+    };
     if method == CookingMethod::Stew {
-        let required = 500.0
-            + amounts_milliunits
-                .iter()
-                .map(|amount| *amount as f32)
-                .sum::<f32>()
-                / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
-                * 100.0;
         let pooled = actor
             .party_id
             .as_deref()
             .and_then(|id| ctx.db.party_authority().id().find(id.to_string()))
             .map_or(0.0, |row| row.pooled_water_ml);
-        if pooled + needs.carried_water_ml < required {
+        if pooled + needs.carried_water_ml < stew_water_ml {
             return Err("Stew requires enough pooled or carried water".into());
         }
     }
@@ -888,6 +885,8 @@ pub fn cook_food(
     let mut mass = 0.0;
     let mut kcal = 0.0;
     let mut value = 0.0;
+    let mut flavors = food::FlavorProfile::default();
+    let mut culinary_fat_mass_kg = 0.0;
     let mut growth = Vec::new();
     let mut loads = Vec::new();
     for (&id, &amount) in inventory_item_ids.iter().zip(&amounts_milliunits) {
@@ -896,6 +895,21 @@ pub fn cook_food(
         let available = crate::inventory_amount::personal_amount(ctx, id)
             .ok_or("Ingredient amount state is missing")?;
         let ratio = amount as f32 / available as f32;
+        if ![
+            lot.mass_kg,
+            lot.nutrition_kcal,
+            lot.total_value,
+            lot.salty_kg,
+            lot.spicy_kg,
+            lot.sweet_kg,
+            lot.sour_kg,
+            lot.savory_kg,
+        ]
+        .into_iter()
+        .all(|value| value.is_finite() && value >= 0.0)
+        {
+            return Err("Ingredient lot contains invalid food values".into());
+        }
         name_parts.push(lot.display_name.clone());
         ingredients.extend(lot.ingredient_item_ids.clone());
         ingredient_quantities.extend(
@@ -906,27 +920,41 @@ pub fn cook_food(
         mass += lot.mass_kg * ratio;
         kcal += lot.nutrition_kcal * ratio;
         value += lot.total_value * ratio;
+        flavors.add_assign(
+            food::FlavorProfile::new(
+                lot.salty_kg,
+                lot.spicy_kg,
+                lot.sweet_kg,
+                lot.sour_kg,
+                lot.savory_kg,
+            )
+            .scaled(ratio),
+        );
+        if lot
+            .ingredient_item_ids
+            .iter()
+            .any(|item_id| food::definition(item_id).is_some_and(|item| item.culinary_fat))
+        {
+            culinary_fat_mass_kg += lot.mass_kg * ratio;
+        }
         growth.push(cont.growth_per_hour);
         loads.push(current * lot.mass_kg * ratio);
     }
+    let ingredient_mass_kg = mass;
+    if method == CookingMethod::Stew {
+        mass += stew_water_ml / 1_000.0;
+    }
     // Ingredient and water mutation begins only after the wait completed.
     if method == CookingMethod::Stew {
-        let required = 500.0
-            + amounts_milliunits
-                .iter()
-                .map(|amount| *amount as f32)
-                .sum::<f32>()
-                / crate::inventory_amount::FULL_AMOUNT_MILLIUNITS as f32
-                * 100.0;
         if let Some(party_id) = actor.party_id.as_deref()
             && let Some(mut party) = ctx.db.party_authority().id().find(party_id.to_string())
         {
-            let used = required.min(party.pooled_water_ml);
+            let used = stew_water_ml.min(party.pooled_water_ml);
             party.pooled_water_ml -= used;
             ctx.db.party_authority().id().update(party);
-            needs.carried_water_ml -= required - used;
+            needs.carried_water_ml -= stew_water_ml - used;
         } else {
-            needs.carried_water_ml -= required;
+            needs.carried_water_ml -= stew_water_ml;
         }
         ctx.db.character_needs().character_id().update(needs);
     }
@@ -966,6 +994,13 @@ pub fn cook_food(
     name_parts.dedup();
     let display = format!("{} {}", method.name(), name_parts.join(", "));
     let out_minute = current_minute(ctx, character_id);
+    let flavor_quality = food::aggregate_flavor_quality(method.core(), flavors, mass);
+    let quality = food::cooked_quality(
+        food::chef_quality_tier(cooking_check),
+        flavor_quality,
+        method == CookingMethod::PanFry
+            && !food::pan_fry_has_enough_fat(culinary_fat_mass_kg, ingredient_mass_kg),
+    );
     let out_lot = ctx.db.food_lot().insert(FoodLot {
         id: 0,
         inventory_item_id: Some(output.id),
@@ -974,9 +1009,17 @@ pub fn cook_food(
         preparation: method.preparation(),
         ingredient_item_ids: ingredients,
         ingredient_quantities,
+        salty_kg: flavors.salty,
+        spicy_kg: flavors.spicy,
+        sweet_kg: flavors.sweet,
+        sour_kg: flavors.sour,
+        savory_kg: flavors.savory,
+        quality,
         mass_kg: mass,
-        nutrition_kcal: kcal * food::cooked_nutrition_retention(cooking_check),
-        total_value: value * food::cooked_quality_multiplier(cooking_check),
+        nutrition_kcal: kcal
+            * food::cooked_nutrition_retention(cooking_check)
+            * food::method_nutrition_retention(method.core()),
+        total_value: value * food::quality_value_multiplier(quality),
         created_at_minute: out_minute,
     });
     let weighted = if mass > 0.0 {
@@ -1011,9 +1054,19 @@ pub fn cook_food(
             gain.excess_effective_hours,
         );
     }
-    consume_food_amount(ctx, character_id, output.id, f32::MAX, true)?;
-    // A full character consumes zero calories, so the helper may return before
-    // its mutation refresh. The retained output mass must still be persisted.
+    if method == CookingMethod::Stew {
+        consume_food_amount(ctx, character_id, output.id, f32::MAX, true)?;
+        // Soup cannot be carried. Any serving left because the cook is full is
+        // discarded, including its hidden contamination state.
+        if ctx.db.inventory_item().id().find(output.id).is_some() {
+            ctx.db
+                .inventory_item_amount()
+                .inventory_item_id()
+                .delete(output.id);
+            ctx.db.inventory_item().id().delete(output.id);
+            delete_personal_food_lot(ctx, output.id);
+        }
+    }
     crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())
@@ -1037,5 +1090,74 @@ mod tests {
             .expect("preview cooking implementation");
         assert!(preview.contains("food::is_cookable_ingredient(&inventory.item_id)"));
         assert!(preview.contains("A cooked meal cannot be cooked again"));
+    }
+
+    #[test]
+    fn partial_lot_retains_quality_and_scales_every_flavor() {
+        let mut lot = FoodLot {
+            id: 1,
+            inventory_item_id: Some(2),
+            party_inventory_item_id: None,
+            display_name: "Roasted test".into(),
+            preparation: FoodPreparation::Roasted,
+            ingredient_item_ids: vec!["salt".into()],
+            ingredient_quantities: vec![1.0],
+            salty_kg: 1.0,
+            spicy_kg: 0.8,
+            sweet_kg: 0.6,
+            sour_kg: 0.4,
+            savory_kg: 0.2,
+            quality: 4,
+            mass_kg: 1.0,
+            nutrition_kcal: 100.0,
+            total_value: 10.0,
+            created_at_minute: 0,
+        };
+        retain_lot_fraction(&mut lot, 0.25);
+        assert_eq!(lot.quality, 4);
+        assert_eq!(lot.salty_kg, 0.25);
+        assert_eq!(lot.spicy_kg, 0.2);
+        assert_eq!(lot.sweet_kg, 0.15);
+        assert_eq!(lot.sour_kg, 0.1);
+        assert_eq!(lot.savory_kg, 0.05);
+    }
+
+    #[test]
+    fn stew_water_contract_and_retained_meal_branch_are_explicit() {
+        assert_eq!(
+            stew_water_required_ml(&[crate::inventory_amount::FULL_AMOUNT_MILLIUNITS]),
+            Some(600.0)
+        );
+        let source = include_str!("food.rs");
+        let cook = source
+            .split("pub fn cook_food")
+            .nth(1)
+            .and_then(|tail| tail.split("#[cfg(test)]").next())
+            .expect("cook reducer source");
+        assert!(cook.contains("mass += stew_water_ml / 1_000.0"));
+        assert!(cook.contains("if method == CookingMethod::Stew"));
+        assert!(cook.contains("delete_personal_food_lot(ctx, output.id)"));
+        assert_eq!(
+            cook.matches("consume_food_amount(ctx, character_id, output.id")
+                .count(),
+            1
+        );
+        let disposal = cook
+            .rfind("if method == CookingMethod::Stew")
+            .expect("stew-only output disposal");
+        assert!(cook[disposal..].contains("consume_food_amount(ctx, character_id, output.id"));
+        assert!(cook.contains("pan_fry_has_enough_fat"));
+        assert!(cook.contains("chef_quality_tier"));
+    }
+
+    #[test]
+    fn catalog_quality_is_copied_when_lots_are_acquired() {
+        let source = include_str!("food.rs");
+        let constructor = source
+            .split("pub fn create_personal_food_lot")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn create_party_food_lot").next())
+            .expect("personal lot constructor");
+        assert!(constructor.contains("quality: definition.default_quality.clamp(1, 5)"));
     }
 }

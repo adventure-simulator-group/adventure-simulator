@@ -28,8 +28,8 @@ use crate::spacetimedb::{
     AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendInvestigationAction,
     BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
     CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
-    ContractPresentationStatus, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem,
-    PartyStake, Settlement,
+    ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyStake, Settlement,
 };
 use crate::templates::quest::{
     CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
@@ -856,6 +856,11 @@ async fn render_quest_location(
     } else {
         Vec::new()
     };
+    let food_lots: Vec<FoodLot> = state
+        .db
+        .query("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     let party_members = get_active_party_members(&state, character.as_ref()).await;
     let living_party_members = living_party_members(&party_members);
     let stats: Vec<CharacterStats> = state
@@ -994,6 +999,7 @@ async fn render_quest_location(
             &pooled,
             stake,
             &items,
+            &food_lots,
             &targets,
             logged_in_as,
         ),

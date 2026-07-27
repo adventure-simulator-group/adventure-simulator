@@ -199,7 +199,10 @@ pub fn item_stock_category(id: &str, kind: CatalogKind) -> Option<Stock> {
         CatalogKind::Food => match id {
             "oat_grain" | "rye_bread" | "travel_ration" => Stock::Grain,
             "raw_venison" | "raw_fowl" | "raw_fish" | "raw_beast_meat" => Stock::Meat,
-            "garlic" | "sage" | "wild_mushrooms" => Stock::Herbs,
+            "garlic" | "sage" | "wild_mushrooms" | "salt" | "mustard" | "horseradish" | "honey"
+            | "vinegar" => Stock::Herbs,
+            "butter" | "lard" => Stock::Meat,
+            "sour_cherries" => Stock::GeneralGoods,
             _ => Stock::GeneralGoods,
         },
     })
@@ -265,7 +268,7 @@ pub fn storefront_stocks(
                 CatalogKind::Ingredient | CatalogKind::Medication | CatalogKind::Food
             ),
             Storefront::Inn => {
-                matches!(kind, CatalogKind::Food)
+                (matches!(kind, CatalogKind::Food) || crate::food::definition(id).is_some())
                     || matches!(id, "cooking_pan" | "cooking_pot" | "portable_oven")
             }
         }
@@ -323,6 +326,19 @@ mod tests {
                 storefront,
                 "waterskin",
                 CatalogKind::Simple,
+            ));
+        }
+    }
+
+    #[test]
+    fn inns_stock_dual_role_cooking_ingredients_without_reclassifying_them() {
+        let inn = profile(vec![Service::Inn], vec![Stock::Herbs]);
+        for id in ["garlic", "sage", "honey", "vinegar"] {
+            assert!(storefront_stocks(
+                &inn,
+                Storefront::Inn,
+                id,
+                CatalogKind::Ingredient
             ));
         }
     }

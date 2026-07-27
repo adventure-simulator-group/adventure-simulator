@@ -932,22 +932,25 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     define_item(ctx, "bandage", 0.05);
     upsert_surgery_items(ctx);
     for (id, weight) in [
-        ("honey", 0.25),
+        ("honey", 0.05),
         ("sage", 0.05),
         ("dried_mint", 0.05),
         ("charcoal", 0.15),
         ("willow_bark", 0.10),
-        ("vinegar", 0.30),
+        ("vinegar", 0.03),
         ("poppy", 0.05),
         ("comfrey", 0.08),
         ("garlic", 0.10),
         ("oatmeal", 0.25),
         ("rosewater", 0.20),
     ] {
+        let food = adventuresim_core::food::definition(id);
         ctx.db.item().insert(Item {
             id: id.into(),
             weight,
             base_value: adventuresim_core::strategic_economy::medicinal_ingredient_value(id),
+            nutrition_kcal: food.map_or(0.0, |food| food.kcal_per_unit),
+            quality: food.map_or(3, |food| food.default_quality),
             kind: ItemKind::Ingredient,
             ..Item::default()
         });
@@ -962,9 +965,9 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         });
     }
     for food in adventuresim_core::food::FOOD_CATALOG {
-        // Garlic and sage retain Ingredient semantics for the herbalist while
+        // These dual-purpose remedies retain Ingredient semantics for the herbalist while
         // also being accepted by the food-lot/cooking rules.
-        if matches!(food.id, "garlic" | "sage") {
+        if matches!(food.id, "garlic" | "sage" | "honey" | "vinegar") {
             continue;
         }
         ctx.db.item().insert(Item {
@@ -972,6 +975,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             weight: food.mass_kg_per_unit,
             base_value: Some(food.value_per_unit.ceil() as u32),
             nutrition_kcal: food.kcal_per_unit,
+            quality: food.default_quality,
             kind: ItemKind::Food,
             ..Item::default()
         });
