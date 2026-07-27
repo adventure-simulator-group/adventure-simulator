@@ -11,8 +11,8 @@ use super::{AppState, PartyAction, execute_or_request_party_action};
 use crate::{
     session::Session,
     spacetimedb::{
-        BackendInvestigationCaseSummary, BackendInvestigationJournalEntry,
-        BackendInvestigationLead, Character,
+        BackendBestiaryDeduction, BackendInvestigationCaseSummary,
+        BackendInvestigationJournalEntry, BackendInvestigationLead, Character,
     },
     templates::investigation::journal_page,
 };
@@ -62,28 +62,43 @@ async fn journal_response(
     let cases_sql = format!(
         "SELECT * FROM backend_investigation_cases WHERE owner_character_id = {character_id}"
     );
-    let (entries, leads, cases) = tokio::join!(
+    let deductions_sql = format!(
+        "SELECT * FROM backend_bestiary_deductions WHERE owner_character_id = {character_id}"
+    );
+    let (entries, leads, cases, deductions) = tokio::join!(
         state
             .db
             .query::<BackendInvestigationJournalEntry>(&entries_sql),
         state.db.query::<BackendInvestigationLead>(&leads_sql),
         state
             .db
-            .query::<BackendInvestigationCaseSummary>(&cases_sql)
+            .query::<BackendInvestigationCaseSummary>(&cases_sql),
+        state.db.query::<BackendBestiaryDeduction>(&deductions_sql)
     );
-    match (entries, leads, cases) {
-        (Ok(mut entries), Ok(mut leads), Ok(cases)) => {
+    match (entries, leads, cases, deductions) {
+        (Ok(mut entries), Ok(mut leads), Ok(cases), Ok(deductions)) => {
             entries.sort_by_key(|row| (row.case_id.clone(), row.recorded_at));
             leads.sort_by_key(|row| (row.case_id.clone(), row.recorded_at));
             (
                 status,
                 Html(
-                    journal_page(&entries, &leads, &cases, &character.name, feedback).into_string(),
+                    journal_page(
+                        &entries,
+                        &leads,
+                        &cases,
+                        &deductions,
+                        &character.name,
+                        feedback,
+                    )
+                    .into_string(),
                 ),
             )
                 .into_response()
         }
-        (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
+        (Err(error), _, _, _)
+        | (_, Err(error), _, _)
+        | (_, _, Err(error), _)
+        | (_, _, _, Err(error)) => {
             tracing::error!(%error, character_id, "sanitized investigation projection failed");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }

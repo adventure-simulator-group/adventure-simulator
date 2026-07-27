@@ -2436,6 +2436,11 @@ body.character-action-dialog-open { overflow: hidden; }
   outline-offset: 2px;
 }
 
+.bestiary-result-chip.support-strong { background: color-mix(in srgb, var(--success-color) 30%, transparent); }
+.bestiary-result-chip.support-plausible { background: color-mix(in srgb, var(--warning-color) 24%, transparent); }
+.bestiary-result-chip.support-weak { background: color-mix(in srgb, var(--muted-color) 20%, transparent); }
+.bestiary-provenance { margin: .35rem 0 0; padding-left: 1.2rem; }
+
 .journal-bestiary-results {
   margin-top: 0.45rem;
 }

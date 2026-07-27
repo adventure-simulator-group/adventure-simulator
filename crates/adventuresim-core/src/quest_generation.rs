@@ -216,7 +216,6 @@ pub struct EvidenceInspectionTopic {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BestiaryEvidenceImplication {
     pub category: BestiaryCategory,
-    pub support_bps: u16,
     /// Hidden fixed-point Bestiary threshold, where 1,000 is a check of 1.0.
     pub lore_difficulty_milli: u16,
     pub diagnostic_kind: Option<String>,
@@ -1108,7 +1107,6 @@ fn evidence_presentation(
                     .iter()
                     .map(|implication| BestiaryEvidenceImplication {
                         category: implication.category,
-                        support_bps: implication.support_bps,
                         lore_difficulty_milli: implication.lore_difficulty_milli,
                         diagnostic_kind: implication.diagnostic_kind.clone(),
                         interpretation: implication.interpretation.clone(),
@@ -2514,15 +2512,19 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             "The incidents have no reliable time, place, or victim schedule.".to_owned()
         }
     };
-    let uncorroborated_pattern_claim = if reliability == Reliability::Truthful {
-        pattern_truth.clone()
+    // Released presentation cannot identify hidden reliability, even to a
+    // player who knows every authored line and generation rule.
+    let uncorroborated_pattern_claim =
+        "There may be a pattern, but I am not prepared to say which details matter.".to_owned();
+    let pattern_delivery = if hash(
+        context.observer_entropy_hi ^ context.observer_entropy_lo.rotate_left(17),
+        "testimony-delivery:primary-pattern",
+    ) % 2
+        == 0
+    {
+        TestimonyDelivery::Withheld
     } else {
-        match attack_pattern {
-            AttackPattern::Nightly => "I think it happens at all hours.".to_owned(),
-            AttackPattern::Roadside => "I doubt the road has anything to do with it.".to_owned(),
-            AttackPattern::VictimSpecific => "The victims seem entirely random to me.".to_owned(),
-            AttackPattern::Irregular => "I am sure it always happens just after dusk.".to_owned(),
-        }
+        TestimonyDelivery::Volunteered
     };
     let evidence_site_label = if family == TemplateFamily::RecurringDepredation {
         "the latest incident site"
@@ -2601,7 +2603,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 TestimonyDraft {
                     proposition_id: pattern_prop.clone(),
                     reliability,
-                    delivery: TestimonyDelivery::Withheld,
+                    delivery: pattern_delivery,
                     truthful_text: pattern_truth.clone(),
                     spoken_text: uncorroborated_pattern_claim,
                     destination_stage: "textual".into(),
@@ -3968,6 +3970,48 @@ mod tests {
     }
 
     #[test]
+    fn withholding_and_visible_presentations_overlap_hidden_reliability_states() {
+        let mut delivery_states = BTreeSet::new();
+        let mut truthful_initial = BTreeSet::new();
+        let mut nontruthful_initial = BTreeSet::new();
+        let mut truthful_released = BTreeSet::new();
+        let mut nontruthful_released = BTreeSet::new();
+        let mut truthful_sources = BTreeSet::new();
+        let mut nontruthful_sources = BTreeSet::new();
+        for seed in 0..4_096 {
+            let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
+            let primary = &generated.witnesses[0];
+            let reliability = primary.testimony[0].reliability;
+            let truthful = reliability == Reliability::Truthful;
+            let pattern = &primary.testimony[1];
+            delivery_states.insert((truthful, pattern.delivery));
+            let initial = &primary.testimony[0];
+            assert_eq!(initial.destination_stage, "route_segment");
+            if truthful {
+                truthful_initial.insert(initial.spoken_text.clone());
+                truthful_sources.insert(primary.npc_id.clone());
+            } else {
+                nontruthful_initial.insert(initial.spoken_text.clone());
+                nontruthful_sources.insert(primary.npc_id.clone());
+            }
+            if pattern.delivery == TestimonyDelivery::Withheld {
+                if truthful {
+                    truthful_released.insert(pattern.spoken_text.clone());
+                } else {
+                    nontruthful_released.insert(pattern.spoken_text.clone());
+                }
+            }
+        }
+        assert!(delivery_states.contains(&(true, TestimonyDelivery::Volunteered)));
+        assert!(delivery_states.contains(&(true, TestimonyDelivery::Withheld)));
+        assert!(delivery_states.contains(&(false, TestimonyDelivery::Volunteered)));
+        assert!(delivery_states.contains(&(false, TestimonyDelivery::Withheld)));
+        assert!(!truthful_initial.is_disjoint(&nontruthful_initial));
+        assert!(!truthful_released.is_disjoint(&nontruthful_released));
+        assert!(!truthful_sources.is_disjoint(&nontruthful_sources));
+    }
+
+    #[test]
     fn generated_physical_trails_are_opaque_contiguous_two_segment_chains() {
         for family in [
             TemplateFamily::RecurringDepredation,
@@ -4622,14 +4666,12 @@ mod tests {
                 BestiaryCategory::Human | BestiaryCategory::Elf | BestiaryCategory::Dwarf
             )
         }));
-        assert_eq!(
-            implications
-                .iter()
-                .find(|implication| implication.category == BestiaryCategory::Beast)
-                .unwrap()
-                .support_bps,
-            10_000
-        );
+        assert!(implications.iter().all(|implication| {
+            implication
+                .diagnostic_kind
+                .as_deref()
+                .is_some_and(|kind| !kind.is_empty())
+        }));
     }
 
     #[test]
