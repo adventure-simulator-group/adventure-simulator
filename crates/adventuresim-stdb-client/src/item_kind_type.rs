@@ -18,6 +18,8 @@ pub enum ItemKind {
 
     Clothing,
 
+    Container,
+
     Currency,
 
     Ingredient,

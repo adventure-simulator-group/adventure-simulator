@@ -12,7 +12,7 @@ use crate::{
     party_inventory_item, retained_projectile,
 };
 
-pub const SOAP_ITEM_ID: &str = "soft_soap";
+pub use adventuresim_core::item_references::SOFT_SOAP_ID as SOAP_ITEM_ID;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum FilthSubstance {

@@ -342,7 +342,7 @@ pub struct InterventionProfile {
 /// composition, recipes and preparation.
 pub const INTERVENTION_PROFILES: [InterventionProfile; 3] = [
     InterventionProfile {
-        preparation_id: "oral_rehydration_draught",
+        preparation_id: crate::item_references::MEDICATION_IDS[0],
         version: 1,
         route: InterventionRoute::Oral,
         duration_minutes: 8 * 60,
@@ -353,7 +353,7 @@ pub const INTERVENTION_PROFILES: [InterventionProfile; 3] = [
         adverse_delta_per_unit: MeterVector::from_const([(Meter::Hydration, 0.03)]),
     },
     InterventionProfile {
-        preparation_id: "cooling_willow_draught",
+        preparation_id: crate::item_references::MEDICATION_IDS[1],
         version: 1,
         route: InterventionRoute::Oral,
         duration_minutes: 6 * 60,
@@ -364,7 +364,7 @@ pub const INTERVENTION_PROFILES: [InterventionProfile; 3] = [
         adverse_delta_per_unit: MeterVector::from_const([(Meter::Coagulation, 0.04)]),
     },
     InterventionProfile {
-        preparation_id: "honey_wound_dressing",
+        preparation_id: crate::item_references::MEDICATION_IDS[2],
         version: 1,
         route: InterventionRoute::Topical,
         duration_minutes: 12 * 60,

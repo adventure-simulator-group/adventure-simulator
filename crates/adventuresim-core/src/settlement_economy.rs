@@ -192,19 +192,27 @@ pub fn item_stock_category(id: &str, kind: CatalogKind) -> Option<Stock> {
         CatalogKind::Armor => Stock::Armor,
         CatalogKind::Clothing => Stock::Cloth,
         CatalogKind::Ingredient | CatalogKind::Medication => Stock::Herbs,
-        CatalogKind::Simple => match id {
-            "cooking_pan" | "cooking_pot" | "portable_oven" => Stock::Metalwares,
-            _ => Stock::GeneralGoods,
-        },
-        CatalogKind::Food => match id {
-            "oat_grain" | "rye_bread" | "travel_ration" => Stock::Grain,
-            "raw_venison" | "raw_fowl" | "raw_fish" | "raw_beast_meat" => Stock::Meat,
-            "garlic" | "sage" | "wild_mushrooms" | "salt" | "mustard" | "horseradish" | "honey"
-            | "vinegar" => Stock::Herbs,
-            "butter" | "lard" => Stock::Meat,
-            "sour_cherries" => Stock::GeneralGoods,
-            _ => Stock::GeneralGoods,
-        },
+        CatalogKind::Simple
+            if crate::item_catalog::definition(id)
+                .is_some_and(|item| item.tags.iter().any(|tag| tag == "cooking_tool")) =>
+        {
+            Stock::Metalwares
+        }
+        CatalogKind::Simple => Stock::GeneralGoods,
+        CatalogKind::Food => crate::item_catalog::definition(id)
+            .and_then(|item| {
+                [
+                    ("stock_grain", Stock::Grain),
+                    ("stock_meat", Stock::Meat),
+                    ("stock_herbs", Stock::Herbs),
+                    ("stock_general", Stock::GeneralGoods),
+                ]
+                .into_iter()
+                .find_map(|(tag, stock)| {
+                    item.tags.iter().any(|value| value == tag).then_some(stock)
+                })
+            })
+            .unwrap_or(Stock::GeneralGoods),
     })
 }
 
@@ -240,7 +248,8 @@ pub fn storefront_stocks(
     // commodity profile: the travel planner must never direct a player to an
     // exposed storefront that cannot sell the provisions it just recommended.
     if matches!(storefront, Storefront::General | Storefront::Inn)
-        && matches!(id, "travel_ration" | "waterskin")
+        && crate::item_catalog::definition(id)
+            .is_some_and(|item| item.tags.iter().any(|tag| tag == "travel_provision"))
     {
         return true;
     }
@@ -269,7 +278,8 @@ pub fn storefront_stocks(
             ),
             Storefront::Inn => {
                 (matches!(kind, CatalogKind::Food) || crate::food::definition(id).is_some())
-                    || matches!(id, "cooking_pan" | "cooking_pot" | "portable_oven")
+                    || crate::item_catalog::definition(id)
+                        .is_some_and(|item| item.tags.iter().any(|tag| tag == "cooking_tool"))
             }
         }
 }

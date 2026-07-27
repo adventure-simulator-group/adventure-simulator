@@ -84,7 +84,6 @@ pub mod backend_social_addresses_table;
 pub mod backend_social_beliefs_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
-pub mod backfill_item_values_reducer;
 pub mod backfill_solo_parties_reducer;
 pub mod battle_loot_item_table;
 pub mod battle_loot_item_type;
@@ -98,7 +97,6 @@ pub mod bestiary_hours_type;
 pub mod blood_exposure_checkpoint_type;
 pub mod bootstrap_development_world_reducer;
 pub mod built_settlement_cover_type;
-pub mod calibrate_weapon_precision_reducer;
 pub mod camp_duration_mode_type;
 pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
@@ -729,7 +727,6 @@ pub use backend_social_addresses_table::*;
 pub use backend_social_beliefs_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
-pub use backfill_item_values_reducer::backfill_item_values;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
 pub use battle_loot_item_table::*;
 pub use battle_loot_item_type::BattleLootItem;
@@ -743,7 +740,6 @@ pub use bestiary_hours_type::BestiaryHours;
 pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use built_settlement_cover_type::BuiltSettlementCover;
-pub use calibrate_weapon_precision_reducer::calibrate_weapon_precision;
 pub use camp_duration_mode_type::CampDurationMode;
 pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
@@ -1356,7 +1352,6 @@ pub enum Reducer {
     },
     BackfillCharacterDeathsAndLeadership,
     BackfillEquipmentConditionAndSmiths,
-    BackfillItemValues,
     BackfillSoloParties,
     BeginWorldDataImport {
         schema_version: u32,
@@ -1368,7 +1363,6 @@ pub enum Reducer {
         bootstrap_token: String,
         include_visual_demos: bool,
     },
-    CalibrateWeaponPrecision,
     CancelMissionRequest {
         character_id: u64,
         mission_id: String,
@@ -1942,11 +1936,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillEquipmentConditionAndSmiths => {
                 "backfill_equipment_condition_and_smiths"
             }
-            Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
             Reducer::BootstrapDevelopmentWorld { .. } => "bootstrap_development_world",
-            Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::ChooseDialogueTopic { .. } => "choose_dialogue_topic",
@@ -2161,8 +2153,6 @@ impl __sdk::Reducer for Reducer {
                 }),
 Reducer::BackfillEquipmentConditionAndSmiths => __sats::bsatn::to_vec(&backfill_equipment_condition_and_smiths_reducer::BackfillEquipmentConditionAndSmithsArgs {
                 }),
-Reducer::BackfillItemValues => __sats::bsatn::to_vec(&backfill_item_values_reducer::BackfillItemValuesArgs {
-                }),
 Reducer::BackfillSoloParties => __sats::bsatn::to_vec(&backfill_solo_parties_reducer::BackfillSoloPartiesArgs {
                 }),
 Reducer::BeginWorldDataImport{
@@ -2183,9 +2173,7 @@ Reducer::BeginWorldDataImport{
                 bootstrap_token: bootstrap_token.clone(),
                 include_visual_demos: include_visual_demos.clone(),
 }),
-            Reducer::CalibrateWeaponPrecision => __sats::bsatn::to_vec(&calibrate_weapon_precision_reducer::CalibrateWeaponPrecisionArgs {
-                }),
-Reducer::CancelMissionRequest{
+            Reducer::CancelMissionRequest{
                 character_id,
                 mission_id,
 }             => __sats::bsatn::to_vec(&cancel_mission_request_reducer::CancelMissionRequestArgs {

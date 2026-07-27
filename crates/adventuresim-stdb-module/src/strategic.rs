@@ -10239,12 +10239,55 @@ fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
         .item()
         .id()
         .find(item_id.to_owned())
-        .is_some_and(|definition| {
-            matches!(
-                definition.kind,
-                crate::ItemKind::Weapon | crate::ItemKind::Armor | crate::ItemKind::Shield
-            )
-        })
+        .is_some_and(|definition| definition.repairable)
+}
+
+#[cfg(test)]
+mod durable_custody_tests {
+    #[test]
+    fn clothing_uses_repairable_capability_for_every_custody_path() {
+        let clothing = crate::Item {
+            id: "linen_tunic".into(),
+            kind: crate::ItemKind::Clothing,
+            repairable: true,
+            ..crate::Item::default()
+        };
+        assert!(clothing.repairable);
+
+        let source = include_str!("strategic.rs");
+        let durable_policy = source
+            .split("fn item_is_durable")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(durable_policy.contains("definition.repairable"));
+        assert!(!durable_policy.contains("ItemKind::"));
+        for (start, end) in [
+            ("fn add_to_party_inventory_checked", "fn credit_party_stake"),
+            (
+                "pub fn deposit_party_inventory_item",
+                "pub(crate) fn consume_personal_gold",
+            ),
+            (
+                "pub fn withdraw_party_inventory_item",
+                "pub fn liquidate_party_inventory",
+            ),
+        ] {
+            let custody_path = source
+                .split(start)
+                .nth(1)
+                .unwrap()
+                .split(end)
+                .next()
+                .unwrap();
+            assert!(
+                custody_path.contains("item_is_durable"),
+                "{start} must preserve condition custody for repairable clothing"
+            );
+        }
+    }
 }
 
 pub(crate) fn add_to_party_inventory(

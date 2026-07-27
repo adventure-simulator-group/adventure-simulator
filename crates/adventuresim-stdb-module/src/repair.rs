@@ -83,13 +83,6 @@ pub struct RepairOrder {
     pub quoted_cost: u32,
 }
 
-fn durable(kind: ItemKind) -> bool {
-    matches!(
-        kind,
-        ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
-    )
-}
-
 fn repair_service(value: &str) -> Result<adventuresim_core::durability::RepairService, String> {
     adventuresim_core::durability::RepairService::parse(value)
         .ok_or_else(|| "Unknown repair service".into())
@@ -114,7 +107,7 @@ pub(crate) fn initialize_item_condition(ctx: &ReducerContext, inventory: &Invent
     let Some(definition) = ctx.db.item().id().find(&inventory.item_id) else {
         return;
     };
-    if !durable(definition.kind)
+    if !definition.repairable
         || ctx
             .db
             .item_condition()
@@ -138,7 +131,7 @@ fn initialize_party_item_condition(ctx: &ReducerContext, inventory: &PartyInvent
     let Some(definition) = ctx.db.item().id().find(&inventory.item_id) else {
         return;
     };
-    if !durable(definition.kind)
+    if !definition.repairable
         || ctx
             .db
             .party_item_condition()
@@ -195,7 +188,7 @@ pub fn backfill_equipment_condition_and_smiths(ctx: &ReducerContext) {
             .item()
             .id()
             .find(&inventory.item_id)
-            .is_some_and(|item| durable(item.kind));
+            .is_some_and(|item| item.repairable);
         if durable
             && adventuresim_core::durability::legacy_durable_row_is_invalid(inventory.quantity)
         {
@@ -244,7 +237,7 @@ pub fn backfill_equipment_condition_and_smiths(ctx: &ReducerContext) {
             .item()
             .id()
             .find(&inventory.item_id)
-            .is_some_and(|item| durable(item.kind));
+            .is_some_and(|item| item.repairable);
         if durable
             && adventuresim_core::durability::legacy_durable_row_is_invalid(inventory.quantity)
         {
@@ -768,10 +761,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clothing_instances_receive_durable_condition_tracking() {
-        assert!(durable(ItemKind::Clothing));
-        assert!(durable(ItemKind::Weapon));
-        assert!(!durable(ItemKind::Medication));
+    fn repair_service_kinds_remain_explicit() {
+        assert!(repair_kind(ItemKind::Clothing).is_some());
+        assert!(repair_kind(ItemKind::Weapon).is_some());
+        assert!(repair_kind(ItemKind::Medication).is_none());
     }
 
     #[test]

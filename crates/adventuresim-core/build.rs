@@ -3,6 +3,14 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
 };
+#[path = "src/item_catalog_schema.rs"]
+mod item_catalog_schema;
+#[allow(dead_code)]
+#[path = "src/item_catalog_validation.rs"]
+mod item_catalog_validation;
+#[allow(dead_code)]
+#[path = "src/item_references.rs"]
+mod item_references;
 #[path = "src/organization_catalog_validation.rs"]
 mod organization_catalog_validation;
 #[path = "src/quest_catalog_validation.rs"]
@@ -11,6 +19,7 @@ mod quest_catalog_validation;
 fn main() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..");
     compile_organizations(&root);
+    compile_items(&root);
     let content = root.join("content/quests");
     println!("cargo:rerun-if-changed={}", content.display());
     let mut files: Vec<_> = fs::read_dir(&content)
@@ -39,8 +48,8 @@ fn main() {
         digest.update(text.as_bytes());
         // As with dialogue, quest YAML deliberately uses JSON's strict,
         // diff-friendly YAML subset so deployed binaries need no YAML parser.
-        let value: serde_json::Value =
-            serde_json::from_str(&text).unwrap_or_else(|error| panic!("{relative}: {error}"));
+        let value = item_catalog_validation::parse_document(&text)
+            .unwrap_or_else(|error| panic!("{relative}: {error}"));
         collect_dialogue_variant_sources(
             &value,
             &text,
@@ -66,6 +75,129 @@ fn main() {
         ),
     )
     .unwrap();
+}
+
+fn compile_items(root: &Path) {
+    let content = root.join("content/items");
+    println!("cargo:rerun-if-changed={}", content.display());
+    let mut files: Vec<_> = fs::read_dir(&content)
+        .expect("content/items must exist")
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "yaml")
+        })
+        .collect();
+    files.sort();
+    let mut documents = Vec::new();
+    let mut source_files = Vec::new();
+    let mut sources = Vec::new();
+    let mut item_sources = Vec::new();
+    let mut digest = Sha256::new();
+    for file in files {
+        let relative = file
+            .strip_prefix(root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(
+            text.len() <= item_catalog_validation::MAX_SOURCE_BYTES,
+            "{relative}: item catalog source is too large"
+        );
+        digest.update(relative.as_bytes());
+        digest.update([0]);
+        digest.update(text.as_bytes());
+        let value = item_catalog_validation::parse_document(&text)
+            .unwrap_or_else(|error| panic!("{relative}: {error}"));
+        collect_item_sources(&value, &text, &relative, &mut item_sources);
+        documents.push(value);
+        source_files.push(relative);
+        sources.push(text);
+    }
+    assert!(!documents.is_empty(), "content/items contains no YAML");
+    item_catalog_validation::validate_documents_with_sources(&documents, &source_files, &sources)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let icons = root.join("crates/strategic-web/static/icons/game");
+    for document in &documents {
+        for item in document["items"].as_array().unwrap() {
+            let id = item["id"].as_str().unwrap();
+            let icon = item["presentation"]["icon"].as_str().unwrap();
+            assert!(
+                icons.join(format!("{icon}.svg")).is_file(),
+                "item {id}.presentation.icon: missing vendored icon {icon}.svg"
+            );
+        }
+    }
+    let json = serde_json::to_string(&documents).unwrap();
+    let source_map = serde_json::to_string(&item_sources).unwrap();
+    let digest = format!("{:x}", digest.finalize());
+    fs::write(
+        Path::new(&env::var("OUT_DIR").unwrap()).join("item_catalog.rs"),
+        format!(
+            "pub const ITEM_CATALOG_JSON: &str = {json:?};\n\
+             pub const ITEM_CATALOG_SOURCE_MAP_JSON: &str = {source_map:?};\n\
+             pub const ITEM_CATALOG_DIGEST: &str = {digest:?};\n"
+        ),
+    )
+    .unwrap();
+}
+
+/// Record the exact authored `id` token for each item while the build owns the
+/// parsed document and its raw source. IDs are unique after validation, so the
+/// resulting map remains stable even when definitions move between files.
+fn collect_item_sources(
+    value: &serde_json::Value,
+    text: &str,
+    file: &str,
+    out: &mut Vec<serde_json::Value>,
+) {
+    let Some(items) = value.get("items").and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    let mut cursor = 0usize;
+    for item in items {
+        let Some(id) = item.get("id").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let encoded_id = serde_json::to_string(id).unwrap();
+        let start = locate_item_id_token(text, cursor, &encoded_id)
+            .unwrap_or_else(|| panic!("{file}: could not locate item {id:?} ID token"));
+        cursor = start + encoded_id.len();
+        let before = &text[..start];
+        let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+        let column = before
+            .rsplit('\n')
+            .next()
+            .map_or(1, |line| line.chars().count() + 1);
+        out.push(serde_json::json!({
+            "id": id,
+            "file": file,
+            "line": line,
+            "column": column,
+        }));
+    }
+}
+
+fn locate_item_id_token(text: &str, cursor: usize, encoded_id: &str) -> Option<usize> {
+    let mut search = cursor;
+    while let Some(relative) = text[search..].find("\"id\"") {
+        let key_start = search + relative;
+        let after_key = &text[key_start + "\"id\"".len()..];
+        let key_whitespace = after_key.len() - after_key.trim_start().len();
+        let rest = after_key.trim_start();
+        let Some(after_colon) = rest.strip_prefix(':') else {
+            search = key_start + "\"id\"".len();
+            continue;
+        };
+        let value_whitespace = after_colon.len() - after_colon.trim_start().len();
+        let value_start = key_start + "\"id\"".len() + key_whitespace + 1 + value_whitespace;
+        if text[value_start..].starts_with(encoded_id) {
+            return Some(value_start);
+        }
+        search = key_start + "\"id\"".len();
+    }
+    None
 }
 
 /// The quest authoring format is the strict JSON YAML subset. Record the

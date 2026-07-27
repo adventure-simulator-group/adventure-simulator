@@ -8,6 +8,7 @@ const script = fs.readFileSync(path.join(root, "static", "developer-mode.js"), "
 const dialogue = fs.readFileSync(path.join(root, "static", "dialogue-client.js"), "utf8");
 const layoutCss = fs.readFileSync(path.join(root, "static", "css", "layout.css"), "utf8");
 const componentsCss = fs.readFileSync(path.join(root, "static", "css", "components.css"), "utf8");
+const strategicCss = fs.readFileSync(path.join(root, "static", "css", "strategic.css"), "utf8");
 const layout = fs.readFileSync(path.join(root, "src", "templates", "layout.rs"), "utf8");
 const settlement = fs.readFileSync(path.join(root, "src", "templates", "settlement", "social.rs"), "utf8");
 
@@ -21,6 +22,8 @@ test("developer mode is persisted off by default and controls only source links"
   assert.match(layoutCss, /\.dialogue-source-link[\s\S]*border-radius: 50%/);
   assert.match(layoutCss, /\.dialogue-source-link\[hidden\] \{ display: none; \}/);
   assert.match(layoutCss, /\.dialogue-source-icon[\s\S]*hammer-nails\.svg/);
+  assert.match(strategicCss, /\.inventory-source-link[\s\S]*\.inventory-source-icon/);
+  assert.match(strategicCss, /\.inventory-source-icon[\s\S]*hammer-nails\.svg/);
 });
 
 test("toggle is emitted immediately before every character portrait menu", () => {

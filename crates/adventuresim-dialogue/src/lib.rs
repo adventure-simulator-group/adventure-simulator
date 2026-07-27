@@ -869,11 +869,22 @@ pub fn source_for_choice_fragment(
 /// Builds a web-editor URL from centrally configured repository/ref values.
 /// It rejects non-repository paths so browser markup can never disclose local paths.
 pub fn github_edit_url(repository: &str, git_ref: &str, source: &SourceRef) -> Option<String> {
+    github_edit_url_for_location(repository, git_ref, &source.file, source.line)
+}
+
+/// Builds a GitHub editor URL for any compiled repository source location.
+pub fn github_edit_url_for_location(
+    repository: &str,
+    git_ref: &str,
+    file: &str,
+    line: usize,
+) -> Option<String> {
     if repository.is_empty()
         || git_ref.is_empty()
-        || source.file.contains('\\')
-        || source.file.starts_with('/')
-        || source.file.split('/').any(|part| part == "..")
+        || line == 0
+        || file.contains('\\')
+        || file.starts_with('/')
+        || file.split('/').any(|part| part == "..")
     {
         return None;
     }
@@ -888,13 +899,8 @@ pub fn github_edit_url(repository: &str, git_ref: &str, source: &SourceRef) -> O
         "https://github.com/{}/edit/{}/{}#L{}",
         repository.trim_matches('/'),
         encode(git_ref),
-        source
-            .file
-            .split('/')
-            .map(encode)
-            .collect::<Vec<_>>()
-            .join("/"),
-        source.line
+        file.split('/').map(encode).collect::<Vec<_>>().join("/"),
+        line
     ))
 }
 
@@ -1054,6 +1060,14 @@ mod tests {
         assert_eq!(
             github_edit_url("owner/repo", "main", &s).unwrap(),
             "https://github.com/owner/repo/edit/main/content/dialogue/a%20file.yaml#L7"
+        );
+        assert_eq!(
+            github_edit_url_for_location("owner/repo", "feature/items", &s.file, 7).unwrap(),
+            "https://github.com/owner/repo/edit/feature/items/content/dialogue/a%20file.yaml#L7"
+        );
+        assert!(
+            github_edit_url_for_location("owner/repo", "main", "content/items/catalog.yaml", 0)
+                .is_none()
         );
         let bad = SourceRef {
             file: "../secret".into(),

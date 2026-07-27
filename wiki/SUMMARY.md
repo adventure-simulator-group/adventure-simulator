@@ -38,6 +38,7 @@
 - [WIP: Terrain](shared/terrain.md)
 - [Bestiary authority](reference/bestiary.md)
 - [Historical equipment catalog](reference/equipment.md)
+- [Item definition authoring](reference/item-authoring.md)
 - [Food and cooking](reference/food-and-cooking.md)
 - [Foraging](reference/foraging.md)
 - [Measured inventory architecture](reference/measured-inventory.md)

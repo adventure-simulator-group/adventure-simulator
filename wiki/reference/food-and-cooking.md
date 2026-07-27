@@ -16,6 +16,9 @@ lots retain quantity one and scale every extensive property (including flavor)
 together with their fixed-point remaining amount; quality remains unchanged.
 Transfers and sales therefore
 move a complete remaining batch rather than manufacturing rounded sub-units.
+Food item metadata, including dual-purpose ingredient capabilities, is
+canonical in the embedded [item definition catalog](item-authoring.md);
+spoilage, cooking, and ingestion mechanics remain Rust rules.
 Food definitions are validated before either personal or party inventory is
 mutated, so an acquisition cannot leave an inedible inventory row without its
 lot metadata. Inns sell a standard cooked meal with a fixed lot profile;

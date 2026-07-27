@@ -1,28 +1,16 @@
 /// Equal-value historical denominations used by the northern-German 1544
 /// setting. Exchange-rate gameplay intentionally remains deferred.
-pub const CURRENCY_IDS: [&str; 6] = [
-    "rhenish_gulden",
-    "lubeck_mark",
-    "hamburg_mark",
-    "saxon_thaler",
-    "brandenburg_groschen",
-    "danish_mark",
-];
+pub use crate::item_references::CURRENCY_IDS;
 
 pub fn is_currency_id(item_id: &str) -> bool {
-    CURRENCY_IDS.contains(&item_id)
+    crate::item_catalog::definition(item_id)
+        .is_some_and(|item| matches!(&item.kind, crate::item_catalog::ItemKind::Currency))
 }
 
 pub fn currency_name(item_id: &str) -> Option<&'static str> {
-    Some(match item_id {
-        "rhenish_gulden" => "Rhenish gulden",
-        "lubeck_mark" => "Lübeck mark",
-        "hamburg_mark" => "Hamburg mark",
-        "saxon_thaler" => "Saxon thaler",
-        "brandenburg_groschen" => "Brandenburg groschen",
-        "danish_mark" => "Danish mark",
-        _ => return None,
-    })
+    crate::item_catalog::definition(item_id)
+        .filter(|item| matches!(&item.kind, crate::item_catalog::ItemKind::Currency))
+        .map(|item| item.display_name.as_str())
 }
 
 /// Stable FNV-1a assignment. Unlike `DefaultHasher`, this mapping is stable

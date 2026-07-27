@@ -499,7 +499,27 @@
         cell.append(list);
       } else {
         cell.className = "inventory-detail-empty";
-        cell.textContent = "No additional details.";
+        const empty = document.createElement("span");
+        empty.textContent = "No additional details.";
+        cell.append(empty);
+      }
+      const editUrl = label?.dataset.itemEditUrl;
+      if (editUrl) {
+        const link = document.createElement("a");
+        link.className = "inventory-source-link";
+        link.href = editUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.dataset.developerOnly = "";
+        link.setAttribute("aria-label", `Edit ${label.dataset.itemName || "item"} YAML definition`);
+        link.title = "Edit YAML definition on GitHub";
+        const icon = document.createElement("span");
+        icon.className = "inventory-source-icon";
+        icon.setAttribute("aria-hidden", "true");
+        const text = document.createElement("span");
+        text.textContent = "Edit YAML";
+        link.append(icon, text);
+        cell.append(link);
       }
       detail.append(cell); row._inventoryDetail = detail; row.after(detail);
     }
