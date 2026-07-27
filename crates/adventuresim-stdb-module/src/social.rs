@@ -115,6 +115,235 @@ pub struct CharacterFamiliarity {
     pub joint_minute_anchor: u64,
 }
 
+/// Private social identity for a persistent settlement NPC. Settlement NPCs do
+/// not become Characters and therefore cannot accidentally enter party,
+/// equipment, physiology, or tactical systems.
+#[derive(Clone, Debug)]
+#[table(accessor = settlement_npc_social_state)]
+pub struct SettlementNpcSocialState {
+    #[primary_key]
+    pub npc_id: String,
+    pub transparency: crate::personality::Transparency,
+    pub mirth: crate::personality::Mirth,
+    pub morale_anchor: f32,
+    pub morale_anchor_minute: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = settlement_npc_relationship)]
+pub struct SettlementNpcRelationship {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub observer_character_id: u64,
+    #[index(btree)]
+    pub npc_id: String,
+    pub affinity_anchor: f32,
+    pub affinity_anchor_minute: u64,
+    pub shared_minutes: u64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendSettlementNpcRelationship {
+    pub observer_character_id: u64,
+    pub npc_id: String,
+    pub affinity_band: String,
+    pub familiarity_band: String,
+    pub morale_band: String,
+}
+
+fn relationship_band(value: f32) -> String {
+    if value <= -25.0 {
+        "hostile"
+    } else if value < 15.0 {
+        "reserved"
+    } else if value < 50.0 {
+        "warm"
+    } else {
+        "trusted"
+    }
+    .into()
+}
+
+fn familiarity_band(minutes: u64) -> String {
+    if minutes < 60 {
+        "new"
+    } else if minutes < 8 * 60 {
+        "known"
+    } else if minutes < 40 * 60 {
+        "familiar"
+    } else {
+        "well_known"
+    }
+    .into()
+}
+
+fn morale_band(value: f32) -> String {
+    if value <= -20.0 {
+        "distressed"
+    } else if value < 10.0 {
+        "guarded"
+    } else {
+        "settled"
+    }
+    .into()
+}
+
+#[view(accessor = backend_settlement_npc_relationships, public)]
+pub fn backend_settlement_npc_relationships(
+    ctx: &ViewContext,
+) -> Vec<BackendSettlementNpcRelationship> {
+    if !is_strategic_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .settlement_npc_relationship()
+        .observer_character_id()
+        .filter(0u64..)
+        .filter_map(|relationship| {
+            let state = ctx
+                .db
+                .settlement_npc_social_state()
+                .npc_id()
+                .find(&relationship.npc_id)?;
+            Some(BackendSettlementNpcRelationship {
+                observer_character_id: relationship.observer_character_id,
+                npc_id: relationship.npc_id,
+                affinity_band: relationship_band(settle_affinity(
+                    relationship.affinity_anchor,
+                    0,
+                )),
+                familiarity_band: familiarity_band(relationship.shared_minutes),
+                morale_band: morale_band(state.morale_anchor),
+            })
+        })
+        .collect()
+}
+
+fn ensure_settlement_npc_social_state(
+    ctx: &ReducerContext,
+    npc_id: &str,
+    now: u64,
+) -> SettlementNpcSocialState {
+    if let Some(state) = ctx
+        .db
+        .settlement_npc_social_state()
+        .npc_id()
+        .find(&npc_id.to_owned())
+    {
+        return state;
+    }
+    let seed = adventuresim_core::settlement_population::stable_hash(npc_id);
+    let state = SettlementNpcSocialState {
+        npc_id: npc_id.into(),
+        transparency: match seed % 3 {
+            0 => crate::personality::Transparency::Open,
+            1 => crate::personality::Transparency::Neutral,
+            _ => crate::personality::Transparency::Guarded,
+        },
+        mirth: match (seed / 3) % 3 {
+            0 => crate::personality::Mirth::Merry,
+            1 => crate::personality::Mirth::Neutral,
+            _ => crate::personality::Mirth::Grave,
+        },
+        morale_anchor: ((seed / 9) % 21) as f32 - 10.0,
+        morale_anchor_minute: now,
+    };
+    ctx.db.settlement_npc_social_state().insert(state.clone());
+    state
+}
+
+/// Spend a bounded half hour with a present local. This establishes durable
+/// familiarity and a modest, diminishing directional affinity gain without
+/// revealing private personality or numeric morale.
+#[reducer]
+pub fn spend_time_with_settlement_npc(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    npc_id: String,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    crate::strategic::require_strategic_character_authority(ctx, actor_id)?;
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(actor_id)
+        .ok_or("Actor not found")?;
+    let npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&npc_id)
+        .ok_or("Settlement NPC not found")?;
+    if actor.current_settlement_id.as_deref() != Some(npc.home_settlement_id.as_str()) {
+        return Err("Actor and settlement NPC are not co-located".into());
+    }
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(actor_id)
+        .map_or(0, |time| time.minutes);
+    let present = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&npc_id)
+        .is_some_and(|presence| crate::settlement_population::npc_is_present(&presence, now));
+    if !present {
+        return Err("Settlement NPC is not presently available".into());
+    }
+    if !crate::time::advance_investigation_time(ctx, actor_id, 30)? {
+        return Err("Actor could not complete the conversation".into());
+    }
+    let after = now.saturating_add(30);
+    let mut state = ensure_settlement_npc_social_state(ctx, &npc_id, after);
+    state.morale_anchor = (state.morale_anchor + 0.5).min(25.0);
+    state.morale_anchor_minute = after;
+    ctx.db
+        .settlement_npc_social_state()
+        .npc_id()
+        .update(state);
+    let id = format!("{actor_id}:{npc_id}");
+    let mut relationship = ctx
+        .db
+        .settlement_npc_relationship()
+        .id()
+        .find(&id)
+        .unwrap_or(SettlementNpcRelationship {
+            id: id.clone(),
+            observer_character_id: actor_id,
+            npc_id,
+            affinity_anchor: 0.0,
+            affinity_anchor_minute: after,
+            shared_minutes: 0,
+        });
+    let current = settle_affinity(
+        relationship.affinity_anchor,
+        after.saturating_sub(relationship.affinity_anchor_minute),
+    );
+    relationship.affinity_anchor =
+        (current + affinity_gain(current, 0.5)).clamp(AFFINITY_MIN, AFFINITY_MAX);
+    relationship.affinity_anchor_minute = after;
+    relationship.shared_minutes = relationship.shared_minutes.saturating_add(30);
+    if ctx
+        .db
+        .settlement_npc_relationship()
+        .id()
+        .find(&id)
+        .is_some()
+    {
+        ctx.db
+            .settlement_npc_relationship()
+            .id()
+            .update(relationship);
+    } else {
+        ctx.db.settlement_npc_relationship().insert(relationship);
+    }
+    Ok(())
+}
+
 /// Canonical pair-presence history. Unlike familiarity this retains every
 /// join/rejoin span and the historical observation capability of both people.
 #[derive(Clone, Debug)]
