@@ -2,6 +2,57 @@
 
 This page is the canonical technical reference for authored quest content, deterministic case generation, observer-specific investigation knowledge, evidence, and discovery.
 
+## Source-aware ambiguity
+
+Generated testimony presentation is not a reliability oracle. Account wording
+families are selected independently from hidden reliability, generated location
+claims share the same route-segment grant shape, and journal confidence
+describes provenance rather than sincerity. The same visible wording, source
+shape, confidence band, and destination class must remain compatible with
+truthful, mistaken, partial, evasive, and deceptive private states.
+
+Hearing quest testimony automatically produces a fallible passive Insight
+assessment for each authoritative proposition boundary. The observer-safe
+signal may be uncertain, lean untrue, or lean true; all three can be wrong and
+all three remain actionable. It never declares intent, changes a proposition,
+or reveals factual accuracy. Private accuracy and demeanor are separate:
+mistaken witnesses can look sincere, while evasive and partly truthful accounts
+have no clean directional signal.
+or grants navigation.
+Every primary witness volunteers the same reliability-neutral public pattern
+account. A separate private pattern detail may or may not exist, sampled
+independently from reliability; its presence never changes the initial
+dialogue's text, cardinality, order, or source. Atomic claim boundaries come
+from private generated testimony records, never browser sentence splitting.
+
+Persistent NPC personality and starting morale are sampled once from
+server-private entropy and stored; public NPC IDs do not determine them. Named
+morale-event rows preserve why morale changes. Current settled morale,
+relationship affinity, familiarity, personality, and the chosen approach all
+affect resolution, while browser projections remain qualitative.
+Ordinary timed chat is available from the normal social menu rather than the
+quest transcript. It may improve or strain morale and affinity and always
+builds familiarity, but it never diagnoses pressure or releases testimony.
+Claim-specific Charm, Command, and Bluff responses remain available only in
+the active dialogue session where that observer heard the claim.
+
+Field action skills are deliberately narrow. `FollowTracks` and
+`ReacquireTracks` use the matching Terrain skill; other investigation actions
+use observation, with ambushes combining observation and Stealth. Until mixed
+terrain exists, Forest maps to Forest, Hills and Underground to Hills,
+Settlement and Ruins to Urban, and Plains, Road, and Marsh to Plains.
+
+Generated physical trails are immutable private manifest authority. A
+`TrackTrail` owns an ordered chain of observer-scoped `TrackSegment` IDs; every
+segment records its ordinal, explicit terrain, safe finding, and adjacent
+predecessor/next links. Exactly one physical tracking action owns each segment.
+Completing an early segment records only its safe finding and route-segment
+knowledge, then activates the adjacent segment. Only the final segment may
+produce an exact true-site destination. Inactive segment capabilities are not
+projected, so the browser cannot infer the remaining segment count, destination,
+fixed difficulty, or canonical cause. Attempt progress remains local to the
+opaque segment capability.
+
 ## Developer quest editor
 
 Settlement pages expose a complete quest-authoring dialog when the existing
@@ -486,26 +537,21 @@ each authored atomic category implication against the inspecting character's
 effective Bestiary knowledge. It never substitutes the party's best expert and
 never consults the hidden threat.
 
-Successful category results persist on one canonical observer-owned inspection
-record: category, support basis points, and interpretation. A repeated reducer
-action ID is an idempotent no-op. A later inspection keeps the original
-physical pass/failure, narration, and timestamp, then rechecks current Bestiary
-knowledge and monotonically adds newly successful categories. It never removes
-knowledge or creates another conversation row. A failed physical observation
-can never gain Bestiary results.
+Successful checks persist only observer-owned diagnostic-kind receipts and
+safe interpretations. A failed physical observation creates no diagnostic
+receipt. Generated testimony similarly creates an observer-owned report
+receipt only after the private manifest is revalidated and the testimony is
+actually received. Neither receipt can be supplied by the browser.
 
-The evidence conversation labels these results `Bestiary check(s) succeeded:`.
-Support colors interpolate continuously from pure red at 0%, through pure
-yellow at 50%, to pure green at 100%. Text labels and percentages accompany
-the color. The same structured successes are copied into the single durable
-investigation-journal notice and remain visible after leaving the evidence
-site. Each result is keyboard focusable. Pointer hover and keyboard focus use
-the document-level strategic tooltip layer, with viewport collision handling
-and `aria-describedby`, to list the current enemy types covered by that
-category, separated into main and secondary type relationships. Clicking a
-result pins the tooltip. Hovering or focusing an enemy type within it reveals
-only strengths and weaknesses derived from mechanics consumed by current
-combat; category-level generalizations and unimplemented folklore are omitted.
+Whenever either input changes, the server calls the shared `infer_threats` and
+`qualitative_deductions` functions using only that observer's received reports,
+learned diagnostics, and the public regional context. It persists a deduplicated
+set of possible monster kinds with `strong`, `plausible`, or `weak` support and
+safe provenance. The journal and evidence conversation show those qualitative
+candidates and their sources. Raw scores, basis points, percentages, hidden
+thresholds, failed checks, canonical cause, and hidden evidence IDs never cross
+the gateway. Identical visible report and diagnostic inputs therefore produce
+identical deductions regardless of the hidden cause.
 
 The SpacetimeDB module currently sets `test = false`, so ordinary Cargo tests
 cannot instantiate a reducer database harness. Narrow pure tests cover action

@@ -58,7 +58,7 @@ pub fn strategic_notice_page(
             section class="strategic-notice" role="alert" aria-labelledby="strategic-notice-title" {
                 span class="strategic-notice-icon" aria-hidden="true" {}
                 h2 id="strategic-notice-title" { (title) }
-                p { (message) }
+                p data-strategic-safe-message { (message) }
                 a href=(return_href) class="btn btn-primary" { (return_label) }
             }
         }
@@ -169,7 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=multi-character-switcher-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -184,7 +184,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/strategic-navigation.js?v=soft-navigation-1" defer {}
-                    script src="/static/strategic-mutations.js?v=single-transaction-1" defer {}
+                    script src="/static/strategic-mutations.js?v=formaction-override-1" defer {}
                     script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
@@ -196,7 +196,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=counterparty-portraits-1" defer {}
+                    script src="/static/dialogue-client.js?v=counterparty-portraits-1-claim-challenges-2" defer {}
+                    script src="/static/social-menu.js?v=timed-chat-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
                     script src="/static/developer-quest-editor.js?v=typed-editor-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
@@ -729,7 +730,7 @@ mod tests {
         assert!(markup.contains("/static/live-regions.js?v=persistent-rest-refresh-2"));
         assert!(markup.contains("id=\"strategic-page\""));
         assert!(markup.contains("/static/strategic-navigation.js"));
-        assert!(markup.contains("/static/strategic-mutations.js"));
+        assert!(markup.contains("/static/strategic-mutations.js?v=formaction-override-1\" defer"));
         assert_eq!(markup.matches("/static/training-schedule.js").count(), 1);
         assert_eq!(markup.matches("/static/immediate-activity.js").count(), 1);
         assert!(markup.contains("/static/training-schedule.js?v=apprentice-system-1\" defer"));
@@ -1156,6 +1157,7 @@ mod tests {
         .into_string();
         assert!(markup.contains("<!DOCTYPE html>"));
         assert!(markup.contains("role=\"alert\""));
+        assert!(markup.contains("data-strategic-safe-message"));
         assert!(markup.contains("href=\"/characters\""));
         assert!(markup.contains("Ada"));
     }

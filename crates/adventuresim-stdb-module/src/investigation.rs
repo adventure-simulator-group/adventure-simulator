@@ -26,7 +26,6 @@ use crate::{
 use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
 use adventuresim_core::skill::Skill;
-use adventuresim_world_schema::BestiaryCategory;
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 use std::collections::{BTreeMap, BTreeSet};
@@ -218,24 +217,256 @@ pub struct PhysicalEvidenceInspectionActionReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct PersistedBestiaryLoreResult {
-    category: BestiaryCategory,
-    support_bps: u16,
+    diagnostic_kind: String,
     interpretation: String,
+}
+
+/// A report exists only after this observer actually receives testimony from a
+/// generated witness whose private manifest has been revalidated.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_bestiary_report_receipt)]
+pub struct InvestigationBestiaryReportReceipt {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    #[index(btree)]
+    pub public_case_id: String,
+    pub description_id: String,
+    pub source_label: String,
+    pub received_at: u64,
+}
+
+/// A diagnostic clue exists only after the owning observer passes its private
+/// Bestiary check. Failed checks never create this authority.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_bestiary_diagnostic_receipt)]
+pub struct InvestigationBestiaryDiagnosticReceipt {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    #[index(btree)]
+    pub public_case_id: String,
+    pub diagnostic_kind: String,
+    pub interpretation: String,
+    pub learned_at: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_bestiary_deduction)]
+pub struct InvestigationBestiaryDeduction {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    #[index(btree)]
+    pub public_case_id: String,
+    pub threat_id: String,
+    pub support_band: String,
+    pub provenance_json: String,
+    pub updated_at: u64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendBestiaryDeduction {
+    pub owner_character_id: u64,
+    pub case_id: String,
+    pub monster_kind: String,
+    pub support_band: String,
+    pub provenance_json: String,
+    pub updated_at: u64,
 }
 
 fn parse_bestiary_lore_results(payload: &str) -> Result<Vec<PersistedBestiaryLoreResult>, String> {
     let results: Vec<PersistedBestiaryLoreResult> = serde_json::from_str(payload)
         .map_err(|_| "Stored Bestiary inspection results are invalid")?;
-    let mut categories = BTreeSet::new();
+    let mut kinds = BTreeSet::new();
     if results.iter().any(|result| {
-        !categories.insert(result.category)
-            || result.support_bps > 10_000
+        !kinds.insert(result.diagnostic_kind.clone())
+            || adventuresim_core::bestiary::EvidenceKind::try_new(&result.diagnostic_kind).is_err()
             || result.interpretation.trim().is_empty()
             || result.interpretation.len() > 1_024
     }) {
         return Err("Stored Bestiary inspection results are invalid".into());
     }
     Ok(results)
+}
+
+fn deduction_support_rank(value: adventuresim_core::investigation::DeductionSupport) -> u8 {
+    match value {
+        adventuresim_core::investigation::DeductionSupport::Weak => 0,
+        adventuresim_core::investigation::DeductionSupport::Plausible => 1,
+        adventuresim_core::investigation::DeductionSupport::Strong => 2,
+    }
+}
+
+fn deduction_support_label(
+    value: adventuresim_core::investigation::DeductionSupport,
+) -> &'static str {
+    match value {
+        adventuresim_core::investigation::DeductionSupport::Weak => "weak",
+        adventuresim_core::investigation::DeductionSupport::Plausible => "plausible",
+        adventuresim_core::investigation::DeductionSupport::Strong => "strong",
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SafeBestiaryDeduction {
+    threat_id: adventuresim_core::bestiary::ThreatId,
+    support_band: &'static str,
+    provenance: Vec<String>,
+}
+
+fn derive_bestiary_deductions(
+    reports: &[(adventuresim_core::bestiary::ReportDescription, String)],
+    diagnostics: &[(adventuresim_core::bestiary::EvidenceKind, String, String)],
+) -> Result<Vec<SafeBestiaryDeduction>, String> {
+    let mut evidence = diagnostics
+        .iter()
+        .map(|(kind, receipt_id, _)| {
+            Ok(adventuresim_core::investigation::VisibleEvidence {
+                kind: *kind,
+                evidence_id: adventuresim_core::investigation::EvidenceId::new(
+                    receipt_id.to_owned(),
+                )
+                .map_err(|_| "Bestiary diagnostic receipt identity is invalid")?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    evidence.sort_by(|left, right| left.evidence_id.cmp(&right.evidence_id));
+    evidence.dedup_by(|left, right| left.evidence_id == right.evidence_id);
+    let mut merged = BTreeMap::new();
+    for (description, source_label) in reports {
+        let inference = adventuresim_core::investigation::infer_threats(
+            adventuresim_core::investigation::InferenceInput {
+                report: adventuresim_core::investigation::VisibleReport {
+                    description: *description,
+                    visibility: adventuresim_core::bestiary::ObservationVisibility::Dim,
+                    distance: adventuresim_core::bestiary::ObservationDistance::Medium,
+                    capability: adventuresim_core::bestiary::WitnessCapability::Ordinary,
+                    source_label: source_label.clone(),
+                },
+                evidence: evidence.clone(),
+                region: adventuresim_core::bestiary::RegionalContext::NorthernGermany1544,
+            },
+        )
+        .map_err(|_| "Bestiary inference inputs are invalid")?;
+        for deduction in adventuresim_core::investigation::qualitative_deductions(&inference) {
+            let candidate = (
+                deduction.support,
+                source_label.clone(),
+                diagnostics
+                    .iter()
+                    .map(|(_, _, interpretation)| interpretation.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+            );
+            merged
+                .entry(deduction.threat_id)
+                .and_modify(
+                    |existing: &mut (
+                        adventuresim_core::investigation::DeductionSupport,
+                        String,
+                        Vec<String>,
+                    )| {
+                        if deduction_support_rank(candidate.0) > deduction_support_rank(existing.0)
+                        {
+                            *existing = candidate.clone();
+                        }
+                    },
+                )
+                .or_insert(candidate);
+        }
+    }
+    Ok(merged
+        .into_iter()
+        .map(
+            |(threat_id, (support, source_label, diagnostic_provenance))| {
+                let mut provenance = vec![format!("received report from {source_label}")];
+                provenance.extend(
+                    diagnostic_provenance
+                        .into_iter()
+                        .map(|text| format!("learned diagnostic clue: {text}")),
+                );
+                SafeBestiaryDeduction {
+                    threat_id,
+                    support_band: deduction_support_label(support),
+                    provenance,
+                }
+            },
+        )
+        .collect())
+}
+
+fn rebuild_bestiary_deductions(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    public_case_id: &str,
+    now: u64,
+) -> Result<(), String> {
+    let reports = ctx
+        .db
+        .investigation_bestiary_report_receipt()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|receipt| receipt.public_case_id == public_case_id)
+        .map(|receipt| {
+            Ok((
+                adventuresim_core::bestiary::ReportDescription::try_new(&receipt.description_id)
+                    .map_err(|_| "Stored Bestiary report is invalid")?,
+                receipt.source_label,
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let diagnostics = ctx
+        .db
+        .investigation_bestiary_diagnostic_receipt()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|receipt| receipt.public_case_id == public_case_id)
+        .map(|receipt| {
+            Ok((
+                adventuresim_core::bestiary::EvidenceKind::try_new(&receipt.diagnostic_kind)
+                    .map_err(|_| "Stored Bestiary diagnostic is invalid")?,
+                receipt.id,
+                receipt.interpretation,
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let deductions = derive_bestiary_deductions(&reports, &diagnostics)?;
+    let old_ids = ctx
+        .db
+        .investigation_bestiary_deduction()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|row| row.public_case_id == public_case_id)
+        .map(|row| row.id)
+        .collect::<Vec<_>>();
+    for id in old_ids {
+        ctx.db.investigation_bestiary_deduction().id().delete(id);
+    }
+    for deduction in deductions {
+        ctx.db
+            .investigation_bestiary_deduction()
+            .insert(InvestigationBestiaryDeduction {
+                id: inv::compound_id(&[
+                    "bestiary-deduction",
+                    &owner_character_id.to_string(),
+                    public_case_id,
+                    deduction.threat_id.as_str(),
+                ]),
+                owner_character_id,
+                public_case_id: public_case_id.into(),
+                threat_id: deduction.threat_id.as_str().into(),
+                support_band: deduction.support_band.into(),
+                provenance_json: serde_json::to_string(&deduction.provenance)
+                    .map_err(|_| "Bestiary provenance could not be persisted")?,
+                updated_at: now,
+            });
+    }
+    Ok(())
 }
 
 fn inspection_action_receipt_matches(
@@ -253,29 +484,37 @@ fn merge_bestiary_lore_results(
     existing: Vec<PersistedBestiaryLoreResult>,
     newly_successful: Vec<PersistedBestiaryLoreResult>,
 ) -> (Vec<PersistedBestiaryLoreResult>, bool) {
-    let mut by_category = existing
+    let mut by_kind = existing
         .into_iter()
-        .map(|result| (result.category, result))
+        .map(|result| (result.diagnostic_kind.clone(), result))
         .collect::<BTreeMap<_, _>>();
-    let before = by_category.len();
+    let before = by_kind.len();
     for result in newly_successful {
-        by_category.entry(result.category).or_insert(result);
+        by_kind
+            .entry(result.diagnostic_kind.clone())
+            .or_insert(result);
     }
-    let changed = by_category.len() != before;
-    (by_category.into_values().collect(), changed)
+    let changed = by_kind.len() != before;
+    (by_kind.into_values().collect(), changed)
 }
 
 fn successful_bestiary_lore_results(
     implications: &[adventuresim_core::quest_generation::BestiaryEvidenceImplication],
-    mut check_passes: impl FnMut(BestiaryCategory, u16) -> bool,
+    mut check_passes: impl FnMut(adventuresim_world_schema::BestiaryCategory, u16) -> bool,
 ) -> Vec<PersistedBestiaryLoreResult> {
     implications
         .iter()
-        .filter(|implication| check_passes(implication.category, implication.lore_difficulty_milli))
-        .map(|implication| PersistedBestiaryLoreResult {
-            category: implication.category,
-            support_bps: implication.support_bps,
-            interpretation: implication.interpretation.clone(),
+        .filter_map(|implication| {
+            (check_passes(implication.category, implication.lore_difficulty_milli))
+                .then(|| {
+                    implication.diagnostic_kind.as_ref().map(|diagnostic_kind| {
+                        PersistedBestiaryLoreResult {
+                            diagnostic_kind: diagnostic_kind.clone(),
+                            interpretation: implication.interpretation.clone(),
+                        }
+                    })
+                })
+                .flatten()
         })
         .collect()
 }
@@ -540,6 +779,42 @@ pub fn inspect_physical_evidence(
     let reveals_clue = topic.check.as_ref().is_some_and(|check| check.reveals_clue);
     let has_bestiary_results =
         !parse_bestiary_lore_results(&inspection.bestiary_results_json)?.is_empty();
+    if inspection.passed && has_bestiary_results {
+        let public_case_id = ctx
+            .db
+            .quest_generation_authority()
+            .case_id()
+            .find(&authority.case_id)
+            .map_or_else(|| authority.case_id.clone(), |row| row.public_case_id);
+        for learned in parse_bestiary_lore_results(&inspection.bestiary_results_json)? {
+            let id = inv::compound_id(&[
+                "bestiary-diagnostic",
+                &character_id.to_string(),
+                &public_case_id,
+                &evidence_id,
+                &learned.diagnostic_kind,
+            ]);
+            if ctx
+                .db
+                .investigation_bestiary_diagnostic_receipt()
+                .id()
+                .find(&id)
+                .is_none()
+            {
+                ctx.db.investigation_bestiary_diagnostic_receipt().insert(
+                    InvestigationBestiaryDiagnosticReceipt {
+                        id,
+                        owner_character_id: character_id,
+                        public_case_id: public_case_id.clone(),
+                        diagnostic_kind: learned.diagnostic_kind,
+                        interpretation: learned.interpretation,
+                        learned_at: inspection.attempted_at,
+                    },
+                );
+            }
+        }
+        rebuild_bestiary_deductions(ctx, character_id, &public_case_id, inspection.attempted_at)?;
+    }
     if inspection.passed && reveals_clue {
         let source_id = format!("evidence-inspection:{evidence_id}:{topic_id}");
         record_evidence_knowledge(
@@ -565,7 +840,6 @@ pub fn inspect_physical_evidence(
             &source_id,
             &inspection.narration,
             &format!("physical evidence: {}", generated.portrait_label),
-            &inspection.bestiary_results_json,
             inspection.attempted_at,
         )?;
     }
@@ -960,8 +1234,6 @@ pub struct InvestigationJournalNotice {
     pub source_id: String,
     pub summary: String,
     pub source_label: String,
-    /// Observer-safe successful category implications only.
-    pub bestiary_results_json: String,
     pub recorded_at: u64,
 }
 
@@ -993,7 +1265,6 @@ pub(crate) fn record_journal_notice(
             && existing.source_id == source_id
             && existing.summary == summary
             && existing.source_label == source_label
-            && existing.bestiary_results_json == "[]"
             && existing.recorded_at == recorded_at
         {
             Ok(())
@@ -1010,7 +1281,6 @@ pub(crate) fn record_journal_notice(
             source_id: source_id.into(),
             summary: summary.into(),
             source_label: source_label.into(),
-            bestiary_results_json: "[]".into(),
             recorded_at,
         });
     Ok(())
@@ -1023,56 +1293,17 @@ fn record_physical_evidence_journal_notice(
     source_id: &str,
     summary: &str,
     source_label: &str,
-    bestiary_results_json: &str,
     recorded_at: u64,
 ) -> Result<(), String> {
-    if public_case_id.is_empty()
-        || source_id.is_empty()
-        || summary.is_empty()
-        || summary.len() > 1_024
-        || source_label.is_empty()
-        || source_label.len() > 160
-    {
-        return Err("Investigation journal notice is invalid".into());
-    }
-    let incoming = parse_bestiary_lore_results(bestiary_results_json)?;
-    let id = format!(
-        "journal-notice:{owner_character_id}:{}",
-        adventuresim_core::settlement_population::stable_hash(source_id)
-    );
-    if let Some(mut existing) = ctx.db.investigation_journal_notice().id().find(&id) {
-        if existing.owner_character_id != owner_character_id
-            || existing.public_case_id != public_case_id
-            || existing.source_id != source_id
-            || existing.summary != summary
-            || existing.source_label != source_label
-            || existing.recorded_at != recorded_at
-        {
-            return Err("Conflicting retry for investigation journal notice".into());
-        }
-        let stored = parse_bestiary_lore_results(&existing.bestiary_results_json)?;
-        let (merged, changed) = merge_bestiary_lore_results(stored, incoming);
-        if changed {
-            existing.bestiary_results_json = serde_json::to_string(&merged)
-                .map_err(|_| "Bestiary journal results could not be persisted")?;
-            ctx.db.investigation_journal_notice().id().update(existing);
-        }
-        return Ok(());
-    }
-    ctx.db
-        .investigation_journal_notice()
-        .insert(InvestigationJournalNotice {
-            id,
-            owner_character_id,
-            public_case_id: public_case_id.into(),
-            source_id: source_id.into(),
-            summary: summary.into(),
-            source_label: source_label.into(),
-            bestiary_results_json: serde_json::to_string(&incoming)
-                .map_err(|_| "Bestiary journal results could not be persisted")?,
-            recorded_at,
-        });
-    Ok(())
+    record_journal_notice(
+        ctx,
+        owner_character_id,
+        public_case_id,
+        source_id,
+        summary,
+        source_label,
+        recorded_at,
+    )
 }
 
 /// Sanitized journal row. It contains no hidden threat, sincerity, coordinates
@@ -1090,7 +1321,6 @@ pub struct BackendInvestigationJournalEntry {
     pub contradiction_group: String,
     pub corrected_by: String,
     pub supersedes: String,
-    pub bestiary_results_json: String,
     pub recorded_at: u64,
 }
 
@@ -1308,7 +1538,6 @@ pub struct BackendPhysicalEvidenceInspection {
     pub stat_label: String,
     pub passed: bool,
     pub narration: String,
-    pub bestiary_results_json: String,
     pub attempted_at: u64,
 }
 
@@ -1318,6 +1547,34 @@ fn is_gateway(ctx: &ViewContext) -> bool {
         .id()
         .find(0)
         .is_some_and(|row| row.identity == ctx.sender())
+}
+
+#[view(accessor = backend_bestiary_deductions, public)]
+pub fn backend_bestiary_deductions(ctx: &ViewContext) -> Vec<BackendBestiaryDeduction> {
+    if !is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .investigation_bestiary_deduction()
+        .owner_character_id()
+        .filter(0u64..)
+        .filter_map(|row| {
+            let threat = row
+                .threat_id
+                .parse::<adventuresim_core::bestiary::ThreatId>()
+                .ok()?;
+            matches!(row.support_band.as_str(), "strong" | "plausible" | "weak").then(|| {
+                BackendBestiaryDeduction {
+                    owner_character_id: row.owner_character_id,
+                    case_id: row.public_case_id,
+                    monster_kind: threat.profile().display_name.into(),
+                    support_band: row.support_band,
+                    provenance_json: row.provenance_json,
+                    updated_at: row.updated_at,
+                }
+            })
+        })
+        .collect()
 }
 
 #[view(accessor = backend_physical_evidence, public)]
@@ -1422,7 +1679,6 @@ pub fn backend_physical_evidence_inspections(
             stat_label: attempt.stat_label,
             passed: attempt.passed,
             narration: attempt.narration,
-            bestiary_results_json: attempt.bestiary_results_json,
             attempted_at: attempt.attempted_at,
         })
         .collect::<Vec<_>>();
@@ -1469,7 +1725,6 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
                     contradiction_group: belief.conflict_group,
                     corrected_by: String::new(),
                     supersedes,
-                    bestiary_results_json: "[]".into(),
                     recorded_at: r.recorded_at,
                 })
             }),
@@ -1490,7 +1745,6 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
                 contradiction_group: String::new(),
                 corrected_by: String::new(),
                 supersedes: String::new(),
-                bestiary_results_json: notice.bestiary_results_json,
                 recorded_at: notice.recorded_at,
             }),
     );
@@ -1636,6 +1890,13 @@ fn generated_capability_safe_text(
         }
         _ => None,
     });
+    let track_finding = generated.outputs.iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::TrackFinding {
+            finding,
+            ..
+        } => Some(finding.clone()),
+        _ => None,
+    });
     (
         learned_condition.map_or_else(
             || {
@@ -1644,10 +1905,41 @@ fn generated_capability_safe_text(
             },
             |clue| format!("First learn and retain this corroborated clue: {clue}"),
         ),
-        earned_clue.unwrap_or_else(|| {
+        track_finding.or(earned_clue).unwrap_or_else(|| {
             "The investigation produces a new, source-attributed lead.".into()
         }),
     )
+}
+
+fn generated_action_terrain(
+    manifest: &adventuresim_core::quest_generation::GeneratedCase,
+    generated: &adventuresim_core::quest_generation::GeneratedAction,
+) -> action::Terrain {
+    generated
+        .track_segment_id
+        .as_ref()
+        .and_then(|segment_id| {
+            manifest
+                .track_segments
+                .iter()
+                .find(|segment| &segment.id == segment_id)
+                .map(|segment| segment.terrain)
+        })
+        .or_else(|| {
+            manifest
+                .sites
+                .iter()
+                .find(|site| site.id.0 == generated.target_id)
+                .map(|site| site.terrain)
+        })
+        .or_else(|| {
+            manifest
+                .areas
+                .iter()
+                .find(|area| area.id == generated.target_id)
+                .map(|area| area.terrain)
+        })
+        .unwrap_or(action::Terrain::Settlement)
 }
 
 fn generated_pattern_authority(
@@ -1711,19 +2003,7 @@ fn generated_pattern_authority(
     let expected_alternate = remap(&generated.alternate);
     let (expected_known_prerequisites, expected_safe_result) =
         generated_capability_safe_text(&manifest, generated);
-    let expected_terrain = manifest
-        .sites
-        .iter()
-        .find(|site| site.id.0 == generated.target_id)
-        .map(|site| site.terrain)
-        .or_else(|| {
-            manifest
-                .areas
-                .iter()
-                .find(|area| area.id == generated.target_id)
-                .map(|area| area.terrain)
-        })
-        .unwrap_or(action::Terrain::Settlement);
+    let expected_terrain = generated_action_terrain(&manifest, generated);
     if capability.method != action_method(generated.kind)
         || capability.target_kind != generated.target_kind
         || capability.target_id != generated.target_id
@@ -3032,16 +3312,6 @@ fn issue_rumor_action_graph(
                     &format!("{owner_character_id}:{}", id.0),
                 )
             };
-            let site_terrain = manifest
-                .sites
-                .iter()
-                .find(|site| site.id.0 == generated.target_id)
-                .map(|site| site.terrain);
-            let area_terrain = manifest
-                .areas
-                .iter()
-                .find(|area| area.id == generated.target_id)
-                .map(|area| area.terrain);
             let consequence = generated
                 .outputs
                 .iter()
@@ -3081,9 +3351,7 @@ fn issue_rumor_action_graph(
                 generated.kind,
                 generated.target_kind.clone(),
                 generated.target_id.clone(),
-                site_terrain
-                    .or(area_terrain)
-                    .unwrap_or(action::Terrain::Settlement),
+                generated_action_terrain(&manifest, generated),
                 ctx.random::<u64>(),
                 7_000,
                 generated.safe_summary.clone(),
@@ -3381,7 +3649,7 @@ fn party_action_skills(
             actor.terrain_forest_hours,
             &actor_attributes,
         ),
-        action::Terrain::Hills => skill_bps(
+        action::Terrain::Hills | action::Terrain::Underground => skill_bps(
             Skill::TerrainHills,
             actor.terrain_hills_hours,
             &actor_attributes,
@@ -3391,7 +3659,7 @@ fn party_action_skills(
             actor.terrain_urban_hours,
             &actor_attributes,
         ),
-        _ => skill_bps(
+        action::Terrain::Plains | action::Terrain::Road | action::Terrain::Marsh => skill_bps(
             Skill::TerrainPlains,
             actor.terrain_plains_hours,
             &actor_attributes,
@@ -3413,17 +3681,19 @@ fn party_action_skills(
                     skills.terrain_forest_hours,
                     &attributes,
                 ),
-                action::Terrain::Hills => {
+                action::Terrain::Hills | action::Terrain::Underground => {
                     skill_bps(Skill::TerrainHills, skills.terrain_hills_hours, &attributes)
                 }
                 action::Terrain::Settlement | action::Terrain::Ruins => {
                     skill_bps(Skill::TerrainUrban, skills.terrain_urban_hours, &attributes)
                 }
-                _ => skill_bps(
-                    Skill::TerrainPlains,
-                    skills.terrain_plains_hours,
-                    &attributes,
-                ),
+                action::Terrain::Plains | action::Terrain::Road | action::Terrain::Marsh => {
+                    skill_bps(
+                        Skill::TerrainPlains,
+                        skills.terrain_plains_hours,
+                        &attributes,
+                    )
+                }
             } / 4;
             assistance = assistance.saturating_add(contribution).min(2_000);
         }
@@ -5899,6 +6169,46 @@ fn validate_generated_testimony_site(
     Ok(())
 }
 
+fn record_generated_bestiary_report(
+    ctx: &ReducerContext,
+    character_id: u64,
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
+    received_at: u64,
+) -> Result<(), String> {
+    let id = inv::compound_id(&[
+        "bestiary-report",
+        &character_id.to_string(),
+        &generated.public_case_id,
+        &witness.id.0,
+    ]);
+    if let Some(existing) = ctx
+        .db
+        .investigation_bestiary_report_receipt()
+        .id()
+        .find(&id)
+    {
+        if existing.owner_character_id != character_id
+            || existing.public_case_id != generated.public_case_id
+            || existing.description_id != witness.description.as_str()
+        {
+            return Err("Bestiary report receipt conflicts with its generated authority".into());
+        }
+    } else {
+        ctx.db
+            .investigation_bestiary_report_receipt()
+            .insert(InvestigationBestiaryReportReceipt {
+                id,
+                owner_character_id: character_id,
+                public_case_id: generated.public_case_id.clone(),
+                description_id: witness.description.as_str().into(),
+                source_label: witness.display_name.clone(),
+                received_at,
+            });
+    }
+    rebuild_bestiary_deductions(ctx, character_id, &generated.public_case_id, received_at)
+}
+
 pub(crate) fn persist_generated_testimony(
     ctx: &ReducerContext,
     character_id: u64,
@@ -5906,8 +6216,8 @@ pub(crate) fn persist_generated_testimony(
     witness: &adventuresim_core::quest_generation::WitnessBinding,
     presentation_texts: Option<&[String]>,
     dialogue_action_id: &str,
+    withheld_only: bool,
 ) -> Result<(), String> {
-    use adventuresim_core::quest_generation::Reliability;
     if !generated
         .witnesses
         .iter()
@@ -5950,6 +6260,11 @@ pub(crate) fn persist_generated_testimony(
     let generation_context = validated_authority.context;
     let mut corrected_capability_ids = BTreeSet::new();
     for (index, draft) in projection_plan.iter().enumerate() {
+        let is_withheld =
+            draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld;
+        if is_withheld != withheld_only {
+            continue;
+        }
         let (receipt_id, mut pipeline) =
             adventuresim_core::quest_generation::generated_testimony_pipeline(
                 &generation_context,
@@ -6022,6 +6337,13 @@ pub(crate) fn persist_generated_testimony(
             inv::compound_id(&["receive-generated-testimony", &receipt_id]),
             receipt_id.clone(),
         )?;
+        record_generated_bestiary_report(
+            ctx,
+            character_id,
+            generated,
+            witness,
+            official_minute(ctx),
+        )?;
 
         let site = draft
             .site_id
@@ -6049,11 +6371,10 @@ pub(crate) fn persist_generated_testimony(
                 proposition_id: draft.proposition_id.clone(),
                 summary: presentation_text.clone(),
                 source_label: "the referred local witness".into(),
-                confidence_bps: if draft.reliability == Reliability::Truthful {
-                    8_000
-                } else {
-                    5_000
-                },
+                // Confidence describes provenance quality, never sincerity.
+                // Generated testimony uses one observer-facing band for every
+                // hidden reliability state.
+                confidence_bps: 6_000,
                 destination_stage: draft.destination_stage.clone(),
                 directions: if exact {
                     String::new()
@@ -6691,11 +7012,37 @@ mod tests {
     use super::{
         PersistedBestiaryLoreResult, PhysicalEvidenceInspectionActionReceipt,
         PhysicalEvidenceInspectionAttempt, augment_physical_evidence_inspection,
-        inspection_action_receipt_matches, parse_bestiary_lore_results,
+        derive_bestiary_deductions, inspection_action_receipt_matches, parse_bestiary_lore_results,
         successful_bestiary_lore_results,
     };
     use adventuresim_core::quest_generation::BestiaryEvidenceImplication;
     use adventuresim_world_schema::BestiaryCategory;
+
+    #[test]
+    fn qualitative_deductions_depend_only_on_visible_reports_and_learned_diagnostics() {
+        use adventuresim_core::bestiary::{EvidenceKind, ReportDescription};
+        let reports = [(ReportDescription::DoglikeBeast, "the shepherd".into())];
+        let diagnostics = [
+            (
+                EvidenceKind::Pawprints,
+                "observer-receipt:paws".into(),
+                "canine pawprints".into(),
+            ),
+            (
+                EvidenceKind::Pawprints,
+                "observer-receipt:paws".into(),
+                "canine pawprints".into(),
+            ),
+        ];
+        let first = derive_bestiary_deductions(&reports, &diagnostics).unwrap();
+        let same_visible_inputs_under_another_hidden_cause =
+            derive_bestiary_deductions(&reports, &diagnostics).unwrap();
+        assert_eq!(first, same_visible_inputs_under_another_hidden_cause);
+        assert!(!first.is_empty());
+        let serialized = format!("{first:?}");
+        assert!(!serialized.contains("score"));
+        assert!(!serialized.contains("canonical"));
+    }
 
     #[test]
     fn same_inspection_action_retry_is_idempotent_and_scope_checked() {
@@ -6719,8 +7066,7 @@ mod tests {
     #[test]
     fn later_revisit_augments_one_stable_observation_without_duplicates() {
         let first_results = serde_json::to_string(&vec![PersistedBestiaryLoreResult {
-            category: BestiaryCategory::Beast,
-            support_bps: 10_000,
+            diagnostic_kind: "pawprints".into(),
             interpretation: "This appears to be a canine print.".into(),
         }])
         .unwrap();
@@ -6740,13 +7086,11 @@ mod tests {
             first,
             vec![
                 PersistedBestiaryLoreResult {
-                    category: BestiaryCategory::Beast,
-                    support_bps: 10_000,
+                    diagnostic_kind: "pawprints".into(),
                     interpretation: "This duplicate must not create another chip.".into(),
                 },
                 PersistedBestiaryLoreResult {
-                    category: BestiaryCategory::Werekin,
-                    support_bps: 6_500,
+                    diagnostic_kind: "claw_marks".into(),
                     interpretation: "The print could have been made by a transformed werekin."
                         .into(),
                 },
@@ -6767,7 +7111,7 @@ mod tests {
         assert_eq!(
             learned
                 .iter()
-                .find(|result| result.category == BestiaryCategory::Beast)
+                .find(|result| result.diagnostic_kind == "pawprints")
                 .unwrap()
                 .interpretation,
             "This appears to be a canine print."
@@ -6800,8 +7144,7 @@ mod tests {
         let (still_failed, changed) = augment_physical_evidence_inspection(
             failed,
             vec![PersistedBestiaryLoreResult {
-                category: BestiaryCategory::Beast,
-                support_bps: 10_000,
+                diagnostic_kind: "pawprints".into(),
                 interpretation: "Must remain private because physical inspection failed.".into(),
             }],
         )
@@ -6815,14 +7158,14 @@ mod tests {
         let implications = [
             BestiaryEvidenceImplication {
                 category: BestiaryCategory::Beast,
-                support_bps: 10_000,
                 lore_difficulty_milli: 1_000,
+                diagnostic_kind: Some("pawprints".into()),
                 interpretation: "This appears to be a canine print.".into(),
             },
             BestiaryEvidenceImplication {
                 category: BestiaryCategory::Werekin,
-                support_bps: 6_500,
                 lore_difficulty_milli: 2_000,
+                diagnostic_kind: Some("pawprints".into()),
                 interpretation: "A transformed werekin is possible.".into(),
             },
         ];
@@ -6830,30 +7173,32 @@ mod tests {
             category == BestiaryCategory::Beast
         });
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].category, BestiaryCategory::Beast);
+        assert_eq!(results[0].diagnostic_kind, "pawprints");
         let serialized = serde_json::to_string(&results).unwrap();
         assert!(!serialized.contains("difficulty"));
         assert!(!serialized.contains("werekin"));
     }
 
     #[test]
-    fn persisted_bestiary_lore_contains_one_category_and_no_hidden_check_data() {
+    fn persisted_bestiary_lore_contains_only_successful_diagnostic_provenance() {
         let serialized = serde_json::to_string(&PersistedBestiaryLoreResult {
-            category: BestiaryCategory::Beast,
-            support_bps: 10_000,
+            diagnostic_kind: "pawprints".into(),
             interpretation: "This appears to be a canine print.".into(),
         })
         .unwrap();
 
-        assert!(serialized.contains("\"category\":\"beast\""));
-        assert!(serialized.contains("\"support_bps\":10000"));
+        assert!(serialized.contains("\"diagnostic_kind\":\"pawprints\""));
+        assert!(!serialized.contains("support_bps"));
+        assert!(!serialized.contains("category"));
         assert!(!serialized.contains("difficulty"));
         assert!(!serialized.contains("threat"));
         assert!(!serialized.contains("failed"));
-        assert!(parse_bestiary_lore_results(
-            r#"[{"category":"beast","support_bps":10000,"interpretation":"print","difficulty_milli":1}]"#
-        )
-        .is_err());
+        assert!(
+            parse_bestiary_lore_results(
+                r#"[{"diagnostic_kind":"pawprints","interpretation":"print","difficulty_milli":1}]"#
+            )
+            .is_err()
+        );
     }
 
     fn failed_attempt(
@@ -7185,6 +7530,28 @@ mod tests {
             unique_capability_ids(dependent_ids),
             BTreeSet::from(["capability".to_string(), "cap-b".to_string()])
         );
+    }
+
+    #[test]
+    fn bestiary_deduction_projection_is_observer_scoped_and_score_free() {
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("pub struct BackendBestiaryDeduction")
+            .nth(1)
+            .and_then(|tail| tail.split("fn parse_bestiary_lore_results").next())
+            .expect("Bestiary deduction projection");
+        assert!(projection.contains("owner_character_id"));
+        assert!(projection.contains("support_band"));
+        assert!(projection.contains("provenance_json"));
+        assert!(!projection.contains("score"));
+        assert!(!projection.contains("canonical"));
+        assert!(!projection.contains("receipt_id"));
+        let rebuild = source
+            .split("fn rebuild_bestiary_deductions")
+            .nth(1)
+            .and_then(|tail| tail.split("fn inspection_action_receipt_matches").next())
+            .expect("Bestiary deduction rebuild");
+        assert!(rebuild.contains(".filter(owner_character_id)"));
     }
 
     #[test]
@@ -7612,8 +7979,7 @@ mod tests {
         use adventuresim_core::{
             local_problem::Scope,
             quest_generation::{
-                GeneratedActionOutput, GenerationContext, TemplateFamily, generate,
-                observer_scoped_id, test_witnesses,
+                GenerationContext, TemplateFamily, generate, observer_scoped_id, test_witnesses,
             },
         };
 
@@ -7636,6 +8002,21 @@ mod tests {
                 witness_candidates: test_witnesses(),
             };
             let manifest = generate(&context).expect("family should generate");
+            for generated_action in manifest
+                .actions
+                .iter()
+                .filter(|action| action.track_segment_id.is_some())
+            {
+                let segment = manifest
+                    .track_segments
+                    .iter()
+                    .find(|segment| generated_action.track_segment_id.as_ref() == Some(&segment.id))
+                    .unwrap();
+                assert_eq!(
+                    generated_action_terrain(&manifest, generated_action),
+                    segment.terrain
+                );
+            }
             let mut saw_root = false;
             let mut saw_successor = false;
             for action in &manifest.actions {
@@ -7646,24 +8027,16 @@ mod tests {
                     action.prerequisite.as_ref().map_or_else(String::new, remap);
                 saw_root |= required_action_id.is_empty();
                 saw_successor |= !required_action_id.is_empty();
-                let earned_clue = action.outputs.iter().find_map(|output| match output {
-                    GeneratedActionOutput::Evidence { evidence_id } => manifest
-                        .evidence
-                        .iter()
-                        .find(|evidence| evidence.id == *evidence_id)
-                        .map(|evidence| evidence.safe_description.clone()),
-                    _ => None,
-                });
+                let (known_prerequisites, safe_result) =
+                    generated_capability_safe_text(&manifest, action);
                 validate_investigation_action_text(
                     &remap(&action.id),
                     &manifest.public_case_id,
                     &action.target_kind,
                     &action.target_id,
                     &action.safe_summary,
-                    "Complete the preceding generated lead and remain with your ready, co-located party.",
-                    earned_clue.as_deref().unwrap_or(
-                        "The investigation produces a new, source-attributed lead.",
-                    ),
+                    &known_prerequisites,
+                    &safe_result,
                     &required_action_id,
                     &remap(&action.alternate),
                 )
@@ -8080,6 +8453,8 @@ mod tests {
         assert!(projection.contains("capability_has_successful_attempt_view"));
         assert!(projection.contains("capability_has_live_support_view"));
         assert!(projection.contains("action_unavailable_reason_view"));
+        assert!(projection.contains(".filter(|capability| capability.active)"));
+        assert!(!projected_type.contains("track_segment"));
 
         let reducer = source
             .split("pub fn perform_investigation_action")

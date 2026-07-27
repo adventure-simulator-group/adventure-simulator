@@ -17,9 +17,14 @@ pub fn routes() -> Router<AppState> {
         .route("/api/dialogue/topic", post(topic))
         .route("/api/dialogue/answer", post(answer))
         .route("/api/dialogue/join", post(join))
+        .route("/api/dialogue/claim-response", post(witness_approach))
         .route(
             "/api/settlements/{settlement_id}/locations/{location_id}/npcs",
             get(location_npcs),
+        )
+        .route(
+            "/api/settlements/{settlement_id}/locations/{location_id}/npcs/{npc_id}/social",
+            get(npc_social).post(chat_with_npc),
         )
 }
 
@@ -63,6 +68,22 @@ struct TopicRow {
     source_ref_json: String,
 }
 
+#[derive(Clone, Deserialize)]
+struct WitnessClaimRow {
+    event_sequence: u32,
+    claim_order: u32,
+    challenge_token: String,
+    displayed_text: String,
+    charm_response: Option<String>,
+    command_response: Option<String>,
+    bluff_response: Option<String>,
+    assessment_direction: String,
+    assessment_strength: f32,
+    resolved: bool,
+    outcome: String,
+    affinity_delta: f32,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 struct SettlementNpcRow {
     id: String,
@@ -103,6 +124,37 @@ struct NpcView {
     is_default: bool,
 }
 
+#[derive(Deserialize)]
+struct NpcSocialRelationshipRow {
+    affinity_band: String,
+    familiarity_band: String,
+    morale_band: String,
+}
+
+#[derive(Deserialize)]
+struct SocialChatReceiptRow {
+    target_kind: String,
+    target_id: String,
+    requested_minutes: u64,
+    outcome: String,
+}
+
+#[derive(Serialize)]
+struct NpcSocialView {
+    npc_id: String,
+    name: String,
+    affinity: String,
+    familiarity: String,
+    morale: String,
+    last_outcome: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NpcChatRequest {
+    requested_minutes: u64,
+    action_id: String,
+}
+
 #[derive(Serialize)]
 struct ConversationView {
     session_id: String,
@@ -125,6 +177,26 @@ struct EventView {
 struct FragmentView {
     fragment: adventuresim_dialogue::Fragment,
     source: Option<EditSource>,
+    claim_segments: Option<Vec<ClaimSegmentView>>,
+}
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ClaimSegmentView {
+    Text {
+        value: String,
+    },
+    Claim {
+        value: String,
+        challenge_token: String,
+        charm_response: Option<String>,
+        command_response: Option<String>,
+        bluff_response: Option<String>,
+        assessment_direction: String,
+        assessment_strength: f32,
+        resolved: bool,
+        outcome: String,
+        affinity_delta: f32,
+    },
 }
 #[derive(Serialize)]
 struct TopicView {
@@ -180,9 +252,22 @@ fn npc_location_is_navigable(
     adventuresim_core::settlement_economy::npc_location_is_navigable(profile, has_keep, location_id)
 }
 
+fn npc_presence_contains(start_minute: u16, end_minute: u16, minute: u64) -> bool {
+    let minute = minute % 1_440;
+    let start = u64::from(start_minute);
+    let end = u64::from(end_minute);
+    if start == end {
+        false
+    } else if start < end {
+        start <= minute && minute < end
+    } else {
+        minute >= start || minute < end
+    }
+}
+
 #[cfg(test)]
 mod npc_navigation_tests {
-    use super::npc_location_is_navigable;
+    use super::{npc_location_is_navigable, npc_presence_contains};
     use crate::spacetimedb::SettlementCategory;
 
     #[test]
@@ -243,6 +328,34 @@ mod npc_navigation_tests {
         assert!(!build_view.contains("backend_local_problem_rumors"));
         assert!(!build_view.contains("events.push"));
     }
+
+    #[test]
+    fn browser_presence_check_supports_wrapped_daily_windows() {
+        assert!(npc_presence_contains(1_200, 120, 1_380));
+        assert!(npc_presence_contains(1_200, 120, 60));
+        assert!(!npc_presence_contains(1_200, 120, 600));
+        assert!(!npc_presence_contains(480, 1_020, 1_020));
+    }
+
+    #[test]
+    fn npc_chat_http_retry_checks_receipt_before_current_presence() {
+        let source = include_str!("dialogue.rs");
+        let handler = source
+            .rsplit("async fn chat_with_npc")
+            .next()
+            .and_then(|tail| tail.split("async fn build_view").next())
+            .expect("NPC chat handler");
+        let receipt = handler
+            .find("backend_social_chat_receipts")
+            .expect("receipt lookup");
+        let presence = handler
+            .find("available_social_npc")
+            .expect("presence lookup");
+        assert!(receipt < presence);
+        assert!(handler.contains("receipt.target_kind != \"settlement_npc\""));
+        assert!(handler.contains("receipt.target_id != npc_id"));
+        assert!(handler.contains("receipt.requested_minutes != request.requested_minutes"));
+    }
 }
 
 async fn location_npcs(
@@ -300,13 +413,229 @@ async fn location_npcs(
         .flatten()
         .map_or(720, |time| time.minutes)
         % 1_440;
-    let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && u64::from(presence.start_minute) <= minute && minute < u64::from(presence.end_minute)).filter_map(|presence| {
+    let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && npc_presence_contains(presence.start_minute, presence.end_minute, minute)).filter_map(|presence| {
         let npc = npcs.iter().find(|npc| npc.id == presence.npc_id)?;
         let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
         Some(NpcView { id: npc.id.clone(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} person with {} presentation, a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.presentation.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default })
     }).collect::<Vec<_>>();
     views.sort_by_key(|view| (!view.is_default, view.name.clone()));
     Ok(Json(views))
+}
+
+async fn social_npc_in_scope(
+    state: &AppState,
+    character_id: u64,
+    settlement_id: &str,
+    location_id: &str,
+    npc_id: &str,
+) -> Result<SettlementNpcRow, StatusCode> {
+    let character = state
+        .db
+        .query_one::<crate::spacetimedb::Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    if character.current_settlement_id.as_deref() != Some(settlement_id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let settlement = state
+        .db
+        .query_one::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(settlement_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if !npc_location_is_navigable(&settlement.economy, &settlement.category, location_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    state
+        .db
+        .query_one::<SettlementNpcRow>(&format!(
+            "SELECT * FROM backend_settlement_npcs WHERE id = {}",
+            sql_string_literal(npc_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .filter(|npc| npc.home_settlement_id == settlement_id)
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+async fn available_social_npc(
+    state: &AppState,
+    character_id: u64,
+    settlement_id: &str,
+    location_id: &str,
+    npc_id: &str,
+) -> Result<SettlementNpcRow, StatusCode> {
+    let npc = social_npc_in_scope(state, character_id, settlement_id, location_id, npc_id).await?;
+    let minute = state
+        .db
+        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
+            "SELECT * FROM character_time WHERE character_id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .map_or(720, |time| time.minutes)
+        % 1_440;
+    let present = state
+        .db
+        .query::<NpcPresenceRow>(&format!(
+            "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
+            sql_string_literal(npc_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .into_iter()
+        .any(|presence| {
+            presence.settlement_id == settlement_id
+                && presence.location_id == location_id
+                && npc_presence_contains(presence.start_minute, presence.end_minute, minute)
+        });
+    present.then_some(npc).ok_or(StatusCode::CONFLICT)
+}
+
+async fn npc_social_view(
+    state: &AppState,
+    character_id: u64,
+    npc: SettlementNpcRow,
+    last_outcome: Option<String>,
+) -> Result<NpcSocialView, StatusCode> {
+    let relationship = state
+        .db
+        .query_one::<NpcSocialRelationshipRow>(&format!(
+            "SELECT * FROM backend_settlement_npc_relationships WHERE observer_character_id = {character_id} AND npc_id = {}",
+            sql_string_literal(&npc.id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(NpcSocialView {
+        npc_id: npc.id,
+        name: npc.name,
+        affinity: relationship
+            .as_ref()
+            .map_or_else(|| "reserved".into(), |row| row.affinity_band.clone()),
+        familiarity: relationship
+            .as_ref()
+            .map_or_else(|| "new".into(), |row| row.familiarity_band.clone()),
+        morale: relationship
+            .as_ref()
+            .map_or_else(|| "uncertain".into(), |row| row.morale_band.clone()),
+        last_outcome,
+    })
+}
+
+async fn npc_social(
+    State(state): State<AppState>,
+    Path((settlement_id, location_id, npc_id)): Path<(String, String, String)>,
+    session: Session,
+) -> Result<Json<NpcSocialView>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    let npc =
+        available_social_npc(&state, character_id, &settlement_id, &location_id, &npc_id).await?;
+    Ok(Json(
+        npc_social_view(&state, character_id, npc, None).await?,
+    ))
+}
+
+async fn chat_with_npc(
+    State(state): State<AppState>,
+    Path((settlement_id, location_id, npc_id)): Path<(String, String, String)>,
+    session: Session,
+    Json(request): Json<NpcChatRequest>,
+) -> Result<Json<NpcSocialView>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    if !(15..=8 * 60).contains(&request.requested_minutes) || request.requested_minutes % 15 != 0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let npc =
+        social_npc_in_scope(&state, character_id, &settlement_id, &location_id, &npc_id).await?;
+    let receipt_id = format!("{character_id}:{}", request.action_id);
+    if let Some(receipt) = state
+        .db
+        .query_one::<SocialChatReceiptRow>(&format!(
+            "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {character_id}",
+            sql_string_literal(&receipt_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+    {
+        if receipt.target_kind != "settlement_npc"
+            || receipt.target_id != npc_id
+            || receipt.requested_minutes != request.requested_minutes
+        {
+            return Err(StatusCode::CONFLICT);
+        }
+        return Ok(Json(
+            npc_social_view(&state, character_id, npc, Some(receipt.outcome)).await?,
+        ));
+    }
+    let npc =
+        available_social_npc(&state, character_id, &settlement_id, &location_id, &npc_id).await?;
+    state
+        .db
+        .call(
+            "spend_time_with_settlement_npc",
+            &[
+                json!(character_id),
+                json!(&npc_id),
+                json!(request.requested_minutes),
+                json!(&request.action_id),
+            ],
+        )
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
+    let receipt = state
+        .db
+        .query_one::<SocialChatReceiptRow>(&format!(
+            "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {character_id}",
+            sql_string_literal(&receipt_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(Json(
+        npc_social_view(&state, character_id, npc, Some(receipt.outcome)).await?,
+    ))
+}
+
+fn claim_segments(text: &str, claims: &[WitnessClaimRow]) -> Option<Vec<ClaimSegmentView>> {
+    if claims.is_empty() {
+        return None;
+    }
+    let mut segments = Vec::new();
+    let mut remainder = text;
+    for claim in claims {
+        let (before, after) = remainder.split_once(&claim.displayed_text)?;
+        if !before.is_empty() {
+            segments.push(ClaimSegmentView::Text {
+                value: before.into(),
+            });
+        }
+        segments.push(ClaimSegmentView::Claim {
+            value: claim.displayed_text.clone(),
+            challenge_token: claim.challenge_token.clone(),
+            charm_response: claim.charm_response.clone(),
+            command_response: claim.command_response.clone(),
+            bluff_response: claim.bluff_response.clone(),
+            assessment_direction: claim.assessment_direction.clone(),
+            assessment_strength: claim.assessment_strength.clamp(0.0, 1.0),
+            resolved: claim.resolved,
+            outcome: claim.outcome.clone(),
+            affinity_delta: claim.affinity_delta,
+        });
+        remainder = after;
+    }
+    if !remainder.is_empty() {
+        segments.push(ClaimSegmentView::Text {
+            value: remainder.into(),
+        });
+    }
+    Some(segments)
 }
 
 async fn build_view(
@@ -342,6 +671,15 @@ async fn build_view(
         .iter()
         .map(|p| (p.role.clone(), p.display_name.clone()))
         .collect();
+    let mut claims = state
+        .db
+        .query::<WitnessClaimRow>(&format!(
+            "SELECT * FROM backend_dialogue_witness_claims WHERE session_id = {} AND observer_character_id = {character_id}",
+            sql_string_literal(session_id),
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    claims.sort_by_key(|claim| (claim.event_sequence, claim.claim_order));
     let mut events = state
         .db
         .query::<EventRow>(&format!(
@@ -362,6 +700,11 @@ async fn build_view(
                 .iter()
                 .find(|p| p.role == event.speaker_role)
                 .is_some_and(|p| p.character_id.is_some());
+            let event_claims = claims
+                .iter()
+                .filter(|claim| claim.event_sequence == event.sequence)
+                .cloned()
+                .collect::<Vec<_>>();
             EventView {
                 sequence: event.sequence,
                 speaker_name: names
@@ -373,9 +716,18 @@ async fn build_view(
                 fragments: fragments
                     .into_iter()
                     .enumerate()
-                    .map(|(index, fragment)| FragmentView {
-                        fragment,
-                        source: sources.get(index).cloned().flatten().and_then(edit_source),
+                    .map(|(index, fragment)| {
+                        let segments = match &fragment {
+                            adventuresim_dialogue::Fragment::Text { value } => {
+                                claim_segments(value, &event_claims)
+                            }
+                            _ => None,
+                        };
+                        FragmentView {
+                            fragment,
+                            source: sources.get(index).cloned().flatten().and_then(edit_source),
+                            claim_segments: segments,
+                        }
                     })
                     .collect(),
             }
@@ -625,4 +977,77 @@ async fn join(
     Ok(Json(
         build_view(&state, character_id, &request.session_id).await?,
     ))
+}
+
+#[derive(Deserialize)]
+struct WitnessApproachRequest {
+    session_id: String,
+    challenge_token: String,
+    approach: String,
+    action_id: String,
+    expected_revision: u64,
+}
+
+async fn witness_approach(
+    State(state): State<AppState>,
+    session: Session,
+    Json(request): Json<WitnessApproachRequest>,
+) -> Result<Json<ConversationView>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    if !matches!(request.approach.as_str(), "charm" | "command" | "bluff") {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    state
+        .db
+        .call(
+            "approach_dialogue_witness",
+            &[
+                json!(character_id),
+                json!(&request.session_id),
+                json!(&request.challenge_token),
+                json!(request.approach),
+                json!(request.action_id),
+                json!(request.expected_revision),
+            ],
+        )
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
+    Ok(Json(
+        build_view(&state, character_id, &request.session_id).await?,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn claim(text: &str, order: u32) -> WitnessClaimRow {
+        WitnessClaimRow {
+            event_sequence: 4,
+            claim_order: order,
+            challenge_token: format!("opaque-{order}"),
+            displayed_text: text.into(),
+            charm_response: Some(format!("Charm {order}")),
+            command_response: None,
+            bluff_response: Some(format!("Bluff {order}")),
+            assessment_direction: "likely_true".into(),
+            assessment_strength: 0.5,
+            resolved: false,
+            outcome: String::new(),
+            affinity_delta: 0.0,
+        }
+    }
+
+    #[test]
+    fn claim_segmentation_preserves_authoritative_order_and_fails_closed() {
+        let rows = vec![claim("alone", 0), claim("a creature as tall as a tree", 1)];
+        let segments = claim_segments(
+            "I was there alone and saw a creature as tall as a tree.",
+            &rows,
+        )
+        .expect("authoritative boundaries match");
+        assert_eq!(segments.len(), 5);
+        assert!(claim_segments("I was there with company.", &rows).is_none());
+        assert!(claim_segments("A creature as tall as a tree saw me alone.", &rows).is_none());
+    }
 }

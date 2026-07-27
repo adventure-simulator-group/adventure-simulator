@@ -34,6 +34,7 @@ use adventuresim_stdb_client::{
     autoresolve_report_table::AutoresolveReportTableAccess,
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
     backend_contract_type::BackendContract, backend_contracts_table::BackendContractsTableAccess,
+    backend_local_problem_trade_effects_table::BackendLocalProblemTradeEffectsTableAccess,
     backend_npc_case_intervention_type::BackendNpcCaseIntervention,
     backend_npc_case_interventions_table::BackendNpcCaseInterventionsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
@@ -79,6 +80,7 @@ use adventuresim_stdb_client::{
     travel_to_settlement_reducer::travel_to_settlement,
     update_training_schedule_reducer::update_training_schedule,
     withdraw_party_inventory_item_reducer::withdraw_party_inventory_item,
+    world_data_import_table::WorldDataImportTableAccess,
 };
 
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -103,6 +105,8 @@ pub struct CoreLoopConfig {
     pub duration_days: u32,
     pub party_size: u32,
     pub run_nonce: String,
+    pub use_imported_world: bool,
+    pub expected_world_manifest_digest: Option<String>,
 }
 
 impl CoreLoopConfig {
@@ -139,6 +143,21 @@ impl CoreLoopConfig {
                 .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
         {
             return Err("run_nonce must be 16..=96 ASCII alphanumeric/dash characters".into());
+        }
+        if self.use_imported_world {
+            let digest = self
+                .expected_world_manifest_digest
+                .as_deref()
+                .ok_or("imported-world mode requires an expected manifest digest")?;
+            if digest.len() != 64
+                || !digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            {
+                return Err("expected world manifest digest must be 64 lowercase hex".into());
+            }
+        } else if self.expected_world_manifest_digest.is_some() {
+            return Err("fixture mode cannot claim an expected world manifest".into());
         }
         Ok(())
     }
@@ -242,6 +261,7 @@ pub enum CoreLoopEventKind {
     SubmitRepair,
     RetrieveRepair,
     WaitForRepair,
+    MedicalDecision,
     BuyMedication,
     AdministerPreparation,
     IllnessRecovered,
@@ -287,6 +307,9 @@ pub struct CoreLoopReport {
     pub database: String,
     pub run_nonce: String,
     pub deployment_identity_note: String,
+    pub world_artifact_id: Option<String>,
+    pub world_manifest_digest: Option<String>,
+    pub starting_settlement_id: String,
     pub profiles: Vec<AgentProfile>,
     pub metrics: CoreLoopMetrics,
     pub trace: Vec<CoreLoopEvent>,
@@ -342,6 +365,90 @@ const SMITHING_DECISION_SCALE: f32 = 1_000.0;
 
 fn quantize_smithing_condition(value: f32) -> u32 {
     (value.clamp(0.0, 1.0) * SMITHING_DECISION_SCALE).round() as u32
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MedicalChoice {
+    Ready,
+    SuppressQuest,
+    RestNaturally,
+    BuyAndRest,
+}
+
+fn choose_medical_action(
+    condition_status: &str,
+    symptomatic: bool,
+    at_settlement: bool,
+    herbalist_available: bool,
+    purse: u64,
+    observable_quote: Option<u64>,
+    natural_rest_venue: Option<bool>,
+    medicated_rest_venue: Option<bool>,
+) -> (MedicalChoice, &'static str) {
+    if condition_status == "ready" && !symptomatic {
+        return (MedicalChoice::Ready, "ready_without_symptoms");
+    }
+    if !at_settlement {
+        return (MedicalChoice::SuppressQuest, "not_at_settlement");
+    }
+    if natural_rest_venue.is_none() {
+        return (
+            MedicalChoice::SuppressQuest,
+            "rest_venue_unavailable_or_unaffordable",
+        );
+    }
+    if !symptomatic {
+        return (
+            MedicalChoice::RestNaturally,
+            "convalescing_without_symptoms",
+        );
+    }
+    if !herbalist_available {
+        return (MedicalChoice::RestNaturally, "herbalist_unavailable");
+    }
+    let Some(quote) = observable_quote else {
+        return (MedicalChoice::RestNaturally, "observable_quote_unavailable");
+    };
+    if purse < quote || medicated_rest_venue.is_none() {
+        return (MedicalChoice::RestNaturally, "observable_care_unaffordable");
+    }
+    (MedicalChoice::BuyAndRest, "symptomatic_and_affordable")
+}
+
+fn affordable_medical_rest_venue(
+    inn_available: bool,
+    temple_available: bool,
+    purse: u64,
+    committed_cost: u64,
+) -> Option<bool> {
+    if temple_available && purse >= committed_cost {
+        return Some(false);
+    }
+    let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440)?;
+    (inn_available && purse >= committed_cost.saturating_add(inn_cost)).then_some(true)
+}
+
+fn observable_herbalist_stocks_medication(
+    herbalist_available: bool,
+    medication_kind: bool,
+    herbs_stocked: bool,
+) -> bool {
+    herbalist_available && medication_kind && herbs_stocked
+}
+
+/// Keep one player-visible course of local treatment available while making
+/// discretionary equipment decisions. This is a concrete emergency reserve,
+/// not an arbitrary wealth target.
+fn spending_budget_after_medical_reserve(purse: u64, observable_quote: Option<u64>) -> u64 {
+    purse.saturating_sub(observable_quote.unwrap_or(0))
+}
+
+fn equipment_spend_is_still_affordable(
+    purse: u64,
+    observable_medical_quote: Option<u64>,
+    equipment_cost: u64,
+) -> bool {
+    equipment_cost <= spending_budget_after_medical_reserve(purse, observable_medical_quote)
 }
 
 fn live_attributes(character_id: u64, profile: &AgentProfile) -> CharacterAttributes {
@@ -965,6 +1072,86 @@ impl LiveRunner {
             .sum()
     }
 
+    /// Reproduce the herbalist storefront/reducer quote from the same item
+    /// definition and gateway-projected local-problem modifier visible to a
+    /// player. No local-problem authority or infection state is transported.
+    fn observable_medical_quote(&self, character_id: u64, settlement_id: &str) -> Option<u64> {
+        let settlement = self
+            .connection
+            .db
+            .settlement()
+            .iter()
+            .find(|row| row.id == settlement_id)?;
+        if !settlement
+            .economy
+            .services
+            .contains(&SettlementService::Herbalist)
+        {
+            return None;
+        }
+        let preparation = self
+            .connection
+            .db
+            .item()
+            .iter()
+            .find(|row| row.id == "oral_rehydration_draught")?;
+        // This is the generated-client equivalent of the public
+        // `storefront_stocks(..., Herbalist, ..., Medication)` predicate:
+        // the service must exist and the medication's Herbs category must be
+        // present in visible settlement stock.
+        if !observable_herbalist_stocks_medication(
+            true,
+            preparation.kind == ItemKind::Medication,
+            settlement
+                .economy
+                .stock
+                .iter()
+                .any(|row| row.category == StockCategory::Herbs),
+        ) {
+            return None;
+        }
+        let buy_bps = self
+            .connection
+            .db
+            .backend_local_problem_trade_effects()
+            .iter()
+            .find(|row| row.character_id == character_id && row.settlement_id == settlement_id)?
+            .buy_bps;
+        let base = adventuresim_core::strategic_economy::merchant_buy_price(
+            preparation.base_value.unwrap_or(1),
+        );
+        Some(u64::from(adventuresim_core::local_problem::adjust_price(
+            base, buy_bps,
+        )))
+    }
+
+    fn observable_medical_reserve(&self, character_id: u64, settlement_id: &str) -> Option<u64> {
+        let quote = self.observable_medical_quote(character_id, settlement_id)?;
+        let settlement = self
+            .connection
+            .db
+            .settlement()
+            .iter()
+            .find(|row| row.id == settlement_id)?;
+        if settlement
+            .economy
+            .services
+            .contains(&SettlementService::Temple)
+        {
+            Some(quote)
+        } else if settlement
+            .economy
+            .services
+            .contains(&SettlementService::Inn)
+        {
+            quote.checked_add(adventuresim_core::strategic_economy::inn_full_board_cost(
+                1_440,
+            )?)
+        } else {
+            None
+        }
+    }
+
     fn set_medical_rest_schedule(&mut self, agent: u32) -> Result<(), String> {
         let character_id = self.character_ids[agent as usize];
         if self.medically_paused_schedules.contains(&character_id) {
@@ -1073,30 +1260,91 @@ impl LiveRunner {
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .is_some_and(|row| row.symptomatic);
-            if condition.status == "ready" && !symptomatic {
+            let settlement = character.current_settlement_id.clone();
+            let herbalist_available = settlement.as_ref().is_some_and(|settlement| {
+                self.connection
+                    .db
+                    .settlement()
+                    .iter()
+                    .find(|row| row.id == *settlement)
+                    .is_some_and(|row| row.economy.services.contains(&SettlementService::Herbalist))
+            });
+            let purse = self.personal_gold(character_id);
+            let observable_quote = settlement
+                .as_deref()
+                .and_then(|settlement| self.observable_medical_quote(character_id, settlement));
+            let (inn_available, temple_available) =
+                settlement.as_ref().map_or((false, false), |settlement_id| {
+                    self.connection
+                        .db
+                        .settlement()
+                        .iter()
+                        .find(|row| row.id == *settlement_id)
+                        .map_or((false, false), |row| {
+                            (
+                                row.economy.services.contains(&SettlementService::Inn),
+                                row.economy.services.contains(&SettlementService::Temple),
+                            )
+                        })
+                });
+            let natural_rest_venue =
+                affordable_medical_rest_venue(inn_available, temple_available, purse, 0);
+            let required_rest_cost = if temple_available {
+                Some(0)
+            } else if inn_available {
+                adventuresim_core::strategic_economy::inn_full_board_cost(1_440)
+            } else {
+                None
+            };
+            let observable_care_total = observable_quote
+                .zip(required_rest_cost)
+                .and_then(|(quote, rest)| quote.checked_add(rest));
+            let medicated_rest_venue = observable_quote.and_then(|quote| {
+                affordable_medical_rest_venue(inn_available, temple_available, purse, quote)
+            });
+            let (choice, reason) = choose_medical_action(
+                &condition.status,
+                symptomatic,
+                settlement.is_some(),
+                herbalist_available,
+                purse,
+                observable_quote,
+                natural_rest_venue,
+                medicated_rest_venue,
+            );
+            self.event(
+                agent,
+                CoreLoopEventKind::MedicalDecision,
+                format!(
+                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};care_affordable={};action={choice:?};reason={reason}",
+                    condition.status,
+                    settlement.as_deref().unwrap_or("none"),
+                    observable_quote.map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
+                    required_rest_cost.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
+                    observable_care_total.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
+                    medicated_rest_venue.map_or("unavailable", |at_inn| if at_inn { "inn" } else { "temple" }),
+                    observable_quote.is_some() && medicated_rest_venue.is_some(),
+                ),
+            );
+            if choice == MedicalChoice::Ready {
                 self.restore_profile_schedule(agent)?;
                 return Ok(true);
             }
-            let Some(settlement) = character.current_settlement_id.clone() else {
+            if choice == MedicalChoice::SuppressQuest {
                 self.metrics.quests_suppressed_for_health += 1;
                 self.event(
                     agent,
                     CoreLoopEventKind::QuestSuppressed,
-                    format!("status={}", condition.status),
+                    format!("status={};reason={reason}", condition.status),
                 );
                 return Ok(false);
+            }
+            let Some(settlement) = settlement else {
+                unreachable!("a missing settlement is handled as quest suppression");
             };
-
-            let herbalist_available = self
-                .connection
-                .db
-                .settlement()
-                .iter()
-                .find(|row| row.id == settlement)
-                .is_some_and(|row| row.economy.services.contains(&SettlementService::Herbalist));
-            if !herbalist_available {
-                self.set_medical_rest_schedule(agent)?;
-                let at_inn = self.settlement_rest_at_inn(character_id)?;
+            self.set_medical_rest_schedule(agent)?;
+            if choice == MedicalChoice::RestNaturally {
+                let at_inn = natural_rest_venue.expect("natural rest choice requires a venue");
                 let result = reducer_call!(self, "natural_illness_recovery_rest", |cb| self
                     .connection
                     .reducers
@@ -1107,7 +1355,7 @@ impl LiveRunner {
                 self.event(
                     agent,
                     CoreLoopEventKind::Recover,
-                    "natural_recovery_minutes=1440;herbalist=unavailable",
+                    format!("natural_recovery_minutes=1440;reason={reason}"),
                 );
                 continue;
             }
@@ -1115,7 +1363,8 @@ impl LiveRunner {
             // NPCs react only to the public illness status. They may purchase a
             // pre-existing preparation and administer its versioned profile;
             // Physiology never diagnoses or crafts it.
-            let gold_before = self.personal_gold(character_id);
+            debug_assert_eq!(choice, MedicalChoice::BuyAndRest);
+            let gold_before = purse;
             let preparation_id = "oral_rehydration_draught";
             let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
                 .connection
@@ -1129,6 +1378,14 @@ impl LiveRunner {
                 ));
             self.call(result)?;
             self.metrics.preparations_purchased += 1;
+            self.event(
+                agent,
+                CoreLoopEventKind::BuyMedication,
+                format!(
+                    "item={preparation_id};observable_quote={}",
+                    observable_quote.expect("purchase choice requires a quote")
+                ),
+            );
             let preparation = self
                 .connection
                 .db
@@ -1159,7 +1416,8 @@ impl LiveRunner {
             self.metrics.treatment_gold_spent +=
                 gold_before.saturating_sub(self.personal_gold(character_id));
 
-            let at_inn = self.settlement_rest_at_inn(character_id)?;
+            let at_inn =
+                medicated_rest_venue.expect("purchase choice requires an affordable venue");
             let result = reducer_call!(self, "medical_recovery_rest", |cb| self
                 .connection
                 .reducers
@@ -1305,14 +1563,11 @@ impl LiveRunner {
             .find(|row| row.character_id == character_id)
             .ok_or("missing maintenance clock")?
             .minutes;
-        let mut repair_budget: u64 = self
-            .connection
-            .db
-            .inventory_item()
-            .iter()
-            .filter(|row| row.character_id == character_id && is_currency_id(&row.item_id))
-            .map(|row| u64::from(row.quantity))
-            .sum();
+        let medical_reserve = self.observable_medical_reserve(character_id, &settlement);
+        let mut repair_budget = spending_budget_after_medical_reserve(
+            self.personal_gold(character_id),
+            medical_reserve,
+        );
 
         let mut orders: Vec<_> = self
             .connection
@@ -1436,14 +1691,10 @@ impl LiveRunner {
             return Ok(());
         }
         orders.sort_by_key(|order| (order.ready_at_minutes, order.id));
-        let mut retrieval_budget: u64 = self
-            .connection
-            .db
-            .inventory_item()
-            .iter()
-            .filter(|row| row.character_id == character_id && is_currency_id(&row.item_id))
-            .map(|row| u64::from(row.quantity))
-            .sum();
+        let mut retrieval_budget = spending_budget_after_medical_reserve(
+            self.personal_gold(character_id),
+            medical_reserve,
+        );
         let affordable: Vec<_> = orders
             .into_iter()
             .filter(|order| {
@@ -1491,7 +1742,9 @@ impl LiveRunner {
                 if !alive {
                     return Ok(());
                 }
-                self.ensure_medically_safe(agent)?;
+                if !self.ensure_medically_safe(agent)? {
+                    return Ok(());
+                }
                 let current = self
                     .connection
                     .db
@@ -1518,6 +1771,18 @@ impl LiveRunner {
                     retrieval_character.current_settlement_id,
                     order.settlement_id
                 ));
+            }
+            let current_medical_quote =
+                self.observable_medical_reserve(character_id, &order.settlement_id);
+            if !equipment_spend_is_still_affordable(
+                self.personal_gold(character_id),
+                current_medical_quote,
+                u64::from(order.quoted_cost),
+            ) {
+                // Time and medical care can change both the purse and the
+                // public local-problem quote while a smith holds the item.
+                // Leave the completed order in custody for a later attempt.
+                continue;
             }
             let result = reducer_call!(self, "retrieve_repaired_item", |cb| self
                 .connection
@@ -2284,6 +2549,7 @@ pub fn run_core_loop_with_npc_policy(
         .add_query(|query| query.from.backend_case_site_pins())
         .add_query(|query| query.from.backend_npc_case_interventions())
         .add_query(|query| query.from.backend_npc_intervention_candidates())
+        .add_query(|query| query.from.backend_local_problem_trade_effects())
         .add_query(|query| query.from.battle_loot_item())
         .add_query(|query| query.from.battle_result())
         .add_query(|query| query.from.character())
@@ -2308,6 +2574,7 @@ pub fn run_core_loop_with_npc_policy(
         .add_query(|query| query.from.settlement())
         .add_query(|query| query.from.settlement_smith())
         .add_query(|query| query.from.simulation_run())
+        .add_query(|query| query.from.world_data_import())
         .subscribe();
     connection.run_threaded();
     connected_rx
@@ -2345,9 +2612,32 @@ pub fn run_core_loop_with_npc_policy(
         .next()
         .is_some()
         || runner.connection.db.character().iter().next().is_some()
-        || runner.connection.db.settlement().iter().next().is_some()
     {
         return Err("refusing reused or populated simulation database".into());
+    }
+    let world_import = runner.connection.db.world_data_import().iter().next();
+    if config.use_imported_world {
+        let imported = world_import
+            .as_ref()
+            .filter(|import| import.completed)
+            .ok_or("full-world mode requires a completed world_data_import")?;
+        if Some(imported.manifest_digest.as_str())
+            != config.expected_world_manifest_digest.as_deref()
+        {
+            return Err(
+                "imported world manifest does not match the pinned expected manifest".into(),
+            );
+        }
+        if imported.artifact_id.trim().is_empty()
+            || imported.manifest_digest.len() != 64
+            || runner.connection.db.settlement().iter().next().is_none()
+        {
+            return Err(
+                "completed world_data_import has invalid provenance or no settlements".into(),
+            );
+        }
+    } else if world_import.is_some() || runner.connection.db.settlement().iter().next().is_some() {
+        return Err("fixture mode refuses imported or pre-existing settlement state".into());
     }
     let result = reducer_call!(runner, "claim_simulation_run", |cb| runner
         .connection
@@ -2383,17 +2673,27 @@ pub fn run_core_loop_with_npc_policy(
         .add_query(|query| query.from.backend_case_site_pins())
         .add_query(|query| query.from.backend_npc_case_interventions())
         .add_query(|query| query.from.backend_npc_intervention_candidates())
+        .add_query(|query| query.from.backend_local_problem_trade_effects())
         .add_query(|query| query.from.party())
         .subscribe();
     gateway_subscription_rx
         .recv_timeout(ACTION_TIMEOUT)
         .map_err(|_| "gateway subscription timed out".to_string())??;
-    let result = reducer_call!(runner, "seed_simulation_world", |cb| runner
+    if !config.use_imported_world {
+        let result = reducer_call!(runner, "seed_simulation_world", |cb| runner
+            .connection
+            .reducers
+            .seed_simulation_world_then(config.run_nonce.clone(), cb));
+        runner.call(result)?;
+    }
+    let starting_settlement_id = runner
         .connection
-        .reducers
-        .seed_simulation_world_then(config.run_nonce.clone(), cb));
-    runner.call(result)?;
-    let mut shared_settlement: Option<String> = None;
+        .db
+        .settlement()
+        .iter()
+        .map(|settlement| settlement.id)
+        .min()
+        .ok_or("simulation world has no starting settlement")?;
     for (agent, character_id) in runner.character_ids.clone().into_iter().enumerate() {
         let name = format!("sim-{}-{agent}", config.seed);
         let result = reducer_call!(runner, "create_named_character_with_id", |cb| runner
@@ -2401,17 +2701,7 @@ pub fn run_core_loop_with_npc_policy(
             .reducers
             .create_named_character_with_id_then(character_id, name.clone(), cb));
         runner.call(result)?;
-        let settlement = match &shared_settlement {
-            Some(settlement) => settlement.clone(),
-            None => {
-                let settlement = runner
-                    .party_for(character_id)?
-                    .current_settlement_id
-                    .ok_or("fresh character has no settlement")?;
-                shared_settlement = Some(settlement.clone());
-                settlement
-            }
-        };
+        let settlement = starting_settlement_id.clone();
         let profile = runner.profiles[agent].clone();
         let attributes = live_attributes(character_id, &profile);
         let skills = live_skills(character_id, &profile);
@@ -2758,6 +3048,11 @@ pub fn run_core_loop_with_npc_policy(
         database: config.database,
         run_nonce: config.run_nonce,
         deployment_identity_note: "server origin, database, and claimed run nonce identify this deployment; the SDK does not expose a deployed module binary digest".into(),
+        world_artifact_id: world_import.as_ref().map(|import| import.artifact_id.clone()),
+        world_manifest_digest: world_import
+            .as_ref()
+            .map(|import| import.manifest_digest.clone()),
+        starting_settlement_id,
         profiles: runner.profiles,
         metrics: runner.metrics,
         trace: runner.trace,
@@ -2856,6 +3151,8 @@ mod tests {
             duration_days: 1,
             party_size: 2,
             run_nonce: "unit-test-nonce-0001".into(),
+            use_imported_world: false,
+            expected_world_manifest_digest: None,
         };
         assert!(config.validate().is_err());
         config.host = "http://127.0.0.1:3000".into();
@@ -2916,6 +3213,80 @@ mod tests {
         );
         assert_eq!(live_schedule(&profile), saved);
         assert_ne!(saved, rest);
+    }
+
+    #[test]
+    fn unaffordable_symptomatic_treatment_falls_back_to_natural_rest() {
+        assert_eq!(
+            choose_medical_action("recovering", true, true, true, 6, Some(5), Some(true), None),
+            (MedicalChoice::RestNaturally, "observable_care_unaffordable")
+        );
+    }
+
+    #[test]
+    fn nonsymptomatic_convalescence_does_not_buy_medication() {
+        assert_eq!(
+            choose_medical_action(
+                "recovering",
+                false,
+                true,
+                true,
+                100,
+                Some(5),
+                Some(false),
+                Some(false)
+            ),
+            (
+                MedicalChoice::RestNaturally,
+                "convalescing_without_symptoms"
+            )
+        );
+    }
+
+    #[test]
+    fn affordable_symptomatic_treatment_buys_then_rests() {
+        assert_eq!(
+            choose_medical_action(
+                "recovering",
+                true,
+                true,
+                true,
+                7,
+                Some(5),
+                Some(true),
+                Some(true)
+            ),
+            (MedicalChoice::BuyAndRest, "symptomatic_and_affordable")
+        );
+    }
+
+    #[test]
+    fn equipment_spending_reserves_one_observable_medical_course() {
+        assert_eq!(spending_budget_after_medical_reserve(20, Some(7)), 13);
+        assert_eq!(spending_budget_after_medical_reserve(5, Some(7)), 0);
+        assert_eq!(spending_budget_after_medical_reserve(20, None), 20);
+        assert!(equipment_spend_is_still_affordable(20, Some(7), 13));
+        assert!(!equipment_spend_is_still_affordable(19, Some(7), 13));
+        assert!(!equipment_spend_is_still_affordable(20, Some(8), 13));
+    }
+
+    #[test]
+    fn medical_rest_venue_accounts_for_visible_inn_cost() {
+        assert_eq!(affordable_medical_rest_venue(true, false, 7, 5), Some(true));
+        assert_eq!(affordable_medical_rest_venue(true, false, 6, 5), None);
+        assert_eq!(
+            affordable_medical_rest_venue(true, true, 5, 5),
+            Some(false),
+            "the free temple is preferred when both public venues exist"
+        );
+    }
+
+    #[test]
+    fn medical_quote_requires_player_visible_herbalist_stock() {
+        assert!(observable_herbalist_stocks_medication(true, true, true));
+        assert!(!observable_herbalist_stocks_medication(false, true, true));
+        assert!(!observable_herbalist_stocks_medication(true, false, true));
+        assert!(!observable_herbalist_stocks_medication(true, true, false));
     }
 
     #[test]

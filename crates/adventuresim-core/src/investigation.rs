@@ -453,6 +453,51 @@ pub struct SafeInference {
     pub ranked: Vec<CandidateScore>,
     pub provenance: Vec<String>,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeductionSupport {
+    Strong,
+    Plausible,
+    Weak,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThreatDeduction {
+    pub threat_id: crate::bestiary::ThreatId,
+    pub support: DeductionSupport,
+}
+
+/// Observer projection for ranked candidates. Raw likelihood products remain
+/// private because exact values invite posterior-looking interpretation and
+/// can make authored priors invertible.
+pub fn qualitative_deductions(inference: &SafeInference) -> Vec<ThreatDeduction> {
+    let Some(top) = inference.ranked.first().map(|candidate| candidate.score) else {
+        return Vec::new();
+    };
+    inference
+        .ranked
+        .iter()
+        .take(6)
+        .map(|candidate| {
+            let ratio_bps = if top == 0 {
+                0
+            } else {
+                candidate.score.saturating_mul(10_000) / top
+            };
+            let support = if ratio_bps >= 7_500 {
+                DeductionSupport::Strong
+            } else if ratio_bps >= 3_000 {
+                DeductionSupport::Plausible
+            } else {
+                DeductionSupport::Weak
+            };
+            ThreatDeduction {
+                threat_id: candidate.id,
+                support,
+            }
+        })
+        .collect()
+}
 pub fn infer_threats(mut input: InferenceInput) -> Result<SafeInference, ValidationError> {
     if input.evidence.len() > 32 {
         return Err(ValidationError::TooManyRecords);
@@ -733,6 +778,9 @@ mod tests {
         assert!(!provenance.contains("truth"));
         assert!(!provenance.contains("sincerity"));
         assert!(!provenance.contains("bridge"));
+        let deductions = qualitative_deductions(&after);
+        assert!(!deductions.is_empty());
+        assert_eq!(deductions[0].support, DeductionSupport::Strong);
     }
 
     #[test]

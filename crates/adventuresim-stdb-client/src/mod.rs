@@ -17,6 +17,7 @@ pub mod agriculture_industry_type;
 pub mod alcohol_consumption_table;
 pub mod alcohol_consumption_type;
 pub mod answer_dialogue_prompt_reducer;
+pub mod approach_dialogue_witness_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
 pub mod authorize_tactical_server_claim_reducer;
@@ -26,6 +27,8 @@ pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
 pub mod backend_automatic_social_chats_table;
+pub mod backend_bestiary_deduction_type;
+pub mod backend_bestiary_deductions_table;
 pub mod backend_case_battle_type;
 pub mod backend_case_battles_table;
 pub mod backend_case_site_pin_type;
@@ -48,6 +51,8 @@ pub mod backend_dialogue_session_type;
 pub mod backend_dialogue_sessions_table;
 pub mod backend_dialogue_topic_option_type;
 pub mod backend_dialogue_topic_options_table;
+pub mod backend_dialogue_witness_claim_type;
+pub mod backend_dialogue_witness_claims_table;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
 pub mod backend_investigation_action_outcome_type;
@@ -79,9 +84,13 @@ pub mod backend_physiology_administrations_table;
 pub mod backend_physiology_chart_type;
 pub mod backend_physiology_charts_table;
 pub mod backend_physiology_differential_type;
+pub mod backend_settlement_npc_relationship_type;
+pub mod backend_settlement_npc_relationships_table;
 pub mod backend_settlement_npcs_table;
 pub mod backend_social_addresses_table;
 pub mod backend_social_beliefs_table;
+pub mod backend_social_chat_receipt_type;
+pub mod backend_social_chat_receipts_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_solo_parties_reducer;
@@ -156,6 +165,7 @@ pub mod character_type;
 pub mod character_virtue_table;
 pub mod character_virtue_type;
 pub mod charcoal_burning_industry_type;
+pub mod chat_with_party_member_reducer;
 pub mod choose_dialogue_topic_reducer;
 pub mod claim_simulation_run_reducer;
 pub mod clear_organization_presentation_reducer;
@@ -205,6 +215,8 @@ pub mod dialogue_participant_type;
 pub mod dialogue_prompt_type;
 pub mod dialogue_session_type;
 pub mod dialogue_topic_option_type;
+pub mod dialogue_witness_capability_type;
+pub mod dialogue_witness_claim_type;
 pub mod direct_historical_vegetation_cover_type;
 pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
@@ -304,6 +316,9 @@ pub mod investigation_action_receipt_type;
 pub mod investigation_area_authority_type;
 pub mod investigation_belief_revision_type;
 pub mod investigation_belief_type;
+pub mod investigation_bestiary_deduction_type;
+pub mod investigation_bestiary_diagnostic_receipt_type;
+pub mod investigation_bestiary_report_receipt_type;
 pub mod investigation_case_authority_type;
 pub mod investigation_claim_type;
 pub mod investigation_event_authority_type;
@@ -544,9 +559,12 @@ pub mod settlement_economy_profile_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
 pub mod settlement_language_profile_type;
+pub mod settlement_npc_morale_event_type;
 pub mod settlement_npc_presence_table;
 pub mod settlement_npc_presence_type;
+pub mod settlement_npc_relationship_type;
 pub mod settlement_npc_seed_explanation_type;
+pub mod settlement_npc_social_state_type;
 pub mod settlement_npc_type;
 pub mod settlement_outbreak_table;
 pub mod settlement_outbreak_type;
@@ -569,6 +587,7 @@ pub mod sociability_type;
 pub mod social_action_cooldown_type;
 pub mod social_address_type;
 pub mod social_belief_type;
+pub mod social_chat_receipt_type;
 pub mod social_interaction_type;
 pub mod soil_acidity_type;
 pub mod soil_basis_points_type;
@@ -580,6 +599,7 @@ pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
 pub mod spawn_developer_quest_reducer;
+pub mod spend_time_with_settlement_npc_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
 pub mod starting_age_tier_coordinate_type;
@@ -637,6 +657,7 @@ pub mod water_distance_meters_type;
 pub mod weapon_skill_distribution_type;
 pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
+pub mod witness_social_action_receipt_type;
 pub mod woodland_type;
 pub mod world_clock_schedule_type;
 pub mod world_clock_table;
@@ -660,6 +681,7 @@ pub use agriculture_industry_type::AgricultureIndustry;
 pub use alcohol_consumption_table::*;
 pub use alcohol_consumption_type::AlcoholConsumption;
 pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
+pub use approach_dialogue_witness_reducer::approach_dialogue_witness;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
 pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
@@ -669,6 +691,8 @@ pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backend_automatic_social_chats_table::*;
+pub use backend_bestiary_deduction_type::BackendBestiaryDeduction;
+pub use backend_bestiary_deductions_table::*;
 pub use backend_case_battle_type::BackendCaseBattle;
 pub use backend_case_battles_table::*;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
@@ -691,6 +715,8 @@ pub use backend_dialogue_session_type::BackendDialogueSession;
 pub use backend_dialogue_sessions_table::*;
 pub use backend_dialogue_topic_option_type::BackendDialogueTopicOption;
 pub use backend_dialogue_topic_options_table::*;
+pub use backend_dialogue_witness_claim_type::BackendDialogueWitnessClaim;
+pub use backend_dialogue_witness_claims_table::*;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
@@ -722,9 +748,13 @@ pub use backend_physiology_administrations_table::*;
 pub use backend_physiology_chart_type::BackendPhysiologyChart;
 pub use backend_physiology_charts_table::*;
 pub use backend_physiology_differential_type::BackendPhysiologyDifferential;
+pub use backend_settlement_npc_relationship_type::BackendSettlementNpcRelationship;
+pub use backend_settlement_npc_relationships_table::*;
 pub use backend_settlement_npcs_table::*;
 pub use backend_social_addresses_table::*;
 pub use backend_social_beliefs_table::*;
+pub use backend_social_chat_receipt_type::BackendSocialChatReceipt;
+pub use backend_social_chat_receipts_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
@@ -799,6 +829,7 @@ pub use character_type::Character;
 pub use character_virtue_table::*;
 pub use character_virtue_type::CharacterVirtue;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
+pub use chat_with_party_member_reducer::chat_with_party_member;
 pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use clear_organization_presentation_reducer::clear_organization_presentation;
@@ -848,6 +879,8 @@ pub use dialogue_participant_type::DialogueParticipant;
 pub use dialogue_prompt_type::DialoguePrompt;
 pub use dialogue_session_type::DialogueSession;
 pub use dialogue_topic_option_type::DialogueTopicOption;
+pub use dialogue_witness_capability_type::DialogueWitnessCapability;
+pub use dialogue_witness_claim_type::DialogueWitnessClaim;
 pub use direct_historical_vegetation_cover_type::DirectHistoricalVegetationCover;
 pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMethod;
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
@@ -947,6 +980,9 @@ pub use investigation_action_receipt_type::InvestigationActionReceipt;
 pub use investigation_area_authority_type::InvestigationAreaAuthority;
 pub use investigation_belief_revision_type::InvestigationBeliefRevision;
 pub use investigation_belief_type::InvestigationBelief;
+pub use investigation_bestiary_deduction_type::InvestigationBestiaryDeduction;
+pub use investigation_bestiary_diagnostic_receipt_type::InvestigationBestiaryDiagnosticReceipt;
+pub use investigation_bestiary_report_receipt_type::InvestigationBestiaryReportReceipt;
 pub use investigation_case_authority_type::InvestigationCaseAuthority;
 pub use investigation_claim_type::InvestigationClaim;
 pub use investigation_event_authority_type::InvestigationEventAuthority;
@@ -1187,9 +1223,12 @@ pub use settlement_economy_profile_type::SettlementEconomyProfile;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
 pub use settlement_language_profile_type::SettlementLanguageProfile;
+pub use settlement_npc_morale_event_type::SettlementNpcMoraleEvent;
 pub use settlement_npc_presence_table::*;
 pub use settlement_npc_presence_type::SettlementNpcPresence;
+pub use settlement_npc_relationship_type::SettlementNpcRelationship;
 pub use settlement_npc_seed_explanation_type::SettlementNpcSeedExplanation;
+pub use settlement_npc_social_state_type::SettlementNpcSocialState;
 pub use settlement_npc_type::SettlementNpc;
 pub use settlement_outbreak_table::*;
 pub use settlement_outbreak_type::SettlementOutbreak;
@@ -1212,6 +1251,7 @@ pub use sociability_type::Sociability;
 pub use social_action_cooldown_type::SocialActionCooldown;
 pub use social_address_type::SocialAddress;
 pub use social_belief_type::SocialBelief;
+pub use social_chat_receipt_type::SocialChatReceipt;
 pub use social_interaction_type::SocialInteraction;
 pub use soil_acidity_type::SoilAcidity;
 pub use soil_basis_points_type::SoilBasisPoints;
@@ -1223,6 +1263,7 @@ pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
 pub use spawn_developer_quest_reducer::spawn_developer_quest;
+pub use spend_time_with_settlement_npc_reducer::spend_time_with_settlement_npc;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
 pub use starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
@@ -1280,6 +1321,7 @@ pub use water_distance_meters_type::WaterDistanceMeters;
 pub use weapon_skill_distribution_type::WeaponSkillDistribution;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
+pub use witness_social_action_receipt_type::WitnessSocialActionReceipt;
 pub use woodland_type::Woodland;
 pub use world_clock_schedule_type::WorldClockSchedule;
 pub use world_clock_table::*;
@@ -1333,6 +1375,14 @@ pub enum Reducer {
         expected_revision: u64,
         catalog_revision: String,
     },
+    ApproachDialogueWitness {
+        observer_character_id: u64,
+        session_id: String,
+        challenge_token: String,
+        approach_kind: String,
+        action_id: String,
+        expected_revision: u64,
+    },
     ApprovePartyActionRequest {
         leader_id: u64,
         request_id: u64,
@@ -1371,6 +1421,12 @@ pub enum Reducer {
         character_id: u64,
         item_id: String,
         by_quantity: i32,
+    },
+    ChatWithPartyMember {
+        actor_id: u64,
+        target_id: u64,
+        requested_minutes: u64,
+        action_id: String,
     },
     ChooseDialogueTopic {
         character_id: u64,
@@ -1793,6 +1849,12 @@ pub enum Reducer {
         definition_json: String,
         allow_implausible: bool,
     },
+    SpendTimeWithSettlementNpc {
+        actor_id: u64,
+        npc_id: String,
+        requested_minutes: u64,
+        action_id: String,
+    },
     StageInvestigationLead {
         character_id: u64,
         receipt_id: String,
@@ -1924,6 +1986,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AdministerPreparation { .. } => "administer_preparation",
             Reducer::AdvanceSimulationWorldTime { .. } => "advance_simulation_world_time",
             Reducer::AnswerDialoguePrompt { .. } => "answer_dialogue_prompt",
+            Reducer::ApproachDialogueWitness { .. } => "approach_dialogue_witness",
             Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
                 "approve_party_action_request_planned"
@@ -1941,6 +2004,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::BootstrapDevelopmentWorld { .. } => "bootstrap_development_world",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
+            Reducer::ChatWithPartyMember { .. } => "chat_with_party_member",
             Reducer::ChooseDialogueTopic { .. } => "choose_dialogue_topic",
             Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
             Reducer::ClearOrganizationPresentation { .. } => "clear_organization_presentation",
@@ -2032,6 +2096,7 @@ impl __sdk::Reducer for Reducer {
                 "simulate_contract_issuer_interaction"
             }
             Reducer::SpawnDeveloperQuest { .. } => "spawn_developer_quest",
+            Reducer::SpendTimeWithSettlementNpc { .. } => "spend_time_with_settlement_npc",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StopPreparation { .. } => "stop_preparation",
@@ -2119,6 +2184,21 @@ impl __sdk::Reducer for Reducer {
                 expected_revision: expected_revision.clone(),
                 catalog_revision: catalog_revision.clone(),
 }),
+            Reducer::ApproachDialogueWitness{
+                observer_character_id,
+                session_id,
+                challenge_token,
+                approach_kind,
+                action_id,
+                expected_revision,
+}             => __sats::bsatn::to_vec(&approach_dialogue_witness_reducer::ApproachDialogueWitnessArgs {
+                observer_character_id: observer_character_id.clone(),
+                session_id: session_id.clone(),
+                challenge_token: challenge_token.clone(),
+                approach_kind: approach_kind.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+}),
             Reducer::ApprovePartyActionRequest{
                 leader_id,
                 request_id,
@@ -2188,6 +2268,17 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 item_id: item_id.clone(),
                 by_quantity: by_quantity.clone(),
+}),
+            Reducer::ChatWithPartyMember{
+                actor_id,
+                target_id,
+                requested_minutes,
+                action_id,
+}             => __sats::bsatn::to_vec(&chat_with_party_member_reducer::ChatWithPartyMemberArgs {
+                actor_id: actor_id.clone(),
+                target_id: target_id.clone(),
+                requested_minutes: requested_minutes.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::ChooseDialogueTopic{
                 character_id,
@@ -2944,6 +3035,17 @@ Reducer::BeginWorldDataImport{
                 definition_json: definition_json.clone(),
                 allow_implausible: allow_implausible.clone(),
 }),
+            Reducer::SpendTimeWithSettlementNpc{
+                actor_id,
+                npc_id,
+                requested_minutes,
+                action_id,
+}             => __sats::bsatn::to_vec(&spend_time_with_settlement_npc_reducer::SpendTimeWithSettlementNpcArgs {
+                actor_id: actor_id.clone(),
+                npc_id: npc_id.clone(),
+                requested_minutes: requested_minutes.clone(),
+                action_id: action_id.clone(),
+}),
             Reducer::StageInvestigationLead{
                 character_id,
                 receipt_id,
@@ -3168,6 +3270,7 @@ pub struct DbUpdate {
     alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
     backend_automatic_social_chats: __sdk::TableUpdate<AutomaticSocialChat>,
+    backend_bestiary_deductions: __sdk::TableUpdate<BackendBestiaryDeduction>,
     backend_case_battles: __sdk::TableUpdate<BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
@@ -3181,6 +3284,7 @@ pub struct DbUpdate {
     backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableUpdate<BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableUpdate<BackendDialogueTopicOption>,
+    backend_dialogue_witness_claims: __sdk::TableUpdate<BackendDialogueWitnessClaim>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
@@ -3196,9 +3300,11 @@ pub struct DbUpdate {
     backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
     backend_physiology_administrations: __sdk::TableUpdate<BackendPhysiologyAdministration>,
     backend_physiology_charts: __sdk::TableUpdate<BackendPhysiologyChart>,
+    backend_settlement_npc_relationships: __sdk::TableUpdate<BackendSettlementNpcRelationship>,
     backend_settlement_npcs: __sdk::TableUpdate<SettlementNpc>,
     backend_social_addresses: __sdk::TableUpdate<SocialAddress>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
+    backend_social_chat_receipts: __sdk::TableUpdate<BackendSocialChatReceipt>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -3287,6 +3393,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         backend_automatic_social_chats_table::parse_table_update(table_update)?,
                     )
                 }
+                "backend_bestiary_deductions" => db_update.backend_bestiary_deductions.append(
+                    backend_bestiary_deductions_table::parse_table_update(table_update)?,
+                ),
                 "backend_case_battles" => db_update.backend_case_battles.append(
                     backend_case_battles_table::parse_table_update(table_update)?,
                 ),
@@ -3334,6 +3443,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_dialogue_topic_options" => {
                     db_update.backend_dialogue_topic_options.append(
                         backend_dialogue_topic_options_table::parse_table_update(table_update)?,
+                    )
+                }
+                "backend_dialogue_witness_claims" => {
+                    db_update.backend_dialogue_witness_claims.append(
+                        backend_dialogue_witness_claims_table::parse_table_update(table_update)?,
                     )
                 }
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
@@ -3401,6 +3515,13 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_physiology_charts" => db_update.backend_physiology_charts.append(
                     backend_physiology_charts_table::parse_table_update(table_update)?,
                 ),
+                "backend_settlement_npc_relationships" => {
+                    db_update.backend_settlement_npc_relationships.append(
+                        backend_settlement_npc_relationships_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
                 "backend_settlement_npcs" => db_update.backend_settlement_npcs.append(
                     backend_settlement_npcs_table::parse_table_update(table_update)?,
                 ),
@@ -3409,6 +3530,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_social_beliefs" => db_update.backend_social_beliefs.append(
                     backend_social_beliefs_table::parse_table_update(table_update)?,
+                ),
+                "backend_social_chat_receipts" => db_update.backend_social_chat_receipts.append(
+                    backend_social_chat_receipts_table::parse_table_update(table_update)?,
                 ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -3929,6 +4053,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_automatic_social_chats",
             &self.backend_automatic_social_chats,
         );
+        diff.backend_bestiary_deductions = cache.apply_diff_to_table::<BackendBestiaryDeduction>(
+            "backend_bestiary_deductions",
+            &self.backend_bestiary_deductions,
+        );
         diff.backend_case_battles = cache.apply_diff_to_table::<BackendCaseBattle>(
             "backend_case_battles",
             &self.backend_case_battles,
@@ -3981,6 +4109,11 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<BackendDialogueTopicOption>(
                 "backend_dialogue_topic_options",
                 &self.backend_dialogue_topic_options,
+            );
+        diff.backend_dialogue_witness_claims = cache
+            .apply_diff_to_table::<BackendDialogueWitnessClaim>(
+                "backend_dialogue_witness_claims",
+                &self.backend_dialogue_witness_claims,
             );
         diff.backend_forage_receipts = cache.apply_diff_to_table::<BackendForageReceipt>(
             "backend_forage_receipts",
@@ -4051,6 +4184,11 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_physiology_charts",
             &self.backend_physiology_charts,
         );
+        diff.backend_settlement_npc_relationships = cache
+            .apply_diff_to_table::<BackendSettlementNpcRelationship>(
+                "backend_settlement_npc_relationships",
+                &self.backend_settlement_npc_relationships,
+            );
         diff.backend_settlement_npcs = cache.apply_diff_to_table::<SettlementNpc>(
             "backend_settlement_npcs",
             &self.backend_settlement_npcs,
@@ -4062,6 +4200,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.backend_social_beliefs = cache.apply_diff_to_table::<SocialBelief>(
             "backend_social_beliefs",
             &self.backend_social_beliefs,
+        );
+        diff.backend_social_chat_receipts = cache.apply_diff_to_table::<BackendSocialChatReceipt>(
+            "backend_social_chat_receipts",
+            &self.backend_social_chat_receipts,
         );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
@@ -4097,6 +4239,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_automatic_social_chats" => db_update
                     .backend_automatic_social_chats
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_bestiary_deductions" => db_update
+                    .backend_bestiary_deductions
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_case_battles" => db_update
                     .backend_case_battles
@@ -4136,6 +4281,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_dialogue_topic_options" => db_update
                     .backend_dialogue_topic_options
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_dialogue_witness_claims" => db_update
+                    .backend_dialogue_witness_claims
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
@@ -4182,6 +4330,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_physiology_charts" => db_update
                     .backend_physiology_charts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_settlement_npc_relationships" => db_update
+                    .backend_settlement_npc_relationships
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_settlement_npcs" => db_update
                     .backend_settlement_npcs
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -4190,6 +4341,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_social_chat_receipts" => db_update
+                    .backend_social_chat_receipts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -4420,6 +4574,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_automatic_social_chats" => db_update
                     .backend_automatic_social_chats
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_bestiary_deductions" => db_update
+                    .backend_bestiary_deductions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_case_battles" => db_update
                     .backend_case_battles
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4458,6 +4615,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_dialogue_topic_options" => db_update
                     .backend_dialogue_topic_options
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_dialogue_witness_claims" => db_update
+                    .backend_dialogue_witness_claims
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
@@ -4504,6 +4664,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_physiology_charts" => db_update
                     .backend_physiology_charts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_settlement_npc_relationships" => db_update
+                    .backend_settlement_npc_relationships
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_settlement_npcs" => db_update
                     .backend_settlement_npcs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4512,6 +4675,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_social_chat_receipts" => db_update
+                    .backend_social_chat_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -4738,6 +4904,7 @@ pub struct AppliedDiff<'r> {
     alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
     backend_automatic_social_chats: __sdk::TableAppliedDiff<'r, AutomaticSocialChat>,
+    backend_bestiary_deductions: __sdk::TableAppliedDiff<'r, BackendBestiaryDeduction>,
     backend_case_battles: __sdk::TableAppliedDiff<'r, BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
@@ -4752,6 +4919,7 @@ pub struct AppliedDiff<'r> {
     backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableAppliedDiff<'r, BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableAppliedDiff<'r, BackendDialogueTopicOption>,
+    backend_dialogue_witness_claims: __sdk::TableAppliedDiff<'r, BackendDialogueWitnessClaim>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
     backend_investigation_action_outcomes:
         __sdk::TableAppliedDiff<'r, BackendInvestigationActionOutcome>,
@@ -4772,9 +4940,12 @@ pub struct AppliedDiff<'r> {
     backend_physiology_administrations:
         __sdk::TableAppliedDiff<'r, BackendPhysiologyAdministration>,
     backend_physiology_charts: __sdk::TableAppliedDiff<'r, BackendPhysiologyChart>,
+    backend_settlement_npc_relationships:
+        __sdk::TableAppliedDiff<'r, BackendSettlementNpcRelationship>,
     backend_settlement_npcs: __sdk::TableAppliedDiff<'r, SettlementNpc>,
     backend_social_addresses: __sdk::TableAppliedDiff<'r, SocialAddress>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
+    backend_social_chat_receipts: __sdk::TableAppliedDiff<'r, BackendSocialChatReceipt>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -4872,6 +5043,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_automatic_social_chats,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendBestiaryDeduction>(
+            "backend_bestiary_deductions",
+            &self.backend_bestiary_deductions,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<BackendCaseBattle>(
             "backend_case_battles",
             &self.backend_case_battles,
@@ -4935,6 +5111,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendDialogueTopicOption>(
             "backend_dialogue_topic_options",
             &self.backend_dialogue_topic_options,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendDialogueWitnessClaim>(
+            "backend_dialogue_witness_claims",
+            &self.backend_dialogue_witness_claims,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
@@ -5012,6 +5193,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_physiology_charts,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendSettlementNpcRelationship>(
+            "backend_settlement_npc_relationships",
+            &self.backend_settlement_npc_relationships,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<SettlementNpc>(
             "backend_settlement_npcs",
             &self.backend_settlement_npcs,
@@ -5025,6 +5211,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SocialBelief>(
             "backend_social_beliefs",
             &self.backend_social_beliefs,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendSocialChatReceipt>(
+            "backend_social_chat_receipts",
+            &self.backend_social_chat_receipts,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -5995,6 +6186,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
         backend_automatic_social_chats_table::register_table(client_cache);
+        backend_bestiary_deductions_table::register_table(client_cache);
         backend_case_battles_table::register_table(client_cache);
         backend_case_site_pins_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
@@ -6008,6 +6200,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_dialogue_prompts_table::register_table(client_cache);
         backend_dialogue_sessions_table::register_table(client_cache);
         backend_dialogue_topic_options_table::register_table(client_cache);
+        backend_dialogue_witness_claims_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
@@ -6023,9 +6216,11 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_physical_evidence_inspections_table::register_table(client_cache);
         backend_physiology_administrations_table::register_table(client_cache);
         backend_physiology_charts_table::register_table(client_cache);
+        backend_settlement_npc_relationships_table::register_table(client_cache);
         backend_settlement_npcs_table::register_table(client_cache);
         backend_social_addresses_table::register_table(client_cache);
         backend_social_beliefs_table::register_table(client_cache);
+        backend_social_chat_receipts_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -6100,6 +6295,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "alcohol_consumption",
         "autoresolve_report",
         "backend_automatic_social_chats",
+        "backend_bestiary_deductions",
         "backend_case_battles",
         "backend_case_site_pins",
         "backend_character_affinities",
@@ -6113,6 +6309,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_dialogue_prompts",
         "backend_dialogue_sessions",
         "backend_dialogue_topic_options",
+        "backend_dialogue_witness_claims",
         "backend_forage_receipts",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",
@@ -6128,9 +6325,11 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_physical_evidence_inspections",
         "backend_physiology_administrations",
         "backend_physiology_charts",
+        "backend_settlement_npc_relationships",
         "backend_settlement_npcs",
         "backend_social_addresses",
         "backend_social_beliefs",
+        "backend_social_chat_receipts",
         "battle_loot_item",
         "battle_participant",
         "battle_result",

@@ -24,6 +24,7 @@ use adventuresim_stdb_client::{
     backend_dialogue_prompts_table::BackendDialoguePromptsTableAccess,
     backend_dialogue_sessions_table::BackendDialogueSessionsTableAccess,
     backend_dialogue_topic_options_table::BackendDialogueTopicOptionsTableAccess,
+    backend_dialogue_witness_claims_table::BackendDialogueWitnessClaimsTableAccess,
     backend_local_chat_messages_table::BackendLocalChatMessagesTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
@@ -147,6 +148,7 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "backend_dialogue_sessions",
     "backend_dialogue_participants",
     "backend_dialogue_events",
+    "backend_dialogue_witness_claims",
     "backend_dialogue_prompts",
     "backend_dialogue_topic_options",
     "battle_result",
@@ -321,6 +323,7 @@ impl LiveState {
         invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_sessions());
         invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_participants());
         invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_events());
+        invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_witness_claims());
         invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_prompts());
         invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_topic_options());
         invalidate_on_changes!(state.0._connection.db.battle_result());
@@ -398,6 +401,7 @@ impl LiveState {
             .add_query(|query| query.from.backend_dialogue_sessions())
             .add_query(|query| query.from.backend_dialogue_participants())
             .add_query(|query| query.from.backend_dialogue_events())
+            .add_query(|query| query.from.backend_dialogue_witness_claims())
             .add_query(|query| query.from.backend_dialogue_prompts())
             .add_query(|query| query.from.backend_dialogue_topic_options())
             .add_query(|query| query.from.morale_event())
@@ -681,6 +685,7 @@ mod tests {
         // renderer-facing cache accessor may expose their rows.
         assert!(source.contains("backend_local_chat_messages"));
         assert!(source.contains("backend_dialogue_sessions"));
+        assert!(source.contains("backend_dialogue_witness_claims"));
     }
 
     #[test]
@@ -697,6 +702,7 @@ mod tests {
         for private_table in [
             "backend_local_chat_messages",
             "backend_dialogue_sessions",
+            "backend_dialogue_witness_claims",
             "backend_case_battles",
             "settlement_outbreak",
             "backend_investigation_cases",

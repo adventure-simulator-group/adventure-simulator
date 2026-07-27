@@ -91,6 +91,7 @@ const BESTIARY_IMPLICATION_KEYS: &[&str] = &[
     "category",
     "support_bps",
     "lore_difficulty_milli",
+    "diagnostic_kind",
     "interpretation",
 ];
 const BESTIARY_CATEGORY_IDS: &[&str] = &[
@@ -781,6 +782,12 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                     5_000,
                                     &implication_at,
                                 )?;
+                                if let Some(kind) = implication.get("diagnostic_kind") {
+                                    let kind = kind.as_str().ok_or_else(|| {
+                                        format!("{implication_at}.diagnostic_kind: expected string")
+                                    })?;
+                                    id(kind, &format!("{implication_at}.diagnostic_kind"))?;
+                                }
                                 let interpretation = nonempty_string(
                                     implication,
                                     "interpretation",

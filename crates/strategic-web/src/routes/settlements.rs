@@ -12,7 +12,7 @@ use adventuresim_core::{
 use adventuresim_world_schema::OfficialReligion;
 use axum::{
     Form, Json, Router,
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, rejection::FormRejection},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -311,6 +311,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/social",
             get(party_social).post(perform_social_action),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/social/chat",
+            post(chat_with_party_member),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/social/automatic",
@@ -4484,6 +4488,17 @@ struct SocialActionForm {
 }
 
 #[derive(Deserialize)]
+struct CasualChatForm {
+    requested_minutes: u64,
+    action_id: String,
+}
+
+#[derive(Deserialize)]
+struct BackendSocialChatReceiptRow {
+    outcome: String,
+}
+
+#[derive(Deserialize)]
 struct AutomaticSocialChatForm {
     enabled: Option<String>,
 }
@@ -4569,6 +4584,77 @@ async fn perform_social_action(
     .into_response()
 }
 
+fn valid_casual_chat_minutes(minutes: u64) -> bool {
+    (15..=8 * 60).contains(&minutes) && minutes % 15 == 0
+}
+
+fn valid_casual_chat_action_id(action_id: &str) -> bool {
+    !action_id.is_empty()
+        && action_id.len() <= 96
+        && action_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+async fn chat_with_party_member(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+    Form(form): Form<CasualChatForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return (StatusCode::UNAUTHORIZED, "Choose a character first").into_response();
+    };
+    if !valid_casual_chat_minutes(form.requested_minutes) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Choose 15 minutes to 8 hours in 15-minute increments",
+        )
+            .into_response();
+    }
+    if !valid_casual_chat_action_id(&form.action_id) {
+        return (StatusCode::BAD_REQUEST, "Invalid conversation action ID").into_response();
+    }
+    let result = state
+        .db
+        .call(
+            "chat_with_party_member",
+            &[
+                json!(actor_id),
+                json!(target_id),
+                json!(form.requested_minutes),
+                json!(&form.action_id),
+            ],
+        )
+        .await;
+    let feedback = match result {
+        Ok(()) => state
+            .db
+            .query_one::<BackendSocialChatReceiptRow>(&format!(
+                "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {actor_id}",
+                sql_string_literal(&format!("{actor_id}:{}", form.action_id))
+            ))
+            .await
+            .ok()
+            .flatten()
+            .map_or("chat_unavailable", |row| match row.outcome.as_str() {
+                "positive" => "chat_positive",
+                "mixed" => "chat_mixed",
+                "negative" => "chat_negative",
+                _ => "chat_unavailable",
+            }),
+        Err(error) => {
+            tracing::warn!(%error, actor_id, target_id, "casual party chat rejected");
+            "chat_unavailable"
+        }
+    };
+    Redirect::to(&building.append_to(format!(
+        "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
+    )))
+    .into_response()
+}
+
 fn social_action_error_feedback(error: &str) -> &'static str {
     if error.contains("needs time before it can be tried again") {
         "cooldown"
@@ -4631,6 +4717,22 @@ fn social_feedback(value: Option<&str>) -> Option<crate::templates::settlement::
         }),
         Some("unavailable") => Some(SocialFeedback {
             message: "The social action could not be completed right now.",
+            is_error: true,
+        }),
+        Some("chat_positive") => Some(SocialFeedback {
+            message: "The conversation brings you closer.",
+            is_error: false,
+        }),
+        Some("chat_mixed") => Some(SocialFeedback {
+            message: "The conversation has warm moments and awkward ones.",
+            is_error: false,
+        }),
+        Some("chat_negative") => Some(SocialFeedback {
+            message: "The conversation leaves some friction between you.",
+            is_error: false,
+        }),
+        Some("chat_unavailable") => Some(SocialFeedback {
+            message: "The conversation could not be completed right now.",
             is_error: true,
         }),
         _ => None,
@@ -5037,7 +5139,7 @@ async fn rest(
     State(state): State<AppState>,
     Path((id, kind)): Path<(String, String)>,
     session: Session,
-    Form(form): Form<RestForm>,
+    form: Result<Form<RestForm>, FormRejection>,
 ) -> Response {
     let at_inn = match kind.as_str() {
         "inn" => true,
@@ -5046,6 +5148,20 @@ async fn rest(
     };
     let Some(character_id) = session.character_id_u64() else {
         return Html("<h1>Choose a character first</h1>".to_string()).into_response();
+    };
+    let form = match form {
+        Ok(Form(form)) => form,
+        Err(error) => {
+            tracing::warn!(
+                character_id,
+                requested_settlement_id_length = id.len(),
+                service = kind.as_str(),
+                rejection_status = %error.status(),
+                error = %error,
+                "settlement rest form extraction rejected request"
+            );
+            return error.into_response();
+        }
     };
     let settlements: Vec<Settlement> = state
         .db
@@ -5069,6 +5185,22 @@ async fn rest(
     let requested_minutes = match settlement_rest_minutes(&form) {
         Ok(minutes) => minutes,
         Err(message) => {
+            let unit = match form.unit.as_str() {
+                "hours" => "hours",
+                "days" => "days",
+                _ => "unknown",
+            };
+            tracing::warn!(
+                character_id,
+                requested_settlement_id = %id,
+                requested_minutes = ?form.requested_minutes,
+                at_inn,
+                service = kind.as_str(),
+                unit,
+                duration_length = form.duration.len(),
+                reason = message,
+                "settlement rest duration validation rejected request"
+            );
             return (
                 axum::http::StatusCode::BAD_REQUEST,
                 Html(
@@ -5098,6 +5230,10 @@ async fn rest(
             .await;
     let before_notoriety =
         query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
+    let character_settlement_id = before_character
+        .as_ref()
+        .and_then(|(character, _)| character.current_settlement_id.as_deref())
+        .unwrap_or("<none>");
     if let Err(error) = state
         .db
         .call(
@@ -5106,6 +5242,16 @@ async fn rest(
         )
         .await
     {
+        tracing::warn!(
+            character_id,
+            requested_settlement_id = %id,
+            character_settlement_id,
+            requested_minutes,
+            at_inn,
+            service = kind.as_str(),
+            error = %error,
+            "settlement rest reducer rejected request"
+        );
         return (
             StatusCode::BAD_REQUEST,
             Html(
@@ -6570,7 +6716,10 @@ pub(crate) async fn get_active_party_members(
 
 #[cfg(test)]
 mod social_notification_query_tests {
-    use super::{social_action_blocked_by_actor, social_action_error_feedback, social_feedback};
+    use super::{
+        social_action_blocked_by_actor, social_action_error_feedback, social_feedback,
+        valid_casual_chat_action_id, valid_casual_chat_minutes,
+    };
     use adventuresim_core::social::SocialActionKind;
 
     #[test]
@@ -6590,6 +6739,26 @@ mod social_notification_query_tests {
             "This concern is addressed."
         );
         assert!(social_feedback(Some("made-up")).is_none());
+    }
+
+    #[test]
+    fn casual_chat_forms_validate_stable_opaque_action_ids() {
+        assert!(valid_casual_chat_minutes(15));
+        assert!(valid_casual_chat_minutes(480));
+        assert!(!valid_casual_chat_minutes(14));
+        assert!(!valid_casual_chat_minutes(481));
+        assert!(valid_casual_chat_action_id("chat-19af-2"));
+        assert!(!valid_casual_chat_action_id(""));
+        assert!(!valid_casual_chat_action_id("chat:19af"));
+
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn chat_with_party_member")
+            .nth(1)
+            .and_then(|tail| tail.split("fn social_action_error_feedback").next())
+            .expect("party chat handler");
+        assert!(handler.contains("json!(&form.action_id)"));
+        assert!(!handler.contains("SystemTime::now"));
     }
 
     #[test]
@@ -7129,6 +7298,112 @@ mod rest_form_tests {
             "You do not have enough coin for that inn stay."
         );
         assert!(!safe_rest_error("private injury authority 123").contains("123"));
+    }
+
+    #[test]
+    fn rest_form_extraction_failures_are_logged_without_request_contents() {
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn rest(")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn query_single").next())
+            .expect("settlement rest handler");
+        let extraction = handler
+            .split("let form = match form")
+            .nth(1)
+            .and_then(|tail| tail.split("let settlements").next())
+            .expect("form extraction branch");
+        assert!(extraction.contains("tracing::warn!("));
+        for field in [
+            "character_id",
+            "requested_settlement_id_length = id.len()",
+            "service = kind.as_str()",
+            "rejection_status = %error.status()",
+            "error = %error",
+        ] {
+            assert!(extraction.contains(field), "{field}");
+        }
+        assert!(extraction.contains("return error.into_response()"));
+        assert!(!extraction.contains("requested_settlement_id = %id"));
+        assert!(!extraction.contains("form.duration"));
+        assert!(!extraction.contains("request body"));
+        assert!(
+            handler.find("let Some(character_id)") < handler.find("let form = match form"),
+            "authentication precedes malformed-form warning"
+        );
+    }
+
+    #[test]
+    fn rest_duration_validation_logs_bounded_metadata_before_safe_notice() {
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn rest(")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn query_single").next())
+            .expect("settlement rest handler");
+        let validation = handler
+            .split("let requested_minutes = match settlement_rest_minutes(&form)")
+            .nth(1)
+            .and_then(|tail| tail.split("let before_character").next())
+            .expect("rest duration validation branch");
+        let warning = validation.find("tracing::warn!(").expect("warning");
+        let safe_notice = validation
+            .find("strategic_notice_page(")
+            .expect("safe notice");
+        assert!(warning < safe_notice);
+        for field in [
+            "character_id",
+            "requested_settlement_id = %id",
+            "requested_minutes = ?form.requested_minutes",
+            "at_inn",
+            "service = kind.as_str()",
+            "duration_length = form.duration.len()",
+            "reason = message",
+        ] {
+            assert!(validation[..safe_notice].contains(field), "{field}");
+        }
+        for category in [
+            "\"hours\" => \"hours\"",
+            "\"days\" => \"days\"",
+            "_ => \"unknown\"",
+        ] {
+            assert!(validation[..safe_notice].contains(category), "{category}");
+        }
+        assert!(!validation.contains("duration = %form.duration"));
+        assert!(!validation.contains("unit = %form.unit"));
+    }
+
+    #[test]
+    fn rest_reducer_rejections_are_logged_before_the_sanitized_notice() {
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn rest(")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn query_single").next())
+            .expect("settlement rest handler");
+        let reducer_error = handler
+            .split("if let Err(error)")
+            .nth(1)
+            .expect("rest reducer error branch");
+        let warning = reducer_error.find("tracing::warn!(").expect("warning");
+        let sanitization = reducer_error
+            .find("safe_rest_error(&error.to_string())")
+            .expect("safe response");
+        assert!(warning < sanitization);
+        for field in [
+            "character_id",
+            "requested_settlement_id = %id",
+            "character_settlement_id",
+            "requested_minutes",
+            "at_inn",
+            "service = kind.as_str()",
+            "error = %error",
+        ] {
+            assert!(reducer_error[..sanitization].contains(field), "{field}");
+        }
+        assert!(handler.contains("character.current_settlement_id.as_deref()"));
+        assert!(handler.contains(".unwrap_or(\"<none>\")"));
+        assert!(reducer_error.contains("settlement rest reducer rejected request"));
     }
 
     #[test]

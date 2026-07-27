@@ -338,6 +338,10 @@ pub fn supported_investigation_approaches(
         .iter()
         .map(|action| action.route)
         .collect::<Vec<_>>();
+    let visible_contact_ids = crate::quest_generation::player_visible_testimony_sequence(generated)
+        .into_iter()
+        .map(|(witness, _)| witness.npc_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
     routes.sort();
     routes.dedup();
     routes
@@ -361,6 +365,12 @@ pub fn supported_investigation_approaches(
                 });
             }
             chain.reverse();
+            if chain.iter().any(|action| {
+                action.target_kind == "contact"
+                    && !visible_contact_ids.contains(action.target_id.as_str())
+            }) {
+                return None;
+            }
             let (lead_source, lead_quote) = testimony_for_route(generated, route)
                 .unwrap_or_else(|| ("the local accounts".into(), terminal.safe_summary.clone()));
             Some(NpcInvestigationApproach {
@@ -476,20 +486,19 @@ pub fn resolve_investigation_approach(
 }
 
 fn testimony_for_route(generated: &GeneratedCase, route: RouteClass) -> Option<(String, String)> {
-    let mut statements = generated.witnesses.iter().flat_map(|witness| {
-        witness
-            .testimony
-            .iter()
-            .map(move |statement| (witness, statement))
-    });
+    let statements = crate::quest_generation::player_visible_testimony_sequence(generated);
     let selected = match route {
         RouteClass::PhysicalTrail => statements
+            .iter()
+            .copied()
             .filter(|(_, statement)| statement.site_id.is_some())
             .next(),
         RouteClass::PatternSurveillance => statements
+            .iter()
+            .copied()
             .filter(|(_, statement)| statement.site_id.is_none())
             .next(),
-        RouteClass::SocialInquiry => statements.next(),
+        RouteClass::SocialInquiry => statements.first().copied(),
     }?;
     Some((
         selected.0.display_name.clone(),
@@ -753,6 +762,59 @@ mod tests {
         )
         .unwrap();
         assert_ne!(first.route, changed_strategy_retry.route);
+    }
+
+    #[test]
+    fn generated_routes_never_use_withheld_or_unreferred_testimony() {
+        let mut generated = generated(TemplateFamily::RecurringDepredation);
+        generated.witnesses[0]
+            .testimony
+            .push(crate::quest_generation::TestimonyDraft {
+                proposition_id: "withheld-canary-proposition".into(),
+                reliability: crate::quest_generation::Reliability::Truthful,
+                delivery: crate::quest_generation::TestimonyDelivery::Withheld,
+                truthful_text: "WITHHELD_CANARY".into(),
+                spoken_text: "WITHHELD_CANARY".into(),
+                challenge_text: "WITHHELD_CANARY".into(),
+                challenge_responses: crate::quest_generation::TestimonyChallengeResponses {
+                    charm: Some("CANARY_CHARM".into()),
+                    command: Some("CANARY_COMMAND".into()),
+                    bluff: Some("CANARY_BLUFF".into()),
+                },
+                destination_stage: "textual".into(),
+                site_id: None,
+                corrects_proposition_id: None,
+                referred_witness_ids: vec![],
+            });
+        for statement in &mut generated.witnesses[0].testimony {
+            statement.referred_witness_ids.clear();
+        }
+        generated.witnesses[1].display_name = "UNREFERRED_CANARY".into();
+        generated.witnesses[1].testimony[0].spoken_text = "UNREFERRED_CANARY".into();
+        generated
+            .actions
+            .iter_mut()
+            .find(|action| action.target_kind == "contact")
+            .unwrap()
+            .target_id = generated.witnesses[1].npc_id.clone();
+        let hidden_contact_routes = generated
+            .actions
+            .iter()
+            .filter(|action| {
+                action.target_kind == "contact" && action.target_id == generated.witnesses[1].npc_id
+            })
+            .map(|action| action.route)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert!(!hidden_contact_routes.is_empty());
+        let approaches = supported_investigation_approaches(&generated);
+        let rendered = format!("{approaches:?}");
+        assert!(!rendered.contains("WITHHELD_CANARY"));
+        assert!(!rendered.contains("UNREFERRED_CANARY"));
+        assert!(
+            approaches
+                .iter()
+                .all(|approach| !hidden_contact_routes.contains(&approach.route))
+        );
     }
 
     #[test]

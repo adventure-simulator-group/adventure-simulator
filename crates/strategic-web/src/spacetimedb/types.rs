@@ -1,13 +1,5 @@
 //! SpacetimeDB response types
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StoredBestiaryResult {
-    pub category: adventuresim_world_schema::BestiaryCategory,
-    pub support_bps: u16,
-    pub interpretation: String,
-}
-
 #[derive(Clone, Debug, Serialize)]
 pub struct BestiaryEnemyLoreView {
     pub id: String,
@@ -36,67 +28,24 @@ pub fn bestiary_enemy_lore(
         .collect()
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct BestiaryResultView {
-    pub category: String,
-    pub label: String,
-    pub support_bps: u16,
-    pub support_label: &'static str,
-    pub interpretation: String,
-    pub enemies: Vec<BestiaryEnemyLoreView>,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendBestiaryDeduction {
+    pub owner_character_id: u64,
+    pub case_id: String,
+    pub monster_kind: String,
+    pub support_band: String,
+    pub provenance_json: String,
+    pub updated_at: u64,
 }
 
-pub fn bestiary_support_label(support_bps: u16) -> &'static str {
-    match support_bps {
-        0 => "rules out",
-        1..=2_500 => "argues against",
-        2_501..=4_999 => "weakly argues against",
-        5_000 => "inconclusive",
-        5_001..=7_499 => "supports",
-        7_500..=9_999 => "strongly supports",
-        _ => "conclusive support",
+impl BackendBestiaryDeduction {
+    pub fn provenance(&self) -> Vec<String> {
+        serde_json::from_str::<Vec<String>>(&self.provenance_json)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|item| !item.trim().is_empty() && item.len() <= 1_024)
+            .collect()
     }
-}
-
-pub fn bestiary_support_color(support_bps: u16) -> String {
-    let bounded = support_bps.min(10_000);
-    if bounded <= 5_000 {
-        format!("rgb(255 {} 0)", (255 * u32::from(bounded) + 2_500) / 5_000)
-    } else {
-        format!(
-            "rgb({} 255 0)",
-            (255 * u32::from(10_000 - bounded) + 2_500) / 5_000
-        )
-    }
-}
-
-impl From<StoredBestiaryResult> for BestiaryResultView {
-    fn from(result: StoredBestiaryResult) -> Self {
-        let category = result.category;
-        Self {
-            category: category.id().into(),
-            label: category.label().into(),
-            support_bps: result.support_bps,
-            support_label: bestiary_support_label(result.support_bps),
-            interpretation: result.interpretation,
-            enemies: bestiary_enemy_lore(category),
-        }
-    }
-}
-
-pub fn bestiary_result_views(payload: &str) -> Vec<BestiaryResultView> {
-    let mut categories = std::collections::BTreeSet::new();
-    serde_json::from_str::<Vec<StoredBestiaryResult>>(payload)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|result| {
-            categories.insert(result.category)
-                && result.support_bps <= 10_000
-                && !result.interpretation.trim().is_empty()
-                && result.interpretation.len() <= 1_024
-        })
-        .map(Into::into)
-        .collect()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -119,7 +68,6 @@ pub struct BackendInvestigationJournalEntry {
     pub contradiction_group: String,
     pub corrected_by: String,
     pub supersedes: String,
-    pub bestiary_results_json: String,
     pub recorded_at: u64,
 }
 
@@ -229,7 +177,6 @@ pub struct BackendPhysicalEvidenceInspection {
     pub stat_label: String,
     pub passed: bool,
     pub narration: String,
-    pub bestiary_results_json: String,
     pub attempted_at: u64,
 }
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
@@ -1852,23 +1799,19 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn bestiary_probability_colors_have_exact_anchors_and_safe_payloads() {
-        assert_eq!(bestiary_support_color(0), "rgb(255 0 0)");
-        assert_eq!(bestiary_support_color(5_000), "rgb(255 255 0)");
-        assert_eq!(bestiary_support_color(10_000), "rgb(0 255 0)");
-        assert_eq!(
-            bestiary_result_views(
-                r#"[{"category":"beast","support_bps":10000,"interpretation":"Canine print"}]"#
-            )
-            .len(),
-            1
-        );
-        assert!(
-            bestiary_result_views(
-                r#"[{"category":"beast","support_bps":10000,"interpretation":"Canine print","difficulty_milli":1}]"#
-            )
-            .is_empty()
-        );
+    fn bestiary_deduction_provenance_is_bounded_and_contains_no_score() {
+        let result = BackendBestiaryDeduction {
+            owner_character_id: 1,
+            case_id: "case".into(),
+            monster_kind: "Wolf".into(),
+            support_band: "plausible".into(),
+            provenance_json: r#"["received report from a shepherd"]"#.into(),
+            updated_at: 1,
+        };
+        assert_eq!(result.provenance(), ["received report from a shepherd"]);
+        let serialized = serde_json::to_string(&result).unwrap();
+        assert!(!serialized.contains("support_bps"));
+        assert!(!serialized.contains("score"));
     }
 
     #[test]

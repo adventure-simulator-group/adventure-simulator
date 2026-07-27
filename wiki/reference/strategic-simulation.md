@@ -110,7 +110,15 @@ fixture seeds one deterministic influenza episode behind the same claimed-run ca
 other simulator-only setup. Policy observes only public condition and the narrow public
 symptomatic/critical signal, buys a fixed concrete preparation, and invokes the generic administration
 reducer without reading infection identity, crafting, diagnosing, or selecting an effect by disease.
-It rests in bounded one-day steps until ready. While recovery is active it authoritatively replaces the saved
+The policy reproduces the player-visible herbalist quote from the public item definition, visible
+storefront stock, and the gateway-projected local-problem trade modifier. Affordability includes the
+visible cost of the required one-day rest venue, preferring a free temple to a paid inn. An affordable symptomatic character buys a course;
+an unaffordable character, a settlement without an herbalist, or a nonsymptomatic convalescent
+instead takes bounded one-day natural recovery. Equipment maintenance retains one locally quoted
+course as an emergency reserve rather than consuming every coin before a later symptom becomes
+visible. It rests in bounded one-day steps until ready. Before each choice, the trace records public
+condition, symptomatic status, settlement, purse, quote, affordability, action, and reason. While
+recovery is active it authoritatively replaces the saved
 personality schedule with pure rest, then restores that profile schedule after recovery so labor or
 thievery cannot interrupt convalescence with an incident. Quests remain suppressed while a member is unsafe. Reports audit
 diagnosis attempts/results, crafting or purchases, medication equips, treatment gold and time,
@@ -119,8 +127,12 @@ recoveries, suppression, and terminal deaths.
 Safety is intentionally strict. URLs are parsed structurally and must be an
 exact credential-free HTTP loopback origin with no path, query, or fragment.
 The command accepts only an `adventuresim-sim-*` database and refuses any
-pre-existing run, character, party, or settlement state. It atomically claims
-the fresh database with an owner identity and nonce before seeding. Bootstrap
+pre-existing run, character, or party state. Fixture mode also refuses any
+settlement or import state. Full-world mode permits settlements only when a
+completed `world_data_import` proves they came from the pinned compiled world,
+and records its artifact ID and manifest digest in the report. It atomically
+claims the database with an owner identity and nonce before creating simulation
+characters. Bootstrap
 configuration requires that claim and permanently marks each simulated
 character by run and agent ID; simulated and ordinary characters cannot merge
 parties. In addition, ordinary module builds compile with simulation claims
@@ -161,7 +173,8 @@ cargo run -p adventuresim-strategic-sim -- run --seed 42 --population 100 --days
 cargo run -p adventuresim-strategic-sim -- replay --report report.json
 cargo run -p adventuresim-strategic-sim -- matched --seed 42 --days 365
 # Safe disposable integration run (requires local SpacetimeDB 2.6.1):
-just strategic-sim-core-loop 42 8 20 30 2
+just strategic-sim-core-loop target/sim-runs/fixture-001 42 8 20 30 2
+just strategic-sim-core-loop-world target/sim-runs/world-001 42 8 20 30 2
 ```
 
 ## Quest evaluators
@@ -274,7 +287,7 @@ labor day; all accommodation and food costs still use ordinary currency rules.
 Use the normal isolated recipe for the scripted policy:
 
 ```powershell
-just strategic-sim-core-loop 42 8 20 30 2
+just strategic-sim-core-loop-world target/sim-runs/world-001 42 8 20 30 2
 ```
 
 Direct expert invocation can opt into an OpenAI-compatible strategy policy:
@@ -283,6 +296,8 @@ Direct expert invocation can opt into an OpenAI-compatible strategy policy:
 cargo run -p adventuresim-strategic-sim -- core-loop `
   --host http://127.0.0.1:3000 --database adventuresim-sim-UNIQUE `
   --run-nonce UNIQUE-NONCE --npc-strategy-policy openai `
+  --imported-world --expected-world-manifest-digest PINNED-DIGEST `
+  --output report.json `
   --npc-allow-network --npc-api-key-env OPENAI_API_KEY `
   --npc-stories-output npc-adventurer-stories.md
 ```
@@ -321,6 +336,19 @@ Direct `core-loop` invocation is intentionally an expert-only path: its process
 must inherit the same `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN` used to compile and
 publish that disposable module. There is no token CLI option. Prefer the recipe,
 which keeps the capability confined to one shell process and always cleans up.
+
+The full-world recipe is the authoritative core-loop workflow. It publishes a
+nonce database with the simulation capability, loads exactly
+`target/world-1544.json`, verifies the completed import through the simulator's
+typed subscription, checks the file's size and SHA-256 against
+`world-runtime-release.lock.json`, requires the observed import manifest to
+match that verified file, then runs without calling `seed_simulation_world`. It
+chooses the lexicographically first imported settlement ID so the loaded-world
+start is deterministic. The explicit output directory must not exist. A
+successful run contains `report.json`, `npc-adventurer-stories.md`, and
+`launcher.json`; failed launches retain `launcher.json` with the failed stage.
+The launcher attempts to delete the disposable database on every exit path and
+reports `cleanup_failed` with a nonzero exit if deletion is not confirmed.
 
 The reducer-backed core loop subscribes to strategic encounters and resolves
 each through the same public reducer used by the Map/camp UI. Its report records

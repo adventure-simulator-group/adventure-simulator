@@ -88,10 +88,11 @@ left with a craftsperson at the current settlement.
 
 Inn rest costs 2 gold per started day and includes full board: elapsed calories
 and ordinary drinking water are covered, existing food and water deficits are
-cleared, and personal and party provisions are preserved. Temple rest is free
-sanctuary intended for characters down on their luck; it does not provide food
-or drinking water. A future karma system will account for taking undue
-advantage of it.
+cleared, and personal and party provisions are preserved. Ordinary settlement
+water is also consumed automatically during non-inn settlement rest, clearing
+thirst without spending carried water. Temple rest is free sanctuary intended
+for characters down on their luck, but it does not provide food. A future karma
+system will account for taking undue advantage of it.
 
 Convalescence, blood recovery, and automatic field maintenance use only the
 interval's unallocated Leisure minutes. A fully allocated 24-hour schedule
@@ -110,7 +111,7 @@ The rest summary itemizes the selected inn full-board charge separately from
 other net spending during the interval, such as alcohol or apprenticeship,
 without attributing that additional spending to a single activity.
 
-Strategic travel adds calories to the fatigue reservoir at the current marching calibration of 6,000 calories per full day. It also consumes food and water proportionally through the persistent strategic-needs state. The fatigue reservoir remains a separate representation of exertion and future sleep pressure: eating does not erase the fatigue caused by marching. Travel, camp, temple, and private rest use carried provisions; paid inn rest feeds and hydrates its guest as part of full board. Recent morale events decay against each character's absolute strategic minute, so resting and travel both move them toward expiry.
+Strategic travel adds calories to the fatigue reservoir at the current marching calibration of 6,000 calories per full day. It also consumes food and water proportionally through the persistent strategic-needs state. The fatigue reservoir remains a separate representation of exertion and future sleep pressure: eating does not erase the fatigue caused by marching. Travel, camp, and private rest use carried provisions. Temple rest uses carried food and ordinary settlement water; paid inn rest feeds and hydrates its guest as part of full board. Recent morale events decay against each character's absolute strategic minute, so resting and travel both move them toward expiry.
 
 The calendar treats Day 7 and every seventh day thereafter as Sunday. A religious character who is in a settlement on Sunday receives an explicit call to keep a full day of worship and rest. Traveling during any part of Sunday counts as refusing that call. The server applies the same continuous Fervor- and party-Command-based morale penalty once for that Sunday, including when a journey begins Saturday night and ends Monday morning. A pending Sunday demand is automatically resolved as refused when the party departs; already resolved Sundays cannot be penalized twice.
 

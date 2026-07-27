@@ -10,6 +10,7 @@ pub const AFFINITY_MIN: f32 = -100.0;
 pub const AFFINITY_MAX: f32 = 100.0;
 pub const AFFINITY_HALF_LIFE_MINUTES: u64 = 30 * 24 * 60;
 pub const SOCIAL_COOLDOWN_MINUTES: u64 = 24 * 60;
+pub const SOCIAL_RESPONSE_MINUTES: u64 = 5;
 pub const DISCOVERY_TRAINING_HOURS: f32 = 0.25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -643,6 +644,103 @@ pub struct SocialOutcome {
     pub revealed_belief: bool,
 }
 
+/// The small personality surface used by an ordinary conversation.
+///
+/// Codes use the canonical personality values: neutral is zero, while one and
+/// two are the opposed authored traits for Sociability and Outlook. Keeping
+/// this input explicit lets settlement NPCs use their authored Mirth and
+/// Transparency while treating personality axes they do not own as neutral.
+#[derive(Debug, Clone, Copy)]
+pub struct CasualChatDisposition {
+    pub mirth: Mirth,
+    pub transparency: Transparency,
+    pub sociability: i8,
+    pub outlook: i8,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CasualChatInput {
+    pub charm_check: f32,
+    pub insight_check: f32,
+    pub affinity: f32,
+    pub familiarity_hours: f32,
+    pub actor: CasualChatDisposition,
+    pub target: CasualChatDisposition,
+    /// Injected deterministic roll, from zero to one, for one quarter hour.
+    pub roll: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CasualChatOutcome {
+    pub positive: bool,
+    pub morale_delta: f32,
+    pub affinity_delta: f32,
+}
+
+/// Mutual personality fit for an unstructured conversation. Matching strong
+/// traits help, opposed traits hinder, and neutral traits reveal nothing about
+/// the outcome on their own.
+pub fn casual_chat_personality_fit(
+    actor: CasualChatDisposition,
+    target: CasualChatDisposition,
+) -> f32 {
+    let paired = |left: i8, right: i8, same: f32, opposed: f32| {
+        if left == 0 || right == 0 {
+            0.0
+        } else if left == right {
+            same
+        } else {
+            opposed
+        }
+    };
+    let mirth = match (actor.mirth, target.mirth) {
+        (Mirth::Neutral, _) | (_, Mirth::Neutral) => 0.0,
+        (left, right) if left == right => 0.45,
+        _ => -0.5,
+    };
+    let transparency = match (actor.transparency, target.transparency) {
+        (Transparency::Neutral, _) | (_, Transparency::Neutral) => 0.0,
+        (left, right) if left == right => 0.25,
+        _ => -0.2,
+    };
+    (mirth
+        + transparency
+        + paired(actor.sociability, target.sociability, 0.35, -0.4)
+        + paired(actor.outlook, target.outlook, 0.2, -0.25))
+    .clamp(-1.5, 1.5)
+}
+
+/// Resolve one quarter hour of ordinary conversation. Even a skilled,
+/// compatible pair can have an awkward stretch, while poor matches can still
+/// occasionally connect. The result deliberately exposes no chance or roll.
+pub fn resolve_casual_chat(input: CasualChatInput) -> CasualChatOutcome {
+    let personality_fit = casual_chat_personality_fit(input.actor, input.target);
+    let relationship = (input.affinity / 100.0).clamp(-1.0, 1.0) * 0.12
+        + (input.familiarity_hours / 100.0).min(1.0) * 0.08;
+    let chance = (0.38
+        + input.charm_check.clamp(0.0, 5.0) * 0.065
+        + input.insight_check.clamp(0.0, 5.0) * 0.035
+        + personality_fit * 0.12
+        + relationship)
+        .clamp(0.08, 0.92);
+    let positive = input.roll.clamp(0.0, 1.0) < chance;
+    let morale_delta = if positive {
+        0.35 + input.charm_check.clamp(0.0, 5.0) * 0.05
+    } else {
+        -(0.3 + (-personality_fit).max(0.0) * 0.2)
+    };
+    let affinity_delta = if positive {
+        affinity_gain(input.affinity, morale_delta)
+    } else {
+        morale_delta * 0.65
+    };
+    CasualChatOutcome {
+        positive,
+        morale_delta,
+        affinity_delta,
+    }
+}
+
 pub fn settle_affinity(anchor: f32, elapsed_minutes: u64) -> f32 {
     if !anchor.is_finite() {
         return 0.0;
@@ -775,9 +873,242 @@ pub fn diagnosed_axis(
     (belief, confidence)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimAssessmentDirection {
+    Unknown,
+    LikelyFalse,
+    LikelyTrue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClaimAssessment {
+    pub direction: ClaimAssessmentDirection,
+    /// Bounded presentation strength. This is a noisy demeanor perception, not
+    /// confidence in factual accuracy.
+    pub strength: f32,
+}
+
+/// Produce a fallible observer perception for one atomic claim.
+///
+/// Noise deliberately dominates weak checks, so any demeanor can produce any
+/// colored direction. Better Insight strengthens a non-ambiguous private
+/// demeanor signal without ever making it certain.
+pub fn assess_testimony_claim(
+    demeanor_truth_signal: f32,
+    insight_check: f32,
+    roll: f32,
+) -> ClaimAssessment {
+    let insight = insight_check.clamp(0.0, 5.0);
+    let noise = (roll.clamp(0.0, 1.0) * 2.0 - 1.0) * 0.75;
+    let signal = demeanor_truth_signal.clamp(-1.0, 1.0) * (0.1 + insight * 0.06) + noise;
+    let absolute = signal.abs();
+    let direction = if absolute < 0.18 {
+        ClaimAssessmentDirection::Unknown
+    } else if signal < 0.0 {
+        ClaimAssessmentDirection::LikelyFalse
+    } else {
+        ClaimAssessmentDirection::LikelyTrue
+    };
+    ClaimAssessment {
+        direction,
+        strength: ((absolute - 0.18).max(0.0) / 0.82).clamp(0.0, 1.0),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimChallengeApproach {
+    Charm,
+    Command,
+    Bluff,
+}
+
+impl ClaimChallengeApproach {
+    pub const fn skill_name(self) -> &'static str {
+        match self {
+            Self::Charm => "Charm",
+            Self::Command => "Command",
+            Self::Bluff => "Deception",
+        }
+    }
+
+    const fn social_action(self) -> SocialActionKind {
+        match self {
+            Self::Charm => SocialActionKind::LightenMood,
+            Self::Command => SocialActionKind::Rally,
+            Self::Bluff => SocialActionKind::Reframe,
+        }
+    }
+
+    pub const fn leverage(self) -> f32 {
+        match self {
+            Self::Charm => 0.0,
+            Self::Command => 0.45,
+            Self::Bluff => 0.9,
+        }
+    }
+
+    pub const fn failure_affinity_loss(self) -> f32 {
+        match self {
+            Self::Charm => -0.8,
+            Self::Command => -1.4,
+            Self::Bluff => -2.5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ClaimChallengeInput {
+    pub approach: ClaimChallengeApproach,
+    pub claim_is_factually_accurate: bool,
+    pub skill_check: f32,
+    pub affinity: f32,
+    pub familiarity_hours: f32,
+    /// Current settled NPC morale in the ordinary -100..=100 strategic range.
+    /// It contributes at most +/-0.12 chance before the common clamp.
+    pub current_morale: f32,
+    pub target_transparency: Transparency,
+    pub target_mirth: Mirth,
+    pub roll: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClaimChallengeOutcome {
+    pub succeeded: bool,
+    pub morale_delta: f32,
+    pub affinity_delta: f32,
+}
+
+/// Resolve a response to one atomic claim. Truthful claims always use the same
+/// safe failed-challenge result as an insufficient check against an untrue
+/// claim, so callers cannot infer why a response failed.
+pub fn resolve_claim_challenge(input: ClaimChallengeInput) -> ClaimChallengeOutcome {
+    let personality_fit = match (
+        input.approach,
+        input.target_transparency,
+        input.target_mirth,
+    ) {
+        (ClaimChallengeApproach::Charm, _, Mirth::Merry) => 0.45,
+        (ClaimChallengeApproach::Charm, _, Mirth::Grave) => -0.45,
+        (ClaimChallengeApproach::Command, Transparency::Open, _) => -0.3,
+        (ClaimChallengeApproach::Command, Transparency::Guarded, _) => 0.25,
+        (ClaimChallengeApproach::Bluff, Transparency::Open, _) => 0.25,
+        (ClaimChallengeApproach::Bluff, Transparency::Guarded, _) => -0.35,
+        _ => 0.0,
+    };
+    let sensitivity = match input.target_transparency {
+        Transparency::Open => 0.2,
+        Transparency::Neutral => 0.5,
+        Transparency::Guarded => 0.85,
+    };
+    let morale_fit = input.current_morale.clamp(-100.0, 100.0) / 100.0 * 1.5;
+    let outcome = resolve_social_attempt(SocialAttempt {
+        action: input.approach.social_action(),
+        topic: SocialTopic::Defeat,
+        skill_check: input.skill_check + personality_fit + morale_fit + input.approach.leverage(),
+        affinity: input.affinity,
+        familiarity_hours: input.familiarity_hours,
+        diagnosis_correct: None,
+        sensitivity,
+        roll: input.roll,
+    });
+    let succeeded = !input.claim_is_factually_accurate && outcome.succeeded;
+    let affinity_delta = if succeeded {
+        if input.approach == ClaimChallengeApproach::Command {
+            -0.4
+        } else {
+            0.0
+        }
+    } else {
+        input.approach.failure_affinity_loss()
+    };
+    ClaimChallengeOutcome {
+        succeeded,
+        morale_delta: if succeeded {
+            outcome.morale_delta
+        } else {
+            outcome.morale_delta.min(0.0)
+        },
+        affinity_delta,
+    }
+}
+
+pub fn realized_affinity_delta(current: f32, requested_delta: f32) -> f32 {
+    (current + requested_delta).clamp(AFFINITY_MIN, AFFINITY_MAX)
+        - current.clamp(AFFINITY_MIN, AFFINITY_MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn casual_chat_uses_social_skills_and_mutual_personality_without_certainty() {
+        let compatible = CasualChatDisposition {
+            mirth: Mirth::Merry,
+            transparency: Transparency::Open,
+            sociability: 1,
+            outlook: 1,
+        };
+        let incompatible = CasualChatDisposition {
+            mirth: Mirth::Grave,
+            transparency: Transparency::Guarded,
+            sociability: 2,
+            outlook: 2,
+        };
+        let skilled = resolve_casual_chat(CasualChatInput {
+            charm_check: 5.0,
+            insight_check: 5.0,
+            affinity: 0.0,
+            familiarity_hours: 0.0,
+            actor: compatible,
+            target: compatible,
+            roll: 0.5,
+        });
+        let poor_match = resolve_casual_chat(CasualChatInput {
+            charm_check: 0.0,
+            insight_check: 0.0,
+            affinity: 0.0,
+            familiarity_hours: 0.0,
+            actor: compatible,
+            target: incompatible,
+            roll: 0.5,
+        });
+        assert!(skilled.positive);
+        assert!(skilled.affinity_delta > 0.0);
+        assert!(!poor_match.positive);
+        assert!(poor_match.affinity_delta < 0.0);
+
+        assert!(
+            !resolve_casual_chat(CasualChatInput {
+                roll: 0.99,
+                ..CasualChatInput {
+                    charm_check: 5.0,
+                    insight_check: 5.0,
+                    affinity: 100.0,
+                    familiarity_hours: 100.0,
+                    actor: compatible,
+                    target: compatible,
+                    roll: 0.0,
+                }
+            })
+            .positive
+        );
+        assert!(
+            resolve_casual_chat(CasualChatInput {
+                roll: 0.0,
+                ..CasualChatInput {
+                    charm_check: 0.0,
+                    insight_check: 0.0,
+                    affinity: -100.0,
+                    familiarity_hours: 0.0,
+                    actor: compatible,
+                    target: incompatible,
+                    roll: 1.0,
+                }
+            })
+            .positive
+        );
+    }
 
     #[test]
     fn decay_is_partition_independent_and_never_crosses_neutral() {
@@ -788,6 +1119,97 @@ mod tests {
             assert_eq!(once.signum(), start.signum());
             assert!(once.abs() < start.abs());
         }
+    }
+
+    #[test]
+    fn claim_assessments_are_bounded_and_overlap_demeanor_states() {
+        for truth_signal in [-1.0, 0.0, 1.0] {
+            let low = assess_testimony_claim(truth_signal, 3.0, 0.0);
+            let high = assess_testimony_claim(truth_signal, 3.0, 1.0);
+            assert_ne!(low.direction, high.direction);
+            assert!((0.0..=1.0).contains(&low.strength));
+            assert!((0.0..=1.0).contains(&high.strength));
+        }
+        assert_eq!(
+            assess_testimony_claim(1.0, 0.0, 0.43).direction,
+            ClaimAssessmentDirection::Unknown
+        );
+        let correct = |insight| {
+            (0..1_000)
+                .filter(|index| {
+                    assess_testimony_claim(1.0, insight, *index as f32 / 999.0).direction
+                        == ClaimAssessmentDirection::LikelyTrue
+                })
+                .count()
+        };
+        assert!(correct(5.0) > correct(0.0));
+    }
+
+    #[test]
+    fn challenge_risk_and_leverage_increase_by_approach() {
+        assert!(
+            ClaimChallengeApproach::Charm.leverage() < ClaimChallengeApproach::Command.leverage()
+        );
+        assert!(
+            ClaimChallengeApproach::Command.leverage() < ClaimChallengeApproach::Bluff.leverage()
+        );
+        assert!(
+            ClaimChallengeApproach::Charm.failure_affinity_loss().abs()
+                < ClaimChallengeApproach::Command
+                    .failure_affinity_loss()
+                    .abs()
+        );
+        assert!(
+            ClaimChallengeApproach::Command
+                .failure_affinity_loss()
+                .abs()
+                < ClaimChallengeApproach::Bluff.failure_affinity_loss().abs()
+        );
+    }
+
+    #[test]
+    fn truthful_and_insufficient_challenges_share_safe_failure() {
+        let attempt = |claim_is_factually_accurate, roll| {
+            resolve_claim_challenge(ClaimChallengeInput {
+                approach: ClaimChallengeApproach::Charm,
+                claim_is_factually_accurate,
+                skill_check: 2.5,
+                affinity: 0.0,
+                familiarity_hours: 0.0,
+                current_morale: 0.0,
+                target_transparency: Transparency::Neutral,
+                target_mirth: Mirth::Neutral,
+                roll,
+            })
+        };
+        let truthful = attempt(true, 0.0);
+        let insufficient = attempt(false, 1.0);
+        assert!(!truthful.succeeded);
+        assert!(!insufficient.succeeded);
+        assert_eq!(truthful.affinity_delta, insufficient.affinity_delta);
+    }
+
+    #[test]
+    fn command_always_takes_an_affinity_toll() {
+        let outcome = resolve_claim_challenge(ClaimChallengeInput {
+            approach: ClaimChallengeApproach::Command,
+            claim_is_factually_accurate: false,
+            skill_check: 5.0,
+            affinity: 100.0,
+            familiarity_hours: 100.0,
+            current_morale: 0.0,
+            target_transparency: Transparency::Open,
+            target_mirth: Mirth::Neutral,
+            roll: 0.0,
+        });
+        assert!(outcome.succeeded);
+        assert!(outcome.affinity_delta < 0.0);
+    }
+
+    #[test]
+    fn realized_affinity_delta_reports_clamping() {
+        assert!((realized_affinity_delta(-99.5, -2.5) + 0.5).abs() < 0.0001);
+        assert_eq!(realized_affinity_delta(0.0, 0.0), 0.0);
     }
 
     #[test]

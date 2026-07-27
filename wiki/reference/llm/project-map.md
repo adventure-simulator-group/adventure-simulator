@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1307)
+## Files (1331)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -118,6 +118,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/alcohol_consumption_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/alcohol_consumption_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/answer_dialogue_prompt_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/approach_dialogue_witness_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/approve_party_action_request_planned_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/approve_party_action_request_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/authorize_tactical_server_claim_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -127,6 +128,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/autoresolve_report_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/available_water_capacity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_automatic_social_chats_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_bestiary_deduction_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_bestiary_deductions_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_case_battle_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_case_battles_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_case_site_pin_type.rs` — Generated SpacetimeDB data type.
@@ -149,6 +152,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_sessions_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_topic_option_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_dialogue_topic_options_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_dialogue_witness_claim_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_dialogue_witness_claims_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_forage_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_forage_receipts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_investigation_action_outcome_type.rs` — Generated SpacetimeDB data type.
@@ -180,9 +185,13 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_physiology_chart_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_physiology_charts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_physiology_differential_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_settlement_npc_relationship_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_settlement_npc_relationships_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_settlement_npcs_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_social_addresses_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_social_beliefs_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_social_chat_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_social_chat_receipts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backfill_character_deaths_and_leadership_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_equipment_condition_and_smiths_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_solo_parties_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -257,6 +266,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_virtue_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_virtue_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/charcoal_burning_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/chat_with_party_member_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/choose_dialogue_topic_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/claim_simulation_run_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/clear_organization_presentation_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -306,6 +316,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/dialogue_prompt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/dialogue_session_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/dialogue_topic_option_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_witness_capability_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_witness_claim_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_method_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_type.rs` — Generated SpacetimeDB data type.
@@ -405,6 +417,9 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/investigation_area_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_belief_revision_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_belief_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/investigation_bestiary_deduction_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/investigation_bestiary_diagnostic_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/investigation_bestiary_report_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_case_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_claim_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_event_authority_type.rs` — Generated SpacetimeDB data type.
@@ -647,9 +662,12 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/settlement_hydrology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_import_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_language_profile_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/settlement_npc_morale_event_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_npc_presence_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/settlement_npc_presence_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/settlement_npc_relationship_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_npc_seed_explanation_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/settlement_npc_social_state_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_npc_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_outbreak_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/settlement_outbreak_type.rs` — Generated SpacetimeDB data type.
@@ -672,6 +690,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/social_action_cooldown_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/social_address_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/social_belief_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/social_chat_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/social_interaction_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_acidity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_basis_points_type.rs` — Generated SpacetimeDB data type.
@@ -683,6 +702,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/soil_substrate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_water_regime_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/spawn_developer_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/spend_time_with_settlement_npc_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/stage_investigation_lead_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/start_dialogue_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/starting_age_tier_coordinate_type.rs` — Generated SpacetimeDB data type.
@@ -740,6 +760,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/weapon_skill_distribution_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/western_christian_arrangement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/withdraw_party_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/witness_social_action_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/woodland_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_clock_schedule_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_clock_table.rs` — Generated SpacetimeDB table interface.
@@ -1137,6 +1158,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/static/physiology-dialog.js` — Repository support file.
 - `crates/strategic-web/static/rest-duration.js` — Repository support file.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
+- `crates/strategic-web/static/social-menu.js` — Repository support file.
 - `crates/strategic-web/static/strategic-condition.js` — Repository support file.
 - `crates/strategic-web/static/strategic-map.js` — Repository support file.
 - `crates/strategic-web/static/strategic-mutations.js` — Repository support file.
@@ -1219,7 +1241,9 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/tests/quest-web-eval.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/rest-duration.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/social-menu.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/strategic-map-behavior.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/strategic-mutations.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/strategic-navigation.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/tooltips.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.

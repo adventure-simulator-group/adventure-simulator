@@ -2,8 +2,8 @@ use super::AppState;
 use crate::{
     session::Session,
     spacetimedb::{
-        BackendPhysicalEvidence, BackendPhysicalEvidenceInspection, BestiaryResultView,
-        bestiary_result_views, sql_string_literal,
+        BackendBestiaryDeduction, BackendPhysicalEvidence, BackendPhysicalEvidenceInspection,
+        sql_string_literal,
     },
 };
 use axum::{
@@ -38,6 +38,7 @@ struct EvidenceView {
     description: String,
     topics: Vec<EvidenceTopicView>,
     inspections: Vec<EvidenceInspectionView>,
+    deductions: Vec<EvidenceDeductionView>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -47,7 +48,13 @@ struct EvidenceInspectionView {
     stat_label: String,
     passed: bool,
     narration: String,
-    bestiary_results: Vec<BestiaryResultView>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct EvidenceDeductionView {
+    monster_kind: String,
+    support_band: String,
+    provenance: Vec<String>,
 }
 
 async fn evidence_at_site(
@@ -77,6 +84,13 @@ async fn evidence_at_site(
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let deductions = state
+        .db
+        .query::<BackendBestiaryDeduction>(&format!(
+            "SELECT * FROM backend_bestiary_deductions WHERE owner_character_id = {character_id}"
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     evidence.sort_by(|left, right| {
         (&left.label, &left.evidence_id).cmp(&(&right.label, &right.evidence_id))
     });
@@ -96,6 +110,15 @@ async fn evidence_at_site(
                 portrait_icon: item.portrait_icon,
                 description: item.description,
                 topics: serde_json::from_str(&item.topics_json).unwrap_or_default(),
+                deductions: deductions
+                    .iter()
+                    .filter(|deduction| deduction.case_id == item.case_id)
+                    .map(|deduction| EvidenceDeductionView {
+                        monster_kind: deduction.monster_kind.clone(),
+                        support_band: deduction.support_band.clone(),
+                        provenance: deduction.provenance(),
+                    })
+                    .collect(),
                 inspections: item_inspections
                     .into_iter()
                     .map(|attempt| EvidenceInspectionView {
@@ -104,7 +127,6 @@ async fn evidence_at_site(
                         stat_label: attempt.stat_label,
                         passed: attempt.passed,
                         narration: attempt.narration,
-                        bestiary_results: bestiary_result_views(&attempt.bestiary_results_json),
                     })
                     .collect(),
             }
@@ -178,9 +200,6 @@ async fn inspect(
 
 #[cfg(test)]
 mod tests {
-    use crate::spacetimedb::{BestiaryResultView, StoredBestiaryResult, bestiary_support_label};
-    use adventuresim_world_schema::BestiaryCategory;
-
     #[test]
     fn evidence_api_never_serializes_check_difficulty() {
         let source = include_str!("evidence.rs");
@@ -191,32 +210,14 @@ mod tests {
     }
 
     #[test]
-    fn bestiary_support_labels_cover_exact_probability_anchors() {
-        assert_eq!(bestiary_support_label(0), "rules out");
-        assert_eq!(bestiary_support_label(5_000), "inconclusive");
-        assert_eq!(bestiary_support_label(10_000), "conclusive support");
-    }
-
-    #[test]
-    fn bestiary_api_result_contains_accessible_lore_but_no_hidden_truth() {
-        let view = BestiaryResultView::from(StoredBestiaryResult {
-            category: BestiaryCategory::Spirit,
-            support_bps: 5_000,
-            interpretation: "The impression may not have been fully physical.".into(),
-        });
-        let serialized = serde_json::to_string(&view).unwrap();
-
-        assert!(serialized.contains("\"support_bps\":5000"));
-        assert!(serialized.contains("\"support_label\":\"inconclusive\""));
-        assert!(serialized.contains("\"enemies\":["));
-        assert!(serialized.contains("\"name\":\"Spectral hound\""));
-        assert!(serialized.contains("\"strengths\":["));
-        assert!(serialized.contains("\"weaknesses\":["));
-        assert!(!serialized.contains("confirmed_mechanics"));
-        assert!(!serialized.contains("folklore"));
-        assert!(!serialized.contains("combat modifier"));
-        assert!(!serialized.contains("difficulty"));
-        assert!(!serialized.contains("threat"));
-        assert!(!serialized.contains("canonical"));
+    fn bestiary_api_exposes_only_qualitative_observer_deductions() {
+        let source = include_str!("evidence.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("backend_bestiary_deductions"));
+        assert!(production.contains("owner_character_id = {character_id}"));
+        assert!(production.contains("support_band"));
+        assert!(production.contains("provenance"));
+        assert!(!production.contains("support_bps"));
+        assert!(!production.contains("canonical"));
     }
 }

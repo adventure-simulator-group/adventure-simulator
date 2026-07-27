@@ -5,6 +5,23 @@ activate them. A settlement may already be suffering thefts, disappearances,
 dangerous creatures, disease, or disrupted trade before any character hears
 about the cause.
 
+Investigation skills answer different questions. Bestiary narrows which
+creatures fit received descriptions and successfully interpreted physical
+clues. Terrain follows and recovers tracks. Hearing testimony passively uses
+Insight to form a fallible impression of each specific claim, while Charm,
+Command, and Deception offer increasingly risky and forceful ways to question
+that claim. Insight reads demeanor, not hidden facts: a sincere mistake can
+look sincere, and evasive or partly truthful accounts are inherently ambiguous.
+Witnesses do not always have quest information withheld, and the wording of an
+initial or released account does not identify its reliability. A character
+may question any highlighted claim, even one that looks truthful. A failed
+challenge strains affinity; Command always imposes some strain. Time together
+builds familiarity, while the NPC's private personality and morale also matter.
+
+Tracks are followed as a short sequence rather than one all-or-nothing check.
+Each successful section contributes a physical finding before the final section
+locates a site; unseen later sections and their destination remain private.
+
 ## Discovery
 
 Players learn about problems through tavern rumors, local conversations,
@@ -40,9 +57,10 @@ another person, a place, or a suspicious event. Tracks, wounds, objects, and
 other evidence may support several interpretations until a character has
 enough relevant knowledge.
 
-Bestiary knowledge can identify physical implications without revealing the
-canonical enemy automatically. Failure remains private: the journal records
-safe successful observations rather than hidden thresholds or failed checks.
+Bestiary combines reports a character has actually received with diagnostic
+clues that character successfully learned. The evidence view and journal list
+possible monster kinds with qualitative support and provenance. Failure,
+numeric scores, and the canonical enemy remain private.
 
 Different routes may reach the same finale. A failed lead does not delete an
 independent route, and a later correction does not rewrite what the character

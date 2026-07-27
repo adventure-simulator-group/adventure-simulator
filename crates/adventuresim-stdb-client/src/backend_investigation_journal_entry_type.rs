@@ -17,7 +17,6 @@ pub struct BackendInvestigationJournalEntry {
     pub contradiction_group: String,
     pub corrected_by: String,
     pub supersedes: String,
-    pub bestiary_results_json: String,
     pub recorded_at: u64,
 }
 
@@ -39,8 +38,6 @@ pub struct BackendInvestigationJournalEntryCols {
     pub contradiction_group: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
     pub corrected_by: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
     pub supersedes: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
-    pub bestiary_results_json:
-        __sdk::__query_builder::Col<BackendInvestigationJournalEntry, String>,
     pub recorded_at: __sdk::__query_builder::Col<BackendInvestigationJournalEntry, u64>,
 }
 
@@ -61,10 +58,6 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationJournalEntry {
             ),
             corrected_by: __sdk::__query_builder::Col::new(table_name, "corrected_by"),
             supersedes: __sdk::__query_builder::Col::new(table_name, "supersedes"),
-            bestiary_results_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "bestiary_results_json",
-            ),
             recorded_at: __sdk::__query_builder::Col::new(table_name, "recorded_at"),
         }
     }

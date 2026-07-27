@@ -1,6 +1,44 @@
 (() => {
   let generation = 0;
   let pending;
+  const SAFE_NOTICE_SELECTOR = "[data-strategic-safe-message]";
+  const mutationFormAction = (form, submitter) =>
+    submitter?.hasAttribute?.("formaction") ? submitter.formAction : form.action;
+
+  const extractStrategicNoticeMessage = (root) => {
+    const message = root?.querySelector?.(SAFE_NOTICE_SELECTOR)?.textContent
+      ?.trim()
+      .replace(/\s+/g, " ");
+    return message && message.length <= 512 ? message : null;
+  };
+
+  const safeStrategicErrorMessage = async (response, origin, parseHtml) => {
+    const contentType = response.headers?.get?.("Content-Type") || "";
+    if (!contentType.toLowerCase().includes("text/html")) return null;
+    let responseUrl;
+    try {
+      responseUrl = new URL(response.url || origin, origin);
+    } catch {
+      return null;
+    }
+    if (responseUrl.origin !== origin) return null;
+    try {
+      const parsed = parseHtml(await response.text());
+      return extractStrategicNoticeMessage(parsed);
+    } catch (error) {
+      if (error?.name === "AbortError") throw error;
+      return null;
+    }
+  };
+
+  if (typeof module !== "undefined") {
+    module.exports = {
+      extractStrategicNoticeMessage,
+      mutationFormAction,
+      safeStrategicErrorMessage,
+    };
+  }
+  if (typeof document === "undefined") return;
 
   const hardBoundary = (form, url) =>
     form.target && form.target.toLowerCase() !== "_self" ||
@@ -54,11 +92,29 @@
       return true;
     }
     if (!response.ok) {
-      const message = errorMessageFromResponse
-        ? await errorMessageFromResponse(response)
-        : response.status === 409
-          ? "The world changed before that action completed. Review the page and try again."
-          : "The action could not be completed.";
+      let message;
+      try {
+        if (errorMessageFromResponse) {
+          message = await errorMessageFromResponse(response);
+        } else {
+          const safeMessage = await safeStrategicErrorMessage(
+            response,
+            location.origin,
+            (html) => new DOMParser().parseFromString(html, "text/html"),
+          );
+          message = safeMessage || (response.status === 409
+            ? "The world changed before that action completed. Review the page and try again."
+            : "The action could not be completed.");
+        }
+      } catch (error) {
+        if (mine !== generation || originPage !== document.querySelector("#strategic-page")) {
+          return false;
+        }
+        throw error;
+      }
+      if (mine !== generation || originPage !== document.querySelector("#strategic-page")) {
+        return false;
+      }
       throw new Error(message);
     }
     const text = await response.text();
@@ -95,7 +151,7 @@
     const form = event.target.closest?.("#strategic-page form[method='post' i]");
     if (!form || event.defaultPrevented) return;
     const submitter = event.submitter;
-    const url = new URL(submitter?.formAction || form.action, location.href);
+    const url = new URL(mutationFormAction(form, submitter), location.href);
     if (hardBoundary(form, url)) return;
     event.preventDefault();
     event.stopImmediatePropagation();

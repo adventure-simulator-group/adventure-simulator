@@ -58,6 +58,8 @@ id_type!(WitnessId);
 id_type!(EvidenceId);
 id_type!(ActionId);
 id_type!(FinaleId);
+id_type!(TrackTrailId);
+id_type!(TrackSegmentId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -214,9 +216,9 @@ pub struct EvidenceInspectionTopic {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BestiaryEvidenceImplication {
     pub category: BestiaryCategory,
-    pub support_bps: u16,
     /// Hidden fixed-point Bestiary threshold, where 1,000 is a check of 1.0.
     pub lore_difficulty_milli: u16,
+    pub diagnostic_kind: Option<String>,
     pub interpretation: String,
 }
 
@@ -413,17 +415,39 @@ pub struct GeneratedArea {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestimonyChallengeResponses {
+    pub charm: Option<String>,
+    pub command: Option<String>,
+    pub bluff: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestimonyDraft {
     pub proposition_id: String,
     pub reliability: Reliability,
+    pub delivery: TestimonyDelivery,
     pub truthful_text: String,
     pub spoken_text: String,
+    /// Exact server-authored substring that may be questioned in dialogue.
+    /// It must occur once within `spoken_text`; punctuation and surrounding
+    /// narration deliberately remain outside the interactive claim.
+    pub challenge_text: String,
+    /// Required claim-specific lines authored alongside the testimony.
+    /// The client has no generic fallback.
+    pub challenge_responses: TestimonyChallengeResponses,
     pub destination_stage: String,
     pub site_id: Option<SiteId>,
     /// Proposition superseded by this claim. Set only on the later correction.
     pub corrects_proposition_id: Option<String>,
     /// Exact authored witnesses this account explicitly refers the observer to.
     pub referred_witness_ids: Vec<WitnessId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestimonyDelivery {
+    Volunteered,
+    Withheld,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -460,6 +484,25 @@ pub struct GeneratedEvidence {
     pub corrects_proposition_id: Option<String>,
 }
 
+/// Immutable private trail authority. Segment identities are observer-scoped;
+/// public projections disclose only a successfully completed segment.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrackTrail {
+    pub id: TrackTrailId,
+    pub segment_ids: Vec<TrackSegmentId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrackSegment {
+    pub id: TrackSegmentId,
+    pub trail_id: TrackTrailId,
+    pub ordinal: u16,
+    pub terrain: Terrain,
+    pub safe_finding: String,
+    pub predecessor: Option<TrackSegmentId>,
+    pub next: Option<TrackSegmentId>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneratedAction {
     pub id: ActionId,
@@ -471,6 +514,7 @@ pub struct GeneratedAction {
     pub alternate: ActionId,
     pub active_initially: bool,
     pub safe_summary: String,
+    pub track_segment_id: Option<TrackSegmentId>,
     pub outputs: Vec<GeneratedActionOutput>,
 }
 
@@ -563,6 +607,89 @@ pub fn generated_testimony_projection_plan(
     }
 }
 
+/// The complete authored testimony visible on first contact, in presentation
+/// order. Withheld details remain private manifest authority and cannot change
+/// the initial dialogue's text, cardinality, ordering, or source.
+pub fn initial_testimony_projection(witness: &WitnessBinding) -> Vec<(usize, &TestimonyDraft)> {
+    witness
+        .testimony
+        .iter()
+        .enumerate()
+        .filter(|(_, draft)| draft.delivery == TestimonyDelivery::Volunteered)
+        .collect()
+}
+
+/// Private authority used to assess and challenge an authored claim.
+///
+/// Presentation text may add framing or paraphrase the proposition, so display
+/// string equality is never authority. Accuracy and demeanor are deliberately
+/// separate: a mistaken witness can assert an inaccurate claim sincerely,
+/// while evasive or partly truthful testimony provides no clean demeanor signal.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TestimonyClaimAuthority {
+    pub factually_accurate: bool,
+    /// Signed private signal used by passive Insight: `-1` is deliberate
+    /// deception, `1` is sincere conviction, and `0` is genuinely ambiguous.
+    pub demeanor_truth_signal: f32,
+}
+
+pub const fn testimony_claim_authority(draft: &TestimonyDraft) -> TestimonyClaimAuthority {
+    match draft.reliability {
+        Reliability::Truthful => TestimonyClaimAuthority {
+            factually_accurate: true,
+            demeanor_truth_signal: 1.0,
+        },
+        Reliability::Mistaken => TestimonyClaimAuthority {
+            factually_accurate: false,
+            demeanor_truth_signal: 1.0,
+        },
+        Reliability::Evasive | Reliability::PartlyTruthful => TestimonyClaimAuthority {
+            factually_accurate: false,
+            demeanor_truth_signal: 0.0,
+        },
+        Reliability::Deceptive => TestimonyClaimAuthority {
+            factually_accurate: false,
+            demeanor_truth_signal: -1.0,
+        },
+    }
+}
+
+/// Testimony a player-like actor can legitimately hear by starting with the
+/// public primary contact and following referrals disclosed by volunteered
+/// statements. Withheld statements and unreferenced secondary witnesses never
+/// enter the projection.
+pub fn player_visible_testimony_sequence(
+    generated: &GeneratedCase,
+) -> Vec<(&WitnessBinding, &TestimonyDraft)> {
+    let Some(primary) = generated.witnesses.first() else {
+        return Vec::new();
+    };
+    let mut visible_witnesses = BTreeSet::from([primary.id.clone()]);
+    let mut delivered_witnesses = BTreeSet::new();
+    let mut output = Vec::new();
+    loop {
+        let Some(witness) = generated.witnesses.iter().find(|witness| {
+            visible_witnesses.contains(&witness.id) && !delivered_witnesses.contains(&witness.id)
+        }) else {
+            break;
+        };
+        delivered_witnesses.insert(witness.id.clone());
+        for (_, statement) in initial_testimony_projection(witness) {
+            for referred in &statement.referred_witness_ids {
+                if generated
+                    .witnesses
+                    .iter()
+                    .any(|candidate| candidate.id == *referred)
+                {
+                    visible_witnesses.insert(referred.clone());
+                }
+            }
+            output.push((witness, statement));
+        }
+    }
+    output
+}
+
 pub fn transition_referred_contact_action(
     states: &mut [ReferredContactActionState],
     owner_character_id: u64,
@@ -639,6 +766,10 @@ pub enum GeneratedActionOutput {
     PatternCondition {
         evidence_id: EvidenceId,
         condition: GeneratedPatternCondition,
+    },
+    TrackFinding {
+        segment_id: TrackSegmentId,
+        finding: String,
     },
     AmbushReady,
     Consequence {
@@ -726,6 +857,8 @@ pub struct GeneratedCase {
     pub witnesses: Vec<WitnessBinding>,
     pub pattern_targets: Vec<GeneratedPatternTarget>,
     pub evidence: Vec<GeneratedEvidence>,
+    pub track_trails: Vec<TrackTrail>,
+    pub track_segments: Vec<TrackSegment>,
     pub actions: Vec<GeneratedAction>,
     pub objectives: ObjectiveExpression,
     pub custody: Vec<(String, SiteId)>,
@@ -1071,8 +1204,8 @@ fn evidence_presentation(
                     .iter()
                     .map(|implication| BestiaryEvidenceImplication {
                         category: implication.category,
-                        support_bps: implication.support_bps,
                         lore_difficulty_milli: implication.lore_difficulty_milli,
+                        diagnostic_kind: implication.diagnostic_kind.clone(),
                         interpretation: implication.interpretation.clone(),
                     })
                     .collect(),
@@ -1167,13 +1300,14 @@ pub fn select_follow_up_evidence(
 }
 
 fn account_style_candidates(
-    reliability: Reliability,
+    _reliability: Reliability,
     circumstance: Circumstance,
 ) -> Vec<Candidate<AccountStyle>> {
+    // Account presentation is deliberately independent of hidden reliability.
+    // A source-aware player must not be able to classify a witness from the
+    // wording family selected for their account.
     let relation = crate::quest_catalog::catalog()
-        .relation(if reliability == Reliability::Mistaken {
-            "account.mistaken"
-        } else if circumstance == Circumstance::NightWindow {
+        .relation(if circumstance == Circumstance::NightWindow {
             "account.night_window"
         } else {
             "account.baseline"
@@ -1831,6 +1965,7 @@ fn ambiguous_report_description(v: ReportDescription) -> &'static str {
         .as_str()
 }
 
+#[cfg(test)]
 fn ambiguous_visual_claim(v: ReportDescription, place: &str) -> String {
     format!(
         "It looked like {}, near {place}.",
@@ -1954,14 +2089,14 @@ fn build_actions(
     attack_pattern: AttackPattern,
     victim_target: Option<&GeneratedPatternTarget>,
     pattern_evidence_id: &EvidenceId,
+    track_segments: &[TrackSegment],
 ) -> Vec<GeneratedAction> {
-    let trail_summary = match route_variant {
-        RouteVariant::Direct => "Follow the physical trail directly.",
-        RouteVariant::Cautious => "Reacquire and follow the trail cautiously.",
+    let early_tracking_summary = match route_variant {
+        RouteVariant::Direct => "Read the clearest section of the physical trail.",
+        RouteVariant::Cautious => "Recover the trail cautiously across the changed ground.",
     };
-    let trail_kind = match route_variant {
-        RouteVariant::Direct => InvestigationActionKind::FollowTracks,
-        RouteVariant::Cautious => InvestigationActionKind::ReacquireTracks,
+    let [first_segment, final_segment] = track_segments else {
+        unreachable!("generated physical trails always have two segments")
     };
     let pattern_condition = match attack_pattern {
         AttackPattern::Nightly => GeneratedPatternCondition::NightWindow,
@@ -2029,9 +2164,10 @@ fn build_actions(
         alternate: ActionId::new(scoped_id(prefix, "action", alternate)),
         active_initially: active,
         safe_summary: summary.into(),
+        track_segment_id: None,
         outputs,
     };
-    match family {
+    let mut actions = match family {
         TemplateFamily::RecurringDepredation => vec![
             make(
                 "locate_contact",
@@ -2075,15 +2211,30 @@ fn build_actions(
                 }],
             ),
             make(
-                "follow",
-                trail_kind,
+                "reacquire",
+                InvestigationActionKind::ReacquireTracks,
                 RouteClass::PhysicalTrail,
-                "site",
+                "route",
                 finale.0.clone(),
                 Some("search"),
                 "reveal_route",
                 false,
-                trail_summary,
+                early_tracking_summary,
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::RouteSegment,
+                    site_id: None,
+                }],
+            ),
+            make(
+                "follow",
+                InvestigationActionKind::FollowTracks,
+                RouteClass::PhysicalTrail,
+                "site",
+                finale.0.clone(),
+                Some("reacquire"),
+                "reveal_route",
+                false,
+                "Follow the recovered trail to its source.",
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::Exact,
                     site_id: Some(finale.clone()),
@@ -2144,14 +2295,14 @@ fn build_actions(
             ),
             make(
                 "reveal_route",
-                trail_kind,
+                InvestigationActionKind::ApproachLead,
                 RouteClass::PatternSurveillance,
                 "route",
                 finale.0.clone(),
                 Some("patrol"),
                 "follow",
                 false,
-                trail_summary,
+                "Approach the site along the learned route.",
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::Exact,
                     site_id: Some(finale.clone()),
@@ -2198,15 +2349,30 @@ fn build_actions(
                 vec![],
             ),
             make(
-                "follow",
-                trail_kind,
+                "reacquire",
+                InvestigationActionKind::ReacquireTracks,
                 RouteClass::PhysicalTrail,
-                "site",
+                "route",
                 finale.0.clone(),
                 Some("inspect_last_known"),
                 "approach_social",
                 false,
-                trail_summary,
+                early_tracking_summary,
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::RouteSegment,
+                    site_id: None,
+                }],
+            ),
+            make(
+                "follow",
+                InvestigationActionKind::FollowTracks,
+                RouteClass::PhysicalTrail,
+                "site",
+                finale.0.clone(),
+                Some("reacquire"),
+                "approach_social",
+                false,
+                "Follow the recovered trail to its source.",
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::Exact,
                     site_id: Some(finale.clone()),
@@ -2266,7 +2432,28 @@ fn build_actions(
                 vec![],
             ),
         ],
-    }
+    };
+    let early = actions
+        .iter_mut()
+        .find(|action| action.id == ActionId::new(scoped_id(prefix, "action", "reacquire")))
+        .expect("physical trail has an early segment action");
+    early.track_segment_id = Some(first_segment.id.clone());
+    early.outputs.push(GeneratedActionOutput::TrackFinding {
+        segment_id: first_segment.id.clone(),
+        finding: first_segment.safe_finding.clone(),
+    });
+    let final_action = actions
+        .iter_mut()
+        .find(|action| action.id == ActionId::new(scoped_id(prefix, "action", "follow")))
+        .expect("physical trail has a final segment action");
+    final_action.track_segment_id = Some(final_segment.id.clone());
+    final_action
+        .outputs
+        .push(GeneratedActionOutput::TrackFinding {
+            segment_id: final_segment.id.clone(),
+            finding: final_segment.safe_finding.clone(),
+        });
+    actions
 }
 
 pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, GenerationError> {
@@ -2384,19 +2571,65 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "corroborating"));
     let npc1 = primary.npc_id.clone();
     let npc2 = secondary.npc_id.clone();
-    let unreliable_statement = match account_style {
-        AccountStyle::VisualClaim => {
-            ambiguous_visual_claim(description, label(secondary_site_kind))
-        }
-        AccountStyle::HeardOnly => format!(
-            "I only heard it moving near {}; I never saw it clearly.",
-            label(secondary_site_kind)
-        ),
-        AccountStyle::TracksAndMovement => format!(
-            "Its trail and movement seemed to point toward {}.",
-            label(secondary_site_kind)
-        ),
+    let presented_site_kind = if reliability == Reliability::Truthful {
+        site
+    } else {
+        secondary_site_kind
     };
+    let (presented_location_statement, presented_location_challenge, presented_location_responses) =
+        match account_style {
+            AccountStyle::VisualClaim => {
+                let claim = format!(
+                    "{}, near {}",
+                    ambiguous_report_description(description),
+                    label(presented_site_kind)
+                );
+                (
+                    format!("It looked like {claim}."),
+                    claim,
+                    TestimonyChallengeResponses {
+                        charm: Some("Your eye was keen. What made the shape seem so?".into()),
+                        command: Some("Name what you truly saw, without embellishment.".into()),
+                        bluff: Some("That shape was seen elsewhere; amend your account.".into()),
+                    },
+                )
+            }
+            AccountStyle::HeardOnly => {
+                let claim = format!("something moving near {}", label(presented_site_kind));
+                (
+                    format!("I only heard {claim}; I never saw it clearly."),
+                    claim,
+                    TestimonyChallengeResponses {
+                        charm: Some("Describe the sound as carefully as you can.".into()),
+                        command: Some(
+                            "Tell me exactly what you heard and from which direction.".into(),
+                        ),
+                        bluff: Some(
+                            "Others heard a different sound there; account for that.".into(),
+                        ),
+                    },
+                )
+            }
+            AccountStyle::TracksAndMovement => {
+                let claim = format!(
+                    "The trail and movement seemed to point toward {}",
+                    label(presented_site_kind)
+                );
+                (
+                    format!("{claim}."),
+                    claim,
+                    TestimonyChallengeResponses {
+                        charm: Some("Help me follow how those signs led you that way.".into()),
+                        command: Some(
+                            "Separate the tracks you saw from the course you inferred.".into(),
+                        ),
+                        bluff: Some(
+                            "That trail turns elsewhere on my map; explain your route.".into(),
+                        ),
+                    },
+                )
+            }
+        };
     let true_statement = format!(
         "I saw signs pointing toward {}, but I could not identify the culprit.",
         label(site)
@@ -2404,6 +2637,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let description_prop = scoped_id(&prefix, "proposition", "description");
     let correction_prop = scoped_id(&prefix, "proposition", "location:corrected");
     let pattern_prop = scoped_id(&prefix, "proposition", "attack-pattern");
+    let private_pattern_prop = scoped_id(&prefix, "proposition", "private-pattern-detail");
     let pattern_evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "attack-pattern"));
     let pattern_truth = match attack_pattern {
         AttackPattern::Nightly => "The incidents cluster after nightfall.".to_owned(),
@@ -2423,16 +2657,16 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             "The incidents have no reliable time, place, or victim schedule.".to_owned()
         }
     };
-    let uncorroborated_pattern_claim = if reliability == Reliability::Truthful {
-        pattern_truth.clone()
-    } else {
-        match attack_pattern {
-            AttackPattern::Nightly => "I think it happens at all hours.".to_owned(),
-            AttackPattern::Roadside => "I doubt the road has anything to do with it.".to_owned(),
-            AttackPattern::VictimSpecific => "The victims seem entirely random to me.".to_owned(),
-            AttackPattern::Irregular => "I am sure it always happens just after dusk.".to_owned(),
-        }
-    };
+    // Every primary witness volunteers this reliability-neutral account. The
+    // optional exact detail is a separate private concern, so its existence
+    // cannot change any part of the initial dialogue projection.
+    let uncorroborated_pattern_claim =
+        "There may be a pattern, but I cannot tell which details matter.".to_owned();
+    let has_private_pattern_detail = hash(
+        context.observer_entropy_hi ^ context.observer_entropy_lo.rotate_left(17),
+        "testimony-concern:private-pattern-detail",
+    ) % 2
+        == 0;
     let evidence_site_label = if family == TemplateFamily::RecurringDepredation {
         "the latest incident site"
     } else {
@@ -2477,6 +2711,87 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             is_true_location: false,
         },
     ];
+    let mut primary_testimony = vec![
+        TestimonyDraft {
+            proposition_id: description_prop.clone(),
+            reliability,
+            delivery: TestimonyDelivery::Volunteered,
+            truthful_text: true_statement.clone(),
+            // Presentation and grant shape cannot reveal reliability.
+            // Private authority still binds the proposition to the
+            // place the witness actually believes they described.
+            spoken_text: presented_location_statement,
+            challenge_text: presented_location_challenge,
+            challenge_responses: presented_location_responses,
+            destination_stage: "route_segment".into(),
+            site_id: Some(if reliability == Reliability::Truthful {
+                finale_site.clone()
+            } else {
+                decoy_site.clone()
+            }),
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![witness2.clone()],
+        },
+        TestimonyDraft {
+            proposition_id: pattern_prop.clone(),
+            reliability,
+            delivery: TestimonyDelivery::Volunteered,
+            truthful_text: pattern_truth.clone(),
+            spoken_text: uncorroborated_pattern_claim,
+            challenge_text: "I cannot tell which details matter".into(),
+            challenge_responses: TestimonyChallengeResponses {
+                charm: Some("Take your time—which detail first suggested a pattern?".into()),
+                command: Some("Separate what you observed from what you merely suppose.".into()),
+                bluff: Some("I know which detail matters; tell me what you withheld.".into()),
+            },
+            destination_stage: "textual".into(),
+            site_id: None,
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![],
+        },
+        TestimonyDraft {
+            proposition_id: correction_prop.clone(),
+            reliability: Reliability::Truthful,
+            delivery: TestimonyDelivery::Volunteered,
+            truthful_text: format!(
+                "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
+            ),
+            spoken_text: format!(
+                "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. You may examine it yourself."
+            ),
+            challenge_text: format!(
+                "{primary_evidence_reference} worth inspecting at {evidence_site_label}"
+            ),
+            challenge_responses: TestimonyChallengeResponses {
+                charm: Some("Show me how you came upon that clue.".into()),
+                command: Some("State exactly where and when you found it.".into()),
+                bluff: Some("The site was searched already; tell me what I will find.".into()),
+            },
+            destination_stage: "exact_believed".into(),
+            site_id: Some(evidence_site.clone()),
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![],
+        },
+    ];
+    if has_private_pattern_detail {
+        primary_testimony.push(TestimonyDraft {
+            proposition_id: private_pattern_prop,
+            reliability: Reliability::Truthful,
+            delivery: TestimonyDelivery::Withheld,
+            truthful_text: pattern_truth.clone(),
+            spoken_text: format!("What I held back is this: {pattern_truth}"),
+            challenge_text: pattern_truth.trim_end_matches('.').into(),
+            challenge_responses: TestimonyChallengeResponses {
+                charm: Some("Thank you for saying it. What else attends that detail?".into()),
+                command: Some("Give the whole account now.".into()),
+                bluff: Some("That confirms what I heard elsewhere; continue.".into()),
+            },
+            destination_stage: "textual".into(),
+            site_id: None,
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![],
+        });
+    }
     let witnesses = vec![
         WitnessBinding {
             id: witness1.clone(),
@@ -2488,55 +2803,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             expected_location: primary.expected_location.clone(),
             expected_location_label: primary.expected_location_label.clone(),
             visible_description: primary.visible_description.clone(),
-            testimony: vec![
-                TestimonyDraft {
-                    proposition_id: description_prop.clone(),
-                    reliability,
-                    truthful_text: true_statement.clone(),
-                    spoken_text: if reliability == Reliability::Truthful {
-                        true_statement
-                    } else {
-                        unreliable_statement
-                    },
-                    destination_stage: if reliability == Reliability::Truthful {
-                        "approximate_area"
-                    } else {
-                        "exact_believed"
-                    }
-                    .into(),
-                    site_id: Some(if reliability == Reliability::Truthful {
-                        finale_site.clone()
-                    } else {
-                        decoy_site.clone()
-                    }),
-                    corrects_proposition_id: None,
-                    referred_witness_ids: vec![witness2.clone()],
-                },
-                TestimonyDraft {
-                    proposition_id: pattern_prop.clone(),
-                    reliability,
-                    truthful_text: pattern_truth.clone(),
-                    spoken_text: uncorroborated_pattern_claim,
-                    destination_stage: "textual".into(),
-                    site_id: None,
-                    corrects_proposition_id: None,
-                    referred_witness_ids: vec![],
-                },
-                TestimonyDraft {
-                    proposition_id: correction_prop.clone(),
-                    reliability: Reliability::Truthful,
-                    truthful_text: format!(
-                        "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
-                    ),
-                    spoken_text: format!(
-                        "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. You may examine it yourself."
-                    ),
-                    destination_stage: "exact_believed".into(),
-                    site_id: Some(evidence_site.clone()),
-                    corrects_proposition_id: None,
-                    referred_witness_ids: vec![],
-                },
-            ],
+            testimony: primary_testimony,
         },
         WitnessBinding {
             id: witness2.clone(),
@@ -2551,12 +2818,24 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             testimony: vec![TestimonyDraft {
                 proposition_id: description_prop.clone(),
                 reliability: Reliability::Truthful,
+                delivery: TestimonyDelivery::Volunteered,
                 truthful_text: "The earlier location does not fit the tracks; they lead elsewhere."
                     .into(),
                 spoken_text: format!(
                     "Those tracks turn away from {} and continue beyond it.",
                     label(secondary_site_kind)
                 ),
+                challenge_text: format!(
+                    "tracks turn away from {} and continue beyond it",
+                    label(secondary_site_kind)
+                ),
+                challenge_responses: TestimonyChallengeResponses {
+                    charm: Some("Help me understand where the tracks turned.".into()),
+                    command: Some("Point out their exact course.".into()),
+                    bluff: Some(
+                        "I followed part of that trail already; complete the route.".into(),
+                    ),
+                },
                 destination_stage: "route_segment".into(),
                 site_id: Some(finale_site.clone()),
                 corrects_proposition_id: Some(description_prop.clone()),
@@ -2597,6 +2876,35 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         SubjectId::new(scoped_id(&prefix, "subject", "missing-person")).expect("generated subject");
     let asset =
         AssetId::new(scoped_id(&prefix, "asset", "missing-property")).expect("generated asset");
+    let trail_id = TrackTrailId::new(scoped_id(&prefix, "track-trail", "physical"));
+    let first_segment_id = TrackSegmentId::new(scoped_id(&prefix, "track-segment", "physical:0"));
+    let final_segment_id = TrackSegmentId::new(scoped_id(&prefix, "track-segment", "physical:1"));
+    let track_segments = vec![
+        TrackSegment {
+            id: first_segment_id.clone(),
+            trail_id: trail_id.clone(),
+            ordinal: 0,
+            terrain: Terrain::Settlement,
+            safe_finding:
+                "The impressions continue beyond the broken ground in a consistent direction."
+                    .into(),
+            predecessor: None,
+            next: Some(final_segment_id.clone()),
+        },
+        TrackSegment {
+            id: final_segment_id.clone(),
+            trail_id: trail_id.clone(),
+            ordinal: 1,
+            terrain: terrain(site),
+            safe_finding: "The freshest impressions converge on one occupied site.".into(),
+            predecessor: Some(first_segment_id.clone()),
+            next: None,
+        },
+    ];
+    let track_trails = vec![TrackTrail {
+        id: trail_id,
+        segment_ids: vec![first_segment_id, final_segment_id],
+    }];
     let mut actions = build_actions(
         &prefix,
         family,
@@ -2607,6 +2915,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         attack_pattern,
         pattern_target.as_ref(),
         &pattern_evidence_id,
+        &track_segments,
     );
     let issuer = context
         .witness_candidates
@@ -2944,6 +3253,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         witnesses,
         pattern_targets: pattern_target.into_iter().collect(),
         evidence,
+        track_trails,
+        track_segments,
         actions,
         objectives,
         custody,
@@ -2960,6 +3271,188 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     Ok(manifest)
 }
 
+fn validate_track_trails(case: &GeneratedCase, errors: &mut Vec<String>) {
+    let trail_ids = case
+        .track_trails
+        .iter()
+        .map(|trail| trail.id.clone())
+        .collect::<BTreeSet<_>>();
+    let segment_ids = case
+        .track_segments
+        .iter()
+        .map(|segment| segment.id.clone())
+        .collect::<BTreeSet<_>>();
+    if trail_ids.len() != case.track_trails.len() {
+        errors.push("track trails require unique identities".into());
+    }
+    if segment_ids.len() != case.track_segments.len() {
+        errors.push("track segments require unique identities".into());
+    }
+    if case.track_trails.is_empty() {
+        errors.push("generated case requires an immutable physical trail".into());
+    }
+    for segment in &case.track_segments {
+        if !trail_ids.contains(&segment.trail_id) {
+            errors.push(format!(
+                "track segment {} belongs to a missing trail",
+                segment.id.0
+            ));
+        }
+    }
+    let mut bound_segments = BTreeMap::<TrackSegmentId, &GeneratedAction>::new();
+    for action in &case.actions {
+        let findings = action
+            .outputs
+            .iter()
+            .filter_map(|output| match output {
+                GeneratedActionOutput::TrackFinding {
+                    segment_id,
+                    finding,
+                } => Some((segment_id, finding)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let Some(segment_id) = &action.track_segment_id else {
+            if !findings.is_empty() {
+                errors.push(format!(
+                    "{} exposes a track finding without segment authority",
+                    action.id.0
+                ));
+            }
+            continue;
+        };
+        let Some(segment) = case
+            .track_segments
+            .iter()
+            .find(|segment| &segment.id == segment_id)
+        else {
+            errors.push(format!(
+                "{} binds missing track segment {}",
+                action.id.0, segment_id.0
+            ));
+            continue;
+        };
+        if bound_segments.insert(segment_id.clone(), action).is_some() {
+            errors.push(format!(
+                "track segment {} is bound by multiple actions",
+                segment_id.0
+            ));
+        }
+        if action.route != RouteClass::PhysicalTrail
+            || !matches!(
+                action.kind,
+                InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks
+            )
+        {
+            errors.push(format!(
+                "{} binds a track segment without a physical tracking action",
+                action.id.0
+            ));
+        }
+        if findings.len() != 1
+            || findings[0].0 != segment_id
+            || findings[0].1 != &segment.safe_finding
+        {
+            errors.push(format!(
+                "{} does not emit its exact safe track finding",
+                action.id.0
+            ));
+        }
+    }
+    for trail in &case.track_trails {
+        if !(2..=4).contains(&trail.segment_ids.len()) {
+            errors.push(format!(
+                "track trail {} is not a short segment chain",
+                trail.id.0
+            ));
+            continue;
+        }
+        let owned = case
+            .track_segments
+            .iter()
+            .filter(|segment| segment.trail_id == trail.id)
+            .collect::<Vec<_>>();
+        if owned.len() != trail.segment_ids.len()
+            || trail
+                .segment_ids
+                .iter()
+                .any(|id| !owned.iter().any(|segment| &segment.id == id))
+        {
+            errors.push(format!(
+                "track trail {} does not own exactly its declared segments",
+                trail.id.0
+            ));
+            continue;
+        }
+        for (ordinal, segment_id) in trail.segment_ids.iter().enumerate() {
+            let Some(segment) = owned.iter().find(|segment| &segment.id == segment_id) else {
+                continue;
+            };
+            let predecessor = ordinal
+                .checked_sub(1)
+                .and_then(|index| trail.segment_ids.get(index));
+            let next = trail.segment_ids.get(ordinal + 1);
+            if usize::from(segment.ordinal) != ordinal
+                || segment.predecessor.as_ref() != predecessor
+                || segment.next.as_ref() != next
+                || segment.safe_finding.trim().is_empty()
+                || segment.safe_finding.chars().count() > 512
+            {
+                errors.push(format!(
+                    "track segment {} breaks trail continuity",
+                    segment.id.0
+                ));
+            }
+            let Some(action) = bound_segments.get(&segment.id).copied() else {
+                errors.push(format!(
+                    "track segment {} has no owning action",
+                    segment.id.0
+                ));
+                continue;
+            };
+            if let Some(predecessor_id) = predecessor {
+                let predecessor_action = bound_segments.get(predecessor_id).copied();
+                if predecessor_action.map(|item| &item.id) != action.prerequisite.as_ref() {
+                    errors.push(format!(
+                        "{} can skip its preceding track segment",
+                        action.id.0
+                    ));
+                }
+            }
+            let destinations = action
+                .outputs
+                .iter()
+                .filter_map(|output| match output {
+                    GeneratedActionOutput::Destination { stage, site_id } => {
+                        Some((*stage, site_id.as_ref()))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let is_final = next.is_none();
+            let valid_destination = destinations.len() == 1
+                && destinations.iter().any(|(stage, site_id)| {
+                    if is_final {
+                        *stage == GeneratedDestinationStage::Exact
+                            && site_id.is_some_and(|site_id| {
+                                case.sites
+                                    .iter()
+                                    .any(|site| site.id == *site_id && site.is_true_location)
+                            })
+                    } else {
+                        *stage == GeneratedDestinationStage::RouteSegment && site_id.is_none()
+                    }
+                });
+            if !valid_destination {
+                errors.push(format!(
+                    "{} has an invalid destination for its track segment",
+                    action.id.0
+                ));
+            }
+        }
+    }
+}
+
 pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     if case.catalog_revision != CATALOG_REVISION {
@@ -2969,6 +3462,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
     if true_sites.len() != 1 {
         errors.push("case must have exactly one canonical finale location".into());
     }
+    validate_track_trails(case, &mut errors);
     let route_classes: BTreeSet<_> = case.actions.iter().map(|a| a.route).collect();
     if route_classes.len() < 2 {
         errors.push("case requires two materially different route classes".into());
@@ -3209,6 +3703,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         .map(|(index, witness)| (witness.id.clone(), index))
         .collect::<BTreeMap<_, _>>();
     let mut referral_edges = BTreeMap::<WitnessId, BTreeSet<WitnessId>>::new();
+    let mut authored_challenge_responses = BTreeSet::<String>::new();
     for (source_index, witness) in case.witnesses.iter().enumerate() {
         if witness.npc_id.is_empty()
             || witness.expected_location.is_empty()
@@ -3216,6 +3711,81 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             || witness.visible_description.is_empty()
         {
             errors.push(format!("{} lacks persistent referral data", witness.id.0));
+        }
+        if witness.testimony.is_empty()
+            || !witness
+                .testimony
+                .iter()
+                .any(|draft| draft.delivery == TestimonyDelivery::Volunteered)
+        {
+            errors.push(format!(
+                "{} has no initially visible testimony",
+                witness.id.0
+            ));
+        }
+        for draft in &witness.testimony {
+            let challenge = draft.challenge_text.as_str();
+            let normalized_claim = challenge
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            if challenge.is_empty() || challenge != challenge.trim() {
+                errors.push(format!(
+                    "{} testimony challenge text must be nonempty and already trimmed",
+                    witness.id.0
+                ));
+            } else if draft.spoken_text.match_indices(challenge).count() != 1 {
+                errors.push(format!(
+                    "{} projected testimony must contain its exact challenge text once",
+                    witness.id.0
+                ));
+            }
+            for response in [
+                &draft.challenge_responses.charm,
+                &draft.challenge_responses.command,
+                &draft.challenge_responses.bluff,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let normalized = response
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase();
+                if response.is_empty() || response != response.trim() {
+                    errors.push(format!(
+                        "{} has an empty or untrimmed authored challenge response",
+                        witness.id.0
+                    ));
+                } else if !normalized_claim.is_empty() && normalized.contains(&normalized_claim) {
+                    errors.push(format!(
+                        "{} authored challenge response repeats its claim text",
+                        witness.id.0
+                    ));
+                } else if !authored_challenge_responses.insert(normalized) {
+                    errors.push(format!(
+                        "{} reuses authored challenge response text",
+                        witness.id.0
+                    ));
+                }
+            }
+        }
+        for draft in witness
+            .testimony
+            .iter()
+            .filter(|draft| draft.delivery == TestimonyDelivery::Withheld)
+        {
+            if draft.destination_stage != "textual"
+                || draft.site_id.is_some()
+                || !draft.referred_witness_ids.is_empty()
+            {
+                errors.push(format!(
+                    "{} hides route authority behind a private concern",
+                    witness.id.0
+                ));
+            }
         }
         for referred in witness
             .testimony
@@ -3610,6 +4180,294 @@ mod tests {
         }
     }
 
+    #[test]
+    fn account_presentation_candidates_do_not_encode_reliability() {
+        for circumstance in [
+            Circumstance::SecretRiversideMeeting,
+            Circumstance::NightWindow,
+            Circumstance::RoadJourney,
+        ] {
+            let baseline = account_style_candidates(Reliability::Truthful, circumstance)
+                .into_iter()
+                .map(|candidate| {
+                    (
+                        candidate.id,
+                        candidate.value,
+                        candidate.weight,
+                        candidate.impossible,
+                    )
+                })
+                .collect::<Vec<_>>();
+            for reliability in [
+                Reliability::PartlyTruthful,
+                Reliability::Mistaken,
+                Reliability::Evasive,
+                Reliability::Deceptive,
+            ] {
+                let other = account_style_candidates(reliability, circumstance)
+                    .into_iter()
+                    .map(|candidate| {
+                        (
+                            candidate.id,
+                            candidate.value,
+                            candidate.weight,
+                            candidate.impossible,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(baseline, other);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_location_testimony_has_one_public_grant_shape() {
+        for seed in 0..256 {
+            let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
+            let draft = &generated.witnesses[0].testimony[0];
+            assert_eq!(draft.destination_stage, "route_segment");
+            assert_eq!(draft.referred_witness_ids.len(), 1);
+            assert!(!draft.spoken_text.is_empty());
+            assert!(!draft.spoken_text.to_ascii_lowercase().contains("truthful"));
+            assert!(!draft.spoken_text.to_ascii_lowercase().contains("lying"));
+        }
+    }
+
+    #[test]
+    fn claim_authority_separates_accuracy_from_demeanor_and_ignores_presentation_wording() {
+        let generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let mut draft = generated.witnesses[0].testimony[2].clone();
+        assert_ne!(draft.spoken_text, draft.truthful_text);
+        assert_eq!(
+            testimony_claim_authority(&draft),
+            TestimonyClaimAuthority {
+                factually_accurate: true,
+                demeanor_truth_signal: 1.0,
+            }
+        );
+
+        for delivery in [TestimonyDelivery::Volunteered, TestimonyDelivery::Withheld] {
+            draft.delivery = delivery;
+            for (reliability, expected) in [
+                (Reliability::Truthful, (true, 1.0)),
+                (Reliability::Mistaken, (false, 1.0)),
+                (Reliability::Evasive, (false, 0.0)),
+                (Reliability::Deceptive, (false, -1.0)),
+                (Reliability::PartlyTruthful, (false, 0.0)),
+            ] {
+                draft.reliability = reliability;
+                let authority = testimony_claim_authority(&draft);
+                assert_eq!(
+                    (
+                        authority.factually_accurate,
+                        authority.demeanor_truth_signal
+                    ),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn private_concern_never_changes_complete_initial_dialogue_shape() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            for seed in 0..256 {
+                let mut visible_outputs = BTreeSet::new();
+                let mut concern_states = BTreeSet::new();
+                for entropy in 0..64 {
+                    let mut source = context(seed, family);
+                    source.observer_entropy_hi = entropy;
+                    source.observer_entropy_lo = entropy.rotate_left(29);
+                    let generated = generate(&source).unwrap();
+                    validate(&generated).unwrap();
+                    let primary = &generated.witnesses[0];
+                    let visible = initial_testimony_projection(primary)
+                        .into_iter()
+                        .map(|(index, draft)| {
+                            (
+                                primary.npc_id.clone(),
+                                primary.display_name.clone(),
+                                index,
+                                draft.spoken_text.clone(),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    assert_eq!(visible.len(), 3);
+                    assert_eq!(visible[1].2, 1);
+                    assert_eq!(
+                        primary.testimony[1].delivery,
+                        TestimonyDelivery::Volunteered
+                    );
+                    visible_outputs.insert(visible);
+                    concern_states.insert(
+                        primary
+                            .testimony
+                            .iter()
+                            .any(|draft| draft.delivery == TestimonyDelivery::Withheld),
+                    );
+                }
+                assert_eq!(
+                    visible_outputs.len(),
+                    1,
+                    "observer-private concern entropy changed the full initial output"
+                );
+                assert_eq!(concern_states, BTreeSet::from([false, true]));
+            }
+        }
+    }
+
+    #[test]
+    fn private_concern_is_reliability_independent_and_pipeline_solvable() {
+        use crate::investigation::process_report;
+
+        let mut concern_reliability_states = BTreeSet::new();
+        let mut checked_private_route_guard = false;
+        for seed in 0..4_096 {
+            let source = context(seed, TemplateFamily::RecurringDepredation);
+            let generated = generate(&source).unwrap();
+            let primary = &generated.witnesses[0];
+            let truthful = primary.testimony[0].reliability == Reliability::Truthful;
+            let concern = primary
+                .testimony
+                .iter()
+                .position(|draft| draft.delivery == TestimonyDelivery::Withheld);
+            concern_reliability_states.insert((truthful, concern.is_some()));
+            if let Some(index) = concern {
+                let (_, pipeline) = generated_testimony_pipeline(
+                    &source,
+                    17,
+                    &generated,
+                    primary,
+                    index,
+                    source.now_minute,
+                )
+                .unwrap();
+                let (_, _, claim) = process_report(pipeline).unwrap();
+                assert!(claim.is_some());
+                if !checked_private_route_guard {
+                    let mut invalid = generated.clone();
+                    invalid.witnesses[0].testimony[index].site_id =
+                        Some(invalid.sites[0].id.clone());
+                    assert!(validate(&invalid).unwrap_err().iter().any(|error| {
+                        error.contains("hides route authority behind a private concern")
+                    }));
+                    checked_private_route_guard = true;
+                }
+            }
+        }
+        assert!(checked_private_route_guard);
+        assert_eq!(
+            concern_reliability_states,
+            BTreeSet::from([(false, false), (false, true), (true, false), (true, true)])
+        );
+    }
+
+    #[test]
+    fn generated_physical_trails_are_opaque_contiguous_two_segment_chains() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            let generated = generate(&context(73, family)).unwrap();
+            let [trail] = generated.track_trails.as_slice() else {
+                panic!("generated case must have one physical trail");
+            };
+            assert_eq!(trail.segment_ids.len(), 2);
+            let first = generated
+                .track_segments
+                .iter()
+                .find(|segment| segment.id == trail.segment_ids[0])
+                .unwrap();
+            let final_segment = generated
+                .track_segments
+                .iter()
+                .find(|segment| segment.id == trail.segment_ids[1])
+                .unwrap();
+            assert_eq!(first.ordinal, 0);
+            assert_eq!(first.predecessor, None);
+            assert_eq!(first.next.as_ref(), Some(&final_segment.id));
+            assert_eq!(final_segment.ordinal, 1);
+            assert_eq!(final_segment.predecessor.as_ref(), Some(&first.id));
+            assert_eq!(final_segment.next, None);
+
+            let first_action = generated
+                .actions
+                .iter()
+                .find(|action| action.track_segment_id.as_ref() == Some(&first.id))
+                .unwrap();
+            let final_action = generated
+                .actions
+                .iter()
+                .find(|action| action.track_segment_id.as_ref() == Some(&final_segment.id))
+                .unwrap();
+            assert_eq!(final_action.prerequisite.as_ref(), Some(&first_action.id));
+            assert!(first_action.outputs.iter().any(|output| matches!(
+                output,
+                GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::RouteSegment,
+                    site_id: None,
+                }
+            )));
+            assert!(!first_action.outputs.iter().any(|output| matches!(
+                output,
+                GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Exact,
+                    ..
+                }
+            )));
+            assert!(final_action.outputs.iter().any(|output| matches!(
+                output,
+                GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Exact,
+                    site_id: Some(_),
+                }
+            )));
+        }
+    }
+
+    #[test]
+    fn track_validator_rejects_broken_links_skips_and_early_exact_locations() {
+        let generated = generate(&context(91, TemplateFamily::RecurringDepredation)).unwrap();
+
+        let mut broken_link = generated.clone();
+        broken_link.track_segments[0].next = None;
+        assert!(validate(&broken_link).is_err());
+
+        let mut skipped = generated.clone();
+        let final_id = skipped.track_segments[1].id.clone();
+        let final_action = skipped
+            .actions
+            .iter_mut()
+            .find(|action| action.track_segment_id.as_ref() == Some(&final_id))
+            .unwrap();
+        final_action.prerequisite = None;
+        assert!(validate(&skipped).is_err());
+
+        let mut leaked = generated.clone();
+        let first_id = leaked.track_segments[0].id.clone();
+        let true_site = leaked
+            .sites
+            .iter()
+            .find(|site| site.is_true_location)
+            .unwrap()
+            .id
+            .clone();
+        leaked
+            .actions
+            .iter_mut()
+            .find(|action| action.track_segment_id.as_ref() == Some(&first_id))
+            .unwrap()
+            .outputs
+            .push(GeneratedActionOutput::Destination {
+                stage: GeneratedDestinationStage::Exact,
+                site_id: Some(true_site),
+            });
+        assert!(validate(&leaked).is_err());
+    }
+
     fn inn_only_settlement_witnesses() -> (
         Vec<crate::settlement_economy::SettlementNpcTab>,
         Vec<WitnessCandidate>,
@@ -3824,6 +4682,103 @@ mod tests {
                 .iter()
                 .any(|error| { error.contains("cyclic or backward witness referral") })
         );
+    }
+
+    #[test]
+    fn challenge_boundaries_and_optional_authored_responses_validate() {
+        let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let first = &generated.witnesses[0].testimony[0];
+        assert_eq!(
+            first
+                .spoken_text
+                .match_indices(&first.challenge_text)
+                .count(),
+            1
+        );
+
+        generated.witnesses[0].testimony[0].challenge_responses = TestimonyChallengeResponses {
+            charm: None,
+            command: None,
+            bluff: None,
+        };
+        validate(&generated).unwrap();
+
+        let duplicate = generated.witnesses[0].testimony[1]
+            .challenge_responses
+            .charm
+            .clone()
+            .expect("generated response");
+        generated.witnesses[0].testimony[2]
+            .challenge_responses
+            .bluff = Some(duplicate);
+        assert!(
+            validate(&generated)
+                .unwrap_err()
+                .iter()
+                .any(|error| error.contains("reuses authored challenge response text"))
+        );
+    }
+
+    #[test]
+    fn challenge_validation_rejects_padded_challenge_text() {
+        let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        generated.witnesses[0].testimony[0].challenge_text =
+            format!(" {} ", generated.witnesses[0].testimony[0].challenge_text);
+        assert!(
+            validate(&generated)
+                .unwrap_err()
+                .iter()
+                .any(|error| error.contains("challenge text must be nonempty and already trimmed"))
+        );
+    }
+
+    #[test]
+    fn challenge_validation_rejects_response_containing_normalized_claim_text() {
+        let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let normalized_claim = generated.witnesses[0].testimony[0]
+            .challenge_text
+            .to_uppercase();
+        generated.witnesses[0].testimony[0]
+            .challenge_responses
+            .charm = Some(format!("Press further about {normalized_claim}"));
+        assert!(
+            validate(&generated)
+                .unwrap_err()
+                .iter()
+                .any(|error| error.contains("challenge response repeats its claim text"))
+        );
+    }
+
+    #[test]
+    fn generated_claim_boundaries_exclude_narration_and_punctuation() {
+        let generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let primary = &generated.witnesses[0].testimony;
+        assert_eq!(
+            primary[1].challenge_text,
+            "I cannot tell which details matter"
+        );
+        assert!(primary[2].spoken_text.starts_with("I noticed "));
+        assert!(!primary[2].challenge_text.starts_with("I noticed "));
+        assert!(
+            primary[2]
+                .spoken_text
+                .ends_with(". You may examine it yourself.")
+        );
+        assert!(!primary[2].challenge_text.ends_with('.'));
+
+        let visual = (0..100)
+            .find_map(|seed| {
+                let generated =
+                    generate(&context(seed, TemplateFamily::RecurringDepredation)).ok()?;
+                let draft = generated.witnesses[0].testimony[0].clone();
+                draft
+                    .spoken_text
+                    .starts_with("It looked like ")
+                    .then_some(draft)
+            })
+            .expect("golden range includes a visual claim");
+        assert!(!visual.challenge_text.starts_with("It looked like "));
+        assert!(!visual.challenge_text.ends_with('.'));
     }
 
     #[test]
@@ -4162,14 +5117,12 @@ mod tests {
                 BestiaryCategory::Human | BestiaryCategory::Elf | BestiaryCategory::Dwarf
             )
         }));
-        assert_eq!(
-            implications
-                .iter()
-                .find(|implication| implication.category == BestiaryCategory::Beast)
-                .unwrap()
-                .support_bps,
-            10_000
-        );
+        assert!(implications.iter().all(|implication| {
+            implication
+                .diagnostic_kind
+                .as_deref()
+                .is_some_and(|kind| !kind.is_empty())
+        }));
     }
 
     #[test]
@@ -4490,6 +5443,29 @@ mod tests {
     }
 
     #[test]
+    fn truthful_spoken_location_matches_its_bound_site() {
+        for seed in 0..128 {
+            let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
+            let statement = &generated.witnesses[0].testimony[0];
+            if statement.reliability != Reliability::Truthful {
+                continue;
+            }
+            let site_id = statement.site_id.as_ref().unwrap();
+            let site = generated
+                .sites
+                .iter()
+                .find(|candidate| candidate.id == *site_id)
+                .unwrap();
+            assert!(
+                statement.spoken_text.contains(&site.safe_label),
+                "truthful spoken site {:?} did not match bound site {:?}",
+                statement.spoken_text,
+                site.safe_label
+            );
+        }
+    }
+
+    #[test]
     fn selected_yaml_bridge_materializes_complete_reachable_authority() {
         let generated = generate(&context(44, TemplateFamily::DisappearanceOrLoss)).unwrap();
         assert!(
@@ -4702,6 +5678,12 @@ mod tests {
                         .iter()
                         .map(|evidence| evidence.proposition_id.clone()),
                 )
+                .chain(case.track_trails.iter().map(|trail| trail.id.0.clone()))
+                .chain(
+                    case.track_segments
+                        .iter()
+                        .map(|segment| segment.id.0.clone()),
+                )
                 .chain(std::iter::once(case.public_case_id.clone()))
                 .collect::<BTreeSet<_>>()
         };
@@ -4799,13 +5781,19 @@ mod tests {
                 .is_some()
         );
         let mistaken = account_style_candidates(Reliability::Mistaken, Circumstance::RoadJourney);
-        assert!(
-            mistaken
-                .iter()
-                .find(|c| c.value == AccountStyle::TracksAndMovement)
-                .unwrap()
-                .impossible
-                .is_some()
+        let mistaken_tracks = mistaken
+            .iter()
+            .find(|candidate| candidate.value == AccountStyle::TracksAndMovement)
+            .unwrap();
+        let truthful_tracks =
+            account_style_candidates(Reliability::Truthful, Circumstance::RoadJourney)
+                .into_iter()
+                .find(|candidate| candidate.value == AccountStyle::TracksAndMovement)
+                .unwrap();
+        assert_eq!(
+            (mistaken_tracks.weight, mistaken_tracks.impossible),
+            (truthful_tracks.weight, truthful_tracks.impossible),
+            "account wording must not reveal hidden reliability"
         );
         assert_ne!(
             reliability_candidates(

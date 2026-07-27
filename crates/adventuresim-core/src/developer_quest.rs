@@ -12,7 +12,7 @@ use crate::{
         self as qg, CanonicalCause, CanonicalEvent, CausalBridge, ConsequenceProfile,
         GeneratedAction, GeneratedArea, GeneratedCase, GeneratedDialogueProducer,
         GeneratedEvidence, GeneratedFinale, GeneratedPatternTarget, GeneratedSite,
-        GenerationContext, SiteId, WitnessBinding,
+        GenerationContext, SiteId, TrackSegment, TrackTrail, WitnessBinding,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -67,6 +67,8 @@ pub struct DeveloperQuestDefinition {
     pub witnesses: Vec<WitnessBinding>,
     pub pattern_targets: Vec<GeneratedPatternTarget>,
     pub evidence: Vec<GeneratedEvidence>,
+    pub track_trails: Vec<TrackTrail>,
+    pub track_segments: Vec<TrackSegment>,
     pub actions: Vec<GeneratedAction>,
     pub objectives: ObjectiveExpression,
     pub custody: Vec<(String, SiteId)>,
@@ -93,6 +95,8 @@ impl DeveloperQuestDefinition {
             witnesses: case.witnesses,
             pattern_targets: case.pattern_targets,
             evidence: case.evidence,
+            track_trails: case.track_trails,
+            track_segments: case.track_segments,
             actions: case.actions,
             objectives: case.objectives,
             custody: case.custody,
@@ -274,6 +278,8 @@ const INTERNAL_ID_PREFIXES: &[&str] = &[
     "proposition:",
     "site:",
     "subject:",
+    "track-segment:",
+    "track-trail:",
     "witness:",
 ];
 
@@ -291,6 +297,20 @@ fn valid_local_id(value: &str) -> bool {
 
 fn declared_ids(definition: &DeveloperQuestDefinition) -> Vec<(String, &str)> {
     let mut ids = Vec::new();
+    ids.extend(
+        definition
+            .track_trails
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (format!("track_trails.{index}.id"), item.id.0.as_str())),
+    );
+    ids.extend(
+        definition
+            .track_segments
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (format!("track_segments.{index}.id"), item.id.0.as_str())),
+    );
     ids.extend(
         definition
             .canonical_events
@@ -420,6 +440,8 @@ struct DeclaredIdSets {
     propositions: BTreeSet<String>,
     sites: BTreeSet<String>,
     subjects: BTreeSet<String>,
+    track_segments: BTreeSet<String>,
+    track_trails: BTreeSet<String>,
     witnesses: BTreeSet<String>,
 }
 
@@ -453,6 +475,14 @@ impl DeclaredIdSets {
         );
         ids.actions
             .extend(definition.actions.iter().map(|item| item.id.0.clone()));
+        ids.track_trails
+            .extend(definition.track_trails.iter().map(|item| item.id.0.clone()));
+        ids.track_segments.extend(
+            definition
+                .track_segments
+                .iter()
+                .map(|item| item.id.0.clone()),
+        );
         ids.groups.extend(
             definition
                 .hostile_groups
@@ -500,6 +530,8 @@ impl DeclaredIdSets {
             &ids.propositions,
             &ids.sites,
             &ids.subjects,
+            &ids.track_segments,
+            &ids.track_trails,
             &ids.witnesses,
         ] {
             ids.all.extend(set.iter().cloned());
@@ -610,8 +642,51 @@ fn validate_references(
             );
         }
     }
+    for (index, trail) in definition.track_trails.iter().enumerate() {
+        for (segment_index, segment_id) in trail.segment_ids.iter().enumerate() {
+            missing_reference(
+                diagnostics,
+                format!("track_trails.{index}.segment_ids.{segment_index}"),
+                &segment_id.0,
+                &ids.track_segments,
+                "track segment",
+            );
+        }
+    }
+    for (index, segment) in definition.track_segments.iter().enumerate() {
+        missing_reference(
+            diagnostics,
+            format!("track_segments.{index}.trail_id"),
+            &segment.trail_id.0,
+            &ids.track_trails,
+            "track trail",
+        );
+        for (field, linked) in [
+            ("predecessor", segment.predecessor.as_ref()),
+            ("next", segment.next.as_ref()),
+        ] {
+            if let Some(linked) = linked {
+                missing_reference(
+                    diagnostics,
+                    format!("track_segments.{index}.{field}"),
+                    &linked.0,
+                    &ids.track_segments,
+                    "track segment",
+                );
+            }
+        }
+    }
     for (index, action) in definition.actions.iter().enumerate() {
         let base = format!("actions.{index}");
+        if let Some(segment_id) = &action.track_segment_id {
+            missing_reference(
+                diagnostics,
+                format!("{base}.track_segment_id"),
+                &segment_id.0,
+                &ids.track_segments,
+                "track segment",
+            );
+        }
         if let Some(prerequisite) = &action.prerequisite {
             missing_reference(
                 diagnostics,
@@ -714,6 +789,15 @@ fn validate_references(
                             "cohort",
                         );
                     }
+                }
+                qg::GeneratedActionOutput::TrackFinding { segment_id, .. } => {
+                    missing_reference(
+                        diagnostics,
+                        format!("{path}.segment_id"),
+                        &segment_id.0,
+                        &ids.track_segments,
+                        "track segment",
+                    );
                 }
                 qg::GeneratedActionOutput::Consequence { consequence } => match consequence {
                     qg::GeneratedActionConsequence::RetrieveAsset { asset_id, .. } => {
@@ -1110,6 +1194,22 @@ fn namespace_definition(
             remap(proposition_id, &replacements);
         }
     }
+    for trail in &mut materialized.track_trails {
+        remap(&mut trail.id.0, &replacements);
+        for segment_id in &mut trail.segment_ids {
+            remap(&mut segment_id.0, &replacements);
+        }
+    }
+    for segment in &mut materialized.track_segments {
+        remap(&mut segment.id.0, &replacements);
+        remap(&mut segment.trail_id.0, &replacements);
+        if let Some(predecessor) = &mut segment.predecessor {
+            remap(&mut predecessor.0, &replacements);
+        }
+        if let Some(next) = &mut segment.next {
+            remap(&mut next.0, &replacements);
+        }
+    }
     for action in &mut materialized.actions {
         remap(&mut action.id.0, &replacements);
         if matches!(
@@ -1122,6 +1222,9 @@ fn namespace_definition(
             remap(&mut prerequisite.0, &replacements);
         }
         remap(&mut action.alternate.0, &replacements);
+        if let Some(segment_id) = &mut action.track_segment_id {
+            remap(&mut segment_id.0, &replacements);
+        }
         for output in &mut action.outputs {
             match output {
                 qg::GeneratedActionOutput::Destination { site_id, .. } => {
@@ -1142,6 +1245,9 @@ fn namespace_definition(
                     {
                         remap(cohort_id, &replacements);
                     }
+                }
+                qg::GeneratedActionOutput::TrackFinding { segment_id, .. } => {
+                    remap(&mut segment_id.0, &replacements);
                 }
                 qg::GeneratedActionOutput::Consequence { consequence } => match consequence {
                     qg::GeneratedActionConsequence::RetrieveAsset { asset_id, .. } => {
@@ -1580,6 +1686,8 @@ pub fn compile(
         witnesses: materialized.witnesses,
         pattern_targets: materialized.pattern_targets,
         evidence: materialized.evidence,
+        track_trails: materialized.track_trails,
+        track_segments: materialized.track_segments,
         actions: materialized.actions,
         objectives: materialized.objectives,
         custody: materialized.custody,
@@ -1693,7 +1801,7 @@ pub fn schema_json(witness_candidates: &[qg::WitnessCandidate]) -> Value {
             ,"terrains": ["road", "settlement", "plains", "forest", "hills", "marsh", "ruins", "underground"]
             ,"symptoms": ["missing_caravans", "night_screams", "sick_locals", "empty_stalls", "vanished_livestock"]
             ,"encounter_archetypes": ["bandits", "goblins", "undead"]
-            ,"action_output_kinds": ["destination", "evidence", "pattern_condition", "ambush_ready", "consequence"]
+            ,"action_output_kinds": ["destination", "evidence", "pattern_condition", "track_finding", "ambush_ready", "consequence"]
             ,"pattern_condition_kinds": ["night_window", "road_route", "victim_profile", "broad_survey"]
             ,"action_consequence_kinds": ["retrieve_asset", "rescue_subject"]
             ,"objective_requirements": ["Defeat", "DriveOff", "Capture", "SurviveWindow", "Rescue", "EscortTo", "Retrieve", "Return", "Locate", "Identify", "Expose", "PresentProof", "PresentTestimony", "Protect", "Negotiate", "Release", "Exchange", "ReportToIssuer"]
@@ -1720,6 +1828,7 @@ pub fn schema_json(witness_candidates: &[qg::WitnessCandidate]) -> Value {
                     "destination": {"kind":"destination","stage":"unknown","site_id":null},
                     "evidence": {"kind":"evidence","evidence_id":"evidence:new"},
                     "pattern_condition": {"kind":"pattern_condition","evidence_id":"evidence:new","condition":{"kind":"night_window"}},
+                    "track_finding": {"kind":"track_finding","segment_id":"track-segment:new","finding":"The trail continues across this ground."},
                     "ambush_ready": {"kind":"ambush_ready"},
                     "consequence": {"kind":"consequence","consequence":{"kind":"retrieve_asset","asset_id":"asset:new","next_version":1}}
                 },
@@ -1760,6 +1869,8 @@ pub fn schema_json(witness_candidates: &[qg::WitnessCandidate]) -> Value {
             {"path":"sites", "label":"Sites, hideout and areas", "repeatable":true},
             {"path":"witnesses", "label":"Witnesses, testimony and referrals", "repeatable":true},
             {"path":"evidence", "label":"Physical evidence and inspection topics", "repeatable":true},
+            {"path":"track_trails", "label":"Track trail chains", "repeatable":true},
+            {"path":"track_segments", "label":"Track segment authority", "repeatable":true},
             {"path":"actions", "label":"Routes, prerequisites, alternates and outputs", "repeatable":true},
             {"path":"objectives", "label":"DNF objectives, custody and hostiles", "repeatable":true},
             {"path":"finales", "label":"Finales and dialogue producers", "repeatable":true},
@@ -1826,6 +1937,14 @@ mod tests {
             output,
             qg::GeneratedActionOutput::PatternCondition { .. }
         ));
+        let track_output: qg::GeneratedActionOutput = serde_json::from_value(
+            schema["constructors"]["variants"]["action_output"]["track_finding"].clone(),
+        )
+        .unwrap();
+        assert!(matches!(
+            track_output,
+            qg::GeneratedActionOutput::TrackFinding { .. }
+        ));
         let requirement: crate::case::ObjectiveRequirement = serde_json::from_value(
             schema["constructors"]["variants"]["objective_requirement"]["Rescue"].clone(),
         )
@@ -1877,6 +1996,14 @@ mod tests {
         assert_eq!(first.areas.len(), developer.definition.areas.len());
         assert_eq!(first.witnesses.len(), developer.definition.witnesses.len());
         assert_eq!(first.evidence.len(), developer.definition.evidence.len());
+        assert_eq!(
+            first.track_trails.len(),
+            developer.definition.track_trails.len()
+        );
+        assert_eq!(
+            first.track_segments.len(),
+            developer.definition.track_segments.len()
+        );
         assert_eq!(first.actions.len(), developer.definition.actions.len());
         assert_ne!(first.sites[0].id, developer.definition.sites[0].id);
         assert_eq!(first.consequence, developer.definition.consequence);
@@ -1907,6 +2034,8 @@ mod tests {
             &second.sites[0].id.0,
             &second.witnesses[0].id.0,
             &second.evidence[0].id.0,
+            &second.track_trails[0].id.0,
+            &second.track_segments[0].id.0,
             &second.actions[0].id.0,
             second.objectives.alternatives[0].objectives[0].id.as_str(),
             &second.finales[0].id.0,
@@ -2069,6 +2198,19 @@ mod tests {
         action.actions[0].alternate = qg::ActionId::try_new("action:missing").unwrap();
         assert_unknown_reference(action, "actions.0.alternate");
 
+        let mut segment_action = generated_definition();
+        let action_index = segment_action
+            .actions
+            .iter()
+            .position(|action| action.track_segment_id.is_some())
+            .unwrap();
+        segment_action.actions[action_index].track_segment_id =
+            Some(qg::TrackSegmentId::try_new("track-segment:missing").unwrap());
+        assert_unknown_reference(
+            segment_action,
+            &format!("actions.{action_index}.track_segment_id"),
+        );
+
         let mut finale = generated_definition();
         finale.finales[0].site_id = SiteId::try_new("site:missing").unwrap();
         assert_unknown_reference(finale, "finales.0.site_id");
@@ -2083,6 +2225,26 @@ mod tests {
     #[test]
     fn namespacing_does_not_rewrite_prose_that_looks_like_an_id() {
         let mut definition = generated_definition();
+        definition.track_segments[0].safe_finding = "track-segment:foo".into();
+        let segment_id = definition.track_segments[0].id.clone();
+        if let qg::GeneratedActionOutput::TrackFinding { finding, .. } = definition
+            .actions
+            .iter_mut()
+            .find(|action| action.track_segment_id.as_ref() == Some(&segment_id))
+            .unwrap()
+            .outputs
+            .iter_mut()
+            .find(|output| {
+                matches!(
+                    output,
+                    qg::GeneratedActionOutput::TrackFinding { segment_id: id, .. }
+                        if id == &segment_id
+                )
+            })
+            .unwrap()
+        {
+            *finding = "track-segment:foo".into();
+        }
         let mut prose_site = definition.sites[0].clone();
         prose_site.id = SiteId::try_new("site:foo").unwrap();
         prose_site.safe_label = "site:foo".into();
@@ -2103,6 +2265,10 @@ mod tests {
             .expect("ID-shaped prose is unchanged");
         assert_ne!(site.id.0, "site:foo");
         assert_eq!(site.safe_label.as_bytes(), b"site:foo");
+        assert_eq!(
+            generated.track_segments[0].safe_finding,
+            "track-segment:foo"
+        );
     }
 
     #[test]

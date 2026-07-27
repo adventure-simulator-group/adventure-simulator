@@ -1908,6 +1908,8 @@ body.character-action-dialog-open { overflow: hidden; }
 .character-action-backdrop {
   position: absolute;
   inset: 0;
+  padding: 0;
+  border: 0;
   background: rgb(0 0 0 / 72%);
 }
 .character-action-dialog {
@@ -1959,6 +1961,30 @@ body.character-action-dialog-open { overflow: hidden; }
 .cooking-dialog { width: min(76rem, 100%); padding: 0; }
 .cooking-dialog > .character-action-dialog-header { padding: 1rem 1rem 0; }
 .social-dialog { width: min(40rem, 100%); }
+.social-chat-activity {
+  display: grid;
+  gap: .7rem;
+}
+.social-chat-activity label {
+  display: grid;
+  gap: .2rem;
+}
+.social-chat-duration {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  gap: .75rem;
+  align-items: center;
+}
+.social-chat-duration input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.social-chat-duration output {
+  min-width: 7.5rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
 .automatic-social-chat {
   display: flex;
   align-items: center;
@@ -2356,6 +2382,51 @@ body.character-action-dialog-open { overflow: hidden; }
   font: inherit;
 }
 
+.settlement-npc-portrait-shell {
+  position: relative;
+  display: inline-grid;
+}
+
+.settlement-npc-social-button {
+  position: absolute;
+  z-index: 2;
+  right: -.35rem;
+  bottom: .85rem;
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: .25rem;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  place-items: center;
+  background: var(--tactile-background);
+  box-shadow: var(--tactile-shadow);
+  color: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(.2rem);
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.settlement-npc-portrait-shell:hover .settlement-npc-social-button,
+.settlement-npc-portrait-shell:focus-within .settlement-npc-social-button {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.settlement-npc-social-button .stat-icon { width: 1rem; height: 1rem; }
+.settlement-npc-social-button:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+
+.npc-social-summary {
+  justify-self: center;
+  padding: .35rem .65rem;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: var(--tactile-background);
+  color: inherit;
+  cursor: pointer;
+}
+
 .settlement-npc-portrait:is(.active, [aria-pressed="true"]) .party-portrait-initial {
   box-shadow:
     0 0 0 2px var(--accent-gold),
@@ -2435,6 +2506,11 @@ body.character-action-dialog-open { overflow: hidden; }
   outline: 2px solid var(--focus-ring, #fff);
   outline-offset: 2px;
 }
+
+.bestiary-result-chip.support-strong { background: color-mix(in srgb, var(--success-color) 30%, transparent); }
+.bestiary-result-chip.support-plausible { background: color-mix(in srgb, var(--warning-color) 24%, transparent); }
+.bestiary-result-chip.support-weak { background: color-mix(in srgb, var(--muted-color) 20%, transparent); }
+.bestiary-provenance { margin: .35rem 0 0; padding-left: 1.2rem; }
 
 .journal-bestiary-results {
   margin-top: 0.45rem;
@@ -3344,10 +3420,12 @@ button.party-portrait-action {
 .social-source-context p { margin: 0.3rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
 .social-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.45rem 0.6rem; border-top: 1px solid var(--border-color); background: color-mix(in srgb, var(--panel-bg) 75%, black); }
 .social-actions form { margin: 0; }
-.social-action { display: grid; width: 2rem; height: 2rem; padding: 0.3rem; place-items: center; border: 1px solid var(--border-color); border-radius: 0.3rem; background: var(--panel-bg); color: var(--text); cursor: pointer; }
+.social-action { display: inline-flex; width: auto; min-height: 2rem; padding: 0.3rem 0.55rem; align-items: center; gap: 0.4rem; border: 1px solid var(--border-color); border-radius: 0.3rem; background: var(--panel-bg); color: var(--text); cursor: pointer; }
 .social-action:hover,
 .social-action:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.social-action-icon { display: inline-grid; flex: 0 0 auto; place-items: center; cursor: help; }
 .social-action .game-icon { width: 1.15rem; height: 1.15rem; }
+.social-action-label { white-space: nowrap; }
 .social-unavailable { color: var(--danger); }
 
 .fervor-meter {
@@ -4623,6 +4701,45 @@ body.chat-resizing {
 .settlement-chat-messages [data-chat-channel="dm"] { color: var(--chat-dm-color); }
 .settlement-chat-messages [data-chat-channel="guild"] { color: var(--chat-guild-color); }
 .settlement-chat-messages [data-chat-channel="info"] { color: var(--chat-info-color); }
+
+.dialogue-claim {
+  display: inline;
+  margin: 0 .08em;
+  padding: 0 .12em;
+  border: 0;
+  border-radius: .15em;
+  background: color-mix(in srgb, currentColor var(--claim-bg-mix), transparent);
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: .15em;
+  cursor: pointer;
+}
+.dialogue-claim-unknown { color: color-mix(in srgb, #e8c85e var(--claim-mix), var(--chat-local-color)); }
+.dialogue-claim-likely_false { color: color-mix(in srgb, #ef6054 var(--claim-mix), var(--chat-local-color)); }
+.dialogue-claim-likely_true { color: color-mix(in srgb, #69d17d var(--claim-mix), var(--chat-local-color)); }
+.dialogue-claim:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+.dialogue-claim-responses {
+  display: block;
+  margin: .45rem 0 .55rem 1.4rem;
+  padding: .55rem;
+  border-left: 2px solid color-mix(in srgb, var(--chat-local-color) 45%, transparent);
+  background: color-mix(in srgb, var(--panel-bg, #1d1812) 88%, transparent);
+}
+.dialogue-claim-responses p { margin: 0 0 .4rem; }
+.dialogue-claim-actions { display: flex; flex-direction: column; align-items: stretch; gap: .35rem; }
+.dialogue-claim-action {
+  display: grid;
+  grid-template-columns: 1.25rem 5rem 1fr;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  gap: .45rem;
+}
+.dialogue-claim-response-line { color: var(--text-secondary); font-weight: 400; }
+.dialogue-claim-feedback { color: var(--text-secondary); }
 
 .chat-system-message {
   font-style: italic;

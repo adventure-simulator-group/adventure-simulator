@@ -101,6 +101,99 @@
     if (prompt.mode !== "YesNo") { const submit = document.createElement("button"); submit.type = "submit"; submit.className = "btn btn-small"; submit.textContent = "Answer"; group.append(submit); }
     form.append(group); messages.append(form);
   };
+  let expandedClaimToken = null;
+  const affinityFeedback = (delta) => {
+    if (Math.abs(delta) < 0.05) return "Affinity: no change";
+    const sign = delta > 0 ? "+" : "−";
+    return `Affinity ${sign}${Math.abs(delta).toFixed(1)}`;
+  };
+  const claimResponsePanel = (claim, binding) => {
+    const panel = document.createElement("section");
+    panel.className = "dialogue-claim-responses";
+    panel.dataset.claimPanel = claim.challenge_token;
+    panel.id = `dialogue-claim-panel-${claim.challenge_token}`;
+    panel.setAttribute("aria-label", `Responses concerning ${claim.value}`);
+    const echo = document.createElement("p");
+    echo.className = "dialogue-claim-echo";
+    echo.textContent = `You: “${claim.value}?”`;
+    panel.append(echo);
+    if (claim.resolved) {
+      const feedback = document.createElement("p");
+      feedback.className = "dialogue-claim-feedback";
+      feedback.setAttribute("role", "status");
+      feedback.textContent = `${claim.outcome === "useful_answer" ? "They offer a useful answer." : "They do not yield on that point."} ${affinityFeedback(claim.affinity_delta)}`;
+      panel.append(feedback);
+      return panel;
+    }
+    const controls = document.createElement("div");
+    controls.className = "dialogue-claim-actions";
+    const approaches = [
+      claim.charm_response && { approach: "charm", label: "Charm", icon: "rose", description: "A low-risk, low-leverage appeal.", line: claim.charm_response },
+      claim.command_response && { approach: "command", label: "Command", icon: "crown", description: "A medium-risk demand that always strains affinity.", line: claim.command_response },
+      claim.bluff_response && { approach: "bluff", label: "Bluff", icon: "conversation", description: "A high-risk, high-leverage deception.", line: claim.bluff_response },
+    ].filter(Boolean);
+    approaches.forEach(({ approach, label, icon, description, line }) => {
+      const control = document.createElement("button");
+      control.type = "button";
+      control.className = "social-action dialogue-claim-action";
+      control.dataset.strategicTooltip = `${description} Takes 5 minutes.`;
+      control.setAttribute("aria-label", `${label}. ${line} ${description} Takes 5 minutes.`);
+      const iconMask = document.createElement("span");
+      iconMask.className = "game-icon";
+      iconMask.style.setProperty("--game-icon", `url('/static/icons/game/${icon}.svg')`);
+      iconMask.setAttribute("aria-hidden", "true");
+      const shortLabel = document.createElement("strong");
+      shortLabel.textContent = label;
+      const responseLine = document.createElement("span");
+      responseLine.className = "dialogue-claim-response-line";
+      responseLine.textContent = line;
+      control.append(iconMask, shortLabel, responseLine);
+      control.addEventListener("click", () => {
+        controls.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+        request("/api/dialogue/claim-response", {
+          session_id: binding.sessionId,
+          challenge_token: claim.challenge_token,
+          approach,
+          action_id: actionId(),
+          expected_revision: binding.revision,
+        }).then((view) => {
+          if (dialogueResponseIsCurrent(binding, selectionGeneration, chat.dataset.localChatSubject || "", currentView)) render(view);
+        }).catch((error) => {
+          if (dialogueResponseIsCurrent(binding, selectionGeneration, chat.dataset.localChatSubject || "", currentView)) {
+            window.reportStrategicError(error, `${label.toLowerCase()} claim response`);
+            controls.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+          }
+        });
+      }, { signal });
+      controls.append(control);
+    });
+    panel.append(controls);
+    return panel;
+  };
+  const claimControl = (claim, binding, row) => {
+    const control = document.createElement("button");
+    control.type = "button";
+    control.className = `dialogue-claim dialogue-claim-${claim.assessment_direction}`;
+    const strength = Math.max(0, Math.min(1, claim.assessment_strength));
+    control.style.setProperty("--claim-mix", `${55 + strength * 45}%`);
+    control.style.setProperty("--claim-bg-mix", `${10 + strength * 12}%`);
+    const state = ({ unknown: "Insight is uncertain", likely_false: "Insight leans untrue", likely_true: "Insight leans true" })[claim.assessment_direction] || "Insight is uncertain";
+    control.setAttribute("aria-label", `${claim.value}. ${state}. Open responses.`);
+    control.setAttribute("aria-controls", `dialogue-claim-panel-${claim.challenge_token}`);
+    control.setAttribute("aria-expanded", String(expandedClaimToken === claim.challenge_token));
+    control.textContent = claim.value;
+    const open = () => {
+      document.querySelectorAll(".dialogue-claim-responses").forEach((panel) => panel.remove());
+      expandedClaimToken = expandedClaimToken === claim.challenge_token ? null : claim.challenge_token;
+      document.querySelectorAll(".dialogue-claim").forEach((candidate) => candidate.setAttribute("aria-expanded", "false"));
+      if (expandedClaimToken) {
+        control.setAttribute("aria-expanded", "true");
+        row.append(claimResponsePanel(claim, binding));
+      }
+    };
+    control.addEventListener("click", open, { signal });
+    return control;
+  };
   // Topics are exposed by highlighted phrases in dialogue, not by guessing
   // hidden topic labels in the free-text box.
   const activeCandidates = () => currentView?.open_prompt?.choices || [];
@@ -134,13 +227,22 @@
       const timestamp = document.createElement("span"); timestamp.className = "chat-timestamp"; timestamp.textContent = "[--:--] ";
       const speaker = document.createElement("strong"); speaker.textContent = `${event.speaker_name}: `;
       row.append(timestamp, speaker);
-      event.fragments.forEach(({ fragment, source }) => {
-        if (fragment.kind === "text") { row.append(document.createTextNode(fragment.value)); const edit = sourceLink(source); if (edit) row.append(edit); }
+      event.fragments.forEach(({ fragment, source, claim_segments }) => {
+        if (fragment.kind === "text") {
+          if (claim_segments) claim_segments.forEach((segment) => {
+            row.append(segment.kind === "claim" ? claimControl(segment, binding, row) : document.createTextNode(segment.value));
+          });
+          else row.append(document.createTextNode(fragment.value));
+          const edit = sourceLink(source); if (edit) row.append(edit);
+        }
         else if (fragment.kind === "period_claim") { const claim = document.createElement("q"); claim.className = "dialogue-period-claim"; claim.textContent = fragment.value; row.append(claim); const edit = sourceLink(source); if (edit) row.append(edit); }
         else if (fragment.kind === "authoritative_explanation") { const explanation = document.createElement("span"); explanation.className = "dialogue-authoritative-explanation"; explanation.dataset.reference = fragment.reference; explanation.textContent = fragment.value; row.append(explanation); const edit = sourceLink(source); if (edit) row.append(edit); }
         else if (fragment.kind === "topic") row.append(topicAnchor({ id: fragment.topic, label: fragment.label, source }, { ...binding, topicId: fragment.topic }));
       });
       messages.append(row);
+      const expanded = event.fragments.flatMap((entry) => entry.claim_segments || [])
+        .find((segment) => segment.kind === "claim" && segment.challenge_token === expandedClaimToken);
+      if (expanded) row.append(claimResponsePanel(expanded, binding));
     });
     renderPrompt(view.open_prompt);
     refreshCompletion();
@@ -258,7 +360,7 @@
     currentView = null;
     messages?.querySelectorAll("[data-dialogue-scripted]").forEach((node) => node.remove());
     refreshCompletion();
-    npcStrip?.querySelectorAll("button").forEach((candidate) => {
+    npcStrip?.querySelectorAll(".settlement-npc-portrait").forEach((candidate) => {
       const active = candidate === button;
       candidate.classList.toggle("active", active);
       candidate.setAttribute("aria-pressed", String(active));
@@ -268,7 +370,8 @@
       const placeholder = document.createElement("div"); placeholder.className = npc.initials ? "visual-stage-placeholder" : "visual-stage-placeholder npc-portrait-silhouette"; placeholder.setAttribute("aria-hidden", "true"); placeholder.textContent = npc.initials || "";
       const heading = document.createElement("h2"); heading.textContent = npc.name;
       const description = document.createElement("p"); description.textContent = npc.description;
-      npcDescription.replaceChildren(placeholder, heading, description);
+      const social = document.createElement("button"); social.type = "button"; social.className = "npc-social-summary"; social.dataset.openNpcSocial = npc.id; social.textContent = "Morale and relationship"; social.setAttribute("aria-label", `Open social menu for ${npc.name}`);
+      npcDescription.replaceChildren(placeholder, heading, description, social);
     }
     begin();
   };
@@ -285,10 +388,13 @@
       const face = document.createElement("span"); face.className = npc.initials ? "party-portrait-face" : "party-portrait-face npc-portrait-silhouette"; face.setAttribute("aria-hidden", "true"); face.textContent = npc.initials || "";
       const name = document.createElement("span"); name.className = "party-portrait-name settlement-npc-name"; name.textContent = npc.name;
       portrait.append(face, name); button.append(portrait); button.addEventListener("click", () => selectNpc(npc, button));
+      const social = document.createElement("button"); social.type = "button"; social.className = "settlement-npc-social-button"; social.dataset.openNpcSocial = npc.id; social.setAttribute("aria-label", `Open social menu for ${npc.name}`); social.title = `Social — ${npc.name}`;
+      const socialIcon = document.createElement("span"); socialIcon.className = "stat-icon"; socialIcon.style.setProperty("--stat-icon", "url('/static/icons/game/conversation.svg')"); socialIcon.setAttribute("aria-hidden", "true"); social.append(socialIcon);
+      const shell = document.createElement("span"); shell.className = "settlement-npc-portrait-shell"; shell.append(button, social); button._socialShell = shell;
       button.addEventListener("keydown", (event) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); const offset = event.key === 'ArrowRight' ? 1 : -1; buttons[(buttons.indexOf(button) + offset + buttons.length) % buttons.length].focus(); });
       return button;
     });
-    npcStrip.replaceChildren(...buttons);
+    npcStrip.replaceChildren(...buttons.map((button) => button._socialShell));
     const defaultIndex = Math.max(0, people.findIndex((npc) => npc.is_default));
     selectNpc(people[defaultIndex], buttons[defaultIndex]);
   };

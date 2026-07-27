@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -93,18 +94,87 @@ class JustTaskTests(unittest.TestCase):
         with mock.patch.object(just_tasks.secrets, "token_hex", side_effect=["a" * 64, "b" * 8]), \
                 mock.patch.object(just_tasks.time, "time_ns", return_value=123), \
                 mock.patch.object(just_tasks.os, "getpid", return_value=456), \
-                mock.patch.object(just_tasks.subprocess, "run") as cleanup:
-            self.assertEqual(
-                just_tasks.strategic_sim(
-                    "1", "2", "3", "4", "5", "http://localhost:3000", just_tasks.MODULE_DIR,
-                ),
-                7,
-            )
+                mock.patch.object(just_tasks.subprocess, "run") as cleanup, \
+                tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "run"
+            self.assertEqual(just_tasks.strategic_sim(
+                "1", "2", "3", "4", "5", "http://localhost:3000",
+                just_tasks.MODULE_DIR, output,
+            ), 7)
 
         cleanup.assert_called_once()
         command = cleanup.call_args.args[0]
         self.assertEqual(command[:4], ["spacetime", "delete", "--yes", "--server"])
         self.assertTrue(command[-1].startswith("adventuresim-sim-123-456-"))
+
+    @mock.patch.object(just_tasks, "run", return_value=0)
+    @mock.patch.object(just_tasks, "executable", side_effect=lambda name: name)
+    @mock.patch.object(
+        just_tasks,
+        "verified_world_identity",
+        return_value=("a" * 64, "b" * 64),
+    )
+    def test_full_world_simulation_loads_authoritative_artifact_before_runner(
+        self, _identity, _executable, run
+    ):
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(just_tasks.subprocess, "run") as cleanup:
+            cleanup.return_value.returncode = 0
+            output = Path(temporary) / "run"
+            world = just_tasks.ROOT / "target" / "world-1544.json"
+            self.assertEqual(just_tasks.strategic_sim(
+                "1", "2", "3", "4", "2", "http://localhost:3000",
+                just_tasks.MODULE_DIR, output, world,
+            ), 0)
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(commands[0][1], "publish")
+        self.assertIn("adventuresim-world-import", commands[1])
+        self.assertIn(str(world.resolve()), commands[1])
+        self.assertIn("--imported-world", commands[2])
+        self.assertIn("--expected-world-manifest-digest", commands[2])
+        self.assertIn(str(output / "report.json"), commands[2])
+        self.assertNotIn(
+            "ADVENTURESIM_SIM_BOOTSTRAP_TOKEN",
+            run.call_args_list[1].kwargs["env"],
+        )
+
+    @mock.patch.object(just_tasks, "run", return_value=0)
+    @mock.patch.object(just_tasks, "executable", side_effect=lambda name: name)
+    def test_simulation_reports_cleanup_failure(self, _executable, _run):
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(just_tasks.subprocess, "run") as cleanup:
+            cleanup.return_value.returncode = 1
+            output = Path(temporary) / "run"
+            self.assertEqual(just_tasks.strategic_sim(
+                "1", "2", "3", "4", "2", "http://localhost:3000",
+                just_tasks.MODULE_DIR, output,
+            ), 1)
+            metadata = json.loads((output / "launcher.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["status"], "cleanup_failed")
+            self.assertEqual(metadata["run_status"], "completed")
+
+    @mock.patch.object(just_tasks, "run", return_value=0)
+    @mock.patch.object(just_tasks, "executable", side_effect=lambda name: name)
+    def test_simulation_records_cleanup_process_exception(self, _executable, _run):
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(
+                    just_tasks.subprocess, "run", side_effect=OSError("cleanup failed")
+                ):
+            output = Path(temporary) / "run"
+            self.assertEqual(just_tasks.strategic_sim(
+                "1", "2", "3", "4", "2", "http://localhost:3000",
+                just_tasks.MODULE_DIR, output,
+            ), 1)
+            metadata = json.loads((output / "launcher.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["status"], "cleanup_failed")
+            self.assertEqual(metadata["run_status"], "completed")
+
+    def test_simulation_refuses_existing_output_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertEqual(just_tasks.strategic_sim(
+                "1", "2", "3", "4", "2", "http://localhost:3000",
+                just_tasks.MODULE_DIR, Path(temporary),
+            ), 2)
 
 
 class WasmAssetTests(unittest.TestCase):

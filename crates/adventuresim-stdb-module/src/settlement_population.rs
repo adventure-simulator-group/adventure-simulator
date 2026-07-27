@@ -414,13 +414,57 @@ pub fn ensure_settlement_population(
     Ok(())
 }
 pub fn npc_is_present(presence: &SettlementNpcPresence, minute: u64) -> bool {
-    let minute = (minute % 1440) as u16;
-    presence.start_minute <= minute && minute < presence.end_minute
+    npc_presence_remaining_minutes(presence, minute).is_some()
+}
+
+/// Remaining contiguous minutes in the NPC's current daily presence window.
+/// Wrapped schedules (for example 20:00–02:00) remain one continuous window.
+pub fn npc_presence_remaining_minutes(
+    presence: &SettlementNpcPresence,
+    minute: u64,
+) -> Option<u64> {
+    let minute = minute % 1_440;
+    let start = u64::from(presence.start_minute);
+    let end = u64::from(presence.end_minute);
+    if start == end {
+        return None;
+    }
+    if start < end {
+        (start <= minute && minute < end).then_some(end - minute)
+    } else if minute >= start {
+        Some((1_440 - minute) + end)
+    } else {
+        (minute < end).then_some(end - minute)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn presence(start_minute: u16, end_minute: u16) -> SettlementNpcPresence {
+        SettlementNpcPresence {
+            npc_id: "npc".into(),
+            settlement_id: "settlement".into(),
+            location_id: "inn".into(),
+            start_minute,
+            end_minute,
+            is_default: true,
+        }
+    }
+
+    #[test]
+    fn presence_remaining_handles_daytime_and_wrapped_schedules() {
+        let daytime = presence(480, 1_020);
+        assert_eq!(npc_presence_remaining_minutes(&daytime, 900), Some(120));
+        assert_eq!(npc_presence_remaining_minutes(&daytime, 1_020), None);
+
+        let overnight = presence(1_200, 120);
+        assert_eq!(npc_presence_remaining_minutes(&overnight, 1_380), Some(180));
+        assert_eq!(npc_presence_remaining_minutes(&overnight, 60), Some(60));
+        assert_eq!(npc_presence_remaining_minutes(&overnight, 600), None);
+    }
+
     #[test]
     fn persisted_explanation_is_valid_complete_and_deterministic() {
         let input = GenerationInput {

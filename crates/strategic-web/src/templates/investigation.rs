@@ -1,6 +1,6 @@
 use crate::spacetimedb::{
-    BackendInvestigationCaseSummary, BackendInvestigationJournalEntry, BackendInvestigationLead,
-    BestiaryResultView, bestiary_result_views, bestiary_support_color,
+    BackendBestiaryDeduction, BackendInvestigationCaseSummary, BackendInvestigationJournalEntry,
+    BackendInvestigationLead,
 };
 use maud::{Markup, html};
 use std::{
@@ -13,42 +13,25 @@ struct JournalRecord {
     recorded_at: u64,
     summary: String,
     source: String,
-    bestiary_results: Vec<BestiaryResultView>,
 }
 
-fn bestiary_journal_results(results: &[BestiaryResultView]) -> Markup {
-    let mut interpretations = BTreeSet::new();
+fn bestiary_journal_results(results: &[BackendBestiaryDeduction]) -> Markup {
     html! {
         @if !results.is_empty() {
             section class="bestiary-check-results journal-bestiary-results" {
-                strong class="bestiary-check-heading" { "Bestiary check(s) succeeded:" }
-                @for interpretation in results.iter().map(|result| &result.interpretation) {
-                    @if interpretations.insert(interpretation) {
-                        span class="bestiary-interpretation" { (interpretation) }
-                    }
-                }
+                strong class="bestiary-check-heading" { "Possible monster kinds:" }
                 span class="bestiary-result-list" {
                     @for result in results {
-                        @let percent = f32::from(result.support_bps) / 100.0;
-                        @let enemies = serde_json::to_string(&result.enemies)
-                            .expect("Bestiary enemy lore serializes");
-                        @let accessible = format!(
-                            "{} Bestiary result: {}%, {}.",
-                            result.label, percent, result.support_label,
-                        );
-                        span class="bestiary-result-chip" tabindex="0" role="button"
-                            aria-pressed="false"
-                            data-bestiary-category=(result.category.as_str())
-                            data-bestiary-name=(&result.label)
-                            data-strategic-tooltip=(&result.label)
-                            data-tooltip-pinnable data-bestiary-enemies=(&enemies)
-                            aria-label=(accessible)
-                            style=(format!(
-                                "background-color: {}",
-                                bestiary_support_color(result.support_bps)
-                            )) {
-                            (result.label) " — " (result.support_label) " (" (percent) "%)"
+                        span class=(format!("bestiary-result-chip support-{}", result.support_band)) {
+                            (&result.monster_kind) " — " (&result.support_band)
                         }
+                    }
+                }
+                ul class="bestiary-provenance" {
+                    @for source in results.iter()
+                        .flat_map(BackendBestiaryDeduction::provenance)
+                        .collect::<BTreeSet<_>>() {
+                        li { (source) }
                     }
                 }
             }
@@ -60,6 +43,7 @@ pub fn journal_page(
     entries: &[BackendInvestigationJournalEntry],
     leads: &[BackendInvestigationLead],
     cases: &[BackendInvestigationCaseSummary],
+    deductions: &[BackendBestiaryDeduction],
     character_name: &str,
     feedback: Option<&str>,
 ) -> Markup {
@@ -80,7 +64,6 @@ pub fn journal_page(
                 recorded_at: entry.recorded_at,
                 summary: entry.summary.clone(),
                 source: entry.source_label.clone(),
-                bestiary_results: bestiary_result_views(&entry.bestiary_results_json),
             });
     }
     for lead in leads
@@ -94,7 +77,6 @@ pub fn journal_page(
                 recorded_at: lead.recorded_at,
                 summary: lead.summary.clone(),
                 source: lead.source_label.clone(),
-                bestiary_results: Vec::new(),
             });
     }
     for rows in records.values_mut() {
@@ -158,10 +140,15 @@ pub fn journal_page(
                         @for record in case_records {
                             article class="journal-record" {
                                 p { (&record.summary) }
-                                (bestiary_journal_results(&record.bestiary_results))
                                 p class="journal-source" { "Source: " (&record.source) }
                             }
                         }
+                        (bestiary_journal_results(
+                            &deductions.iter()
+                                .filter(|deduction| deduction.case_id == case.case_id)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        ))
                     } @else {
                         p class="text-muted" { "No recorded reports." }
                     }
@@ -248,7 +235,7 @@ mod tests {
             case("failed", "Recently failed", "failed", 200),
         ];
 
-        let markup = journal_page(&[], &[], &cases, "Ada", None).into_string();
+        let markup = journal_page(&[], &[], &cases, &[], "Ada", None).into_string();
         let new_open = markup.find("New open problem").unwrap();
         let old_open = markup.find("Old open problem").unwrap();
         let failed = markup.find("Recently failed").unwrap();
@@ -294,7 +281,7 @@ mod tests {
             ),
         ];
 
-        let markup = journal_page(&[], &leads, &cases, "Ada", None).into_string();
+        let markup = journal_page(&[], &leads, &cases, &[], "Ada", None).into_string();
         assert!(markup.contains("data-journal-case-index"));
         assert!(markup.contains("data-journal-case-log"));
         assert!(markup.contains("data-journal-case-panel=\"missing-cart\""));
@@ -309,7 +296,7 @@ mod tests {
     fn journal_records_only_the_report_and_its_source() {
         let report = lead("case", "lead", "Screams after dark", "the innkeeper", 1);
         let cases = [case("case", "Night screams", "open", 1)];
-        let markup = journal_page(&[], &[report], &cases, "Ada", None).into_string();
+        let markup = journal_page(&[], &[report], &cases, &[], "Ada", None).into_string();
 
         assert!(markup.contains("Screams after dark"));
         assert!(markup.contains("Source: the innkeeper"));
@@ -323,41 +310,26 @@ mod tests {
     }
 
     #[test]
-    fn journal_renders_durable_bestiary_results_with_global_accessible_tooltips() {
-        let results = vec![BestiaryResultView {
-            category: "werekin".into(),
-            label: "Werekin".into(),
-            support_bps: 6_500,
-            support_label: "supports",
-            interpretation: "The print could have been made by a transformed werekin.".into(),
-            enemies: vec![crate::spacetimedb::BestiaryEnemyLoreView {
-                id: "werewolf".into(),
-                name: "Werewolf".into(),
-                is_primary: true,
-                strengths: vec!["Innate padding absorbs the first 35 J of impact".into()],
-                weaknesses: vec!["Must close to melee before attacking".into()],
-            }],
+    fn journal_renders_qualitative_monster_candidates_and_provenance() {
+        let results = vec![BackendBestiaryDeduction {
+            owner_character_id: 1,
+            case_id: "case".into(),
+            monster_kind: "Werewolf".into(),
+            support_band: "plausible".into(),
+            provenance_json:
+                r#"["received report from the miller","learned diagnostic clue: pawprints"]"#.into(),
+            updated_at: 1,
         }];
 
         let markup = bestiary_journal_results(&results).into_string();
 
-        assert!(markup.contains("Bestiary check(s) succeeded:"));
-        assert!(markup.contains("Werekin — supports (65%)"));
-        assert!(markup.contains("background-color: rgb(179 255 0)"));
-        assert!(markup.contains("tabindex=\"0\""));
-        assert!(markup.contains("role=\"button\""));
-        assert!(markup.contains("aria-pressed=\"false\""));
-        assert!(markup.contains("data-strategic-tooltip"));
-        assert!(markup.contains("data-bestiary-enemies"));
-        assert!(markup.contains("data-tooltip-pinnable"));
+        assert!(markup.contains("Possible monster kinds:"));
         assert!(markup.contains("Werewolf"));
-        assert!(markup.contains("Innate padding absorbs the first 35 J of impact"));
-        assert!(markup.contains("Must close to melee before attacking"));
-        assert!(!markup.contains("data-bestiary-strengths"));
-        assert!(!markup.contains("data-bestiary-weaknesses"));
-        assert!(!markup.contains("combat modifier"));
-        assert!(!markup.contains("unimplemented"));
-        assert!(markup.contains("aria-label=\"Werekin Bestiary result: 65%, supports.\""));
+        assert!(markup.contains("plausible"));
+        assert!(markup.contains("received report from the miller"));
+        assert!(markup.contains("learned diagnostic clue: pawprints"));
+        assert!(!markup.contains('%'));
+        assert!(!markup.contains("support_bps"));
         assert!(!markup.contains("difficulty"));
         assert!(!markup.contains("threshold"));
         assert!(!markup.contains("canonical"));
@@ -380,7 +352,8 @@ mod tests {
             2,
         );
         let cases = [case("case", "Night screams", "open", 2)];
-        let markup = journal_page(&[], &[referral, ordinary], &cases, "Ada", None).into_string();
+        let markup =
+            journal_page(&[], &[referral, ordinary], &cases, &[], "Ada", None).into_string();
 
         assert!(markup.contains("Screams were heard after dark."));
         assert!(!markup.contains("Ask Marta"));

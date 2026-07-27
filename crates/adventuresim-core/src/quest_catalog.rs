@@ -174,6 +174,10 @@ pub struct BestiaryImplicationDefinition {
     pub category: BestiaryCategory,
     pub support_bps: u16,
     pub lore_difficulty_milli: u16,
+    /// Optional bounded clue understood by the threat-ranking system. It is
+    /// learned only after both the physical and Bestiary checks succeed.
+    #[serde(default)]
+    pub diagnostic_kind: Option<String>,
     pub interpretation: String,
 }
 
@@ -457,6 +461,21 @@ impl Catalog {
                     || item.sell_penalty_bps.unsigned_abs() > 10_000
                 {
                     return Err(format!("invalid or duplicate consequence {}", item.id));
+                }
+                for cause in &item.causes {
+                    let compatible = match item.encounter_archetype.as_deref() {
+                        Some("undead") => matches!(cause.as_str(), "ghoul" | "skeleton"),
+                        Some("goblins") => cause == "goblin",
+                        Some("bandits") => matches!(cause.as_str(), "bandit" | "smuggler"),
+                        Some(_) => false,
+                        None => true,
+                    };
+                    if !compatible {
+                        return Err(format!(
+                            "consequence {} maps cause {cause} to an incompatible encounter archetype",
+                            item.id
+                        ));
+                    }
                 }
             }
             for item in &document.relations {
@@ -870,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn nonidentity_testimony_variant_renders_safe_presentation_text() {
+    fn testimony_variant_does_not_repeat_speaker_attribution() {
         let catalog = catalog();
         let variant = catalog
             .dialogue_variant(QuestDialogueVariantKind::Testimony, &FactContext::default())
@@ -883,7 +902,7 @@ mod tests {
                     "I saw a lantern.".into()
                 )]))
                 .unwrap(),
-            "The witness says: I saw a lantern."
+            "I saw a lantern."
         );
     }
 
@@ -950,6 +969,22 @@ mod tests {
             Catalog::compile(documents)
                 .unwrap_err()
                 .contains("duplicate quest dialogue variant")
+        );
+    }
+
+    #[test]
+    fn catalog_rejects_cause_incompatible_encounter_archetypes() {
+        let mut documents = catalog().documents.clone();
+        let consequence = documents
+            .iter_mut()
+            .flat_map(|document| &mut document.consequences)
+            .find(|item| item.causes.iter().any(|cause| cause == "wolf"))
+            .unwrap();
+        consequence.encounter_archetype = Some("goblins".into());
+        assert!(
+            Catalog::compile(documents)
+                .unwrap_err()
+                .contains("incompatible encounter archetype")
         );
     }
 

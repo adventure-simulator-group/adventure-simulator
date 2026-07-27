@@ -45,6 +45,7 @@ pub struct InvestigationEnvironment {
     frame: PlayerFrame,
     capabilities: BTreeMap<String, Capability>,
     tavern_entered: bool,
+    visible_witnesses: BTreeSet<usize>,
     interviewed: BTreeSet<usize>,
     completed_actions: BTreeSet<usize>,
     exact_sites: BTreeSet<String>,
@@ -112,6 +113,7 @@ impl InvestigationEnvironment {
             frame,
             capabilities: BTreeMap::new(),
             tavern_entered: false,
+            visible_witnesses: BTreeSet::new(),
             interviewed: BTreeSet::new(),
             completed_actions: BTreeSet::new(),
             exact_sites: BTreeSet::new(),
@@ -170,20 +172,17 @@ impl InvestigationEnvironment {
                 self.frame.discovery.consequence_summary =
                     format!("{:?}", self.generated.consequence.symptom);
                 self.frame.discovery.learned_at = "settlement tavern rumor".into();
-                self.frame.discovery.referrals = self
-                    .generated
-                    .witnesses
-                    .iter()
-                    .enumerate()
-                    .map(|(index, witness)| WitnessReferral {
-                        witness_id: opaque_handle("witness", index),
+                if let Some(witness) = self.generated.witnesses.first() {
+                    self.visible_witnesses.insert(0);
+                    self.frame.discovery.referrals = vec![WitnessReferral {
+                        witness_id: opaque_handle("witness", 0),
                         display_name: witness.display_name.clone(),
                         physical_description: witness.visible_description.clone(),
                         expected_location: witness.expected_location_label.clone(),
                         interviewed: false,
                         availability: WitnessAvailability::Available,
-                    })
-                    .collect();
+                    }];
+                }
                 self.refresh_witness_availability();
                 learned.push(self.generated.consequence.public_summary.clone());
                 dialogue.push(PublicDialogueLine {
@@ -211,13 +210,27 @@ impl InvestigationEnvironment {
                 )
             }
             Capability::Interview(index) => {
-                let witness = self.generated.witnesses.get(index).ok_or("stale witness")?;
+                if !self.visible_witnesses.contains(&index) {
+                    return Err("witness has not been referred to the player".into());
+                }
+                let witness = self
+                    .generated
+                    .witnesses
+                    .get(index)
+                    .ok_or("stale witness")?
+                    .clone();
                 self.current_location = witness.expected_location_label.clone();
                 self.interviewed.insert(index);
-                if let Some(referral) = self.frame.discovery.referrals.get_mut(index) {
+                if let Some(referral) = self
+                    .frame
+                    .discovery
+                    .referrals
+                    .iter_mut()
+                    .find(|referral| referral.witness_id == opaque_handle("witness", index))
+                {
                     referral.interviewed = true;
                 }
-                for statement in &witness.testimony {
+                for (_, statement) in qg::initial_testimony_projection(&witness) {
                     let claim_id = claim_handle(&self.generated, &statement.proposition_id);
                     self.frame.journal.claims.push(PublicClaim {
                         proposition_id: claim_id.clone(),
@@ -235,6 +248,30 @@ impl InvestigationEnvironment {
                         speaker: witness.display_name.clone(),
                         text: statement.spoken_text.clone(),
                     });
+                    for referred in &statement.referred_witness_ids {
+                        if let Some((referred_index, referred_witness)) = self
+                            .generated
+                            .witnesses
+                            .iter()
+                            .enumerate()
+                            .find(|(_, candidate)| candidate.id == *referred)
+                        {
+                            if self.visible_witnesses.insert(referred_index) {
+                                self.frame.discovery.referrals.push(WitnessReferral {
+                                    witness_id: opaque_handle("witness", referred_index),
+                                    display_name: referred_witness.display_name.clone(),
+                                    physical_description: referred_witness
+                                        .visible_description
+                                        .clone(),
+                                    expected_location: referred_witness
+                                        .expected_location_label
+                                        .clone(),
+                                    interviewed: false,
+                                    availability: WitnessAvailability::Available,
+                                });
+                            }
+                        }
+                    }
                 }
                 (
                     "The witness's account is recorded with its source.".into(),
@@ -319,6 +356,9 @@ impl InvestigationEnvironment {
                                 }
                                 learned.push(evidence.safe_description.clone());
                             }
+                        }
+                        GeneratedActionOutput::TrackFinding { finding, .. } => {
+                            learned.push(finding.clone());
                         }
                         GeneratedActionOutput::AmbushReady => {
                             learned.push("The party has established an ambush position.".into());
@@ -484,6 +524,7 @@ impl InvestigationEnvironment {
                 .witnesses
                 .iter()
                 .enumerate()
+                .filter(|(index, _)| self.visible_witnesses.contains(index))
                 .map(|(index, witness)| {
                     (
                         index,
@@ -579,6 +620,16 @@ impl InvestigationEnvironment {
 
     fn action_available(&self, index: usize) -> bool {
         let action = &self.generated.actions[index];
+        if action.target_kind == "contact"
+            && !self.visible_witnesses.iter().any(|visible| {
+                self.generated
+                    .witnesses
+                    .get(*visible)
+                    .is_some_and(|witness| witness.npc_id == action.target_id)
+            })
+        {
+            return false;
+        }
         // A tavern referral alone is not enough to materialize an investigation
         // action. The player must first hear a source-attributed account.
         if action.active_initially && self.interviewed.is_empty() {
@@ -749,10 +800,9 @@ fn opaque_handle(kind: &str, index: usize) -> String {
 }
 
 fn claim_handle(case: &GeneratedCase, proposition_id: &str) -> String {
-    let index = case
-        .witnesses
-        .iter()
-        .flat_map(|witness| &witness.testimony)
+    let index = qg::player_visible_testimony_sequence(case)
+        .into_iter()
+        .map(|(_, statement)| statement)
         .position(|statement| statement.proposition_id == proposition_id)
         .unwrap_or(usize::MAX);
     if index == usize::MAX {
@@ -912,6 +962,75 @@ mod tests {
                 .legal_choices
                 .iter()
                 .any(|choice| choice.kind == ChoiceKind::Investigate)
+        );
+    }
+
+    #[test]
+    fn offline_projection_excludes_withheld_and_unreferred_testimony() {
+        let context = generation_context(19, TemplateFamily::RecurringDepredation);
+        let mut generated = qg::generate(&context).unwrap();
+        generated.witnesses[0].testimony.push(qg::TestimonyDraft {
+            proposition_id: "withheld-canary-proposition".into(),
+            reliability: qg::Reliability::Truthful,
+            delivery: qg::TestimonyDelivery::Withheld,
+            truthful_text: "WITHHELD_CANARY".into(),
+            spoken_text: "WITHHELD_CANARY".into(),
+            challenge_text: "WITHHELD_CANARY".into(),
+            challenge_responses: qg::TestimonyChallengeResponses {
+                charm: Some("CANARY_CHARM".into()),
+                command: None,
+                bluff: None,
+            },
+            destination_stage: "textual".into(),
+            site_id: None,
+            corrects_proposition_id: None,
+            referred_witness_ids: vec![],
+        });
+        for statement in &mut generated.witnesses[0].testimony {
+            statement.referred_witness_ids.clear();
+        }
+        generated.witnesses[1].display_name = "UNREFERRED_CANARY".into();
+        generated.witnesses[1].testimony[0].spoken_text = "UNREFERRED_CANARY".into();
+        generated
+            .actions
+            .iter_mut()
+            .find(|action| action.target_kind == "contact")
+            .unwrap()
+            .target_id = generated.witnesses[1].npc_id.clone();
+        let mut env = InvestigationEnvironment::from_generated(
+            generated,
+            EvalCaseConfig::fixture(19, TemplateFamily::RecurringDepredation).party,
+        )
+        .unwrap();
+        let tavern = env.frame().legal_choices[0].choice_id.clone();
+        env.apply(&PolicyDecision {
+            version: EVAL_FORMAT_VERSION,
+            choice_id: tavern,
+            arguments: DecisionArguments::default(),
+        })
+        .unwrap();
+        let primary = env
+            .frame()
+            .legal_choices
+            .iter()
+            .find(|choice| choice.kind == ChoiceKind::InterviewWitness)
+            .unwrap()
+            .choice_id
+            .clone();
+        env.apply(&PolicyDecision {
+            version: EVAL_FORMAT_VERSION,
+            choice_id: primary,
+            arguments: DecisionArguments::default(),
+        })
+        .unwrap();
+        let public = format!("{:?}", env.frame());
+        assert!(!public.contains("WITHHELD_CANARY"));
+        assert!(!public.contains("UNREFERRED_CANARY"));
+        assert!(
+            env.frame()
+                .legal_choices
+                .iter()
+                .all(|choice| choice.label != "Find the referred witness.")
         );
     }
 

@@ -291,8 +291,8 @@ pub fn apply_elapsed_needs(
     )
 }
 
-/// Applies settlement-rest needs exactly once, with paid inn stays providing
-/// full board instead of consuming the character's or party's provisions.
+/// Applies settlement-rest needs exactly once. Every settlement provides
+/// ordinary drinking water; paid inn stays additionally provide food.
 pub fn apply_settlement_rest_elapsed_needs(
     ctx: &ReducerContext,
     character_id: u64,
@@ -302,7 +302,7 @@ pub fn apply_settlement_rest_elapsed_needs(
     let provision = if at_inn {
         ElapsedNeedsProvision::InnBoard
     } else {
-        ElapsedNeedsProvision::PersonalSupplies
+        ElapsedNeedsProvision::SettlementWater
     };
     apply_elapsed_needs_with_provision(ctx, character_id, elapsed_minutes, provision)
 }
@@ -310,6 +310,7 @@ pub fn apply_settlement_rest_elapsed_needs(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ElapsedNeedsProvision {
     PersonalSupplies,
+    SettlementWater,
     InnBoard,
 }
 
@@ -337,6 +338,19 @@ fn elapsed_needs_plan(
                 water_balance_ml: starting_water_balance_ml
                     - elapsed_days * TRAVEL_WATER_ML_PER_DAY,
                 consume_stored_water: true,
+            }
+        }
+        // Public wells and ordinary settlement hospitality cover drinking
+        // water during downtime. Food still comes from personal or party
+        // stores unless the character pays for full board at an inn.
+        ElapsedNeedsProvision::SettlementWater => {
+            let elapsed_days = elapsed_minutes as f32 / (24.0 * 60.0);
+            ElapsedNeedsPlan {
+                food_balance_kcal: starting_food_balance_kcal
+                    - elapsed_days * TRAVEL_CALORIES_PER_DAY,
+                consume_stored_food: true,
+                water_balance_ml: starting_water_balance_ml.max(0.0),
+                consume_stored_water: false,
             }
         }
         // Full board covers the elapsed interval and brings an underfed guest
@@ -2092,6 +2106,21 @@ mod tests {
         assert_eq!(plan.water_balance_ml, 250.0 - TRAVEL_WATER_ML_PER_DAY);
         assert!(plan.consume_stored_food);
         assert!(plan.consume_stored_water);
+    }
+
+    #[test]
+    fn settlement_rest_supplies_water_but_not_food() {
+        let plan = elapsed_needs_plan(
+            -500.0,
+            -900.0,
+            MINUTES_PER_DAY,
+            ElapsedNeedsProvision::SettlementWater,
+        );
+
+        assert_eq!(plan.food_balance_kcal, -500.0 - TRAVEL_CALORIES_PER_DAY);
+        assert_eq!(plan.water_balance_ml, 0.0);
+        assert!(plan.consume_stored_food);
+        assert!(!plan.consume_stored_water);
     }
 
     #[test]

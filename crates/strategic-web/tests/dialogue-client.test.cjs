@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "dialogue-client.js"), "utf8");
+const dialogueCss = fs.readFileSync(path.join(__dirname, "..", "static", "css", "strategic.css"), "utf8");
 const {
   dialogueCompletion,
   dialogueResponseIsCurrent,
@@ -37,6 +38,33 @@ test("client renders only persisted authoritative views and enforces prompt boun
   assert.match(source, /choices\.length\s*<\s*prompt\.min_choices/);
 });
 
+test("atomic witness claims use observer-safe projections and authoritative responses", () => {
+  assert.match(source, /claim_segments/);
+  assert.doesNotMatch(source, /api\/dialogue\/spend-time/);
+  assert.doesNotMatch(source, /api\/dialogue\/insight/);
+  assert.match(source, /api\/dialogue\/claim-response/);
+  assert.match(source, /challenge_token:\s*claim\.challenge_token/);
+  assert.match(source, /expected_revision:\s*binding\.revision/);
+  assert.match(dialogueCss, /dialogue-claim-unknown/);
+  assert.match(dialogueCss, /dialogue-claim-likely_false/);
+  assert.match(dialogueCss, /dialogue-claim-likely_true/);
+  assert.match(source, /aria-expanded/);
+  assert.match(source, /aria-controls/);
+  assert.match(dialogueCss, /dialogue-claim-actions\s*\{[^}]*flex-direction:\s*column/s);
+  assert.match(source, /Charm/);
+  assert.match(source, /Command/);
+  assert.match(source, /Bluff/);
+  assert.match(source, /Takes 5 minutes/);
+  assert.match(source, /Affinity \$\{sign\}/);
+  assert.match(source, /claim\.charm_response/);
+  assert.match(source, /claim\.command_response/);
+  assert.match(source, /claim\.bluff_response/);
+  assert.match(source, /\]\.filter\(Boolean\)/);
+  assert.doesNotMatch(source, /Would you tell me more of|Speak plainly: was it truly|Others tell it differently/);
+  assert.doesNotMatch(source, /pressure_cue|possible-pressure|cooldown|available_approaches/);
+  assert.doesNotMatch(source, /has_bound_concern|diagnosis_correct|success_chance|target_transparency|proposition_id|reliability|truthful_text/);
+});
+
 test("dialogue does not expose the removed diagnosis and medication examination flow", () => {
   assert.doesNotMatch(source, /view\.examination/);
   assert.doesNotMatch(source, /data-dialogue-medication/);
@@ -62,6 +90,9 @@ test("settlement NPCs reuse the circular party portrait structure", () => {
   assert.match(source, /party-portrait-face/);
   assert.match(source, /party-portrait-name settlement-npc-name/);
   assert.match(source, /portrait\.append\(face, name\)/);
+  assert.match(source, /data\.openNpcSocial|dataset\.openNpcSocial/);
+  assert.match(source, /settlement-npc-social-button/);
+  assert.match(source, /npc-social-summary/);
 });
 
 test("NPCs without initials use the neutral person silhouette without losing their accessible name", () => {

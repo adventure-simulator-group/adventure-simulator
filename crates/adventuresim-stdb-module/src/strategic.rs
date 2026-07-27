@@ -5913,7 +5913,7 @@ pub fn start_dialogue(
             .filter(&session.id)
             .count() as u32;
         let (fragments_json, source_refs_json) =
-            render_quest_referral_variant(ctx, &session, character_id, &delivery)?;
+            render_quest_referral_variant(ctx, &session, character_id, &npc_actor_id, &delivery)?;
         ctx.db.dialogue_event().insert(DialogueEvent {
             id: format!("{}:event:{sequence}", session.id),
             gateway_bucket: 0,
@@ -5932,6 +5932,7 @@ pub fn start_dialogue(
             format!("receive-rumor:{character_id}:{}", receipt.id),
         )?;
     }
+    crate::social::ensure_dialogue_witness_capability(ctx, &session, character_id, &npc_actor_id)?;
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
 }
@@ -5940,21 +5941,24 @@ pub fn start_dialogue(
 /// session facts used by ordinary dialogue have been revalidated. The receipt,
 /// contact, and generated case remain the authority; variants cannot affect
 /// any of them.
+fn referral_variant_can_replace_authoritative_wording(
+    source: Option<(&str, &str)>,
+    contact_id: &str,
+    contact_name: &str,
+) -> bool {
+    source.is_some_and(|(source_id, source_name)| {
+        source_id != contact_id && !source_name.eq_ignore_ascii_case(contact_name)
+    })
+}
+
 fn render_quest_referral_variant(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
+    current_speaker_npc_id: &str,
     delivery: &crate::local_problem::LocalProblemRumorDelivery,
 ) -> Result<(String, String), String> {
     let facts = dialogue_fact_context(ctx, session, character_id)?;
-    let catalog = adventuresim_core::quest_catalog::catalog();
-    let Some(variant) = catalog.dialogue_variant(
-        adventuresim_core::quest_catalog::QuestDialogueVariantKind::Referral,
-        &facts,
-    )?
-    else {
-        return Ok((delivery.fragments_json.clone(), "[]".into()));
-    };
     let receipt = ctx
         .db
         .local_problem_receipt()
@@ -5967,6 +5971,31 @@ fn render_quest_referral_variant(
         .id()
         .find(&receipt.contact_npc_id)
         .ok_or("Rumor referral contact is unavailable")?;
+    let source = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&current_speaker_npc_id.to_owned());
+    if !referral_variant_can_replace_authoritative_wording(
+        source
+            .as_ref()
+            .map(|source| (source.id.as_str(), source.name.as_str())),
+        &contact.id,
+        &contact.name,
+    ) {
+        // The authoritative presentation distinguishes self-referrals and
+        // same-named people, and may expose the referred-testimony topic.
+        // Generic flavor variants cannot safely preserve those semantics.
+        return Ok((delivery.fragments_json.clone(), "[]".into()));
+    }
+    let catalog = adventuresim_core::quest_catalog::catalog();
+    let Some(variant) = catalog.dialogue_variant(
+        adventuresim_core::quest_catalog::QuestDialogueVariantKind::Referral,
+        &facts,
+    )?
+    else {
+        return Ok((delivery.fragments_json.clone(), "[]".into()));
+    };
     let mut values = std::collections::BTreeMap::new();
     values.insert("summary".into(), receipt.safe_summary);
     values.insert("contact_name".into(), contact.name);
@@ -5982,6 +6011,54 @@ fn render_quest_referral_variant(
     let sources = serde_json::to_string(&vec![source])
         .map_err(|_| "Could not encode generated referral source")?;
     Ok((json, sources))
+}
+
+#[cfg(test)]
+mod referral_variant_tests {
+    use super::referral_variant_can_replace_authoritative_wording;
+
+    #[test]
+    fn generic_variants_never_erase_referral_identity_disambiguation() {
+        assert!(!referral_variant_can_replace_authoritative_wording(
+            Some(("npc:church:0", "Marta Hartmann")),
+            "npc:church:0",
+            "Marta Hartmann",
+        ));
+        assert!(!referral_variant_can_replace_authoritative_wording(
+            Some(("npc:inn:0", "Marta Hartmann")),
+            "npc:church:0",
+            "Marta Hartmann",
+        ));
+        assert!(!referral_variant_can_replace_authoritative_wording(
+            None,
+            "npc:church:0",
+            "Marta Hartmann",
+        ));
+        assert!(referral_variant_can_replace_authoritative_wording(
+            Some(("npc:inn:0", "Anna Kramer")),
+            "npc:church:0",
+            "Marta Hartmann",
+        ));
+    }
+
+    #[test]
+    fn referral_renderer_uses_the_current_speaker_not_discovery_provenance() {
+        let source = include_str!("strategic.rs");
+        let start = source
+            .split("pub fn start_dialogue")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn join_dialogue_session").next())
+            .expect("dialogue startup");
+        assert!(start.contains("&npc_actor_id,\n            &delivery"));
+
+        let renderer = source
+            .split("fn render_quest_referral_variant")
+            .nth(1)
+            .and_then(|tail| tail.split("#[cfg(test)]").next())
+            .expect("referral renderer");
+        assert!(renderer.contains("current_speaker_npc_id"));
+        assert!(!renderer.contains("receipt.source_npc_id"));
+    }
 }
 
 #[reducer]
@@ -6067,7 +6144,7 @@ pub fn join_dialogue_session(
     Ok(())
 }
 
-fn require_session_member(
+pub(crate) fn require_session_member(
     ctx: &ReducerContext,
     session_id: &str,
     character_id: u64,
@@ -6714,10 +6791,12 @@ fn dialogue_runtime_bindings(
             &session.settlement_id,
             &session.location_id,
         )? {
-            let mut testimony_parts = selected_witness
-                .testimony
-                .iter()
-                .map(|draft| draft.spoken_text.trim().to_owned())
+            let mut testimony_parts =
+                adventuresim_core::quest_generation::initial_testimony_projection(
+                    &selected_witness,
+                )
+                .into_iter()
+                .map(|(_, draft)| draft.spoken_text.trim().to_owned())
                 .filter(|text| !text.is_empty())
                 .collect::<Vec<_>>();
             if let Some(variant) = adventuresim_core::quest_catalog::catalog().dialogue_variant(
@@ -6797,7 +6876,187 @@ fn receive_referred_testimony(
         &witness,
         presentation_texts.as_deref(),
         action_id,
+        false,
     )
+}
+
+pub(crate) fn dialogue_referred_witness(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    npc_id: &str,
+) -> Result<
+    Option<(
+        adventuresim_core::quest_generation::GeneratedCase,
+        adventuresim_core::quest_generation::WitnessBinding,
+    )>,
+    String,
+> {
+    let Some(delivery) = ctx
+        .db
+        .local_problem_rumor_delivery()
+        .session_id()
+        .filter(&session.id)
+        .find(|delivery| delivery.character_id == character_id)
+    else {
+        return Ok(None);
+    };
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&delivery.receipt_id)
+        .ok_or("Rumor delivery receipt disappeared")?;
+    referred_generated_witness(
+        ctx,
+        character_id,
+        &receipt.opaque_case_ref,
+        npc_id,
+        &session.settlement_id,
+        &session.location_id,
+    )
+}
+
+pub(crate) struct ReferredTestimonyClaim {
+    pub proposition_id: String,
+    pub displayed_text: String,
+    pub charm_response: Option<String>,
+    pub command_response: Option<String>,
+    pub bluff_response: Option<String>,
+    pub claim_is_factually_accurate: bool,
+    pub demeanor_truth_signal: f32,
+}
+
+/// Recover proposition-granular presentation from private generation authority.
+/// The gateway never receives proposition IDs or reliability; only the social
+/// module converts these rows into opaque observer-scoped claim projections.
+pub(crate) fn referred_testimony_claims(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    npc_id: &str,
+    withheld: bool,
+) -> Result<(u32, Vec<ReferredTestimonyClaim>), String> {
+    let (_, witness) = dialogue_referred_witness(ctx, character_id, session, npc_id)?
+        .ok_or("Dialogue has no bound witness testimony")?;
+    let claims = witness
+        .testimony
+        .iter()
+        .filter(|draft| {
+            (draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld)
+                == withheld
+        })
+        .map(|draft| {
+            // The exact interactive substring and its optional responses are
+            // authored with private testimony authority. The gateway later
+            // requires this substring in the persisted utterance and fails
+            // closed rather than sentence-splitting.
+            let displayed_text = draft.challenge_text.clone();
+            let authority = adventuresim_core::quest_generation::testimony_claim_authority(draft);
+            Ok(ReferredTestimonyClaim {
+                proposition_id: draft.proposition_id.clone(),
+                displayed_text,
+                charm_response: draft.challenge_responses.charm.clone(),
+                command_response: draft.challenge_responses.command.clone(),
+                bluff_response: draft.challenge_responses.bluff.clone(),
+                claim_is_factually_accurate: authority.factually_accurate,
+                demeanor_truth_signal: authority.demeanor_truth_signal,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let response_id = if withheld {
+        "witness-social-release"
+    } else {
+        "hear-referred-testimony"
+    };
+    let event_sequence = ctx
+        .db
+        .dialogue_event()
+        .session_id()
+        .filter(&session.id)
+        .filter(|event| event.response_id == response_id)
+        .map(|event| event.sequence)
+        .max()
+        .ok_or("Heard witness claim event is unavailable")?;
+    Ok((event_sequence, claims))
+}
+
+pub(crate) fn release_referred_withheld_testimony(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    npc_id: &str,
+    action_id: &str,
+) -> Result<(), String> {
+    let (generated, witness) = dialogue_referred_witness(ctx, character_id, session, npc_id)?
+        .ok_or("Dialogue has no bound witness testimony")?;
+    let variant = adventuresim_core::quest_catalog::catalog().dialogue_variant(
+        adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
+        &dialogue_fact_context(ctx, session, character_id)?,
+    )?;
+    let mut presentation_texts = Vec::with_capacity(witness.testimony.len());
+    for draft in &witness.testimony {
+        let text = if let Some(variant) = variant {
+            let mut values = std::collections::BTreeMap::new();
+            values.insert("testimony".into(), draft.spoken_text.clone());
+            variant.render(&values)?
+        } else {
+            draft.spoken_text.clone()
+        };
+        presentation_texts.push(text);
+    }
+    let released = witness
+        .testimony
+        .iter()
+        .enumerate()
+        .filter(|(_, draft)| {
+            draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
+        })
+        .map(|(index, _)| presentation_texts[index].trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if released.is_empty() || released.chars().count() > 4_096 {
+        return Err("Bound witness testimony is unavailable or too large".into());
+    }
+    crate::investigation::persist_generated_testimony(
+        ctx,
+        character_id,
+        &generated,
+        &witness,
+        Some(&presentation_texts),
+        action_id,
+        true,
+    )?;
+    let speaker_role = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .find(|participant| participant.actor_id == npc_id)
+        .map(|participant| participant.role)
+        .ok_or("Witness dialogue participant disappeared")?;
+    let sequence = ctx
+        .db
+        .dialogue_event()
+        .session_id()
+        .filter(&session.id)
+        .count() as u32;
+    ctx.db.dialogue_event().insert(DialogueEvent {
+        id: format!("{}:event:{sequence}", session.id),
+        gateway_bucket: 0,
+        session_id: session.id.clone(),
+        sequence,
+        response_id: "witness-social-release".into(),
+        speaker_role,
+        fragments_json: serde_json::to_string(&vec![adventuresim_dialogue::Fragment::Text {
+            value: released,
+        }])
+        .map_err(|_| "Could not encode released witness testimony")?,
+        source_refs_json: "[null]".into(),
+        created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+    });
+    Ok(())
 }
 
 fn resolve_dialogue_fragments(
@@ -7918,7 +8177,8 @@ fn apply_dialogue_effect(
             crate::organization::join_organization(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
-            receive_referred_testimony(ctx, character_id, session, &live_npc, action_id)
+            receive_referred_testimony(ctx, character_id, session, &live_npc, action_id)?;
+            crate::social::passively_assess_dialogue_witness(ctx, character_id, &session.id)
         }
         adventuresim_dialogue::Effect::InvestigationAction { action } => {
             apply_dialogue_investigation_action(
@@ -19468,5 +19728,26 @@ mod developer_quest_source_tests {
             .next()
             .unwrap();
         assert!(materializer.contains("&generated.custody"));
+    }
+
+    #[test]
+    fn hearing_referred_testimony_triggers_passive_insight_after_persistence() {
+        let source = include_str!("strategic.rs");
+        let effect = source
+            .split("adventuresim_dialogue::Effect::ReceiveReferredTestimony =>")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("adventuresim_dialogue::Effect::InvestigationAction")
+                    .next()
+            })
+            .expect("referred testimony dialogue effect");
+        let receive = effect
+            .find("receive_referred_testimony")
+            .expect("authoritative testimony persistence");
+        let assess = effect
+            .find("passively_assess_dialogue_witness")
+            .expect("passive Insight assessment");
+        assert!(receive < assess);
+        assert!(effect.contains("?;"));
     }
 }

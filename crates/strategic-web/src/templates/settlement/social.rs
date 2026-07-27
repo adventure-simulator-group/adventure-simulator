@@ -1,4 +1,5 @@
 use maud::{Markup, html};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{
     character_details::religion_name,
@@ -30,6 +31,16 @@ pub struct SocialFeedback {
     pub is_error: bool,
 }
 
+fn casual_chat_action_id() -> String {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("chat-{nanos:x}-{sequence:x}")
+}
+
 fn social_actions(
     is_self: bool,
     topic: adventuresim_core::social::SocialTopic,
@@ -59,6 +70,23 @@ fn social_actions(
             && !(*action == Flirt && flirt_blocked)
     })
     .collect()
+}
+
+fn social_action_label(
+    action: adventuresim_core::social::SocialActionKind,
+    shares_concern: bool,
+) -> &'static str {
+    use adventuresim_core::social::SocialActionKind;
+    match action {
+        SocialActionKind::Reflect => "Reflect",
+        SocialActionKind::Listen => "Listen",
+        SocialActionKind::Commiserate if shares_concern => "Commiserate",
+        SocialActionKind::Commiserate => "Feign sympathy",
+        SocialActionKind::LightenMood => "Joke",
+        SocialActionKind::Rally => "Rally",
+        SocialActionKind::Reframe => "Reframe",
+        SocialActionKind::Flirt => "Flirt",
+    }
 }
 
 fn perceived_trait(
@@ -143,6 +171,12 @@ pub fn party_social_dialog(
         location.base_path(),
         selected.id
     ));
+    let chat_href = location.preserve_building(format!(
+        "{}/party/{}/social/chat",
+        location.base_path(),
+        selected.id
+    ));
+    let chat_action_id = casual_chat_action_id();
     let affinity_label = match social.affinity {
         value if value >= 50.0 => "Devoted",
         value if value >= 15.0 => "Warm",
@@ -179,6 +213,29 @@ pub fn party_social_dialog(
                 }
             }
             @if !is_self {
+                (sidebar_section("Spend time together", html! {
+                    form class="social-chat-activity" method="post" action=(&chat_href)
+                        data-social-chat-form data-chat-start-minutes="30" {
+                        input type="hidden" name="action_id" value=(&chat_action_id);
+                        label for=(format!("social-chat-duration-{}", selected.id)) {
+                            strong { "Chat" }
+                            span class="text-muted small-copy" {
+                                "An ordinary conversation can strengthen or strain the relationship."
+                            }
+                        }
+                        div class="social-chat-duration" {
+                            input id=(format!("social-chat-duration-{}", selected.id))
+                                type="range" name="requested_minutes" min="15" max="480" step="15"
+                                value="30" data-social-chat-duration
+                                aria-label=(format!("Time spent chatting with {}", selected.name))
+                                aria-valuetext="30 minutes";
+                            output for=(format!("social-chat-duration-{}", selected.id))
+                                data-social-chat-output { "30 minutes" }
+                        }
+                        button type="submit" class="btn btn-primary btn-small"
+                            data-social-chat-submit { "Chat for 30 minutes" }
+                    }
+                }))
                 form class="automatic-social-chat" method="post" action=(&automatic_href) {
                     label {
                         input type="checkbox" name="enabled" value="true"
@@ -252,11 +309,20 @@ pub fn party_social_dialog(
                                       @let action_shares_concern = action != adventuresim_core::social::SocialActionKind::Commiserate || shares_concern;
                                       @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
                                       @let description = action.description(topic, action_shares_concern);
+                                      @let label = social_action_label(action, action_shares_concern);
+                                      @let tooltip = format!("{}\nTakes {} minutes.\n{} · {} risk", description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" });
                                     form method="post" action=(&social_href) {
                                         input type="hidden" name="source_id" value=(&source.id);
                                         button type="submit" name="action_kind" value=(value) class="social-action"
-                                            aria-label=(description) title=(description) data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
-                                            (decorative_game_icon(icon))
+                                            aria-label=(format!("{}. {}. Takes {} minutes.", label, description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES))
+                                            data-strategic-tooltip=(&tooltip) {
+                                            span class="social-action-icon"
+                                                data-strategic-tooltip=(&tooltip) {
+                                                (decorative_game_icon(icon))
+                                            }
+                                            span class="social-action-label" {
+                                                (label)
+                                            }
                                         }
                                     }
                                     }
@@ -306,6 +372,7 @@ pub(super) fn npc_location_id(service_id: &str) -> &str {
         "weapons" => "forge",
         "armor" => "armoury",
         "clothing" => "tailor",
+        "religion" => "church",
         other => other,
     }
 }
@@ -314,7 +381,7 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
     html! {
         nav class="settlement-npc-strip" aria-label="People here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
-            span class="text-muted" data-npc-loading { "Finding the people hereâ€¦" }
+            span class="text-muted" data-npc-loading { "Finding the people here…" }
         }
     }
 }
@@ -541,6 +608,9 @@ mod tests {
         assert!(markup.contains("name=\"enabled\" value=\"true\" checked"));
         assert!(markup.contains("/party/2/social/automatic?building=inn"));
         assert!(markup.contains("data-automatic-social-chat"));
+        assert!(markup.contains("name=\"action_id\" value=\"chat-"));
+        assert!(markup.contains("name=\"requested_minutes\" min=\"15\" max=\"480\" step=\"15\""));
+        assert!(markup.contains("/party/2/social/chat?building=inn"));
         assert!(markup.contains("according to your personality and relevant skills"));
         assert!(!markup.contains(">Save</button>"));
         assert!(!markup.contains("Use low-risk listening"));
@@ -560,6 +630,31 @@ mod tests {
         assert!(feedback_markup.contains("class=\"social-feedback social-feedback-error\""));
         assert!(feedback_markup.contains("role=\"alert\""));
         assert!(feedback_markup.contains("That approach needs time"));
+
+        let response_social = SocialPresentation::default();
+        let response_source = CharacterMoraleSource {
+            id: "fresh-concern".into(),
+            character_id: target.id,
+            kind: "defeat".into(),
+            label: "Another defeat".into(),
+            magnitude: -2.0,
+        };
+        let response_markup = party_social_dialog(
+            &location,
+            &target,
+            &actor,
+            &[response_source],
+            &response_social,
+        )
+        .into_string();
+        assert!(response_markup.contains("class=\"social-action-icon\""));
+        assert!(response_markup.contains("class=\"social-action-label\">Listen</span>"));
+        assert!(!response_markup.contains(">Listen ("));
+        assert!(response_markup.contains("Takes 5 minutes."));
+        assert!(response_markup.contains("data-strategic-tooltip=\"Ask how they feel"));
+        assert!(!response_markup.contains(
+            "class=\"social-action\" aria-label=\"Ask how they feel about the defeat\" title="
+        ));
     }
 
     #[test]
@@ -578,6 +673,14 @@ mod tests {
         assert_eq!(
             social_actions(true, SocialTopic::Defeat, true, true),
             vec![("inner-self", SocialActionKind::Reflect, "reflect")]
+        );
+        assert_eq!(
+            social_action_label(SocialActionKind::Listen, false),
+            "Listen"
+        );
+        assert_eq!(
+            social_action_label(SocialActionKind::Commiserate, false),
+            "Feign sympathy"
         );
         assert_eq!(
             social_actions(false, SocialTopic::Hunger, false, false).len(),
@@ -679,6 +782,11 @@ mod tests {
         assert!(chat.contains("data-local-chat-location=\"market\""));
         assert!(chat.contains("data-dialogue-catalog-revision"));
         assert!(!chat.contains("lubeck:merchants"));
+        assert_eq!(npc_location_id("religion"), "church");
+        assert_eq!(npc_location_id("inn"), "inn");
+        let church_strip = npc_portrait_strip("lubeck", "church").into_string();
+        assert!(church_strip.contains("Finding the people here…"));
+        assert!(!church_strip.contains("â"));
     }
 
     #[test]

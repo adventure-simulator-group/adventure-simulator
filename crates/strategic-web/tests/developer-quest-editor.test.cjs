@@ -78,6 +78,14 @@ test("typed constructors replace whole tagged values and structured options", ()
   });
 });
 
+test("track authoring defaults preserve typed segment authority", () => {
+  assert.match(script, /track_trails:\s*\{\s*id:\s*"track-trail:new",\s*segment_ids:\s*\[\]/);
+  assert.match(script, /track_segments:\s*\{\s*id:\s*"track-segment:new"/);
+  assert.match(script, /trail_id:\s*"track-trail:new"/);
+  assert.match(script, /track_segment_id:\s*null/);
+  assert.match(script, /segment_ids:\s*"track-segment:new"/);
+});
+
 test("NPC selection atomically hydrates locked witness and pattern bindings", () => {
   const binding = {
     npc_id: "npc:two", display_name: "Else", demographic: "merchant",

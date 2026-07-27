@@ -1,7 +1,7 @@
 {
   "version": 3,
-  "catalog_revision": "31635fa78e042aea69fb491918a17ed49ad94402e634e068d7dec26ca0def753",
-  "generator_manifest_digest": "3aa2c937f34eee7a703a5d3bfaaaa9456c675ff69d61854b9e36868a0dd3da9f",
+  "catalog_revision": "82907c49eac07fd0b0b89e99a12b31649e516f43a706f15add4c722580ef7cdf",
+  "generator_manifest_digest": "4f081e329c061b98c64844bbd50605c7897311b5ce8a5cb8be3aae409d8c4cd4",
   "seed": 41,
   "family": "recurring_depredation",
   "decisions": [

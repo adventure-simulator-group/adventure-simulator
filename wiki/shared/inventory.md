@@ -64,8 +64,10 @@ Travel planning should calculate expected food and water needs and let the
 party purchase provisions with a safety margin.
 
 Food and water are consumed from shared supplies before personal reserves.
-Settlement departure fills owned water capacity. Rest at an inn includes board;
-field, temple, private, and camp rest consume the party's own supplies.
+Settlement departure fills owned water capacity. Ordinary settlement water is
+consumed automatically during settlement rest. Rest at an inn additionally
+includes food; field, private, and camp rest consume the party's own supplies,
+while temple rest still consumes the party's food.
 
 Alcohol remains separate from ordinary water. Weak drinks may contribute some
 hydration, while strong alcohol is more valuable for disinfection. Desired
