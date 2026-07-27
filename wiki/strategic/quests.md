@@ -11,6 +11,10 @@ clues. Terrain follows and recovers tracks. Insight notices possible pressure
 without certifying truth, while Charm, Command, and Deception offer
 personality-sensitive ways to pursue what a witness has not volunteered.
 
+Tracks are followed as a short sequence rather than one all-or-nothing check.
+Each successful section contributes a physical finding before the final section
+locates a site; unseen later sections and their destination remain private.
+
 ## Discovery
 
 Players learn about problems through tavern rumors, local conversations,

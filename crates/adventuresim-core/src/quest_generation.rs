@@ -58,6 +58,8 @@ id_type!(WitnessId);
 id_type!(EvidenceId);
 id_type!(ActionId);
 id_type!(FinaleId);
+id_type!(TrackTrailId);
+id_type!(TrackSegmentId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -469,6 +471,25 @@ pub struct GeneratedEvidence {
     pub corrects_proposition_id: Option<String>,
 }
 
+/// Immutable private trail authority. Segment identities are observer-scoped;
+/// public projections disclose only a successfully completed segment.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrackTrail {
+    pub id: TrackTrailId,
+    pub segment_ids: Vec<TrackSegmentId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrackSegment {
+    pub id: TrackSegmentId,
+    pub trail_id: TrackTrailId,
+    pub ordinal: u16,
+    pub terrain: Terrain,
+    pub safe_finding: String,
+    pub predecessor: Option<TrackSegmentId>,
+    pub next: Option<TrackSegmentId>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneratedAction {
     pub id: ActionId,
@@ -480,6 +501,7 @@ pub struct GeneratedAction {
     pub alternate: ActionId,
     pub active_initially: bool,
     pub safe_summary: String,
+    pub track_segment_id: Option<TrackSegmentId>,
     pub outputs: Vec<GeneratedActionOutput>,
 }
 
@@ -649,6 +671,10 @@ pub enum GeneratedActionOutput {
         evidence_id: EvidenceId,
         condition: GeneratedPatternCondition,
     },
+    TrackFinding {
+        segment_id: TrackSegmentId,
+        finding: String,
+    },
     AmbushReady,
     Consequence {
         consequence: GeneratedActionConsequence,
@@ -735,6 +761,8 @@ pub struct GeneratedCase {
     pub witnesses: Vec<WitnessBinding>,
     pub pattern_targets: Vec<GeneratedPatternTarget>,
     pub evidence: Vec<GeneratedEvidence>,
+    pub track_trails: Vec<TrackTrail>,
+    pub track_segments: Vec<TrackSegment>,
     pub actions: Vec<GeneratedAction>,
     pub objectives: ObjectiveExpression,
     pub custody: Vec<(String, SiteId)>,
@@ -1965,14 +1993,14 @@ fn build_actions(
     attack_pattern: AttackPattern,
     victim_target: Option<&GeneratedPatternTarget>,
     pattern_evidence_id: &EvidenceId,
+    track_segments: &[TrackSegment],
 ) -> Vec<GeneratedAction> {
-    let trail_summary = match route_variant {
-        RouteVariant::Direct => "Follow the physical trail directly.",
-        RouteVariant::Cautious => "Reacquire and follow the trail cautiously.",
+    let early_tracking_summary = match route_variant {
+        RouteVariant::Direct => "Read the clearest section of the physical trail.",
+        RouteVariant::Cautious => "Recover the trail cautiously across the changed ground.",
     };
-    let trail_kind = match route_variant {
-        RouteVariant::Direct => InvestigationActionKind::FollowTracks,
-        RouteVariant::Cautious => InvestigationActionKind::ReacquireTracks,
+    let [first_segment, final_segment] = track_segments else {
+        unreachable!("generated physical trails always have two segments")
     };
     let pattern_condition = match attack_pattern {
         AttackPattern::Nightly => GeneratedPatternCondition::NightWindow,
@@ -2040,9 +2068,10 @@ fn build_actions(
         alternate: ActionId::new(scoped_id(prefix, "action", alternate)),
         active_initially: active,
         safe_summary: summary.into(),
+        track_segment_id: None,
         outputs,
     };
-    match family {
+    let mut actions = match family {
         TemplateFamily::RecurringDepredation => vec![
             make(
                 "locate_contact",
@@ -2094,10 +2123,10 @@ fn build_actions(
                 Some("search"),
                 "reveal_route",
                 false,
-                "Recover the trail across the changed ground.",
+                early_tracking_summary,
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::RouteSegment,
-                    site_id: Some(finale.clone()),
+                    site_id: None,
                 }],
             ),
             make(
@@ -2170,14 +2199,14 @@ fn build_actions(
             ),
             make(
                 "reveal_route",
-                trail_kind,
+                InvestigationActionKind::ApproachLead,
                 RouteClass::PatternSurveillance,
                 "route",
                 finale.0.clone(),
                 Some("patrol"),
                 "follow",
                 false,
-                trail_summary,
+                "Approach the site along the learned route.",
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::Exact,
                     site_id: Some(finale.clone()),
@@ -2224,15 +2253,30 @@ fn build_actions(
                 vec![],
             ),
             make(
-                "follow",
-                trail_kind,
+                "reacquire",
+                InvestigationActionKind::ReacquireTracks,
                 RouteClass::PhysicalTrail,
-                "site",
+                "route",
                 finale.0.clone(),
                 Some("inspect_last_known"),
                 "approach_social",
                 false,
-                trail_summary,
+                early_tracking_summary,
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::RouteSegment,
+                    site_id: None,
+                }],
+            ),
+            make(
+                "follow",
+                InvestigationActionKind::FollowTracks,
+                RouteClass::PhysicalTrail,
+                "site",
+                finale.0.clone(),
+                Some("reacquire"),
+                "approach_social",
+                false,
+                "Follow the recovered trail to its source.",
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::Exact,
                     site_id: Some(finale.clone()),
@@ -2292,7 +2336,28 @@ fn build_actions(
                 vec![],
             ),
         ],
-    }
+    };
+    let early = actions
+        .iter_mut()
+        .find(|action| action.id == ActionId::new(scoped_id(prefix, "action", "reacquire")))
+        .expect("physical trail has an early segment action");
+    early.track_segment_id = Some(first_segment.id.clone());
+    early.outputs.push(GeneratedActionOutput::TrackFinding {
+        segment_id: first_segment.id.clone(),
+        finding: first_segment.safe_finding.clone(),
+    });
+    let final_action = actions
+        .iter_mut()
+        .find(|action| action.id == ActionId::new(scoped_id(prefix, "action", "follow")))
+        .expect("physical trail has a final segment action");
+    final_action.track_segment_id = Some(final_segment.id.clone());
+    final_action
+        .outputs
+        .push(GeneratedActionOutput::TrackFinding {
+            segment_id: final_segment.id.clone(),
+            finding: final_segment.safe_finding.clone(),
+        });
+    actions
 }
 
 pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, GenerationError> {
@@ -2621,6 +2686,35 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         SubjectId::new(scoped_id(&prefix, "subject", "missing-person")).expect("generated subject");
     let asset =
         AssetId::new(scoped_id(&prefix, "asset", "missing-property")).expect("generated asset");
+    let trail_id = TrackTrailId::new(scoped_id(&prefix, "track-trail", "physical"));
+    let first_segment_id = TrackSegmentId::new(scoped_id(&prefix, "track-segment", "physical:0"));
+    let final_segment_id = TrackSegmentId::new(scoped_id(&prefix, "track-segment", "physical:1"));
+    let track_segments = vec![
+        TrackSegment {
+            id: first_segment_id.clone(),
+            trail_id: trail_id.clone(),
+            ordinal: 0,
+            terrain: Terrain::Settlement,
+            safe_finding:
+                "The impressions continue beyond the broken ground in a consistent direction."
+                    .into(),
+            predecessor: None,
+            next: Some(final_segment_id.clone()),
+        },
+        TrackSegment {
+            id: final_segment_id.clone(),
+            trail_id: trail_id.clone(),
+            ordinal: 1,
+            terrain: terrain(site),
+            safe_finding: "The freshest impressions converge on one occupied site.".into(),
+            predecessor: Some(first_segment_id.clone()),
+            next: None,
+        },
+    ];
+    let track_trails = vec![TrackTrail {
+        id: trail_id,
+        segment_ids: vec![first_segment_id, final_segment_id],
+    }];
     let mut actions = build_actions(
         &prefix,
         family,
@@ -2631,6 +2725,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         attack_pattern,
         pattern_target.as_ref(),
         &pattern_evidence_id,
+        &track_segments,
     );
     let issuer = context
         .witness_candidates
@@ -2968,6 +3063,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         witnesses,
         pattern_targets: pattern_target.into_iter().collect(),
         evidence,
+        track_trails,
+        track_segments,
         actions,
         objectives,
         custody,
@@ -2984,6 +3081,188 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     Ok(manifest)
 }
 
+fn validate_track_trails(case: &GeneratedCase, errors: &mut Vec<String>) {
+    let trail_ids = case
+        .track_trails
+        .iter()
+        .map(|trail| trail.id.clone())
+        .collect::<BTreeSet<_>>();
+    let segment_ids = case
+        .track_segments
+        .iter()
+        .map(|segment| segment.id.clone())
+        .collect::<BTreeSet<_>>();
+    if trail_ids.len() != case.track_trails.len() {
+        errors.push("track trails require unique identities".into());
+    }
+    if segment_ids.len() != case.track_segments.len() {
+        errors.push("track segments require unique identities".into());
+    }
+    if case.track_trails.is_empty() {
+        errors.push("generated case requires an immutable physical trail".into());
+    }
+    for segment in &case.track_segments {
+        if !trail_ids.contains(&segment.trail_id) {
+            errors.push(format!(
+                "track segment {} belongs to a missing trail",
+                segment.id.0
+            ));
+        }
+    }
+    let mut bound_segments = BTreeMap::<TrackSegmentId, &GeneratedAction>::new();
+    for action in &case.actions {
+        let findings = action
+            .outputs
+            .iter()
+            .filter_map(|output| match output {
+                GeneratedActionOutput::TrackFinding {
+                    segment_id,
+                    finding,
+                } => Some((segment_id, finding)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let Some(segment_id) = &action.track_segment_id else {
+            if !findings.is_empty() {
+                errors.push(format!(
+                    "{} exposes a track finding without segment authority",
+                    action.id.0
+                ));
+            }
+            continue;
+        };
+        let Some(segment) = case
+            .track_segments
+            .iter()
+            .find(|segment| &segment.id == segment_id)
+        else {
+            errors.push(format!(
+                "{} binds missing track segment {}",
+                action.id.0, segment_id.0
+            ));
+            continue;
+        };
+        if bound_segments.insert(segment_id.clone(), action).is_some() {
+            errors.push(format!(
+                "track segment {} is bound by multiple actions",
+                segment_id.0
+            ));
+        }
+        if action.route != RouteClass::PhysicalTrail
+            || !matches!(
+                action.kind,
+                InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks
+            )
+        {
+            errors.push(format!(
+                "{} binds a track segment without a physical tracking action",
+                action.id.0
+            ));
+        }
+        if findings.len() != 1
+            || findings[0].0 != segment_id
+            || findings[0].1 != &segment.safe_finding
+        {
+            errors.push(format!(
+                "{} does not emit its exact safe track finding",
+                action.id.0
+            ));
+        }
+    }
+    for trail in &case.track_trails {
+        if !(2..=4).contains(&trail.segment_ids.len()) {
+            errors.push(format!(
+                "track trail {} is not a short segment chain",
+                trail.id.0
+            ));
+            continue;
+        }
+        let owned = case
+            .track_segments
+            .iter()
+            .filter(|segment| segment.trail_id == trail.id)
+            .collect::<Vec<_>>();
+        if owned.len() != trail.segment_ids.len()
+            || trail
+                .segment_ids
+                .iter()
+                .any(|id| !owned.iter().any(|segment| &segment.id == id))
+        {
+            errors.push(format!(
+                "track trail {} does not own exactly its declared segments",
+                trail.id.0
+            ));
+            continue;
+        }
+        for (ordinal, segment_id) in trail.segment_ids.iter().enumerate() {
+            let Some(segment) = owned.iter().find(|segment| &segment.id == segment_id) else {
+                continue;
+            };
+            let predecessor = ordinal
+                .checked_sub(1)
+                .and_then(|index| trail.segment_ids.get(index));
+            let next = trail.segment_ids.get(ordinal + 1);
+            if usize::from(segment.ordinal) != ordinal
+                || segment.predecessor.as_ref() != predecessor
+                || segment.next.as_ref() != next
+                || segment.safe_finding.trim().is_empty()
+                || segment.safe_finding.chars().count() > 512
+            {
+                errors.push(format!(
+                    "track segment {} breaks trail continuity",
+                    segment.id.0
+                ));
+            }
+            let Some(action) = bound_segments.get(&segment.id).copied() else {
+                errors.push(format!(
+                    "track segment {} has no owning action",
+                    segment.id.0
+                ));
+                continue;
+            };
+            if let Some(predecessor_id) = predecessor {
+                let predecessor_action = bound_segments.get(predecessor_id).copied();
+                if predecessor_action.map(|item| &item.id) != action.prerequisite.as_ref() {
+                    errors.push(format!(
+                        "{} can skip its preceding track segment",
+                        action.id.0
+                    ));
+                }
+            }
+            let destinations = action
+                .outputs
+                .iter()
+                .filter_map(|output| match output {
+                    GeneratedActionOutput::Destination { stage, site_id } => {
+                        Some((*stage, site_id.as_ref()))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let is_final = next.is_none();
+            let valid_destination = destinations.len() == 1
+                && destinations.iter().any(|(stage, site_id)| {
+                    if is_final {
+                        *stage == GeneratedDestinationStage::Exact
+                            && site_id.is_some_and(|site_id| {
+                                case.sites
+                                    .iter()
+                                    .any(|site| site.id == *site_id && site.is_true_location)
+                            })
+                    } else {
+                        *stage == GeneratedDestinationStage::RouteSegment && site_id.is_none()
+                    }
+                });
+            if !valid_destination {
+                errors.push(format!(
+                    "{} has an invalid destination for its track segment",
+                    action.id.0
+                ));
+            }
+        }
+    }
+}
+
 pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     if case.catalog_revision != CATALOG_REVISION {
@@ -2993,6 +3272,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
     if true_sites.len() != 1 {
         errors.push("case must have exactly one canonical finale location".into());
     }
+    validate_track_trails(case, &mut errors);
     let route_classes: BTreeSet<_> = case.actions.iter().map(|a| a.route).collect();
     if route_classes.len() < 2 {
         errors.push("case requires two materially different route classes".into());
@@ -3677,8 +3957,7 @@ mod tests {
     #[test]
     fn generated_location_testimony_has_one_public_grant_shape() {
         for seed in 0..256 {
-            let generated =
-                generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
+            let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
             let draft = &generated.witnesses[0].testimony[0];
             assert_eq!(draft.destination_stage, "route_segment");
             assert_eq!(draft.referred_witness_ids.len(), 1);
@@ -3686,6 +3965,109 @@ mod tests {
             assert!(!draft.spoken_text.to_ascii_lowercase().contains("truthful"));
             assert!(!draft.spoken_text.to_ascii_lowercase().contains("lying"));
         }
+    }
+
+    #[test]
+    fn generated_physical_trails_are_opaque_contiguous_two_segment_chains() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            let generated = generate(&context(73, family)).unwrap();
+            let [trail] = generated.track_trails.as_slice() else {
+                panic!("generated case must have one physical trail");
+            };
+            assert_eq!(trail.segment_ids.len(), 2);
+            let first = generated
+                .track_segments
+                .iter()
+                .find(|segment| segment.id == trail.segment_ids[0])
+                .unwrap();
+            let final_segment = generated
+                .track_segments
+                .iter()
+                .find(|segment| segment.id == trail.segment_ids[1])
+                .unwrap();
+            assert_eq!(first.ordinal, 0);
+            assert_eq!(first.predecessor, None);
+            assert_eq!(first.next.as_ref(), Some(&final_segment.id));
+            assert_eq!(final_segment.ordinal, 1);
+            assert_eq!(final_segment.predecessor.as_ref(), Some(&first.id));
+            assert_eq!(final_segment.next, None);
+
+            let first_action = generated
+                .actions
+                .iter()
+                .find(|action| action.track_segment_id.as_ref() == Some(&first.id))
+                .unwrap();
+            let final_action = generated
+                .actions
+                .iter()
+                .find(|action| action.track_segment_id.as_ref() == Some(&final_segment.id))
+                .unwrap();
+            assert_eq!(final_action.prerequisite.as_ref(), Some(&first_action.id));
+            assert!(first_action.outputs.iter().any(|output| matches!(
+                output,
+                GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::RouteSegment,
+                    site_id: None,
+                }
+            )));
+            assert!(!first_action.outputs.iter().any(|output| matches!(
+                output,
+                GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Exact,
+                    ..
+                }
+            )));
+            assert!(final_action.outputs.iter().any(|output| matches!(
+                output,
+                GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Exact,
+                    site_id: Some(_),
+                }
+            )));
+        }
+    }
+
+    #[test]
+    fn track_validator_rejects_broken_links_skips_and_early_exact_locations() {
+        let generated = generate(&context(91, TemplateFamily::RecurringDepredation)).unwrap();
+
+        let mut broken_link = generated.clone();
+        broken_link.track_segments[0].next = None;
+        assert!(validate(&broken_link).is_err());
+
+        let mut skipped = generated.clone();
+        let final_id = skipped.track_segments[1].id.clone();
+        let final_action = skipped
+            .actions
+            .iter_mut()
+            .find(|action| action.track_segment_id.as_ref() == Some(&final_id))
+            .unwrap();
+        final_action.prerequisite = None;
+        assert!(validate(&skipped).is_err());
+
+        let mut leaked = generated.clone();
+        let first_id = leaked.track_segments[0].id.clone();
+        let true_site = leaked
+            .sites
+            .iter()
+            .find(|site| site.is_true_location)
+            .unwrap()
+            .id
+            .clone();
+        leaked
+            .actions
+            .iter_mut()
+            .find(|action| action.track_segment_id.as_ref() == Some(&first_id))
+            .unwrap()
+            .outputs
+            .push(GeneratedActionOutput::Destination {
+                stage: GeneratedDestinationStage::Exact,
+                site_id: Some(true_site),
+            });
+        assert!(validate(&leaked).is_err());
     }
 
     fn inn_only_settlement_witnesses() -> (
@@ -4779,6 +5161,12 @@ mod tests {
                     case.evidence
                         .iter()
                         .map(|evidence| evidence.proposition_id.clone()),
+                )
+                .chain(case.track_trails.iter().map(|trail| trail.id.0.clone()))
+                .chain(
+                    case.track_segments
+                        .iter()
+                        .map(|segment| segment.id.0.clone()),
                 )
                 .chain(std::iter::once(case.public_case_id.clone()))
                 .collect::<BTreeSet<_>>()

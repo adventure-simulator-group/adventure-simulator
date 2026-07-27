@@ -21,6 +21,17 @@ use observation, with ambushes combining observation and Stealth. Until mixed
 terrain exists, Forest maps to Forest, Hills and Underground to Hills,
 Settlement and Ruins to Urban, and Plains, Road, and Marsh to Plains.
 
+Generated physical trails are immutable private manifest authority. A
+`TrackTrail` owns an ordered chain of observer-scoped `TrackSegment` IDs; every
+segment records its ordinal, explicit terrain, safe finding, and adjacent
+predecessor/next links. Exactly one physical tracking action owns each segment.
+Completing an early segment records only its safe finding and route-segment
+knowledge, then activates the adjacent segment. Only the final segment may
+produce an exact true-site destination. Inactive segment capabilities are not
+projected, so the browser cannot infer the remaining segment count, destination,
+fixed difficulty, or canonical cause. Attempt progress remains local to the
+opaque segment capability.
+
 ## Developer quest editor
 
 Settlement pages expose a complete quest-authoring dialog when the existing

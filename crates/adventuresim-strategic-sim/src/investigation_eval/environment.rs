@@ -320,6 +320,9 @@ impl InvestigationEnvironment {
                                 learned.push(evidence.safe_description.clone());
                             }
                         }
+                        GeneratedActionOutput::TrackFinding { finding, .. } => {
+                            learned.push(finding.clone());
+                        }
                         GeneratedActionOutput::AmbushReady => {
                             learned.push("The party has established an ambush position.".into());
                         }

@@ -1641,6 +1641,13 @@ fn generated_capability_safe_text(
         }
         _ => None,
     });
+    let track_finding = generated.outputs.iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::TrackFinding {
+            finding,
+            ..
+        } => Some(finding.clone()),
+        _ => None,
+    });
     (
         learned_condition.map_or_else(
             || {
@@ -1649,10 +1656,41 @@ fn generated_capability_safe_text(
             },
             |clue| format!("First learn and retain this corroborated clue: {clue}"),
         ),
-        earned_clue.unwrap_or_else(|| {
+        track_finding.or(earned_clue).unwrap_or_else(|| {
             "The investigation produces a new, source-attributed lead.".into()
         }),
     )
+}
+
+fn generated_action_terrain(
+    manifest: &adventuresim_core::quest_generation::GeneratedCase,
+    generated: &adventuresim_core::quest_generation::GeneratedAction,
+) -> action::Terrain {
+    generated
+        .track_segment_id
+        .as_ref()
+        .and_then(|segment_id| {
+            manifest
+                .track_segments
+                .iter()
+                .find(|segment| &segment.id == segment_id)
+                .map(|segment| segment.terrain)
+        })
+        .or_else(|| {
+            manifest
+                .sites
+                .iter()
+                .find(|site| site.id.0 == generated.target_id)
+                .map(|site| site.terrain)
+        })
+        .or_else(|| {
+            manifest
+                .areas
+                .iter()
+                .find(|area| area.id == generated.target_id)
+                .map(|area| area.terrain)
+        })
+        .unwrap_or(action::Terrain::Settlement)
 }
 
 fn generated_pattern_authority(
@@ -1716,19 +1754,7 @@ fn generated_pattern_authority(
     let expected_alternate = remap(&generated.alternate);
     let (expected_known_prerequisites, expected_safe_result) =
         generated_capability_safe_text(&manifest, generated);
-    let expected_terrain = manifest
-        .sites
-        .iter()
-        .find(|site| site.id.0 == generated.target_id)
-        .map(|site| site.terrain)
-        .or_else(|| {
-            manifest
-                .areas
-                .iter()
-                .find(|area| area.id == generated.target_id)
-                .map(|area| area.terrain)
-        })
-        .unwrap_or(action::Terrain::Settlement);
+    let expected_terrain = generated_action_terrain(&manifest, generated);
     if capability.method != action_method(generated.kind)
         || capability.target_kind != generated.target_kind
         || capability.target_id != generated.target_id
@@ -3037,16 +3063,6 @@ fn issue_rumor_action_graph(
                     &format!("{owner_character_id}:{}", id.0),
                 )
             };
-            let site_terrain = manifest
-                .sites
-                .iter()
-                .find(|site| site.id.0 == generated.target_id)
-                .map(|site| site.terrain);
-            let area_terrain = manifest
-                .areas
-                .iter()
-                .find(|area| area.id == generated.target_id)
-                .map(|area| area.terrain);
             let consequence = generated
                 .outputs
                 .iter()
@@ -3086,9 +3102,7 @@ fn issue_rumor_action_graph(
                 generated.kind,
                 generated.target_kind.clone(),
                 generated.target_id.clone(),
-                site_terrain
-                    .or(area_terrain)
-                    .unwrap_or(action::Terrain::Settlement),
+                generated_action_terrain(&manifest, generated),
                 ctx.random::<u64>(),
                 7_000,
                 generated.safe_summary.clone(),
@@ -7630,8 +7644,7 @@ mod tests {
         use adventuresim_core::{
             local_problem::Scope,
             quest_generation::{
-                GeneratedActionOutput, GenerationContext, TemplateFamily, generate,
-                observer_scoped_id, test_witnesses,
+                GenerationContext, TemplateFamily, generate, observer_scoped_id, test_witnesses,
             },
         };
 
@@ -7654,6 +7667,21 @@ mod tests {
                 witness_candidates: test_witnesses(),
             };
             let manifest = generate(&context).expect("family should generate");
+            for generated_action in manifest
+                .actions
+                .iter()
+                .filter(|action| action.track_segment_id.is_some())
+            {
+                let segment = manifest
+                    .track_segments
+                    .iter()
+                    .find(|segment| generated_action.track_segment_id.as_ref() == Some(&segment.id))
+                    .unwrap();
+                assert_eq!(
+                    generated_action_terrain(&manifest, generated_action),
+                    segment.terrain
+                );
+            }
             let mut saw_root = false;
             let mut saw_successor = false;
             for action in &manifest.actions {
@@ -7664,24 +7692,16 @@ mod tests {
                     action.prerequisite.as_ref().map_or_else(String::new, remap);
                 saw_root |= required_action_id.is_empty();
                 saw_successor |= !required_action_id.is_empty();
-                let earned_clue = action.outputs.iter().find_map(|output| match output {
-                    GeneratedActionOutput::Evidence { evidence_id } => manifest
-                        .evidence
-                        .iter()
-                        .find(|evidence| evidence.id == *evidence_id)
-                        .map(|evidence| evidence.safe_description.clone()),
-                    _ => None,
-                });
+                let (known_prerequisites, safe_result) =
+                    generated_capability_safe_text(&manifest, action);
                 validate_investigation_action_text(
                     &remap(&action.id),
                     &manifest.public_case_id,
                     &action.target_kind,
                     &action.target_id,
                     &action.safe_summary,
-                    "Complete the preceding generated lead and remain with your ready, co-located party.",
-                    earned_clue.as_deref().unwrap_or(
-                        "The investigation produces a new, source-attributed lead.",
-                    ),
+                    &known_prerequisites,
+                    &safe_result,
                     &required_action_id,
                     &remap(&action.alternate),
                 )
@@ -8098,6 +8118,8 @@ mod tests {
         assert!(projection.contains("capability_has_successful_attempt_view"));
         assert!(projection.contains("capability_has_live_support_view"));
         assert!(projection.contains("action_unavailable_reason_view"));
+        assert!(projection.contains(".filter(|capability| capability.active)"));
+        assert!(!projected_type.contains("track_segment"));
 
         let reducer = source
             .split("pub fn perform_investigation_action")
