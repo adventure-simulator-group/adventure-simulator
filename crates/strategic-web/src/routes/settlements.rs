@@ -4490,6 +4490,7 @@ struct SocialActionForm {
 #[derive(Deserialize)]
 struct CasualChatForm {
     requested_minutes: u64,
+    action_id: String,
 }
 
 #[derive(Deserialize)]
@@ -4583,16 +4584,16 @@ async fn perform_social_action(
     .into_response()
 }
 
-fn casual_chat_action_id(actor_id: u64, target_id: &str) -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("chat-{actor_id}-{target_id}-{nanos:x}")
-}
-
 fn valid_casual_chat_minutes(minutes: u64) -> bool {
     (15..=8 * 60).contains(&minutes) && minutes % 15 == 0
+}
+
+fn valid_casual_chat_action_id(action_id: &str) -> bool {
+    !action_id.is_empty()
+        && action_id.len() <= 96
+        && action_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 async fn chat_with_party_member(
@@ -4612,7 +4613,9 @@ async fn chat_with_party_member(
         )
             .into_response();
     }
-    let action_id = casual_chat_action_id(actor_id, &target_id.to_string());
+    if !valid_casual_chat_action_id(&form.action_id) {
+        return (StatusCode::BAD_REQUEST, "Invalid conversation action ID").into_response();
+    }
     let result = state
         .db
         .call(
@@ -4621,7 +4624,7 @@ async fn chat_with_party_member(
                 json!(actor_id),
                 json!(target_id),
                 json!(form.requested_minutes),
-                json!(&action_id),
+                json!(&form.action_id),
             ],
         )
         .await;
@@ -4630,7 +4633,7 @@ async fn chat_with_party_member(
             .db
             .query_one::<BackendSocialChatReceiptRow>(&format!(
                 "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {actor_id}",
-                sql_string_literal(&format!("{actor_id}:{action_id}"))
+                sql_string_literal(&format!("{actor_id}:{}", form.action_id))
             ))
             .await
             .ok()
@@ -6669,7 +6672,10 @@ pub(crate) async fn get_active_party_members(
 
 #[cfg(test)]
 mod social_notification_query_tests {
-    use super::{social_action_blocked_by_actor, social_action_error_feedback, social_feedback};
+    use super::{
+        social_action_blocked_by_actor, social_action_error_feedback, social_feedback,
+        valid_casual_chat_action_id, valid_casual_chat_minutes,
+    };
     use adventuresim_core::social::SocialActionKind;
 
     #[test]
@@ -6689,6 +6695,26 @@ mod social_notification_query_tests {
             "This concern is addressed."
         );
         assert!(social_feedback(Some("made-up")).is_none());
+    }
+
+    #[test]
+    fn casual_chat_forms_validate_stable_opaque_action_ids() {
+        assert!(valid_casual_chat_minutes(15));
+        assert!(valid_casual_chat_minutes(480));
+        assert!(!valid_casual_chat_minutes(14));
+        assert!(!valid_casual_chat_minutes(481));
+        assert!(valid_casual_chat_action_id("chat-19af-2"));
+        assert!(!valid_casual_chat_action_id(""));
+        assert!(!valid_casual_chat_action_id("chat:19af"));
+
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn chat_with_party_member")
+            .nth(1)
+            .and_then(|tail| tail.split("fn social_action_error_feedback").next())
+            .expect("party chat handler");
+        assert!(handler.contains("json!(&form.action_id)"));
+        assert!(!handler.contains("SystemTime::now"));
     }
 
     #[test]

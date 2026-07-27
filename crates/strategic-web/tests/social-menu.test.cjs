@@ -23,3 +23,17 @@ test("settlement NPC social menu uses safe qualitative projections", () => {
   assert.match(source, /negative: "The conversation leaves some friction/);
   assert.match(source, /data\.openNpcSocial|dataset\.openNpcSocial/);
 });
+
+test("NPC social modal follows soft-navigation lifecycle and traps focus", () => {
+  assert.match(source, /strategic-page-unmounting/);
+  assert.match(source, /openController\?\.abort/);
+  assert.match(source, /closeActiveOverlay\(false\)/);
+  assert.match(source, /classList\.remove\("activity-modal-open"\)/);
+  assert.match(source, /event\.key !== "Tab"/);
+  assert.match(source, /focusables\[focusables\.length - 1\]\.focus/);
+});
+
+test("an NPC chat form retains one action ID across transport retries", () => {
+  assert.match(source, /const submissionActionId = actionId\(\)/);
+  assert.match(source, /action_id: submissionActionId/);
+});

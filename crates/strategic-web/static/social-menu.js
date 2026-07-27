@@ -9,10 +9,19 @@
   const actionId = () => globalThis.crypto?.randomUUID?.()
     || `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const relationshipLabel = (value) => String(value || "uncertain").replaceAll("_", " ");
+  const FOCUSABLE = [
+    "a[href]", "button:not(:disabled)", "input:not([type='hidden']):not(:disabled)",
+    "select:not(:disabled)", "textarea:not(:disabled)", "[tabindex]:not([tabindex='-1'])",
+  ].join(",");
+  const visible = (root) => [...root.querySelectorAll(FOCUSABLE)]
+    .filter((element) => !element.hidden && !element.closest("[hidden]")
+      && element.getAttribute("aria-hidden") !== "true");
   if (typeof module !== "undefined") {
     module.exports = { formatDuration, relationshipLabel };
   }
   if (typeof window === "undefined" || typeof document === "undefined") return;
+  let activeOverlay = null;
+  let openController = null;
 
   const bindDuration = (form) => {
     if (form.dataset.socialChatBound === "true") return;
@@ -32,10 +41,17 @@
     render();
   };
 
-  const closeOverlay = (overlay, opener) => {
+  const closeActiveOverlay = (restoreFocus = true) => {
+    if (!activeOverlay) {
+      document.body.classList.remove("activity-modal-open");
+      return;
+    }
+    const { overlay, opener, controller } = activeOverlay;
+    activeOverlay = null;
+    controller.abort();
     overlay.remove();
     document.body.classList.remove("activity-modal-open");
-    opener?.focus();
+    if (restoreFocus && opener?.isConnected) opener.focus();
   };
 
   const socialPath = (npcId) => {
@@ -45,7 +61,9 @@
   };
 
   const renderNpcSocial = (view, path, opener) => {
-    document.querySelector("[data-npc-social-overlay]")?.remove();
+    closeActiveOverlay(false);
+    const controller = new AbortController();
+    const { signal } = controller;
     const overlay = document.createElement("div");
     overlay.className = "character-action-overlay";
     overlay.dataset.npcSocialOverlay = "true";
@@ -136,13 +154,34 @@
     overlay.append(backdrop, dialog);
     document.body.append(overlay);
     document.body.classList.add("activity-modal-open");
+    activeOverlay = { overlay, opener, controller };
     bindDuration(form);
-    const dismiss = () => closeOverlay(overlay, opener);
-    backdrop.addEventListener("click", dismiss);
-    close.addEventListener("click", dismiss);
-    dialog.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") dismiss();
-    });
+    const submissionActionId = actionId();
+    const dismiss = () => closeActiveOverlay(true);
+    backdrop.addEventListener("click", dismiss, { signal });
+    close.addEventListener("click", dismiss, { signal });
+    overlay.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismiss();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusables = visible(dialog);
+      if (!focusables.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const current = focusables.indexOf(document.activeElement);
+      if (event.shiftKey && current <= 0) {
+        event.preventDefault();
+        focusables[focusables.length - 1].focus();
+      } else if (!event.shiftKey && (current < 0 || current === focusables.length - 1)) {
+        event.preventDefault();
+        focusables[0].focus();
+      }
+    }, { signal });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       submit.disabled = true;
@@ -152,33 +191,49 @@
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({
             requested_minutes: Number(slider.value),
-            action_id: actionId(),
+            action_id: submissionActionId,
           }),
+          signal,
         });
         if (!response.ok) throw new Error(`Conversation failed (${response.status})`);
-        renderNpcSocial(await response.json(), path, opener);
+        if (signal.aborted) return;
+        const updatedView = await response.json();
+        if (signal.aborted) return;
+        renderNpcSocial(updatedView, path, opener);
       } catch (error) {
+        if (signal.aborted || error?.name === "AbortError") return;
         feedback.className = "social-feedback social-feedback-error";
         feedback.textContent = "The conversation could not be completed right now.";
         window.reportStrategicError(error, "chat with local resident");
         submit.disabled = false;
       }
-    });
+    }, { signal });
     dialog.focus();
   };
 
   const openNpcSocial = async (opener) => {
     const path = socialPath(opener.dataset.openNpcSocial);
     if (!path) return;
+    openController?.abort();
+    const controller = new AbortController();
+    openController = controller;
     opener.disabled = true;
     try {
-      const response = await window.strategicFetch(path, { headers: { Accept: "application/json" } });
+      const response = await window.strategicFetch(path, {
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
       if (!response.ok) throw new Error(`Social menu unavailable (${response.status})`);
-      renderNpcSocial(await response.json(), path, opener);
+      if (controller.signal.aborted) return;
+      const view = await response.json();
+      if (controller.signal.aborted) return;
+      renderNpcSocial(view, path, opener);
     } catch (error) {
+      if (controller.signal.aborted || error?.name === "AbortError") return;
       window.reportStrategicError(error, "open social menu");
     } finally {
-      opener.disabled = false;
+      if (openController === controller) openController = null;
+      if (opener.isConnected) opener.disabled = false;
     }
   };
 
@@ -186,11 +241,17 @@
     document.querySelectorAll("[data-social-chat-form]").forEach(bindDuration);
   };
   document.addEventListener("click", (event) => {
-    const opener = event.target.closest("[data-open-npc-social]");
+    const opener = event.target.closest?.("[data-open-npc-social]");
     if (!opener) return;
     event.preventDefault();
     openNpcSocial(opener);
   });
   mount();
+  document.addEventListener("strategic-page-unmounting", () => {
+    openController?.abort();
+    openController = null;
+    closeActiveOverlay(false);
+    document.body.classList.remove("activity-modal-open");
+  });
   document.addEventListener("strategic-page-mounted", mount);
 })();

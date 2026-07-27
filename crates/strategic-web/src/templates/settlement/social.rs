@@ -1,4 +1,5 @@
 use maud::{Markup, html};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{
     character_details::religion_name,
@@ -28,6 +29,16 @@ pub struct SocialPresentation {
 pub struct SocialFeedback {
     pub message: &'static str,
     pub is_error: bool,
+}
+
+fn casual_chat_action_id() -> String {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("chat-{nanos:x}-{sequence:x}")
 }
 
 fn social_actions(
@@ -148,6 +159,7 @@ pub fn party_social_dialog(
         location.base_path(),
         selected.id
     ));
+    let chat_action_id = casual_chat_action_id();
     let affinity_label = match social.affinity {
         value if value >= 50.0 => "Devoted",
         value if value >= 15.0 => "Warm",
@@ -187,6 +199,7 @@ pub fn party_social_dialog(
                 (sidebar_section("Spend time together", html! {
                     form class="social-chat-activity" method="post" action=(&chat_href)
                         data-social-chat-form data-chat-start-minutes="30" {
+                        input type="hidden" name="action_id" value=(&chat_action_id);
                         label for=(format!("social-chat-duration-{}", selected.id)) {
                             strong { "Chat" }
                             span class="text-muted small-copy" {
@@ -568,6 +581,9 @@ mod tests {
         assert!(markup.contains("name=\"enabled\" value=\"true\" checked"));
         assert!(markup.contains("/party/2/social/automatic?building=inn"));
         assert!(markup.contains("data-automatic-social-chat"));
+        assert!(markup.contains("name=\"action_id\" value=\"chat-"));
+        assert!(markup.contains("name=\"requested_minutes\" min=\"15\" max=\"480\" step=\"15\""));
+        assert!(markup.contains("/party/2/social/chat?building=inn"));
         assert!(markup.contains("according to your personality and relevant skills"));
         assert!(!markup.contains(">Save</button>"));
         assert!(!markup.contains("Use low-risk listening"));

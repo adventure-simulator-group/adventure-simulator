@@ -348,7 +348,10 @@ pub fn backend_settlement_npc_relationships(
             Some(BackendSettlementNpcRelationship {
                 observer_character_id: relationship.observer_character_id,
                 npc_id: relationship.npc_id,
-                affinity_band: relationship_band(settle_affinity(relationship.affinity_anchor, 0)),
+                affinity_band: relationship_band(settle_affinity(
+                    relationship.affinity_anchor,
+                    now.saturating_sub(relationship.affinity_anchor_minute),
+                )),
                 familiarity_band: familiarity_band(relationship.shared_minutes),
                 morale_band: morale_band(settle_affinity(
                     state.morale_anchor,
@@ -850,14 +853,21 @@ pub fn spend_time_with_settlement_npc(
         .character_id()
         .find(actor_id)
         .map_or(0, |time| time.minutes);
-    let present = ctx
+    let remaining_presence = ctx
         .db
         .settlement_npc_presence()
         .npc_id()
         .find(&npc_id)
-        .is_some_and(|presence| crate::settlement_population::npc_is_present(&presence, now));
-    if !present {
+        .and_then(|presence| {
+            crate::settlement_population::npc_presence_remaining_minutes(&presence, now)
+        });
+    if remaining_presence.is_none() {
         return Err("Settlement NPC is not presently available".into());
+    }
+    if now.checked_add(requested_minutes).is_none()
+        || remaining_presence.is_none_or(|remaining| requested_minutes > remaining)
+    {
+        return Err("The conversation would continue beyond the NPC's availability".into());
     }
     let actor_personality = crate::personality::personality_or_neutral(ctx, actor_id);
     let actor_disposition = character_chat_disposition(&actor_personality);
@@ -3489,6 +3499,32 @@ mod contract_tests {
             .expect("settlement NPC relationship projection");
         assert!(!projection.contains("private_entropy"));
         assert!(!projection.contains("morale_anchor"));
+    }
+
+    #[test]
+    fn casual_npc_chat_is_replay_first_and_fits_the_presence_window() {
+        let source = include_str!("social.rs");
+        let reducer = source
+            .split("pub fn spend_time_with_settlement_npc")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn chat_with_party_member").next())
+            .expect("settlement NPC chat reducer");
+        assert!(reducer.find("chat_replayed(") < reducer.find("settlement_npc_presence()"));
+        assert!(reducer.contains("npc_presence_remaining_minutes"));
+        assert!(reducer.contains("now.checked_add(requested_minutes)"));
+        assert!(reducer.contains("requested_minutes > remaining"));
+    }
+
+    #[test]
+    fn settlement_npc_affinity_projection_uses_observer_elapsed_time() {
+        let source = include_str!("social.rs");
+        let projection = source
+            .split("pub fn backend_settlement_npc_relationships")
+            .nth(1)
+            .and_then(|tail| tail.split("fn witness_social_cooldown_id").next())
+            .expect("settlement NPC relationship projection");
+        assert!(projection.contains("now.saturating_sub(relationship.affinity_anchor_minute)"));
+        assert!(!projection.contains("settle_affinity(relationship.affinity_anchor, 0)"));
     }
 
     #[test]

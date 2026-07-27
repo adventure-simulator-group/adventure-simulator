@@ -130,6 +130,9 @@ struct NpcSocialRelationshipRow {
 
 #[derive(Deserialize)]
 struct SocialChatReceiptRow {
+    target_kind: String,
+    target_id: String,
+    requested_minutes: u64,
     outcome: String,
 }
 
@@ -238,9 +241,22 @@ fn npc_location_is_navigable(
     adventuresim_core::settlement_economy::npc_location_is_navigable(profile, has_keep, location_id)
 }
 
+fn npc_presence_contains(start_minute: u16, end_minute: u16, minute: u64) -> bool {
+    let minute = minute % 1_440;
+    let start = u64::from(start_minute);
+    let end = u64::from(end_minute);
+    if start == end {
+        false
+    } else if start < end {
+        start <= minute && minute < end
+    } else {
+        minute >= start || minute < end
+    }
+}
+
 #[cfg(test)]
 mod npc_navigation_tests {
-    use super::npc_location_is_navigable;
+    use super::{npc_location_is_navigable, npc_presence_contains};
     use crate::spacetimedb::SettlementCategory;
 
     #[test]
@@ -301,6 +317,34 @@ mod npc_navigation_tests {
         assert!(!build_view.contains("backend_local_problem_rumors"));
         assert!(!build_view.contains("events.push"));
     }
+
+    #[test]
+    fn browser_presence_check_supports_wrapped_daily_windows() {
+        assert!(npc_presence_contains(1_200, 120, 1_380));
+        assert!(npc_presence_contains(1_200, 120, 60));
+        assert!(!npc_presence_contains(1_200, 120, 600));
+        assert!(!npc_presence_contains(480, 1_020, 1_020));
+    }
+
+    #[test]
+    fn npc_chat_http_retry_checks_receipt_before_current_presence() {
+        let source = include_str!("dialogue.rs");
+        let handler = source
+            .rsplit("async fn chat_with_npc")
+            .next()
+            .and_then(|tail| tail.split("async fn build_view").next())
+            .expect("NPC chat handler");
+        let receipt = handler
+            .find("backend_social_chat_receipts")
+            .expect("receipt lookup");
+        let presence = handler
+            .find("available_social_npc")
+            .expect("presence lookup");
+        assert!(receipt < presence);
+        assert!(handler.contains("receipt.target_kind != \"settlement_npc\""));
+        assert!(handler.contains("receipt.target_id != npc_id"));
+        assert!(handler.contains("receipt.requested_minutes != request.requested_minutes"));
+    }
 }
 
 async fn location_npcs(
@@ -358,7 +402,7 @@ async fn location_npcs(
         .flatten()
         .map_or(720, |time| time.minutes)
         % 1_440;
-    let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && u64::from(presence.start_minute) <= minute && minute < u64::from(presence.end_minute)).filter_map(|presence| {
+    let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && npc_presence_contains(presence.start_minute, presence.end_minute, minute)).filter_map(|presence| {
         let npc = npcs.iter().find(|npc| npc.id == presence.npc_id)?;
         let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
         Some(NpcView { id: npc.id.clone(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} person with {} presentation, a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.presentation.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default })
@@ -367,7 +411,7 @@ async fn location_npcs(
     Ok(Json(views))
 }
 
-async fn available_social_npc(
+async fn social_npc_in_scope(
     state: &AppState,
     character_id: u64,
     settlement_id: &str,
@@ -397,7 +441,7 @@ async fn available_social_npc(
     if !npc_location_is_navigable(&settlement.economy, &settlement.category, location_id) {
         return Err(StatusCode::NOT_FOUND);
     }
-    let npc = state
+    state
         .db
         .query_one::<SettlementNpcRow>(&format!(
             "SELECT * FROM backend_settlement_npcs WHERE id = {}",
@@ -406,7 +450,17 @@ async fn available_social_npc(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .filter(|npc| npc.home_settlement_id == settlement_id)
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+async fn available_social_npc(
+    state: &AppState,
+    character_id: u64,
+    settlement_id: &str,
+    location_id: &str,
+    npc_id: &str,
+) -> Result<SettlementNpcRow, StatusCode> {
+    let npc = social_npc_in_scope(state, character_id, settlement_id, location_id, npc_id).await?;
     let minute = state
         .db
         .query_one::<crate::spacetimedb::CharacterTime>(&format!(
@@ -429,8 +483,7 @@ async fn available_social_npc(
         .any(|presence| {
             presence.settlement_id == settlement_id
                 && presence.location_id == location_id
-                && u64::from(presence.start_minute) <= minute
-                && minute < u64::from(presence.end_minute)
+                && npc_presence_contains(presence.start_minute, presence.end_minute, minute)
         });
     present.then_some(npc).ok_or(StatusCode::CONFLICT)
 }
@@ -489,6 +542,28 @@ async fn chat_with_npc(
         return Err(StatusCode::BAD_REQUEST);
     }
     let npc =
+        social_npc_in_scope(&state, character_id, &settlement_id, &location_id, &npc_id).await?;
+    let receipt_id = format!("{character_id}:{}", request.action_id);
+    if let Some(receipt) = state
+        .db
+        .query_one::<SocialChatReceiptRow>(&format!(
+            "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {character_id}",
+            sql_string_literal(&receipt_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+    {
+        if receipt.target_kind != "settlement_npc"
+            || receipt.target_id != npc_id
+            || receipt.requested_minutes != request.requested_minutes
+        {
+            return Err(StatusCode::CONFLICT);
+        }
+        return Ok(Json(
+            npc_social_view(&state, character_id, npc, Some(receipt.outcome)).await?,
+        ));
+    }
+    let npc =
         available_social_npc(&state, character_id, &settlement_id, &location_id, &npc_id).await?;
     state
         .db
@@ -507,7 +582,7 @@ async fn chat_with_npc(
         .db
         .query_one::<SocialChatReceiptRow>(&format!(
             "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {character_id}",
-            sql_string_literal(&format!("{character_id}:{}", request.action_id))
+            sql_string_literal(&receipt_id)
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?

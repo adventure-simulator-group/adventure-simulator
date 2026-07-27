@@ -42,7 +42,8 @@ resent.
 The same social menu also supports ordinary conversation with another living,
 co-located party member or a currently present settlement NPC. The player
 chooses 15 minutes to eight hours in 15-minute increments, with 30 minutes as
-the default. Each quarter hour uses the speaker's Charm and Insight together
+the default. A conversation with a settlement NPC must fit wholly inside that
+NPC's current presence window. Each quarter hour uses the speaker's Charm and Insight together
 with mutual personality fit and the existing relationship. Familiarity always
 records the shared time, but morale and directional affinity can rise or fall;
 even a skilled, compatible pair can have an awkward conversation, and a poor
