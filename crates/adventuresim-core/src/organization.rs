@@ -67,6 +67,20 @@ pub enum StartingProfession {
 }
 
 impl StartingProfession {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Merchant => "merchant",
+            Self::Weaponsmith => "weaponsmith",
+            Self::Armourer => "armourer",
+            Self::Tailor => "tailor",
+            Self::Herbalist => "herbalist",
+            Self::Cook => "cook",
+            Self::LearnedReligiousPractitioner => "learned_religious_practitioner",
+            Self::WitchHunter => "witch_hunter",
+            Self::Knight => "knight",
+            Self::Forester => "forester",
+        }
+    }
     pub const ALL: [Self; 10] = [
         Self::Merchant,
         Self::Weaponsmith,
@@ -313,5 +327,14 @@ mod tests {
             assert!(!definition.has_privilege_at_rank(&first.id, Privilege::ForageHighGame));
             assert!(definition.has_privilege_at_rank("master", Privilege::ForageHighGame));
         }
+    }
+
+    #[test]
+    fn starting_profession_ids_are_authoring_stable_snake_case() {
+        assert_eq!(
+            StartingProfession::LearnedReligiousPractitioner.id(),
+            "learned_religious_practitioner"
+        );
+        assert_eq!(StartingProfession::WitchHunter.id(), "witch_hunter");
     }
 }

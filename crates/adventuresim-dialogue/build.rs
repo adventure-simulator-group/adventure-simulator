@@ -181,6 +181,13 @@ fn validate_condition(value: &serde_json::Value, relative: &str) {
                     kind,
                     Some(
                         "participant_profession"
+                            | "participant_organization"
+                            | "participant_religion"
+                            | "participant_age_band"
+                            | "participant_sex"
+                            | "participant_local_role"
+                            | "participant_status"
+                            | "participant_language_compatibility"
                             | "participant_familiarity"
                             | "participant_clothing_category"
                             | "participant_count"

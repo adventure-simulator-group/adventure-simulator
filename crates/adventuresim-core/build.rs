@@ -25,6 +25,7 @@ fn main() {
 
     let mut documents = Vec::new();
     let mut source_files = Vec::new();
+    let mut dialogue_variant_sources = Vec::new();
     let mut digest = Sha256::new();
     for file in files {
         let relative = file
@@ -40,6 +41,13 @@ fn main() {
         // diff-friendly YAML subset so deployed binaries need no YAML parser.
         let value: serde_json::Value =
             serde_json::from_str(&text).unwrap_or_else(|error| panic!("{relative}: {error}"));
+        collect_dialogue_variant_sources(
+            &value,
+            &text,
+            &relative,
+            documents.len(),
+            &mut dialogue_variant_sources,
+        );
         documents.push(value);
         source_files.push(relative);
     }
@@ -52,10 +60,56 @@ fn main() {
         Path::new(&env::var("OUT_DIR").unwrap()).join("quest_catalog.rs"),
         format!(
             "pub const QUEST_CATALOG_JSON: &str = {json:?};\n\
-             pub const QUEST_CATALOG_DIGEST: &str = {digest:?};\n"
+             pub const QUEST_DIALOGUE_VARIANT_SOURCE_MAP_JSON: &str = {sources:?};\n\
+             pub const QUEST_CATALOG_DIGEST: &str = {digest:?};\n",
+            sources = serde_json::to_string(&dialogue_variant_sources).unwrap(),
         ),
     )
     .unwrap();
+}
+
+/// The quest authoring format is the strict JSON YAML subset. Record the
+/// exact scalar token for each variant template while the build compiler owns
+/// both the raw source and its parsed structural path.
+fn collect_dialogue_variant_sources(
+    value: &serde_json::Value,
+    text: &str,
+    file: &str,
+    document: usize,
+    out: &mut Vec<serde_json::Value>,
+) {
+    let Some(variants) = value
+        .get("dialogue_variants")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return;
+    };
+    let mut cursor = 0usize;
+    for (index, variant) in variants.iter().enumerate() {
+        let Some(template) = variant.get("template").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let encoded = serde_json::to_string(template).unwrap();
+        let start = text[cursor..]
+            .find(&encoded)
+            .map(|offset| cursor + offset)
+            .unwrap_or_else(|| panic!("{file}: could not locate dialogue variant template token"));
+        cursor = start + encoded.len();
+        let before = &text[..start];
+        let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+        let column = before
+            .rsplit('\n')
+            .next()
+            .map_or(1, |line| line.chars().count() + 1);
+        out.push(serde_json::json!({
+            "document": document,
+            "path": format!("dialogue_variants.{index}.template"),
+            "file": file,
+            "line": line,
+            "column": column,
+            "value_json": encoded,
+        }));
+    }
 }
 
 fn compile_organizations(root: &Path) {

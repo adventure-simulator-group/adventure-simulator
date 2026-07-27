@@ -5904,6 +5904,7 @@ pub(crate) fn persist_generated_testimony(
     character_id: u64,
     generated: &adventuresim_core::quest_generation::GeneratedCase,
     witness: &adventuresim_core::quest_generation::WitnessBinding,
+    presentation_texts: Option<&[String]>,
     dialogue_action_id: &str,
 ) -> Result<(), String> {
     use adventuresim_core::quest_generation::Reliability;
@@ -5927,6 +5928,17 @@ pub(crate) fn persist_generated_testimony(
     if validated_authority.manifest != *generated {
         return Err("Generated testimony manifest does not match private authority".into());
     }
+    if let Some(texts) = presentation_texts {
+        if texts.len() != witness.testimony.len()
+            || texts.iter().any(|text| {
+                text.is_empty()
+                    || text.chars().count() > 1_024
+                    || text.chars().any(char::is_control)
+            })
+        {
+            return Err("Generated testimony presentation text is invalid".into());
+        }
+    }
     for draft in &projection_plan {
         let site = draft
             .site_id
@@ -5938,7 +5950,7 @@ pub(crate) fn persist_generated_testimony(
     let generation_context = validated_authority.context;
     let mut corrected_capability_ids = BTreeSet::new();
     for (index, draft) in projection_plan.iter().enumerate() {
-        let (receipt_id, pipeline) =
+        let (receipt_id, mut pipeline) =
             adventuresim_core::quest_generation::generated_testimony_pipeline(
                 &generation_context,
                 character_id,
@@ -5948,6 +5960,12 @@ pub(crate) fn persist_generated_testimony(
                 official_minute(ctx),
             )
             .map_err(|error| format!("Invalid generated testimony pipeline: {error:?}"))?;
+        let presentation_text = presentation_texts
+            .and_then(|texts| texts.get(index))
+            .unwrap_or(&draft.spoken_text);
+        pipeline.recalled_text = presentation_text.clone();
+        pipeline.disclosed_text = Some(presentation_text.clone());
+        pipeline.transmitted_text = presentation_text.clone();
         if ctx
             .db
             .investigation_safe_claim_receipt()
@@ -6029,7 +6047,7 @@ pub(crate) fn persist_generated_testimony(
                 owner_character_id: character_id,
                 case_id: generated.public_case_id.clone(),
                 proposition_id: draft.proposition_id.clone(),
-                summary: draft.spoken_text.clone(),
+                summary: presentation_text.clone(),
                 source_label: "the referred local witness".into(),
                 confidence_bps: if draft.reliability == Reliability::Truthful {
                     8_000
@@ -6040,7 +6058,7 @@ pub(crate) fn persist_generated_testimony(
                 directions: if exact {
                     String::new()
                 } else {
-                    draft.spoken_text.clone()
+                    presentation_text.clone()
                 },
                 exact_location_id: site
                     .as_ref()

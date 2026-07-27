@@ -403,34 +403,90 @@ pub enum Condition {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FactKey {
-    ParticipantProfession { role: String },
-    ParticipantAgeBand { role: String },
-    ParticipantSex { role: String },
-    ParticipantLocalRole { role: String },
-    ParticipantStatus { role: String },
-    ParticipantLanguageCompatibility { left: String, right: String },
-    ParticipantFamiliarity { left: String, right: String },
-    ParticipantClothingCategory { role: String },
-    ParticipantHasVisibleClothing { role: String },
-    ParticipantPriorInteraction { left: String, right: String },
-    ParticipantCount { role: String },
-    ParticipantPresent { role: String },
-    ParticipantRumorCase { role: String },
-    ParticipantReferralContact { role: String },
+    /// An NPC's occupational description, or a player's canonical profession
+    /// derived from their locally effective presented organization.
+    ParticipantProfession {
+        role: String,
+    },
+    /// A player's locally effective presented organization. This deliberately
+    /// differs from profession: a guild chapter and its profession family are
+    /// separate authoring concerns.
+    ParticipantOrganization {
+        role: String,
+    },
+    /// A player's authoritative profession of faith.
+    ParticipantReligion {
+        role: String,
+    },
+    ParticipantAgeBand {
+        role: String,
+    },
+    ParticipantSex {
+        role: String,
+    },
+    ParticipantLocalRole {
+        role: String,
+    },
+    ParticipantStatus {
+        role: String,
+    },
+    ParticipantLanguageCompatibility {
+        left: String,
+        right: String,
+    },
+    ParticipantFamiliarity {
+        left: String,
+        right: String,
+    },
+    ParticipantClothingCategory {
+        role: String,
+    },
+    ParticipantHasVisibleClothing {
+        role: String,
+    },
+    ParticipantPriorInteraction {
+        left: String,
+        right: String,
+    },
+    ParticipantCount {
+        role: String,
+    },
+    ParticipantPresent {
+        role: String,
+    },
+    ParticipantRumorCase {
+        role: String,
+    },
+    ParticipantReferralContact {
+        role: String,
+    },
     KnownClaim,
     KnownLead,
-    PriorQuestioning { role: String },
+    PriorQuestioning {
+        role: String,
+    },
     Confidence,
-    LanguageCheck { left: String, right: String },
+    LanguageCheck {
+        left: String,
+        right: String,
+    },
     SocialCheck,
-    PartyLeader { role: String },
-    Service { role: String },
+    PartyLeader {
+        role: String,
+    },
+    Service {
+        role: String,
+    },
     Location,
     LocationRole,
     LocalCircumstance,
     TimePeriod,
-    ContractState { contract: String },
-    Flag { flag: String },
+    ContractState {
+        contract: String,
+    },
+    Flag {
+        flag: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
