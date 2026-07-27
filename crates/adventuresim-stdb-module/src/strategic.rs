@@ -5913,7 +5913,7 @@ pub fn start_dialogue(
             .filter(&session.id)
             .count() as u32;
         let (fragments_json, source_refs_json) =
-            render_quest_referral_variant(ctx, &session, character_id, &delivery)?;
+            render_quest_referral_variant(ctx, &session, character_id, &npc_actor_id, &delivery)?;
         ctx.db.dialogue_event().insert(DialogueEvent {
             id: format!("{}:event:{sequence}", session.id),
             gateway_bucket: 0,
@@ -5941,21 +5941,24 @@ pub fn start_dialogue(
 /// session facts used by ordinary dialogue have been revalidated. The receipt,
 /// contact, and generated case remain the authority; variants cannot affect
 /// any of them.
+fn referral_variant_can_replace_authoritative_wording(
+    source: Option<(&str, &str)>,
+    contact_id: &str,
+    contact_name: &str,
+) -> bool {
+    source.is_some_and(|(source_id, source_name)| {
+        source_id != contact_id && !source_name.eq_ignore_ascii_case(contact_name)
+    })
+}
+
 fn render_quest_referral_variant(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
+    current_speaker_npc_id: &str,
     delivery: &crate::local_problem::LocalProblemRumorDelivery,
 ) -> Result<(String, String), String> {
     let facts = dialogue_fact_context(ctx, session, character_id)?;
-    let catalog = adventuresim_core::quest_catalog::catalog();
-    let Some(variant) = catalog.dialogue_variant(
-        adventuresim_core::quest_catalog::QuestDialogueVariantKind::Referral,
-        &facts,
-    )?
-    else {
-        return Ok((delivery.fragments_json.clone(), "[]".into()));
-    };
     let receipt = ctx
         .db
         .local_problem_receipt()
@@ -5968,6 +5971,31 @@ fn render_quest_referral_variant(
         .id()
         .find(&receipt.contact_npc_id)
         .ok_or("Rumor referral contact is unavailable")?;
+    let source = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&current_speaker_npc_id.to_owned());
+    if !referral_variant_can_replace_authoritative_wording(
+        source
+            .as_ref()
+            .map(|source| (source.id.as_str(), source.name.as_str())),
+        &contact.id,
+        &contact.name,
+    ) {
+        // The authoritative presentation distinguishes self-referrals and
+        // same-named people, and may expose the referred-testimony topic.
+        // Generic flavor variants cannot safely preserve those semantics.
+        return Ok((delivery.fragments_json.clone(), "[]".into()));
+    }
+    let catalog = adventuresim_core::quest_catalog::catalog();
+    let Some(variant) = catalog.dialogue_variant(
+        adventuresim_core::quest_catalog::QuestDialogueVariantKind::Referral,
+        &facts,
+    )?
+    else {
+        return Ok((delivery.fragments_json.clone(), "[]".into()));
+    };
     let mut values = std::collections::BTreeMap::new();
     values.insert("summary".into(), receipt.safe_summary);
     values.insert("contact_name".into(), contact.name);
@@ -5983,6 +6011,54 @@ fn render_quest_referral_variant(
     let sources = serde_json::to_string(&vec![source])
         .map_err(|_| "Could not encode generated referral source")?;
     Ok((json, sources))
+}
+
+#[cfg(test)]
+mod referral_variant_tests {
+    use super::referral_variant_can_replace_authoritative_wording;
+
+    #[test]
+    fn generic_variants_never_erase_referral_identity_disambiguation() {
+        assert!(!referral_variant_can_replace_authoritative_wording(
+            Some(("npc:church:0", "Marta Hartmann")),
+            "npc:church:0",
+            "Marta Hartmann",
+        ));
+        assert!(!referral_variant_can_replace_authoritative_wording(
+            Some(("npc:inn:0", "Marta Hartmann")),
+            "npc:church:0",
+            "Marta Hartmann",
+        ));
+        assert!(!referral_variant_can_replace_authoritative_wording(
+            None,
+            "npc:church:0",
+            "Marta Hartmann",
+        ));
+        assert!(referral_variant_can_replace_authoritative_wording(
+            Some(("npc:inn:0", "Anna Kramer")),
+            "npc:church:0",
+            "Marta Hartmann",
+        ));
+    }
+
+    #[test]
+    fn referral_renderer_uses_the_current_speaker_not_discovery_provenance() {
+        let source = include_str!("strategic.rs");
+        let start = source
+            .split("pub fn start_dialogue")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn join_dialogue_session").next())
+            .expect("dialogue startup");
+        assert!(start.contains("&npc_actor_id,\n            &delivery"));
+
+        let renderer = source
+            .split("fn render_quest_referral_variant")
+            .nth(1)
+            .and_then(|tail| tail.split("#[cfg(test)]").next())
+            .expect("referral renderer");
+        assert!(renderer.contains("current_speaker_npc_id"));
+        assert!(!renderer.contains("receipt.source_npc_id"));
+    }
 }
 
 #[reducer]
