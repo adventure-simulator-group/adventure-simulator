@@ -17,7 +17,10 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 
 use crate::character::{character, character__view};
 use crate::condition::{character_morale_source__view, morale_event};
-use crate::strategic::{dialogue_session__view, strategic_gateway_authority__view};
+use crate::investigation::{investigation_belief__view, investigation_evidence_knowledge__view};
+use crate::strategic::{
+    dialogue_session__view, quest_generation_authority__view, strategic_gateway_authority__view,
+};
 use crate::time::character_time__view;
 use crate::{
     character_attributes, character_capability, character_morale_source, character_personality,
