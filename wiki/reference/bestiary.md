@@ -7,6 +7,14 @@ Combat weaknesses use the ordinary
 physical resistance/padding model. Skeleton bone, for example, has edge
 resistance and no innate padding rather than a flat cut/blunt multiplier.
 
+Generated physical-evidence topics may carry an optional diagnostic clue kind.
+It is learned only when both the physical inspection and the relevant Bestiary
+check succeed. Foot morphology, grave residue, and unexplained missing blood
+currently feed the same forward candidate-ranking vocabulary used by witness
+descriptions. Candidate output is a deduction, never canonical identity:
+observer presentation uses qualitative strong, plausible, or weak support
+bands rather than exposing raw likelihood products or authored priors.
+
 `adventuresim-core::bestiary` is the shared authority for strategic threat
 identity. Persisted `Quest.enemy_type` and `StrategicEncounter.archetype`
 strings are bounded, open `ThreatId` values such as `skeleton` and

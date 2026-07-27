@@ -1,5 +1,12 @@
 Morale is a signed strategic stat. Zero is emotionally neutral. Negative morale creates fear incapacitation, while surplus morale above zero lets a character with Command lift the spirits of allies who are below zero.
 
+Witness conversations reuse the relationship and morale resolution curve used
+by party social actions. Affinity, familiarity, diagnosis quality, approach
+risk, and private personality fit all affect an attempt. Quest disclosure is a
+separate consequence: a successful approach can release bound testimony, while
+a benign concern yields only clarification. This separation prevents morale or
+affinity results from becoming a hidden-truth oracle.
+
 The character-sheet morale meter is informational. A raised Social meta-skill
 icon beside its heading opens the observer-specific morale sources, beliefs,
 and available social actions in a modal dialog without replacing either

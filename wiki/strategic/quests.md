@@ -5,6 +5,12 @@ activate them. A settlement may already be suffering thefts, disappearances,
 dangerous creatures, disease, or disrupted trade before any character hears
 about the cause.
 
+Investigation skills answer different questions. Bestiary narrows which
+creatures fit received descriptions and successfully interpreted physical
+clues. Terrain follows and recovers tracks. Insight notices possible pressure
+without certifying truth, while Charm, Command, and Deception offer
+personality-sensitive ways to pursue what a witness has not volunteered.
+
 ## Discovery
 
 Players learn about problems through tavern rumors, local conversations,

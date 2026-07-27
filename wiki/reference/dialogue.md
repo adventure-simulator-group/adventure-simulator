@@ -4,6 +4,14 @@ Settlement dialogue is the markerless discovery boundary for local problems.
 Inns surface unknown unresolved symptoms; overview is fallback only when no inn
 NPC is available. Locals repeat referrals. Hidden causes and destinations stay private.
 
+Witness questioning uses the shared social resolution curve. Listening
+(Insight), reassurance (Charm), invoking duty (Command), and bluffing
+(Deception) have different private personality fits. Outcomes may adjust morale
+and directional affinity, but projections do not expose personality, DC, roll,
+success chance, reliability, or whether unease is bound to undisclosed
+testimony. A successful approach to a benign concern can produce clarification
+without creating a factual claim.
+
 ## Persistent settlement actors
 
 Settlement dialogue is authorized against persistent `settlement_npc` identities and

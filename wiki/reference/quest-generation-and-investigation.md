@@ -2,6 +2,25 @@
 
 This page is the canonical technical reference for authored quest content, deterministic case generation, observer-specific investigation knowledge, evidence, and discovery.
 
+## Source-aware ambiguity
+
+Generated testimony presentation is not a reliability oracle. Account wording
+families are selected independently from hidden reliability, generated location
+claims share the same route-segment grant shape, and journal confidence
+describes provenance rather than sincerity. The same visible wording, source
+shape, confidence band, and destination class must remain compatible with
+truthful, mistaken, partial, evasive, and deceptive private states.
+
+Insight therefore produces only a fallible pressure cue. A cue may be present
+for a quest-bound concern or for a benign concern, and may be absent in either
+case. It never declares a lie, changes a proposition, or grants navigation.
+
+Field action skills are deliberately narrow. `FollowTracks` and
+`ReacquireTracks` use the matching Terrain skill; other investigation actions
+use observation, with ambushes combining observation and Stealth. Until mixed
+terrain exists, Forest maps to Forest, Hills and Underground to Hills,
+Settlement and Ruins to Urban, and Plains, Road, and Marsh to Plains.
+
 ## Developer quest editor
 
 Settlement pages expose a complete quest-authoring dialog when the existing
