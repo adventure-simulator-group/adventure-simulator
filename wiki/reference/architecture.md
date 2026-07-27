@@ -1,5 +1,11 @@
 # Architecture
 
+Static item definitions cross the strategic boundary as a build-time embedded
+catalog. YAML is authoring input only; the flattened SpacetimeDB `Item` table
+is its deterministic persistence/client projection. Inventory ownership,
+custody, amount, and condition remain strategic state and are not definition
+content. See [Item definition authoring](item-authoring.md).
+
 Adventure Simulator separates persistent strategic play from transient
 real-time tactical play. The boundary is architectural, not merely a difference
 between screens:

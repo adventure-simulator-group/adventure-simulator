@@ -24,75 +24,9 @@ pub fn decorative_game_icon(icon: &str) -> Markup {
 /// Exact icon name for a seeded item. Unknown/modded items get a real fallback
 /// asset rather than a URL derived from untrusted data.
 pub fn item_icon_name(item_id: &str) -> &'static str {
-    if adventuresim_core::strategic_currency::is_currency_id(item_id) || item_id == "coin" {
-        return "coins";
-    }
-    match item_id {
-        "torch" => "torch",
-        "arrow" => "plain-arrow",
-        "bandage" => "bandage-roll",
-        "surgery_kit" => "medical-pack",
-        "splint" => "arm-bandage",
-        "travel_ration" => "bread",
-        "waterskin" => "waterskin",
-        "small_beer" | "table_wine" | "aqua_vitae" => "beer-stein",
-        "linen_tunic" => "shirt",
-        "club" => "wood-club",
-        "walking_staff" => "bo",
-        "hand_axe" => "wood-axe",
-        "flanged_mace" => "flanged-mace",
-        "war_hammer" => "warhammer",
-        "utility_knife" => "plain-dagger",
-        "baselard" => "broad-dagger",
-        "rondel_dagger" => "daggers",
-        "misericorde" => "stiletto",
-        "bauernwehr" => "bowie-knife",
-        "katzbalger" => "sword-hilt",
-        "arming_sword" => "broadsword",
-        "longsword" => "ancient-sword",
-        "messer" => "saber-slash",
-        "kriegsmesser" => "relic-blade",
-        "rapier" => "piercing-sword",
-        "zweihander" => "two-handed-sword",
-        "hunting_spear" => "spear-hook",
-        "military_pike" => "spears",
-        "halberd" => "halberd",
-        "self_bow" => "pocket-bow",
-        "longbow" => "bow-arrow",
-        "light_crossbow" | "heavy_crossbow" => "crossbow",
-        "matchlock_arquebus" => "musket",
-        "hooked_arquebus" => "rifle",
-        "buckler" => "bordered-shield",
-        "targe" => "round-shield",
-        "heater_shield" => "templar-shield",
-        "round_shield" => "shield",
-        "pavise" => "roman-shield",
-        "arming_cap" => "helmet",
-        "mail_coif" => "chain-mail",
-        "kettle_hat" => "brodie-helmet",
-        "barbute" => "barbute",
-        "sallet" => "light-helm",
-        "visored_sallet" => "visored-helm",
-        "burgonet" => "crested-helmet",
-        "close_helmet" => "heavy-helm",
-        "quilted_sleeve" => "arm-bandage",
-        "mail_sleeve" => "mailed-fist",
-        "vambrace" => "bracer",
-        "padded_chausses" => "trousers",
-        "mail_chausses" => "armor-cuisses",
-        "greave" => "greaves",
-        "arming_doublet" => "sleeveless-jacket",
-        "jack_of_plates" => "armor-vest",
-        "brigandine" => "layered-armor",
-        "mail_shirt" => "mail-shirt",
-        "breastplate" => "breastplate",
-        "cuirass" => "chest-armor",
-        "padded_skirt" => "skirt",
-        "mail_skirt" => "metal-skirt",
-        "fauld" => "belt-armor",
-        "tassets" => "pteruges",
-        _ => "help",
-    }
+    adventuresim_core::item_catalog::definition(item_id)
+        .map(|item| item.presentation.icon.as_str())
+        .unwrap_or("help")
 }
 
 pub fn item_type_icon(item_id: &str) -> Markup {
@@ -103,6 +37,9 @@ pub fn item_type_icon(item_id: &str) -> Markup {
 /// Turn a stable snake-case item identifier into player-facing copy without
 /// changing the identifier used by forms or client-side behavior.
 pub fn item_display_name(item_id: &str) -> String {
+    if let Some(item) = adventuresim_core::item_catalog::definition(item_id) {
+        return item.display_name.clone();
+    }
     let mut readable = item_id.replace('_', " ");
     if let Some(first) = readable.get_mut(0..1) {
         first.make_ascii_uppercase();

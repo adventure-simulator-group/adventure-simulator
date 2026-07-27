@@ -1,5 +1,12 @@
 # Development Workflow
 
+## Item content
+
+Item YAML uses the production build validator. Run `just content-check` for all
+supported authored catalogs or `just content-check items` while iterating on
+`content/items/*.yaml`; see
+[Item definition authoring](item-authoring.md).
+
 ## Organization content
 
 Organization YAML is validated during `adventuresim-core` builds. Validate its

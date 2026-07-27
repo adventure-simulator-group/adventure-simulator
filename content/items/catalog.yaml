@@ -1,0 +1,3095 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "apple",
+      "display_name": "Apple",
+      "weight_kg": 0.18,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "fruit",
+          "nutrition_kcal": 95,
+          "growth_per_hour": 0.012,
+          "cooking_minutes": 5,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0.12,
+            "sour": 0.12,
+            "savory": 0
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 0.3
+        }
+      }
+    },
+    {
+      "id": "aqua_vitae",
+      "display_name": "Aqua vitae",
+      "weight_kg": 0.11,
+      "base_value": 4,
+      "tags": [
+        "simple",
+        "alcohol"
+      ],
+      "presentation": {
+        "icon": "beer-stein"
+      },
+      "kind": "simple",
+      "capabilities": {
+        "alcohol": {
+          "serving_ml": 100,
+          "abv_basis_points": 5000,
+          "net_hydration_ml": 0,
+          "disinfectant_effectiveness": 100,
+          "disinfectant_focused": true,
+          "potable": true
+        }
+      }
+    },
+    {
+      "id": "arming_cap",
+      "display_name": "Arming cap",
+      "weight_kg": 0.35,
+      "base_value": 2,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "helmet"
+      },
+      "kind": "armor",
+      "slot": "head",
+      "coverage": 0.15,
+      "resistance": 20,
+      "padding": 35,
+      "flexibility": 0.4,
+      "range_of_motion": 0.95,
+      "capabilities": {
+        "durability": {
+          "quality": 4,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "arming_doublet",
+      "display_name": "Arming doublet",
+      "weight_kg": 2.5,
+      "base_value": 12,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "sleeveless-jacket"
+      },
+      "kind": "armor",
+      "slot": "chest",
+      "coverage": 0.6,
+      "resistance": 60,
+      "padding": 45,
+      "flexibility": 0.3,
+      "range_of_motion": 0.88,
+      "capabilities": {
+        "durability": {
+          "quality": 4,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "arming_sword",
+      "display_name": "Arming sword",
+      "weight_kg": 1.3,
+      "base_value": 28,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "broadsword"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 0.95,
+      "penetration": 1,
+      "balance": 0.5,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "sword": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 4,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "arrow",
+      "display_name": "Arrow",
+      "weight_kg": 0.05,
+      "base_value": 1,
+      "tags": [
+        "simple",
+        "ammunition"
+      ],
+      "presentation": {
+        "icon": "plain-arrow"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "bandage",
+      "display_name": "Bandage",
+      "weight_kg": 0.05,
+      "base_value": 1,
+      "tags": [
+        "simple",
+        "medical_supply"
+      ],
+      "presentation": {
+        "icon": "bandage-roll"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "barbute",
+      "display_name": "Barbute",
+      "weight_kg": 2.5,
+      "base_value": 35,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "barbute"
+      },
+      "kind": "armor",
+      "slot": "head",
+      "coverage": 0.75,
+      "resistance": 95,
+      "padding": 30,
+      "flexibility": 0.15,
+      "range_of_motion": 0.65,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "baselard",
+      "display_name": "Baselard",
+      "weight_kg": 0.4,
+      "base_value": 6,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "broad-dagger"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 0.4,
+      "penetration": 1,
+      "balance": 0.75,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "knife": 0.5,
+        "sword": 0.5
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "bauernwehr",
+      "display_name": "Bauernwehr",
+      "weight_kg": 0.7,
+      "base_value": 8,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "bowie-knife"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.2,
+      "reach_m": 0.65,
+      "penetration": 1,
+      "balance": 0.7,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "knife": 0.5,
+        "sword": 0.5
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "brandenburg_groschen",
+      "display_name": "Brandenburg groschen",
+      "weight_kg": 0.01,
+      "base_value": 1,
+      "tags": [
+        "currency"
+      ],
+      "presentation": {
+        "icon": "coins"
+      },
+      "kind": "currency"
+    },
+    {
+      "id": "breastplate",
+      "display_name": "Breastplate",
+      "weight_kg": 3.5,
+      "base_value": 70,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "breastplate"
+      },
+      "kind": "armor",
+      "slot": "chest",
+      "coverage": 0.85,
+      "resistance": 120,
+      "padding": 45,
+      "flexibility": 0.05,
+      "range_of_motion": 0.72,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "brigandine",
+      "display_name": "Brigandine",
+      "weight_kg": 5.5,
+      "base_value": 50,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "layered-armor"
+      },
+      "kind": "armor",
+      "slot": "chest",
+      "coverage": 0.8,
+      "resistance": 100,
+      "padding": 40,
+      "flexibility": 0.4,
+      "range_of_motion": 0.75,
+      "capabilities": {
+        "durability": {
+          "quality": 5,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.08,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "buckler",
+      "display_name": "Buckler",
+      "weight_kg": 1,
+      "base_value": 5,
+      "tags": [
+        "shield"
+      ],
+      "presentation": {
+        "icon": "bordered-shield"
+      },
+      "kind": "shield",
+      "slot": "any_holding",
+      "block": 1.5,
+      "capabilities": {
+        "durability": {
+          "quality": 1,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "burgonet",
+      "display_name": "Burgonet",
+      "weight_kg": 2.3,
+      "base_value": 55,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "crested-helmet"
+      },
+      "kind": "armor",
+      "slot": "head",
+      "coverage": 0.75,
+      "resistance": 100,
+      "padding": 30,
+      "flexibility": 0.2,
+      "range_of_motion": 0.7,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "butter",
+      "display_name": "Butter",
+      "weight_kg": 0.05,
+      "base_value": 2,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 360,
+          "growth_per_hour": 0.018,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 0.05,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.2
+          },
+          "culinary_fat": true,
+          "quality": 3,
+          "value_per_unit": 2
+        }
+      }
+    },
+    {
+      "id": "charcoal",
+      "display_name": "Charcoal",
+      "weight_kg": 0.15,
+      "base_value": 1,
+      "tags": [
+        "ingredient"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient"
+    },
+    {
+      "id": "close_helmet",
+      "display_name": "Close helmet",
+      "weight_kg": 3,
+      "base_value": 75,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "heavy-helm"
+      },
+      "kind": "armor",
+      "slot": "head",
+      "coverage": 0.9,
+      "resistance": 110,
+      "padding": 35,
+      "flexibility": 0.15,
+      "range_of_motion": 0.55,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "club",
+      "display_name": "Club",
+      "weight_kg": 1.2,
+      "base_value": 1,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "wood-club"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 0.5,
+      "reach_m": 0.7,
+      "penetration": 0.1,
+      "balance": 0.7,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "blunt"
+      ],
+      "skills": {
+        "bludgeon": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "comfrey",
+      "display_name": "Comfrey",
+      "weight_kg": 0.08,
+      "base_value": 2,
+      "tags": [
+        "ingredient"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient"
+    },
+    {
+      "id": "cooked_meal",
+      "display_name": "Cooked meal",
+      "weight_kg": 0.65,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "mixed_meal",
+          "nutrition_kcal": 3000,
+          "growth_per_hour": 0.025,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "cooking_pan",
+      "display_name": "Cooking pan",
+      "weight_kg": 1.2,
+      "base_value": 6,
+      "tags": [
+        "simple",
+        "cooking_tool"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "cooking_pot",
+      "display_name": "Cooking pot",
+      "weight_kg": 2.2,
+      "base_value": 8,
+      "tags": [
+        "simple",
+        "cooking_tool"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "cooling_willow_draught",
+      "display_name": "Cooling willow draught",
+      "weight_kg": 0.25,
+      "base_value": 6,
+      "tags": [
+        "medication"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "medication"
+    },
+    {
+      "id": "cuirass",
+      "display_name": "Cuirass",
+      "weight_kg": 6,
+      "base_value": 110,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "chest-armor"
+      },
+      "kind": "armor",
+      "slot": "chest",
+      "coverage": 0.9,
+      "resistance": 120,
+      "padding": 50,
+      "flexibility": 0.08,
+      "range_of_motion": 0.65,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "danish_mark",
+      "display_name": "Danish mark",
+      "weight_kg": 0.01,
+      "base_value": 1,
+      "tags": [
+        "currency"
+      ],
+      "presentation": {
+        "icon": "coins"
+      },
+      "kind": "currency"
+    },
+    {
+      "id": "dried_mint",
+      "display_name": "Dried mint",
+      "weight_kg": 0.05,
+      "base_value": 2,
+      "tags": [
+        "ingredient"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient"
+    },
+    {
+      "id": "fauld",
+      "display_name": "Fauld",
+      "weight_kg": 1.6,
+      "base_value": 40,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "belt-armor"
+      },
+      "kind": "armor",
+      "slot": "stomach",
+      "coverage": 0.7,
+      "resistance": 95,
+      "padding": 35,
+      "flexibility": 0.2,
+      "range_of_motion": 0.78,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "flanged_mace",
+      "display_name": "Flanged mace",
+      "weight_kg": 1.2,
+      "base_value": 10,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "flanged-mace"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 0.7,
+      "reach_m": 0.75,
+      "penetration": 0.5,
+      "balance": 0.65,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "blunt"
+      ],
+      "skills": {
+        "bludgeon": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "garlic",
+      "display_name": "Garlic",
+      "weight_kg": 0.1,
+      "base_value": 1,
+      "tags": [
+        "ingredient",
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 45,
+          "growth_per_hour": 0.009,
+          "cooking_minutes": 3,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0.25,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 1.5
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "greave",
+      "display_name": "Greave",
+      "weight_kg": 1.4,
+      "base_value": 45,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "greaves"
+      },
+      "kind": "armor",
+      "slot": "any_leg",
+      "coverage": 0.65,
+      "resistance": 95,
+      "padding": 25,
+      "flexibility": 0.15,
+      "range_of_motion": 0.78,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "halberd",
+      "display_name": "Halberd",
+      "weight_kg": 2.4,
+      "base_value": 24,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "halberd"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.1,
+      "reach_m": 2,
+      "penetration": 2,
+      "balance": 0.75,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "blunt",
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "polearm": 0.3333333333333333,
+        "axe": 0.3333333333333333,
+        "bludgeon": 0.3333333333333333
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "hamburg_mark",
+      "display_name": "Hamburg mark",
+      "weight_kg": 0.01,
+      "base_value": 1,
+      "tags": [
+        "currency"
+      ],
+      "presentation": {
+        "icon": "coins"
+      },
+      "kind": "currency"
+    },
+    {
+      "id": "hand_axe",
+      "display_name": "Hand axe",
+      "weight_kg": 0.9,
+      "base_value": 4,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "wood-axe"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1,
+      "reach_m": 0.7,
+      "penetration": 1,
+      "balance": 0.65,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash"
+      ],
+      "skills": {
+        "axe": 0.5,
+        "knife": 0.5
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "hazelnuts",
+      "display_name": "Hazelnuts",
+      "weight_kg": 0.1,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "nuts",
+          "nutrition_kcal": 630,
+          "growth_per_hour": 0.004,
+          "cooking_minutes": 5,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0.04,
+            "sour": 0,
+            "savory": 0.05
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "heater_shield",
+      "display_name": "Heater shield",
+      "weight_kg": 3.5,
+      "base_value": 12,
+      "tags": [
+        "shield"
+      ],
+      "presentation": {
+        "icon": "templar-shield"
+      },
+      "kind": "shield",
+      "slot": "any_holding",
+      "block": 3.5,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "heavy_crossbow",
+      "display_name": "Heavy crossbow",
+      "weight_kg": 3.5,
+      "base_value": 50,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "crossbow"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 2,
+      "reach_m": 110,
+      "penetration": 4,
+      "balance": 0.5,
+      "precise": true,
+      "melee": false,
+      "ranged": true,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "crossbow": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "honey",
+      "display_name": "Honey",
+      "weight_kg": 0.05,
+      "base_value": 2,
+      "tags": [
+        "ingredient",
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 150,
+          "growth_per_hour": 0.004,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 1.25,
+            "sour": 0,
+            "savory": 0
+          },
+          "culinary_fat": false,
+          "quality": 4,
+          "value_per_unit": 2
+        }
+      }
+    },
+    {
+      "id": "honey_wound_dressing",
+      "display_name": "Honey wound dressing",
+      "weight_kg": 0.25,
+      "base_value": 6,
+      "tags": [
+        "medication"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "medication"
+    },
+    {
+      "id": "hooked_arquebus",
+      "display_name": "Hooked arquebus",
+      "weight_kg": 7,
+      "base_value": 80,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "rifle"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.2,
+      "reach_m": 130,
+      "penetration": 1,
+      "balance": 0.65,
+      "precise": false,
+      "melee": false,
+      "ranged": true,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "firearm": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "horseradish",
+      "display_name": "Horseradish",
+      "weight_kg": 0.03,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 10,
+          "growth_per_hour": 0.012,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 1.4,
+            "sweet": 0,
+            "sour": 0.05,
+            "savory": 0.08
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "hunting_spear",
+      "display_name": "Hunting spear",
+      "weight_kg": 1.5,
+      "base_value": 6,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "spear-hook"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 2.2,
+      "penetration": 2,
+      "balance": 0.45,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "polearm": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "jack_of_plates",
+      "display_name": "Jack of plates",
+      "weight_kg": 5,
+      "base_value": 35,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "armor-vest"
+      },
+      "kind": "armor",
+      "slot": "chest",
+      "coverage": 0.7,
+      "resistance": 85,
+      "padding": 35,
+      "flexibility": 0.45,
+      "range_of_motion": 0.8,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.08,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "katzbalger",
+      "display_name": "Katzbalger",
+      "weight_kg": 1.1,
+      "base_value": 18,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "sword-hilt"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 0.8,
+      "penetration": 1,
+      "balance": 0.55,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "knife": 0.5,
+        "sword": 0.5
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 2,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "kettle_hat",
+      "display_name": "Kettle hat",
+      "weight_kg": 1.8,
+      "base_value": 20,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "brodie-helmet"
+      },
+      "kind": "armor",
+      "slot": "head",
+      "coverage": 0.6,
+      "resistance": 90,
+      "padding": 25,
+      "flexibility": 0.2,
+      "range_of_motion": 0.75,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "kriegsmesser",
+      "display_name": "Kriegsmesser",
+      "weight_kg": 1.6,
+      "base_value": 35,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "relic-blade"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1,
+      "reach_m": 1.25,
+      "penetration": 1,
+      "balance": 0.65,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "sword": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "lard",
+      "display_name": "Lard",
+      "weight_kg": 0.05,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 450,
+          "growth_per_hour": 0.012,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.18
+          },
+          "culinary_fat": true,
+          "quality": 2,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "light_crossbow",
+      "display_name": "Light crossbow",
+      "weight_kg": 2.2,
+      "base_value": 28,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "crossbow"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 2,
+      "reach_m": 80,
+      "penetration": 4,
+      "balance": 0.45,
+      "precise": true,
+      "melee": false,
+      "ranged": true,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "crossbow": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "linen_tunic",
+      "display_name": "Linen tunic",
+      "weight_kg": 0.6,
+      "base_value": 15,
+      "tags": [
+        "clothing"
+      ],
+      "presentation": {
+        "icon": "shirt"
+      },
+      "kind": "clothing",
+      "capabilities": {
+        "durability": {
+          "quality": 1,
+          "yield_j": 12,
+          "fracture_j": 35,
+          "wear": 0.2,
+          "failure_share": 0.8,
+          "edge_sensitivity": 0,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "longbow",
+      "display_name": "Longbow",
+      "weight_kg": 1,
+      "base_value": 18,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "bow-arrow"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.8,
+      "reach_m": 120,
+      "penetration": 2,
+      "balance": 0.4,
+      "precise": false,
+      "melee": false,
+      "ranged": true,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "bow": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "longsword",
+      "display_name": "Longsword",
+      "weight_kg": 1.5,
+      "base_value": 40,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "ancient-sword"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 1.25,
+      "penetration": 1,
+      "balance": 0.45,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "sword": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "lubeck_mark",
+      "display_name": "Lübeck mark",
+      "weight_kg": 0.01,
+      "base_value": 1,
+      "tags": [
+        "currency"
+      ],
+      "presentation": {
+        "icon": "coins"
+      },
+      "kind": "currency"
+    },
+    {
+      "id": "mail_chausses",
+      "display_name": "Mail chausses",
+      "weight_kg": 3.5,
+      "base_value": 45,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "armor-cuisses"
+      },
+      "kind": "armor",
+      "slot": "any_leg",
+      "coverage": 0.65,
+      "resistance": 70,
+      "padding": 30,
+      "flexibility": 0.8,
+      "range_of_motion": 0.8,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "mail_coif",
+      "display_name": "Mail coif",
+      "weight_kg": 1.5,
+      "base_value": 18,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "chain-mail"
+      },
+      "kind": "armor",
+      "slot": "head",
+      "coverage": 0.65,
+      "resistance": 70,
+      "padding": 30,
+      "flexibility": 0.8,
+      "range_of_motion": 0.85,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "mail_shirt",
+      "display_name": "Mail shirt",
+      "weight_kg": 6,
+      "base_value": 55,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "mail-shirt"
+      },
+      "kind": "armor",
+      "slot": "chest",
+      "coverage": 0.75,
+      "resistance": 70,
+      "padding": 35,
+      "flexibility": 0.8,
+      "range_of_motion": 0.82,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "mail_skirt",
+      "display_name": "Mail skirt",
+      "weight_kg": 2.5,
+      "base_value": 30,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "metal-skirt"
+      },
+      "kind": "armor",
+      "slot": "stomach",
+      "coverage": 0.65,
+      "resistance": 70,
+      "padding": 30,
+      "flexibility": 0.8,
+      "range_of_motion": 0.85,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "mail_sleeve",
+      "display_name": "Mail sleeve",
+      "weight_kg": 1.8,
+      "base_value": 28,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "mailed-fist"
+      },
+      "kind": "armor",
+      "slot": "any_arm",
+      "coverage": 0.65,
+      "resistance": 70,
+      "padding": 30,
+      "flexibility": 0.8,
+      "range_of_motion": 0.8,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "matchlock_arquebus",
+      "display_name": "Matchlock arquebus",
+      "weight_kg": 4.5,
+      "base_value": 55,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "musket"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 90,
+      "penetration": 1,
+      "balance": 0.55,
+      "precise": false,
+      "melee": false,
+      "ranged": true,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "firearm": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "messer",
+      "display_name": "Messer",
+      "weight_kg": 1.2,
+      "base_value": 20,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "saber-slash"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.2,
+      "reach_m": 1,
+      "penetration": 1,
+      "balance": 0.6,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "sword": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "military_pike",
+      "display_name": "Military pike",
+      "weight_kg": 4,
+      "base_value": 9,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "spears"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.3,
+      "reach_m": 4.2,
+      "penetration": 2,
+      "balance": 0.85,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "polearm": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "misericorde",
+      "display_name": "Misericorde",
+      "weight_kg": 0.35,
+      "base_value": 14,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "stiletto"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 2,
+      "reach_m": 0.4,
+      "penetration": 4,
+      "balance": 0.75,
+      "precise": true,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "knife": 0.5,
+        "sword": 0.5
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "mustard",
+      "display_name": "Mustard",
+      "weight_kg": 0.02,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 8,
+          "growth_per_hour": 0.008,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 0.1,
+            "spicy": 1.2,
+            "sweet": 0,
+            "sour": 0.12,
+            "savory": 0.08
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "oat_grain",
+      "display_name": "Oat grain",
+      "weight_kg": 0.25,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "grain",
+          "nutrition_kcal": 950,
+          "growth_per_hour": 0.01,
+          "cooking_minutes": 25,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0.06,
+            "sour": 0,
+            "savory": 0.08
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "oatmeal",
+      "display_name": "Oatmeal",
+      "weight_kg": 0.25,
+      "base_value": 1,
+      "tags": [
+        "ingredient"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient"
+    },
+    {
+      "id": "oral_rehydration_draught",
+      "display_name": "Oral rehydration draught",
+      "weight_kg": 0.25,
+      "base_value": 6,
+      "tags": [
+        "medication"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "medication"
+    },
+    {
+      "id": "padded_chausses",
+      "display_name": "Padded chausses",
+      "weight_kg": 1.2,
+      "base_value": 8,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "trousers"
+      },
+      "kind": "armor",
+      "slot": "any_leg",
+      "coverage": 0.45,
+      "resistance": 50,
+      "padding": 40,
+      "flexibility": 0.35,
+      "range_of_motion": 0.9,
+      "capabilities": {
+        "durability": {
+          "quality": 5,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "padded_skirt",
+      "display_name": "Padded skirt",
+      "weight_kg": 0.8,
+      "base_value": 5,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "skirt"
+      },
+      "kind": "armor",
+      "slot": "stomach",
+      "coverage": 0.45,
+      "resistance": 50,
+      "padding": 40,
+      "flexibility": 0.35,
+      "range_of_motion": 0.92,
+      "capabilities": {
+        "durability": {
+          "quality": 2,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "pavise",
+      "display_name": "Pavise",
+      "weight_kg": 8,
+      "base_value": 20,
+      "tags": [
+        "shield"
+      ],
+      "presentation": {
+        "icon": "roman-shield"
+      },
+      "kind": "shield",
+      "slot": "any_holding",
+      "block": 5,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "poppy",
+      "display_name": "Poppy",
+      "weight_kg": 0.05,
+      "base_value": 4,
+      "tags": [
+        "ingredient"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient"
+    },
+    {
+      "id": "portable_oven",
+      "display_name": "Portable oven",
+      "weight_kg": 8,
+      "base_value": 25,
+      "tags": [
+        "simple",
+        "cooking_tool"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "quilted_sleeve",
+      "display_name": "Quilted sleeve",
+      "weight_kg": 0.6,
+      "base_value": 5,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "arm-bandage"
+      },
+      "kind": "armor",
+      "slot": "any_arm",
+      "coverage": 0.45,
+      "resistance": 50,
+      "padding": 40,
+      "flexibility": 0.35,
+      "range_of_motion": 0.9,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "rapier",
+      "display_name": "Rapier",
+      "weight_kg": 1.1,
+      "base_value": 45,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "piercing-sword"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 2,
+      "reach_m": 1.05,
+      "penetration": 4,
+      "balance": 0.45,
+      "precise": true,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "sword": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "raw_beast_meat",
+      "display_name": "Raw beast meat",
+      "weight_kg": 0.5,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "raw_meat",
+          "nutrition_kcal": 680,
+          "growth_per_hour": 0.105,
+          "cooking_minutes": 24,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.3
+          },
+          "culinary_fat": false,
+          "quality": 1,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "raw_fish",
+      "display_name": "Raw fish",
+      "weight_kg": 0.45,
+      "base_value": 2,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "raw_meat",
+          "nutrition_kcal": 520,
+          "growth_per_hour": 0.115,
+          "cooking_minutes": 16,
+          "flavors_kg": {
+            "salty": 0.08,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.34
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 1.5
+        }
+      }
+    },
+    {
+      "id": "raw_fowl",
+      "display_name": "Raw fowl",
+      "weight_kg": 0.5,
+      "base_value": 2,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "raw_meat",
+          "nutrition_kcal": 720,
+          "growth_per_hour": 0.105,
+          "cooking_minutes": 22,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.32
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 2
+        }
+      }
+    },
+    {
+      "id": "raw_venison",
+      "display_name": "Raw venison",
+      "weight_kg": 0.5,
+      "base_value": 2,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "raw_meat",
+          "nutrition_kcal": 790,
+          "growth_per_hour": 0.09,
+          "cooking_minutes": 18,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.36
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 2
+        }
+      }
+    },
+    {
+      "id": "rhenish_gulden",
+      "display_name": "Rhenish gulden",
+      "weight_kg": 0.01,
+      "base_value": 1,
+      "tags": [
+        "currency"
+      ],
+      "presentation": {
+        "icon": "coins"
+      },
+      "kind": "currency"
+    },
+    {
+      "id": "rondel_dagger",
+      "display_name": "Rondel dagger",
+      "weight_kg": 0.45,
+      "base_value": 12,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "daggers"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 2,
+      "reach_m": 0.4,
+      "penetration": 4,
+      "balance": 0.8,
+      "precise": true,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "knife": 0.5,
+        "sword": 0.5
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "root_vegetables",
+      "display_name": "Root vegetables",
+      "weight_kg": 0.35,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "vegetable",
+          "nutrition_kcal": 190,
+          "growth_per_hour": 0.01,
+          "cooking_minutes": 20,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0.04,
+            "sour": 0,
+            "savory": 0.12
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 0.5
+        }
+      }
+    },
+    {
+      "id": "rosewater",
+      "display_name": "Rosewater",
+      "weight_kg": 0.2,
+      "base_value": 3,
+      "tags": [
+        "ingredient"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient"
+    },
+    {
+      "id": "round_shield",
+      "display_name": "Round shield",
+      "weight_kg": 3,
+      "base_value": 10,
+      "tags": [
+        "shield"
+      ],
+      "presentation": {
+        "icon": "shield"
+      },
+      "kind": "shield",
+      "slot": "any_holding",
+      "block": 3,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "rye_bread",
+      "display_name": "Rye bread",
+      "weight_kg": 0.5,
+      "base_value": 2,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "bread",
+          "nutrition_kcal": 1250,
+          "growth_per_hour": 0.018,
+          "cooking_minutes": 4,
+          "flavors_kg": {
+            "salty": 0.22,
+            "spicy": 0,
+            "sweet": 0.04,
+            "sour": 0.08,
+            "savory": 0.16
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 2
+        }
+      }
+    },
+    {
+      "id": "sage",
+      "display_name": "Sage",
+      "weight_kg": 0.05,
+      "base_value": 2,
+      "tags": [
+        "ingredient",
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 8,
+          "growth_per_hour": 0.008,
+          "cooking_minutes": 2,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0.1,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 1
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 2
+        }
+      }
+    },
+    {
+      "id": "sallet",
+      "display_name": "Sallet",
+      "weight_kg": 2.6,
+      "base_value": 40,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "light-helm"
+      },
+      "kind": "armor",
+      "slot": "head",
+      "coverage": 0.8,
+      "resistance": 100,
+      "padding": 30,
+      "flexibility": 0.2,
+      "range_of_motion": 0.65,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "salt",
+      "display_name": "Salt",
+      "weight_kg": 0.01,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 0,
+          "growth_per_hour": 0.003,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 1,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "saxon_thaler",
+      "display_name": "Saxon thaler",
+      "weight_kg": 0.01,
+      "base_value": 1,
+      "tags": [
+        "currency"
+      ],
+      "presentation": {
+        "icon": "coins"
+      },
+      "kind": "currency"
+    },
+    {
+      "id": "seaweed",
+      "display_name": "Seaweed",
+      "weight_kg": 0.25,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "vegetable",
+          "nutrition_kcal": 45,
+          "growth_per_hour": 0.022,
+          "cooking_minutes": 5,
+          "flavors_kg": {
+            "salty": 0.28,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.18
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 0.6
+        }
+      }
+    },
+    {
+      "id": "self_bow",
+      "display_name": "Self bow",
+      "weight_kg": 0.8,
+      "base_value": 8,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "pocket-bow"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 60,
+      "penetration": 2,
+      "balance": 0.35,
+      "precise": false,
+      "melee": false,
+      "ranged": true,
+      "damage_types": [
+        "pierce"
+      ],
+      "skills": {
+        "bow": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "small_beer",
+      "display_name": "Small beer",
+      "weight_kg": 0.52,
+      "base_value": 1,
+      "tags": [
+        "simple",
+        "alcohol"
+      ],
+      "presentation": {
+        "icon": "beer-stein"
+      },
+      "kind": "simple",
+      "capabilities": {
+        "alcohol": {
+          "serving_ml": 500,
+          "abv_basis_points": 300,
+          "net_hydration_ml": 425,
+          "disinfectant_effectiveness": 10,
+          "disinfectant_focused": false,
+          "potable": true
+        }
+      }
+    },
+    {
+      "id": "soft_soap",
+      "display_name": "Soft soap",
+      "weight_kg": 0.25,
+      "base_value": 3,
+      "tags": [
+        "simple",
+        "soap",
+        "surgery_supply"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "sour_cherries",
+      "display_name": "Sour cherries",
+      "weight_kg": 0.2,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "fruit",
+          "nutrition_kcal": 80,
+          "growth_per_hour": 0.02,
+          "cooking_minutes": 3,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0.12,
+            "sour": 0.22,
+            "savory": 0
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "splint",
+      "display_name": "Splint",
+      "weight_kg": 0.8,
+      "base_value": 4,
+      "tags": [
+        "simple",
+        "surgery_supply"
+      ],
+      "presentation": {
+        "icon": "arm-bandage"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "surgery_kit",
+      "display_name": "Surgery kit",
+      "weight_kg": 2.5,
+      "base_value": 60,
+      "tags": [
+        "simple",
+        "surgery_supply"
+      ],
+      "presentation": {
+        "icon": "medical-pack"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "table_wine",
+      "display_name": "Table wine",
+      "weight_kg": 0.26,
+      "base_value": 2,
+      "tags": [
+        "simple",
+        "alcohol"
+      ],
+      "presentation": {
+        "icon": "beer-stein"
+      },
+      "kind": "simple",
+      "capabilities": {
+        "alcohol": {
+          "serving_ml": 250,
+          "abv_basis_points": 1200,
+          "net_hydration_ml": 150,
+          "disinfectant_effectiveness": 30,
+          "disinfectant_focused": false,
+          "potable": true
+        }
+      }
+    },
+    {
+      "id": "targe",
+      "display_name": "Targe",
+      "weight_kg": 2.5,
+      "base_value": 8,
+      "tags": [
+        "shield"
+      ],
+      "presentation": {
+        "icon": "round-shield"
+      },
+      "kind": "shield",
+      "slot": "any_holding",
+      "block": 2.5,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "tassets",
+      "display_name": "Tassets",
+      "weight_kg": 2,
+      "base_value": 55,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "pteruges"
+      },
+      "kind": "armor",
+      "slot": "stomach",
+      "coverage": 0.75,
+      "resistance": 100,
+      "padding": 35,
+      "flexibility": 0.18,
+      "range_of_motion": 0.75,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "torch",
+      "display_name": "Torch",
+      "weight_kg": 0.5,
+      "base_value": 5,
+      "tags": [
+        "simple"
+      ],
+      "presentation": {
+        "icon": "torch"
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "travel_ration",
+      "display_name": "Travel ration",
+      "weight_kg": 0.65,
+      "base_value": 3,
+      "tags": [
+        "food",
+        "travel_provision"
+      ],
+      "presentation": {
+        "icon": "bread"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "ration",
+          "nutrition_kcal": 2500,
+          "growth_per_hour": 0.008,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 0.35,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.45
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 3
+        }
+      }
+    },
+    {
+      "id": "utility_knife",
+      "display_name": "Utility knife",
+      "weight_kg": 0.2,
+      "base_value": 2,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "plain-dagger"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 1.5,
+      "reach_m": 0.3,
+      "penetration": 1,
+      "balance": 0.8,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "knife": 0.5,
+        "sword": 0.5
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "vambrace",
+      "display_name": "Vambrace",
+      "weight_kg": 0.9,
+      "base_value": 35,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "bracer"
+      },
+      "kind": "armor",
+      "slot": "any_arm",
+      "coverage": 0.65,
+      "resistance": 95,
+      "padding": 25,
+      "flexibility": 0.15,
+      "range_of_motion": 0.8,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "vinegar",
+      "display_name": "Vinegar",
+      "weight_kg": 0.03,
+      "base_value": 2,
+      "tags": [
+        "ingredient",
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 2,
+          "growth_per_hour": 0.003,
+          "cooking_minutes": 0,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 1.2,
+            "savory": 0
+          },
+          "culinary_fat": false,
+          "quality": 3,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "visored_sallet",
+      "display_name": "Visored sallet",
+      "weight_kg": 3,
+      "base_value": 50,
+      "tags": [
+        "armor"
+      ],
+      "presentation": {
+        "icon": "visored-helm"
+      },
+      "kind": "armor",
+      "slot": "head",
+      "coverage": 0.9,
+      "resistance": 105,
+      "padding": 35,
+      "flexibility": 0.15,
+      "range_of_motion": 0.55,
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 35,
+          "fracture_j": 130,
+          "wear": 0.18,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.7
+        }
+      }
+    },
+    {
+      "id": "walking_staff",
+      "display_name": "Walking staff",
+      "weight_kg": 1.5,
+      "base_value": 1,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "bo"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 0.8,
+      "reach_m": 1.8,
+      "penetration": 0.1,
+      "balance": 0.3,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "blunt"
+      ],
+      "skills": {
+        "bludgeon": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "war_hammer",
+      "display_name": "War hammer",
+      "weight_kg": 1.4,
+      "base_value": 14,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "warhammer"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 0.7,
+      "reach_m": 0.8,
+      "penetration": 0.5,
+      "balance": 0.55,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "blunt",
+        "pierce"
+      ],
+      "skills": {
+        "bludgeon": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.2,
+          "handling_sensitivity": 0.5
+        }
+      }
+    },
+    {
+      "id": "watercress",
+      "display_name": "Watercress",
+      "weight_kg": 0.2,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "herb",
+          "nutrition_kcal": 28,
+          "growth_per_hour": 0.025,
+          "cooking_minutes": 2,
+          "flavors_kg": {
+            "salty": 0.05,
+            "spicy": 0.18,
+            "sweet": 0,
+            "sour": 0.06,
+            "savory": 0.12
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 0.7
+        }
+      }
+    },
+    {
+      "id": "waterskin",
+      "display_name": "Waterskin",
+      "weight_kg": 0.5,
+      "base_value": 2,
+      "tags": [
+        "container",
+        "water_container",
+        "travel_provision"
+      ],
+      "presentation": {
+        "icon": "waterskin"
+      },
+      "kind": "container",
+      "slot": "none",
+      "capabilities": {
+        "container": {
+          "capacity_ml": 4000
+        }
+      }
+    },
+    {
+      "id": "wild_berries",
+      "display_name": "Wild berries",
+      "weight_kg": 0.25,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "berries",
+          "nutrition_kcal": 140,
+          "growth_per_hour": 0.02,
+          "cooking_minutes": 4,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0.18,
+            "sour": 0.16,
+            "savory": 0
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 0.6
+        }
+      }
+    },
+    {
+      "id": "wild_mushrooms",
+      "display_name": "Wild mushrooms",
+      "weight_kg": 0.25,
+      "base_value": 1,
+      "tags": [
+        "food"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "food",
+      "capabilities": {
+        "food": {
+          "class": "mushroom",
+          "nutrition_kcal": 55,
+          "growth_per_hour": 0.03,
+          "cooking_minutes": 12,
+          "flavors_kg": {
+            "salty": 0,
+            "spicy": 0,
+            "sweet": 0,
+            "sour": 0,
+            "savory": 0.2
+          },
+          "culinary_fat": false,
+          "quality": 2,
+          "value_per_unit": 1
+        }
+      }
+    },
+    {
+      "id": "willow_bark",
+      "display_name": "Willow bark",
+      "weight_kg": 0.1,
+      "base_value": 2,
+      "tags": [
+        "ingredient"
+      ],
+      "presentation": {
+        "icon": "help"
+      },
+      "kind": "ingredient"
+    },
+    {
+      "id": "zweihander",
+      "display_name": "Zweihander",
+      "weight_kg": 2.8,
+      "base_value": 60,
+      "tags": [
+        "weapon"
+      ],
+      "presentation": {
+        "icon": "two-handed-sword"
+      },
+      "kind": "weapon",
+      "slot": "any_holding",
+      "accuracy": 0.7,
+      "reach_m": 1.8,
+      "penetration": 1,
+      "balance": 0.5,
+      "precise": false,
+      "melee": true,
+      "ranged": false,
+      "damage_types": [
+        "slash",
+        "pierce"
+      ],
+      "skills": {
+        "sword": 1
+      },
+      "capabilities": {
+        "durability": {
+          "quality": 3,
+          "yield_j": 65,
+          "fracture_j": 100,
+          "wear": 0.1,
+          "failure_share": 0.65,
+          "edge_sensitivity": 0.8,
+          "handling_sensitivity": 0.5
+        }
+      }
+    }
+  ]
+}

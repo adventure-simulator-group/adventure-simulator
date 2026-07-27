@@ -308,6 +308,11 @@ check:
 dialogue-check:
     @cargo run -p adventuresim-dialogue --bin dialogue-check -- check
 
+# Validate strict authored content. The optional target currently supports
+# `items`; the default validates every catalog with an external checker.
+content-check target="all":
+    @cargo run -p adventuresim-core --bin content-check -- {{ target }}
+
 test-chat:
     @node --test crates/strategic-web/tests/local-chat.test.cjs crates/strategic-web/tests/service-quests.test.cjs
 

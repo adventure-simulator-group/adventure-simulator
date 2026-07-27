@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1302)
+## Files (1305)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -34,6 +34,7 @@ development, or other wiki document before changing a subsystem.
 - `book.toml` — Tooling or build configuration.
 - `content/dialogue/examples.yaml` — Repository support file.
 - `content/dialogue/services.yaml` — Repository support file.
+- `content/items/catalog.yaml` — Repository support file.
 - `content/organizations/catalog.yaml` — Repository support file.
 - `content/quests/bestiary.yaml` — Repository support file.
 - `content/quests/generation.yaml` — Repository support file.
@@ -52,6 +53,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/autoresolve.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/battle_rewards.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/bestiary.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/bin/content-check.rs` — Rust source module.
 - `crates/adventuresim-core/src/bin/questgen-check.rs` — Rust source module.
 - `crates/adventuresim-core/src/body.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/capability.rs` — Rust source module for this component.
@@ -70,6 +72,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/inventory_measurement.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/investigation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/investigation_action.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/item_catalog.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/item_catalog_validation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/local_problem.rs` — Rust source module for this component.
@@ -179,7 +183,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_social_beliefs_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backfill_character_deaths_and_leadership_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_equipment_condition_and_smiths_reducer.rs` — Generated SpacetimeDB reducer interface.
-- `crates/adventuresim-stdb-client/src/backfill_item_values_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_solo_parties_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/battle_loot_item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/battle_loot_item_type.rs` — Generated SpacetimeDB data type.
@@ -193,7 +196,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/blood_exposure_checkpoint_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/bootstrap_development_world_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/built_settlement_cover_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/calibrate_weapon_precision_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/camp_duration_mode_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/canal_watercourse_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/cancel_mission_request_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -1275,6 +1277,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/historical-land-use.md` — Project documentation.
 - `wiki/reference/hydrology.md` — Project documentation.
 - `wiki/reference/industries.md` — Project documentation.
+- `wiki/reference/item-authoring.md` — Project documentation.
 - `wiki/reference/llm/project-map-maintenance.md` — Project documentation.
 - `wiki/reference/measured-inventory.md` — Project documentation.
 - `wiki/reference/organizations.md` — Project documentation.

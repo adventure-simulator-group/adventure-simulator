@@ -90,40 +90,24 @@ impl WeaponSkillDistribution {
     }
 }
 
-/// Canonical weapon-leaf distribution for the seeded item catalog.
+/// Canonical weapon-leaf distribution from the embedded authored catalog.
 ///
-/// Unknown weapon identifiers retain the catalog's historical sword fallback;
-/// callers must apply this only to items already classified as weapons.
+/// Unknown and non-weapon identifiers deliberately return an empty
+/// distribution. There is no ID-shaped sword fallback.
 pub fn weapon_skill_distribution_for_item(item_id: &str) -> WeaponSkillDistribution {
-    let mut distribution = WeaponSkillDistribution::default();
-    let skills: &[Skill] = match item_id {
-        "club" | "flanged_mace" | "war_hammer" | "walking_staff" => &[Skill::Bludgeon],
-        "hand_axe" => &[Skill::Axe, Skill::Knife],
-        "utility_knife" | "rondel_dagger" | "misericorde" | "baselard" | "bauernwehr"
-        | "katzbalger" => &[Skill::Knife, Skill::Sword],
-        "hunting_spear" | "military_pike" => &[Skill::Polearm],
-        "halberd" => &[Skill::Polearm, Skill::Axe, Skill::Bludgeon],
-        "self_bow" | "longbow" => &[Skill::Bow],
-        "light_crossbow" | "heavy_crossbow" => &[Skill::Crossbow],
-        "matchlock_arquebus" | "hooked_arquebus" => &[Skill::Firearm],
-        _ => &[Skill::Sword],
-    };
-    let weight = 1.0 / skills.len() as f32;
-    for skill in skills {
-        match skill {
-            Skill::Polearm => distribution.polearm = weight,
-            Skill::Axe => distribution.axe = weight,
-            Skill::Bludgeon => distribution.bludgeon = weight,
-            Skill::Sword => distribution.sword = weight,
-            Skill::Knife => distribution.knife = weight,
-            Skill::Bow => distribution.bow = weight,
-            Skill::Crossbow => distribution.crossbow = weight,
-            Skill::Firearm => distribution.firearm = weight,
-            Skill::Throw => distribution.throw = weight,
-            _ => unreachable!("weapon catalog mapping contains only weapon leaf skills"),
+    crate::item_catalog::weapon_skills(item_id).map_or_else(WeaponSkillDistribution::default, |s| {
+        WeaponSkillDistribution {
+            polearm: s.polearm,
+            axe: s.axe,
+            bludgeon: s.bludgeon,
+            sword: s.sword,
+            knife: s.knife,
+            bow: s.bow,
+            crossbow: s.crossbow,
+            firearm: s.firearm,
+            throw: s.throw,
         }
-    }
-    distribution
+    })
 }
 
 pub const LOWER_MUSCLE_MASS_PER_LEG_STRENGTH: f32 = 5.0;
@@ -330,10 +314,7 @@ mod tests {
         assert!((halberd.total() - 1.0).abs() < f32::EPSILON);
         assert_eq!(
             weapon_skill_distribution_for_item("unknown_seeded_weapon"),
-            WeaponSkillDistribution {
-                sword: 1.0,
-                ..Default::default()
-            }
+            WeaponSkillDistribution::default()
         );
     }
 

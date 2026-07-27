@@ -23,7 +23,8 @@ quantity one. A definition without a measurement profile can never have
 measured state.
 
 Capabilities compose. Measurement, armor, weapon, food, alcohol, durability,
-and similar profiles should be separate definition tables keyed by `item_id`,
+and similar profiles are authored as typed capability payloads in the embedded
+[item definition catalog](item-authoring.md), keyed by stable `item_id`,
 not variants in one giant exclusive `ItemKind` union. A bottled medicine may
 be both alcohol and food; clothing may also be armor. An exhaustive union would
 make those legitimate combinations awkward or impossible.

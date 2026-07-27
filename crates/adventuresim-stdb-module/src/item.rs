@@ -103,26 +103,6 @@ impl WeaponSkillDistribution {
             throw: self.throw_skill,
         }
     }
-
-    fn from_core(value: adventuresim_core::equipment::WeaponSkillDistribution) -> Self {
-        Self {
-            polearm: value.polearm,
-            axe: value.axe,
-            bludgeon: value.bludgeon,
-            sword: value.sword,
-            knife: value.knife,
-            bow: value.bow,
-            crossbow: value.crossbow,
-            firearm: value.firearm,
-            throw_skill: value.throw,
-        }
-    }
-}
-
-fn weapon_skills(id: &str) -> WeaponSkillDistribution {
-    WeaponSkillDistribution::from_core(
-        adventuresim_core::equipment::weapon_skill_distribution_for_item(id),
-    )
 }
 
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq, EnumCount, VariantArray)]
@@ -199,1091 +179,151 @@ pub struct Item {
     pub handling_sensitivity: f32,
 }
 
-/// A static item definition used to seed the strategic item table.
-///
-/// The values use the combat quantities documented in `wiki/tactical/combat.md`.
-/// `base_value` is a relative gameplay price, not a claim about a historical
-/// market price; the historical basis and gameplay inferences are recorded in
-/// `wiki/reference/equipment.md`.
-#[derive(Clone, Copy, Debug)]
-struct EquipmentDefinition {
-    id: &'static str,
-    weight: f32,
-    base_value: u32,
-    slot: ItemSlot,
-    kind: ItemKind,
-    accuracy: f32,
-    reach: f32,
-    block: f32,
-    coverage: f32,
-    penetration: f32,
-    resistance: f32,
-    padding: f32,
-    flexibility: f32,
-    range_of_motion: f32,
-    precise: bool,
-    balance: f32,
-    melee: bool,
-    ranged: bool,
-    blunt: bool,
-    slash: bool,
-    pierce: bool,
-}
-
-const fn weapon(
-    id: &'static str,
-    weight: f32,
-    base_value: u32,
-    accuracy: f32,
-    penetration: f32,
-    reach: f32,
-    balance: f32,
-    precise: bool,
-    blunt: bool,
-    slash: bool,
-    pierce: bool,
-    ranged: bool,
-) -> EquipmentDefinition {
-    EquipmentDefinition {
-        id,
-        weight,
-        base_value,
-        slot: ItemSlot::AnyHolding,
-        kind: ItemKind::Weapon,
-        accuracy,
-        reach,
-        block: 0.0,
-        coverage: 0.0,
-        penetration,
-        resistance: 0.0,
-        padding: 0.0,
-        flexibility: 0.0,
-        range_of_motion: 0.0,
-        precise,
-        balance,
-        melee: !ranged,
-        ranged,
-        blunt,
-        slash,
-        pierce,
+/// Projects a typed authored definition into the intentionally flattened
+/// SpacetimeDB ABI used by strategic persistence and existing clients.
+fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefinition) -> Item {
+    use adventuresim_core::item_catalog::{DamageType, ItemKind as K, Slot};
+    let mut item = Item {
+        id: definition.id.clone(),
+        weight: definition.weight_kg,
+        base_value: Some(definition.base_value),
+        ..Item::default()
+    };
+    let slot = |slot| match slot {
+        Slot::None => ItemSlot::None,
+        Slot::LeftHolding => ItemSlot::LeftHolding,
+        Slot::RightHolding => ItemSlot::RightHolding,
+        Slot::LeftArm => ItemSlot::LeftArm,
+        Slot::RightArm => ItemSlot::RightArm,
+        Slot::LeftLeg => ItemSlot::LeftLeg,
+        Slot::RightLeg => ItemSlot::RightLeg,
+        Slot::Chest => ItemSlot::Chest,
+        Slot::Stomach => ItemSlot::Stomach,
+        Slot::Head => ItemSlot::Head,
+        Slot::AnyHolding => ItemSlot::AnyHolding,
+        Slot::AnyArm => ItemSlot::AnyArm,
+        Slot::AnyLeg => ItemSlot::AnyLeg,
+    };
+    match &definition.kind {
+        K::Simple | K::Container { .. } => item.kind = ItemKind::Simple,
+        K::Currency => item.kind = ItemKind::Currency,
+        K::Ingredient => item.kind = ItemKind::Ingredient,
+        K::Medication => item.kind = ItemKind::Medication,
+        K::Clothing => item.kind = ItemKind::Clothing,
+        K::Food => item.kind = ItemKind::Food,
+        K::Shield {
+            slot: authored_slot,
+            block,
+        } => {
+            item.kind = ItemKind::Shield;
+            item.slot = slot(*authored_slot);
+            item.block = *block;
+        }
+        K::Armor {
+            slot: authored_slot,
+            coverage,
+            resistance,
+            padding,
+            flexibility,
+            range_of_motion,
+        } => {
+            item.kind = ItemKind::Armor;
+            item.slot = slot(*authored_slot);
+            item.coverage = *coverage;
+            item.resistance = *resistance;
+            item.padding = *padding;
+            item.flexibility = *flexibility;
+            item.range_of_motion = *range_of_motion;
+        }
+        K::Weapon {
+            slot: authored_slot,
+            accuracy,
+            reach_m,
+            penetration,
+            balance,
+            precise,
+            melee,
+            ranged,
+            damage_types,
+            skills,
+        } => {
+            item.kind = ItemKind::Weapon;
+            item.slot = slot(*authored_slot);
+            item.accuracy = *accuracy;
+            item.reach = *reach_m;
+            item.penetration = *penetration;
+            item.balance = *balance;
+            item.precise = *precise;
+            item.melee = *melee;
+            item.ranged = *ranged;
+            item.blunt = damage_types.contains(&DamageType::Blunt);
+            item.slash = damage_types.contains(&DamageType::Slash);
+            item.pierce = damage_types.contains(&DamageType::Pierce);
+            item.weapon_skills = WeaponSkillDistribution {
+                polearm: skills.polearm,
+                axe: skills.axe,
+                bludgeon: skills.bludgeon,
+                sword: skills.sword,
+                knife: skills.knife,
+                bow: skills.bow,
+                crossbow: skills.crossbow,
+                firearm: skills.firearm,
+                throw_skill: skills.throw,
+            };
+        }
     }
-}
-
-const fn armor(
-    id: &'static str,
-    weight: f32,
-    base_value: u32,
-    slot: ItemSlot,
-    coverage: f32,
-    resistance: f32,
-    padding: f32,
-    flexibility: f32,
-    range_of_motion: f32,
-) -> EquipmentDefinition {
-    EquipmentDefinition {
-        id,
-        weight,
-        base_value,
-        slot,
-        kind: ItemKind::Armor,
-        accuracy: 0.0,
-        reach: 0.0,
-        block: 0.0,
-        coverage,
-        penetration: 0.0,
-        resistance,
-        padding,
-        flexibility,
-        range_of_motion,
-        precise: false,
-        balance: 0.0,
-        melee: false,
-        ranged: false,
-        blunt: false,
-        slash: false,
-        pierce: false,
+    if let Some(food) = &definition.capabilities.food {
+        item.nutrition_kcal = food.nutrition_kcal;
+        item.quality = food.quality;
     }
-}
-
-const fn shield(id: &'static str, weight: f32, base_value: u32, block: f32) -> EquipmentDefinition {
-    EquipmentDefinition {
-        id,
-        weight,
-        base_value,
-        slot: ItemSlot::AnyHolding,
-        kind: ItemKind::Shield,
-        accuracy: 0.0,
-        reach: 0.0,
-        block,
-        coverage: 0.0,
-        penetration: 0.0,
-        resistance: 0.0,
-        padding: 0.0,
-        flexibility: 0.0,
-        range_of_motion: 0.0,
-        precise: false,
-        balance: 0.0,
-        melee: false,
-        ranged: false,
-        blunt: false,
-        slash: false,
-        pierce: false,
+    if let Some(container) = definition.capabilities.container {
+        item.water_capacity_ml = container.capacity_ml;
     }
-}
-
-// Common civilian, militia, professional, elite, and older-serviceable arms.
-// Ranged reach is the current autoresolver range in metres; melee reach is in
-// metres. Weapon precision and penetration follow the combat.md calibration.
-const WEAPONS: &[EquipmentDefinition] = &[
-    weapon(
-        "club", 1.2, 1, 0.5, 0.1, 0.7, 0.7, false, true, false, false, false,
-    ),
-    weapon(
-        "walking_staff",
-        1.5,
-        1,
-        0.8,
-        0.1,
-        1.8,
-        0.3,
-        false,
-        true,
-        false,
-        false,
-        false,
-    ),
-    weapon(
-        "hand_axe", 0.9, 4, 1.0, 1.0, 0.7, 0.65, false, false, true, false, false,
-    ),
-    weapon(
-        "flanged_mace",
-        1.2,
-        10,
-        0.7,
-        0.5,
-        0.75,
-        0.65,
-        false,
-        true,
-        false,
-        false,
-        false,
-    ),
-    weapon(
-        "war_hammer",
-        1.4,
-        14,
-        0.7,
-        0.5,
-        0.8,
-        0.55,
-        false,
-        true,
-        false,
-        true,
-        false,
-    ),
-    weapon(
-        "utility_knife",
-        0.2,
-        2,
-        1.5,
-        1.0,
-        0.3,
-        0.8,
-        false,
-        false,
-        true,
-        true,
-        false,
-    ),
-    weapon(
-        "baselard", 0.4, 6, 1.5, 1.0, 0.4, 0.75, false, false, true, true, false,
-    ),
-    weapon(
-        "rondel_dagger",
-        0.45,
-        12,
-        2.0,
-        4.0,
-        0.4,
-        0.8,
-        true,
-        false,
-        false,
-        true,
-        false,
-    ),
-    weapon(
-        "misericorde",
-        0.35,
-        14,
-        2.0,
-        4.0,
-        0.4,
-        0.75,
-        true,
-        false,
-        false,
-        true,
-        false,
-    ),
-    weapon(
-        "bauernwehr",
-        0.7,
-        8,
-        1.2,
-        1.0,
-        0.65,
-        0.7,
-        false,
-        false,
-        true,
-        true,
-        false,
-    ),
-    weapon(
-        "katzbalger",
-        1.1,
-        18,
-        1.5,
-        1.0,
-        0.8,
-        0.55,
-        false,
-        false,
-        true,
-        true,
-        false,
-    ),
-    weapon(
-        "arming_sword",
-        1.3,
-        28,
-        1.5,
-        1.0,
-        0.95,
-        0.5,
-        false,
-        false,
-        true,
-        true,
-        false,
-    ),
-    weapon(
-        "longsword",
-        1.5,
-        40,
-        1.5,
-        1.0,
-        1.25,
-        0.45,
-        false,
-        false,
-        true,
-        true,
-        false,
-    ),
-    weapon(
-        "messer", 1.2, 20, 1.2, 1.0, 1.0, 0.6, false, false, true, true, false,
-    ),
-    weapon(
-        "kriegsmesser",
-        1.6,
-        35,
-        1.0,
-        1.0,
-        1.25,
-        0.65,
-        false,
-        false,
-        true,
-        true,
-        false,
-    ),
-    weapon(
-        "rapier", 1.1, 45, 2.0, 4.0, 1.05, 0.45, true, false, false, true, false,
-    ),
-    weapon(
-        "zweihander",
-        2.8,
-        60,
-        0.7,
-        1.0,
-        1.8,
-        0.5,
-        false,
-        false,
-        true,
-        true,
-        false,
-    ),
-    weapon(
-        "hunting_spear",
-        1.5,
-        6,
-        1.5,
-        2.0,
-        2.2,
-        0.45,
-        false,
-        false,
-        false,
-        true,
-        false,
-    ),
-    weapon(
-        "military_pike",
-        4.0,
-        9,
-        1.3,
-        2.0,
-        4.2,
-        0.85,
-        false,
-        false,
-        false,
-        true,
-        false,
-    ),
-    weapon(
-        "halberd", 2.4, 24, 1.1, 2.0, 2.0, 0.75, false, true, true, true, false,
-    ),
-    weapon(
-        "self_bow", 0.8, 8, 1.5, 2.0, 60.0, 0.35, false, false, false, true, true,
-    ),
-    weapon(
-        "longbow", 1.0, 18, 1.8, 2.0, 120.0, 0.4, false, false, false, true, true,
-    ),
-    weapon(
-        "light_crossbow",
-        2.2,
-        28,
-        2.0,
-        4.0,
-        80.0,
-        0.45,
-        true,
-        false,
-        false,
-        true,
-        true,
-    ),
-    weapon(
-        "heavy_crossbow",
-        3.5,
-        50,
-        2.0,
-        4.0,
-        110.0,
-        0.5,
-        true,
-        false,
-        false,
-        true,
-        true,
-    ),
-    weapon(
-        "matchlock_arquebus",
-        4.5,
-        55,
-        1.5,
-        1.0,
-        90.0,
-        0.55,
-        false,
-        false,
-        false,
-        true,
-        true,
-    ),
-    weapon(
-        "hooked_arquebus",
-        7.0,
-        80,
-        1.2,
-        1.0,
-        130.0,
-        0.65,
-        false,
-        false,
-        false,
-        true,
-        true,
-    ),
-];
-
-const SHIELDS: &[EquipmentDefinition] = &[
-    shield("buckler", 1.0, 5, 1.5),
-    shield("targe", 2.5, 8, 2.5),
-    shield("round_shield", 3.0, 10, 3.0),
-    shield("heater_shield", 3.5, 12, 3.5),
-    shield("pavise", 8.0, 20, 5.0),
-];
-
-// Helmets deliberately receive more entries than other armor slots: helmets
-// remained independently useful, and armories retained older patterns.
-const ARMOR: &[EquipmentDefinition] = &[
-    armor(
-        "arming_cap",
-        0.35,
-        2,
-        ItemSlot::Head,
-        0.15,
-        20.0,
-        35.0,
-        0.4,
-        0.95,
-    ),
-    armor(
-        "mail_coif",
-        1.5,
-        18,
-        ItemSlot::Head,
-        0.65,
-        70.0,
-        30.0,
-        0.8,
-        0.85,
-    ),
-    armor(
-        "kettle_hat",
-        1.8,
-        20,
-        ItemSlot::Head,
-        0.6,
-        90.0,
-        25.0,
-        0.2,
-        0.75,
-    ),
-    armor(
-        "barbute",
-        2.5,
-        35,
-        ItemSlot::Head,
-        0.75,
-        95.0,
-        30.0,
-        0.15,
-        0.65,
-    ),
-    armor(
-        "sallet",
-        2.6,
-        40,
-        ItemSlot::Head,
-        0.8,
-        100.0,
-        30.0,
-        0.2,
-        0.65,
-    ),
-    armor(
-        "visored_sallet",
-        3.0,
-        50,
-        ItemSlot::Head,
-        0.9,
-        105.0,
-        35.0,
-        0.15,
-        0.55,
-    ),
-    armor(
-        "burgonet",
-        2.3,
-        55,
-        ItemSlot::Head,
-        0.75,
-        100.0,
-        30.0,
-        0.2,
-        0.7,
-    ),
-    armor(
-        "close_helmet",
-        3.0,
-        75,
-        ItemSlot::Head,
-        0.9,
-        110.0,
-        35.0,
-        0.15,
-        0.55,
-    ),
-    armor(
-        "quilted_sleeve",
-        0.6,
-        5,
-        ItemSlot::AnyArm,
-        0.45,
-        50.0,
-        40.0,
-        0.35,
-        0.9,
-    ),
-    armor(
-        "mail_sleeve",
-        1.8,
-        28,
-        ItemSlot::AnyArm,
-        0.65,
-        70.0,
-        30.0,
-        0.8,
-        0.8,
-    ),
-    armor(
-        "vambrace",
-        0.9,
-        35,
-        ItemSlot::AnyArm,
-        0.65,
-        95.0,
-        25.0,
-        0.15,
-        0.8,
-    ),
-    armor(
-        "padded_chausses",
-        1.2,
-        8,
-        ItemSlot::AnyLeg,
-        0.45,
-        50.0,
-        40.0,
-        0.35,
-        0.9,
-    ),
-    armor(
-        "mail_chausses",
-        3.5,
-        45,
-        ItemSlot::AnyLeg,
-        0.65,
-        70.0,
-        30.0,
-        0.8,
-        0.8,
-    ),
-    armor(
-        "greave",
-        1.4,
-        45,
-        ItemSlot::AnyLeg,
-        0.65,
-        95.0,
-        25.0,
-        0.15,
-        0.78,
-    ),
-    armor(
-        "arming_doublet",
-        2.5,
-        12,
-        ItemSlot::Chest,
-        0.6,
-        60.0,
-        45.0,
-        0.3,
-        0.88,
-    ),
-    armor(
-        "jack_of_plates",
-        5.0,
-        35,
-        ItemSlot::Chest,
-        0.7,
-        85.0,
-        35.0,
-        0.45,
-        0.8,
-    ),
-    armor(
-        "brigandine",
-        5.5,
-        50,
-        ItemSlot::Chest,
-        0.8,
-        100.0,
-        40.0,
-        0.4,
-        0.75,
-    ),
-    armor(
-        "mail_shirt",
-        6.0,
-        55,
-        ItemSlot::Chest,
-        0.75,
-        70.0,
-        35.0,
-        0.8,
-        0.82,
-    ),
-    armor(
-        "breastplate",
-        3.5,
-        70,
-        ItemSlot::Chest,
-        0.85,
-        120.0,
-        45.0,
-        0.05,
-        0.72,
-    ),
-    armor(
-        "cuirass",
-        6.0,
-        110,
-        ItemSlot::Chest,
-        0.9,
-        120.0,
-        50.0,
-        0.08,
-        0.65,
-    ),
-    armor(
-        "padded_skirt",
-        0.8,
-        5,
-        ItemSlot::Stomach,
-        0.45,
-        50.0,
-        40.0,
-        0.35,
-        0.92,
-    ),
-    armor(
-        "mail_skirt",
-        2.5,
-        30,
-        ItemSlot::Stomach,
-        0.65,
-        70.0,
-        30.0,
-        0.8,
-        0.85,
-    ),
-    armor(
-        "fauld",
-        1.6,
-        40,
-        ItemSlot::Stomach,
-        0.7,
-        95.0,
-        35.0,
-        0.2,
-        0.78,
-    ),
-    armor(
-        "tassets",
-        2.0,
-        55,
-        ItemSlot::Stomach,
-        0.75,
-        100.0,
-        35.0,
-        0.18,
-        0.75,
-    ),
-];
-
-fn equipment_quality(item_id: &str) -> u8 {
-    match item_id {
-        "buckler" => 1,
-        "katzbalger" | "padded_skirt" => 2,
-        "arming_cap" | "arming_doublet" | "arming_sword" => 4,
-        "padded_chausses" | "brigandine" => 5,
-        _ => 3,
+    if let Some(alcohol) = definition.capabilities.alcohol {
+        item.alcohol_serving_ml = alcohol.serving_ml;
+        item.alcohol_abv_basis_points = alcohol.abv_basis_points;
+        item.alcohol_net_hydration_ml = alcohol.net_hydration_ml;
+        item.alcohol_disinfectant_effectiveness = alcohol.disinfectant_effectiveness;
+        item.alcohol_disinfectant_focused = alcohol.disinfectant_focused;
+        item.alcohol_potable = alcohol.potable;
     }
+    if let Some(durable) = definition.capabilities.durability {
+        item.quality = durable.quality;
+        item.durability_yield = durable.yield_j;
+        item.durability_fracture = durable.fracture_j;
+        item.durability_wear = durable.wear;
+        item.durability_failure_share = durable.failure_share;
+        item.edge_sensitivity = durable.edge_sensitivity;
+        item.handling_sensitivity = durable.handling_sensitivity;
+    }
+    item
 }
 
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     crate::time::initialize_time(ctx);
     crate::disease::initialize_physiology_key(ctx);
-    log::info!("Populating items...");
-
-    define_item(ctx, "torch", 0.5);
-    define_item(ctx, "arrow", 0.05);
-    for id in CURRENCY_IDS {
-        ctx.db.item().insert(Item {
-            id: id.into(),
-            weight: 0.01,
-            base_value: Some(1),
-            kind: ItemKind::Currency,
-            ..Item::default()
-        });
+    log::info!(
+        "Populating items from catalog revision {}",
+        adventuresim_core::item_catalog::revision()
+    );
+    for definition in adventuresim_core::item_catalog::catalog() {
+        ctx.db.item().insert(project_definition(definition));
     }
-    define_item(ctx, "bandage", 0.05);
-    upsert_surgery_items(ctx);
-    for (id, weight) in [
-        ("honey", 0.05),
-        ("sage", 0.05),
-        ("dried_mint", 0.05),
-        ("charcoal", 0.15),
-        ("willow_bark", 0.10),
-        ("vinegar", 0.03),
-        ("poppy", 0.05),
-        ("comfrey", 0.08),
-        ("garlic", 0.10),
-        ("oatmeal", 0.25),
-        ("rosewater", 0.20),
-    ] {
-        let food = adventuresim_core::food::definition(id);
-        ctx.db.item().insert(Item {
-            id: id.into(),
-            weight,
-            base_value: adventuresim_core::strategic_economy::medicinal_ingredient_value(id),
-            nutrition_kcal: food.map_or(0.0, |food| food.kcal_per_unit),
-            quality: food.map_or(3, |food| food.default_quality),
-            kind: ItemKind::Ingredient,
-            ..Item::default()
-        });
-    }
-    for profile in adventuresim_core::physiology::INTERVENTION_PROFILES {
-        ctx.db.item().insert(Item {
-            id: profile.preparation_id.into(),
-            weight: 0.25,
-            base_value: Some(6),
-            kind: ItemKind::Medication,
-            ..Item::default()
-        });
-    }
-    for food in adventuresim_core::food::FOOD_CATALOG {
-        // These dual-purpose remedies retain Ingredient semantics for the herbalist while
-        // also being accepted by the food-lot/cooking rules.
-        if matches!(food.id, "garlic" | "sage" | "honey" | "vinegar") {
-            continue;
-        }
-        ctx.db.item().insert(Item {
-            id: food.id.into(),
-            weight: food.mass_kg_per_unit,
-            base_value: Some(food.value_per_unit.ceil() as u32),
-            nutrition_kcal: food.kcal_per_unit,
-            quality: food.default_quality,
-            kind: ItemKind::Food,
-            ..Item::default()
-        });
-    }
-    for item in [
-        Item {
-            id: "small_beer".into(),
-            weight: 0.52,
-            base_value: Some(1),
-            alcohol_serving_ml: 500,
-            alcohol_abv_basis_points: 300,
-            alcohol_net_hydration_ml: 425,
-            alcohol_disinfectant_effectiveness: 10,
-            alcohol_potable: true,
-            ..Item::default()
-        },
-        Item {
-            id: "table_wine".into(),
-            weight: 0.26,
-            base_value: Some(2),
-            alcohol_serving_ml: 250,
-            alcohol_abv_basis_points: 1_200,
-            alcohol_net_hydration_ml: 150,
-            alcohol_disinfectant_effectiveness: 30,
-            alcohol_potable: true,
-            ..Item::default()
-        },
-        Item {
-            id: "aqua_vitae".into(),
-            weight: 0.11,
-            base_value: Some(4),
-            alcohol_serving_ml: 100,
-            alcohol_abv_basis_points: 5_000,
-            alcohol_net_hydration_ml: 0,
-            alcohol_disinfectant_effectiveness: 100,
-            alcohol_disinfectant_focused: true,
-            alcohol_potable: true,
-            ..Item::default()
-        },
-    ] {
-        if !adventuresim_core::alcohol::properties_valid(crate::alcohol::properties(&item)) {
-            return Err(format!(
-                "Alcohol definition {} has invalid ABV or hydration metadata",
-                item.id
-            ));
-        }
-        ctx.db.item().insert(item);
-    }
-    for (id, weight, value) in [
-        ("cooking_pan", 1.2, 6),
-        ("cooking_pot", 2.2, 8),
-        ("portable_oven", 8.0, 25),
-    ] {
-        ctx.db.item().insert(Item {
-            id: id.into(),
-            weight,
-            base_value: Some(value),
-            ..Item::default()
-        });
-    }
-    ctx.db.item().insert(Item {
-        id: "waterskin".into(),
-        weight: 0.5,
-        base_value: Some(2),
-        water_capacity_ml: 4_000,
-        ..Item::default()
-    });
-    define_clothing(ctx, "linen_tunic", 0.6);
-
-    for definition in WEAPONS.iter().chain(SHIELDS).chain(ARMOR) {
-        ctx.db.item().insert(Item {
-            id: definition.id.into(),
-            weight: definition.weight,
-            base_value: Some(definition.base_value),
-            slot: definition.slot,
-            kind: definition.kind,
-            accuracy: definition.accuracy,
-            reach: definition.reach,
-            block: definition.block,
-            coverage: definition.coverage,
-            penetration: definition.penetration,
-            resistance: definition.resistance,
-            padding: definition.padding,
-            flexibility: definition.flexibility,
-            range_of_motion: definition.range_of_motion,
-            precise: definition.precise,
-            balance: definition.balance,
-            melee: definition.melee,
-            ranged: definition.ranged,
-            weapon_skills: if definition.kind == ItemKind::Weapon {
-                weapon_skills(definition.id)
-            } else {
-                WeaponSkillDistribution::default()
-            },
-            blunt: definition.blunt,
-            slash: definition.slash,
-            pierce: definition.pierce,
-            quality: equipment_quality(definition.id),
-            durability_yield: if definition.kind == ItemKind::Armor {
-                35.0
-            } else {
-                65.0
-            },
-            durability_fracture: if definition.kind == ItemKind::Armor {
-                130.0
-            } else {
-                100.0
-            },
-            durability_wear: if definition.kind == ItemKind::Armor {
-                0.18
-            } else {
-                0.10
-            },
-            durability_failure_share: if matches!(definition.id, "brigandine" | "jack_of_plates") {
-                0.08
-            } else {
-                0.65
-            },
-            edge_sensitivity: if definition.kind == ItemKind::Weapon && !definition.blunt {
-                0.8
-            } else {
-                0.2
-            },
-            handling_sensitivity: if definition.kind == ItemKind::Armor {
-                0.7
-            } else {
-                0.5
-            },
-            ..Item::default()
-        });
-    }
-
     Ok(())
 }
 
 pub(crate) fn upsert_surgery_items(ctx: &ReducerContext) {
-    for definition in [
-        Item {
-            id: "surgery_kit".into(),
-            weight: 2.5,
-            base_value: Some(60),
-            kind: ItemKind::Simple,
-            ..Item::default()
-        },
-        Item {
-            id: "splint".into(),
-            weight: 0.8,
-            base_value: Some(4),
-            kind: ItemKind::Simple,
-            ..Item::default()
-        },
-        Item {
-            id: crate::filth::SOAP_ITEM_ID.into(),
-            weight: 0.25,
-            base_value: Some(3),
-            kind: ItemKind::Simple,
-            ..Item::default()
-        },
-    ] {
-        if ctx.db.item().id().find(definition.id.clone()).is_some() {
-            ctx.db.item().id().update(definition);
-        } else {
-            ctx.db.item().insert(definition);
-        }
-    }
-}
-
-/// Applies recruitment precision calibration to databases created before the
-/// numeric weapon-precision scale was introduced.
-#[reducer]
-pub fn calibrate_weapon_precision(ctx: &ReducerContext) {
-    for (item_id, accuracy) in [("club", 0.5), ("halberd", 1.1)] {
-        if let Some(mut item) = ctx.db.item().id().find(item_id.to_string()) {
-            item.accuracy = accuracy;
+    for id in ["surgery_kit", "splint", crate::filth::SOAP_ITEM_ID] {
+        let definition = adventuresim_core::item_catalog::definition(id)
+            .expect("validated surgery item reference");
+        let item = project_definition(definition);
+        if ctx.db.item().id().find(id.to_owned()).is_some() {
             ctx.db.item().id().update(item);
+        } else {
+            ctx.db.item().insert(item);
         }
     }
-}
-
-pub fn define_item(ctx: &ReducerContext, item_id: &str, weight: f32) {
-    ctx.db.item().insert(Item {
-        id: item_id.to_string(),
-        weight,
-        base_value: Some((weight * 10.0).ceil() as u32),
-        kind: ItemKind::Simple,
-        ..Item::default()
-    });
-}
-
-/// Backfill base values for item records created before values were added to
-/// the item schema. New records receive these values in their definition
-/// reducers; this migration intentionally leaves existing explicit values
-/// untouched.
-#[reducer]
-pub fn backfill_item_values(ctx: &ReducerContext) {
-    for mut item in ctx.db.item().iter() {
-        if item.base_value.is_some() {
-            continue;
-        }
-
-        let multiplier = match item.kind {
-            ItemKind::Simple => 10.0,
-            ItemKind::Weapon => 15.0,
-            ItemKind::Armor | ItemKind::Clothing => 25.0,
-            ItemKind::Shield => 8.0,
-            ItemKind::Currency => 1.0,
-            ItemKind::Ingredient => 10.0,
-            ItemKind::Medication => 1.0,
-            ItemKind::Food => 4.0,
-        };
-        item.base_value = Some((item.weight * multiplier).ceil() as u32);
-        ctx.db.item().id().update(item);
-    }
-}
-
-pub fn define_weapon(
-    ctx: &ReducerContext,
-    item_id: &str,
-    weight: f32,
-    accuracy: f32,
-    penetration: f32,
-    reach: f32,
-    balance: f32,
-    precise: bool,
-    melee: bool,
-    ranged: bool,
-    blunt: bool,
-    slash: bool,
-    pierce: bool,
-) {
-    ctx.db.item().insert(Item {
-        id: item_id.to_string(),
-        weight,
-        base_value: Some((weight * 15.0).ceil() as u32),
-        accuracy,
-        penetration,
-        reach,
-        balance,
-        precise,
-        melee,
-        ranged,
-        weapon_skills: weapon_skills(item_id),
-        blunt,
-        slash,
-        pierce,
-        kind: ItemKind::Weapon,
-        quality: 1,
-        durability_yield: 55.0,
-        durability_fracture: 95.0,
-        durability_wear: 0.1,
-        durability_failure_share: 0.65,
-        edge_sensitivity: if slash || pierce { 0.8 } else { 0.2 },
-        handling_sensitivity: 0.5,
-        ..Item::default()
-    });
-}
-
-pub fn define_shield(ctx: &ReducerContext, item_id: &str, weight: f32, block: f32) {
-    ctx.db.item().insert(Item {
-        id: item_id.to_string(),
-        weight,
-        base_value: Some((weight * 8.0).ceil() as u32),
-        block,
-        kind: ItemKind::Shield,
-        quality: 1,
-        durability_yield: 35.0,
-        durability_fracture: 100.0,
-        durability_wear: 0.15,
-        durability_failure_share: 0.4,
-        handling_sensitivity: 0.8,
-        ..Item::default()
-    });
-}
-
-pub fn define_clothing(ctx: &ReducerContext, item_id: &str, weight: f32) {
-    ctx.db.item().insert(Item {
-        id: item_id.to_string(),
-        weight,
-        base_value: Some((weight * 25.0).ceil() as u32),
-        kind: ItemKind::Clothing,
-        quality: 1,
-        durability_yield: 12.0,
-        durability_fracture: 35.0,
-        durability_wear: 0.2,
-        durability_failure_share: 0.8,
-        handling_sensitivity: 0.5,
-        ..Item::default()
-    });
-}
-
-pub fn define_armor(
-    ctx: &ReducerContext,
-    item_id: &str,
-    weight: f32,
-    slot: ItemSlot,
-    coverage: f32,
-    resistance: f32,
-    padding: f32,
-    flexibility: f32,
-    range_of_motion: f32,
-) {
-    ctx.db.item().insert(Item {
-        id: item_id.to_string(),
-        weight,
-        base_value: Some((weight * 25.0).ceil() as u32),
-        slot,
-        coverage,
-        resistance,
-        padding,
-        flexibility,
-        range_of_motion,
-        kind: ItemKind::Armor,
-        quality: 1,
-        durability_yield: 30.0,
-        durability_fracture: 125.0,
-        durability_wear: 0.18,
-        durability_failure_share: 0.65,
-        handling_sensitivity: 0.7,
-        ..Item::default()
-    });
 }
 
 pub(crate) fn inventory_food_definition(
@@ -1687,17 +727,27 @@ mod tests {
 
     #[test]
     fn catalog_weapon_skill_distributions_cover_hybrids_and_ranged_families() {
-        let halberd = weapon_skills("halberd").core();
+        let halberd =
+            project_definition(adventuresim_core::item_catalog::definition("halberd").unwrap())
+                .weapon_skills
+                .core();
         assert_eq!(halberd.polearm, 1.0 / 3.0);
         assert_eq!(halberd.axe, 1.0 / 3.0);
         assert_eq!(halberd.bludgeon, 1.0 / 3.0);
         assert!(halberd.validate(true, false));
 
-        let hand_axe = weapon_skills("hand_axe").core();
+        let hand_axe =
+            project_definition(adventuresim_core::item_catalog::definition("hand_axe").unwrap())
+                .weapon_skills
+                .core();
         assert_eq!(hand_axe.axe, 0.5);
         assert_eq!(hand_axe.knife, 0.5);
 
-        let crossbow = weapon_skills("heavy_crossbow").core();
+        let crossbow = project_definition(
+            adventuresim_core::item_catalog::definition("heavy_crossbow").unwrap(),
+        )
+        .weapon_skills
+        .core();
         assert_eq!(crossbow.crossbow, 1.0);
         assert!(crossbow.validate(false, true));
     }
@@ -1738,26 +788,33 @@ mod tests {
 
     #[test]
     fn historical_equipment_catalog_is_well_formed() {
-        let definitions: Vec<_> = WEAPONS.iter().chain(SHIELDS).chain(ARMOR).collect();
-        let mut ids = HashSet::new();
-
-        assert!(WEAPONS.len() > ARMOR.len());
+        let projected: Vec<_> = adventuresim_core::item_catalog::catalog()
+            .iter()
+            .map(project_definition)
+            .filter(|item| {
+                matches!(
+                    item.kind,
+                    ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
+                )
+            })
+            .collect();
+        assert_eq!(projected.len(), 55);
         assert_eq!(
-            ARMOR
+            projected
                 .iter()
-                .filter(|definition| definition.slot == ItemSlot::Head)
+                .filter(|definition| {
+                    definition.kind == ItemKind::Armor && definition.slot == ItemSlot::Head
+                })
                 .count(),
             8
         );
-
-        for definition in definitions {
+        for definition in projected {
+            assert!(definition.weight > 0.0, "{} has no weight", definition.id);
             assert!(
-                ids.insert(definition.id),
-                "duplicate item id: {}",
+                definition.base_value.is_some(),
+                "{} has no value",
                 definition.id
             );
-            assert!(definition.weight > 0.0, "{} has no weight", definition.id);
-            assert!(definition.base_value > 0, "{} has no value", definition.id);
             assert!(
                 !definition.id.starts_with("bot_"),
                 "{} is a placeholder rather than historical equipment",
@@ -1798,14 +855,12 @@ mod tests {
 
     #[test]
     fn round_and_heater_shields_have_a_weight_block_tradeoff() {
-        let round = SHIELDS
-            .iter()
-            .find(|item| item.id == "round_shield")
-            .unwrap();
-        let heater = SHIELDS
-            .iter()
-            .find(|item| item.id == "heater_shield")
-            .unwrap();
+        let round = project_definition(
+            adventuresim_core::item_catalog::definition("round_shield").unwrap(),
+        );
+        let heater = project_definition(
+            adventuresim_core::item_catalog::definition("heater_shield").unwrap(),
+        );
         assert!(round.weight < heater.weight);
         assert!(round.block < heater.block);
         assert!(!(round.weight <= heater.weight && round.block >= heater.block));
@@ -1814,11 +869,10 @@ mod tests {
 
     #[test]
     fn development_catalog_exercises_every_quality_level() {
-        let qualities: HashSet<_> = WEAPONS
+        let qualities: HashSet<_> = adventuresim_core::item_catalog::catalog()
             .iter()
-            .chain(SHIELDS)
-            .chain(ARMOR)
-            .map(|definition| equipment_quality(definition.id))
+            .filter_map(|definition| definition.capabilities.durability)
+            .map(|durability| durability.quality)
             .collect();
         assert_eq!(qualities, HashSet::from([1, 2, 3, 4, 5]));
     }
