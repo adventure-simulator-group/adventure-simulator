@@ -643,6 +643,103 @@ pub struct SocialOutcome {
     pub revealed_belief: bool,
 }
 
+/// The small personality surface used by an ordinary conversation.
+///
+/// Codes use the canonical personality values: neutral is zero, while one and
+/// two are the opposed authored traits for Sociability and Outlook. Keeping
+/// this input explicit lets settlement NPCs use their authored Mirth and
+/// Transparency while treating personality axes they do not own as neutral.
+#[derive(Debug, Clone, Copy)]
+pub struct CasualChatDisposition {
+    pub mirth: Mirth,
+    pub transparency: Transparency,
+    pub sociability: i8,
+    pub outlook: i8,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CasualChatInput {
+    pub charm_check: f32,
+    pub insight_check: f32,
+    pub affinity: f32,
+    pub familiarity_hours: f32,
+    pub actor: CasualChatDisposition,
+    pub target: CasualChatDisposition,
+    /// Injected deterministic roll, from zero to one, for one quarter hour.
+    pub roll: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CasualChatOutcome {
+    pub positive: bool,
+    pub morale_delta: f32,
+    pub affinity_delta: f32,
+}
+
+/// Mutual personality fit for an unstructured conversation. Matching strong
+/// traits help, opposed traits hinder, and neutral traits reveal nothing about
+/// the outcome on their own.
+pub fn casual_chat_personality_fit(
+    actor: CasualChatDisposition,
+    target: CasualChatDisposition,
+) -> f32 {
+    let paired = |left: i8, right: i8, same: f32, opposed: f32| {
+        if left == 0 || right == 0 {
+            0.0
+        } else if left == right {
+            same
+        } else {
+            opposed
+        }
+    };
+    let mirth = match (actor.mirth, target.mirth) {
+        (Mirth::Neutral, _) | (_, Mirth::Neutral) => 0.0,
+        (left, right) if left == right => 0.45,
+        _ => -0.5,
+    };
+    let transparency = match (actor.transparency, target.transparency) {
+        (Transparency::Neutral, _) | (_, Transparency::Neutral) => 0.0,
+        (left, right) if left == right => 0.25,
+        _ => -0.2,
+    };
+    (mirth
+        + transparency
+        + paired(actor.sociability, target.sociability, 0.35, -0.4)
+        + paired(actor.outlook, target.outlook, 0.2, -0.25))
+    .clamp(-1.5, 1.5)
+}
+
+/// Resolve one quarter hour of ordinary conversation. Even a skilled,
+/// compatible pair can have an awkward stretch, while poor matches can still
+/// occasionally connect. The result deliberately exposes no chance or roll.
+pub fn resolve_casual_chat(input: CasualChatInput) -> CasualChatOutcome {
+    let personality_fit = casual_chat_personality_fit(input.actor, input.target);
+    let relationship = (input.affinity / 100.0).clamp(-1.0, 1.0) * 0.12
+        + (input.familiarity_hours / 100.0).min(1.0) * 0.08;
+    let chance = (0.38
+        + input.charm_check.clamp(0.0, 5.0) * 0.065
+        + input.insight_check.clamp(0.0, 5.0) * 0.035
+        + personality_fit * 0.12
+        + relationship)
+        .clamp(0.08, 0.92);
+    let positive = input.roll.clamp(0.0, 1.0) < chance;
+    let morale_delta = if positive {
+        0.35 + input.charm_check.clamp(0.0, 5.0) * 0.05
+    } else {
+        -(0.3 + (-personality_fit).max(0.0) * 0.2)
+    };
+    let affinity_delta = if positive {
+        affinity_gain(input.affinity, morale_delta)
+    } else {
+        morale_delta * 0.65
+    };
+    CasualChatOutcome {
+        positive,
+        morale_delta,
+        affinity_delta,
+    }
+}
+
 pub fn settle_affinity(anchor: f32, elapsed_minutes: u64) -> f32 {
     if !anchor.is_finite() {
         return 0.0;
@@ -903,6 +1000,75 @@ pub fn resolve_witness_approach(input: WitnessApproachInput) -> WitnessApproachO
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn casual_chat_uses_social_skills_and_mutual_personality_without_certainty() {
+        let compatible = CasualChatDisposition {
+            mirth: Mirth::Merry,
+            transparency: Transparency::Open,
+            sociability: 1,
+            outlook: 1,
+        };
+        let incompatible = CasualChatDisposition {
+            mirth: Mirth::Grave,
+            transparency: Transparency::Guarded,
+            sociability: 2,
+            outlook: 2,
+        };
+        let skilled = resolve_casual_chat(CasualChatInput {
+            charm_check: 5.0,
+            insight_check: 5.0,
+            affinity: 0.0,
+            familiarity_hours: 0.0,
+            actor: compatible,
+            target: compatible,
+            roll: 0.5,
+        });
+        let poor_match = resolve_casual_chat(CasualChatInput {
+            charm_check: 0.0,
+            insight_check: 0.0,
+            affinity: 0.0,
+            familiarity_hours: 0.0,
+            actor: compatible,
+            target: incompatible,
+            roll: 0.5,
+        });
+        assert!(skilled.positive);
+        assert!(skilled.affinity_delta > 0.0);
+        assert!(!poor_match.positive);
+        assert!(poor_match.affinity_delta < 0.0);
+
+        assert!(
+            !resolve_casual_chat(CasualChatInput {
+                roll: 0.99,
+                ..CasualChatInput {
+                    charm_check: 5.0,
+                    insight_check: 5.0,
+                    affinity: 100.0,
+                    familiarity_hours: 100.0,
+                    actor: compatible,
+                    target: compatible,
+                    roll: 0.0,
+                }
+            })
+            .positive
+        );
+        assert!(
+            resolve_casual_chat(CasualChatInput {
+                roll: 0.0,
+                ..CasualChatInput {
+                    charm_check: 0.0,
+                    insight_check: 0.0,
+                    affinity: -100.0,
+                    familiarity_hours: 0.0,
+                    actor: compatible,
+                    target: incompatible,
+                    roll: 1.0,
+                }
+            })
+            .positive
+        );
+    }
 
     #[test]
     fn decay_is_partition_independent_and_never_crosses_neutral() {

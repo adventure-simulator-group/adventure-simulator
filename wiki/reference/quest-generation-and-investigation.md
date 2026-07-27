@@ -27,6 +27,12 @@ server-private entropy and stored; public NPC IDs do not determine them. Named
 morale-event rows preserve why morale changes. Current settled morale,
 relationship affinity, familiarity, personality, and the chosen approach all
 affect resolution, while browser projections remain qualitative.
+Ordinary timed chat is available from the normal social menu rather than the
+quest transcript. It may improve or strain morale and affinity and always
+builds familiarity, but it never diagnoses pressure or releases testimony.
+Insight and the quest-specific Listen, Reassure, Invoke duty, and Bluff
+approaches remain available only in an active dialogue session after their
+observer-specific prerequisites are met.
 
 Field action skills are deliberately narrow. `FollowTracks` and
 `ReacquireTracks` use the matching Terrain skill; other investigation actions
