@@ -214,6 +214,7 @@ mod tests {
         let source = include_str!("evidence.rs");
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains("backend_bestiary_deductions"));
+        assert!(production.contains("owner_character_id = {character_id}"));
         assert!(production.contains("support_band"));
         assert!(production.contains("provenance"));
         assert!(!production.contains("support_bps"));

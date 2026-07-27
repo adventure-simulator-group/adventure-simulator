@@ -215,6 +215,10 @@ mod tests {
             production
                 .contains("backend_investigation_cases WHERE owner_character_id = {character_id}")
         );
+        assert!(
+            production
+                .contains("backend_bestiary_deductions WHERE owner_character_id = {character_id}")
+        );
         assert!(!production.contains("target_id"));
         assert!(!production.contains("seed"));
         assert!(!production.contains("investigation_case_authority"));
