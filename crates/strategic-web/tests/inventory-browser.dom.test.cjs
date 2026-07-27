@@ -16,7 +16,7 @@ function currencyRow(id, name, quantity, target = 0) {
 function ordinaryRow(id, name, quantity) {
   return `<tr class="trade-inventory-row" data-inventory-quantity="${quantity}" data-item-key="${id}">
     <td class="inventory-item-type"></td>
-    <td class="inventory-item-name"><span data-item-name="${name}" data-item-kind="supply">${name}</span></td>
+    <td class="inventory-item-name"><span data-item-name="${name}" data-item-kind="supply" data-item-edit-url="https://github.com/example/repo/edit/main/content/items/catalog.yaml#L4">${name}</span></td>
     <td class="inventory-count">${quantity}</td>
     <td class="inventory-weight">1</td><td class="inventory-gold">999</td>
   </tr>`;
@@ -65,6 +65,25 @@ function fixture() {
   global.document = document;
   return { window, document, browser: document.querySelector("[data-inventory-browser]") };
 }
+
+test("expanded item details expose a developer-only YAML editor button", () => {
+  const { document, browser } = fixture();
+  delete require.cache[require.resolve("../static/inventory-browser.js")];
+  const inventory = require("../static/inventory-browser.js");
+  inventory.mountAll(document);
+
+  const row = browser.querySelector('[data-item-key="apple"]');
+  assert.equal(browser.querySelector(".inventory-source-link"), null);
+  row.click();
+
+  const link = row.nextElementSibling.querySelector(".inventory-source-link");
+  assert.equal(row.getAttribute("aria-expanded"), "true");
+  assert.equal(link.href, "https://github.com/example/repo/edit/main/content/items/catalog.yaml#L4");
+  assert.equal(link.target, "_blank");
+  assert.equal(link.rel, "noopener noreferrer");
+  assert.ok(link.hasAttribute("data-developer-only"));
+  assert.equal(link.textContent, "Edit YAML");
+});
 
 test("mixed currency DOM stays one aggregate through normalization, staging, and live insertion", () => {
   const { document, browser } = fixture();

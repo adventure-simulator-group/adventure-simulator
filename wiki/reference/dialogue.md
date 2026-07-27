@@ -121,9 +121,10 @@ text continues through the independent free-form chat stream.
 ## Developer mode and source editing
 
 The hammer button immediately left of the character portrait toggles developer
-mode. It is off by default and persisted locally in the browser. Its only
-initial consumer is dialogue: authored NPC lines receive keyboard-accessible
-GitHub editor links in developer mode. Repository and ref are centralized by
+mode. It is off by default and persisted locally in the browser. Its
+content-editing consumers include dialogue and item definitions: authored NPC
+lines receive keyboard-accessible GitHub editor links, and expanding a concrete
+inventory row reveals an **Edit YAML** button. Repository and ref are centralized by
 the server (`ADVENTURESIM_SOURCE_REF`, default `main`); source paths and spans
 come from compilation, so writers never maintain line numbers. Unsupported or
 unsafe paths do not produce links. Extend developer mode only by querying the

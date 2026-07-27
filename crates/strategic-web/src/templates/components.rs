@@ -51,6 +51,18 @@ pub fn item_display_name(item_id: &str) -> String {
     readable
 }
 
+/// Resolve a compiled item source location to the same centrally configured
+/// GitHub editor used by dialogue developer links.
+pub fn item_source_edit_url(item_id: &str) -> Option<String> {
+    let source = adventuresim_core::item_catalog::source_for_item(item_id)?;
+    adventuresim_dialogue::github_edit_url_for_location(
+        "adventure-simulator-group/adventure-simulator",
+        option_env!("ADVENTURESIM_SOURCE_REF").unwrap_or("main"),
+        &source.file,
+        source.line,
+    )
+}
+
 pub fn item_type_header() -> Markup {
     html! {
         th scope="col" class="inventory-column-type" title="Item type" aria-label="Item type" {
@@ -406,6 +418,18 @@ mod icon_tests {
         assert_eq!(item_display_name("arming_sword"), "Arming sword");
         assert_eq!(item_display_name("torch"), "Torch");
         assert_eq!(item_display_name(""), "");
+    }
+
+    #[test]
+    fn item_source_links_use_the_compiled_location_and_configured_ref() {
+        let url = item_source_edit_url("arming_sword").unwrap();
+        assert!(
+            url.starts_with(
+                "https://github.com/adventure-simulator-group/adventure-simulator/edit/"
+            )
+        );
+        assert!(url.contains("/content/items/catalog.yaml#L"));
+        assert_eq!(item_source_edit_url("modded_item"), None);
     }
 }
 

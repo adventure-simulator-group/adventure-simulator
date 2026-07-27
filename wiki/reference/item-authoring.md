@@ -1,5 +1,10 @@
 # Item definition authoring
 
+When browser-local developer mode is enabled, expanding a concrete inventory
+row shows an **Edit YAML** button that opens the definition at its compiled
+file and line in GitHub. Source locations are generated during catalog
+compilation; authors should not maintain line numbers or source URLs.
+
 Item metadata is authored in `content/items/*.yaml`. These files use YAML's
 strict JSON-compatible subset: quote every mapping key and string, use JSON
 arrays/objects, and do not use aliases, tags, implicit scalars, comments, or

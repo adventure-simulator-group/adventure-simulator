@@ -5,11 +5,21 @@
 //! embedded representation and never opens loose content files.
 
 pub use crate::item_catalog_schema::*;
+use serde::Deserialize;
 use std::sync::OnceLock;
 
 include!(concat!(env!("OUT_DIR"), "/item_catalog.rs"));
 
 static CATALOG: OnceLock<Vec<ItemDefinition>> = OnceLock::new();
+static SOURCE_MAP: OnceLock<Vec<ItemSourceRef>> = OnceLock::new();
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct ItemSourceRef {
+    pub id: String,
+    pub file: String,
+    pub line: usize,
+    pub column: usize,
+}
 
 pub fn catalog() -> &'static [ItemDefinition] {
     CATALOG
@@ -31,6 +41,19 @@ pub fn definition(id: &str) -> Option<&'static ItemDefinition> {
         .binary_search_by_key(&id, |definition| definition.id.as_str())
         .ok()
         .map(|index| &catalog()[index])
+}
+
+pub fn source_for_item(id: &str) -> Option<&'static ItemSourceRef> {
+    let sources = SOURCE_MAP.get_or_init(|| {
+        let mut sources: Vec<ItemSourceRef> = serde_json::from_str(ITEM_CATALOG_SOURCE_MAP_JSON)
+            .expect("validated embedded item source map");
+        sources.sort_by(|a, b| a.id.cmp(&b.id));
+        sources
+    });
+    sources
+        .binary_search_by_key(&id, |source| source.id.as_str())
+        .ok()
+        .map(|index| &sources[index])
 }
 
 pub const fn revision() -> &'static str {
@@ -78,6 +101,17 @@ mod tests {
             "Arming sword"
         );
         assert!(definition("missing").is_none());
+        let sword_source = source_for_item("arming_sword").unwrap();
+        assert_eq!(sword_source.file, "content/items/catalog.yaml");
+        assert!(sword_source.line > 1);
+        assert!(sword_source.column > 0);
+        assert_eq!(source_for_item("missing"), None);
+        assert!(
+            catalog()
+                .iter()
+                .all(|item| source_for_item(&item.id).is_some()),
+            "every item definition must retain an authored source location"
+        );
 
         let stable_ids = catalog()
             .iter()

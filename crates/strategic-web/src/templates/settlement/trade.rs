@@ -20,8 +20,8 @@ use crate::spacetimedb::{
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
-    empty_state, game_icon, item_display_name, item_type_header, item_type_icon,
-    settlement_layout_with_session, sidebar_section,
+    empty_state, game_icon, item_display_name, item_source_edit_url, item_type_header,
+    item_type_icon, settlement_layout_with_session, sidebar_section,
 };
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -1158,10 +1158,12 @@ pub(in crate::templates) fn item_name_with_quality(
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
     let currency_name = adventuresim_core::strategic_currency::currency_name(item_id);
+    let edit_url = item_source_edit_url(item_id);
     if let Some(currency_name) = currency_name {
         html! {
             span class="inventory-item-label" data-item-name="Coin"
-                data-item-kind="currency" data-currency-name=(currency_name) { "Coin" }
+                data-item-kind="currency" data-currency-name=(currency_name)
+                data-item-edit-url=[edit_url] { "Coin" }
         }
     } else {
         let display_name = item_display_name(item_id);
@@ -1197,6 +1199,7 @@ fn item_name_with_display_quality(
     definition: Option<&crate::spacetimedb::ItemDefinition>,
     quality_override: Option<u8>,
 ) -> Markup {
+    let edit_url = item_source_edit_url(item_id);
     let alcohol_group = definition
         .filter(|item| item.alcohol_serving_ml > 0)
         .map(|_| "alcohol");
@@ -1259,6 +1262,7 @@ fn item_name_with_display_quality(
             data-stat-range-of-motion=[definition.map(|item| weight_display(item.range_of_motion))]
             data-detail-slot=[definition.map(|item| format!("{:?}", item.slot))]
             data-detail-balance=[definition.map(|item| weight_display(item.balance))]
+            data-item-edit-url=[edit_url]
             data-detail-mode=[definition.map(|item| match (item.melee, item.ranged, item.precise) { (true, true, true) => "Melee, ranged, precise", (true, true, false) => "Melee and ranged", (true, false, true) => "Melee, precise", (false, true, true) => "Ranged, precise", (true, false, false) => "Melee", (false, true, false) => "Ranged", (false, false, true) => "Precise", _ => "—" }.to_string())] {
             (display_name)
         }
@@ -1963,6 +1967,8 @@ mod tests {
         };
         let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
         assert!(rendered.contains(">Coin<"));
+        assert!(rendered.contains("data-item-edit-url=\"https://github.com/"));
+        assert!(rendered.contains("content/items/catalog.yaml#L"));
         assert!(rendered.contains("data-currency-name=\"Lübeck mark\""));
         assert!(!rendered.contains(">Lübeck mark<"));
     }
@@ -1979,6 +1985,7 @@ mod tests {
         assert!(rendered.contains("data-item-name=\"small_beer\""));
         assert!(rendered.contains("data-item-group=\"alcohol\""));
         assert!(rendered.contains("data-group-name=\"Alcohol\""));
+        assert!(rendered.contains("data-item-edit-url=\"https://github.com/"));
     }
 
     #[test]
