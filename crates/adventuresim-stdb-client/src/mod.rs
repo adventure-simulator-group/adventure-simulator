@@ -17,6 +17,7 @@ pub mod agriculture_industry_type;
 pub mod alcohol_consumption_table;
 pub mod alcohol_consumption_type;
 pub mod answer_dialogue_prompt_reducer;
+pub mod approach_dialogue_witness_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
 pub mod authorize_tactical_server_claim_reducer;
@@ -48,6 +49,8 @@ pub mod backend_dialogue_session_type;
 pub mod backend_dialogue_sessions_table;
 pub mod backend_dialogue_topic_option_type;
 pub mod backend_dialogue_topic_options_table;
+pub mod backend_dialogue_witness_capabilities_table;
+pub mod backend_dialogue_witness_capability_type;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
 pub mod backend_investigation_action_outcome_type;
@@ -199,6 +202,7 @@ pub mod derived_historical_vegetation_cover_type;
 pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
+pub mod diagnose_dialogue_witness_reducer;
 pub mod dialogue_action_type;
 pub mod dialogue_answer_type;
 pub mod dialogue_event_type;
@@ -207,6 +211,7 @@ pub mod dialogue_participant_type;
 pub mod dialogue_prompt_type;
 pub mod dialogue_session_type;
 pub mod dialogue_topic_option_type;
+pub mod dialogue_witness_capability_type;
 pub mod direct_historical_vegetation_cover_type;
 pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
@@ -584,6 +589,7 @@ pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
 pub mod spawn_developer_quest_reducer;
+pub mod spend_dialogue_time_with_witness_reducer;
 pub mod spend_time_with_settlement_npc_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
@@ -642,6 +648,8 @@ pub mod water_distance_meters_type;
 pub mod weapon_skill_distribution_type;
 pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
+pub mod witness_social_action_receipt_type;
+pub mod witness_social_cooldown_type;
 pub mod woodland_type;
 pub mod world_clock_schedule_type;
 pub mod world_clock_table;
@@ -665,6 +673,7 @@ pub use agriculture_industry_type::AgricultureIndustry;
 pub use alcohol_consumption_table::*;
 pub use alcohol_consumption_type::AlcoholConsumption;
 pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
+pub use approach_dialogue_witness_reducer::approach_dialogue_witness;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
 pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
@@ -696,6 +705,8 @@ pub use backend_dialogue_session_type::BackendDialogueSession;
 pub use backend_dialogue_sessions_table::*;
 pub use backend_dialogue_topic_option_type::BackendDialogueTopicOption;
 pub use backend_dialogue_topic_options_table::*;
+pub use backend_dialogue_witness_capabilities_table::*;
+pub use backend_dialogue_witness_capability_type::BackendDialogueWitnessCapability;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
@@ -847,6 +858,7 @@ pub use derived_historical_vegetation_cover_type::DerivedHistoricalVegetationCov
 pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMethod;
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
+pub use diagnose_dialogue_witness_reducer::diagnose_dialogue_witness;
 pub use dialogue_action_type::DialogueAction;
 pub use dialogue_answer_type::DialogueAnswer;
 pub use dialogue_event_type::DialogueEvent;
@@ -855,6 +867,7 @@ pub use dialogue_participant_type::DialogueParticipant;
 pub use dialogue_prompt_type::DialoguePrompt;
 pub use dialogue_session_type::DialogueSession;
 pub use dialogue_topic_option_type::DialogueTopicOption;
+pub use dialogue_witness_capability_type::DialogueWitnessCapability;
 pub use direct_historical_vegetation_cover_type::DirectHistoricalVegetationCover;
 pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMethod;
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
@@ -1232,6 +1245,7 @@ pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
 pub use spawn_developer_quest_reducer::spawn_developer_quest;
+pub use spend_dialogue_time_with_witness_reducer::spend_dialogue_time_with_witness;
 pub use spend_time_with_settlement_npc_reducer::spend_time_with_settlement_npc;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
@@ -1290,6 +1304,8 @@ pub use water_distance_meters_type::WaterDistanceMeters;
 pub use weapon_skill_distribution_type::WeaponSkillDistribution;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
+pub use witness_social_action_receipt_type::WitnessSocialActionReceipt;
+pub use witness_social_cooldown_type::WitnessSocialCooldown;
 pub use woodland_type::Woodland;
 pub use world_clock_schedule_type::WorldClockSchedule;
 pub use world_clock_table::*;
@@ -1342,6 +1358,13 @@ pub enum Reducer {
         action_id: String,
         expected_revision: u64,
         catalog_revision: String,
+    },
+    ApproachDialogueWitness {
+        observer_character_id: u64,
+        session_id: String,
+        approach_kind: String,
+        action_id: String,
+        expected_revision: u64,
     },
     ApprovePartyActionRequest {
         leader_id: u64,
@@ -1462,6 +1485,12 @@ pub enum Reducer {
         character_id: u64,
         inventory_item_id: u64,
         quantity: u32,
+    },
+    DiagnoseDialogueWitness {
+        observer_character_id: u64,
+        session_id: String,
+        action_id: String,
+        expected_revision: u64,
     },
     DisbandParty {
         leader_id: u64,
@@ -1803,6 +1832,12 @@ pub enum Reducer {
         definition_json: String,
         allow_implausible: bool,
     },
+    SpendDialogueTimeWithWitness {
+        observer_character_id: u64,
+        session_id: String,
+        action_id: String,
+        expected_revision: u64,
+    },
     SpendTimeWithSettlementNpc {
         actor_id: u64,
         npc_id: String,
@@ -1938,6 +1973,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AdministerPreparation { .. } => "administer_preparation",
             Reducer::AdvanceSimulationWorldTime { .. } => "advance_simulation_world_time",
             Reducer::AnswerDialoguePrompt { .. } => "answer_dialogue_prompt",
+            Reducer::ApproachDialogueWitness { .. } => "approach_dialogue_witness",
             Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
                 "approve_party_action_request_planned"
@@ -1971,6 +2007,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DeleteRecruitmentRole { .. } => "delete_recruitment_role",
             Reducer::DeleteSavedRecruitmentRole { .. } => "delete_saved_recruitment_role",
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
+            Reducer::DiagnoseDialogueWitness { .. } => "diagnose_dialogue_witness",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
             Reducer::DiscoverInvestigationLead { .. } => "discover_investigation_lead",
@@ -2046,6 +2083,7 @@ impl __sdk::Reducer for Reducer {
                 "simulate_contract_issuer_interaction"
             }
             Reducer::SpawnDeveloperQuest { .. } => "spawn_developer_quest",
+            Reducer::SpendDialogueTimeWithWitness { .. } => "spend_dialogue_time_with_witness",
             Reducer::SpendTimeWithSettlementNpc { .. } => "spend_time_with_settlement_npc",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
@@ -2133,6 +2171,19 @@ impl __sdk::Reducer for Reducer {
                 action_id: action_id.clone(),
                 expected_revision: expected_revision.clone(),
                 catalog_revision: catalog_revision.clone(),
+}),
+            Reducer::ApproachDialogueWitness{
+                observer_character_id,
+                session_id,
+                approach_kind,
+                action_id,
+                expected_revision,
+}             => __sats::bsatn::to_vec(&approach_dialogue_witness_reducer::ApproachDialogueWitnessArgs {
+                observer_character_id: observer_character_id.clone(),
+                session_id: session_id.clone(),
+                approach_kind: approach_kind.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
 }),
             Reducer::ApprovePartyActionRequest{
                 leader_id,
@@ -2349,6 +2400,17 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 quantity: quantity.clone(),
+}),
+            Reducer::DiagnoseDialogueWitness{
+                observer_character_id,
+                session_id,
+                action_id,
+                expected_revision,
+}             => __sats::bsatn::to_vec(&diagnose_dialogue_witness_reducer::DiagnoseDialogueWitnessArgs {
+                observer_character_id: observer_character_id.clone(),
+                session_id: session_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
 }),
             Reducer::DisbandParty{
                 leader_id,
@@ -2959,6 +3021,17 @@ Reducer::BeginWorldDataImport{
                 definition_json: definition_json.clone(),
                 allow_implausible: allow_implausible.clone(),
 }),
+            Reducer::SpendDialogueTimeWithWitness{
+                observer_character_id,
+                session_id,
+                action_id,
+                expected_revision,
+}             => __sats::bsatn::to_vec(&spend_dialogue_time_with_witness_reducer::SpendDialogueTimeWithWitnessArgs {
+                observer_character_id: observer_character_id.clone(),
+                session_id: session_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+}),
             Reducer::SpendTimeWithSettlementNpc{
                 actor_id,
                 npc_id,
@@ -3203,6 +3276,7 @@ pub struct DbUpdate {
     backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableUpdate<BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableUpdate<BackendDialogueTopicOption>,
+    backend_dialogue_witness_capabilities: __sdk::TableUpdate<BackendDialogueWitnessCapability>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
@@ -3357,6 +3431,13 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_dialogue_topic_options" => {
                     db_update.backend_dialogue_topic_options.append(
                         backend_dialogue_topic_options_table::parse_table_update(table_update)?,
+                    )
+                }
+                "backend_dialogue_witness_capabilities" => {
+                    db_update.backend_dialogue_witness_capabilities.append(
+                        backend_dialogue_witness_capabilities_table::parse_table_update(
+                            table_update,
+                        )?,
                     )
                 }
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
@@ -4012,6 +4093,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_topic_options",
                 &self.backend_dialogue_topic_options,
             );
+        diff.backend_dialogue_witness_capabilities = cache
+            .apply_diff_to_table::<BackendDialogueWitnessCapability>(
+                "backend_dialogue_witness_capabilities",
+                &self.backend_dialogue_witness_capabilities,
+            );
         diff.backend_forage_receipts = cache.apply_diff_to_table::<BackendForageReceipt>(
             "backend_forage_receipts",
             &self.backend_forage_receipts,
@@ -4171,6 +4257,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_dialogue_topic_options" => db_update
                     .backend_dialogue_topic_options
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_dialogue_witness_capabilities" => db_update
+                    .backend_dialogue_witness_capabilities
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
@@ -4497,6 +4586,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_topic_options" => db_update
                     .backend_dialogue_topic_options
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_dialogue_witness_capabilities" => db_update
+                    .backend_dialogue_witness_capabilities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4793,6 +4885,8 @@ pub struct AppliedDiff<'r> {
     backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableAppliedDiff<'r, BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableAppliedDiff<'r, BackendDialogueTopicOption>,
+    backend_dialogue_witness_capabilities:
+        __sdk::TableAppliedDiff<'r, BackendDialogueWitnessCapability>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
     backend_investigation_action_outcomes:
         __sdk::TableAppliedDiff<'r, BackendInvestigationActionOutcome>,
@@ -4978,6 +5072,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendDialogueTopicOption>(
             "backend_dialogue_topic_options",
             &self.backend_dialogue_topic_options,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendDialogueWitnessCapability>(
+            "backend_dialogue_witness_capabilities",
+            &self.backend_dialogue_witness_capabilities,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
@@ -6056,6 +6155,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_dialogue_prompts_table::register_table(client_cache);
         backend_dialogue_sessions_table::register_table(client_cache);
         backend_dialogue_topic_options_table::register_table(client_cache);
+        backend_dialogue_witness_capabilities_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
@@ -6162,6 +6262,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_dialogue_prompts",
         "backend_dialogue_sessions",
         "backend_dialogue_topic_options",
+        "backend_dialogue_witness_capabilities",
         "backend_forage_receipts",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",
