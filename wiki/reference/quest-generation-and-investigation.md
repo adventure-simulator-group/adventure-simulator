@@ -272,6 +272,20 @@ has no public table accessor. Gateway projections expose only symptoms and
 observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
+Persistent settlement NPCs also cross that boundary through a dedicated
+`BackendSettlementNpc` projection. The projected row contains the NPC's stable
+identity, home settlement, player-visible appearance, profession, household,
+local role, service, and conversation identity. It deliberately excludes the
+authoritative NPC's private `sex` and internal `projection_id`. Gateway-side
+developer quest previews use visible age, presentation, profession, and role
+for witness discovery. Preview, authoritative developer compilation, and later
+victim-profile target validation share one visible-field candidate and
+presence-commitment scheme. The scheme records presentation in that commitment
+but leaves the candidate's sex selector empty for every presentation; it never
+infers private sex from `Man`, `Woman`, or `Ambiguous`. Automatic procedural
+generation remains a separate authoritative path and may use private
+demographic truth.
+
 The initial manifest remains immutable, but an unresolved generated problem
 may acquire append-only follow-up incidents as authoritative world time
 advances. At the template's authored interval, settlement activity materializes the next due
@@ -284,9 +298,19 @@ an incident-only inverse lookup. The template's authored maximum incident
 count is the current safety ceiling (five in both initial templates). Before
 that ceiling can leave a neglected case
 permanently stalled, an available resident NPC adventuring company may
-intervene after the case has aged and accumulated incidents. Recent player
-investigation or physical presence at a case site grants a grace period so the
-server does not resolve a case out from under an active party.
+intervene after the case has aged eight official days and accumulated
+incidents. The first owner-visible rumor intake grants the existing two-day
+player-activity grace once; later receipts for the same case do not extend it.
+A successfully completed investigation action or physical presence at a case site may
+refresh that grace while the case is younger than fourteen official days. The
+fourteen-day absolute case-age ceiling always resumes background intervention,
+so repeated conversations or lingering at a site cannot keep an escalating
+problem open forever. All of these bounds use the authoritative world clock,
+not a character's observer timeline. Private receipt and investigation-outcome
+authority stores a separate official activity timestamp for this purpose;
+owner-facing `learned_at` and `recorded_at` values remain on the character's
+observer chronology. A successful outcome refreshes grace only when its private
+outcome row names the exact successful attempt that produced it.
 
 Incident authority is private. A character who already knows the problem can
 receive a dry local report when rumor circulation next reaches them; an
@@ -431,12 +455,25 @@ until the evidence is learned, and the dependent capability requires knowledge
 of the exact evidence ID and successful completion of its authored predecessor,
 rather than inferring from the canonical event. Projection, failed-route
 recovery, and execution all apply those same live-support requirements.
+For a corroborated nighttime condition, the player-facing action projection
+applies the same day/night gate as reducer execution. During daytime it exposes
+the stable `night_window` reason code and an exact bounded `wait_minutes` until
+minute 1200 of the current day, derived from public world time and the
+furthest-advanced living party clock. It does not project the private event,
+cause, or unlearned pattern authority.
 Victim-specific patterns bind an opaque cohort reference to one persistent
 settlement NPC in private authority, including their authored demographic and a
 versioned presence fingerprint. The learned clue exposes only legitimate
 demographic, physical, and referral details; patrol and ambush execution
 revalidate the NPC's identity, profile, location, and availability immediately
 before resolving the action.
+The player-facing action projection applies the same current cohort-authority,
+case-binding, NPC, presence, expected-place, profile, demographic, presence
+version, and schedule predicates. If any no longer holds, the action remains
+visible but unavailable with the single observer-safe `target_changed` reason;
+the projection never identifies the NPC or reveals which private predicate
+failed. This keeps alternate public actions usable while preventing a
+permanently invalid cohort capability from remaining actionable.
 
 Generated cases create no `Contract` rows. Tavern discovery and NPC referrals
 are their entry points. Settlement activity counts open generated cases
@@ -617,6 +654,18 @@ already known to the observer.
 
 ### Strategic investigation actions
 
+Gateway projections correlate every investigation action and public outcome
+with the observer's public case ID. Generated canonical case IDs remain
+private. A public case summary carries an immutable subject established by its
+first observer journal entry; later leads and journal headlines update recency
+without replacing it in summaries or evaluator events. Dialogue topic options
+that advance a case carry that same public case
+ID (presentation-only topics carry an empty value), so clients can never apply
+a valid topic from one open case while attributing it to another. Public case
+battle rows similarly contain the observer character and public case ID rather
+than the canonical generated case ID; consumers must match observer, public
+case, party, battle, mission, and exact site.
+
 Investigation opportunities are private, versioned capabilities issued by the
 strategic authority. The browser receives only an opaque action ID, method,
 version, safe description, prerequisites, costs, uncertainty, and contribution
@@ -629,6 +678,12 @@ Rumors materialize all nine as two linked routes: witness-led search and
 observation-led interception. A recurring case begins with the exact referred
 contact; succeeding there unlocks inactive approach and watch branches.
 Disappearance/loss cases instead retain independent physical and witness roots.
+Issuance validates that initial frontier shape. Execution revalidates the
+immutable same-owner, same-case topology, while allowing the active frontier to
+advance to a single non-contact successor such as a patrol only when its
+authoritative predecessor attempt succeeded. Reissuing an already complete
+generated graph validates its stored blueprints and evolved frontier without
+reactivating initial roots; a partial generated graph fails closed.
 Successful actions unlock their successors, and failed actions reactivate a
 validated same-owner, same-case alternate. Failure text reports whether any
 other currently live-supported case route remains, including a patrol already
@@ -657,10 +712,14 @@ risk remain authoritative.
 
 Location is revalidated at execution, not merely at issuance. Contact actions
 use the referred NPC's current settlement and presence window (or the same
-settlement as a bound ask-around action). Track actions remain bound to the
-materialized predecessor area until they disclose the site; occupying another
-site from the same case counts only when its valid coordinates fall
-within that area's meter radius. Areas bind the origin settlement's coordinate
+settlement as a bound ask-around action). Physical tracking chains progress
+from an area search through a route segment to a site. Every tracking edge must
+remain same-owner and same-case, its predecessor must have succeeded, and
+position validation recursively follows the coherent chain back to its area
+origin. The same rule gates issuance, observer projection, and execution, so an
+unexecutable successor is never advertised. Occupying another site from the
+same case counts only when its valid coordinates fall within that area's meter
+radius. Areas bind the origin settlement's coordinate
 mode: imported geographic worlds use great-circle meters, while abstract maps
 use the strategic-travel convention of Euclidean coordinate units as
 kilometers. Site and area modes must agree. Later

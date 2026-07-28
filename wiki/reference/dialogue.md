@@ -62,10 +62,11 @@ addressed portrait changes the actor while the character remains at that locatio
 Service providers retain their service conversation, while ordinary residents use the
 compiled `local-resident` conversation and cannot receive service-only topics.
 
-The public NPC row contains only visible identity and presentation: name, age band, sex,
-height, build, hair/facial hair, complexion, visible features, clothing, profession,
-household, and local role. Population seed explanations and relation weights are a
-private diagnostic table. Dialogue facts include typed age, profession, status,
+The public NPC row contains only visible identity and presentation: name, age band,
+presentation, height, build, hair/facial hair, complexion, visible features, clothing,
+profession, household, and local role. Private demographic sex, the internal projection
+key, population seed explanations, and relation weights remain private. Dialogue facts
+include typed age, profession, status,
 clothing presence, prior interaction, language compatibility, observable location role,
 and time period. Hidden causal circumstances remain private until a future discovery
 system deliberately reveals them. Greeting response priority remains deterministic.

@@ -86,6 +86,7 @@ pub mod backend_physiology_charts_table;
 pub mod backend_physiology_differential_type;
 pub mod backend_settlement_npc_relationship_type;
 pub mod backend_settlement_npc_relationships_table;
+pub mod backend_settlement_npc_type;
 pub mod backend_settlement_npcs_table;
 pub mod backend_social_addresses_table;
 pub mod backend_social_beliefs_table;
@@ -600,6 +601,7 @@ pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
 pub mod spawn_developer_quest_reducer;
 pub mod spend_time_with_settlement_npc_reducer;
+pub mod sponsor_party_member_inn_rest_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
 pub mod starting_age_tier_coordinate_type;
@@ -750,6 +752,7 @@ pub use backend_physiology_charts_table::*;
 pub use backend_physiology_differential_type::BackendPhysiologyDifferential;
 pub use backend_settlement_npc_relationship_type::BackendSettlementNpcRelationship;
 pub use backend_settlement_npc_relationships_table::*;
+pub use backend_settlement_npc_type::BackendSettlementNpc;
 pub use backend_settlement_npcs_table::*;
 pub use backend_social_addresses_table::*;
 pub use backend_social_beliefs_table::*;
@@ -1264,6 +1267,7 @@ pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
 pub use spawn_developer_quest_reducer::spawn_developer_quest;
 pub use spend_time_with_settlement_npc_reducer::spend_time_with_settlement_npc;
+pub use sponsor_party_member_inn_rest_reducer::sponsor_party_member_inn_rest;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
 pub use starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
@@ -1855,6 +1859,12 @@ pub enum Reducer {
         requested_minutes: u64,
         action_id: String,
     },
+    SponsorPartyMemberInnRest {
+        payer_id: u64,
+        patient_id: u64,
+        settlement_id: String,
+        expected_cost: u64,
+    },
     StageInvestigationLead {
         character_id: u64,
         receipt_id: String,
@@ -2097,6 +2107,7 @@ impl __sdk::Reducer for Reducer {
             }
             Reducer::SpawnDeveloperQuest { .. } => "spawn_developer_quest",
             Reducer::SpendTimeWithSettlementNpc { .. } => "spend_time_with_settlement_npc",
+            Reducer::SponsorPartyMemberInnRest { .. } => "sponsor_party_member_inn_rest",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StopPreparation { .. } => "stop_preparation",
@@ -3046,6 +3057,17 @@ Reducer::BeginWorldDataImport{
                 requested_minutes: requested_minutes.clone(),
                 action_id: action_id.clone(),
 }),
+            Reducer::SponsorPartyMemberInnRest{
+                payer_id,
+                patient_id,
+                settlement_id,
+                expected_cost,
+}             => __sats::bsatn::to_vec(&sponsor_party_member_inn_rest_reducer::SponsorPartyMemberInnRestArgs {
+                payer_id: payer_id.clone(),
+                patient_id: patient_id.clone(),
+                settlement_id: settlement_id.clone(),
+                expected_cost: expected_cost.clone(),
+}),
             Reducer::StageInvestigationLead{
                 character_id,
                 receipt_id,
@@ -3301,7 +3323,7 @@ pub struct DbUpdate {
     backend_physiology_administrations: __sdk::TableUpdate<BackendPhysiologyAdministration>,
     backend_physiology_charts: __sdk::TableUpdate<BackendPhysiologyChart>,
     backend_settlement_npc_relationships: __sdk::TableUpdate<BackendSettlementNpcRelationship>,
-    backend_settlement_npcs: __sdk::TableUpdate<SettlementNpc>,
+    backend_settlement_npcs: __sdk::TableUpdate<BackendSettlementNpc>,
     backend_social_addresses: __sdk::TableUpdate<SocialAddress>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     backend_social_chat_receipts: __sdk::TableUpdate<BackendSocialChatReceipt>,
@@ -4189,7 +4211,7 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_settlement_npc_relationships",
                 &self.backend_settlement_npc_relationships,
             );
-        diff.backend_settlement_npcs = cache.apply_diff_to_table::<SettlementNpc>(
+        diff.backend_settlement_npcs = cache.apply_diff_to_table::<BackendSettlementNpc>(
             "backend_settlement_npcs",
             &self.backend_settlement_npcs,
         );
@@ -4942,7 +4964,7 @@ pub struct AppliedDiff<'r> {
     backend_physiology_charts: __sdk::TableAppliedDiff<'r, BackendPhysiologyChart>,
     backend_settlement_npc_relationships:
         __sdk::TableAppliedDiff<'r, BackendSettlementNpcRelationship>,
-    backend_settlement_npcs: __sdk::TableAppliedDiff<'r, SettlementNpc>,
+    backend_settlement_npcs: __sdk::TableAppliedDiff<'r, BackendSettlementNpc>,
     backend_social_addresses: __sdk::TableAppliedDiff<'r, SocialAddress>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     backend_social_chat_receipts: __sdk::TableAppliedDiff<'r, BackendSocialChatReceipt>,
@@ -5198,7 +5220,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_settlement_npc_relationships,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<SettlementNpc>(
+        callbacks.invoke_table_row_callbacks::<BackendSettlementNpc>(
             "backend_settlement_npcs",
             &self.backend_settlement_npcs,
             event,

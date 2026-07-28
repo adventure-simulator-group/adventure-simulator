@@ -20,6 +20,39 @@ pub enum InvestigationActionKind {
     ApproachLead,
 }
 
+/// Observer-safe structural rule for one edge in a physical tracking chain.
+///
+/// This deliberately considers only projected action kinds and target kinds:
+/// ownership, case correlation, successful completion, and current position
+/// remain authoritative server checks.
+pub fn tracking_route_edge_is_coherent(
+    action_kind: InvestigationActionKind,
+    action_target_kind: &str,
+    predecessor_kind: InvestigationActionKind,
+    predecessor_target_kind: &str,
+) -> bool {
+    match (action_kind, action_target_kind) {
+        (InvestigationActionKind::ReacquireTracks, "route" | "tracks" | "site") => {
+            predecessor_target_kind == "area"
+        }
+        (InvestigationActionKind::FollowTracks, "site") => {
+            matches!(
+                predecessor_kind,
+                InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks
+            ) && matches!(predecessor_target_kind, "route" | "tracks")
+        }
+        (InvestigationActionKind::FollowTracks, "route" | "tracks") => {
+            predecessor_target_kind == "area"
+                || (matches!(
+                    predecessor_kind,
+                    InvestigationActionKind::FollowTracks
+                        | InvestigationActionKind::ReacquireTracks
+                ) && matches!(predecessor_target_kind, "route" | "tracks"))
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Terrain {
@@ -538,5 +571,37 @@ mod tests {
         let second = resolve(input);
         assert_eq!(first.risk_triggered, second.risk_triggered);
         assert!(first.risk_bps <= 10_000);
+    }
+
+    #[test]
+    fn tracking_edges_accept_area_to_route_to_site_chain() {
+        assert!(tracking_route_edge_is_coherent(
+            InvestigationActionKind::ReacquireTracks,
+            "route",
+            InvestigationActionKind::SearchArea,
+            "area",
+        ));
+        assert!(tracking_route_edge_is_coherent(
+            InvestigationActionKind::FollowTracks,
+            "site",
+            InvestigationActionKind::ReacquireTracks,
+            "route",
+        ));
+    }
+
+    #[test]
+    fn tracking_edges_reject_crossed_route_provenance() {
+        assert!(!tracking_route_edge_is_coherent(
+            InvestigationActionKind::FollowTracks,
+            "site",
+            InvestigationActionKind::SearchArea,
+            "area",
+        ));
+        assert!(!tracking_route_edge_is_coherent(
+            InvestigationActionKind::ReacquireTracks,
+            "route",
+            InvestigationActionKind::FollowTracks,
+            "site",
+        ));
     }
 }

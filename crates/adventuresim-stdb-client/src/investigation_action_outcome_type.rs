@@ -11,8 +11,10 @@ pub struct InvestigationActionOutcome {
     pub owner_character_id: u64,
     pub case_id: String,
     pub capability_id: String,
+    pub attempt_id: String,
     pub safe_wording: String,
     pub recorded_at: u64,
+    pub official_recorded_at: u64,
 }
 
 impl __sdk::InModule for InvestigationActionOutcome {
@@ -27,8 +29,10 @@ pub struct InvestigationActionOutcomeCols {
     pub owner_character_id: __sdk::__query_builder::Col<InvestigationActionOutcome, u64>,
     pub case_id: __sdk::__query_builder::Col<InvestigationActionOutcome, String>,
     pub capability_id: __sdk::__query_builder::Col<InvestigationActionOutcome, String>,
+    pub attempt_id: __sdk::__query_builder::Col<InvestigationActionOutcome, String>,
     pub safe_wording: __sdk::__query_builder::Col<InvestigationActionOutcome, String>,
     pub recorded_at: __sdk::__query_builder::Col<InvestigationActionOutcome, u64>,
+    pub official_recorded_at: __sdk::__query_builder::Col<InvestigationActionOutcome, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for InvestigationActionOutcome {
@@ -39,8 +43,13 @@ impl __sdk::__query_builder::HasCols for InvestigationActionOutcome {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             capability_id: __sdk::__query_builder::Col::new(table_name, "capability_id"),
+            attempt_id: __sdk::__query_builder::Col::new(table_name, "attempt_id"),
             safe_wording: __sdk::__query_builder::Col::new(table_name, "safe_wording"),
             recorded_at: __sdk::__query_builder::Col::new(table_name, "recorded_at"),
+            official_recorded_at: __sdk::__query_builder::Col::new(
+                table_name,
+                "official_recorded_at",
+            ),
         }
     }
 }

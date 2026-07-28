@@ -14,8 +14,9 @@ use crate::{
     quest_generation::{FinaleKind, GeneratedCase, RouteClass},
 };
 
-pub const MIN_INTERVENTION_AGE_MINUTES: u64 = 5 * 1_440;
+pub const MIN_INTERVENTION_AGE_MINUTES: u64 = 8 * 1_440;
 pub const PLAYER_ACTIVITY_GRACE_MINUTES: u64 = 2 * 1_440;
+pub const MAX_PLAYER_GRACE_CASE_AGE_MINUTES: u64 = 14 * 1_440;
 pub const RETRY_DELAY_MINUTES: u64 = 3 * 1_440;
 pub const MIN_INTERVENTION_INCIDENTS: u16 = 2;
 pub const MAX_CAPABILITY: u16 = 100;
@@ -93,9 +94,15 @@ pub struct NpcApproachResolution {
 
 pub fn eligible_at(case: &NpcCaseSnapshot) -> u64 {
     let aged = case.opened_at.saturating_add(MIN_INTERVENTION_AGE_MINUTES);
-    case.player_activity_at.map_or(aged, |at| {
-        aged.max(at.saturating_add(PLAYER_ACTIVITY_GRACE_MINUTES))
-    })
+    let absolute_ceiling = case
+        .opened_at
+        .saturating_add(MAX_PLAYER_GRACE_CASE_AGE_MINUTES);
+    case.player_activity_at
+        .filter(|at| *at < absolute_ceiling)
+        .map_or(aged, |at| {
+            aged.max(at.saturating_add(PLAYER_ACTIVITY_GRACE_MINUTES))
+                .min(absolute_ceiling)
+        })
 }
 
 pub fn case_is_eligible(case: &NpcCaseSnapshot, now: u64) -> bool {
@@ -123,6 +130,18 @@ pub fn select_party<'a>(
                 stable_hash(&format!("{}:{}", case.case_id, party.party_id)),
             )
         })
+}
+
+pub fn update_party_availability(
+    parties: &mut [NpcPartySnapshot],
+    party_id: &str,
+    available_at: u64,
+) -> bool {
+    let Some(party) = parties.iter_mut().find(|party| party.party_id == party_id) else {
+        return false;
+    };
+    party.available_at = available_at;
+    true
 }
 
 pub fn scripted_strategy(
@@ -490,9 +509,9 @@ fn testimony_for_route(generated: &GeneratedCase, route: RouteClass) -> Option<(
     let selected = match route {
         RouteClass::PhysicalTrail => statements
             .iter()
+            .rev()
             .copied()
-            .filter(|(_, statement)| statement.site_id.is_some())
-            .next(),
+            .find(|(_, statement)| statement.site_id.is_some()),
         RouteClass::PatternSurveillance => statements
             .iter()
             .copied()
@@ -605,11 +624,18 @@ fn decision(
     roll_bps: u16,
     safe_summary: String,
 ) -> NpcInterventionDecision {
+    let next_available_at = now
+        .checked_add(RETRY_DELAY_MINUTES)
+        .expect("NPC intervention retry delay must fit in world time");
+    assert!(
+        next_available_at > now,
+        "NPC intervention must reserve its party beyond the current world minute"
+    );
     NpcInterventionDecision {
         strategy,
         outcome,
         mitigation_bps,
-        next_available_at: now.saturating_add(RETRY_DELAY_MINUTES),
+        next_available_at,
         roll_bps,
         safe_summary,
     }
@@ -626,7 +652,10 @@ mod tests {
     use super::*;
     use crate::{
         local_problem::Scope,
-        quest_generation::{GenerationContext, TemplateFamily, generate, test_witnesses},
+        quest_generation::{
+            GenerationContext, Reliability, TemplateFamily, generate,
+            player_visible_testimony_sequence, test_witnesses,
+        },
     };
 
     fn case() -> NpcCaseSnapshot {
@@ -652,9 +681,9 @@ mod tests {
         }
     }
 
-    fn generated(family: TemplateFamily) -> GeneratedCase {
+    fn generated_with_seed(seed: u64, family: TemplateFamily) -> GeneratedCase {
         generate(&GenerationContext {
-            seed: 17,
+            seed,
             observer_entropy_hi: 1,
             observer_entropy_lo: 2,
             settlement_id: "lubeck".into(),
@@ -668,6 +697,47 @@ mod tests {
             witness_candidates: test_witnesses(),
         })
         .unwrap()
+    }
+
+    fn generated(family: TemplateFamily) -> GeneratedCase {
+        generated_with_seed(17, family)
+    }
+
+    fn generated_with_primary_location_accuracy(truthful: bool) -> GeneratedCase {
+        (0..4_096)
+            .find_map(|seed| {
+                let generated = generated_with_seed(seed, TemplateFamily::RecurringDepredation);
+                let primary_is_truthful =
+                    generated.witnesses[0].testimony[0].reliability == Reliability::Truthful;
+                (primary_is_truthful == truthful).then_some(generated)
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "bounded generation sweep did not find a {} primary location account",
+                    if truthful { "truthful" } else { "unreliable" }
+                )
+            })
+    }
+
+    fn assert_physical_lead_is_latest_public_site_testimony(generated: &GeneratedCase) {
+        let visible = player_visible_testimony_sequence(generated);
+        let (latest_witness, latest_statement) = visible
+            .iter()
+            .rev()
+            .find(|(_, statement)| statement.site_id.is_some())
+            .copied()
+            .expect("generated case exposes site-bearing testimony");
+        let approach = supported_investigation_approaches(generated)
+            .into_iter()
+            .find(|approach| approach.route == RouteClass::PhysicalTrail)
+            .expect("generated case supports a physical route");
+
+        assert_eq!(approach.lead_source, latest_witness.display_name);
+        assert_eq!(approach.lead_quote, latest_statement.spoken_text);
+        assert!(visible.iter().any(|(witness, statement)| {
+            witness.display_name == approach.lead_source
+                && statement.spoken_text == approach.lead_quote
+        }));
     }
 
     #[test]
@@ -688,6 +758,21 @@ mod tests {
             &value,
             aged + 10 + PLAYER_ACTIVITY_GRACE_MINUTES
         ));
+
+        value.player_activity_at = Some(aged - 1);
+        assert!(!case_is_eligible(&value, aged));
+        assert!(!case_is_eligible(&value, aged + 1_440));
+        assert!(case_is_eligible(
+            &value,
+            aged - 1 + PLAYER_ACTIVITY_GRACE_MINUTES
+        ));
+
+        let absolute = value.opened_at + MAX_PLAYER_GRACE_CASE_AGE_MINUTES;
+        value.player_activity_at = Some(absolute - 1);
+        assert!(!case_is_eligible(&value, absolute - 1));
+        assert!(case_is_eligible(&value, absolute));
+        value.player_activity_at = Some(absolute + 10_000);
+        assert!(case_is_eligible(&value, absolute));
     }
 
     #[test]
@@ -709,6 +794,45 @@ mod tests {
     }
 
     #[test]
+    fn same_minute_cases_respect_working_party_availability() {
+        let mut first_case = case();
+        first_case.case_id = "case:first".into();
+        let now = eligible_at(&first_case);
+        let mut second_case = case();
+        second_case.case_id = "case:second".into();
+        let mut third_case = case();
+        third_case.case_id = "case:third".into();
+        let mut parties = vec![party("company-a", 80), party("company-b", 70)];
+
+        assert!(case_is_eligible(&first_case, now));
+        let first = select_party(&first_case, now, &parties).unwrap().clone();
+        assert_eq!(first.party_id, "company-a");
+        assert!(update_party_availability(
+            &mut parties,
+            &first.party_id,
+            now + 60
+        ));
+
+        assert!(case_is_eligible(&second_case, now));
+        let second = select_party(&second_case, now, &parties).unwrap().clone();
+        assert_eq!(second.party_id, "company-b");
+        assert!(update_party_availability(
+            &mut parties,
+            &second.party_id,
+            now + 90
+        ));
+
+        assert!(case_is_eligible(&third_case, now));
+        assert!(select_party(&third_case, now, &parties).is_none());
+        assert_eq!(
+            select_party(&third_case, now + 60, &parties)
+                .unwrap()
+                .party_id,
+            "company-a"
+        );
+    }
+
+    #[test]
     fn defer_never_resolves_or_mitigates() {
         let value = case();
         let decision = decide(
@@ -720,6 +844,27 @@ mod tests {
         );
         assert_eq!(decision.outcome, NpcInterventionOutcome::Delayed);
         assert_eq!(decision.mitigation_bps, value.mitigation_bps);
+    }
+
+    #[test]
+    fn every_intervention_outcome_reserves_the_party_beyond_now() {
+        let now = 5_000;
+        for outcome in [
+            NpcInterventionOutcome::Resolved,
+            NpcInterventionOutcome::Mitigated,
+            NpcInterventionOutcome::Failed,
+            NpcInterventionOutcome::Delayed,
+        ] {
+            let value = decision(
+                NpcInterventionStrategy::InvestigateCarefully,
+                outcome,
+                0,
+                now,
+                0,
+                "safe summary".into(),
+            );
+            assert!(value.next_available_at > now, "{outcome:?}");
+        }
     }
 
     #[test]
@@ -762,6 +907,73 @@ mod tests {
         )
         .unwrap();
         assert_ne!(first.route, changed_strategy_retry.route);
+    }
+
+    #[test]
+    fn physical_route_uses_latest_public_truthful_corroboration() {
+        let generated = generated_with_primary_location_accuracy(true);
+        let primary = &generated.witnesses[0].testimony[0];
+        let secondary = &generated.witnesses[1].testimony[0];
+
+        assert_eq!(primary.reliability, Reliability::Truthful);
+        assert_eq!(secondary.corrects_proposition_id, None);
+        assert_physical_lead_is_latest_public_site_testimony(&generated);
+
+        let approach = supported_investigation_approaches(&generated)
+            .into_iter()
+            .find(|approach| approach.route == RouteClass::PhysicalTrail)
+            .unwrap();
+        assert_eq!(approach.lead_source, generated.witnesses[1].display_name);
+        assert_eq!(approach.lead_quote, secondary.spoken_text);
+    }
+
+    #[test]
+    fn physical_route_uses_latest_public_unreliable_account_correction() {
+        let generated = generated_with_primary_location_accuracy(false);
+        let primary = &generated.witnesses[0].testimony[0];
+        let secondary = &generated.witnesses[1].testimony[0];
+
+        assert_ne!(primary.reliability, Reliability::Truthful);
+        assert_eq!(
+            secondary.corrects_proposition_id.as_deref(),
+            Some(primary.proposition_id.as_str())
+        );
+        assert_physical_lead_is_latest_public_site_testimony(&generated);
+
+        let approach = supported_investigation_approaches(&generated)
+            .into_iter()
+            .find(|approach| approach.route == RouteClass::PhysicalTrail)
+            .unwrap();
+        assert_eq!(approach.lead_source, generated.witnesses[1].display_name);
+        assert_eq!(approach.lead_quote, secondary.spoken_text);
+    }
+
+    #[test]
+    fn physical_route_falls_back_to_earlier_public_site_testimony() {
+        let mut generated = generated_with_primary_location_accuracy(false);
+        let expected_source = generated.witnesses[0].display_name.clone();
+        let expected_quote = generated.witnesses[0].testimony[0].spoken_text.clone();
+        generated.witnesses[0].testimony[0]
+            .referred_witness_ids
+            .clear();
+        for statement in generated.witnesses[0].testimony.iter_mut().skip(1) {
+            statement.site_id = None;
+        }
+
+        let visible = player_visible_testimony_sequence(&generated);
+        assert!(
+            visible
+                .iter()
+                .all(|(witness, _)| witness.id == generated.witnesses[0].id)
+        );
+        assert_physical_lead_is_latest_public_site_testimony(&generated);
+
+        let approach = supported_investigation_approaches(&generated)
+            .into_iter()
+            .find(|approach| approach.route == RouteClass::PhysicalTrail)
+            .unwrap();
+        assert_eq!(approach.lead_source, expected_source);
+        assert_eq!(approach.lead_quote, expected_quote);
     }
 
     #[test]

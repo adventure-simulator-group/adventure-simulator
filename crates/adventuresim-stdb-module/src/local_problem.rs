@@ -118,7 +118,10 @@ pub struct LocalProblemReceipt {
     pub contact_npc_id: String,
     pub expected_location_id: String,
     pub safe_summary: String,
+    /// Observer chronology used by owner-facing journal projections.
     pub learned_at: u64,
+    /// Authoritative world chronology used only by server-side fairness rules.
+    pub official_learned_at: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -927,7 +930,11 @@ pub fn surface_problem(
         .id()
         .find(&source_npc_id.to_owned())
         .filter(|npc| npc.home_settlement_id == settlement_id);
-    let minute = ctx
+    // Problem authority is anchored to the official world clock. A character's
+    // elapsed clock is an observer timeline and may be ahead of or behind it
+    // after travel, treatment, or bulk settlement activity.
+    let official_world_minute = official_minute(ctx);
+    let observer_minute = ctx
         .db
         .character_time()
         .character_id()
@@ -939,7 +946,7 @@ pub fn surface_problem(
             .local_problem_authority()
             .scope_key()
             .filter(&scope)
-            .filter(|problem| is_active(problem, minute)),
+            .filter(|problem| is_active(problem, official_world_minute)),
         lp::MAX_ACTIVE_PER_SCOPE,
         |problem| validated_problem_generation(ctx, problem, &settlement_id).is_some(),
         |problem| (problem.id.clone(), problem.opaque_case_ref.clone()),
@@ -982,7 +989,7 @@ pub fn surface_problem(
                     character_id,
                     problem_id: problem.id.clone(),
                     incident_id: incident.id.clone(),
-                    learned_at: minute,
+                    learned_at: observer_minute,
                 });
             ctx.db.investigation_lead().insert(InvestigationLead {
                 id: format!("lead:{incident_receipt_id}"),
@@ -1004,7 +1011,7 @@ pub fn surface_problem(
                 current_learned_location: String::new(),
                 contradiction_group: format!("incident:{}", incident.id),
                 corrected_by: String::new(),
-                recorded_at: minute,
+                recorded_at: observer_minute,
             });
             ctx.db
                 .local_problem_rumor_delivery()
@@ -1082,8 +1089,18 @@ pub fn surface_problem(
             .settlement_npc_presence()
             .settlement_id()
             .filter(&settlement_id)
-            .any(|p| {
-                p.location_id == "inn" && crate::settlement_population::npc_is_present(&p, minute)
+            .any(|presence| {
+                let npc = ctx.db.settlement_npc().id().find(&presence.npc_id);
+                dialogue_capable_inn_contact(
+                    &presence.settlement_id,
+                    &settlement_id,
+                    &presence.location_id,
+                    crate::settlement_population::npc_is_present(&presence, observer_minute),
+                    npc.as_ref().is_some_and(|npc| {
+                        npc.home_settlement_id == settlement_id
+                            && crate::settlement_population::npc_is_dialogue_capable(npc)
+                    }),
+                )
             });
     if lp::discovery_action(location_id, inn_available, false) != lp::DiscoveryAction::NewRumor {
         return Ok(());
@@ -1157,7 +1174,8 @@ pub fn surface_problem(
             contact_npc_id: contact.id,
             expected_location_id: presence.location_id,
             safe_summary: symptom.public_summary,
-            learned_at: minute,
+            learned_at: observer_minute,
+            official_learned_at: official_world_minute,
         });
         ctx.db
             .local_problem_rumor_delivery()
@@ -1172,6 +1190,19 @@ pub fn surface_problem(
         return Ok(());
     }
     Ok(())
+}
+
+fn dialogue_capable_inn_contact(
+    presence_settlement_id: &str,
+    settlement_id: &str,
+    location_id: &str,
+    present_now: bool,
+    has_dialogue_capable_npc: bool,
+) -> bool {
+    presence_settlement_id == settlement_id
+        && location_id == "inn"
+        && present_now
+        && has_dialogue_capable_npc
 }
 
 fn referral_fragments_json(presentation: lp::ReferralPresentation) -> Result<String, String> {
@@ -1246,6 +1277,43 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn discovery_uses_world_time_for_problem_windows_and_observer_time_for_records() {
+        let source = include_str!("local_problem.rs");
+        let surface = source
+            .split("pub fn surface_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("fn referral_fragments_json").next())
+            .expect("problem discovery implementation");
+        assert!(surface.contains("let official_world_minute = official_minute(ctx);"));
+        assert!(surface.contains("let observer_minute = ctx"));
+        assert!(surface.contains("is_active(problem, official_world_minute)"));
+        assert!(!surface.contains("is_active(problem, observer_minute)"));
+        assert!(surface.contains("npc_is_present(&presence, observer_minute)"));
+        assert!(surface.contains("learned_at: observer_minute"));
+        assert!(surface.contains("official_learned_at: official_world_minute"));
+        assert!(surface.contains("recorded_at: observer_minute"));
+    }
+
+    #[test]
+    fn overview_fallback_counts_only_present_dialogue_capable_inn_contacts() {
+        assert!(dialogue_capable_inn_contact(
+            "lubeck", "lubeck", "inn", true, true,
+        ));
+        assert!(!dialogue_capable_inn_contact(
+            "lubeck", "lubeck", "overview", true, true,
+        ));
+        assert!(!dialogue_capable_inn_contact(
+            "lubeck", "lubeck", "inn", true, false,
+        ));
+        assert!(!dialogue_capable_inn_contact(
+            "lubeck", "lubeck", "inn", false, true,
+        ));
+        assert!(!dialogue_capable_inn_contact(
+            "hamburg", "lubeck", "inn", true, true,
+        ));
     }
 
     #[test]

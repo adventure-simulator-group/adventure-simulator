@@ -82,6 +82,14 @@ Settlements offer the safest place to convalesce because a party can advance
 time, obtain food and shelter, and access services. Recovering in the field is
 possible but competes with travel, supplies, exposure, and continuing danger.
 
+A living party member at the same settlement may pay an inn directly for one
+day of another member's publicly necessary convalescence when the patient
+cannot pay. The patient contributes the coin they have, and the inn receives
+only the remaining authoritative price directly from the payer; the patient
+never receives transferable coin. This cooperative lodging does not
+grant authority over treatment, diagnosis, inventory, or arbitrary stretches
+of the patient's time.
+
 ## Fantasy relief
 
 Real recovery can be slow. The game uses two ways to keep realistic injuries

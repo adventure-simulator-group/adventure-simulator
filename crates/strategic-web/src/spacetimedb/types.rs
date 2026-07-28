@@ -119,14 +119,15 @@ pub struct BackendInvestigationAction {
 pub struct BackendInvestigationCaseSummary {
     pub owner_character_id: u64,
     pub case_id: String,
-    pub title: String,
+    pub subject: String,
     pub status: String,
     pub latest_update_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BackendCaseBattle {
-    pub case_id: String,
+    pub owner_character_id: u64,
+    pub public_case_id: String,
     pub party_id: String,
     pub battle_id: String,
     pub mission_id: String,

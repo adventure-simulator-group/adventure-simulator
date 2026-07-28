@@ -762,8 +762,9 @@ async fn render_quest_location(
         state
             .db
             .query::<BackendCaseBattle>(&format!(
-                "SELECT * FROM backend_case_battles WHERE party_id = {}",
-                sql_string_literal(&party.id)
+                "SELECT * FROM backend_case_battles WHERE owner_character_id = {character_id} AND public_case_id = {} AND party_id = {}",
+                sql_string_literal(&site.case_id),
+                sql_string_literal(&party.id),
             ))
             .await
             .unwrap_or_default()

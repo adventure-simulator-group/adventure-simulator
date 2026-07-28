@@ -30,19 +30,21 @@ use crate::{
         character, character_attributes, character_equip, character_limbs, character_skills,
         character_stats, starting_character_claim,
     },
-    condition::character_condition,
+    condition::{character_condition, character_strategic_condition},
+    disease::character_illness_status,
     inventory_amount::{inventory_item_amount, party_item_amount},
     investigation::{
         CaseSiteAuthority, CaseSiteId, EvidencePresentationKind, PartyCaseSiteTracking,
-        case_site_authority, case_site_provenance_reducer, disclose_exact_case_site,
-        exact_case_site_for_observer, investigation_area_authority, investigation_belief,
-        investigation_case_authority, investigation_event_authority,
+        case_site_authority, case_site_authority__view, case_site_provenance_reducer,
+        disclose_exact_case_site, exact_case_site_for_observer, investigation_area_authority,
+        investigation_belief, investigation_case_authority, investigation_event_authority,
         investigation_evidence_authority, investigation_evidence_knowledge, investigation_lead,
         investigation_received_testimony, investigation_testimony_bundle, mark_case_site_visited,
         party_case_site_tracking, referred_generated_witness,
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{local_problem_receipt, local_problem_rumor_delivery},
+    npc_adventurer::npc_adventuring_party_authority,
     repair::{item_condition, settlement_smith},
     settlement_population::{
         settlement_npc, settlement_npc_presence, settlement_npc_seed_explanation,
@@ -325,15 +327,16 @@ mod healing_tests {
         MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate, QuestGenerationAuthority,
         RecruitmentOffer, RecruitmentOfferBindingFields, RecruitmentOfferId,
         RecruitmentOfferStatus, RecruitmentSourceId, activity_incident_source_id, autoresolve_drop,
-        case_refs_have_exact_dialogue_provenance, generated_case_site_combat_eligible,
-        generated_dialogue_action_matches, generated_dialogue_producer_recipient,
-        generated_scene_key, generated_witness_visible_description, hostile_group_authority_row,
+        carrying_capacity_multiplier_for_condition, case_refs_have_exact_dialogue_provenance,
+        generated_case_site_combat_eligible, generated_dialogue_action_matches,
+        generated_dialogue_producer_recipient, generated_scene_key,
+        generated_witness_visible_description, hostile_group_authority_row,
         hostile_resolution_for_objective, incident_group_matches, merchant_storefront,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
         quest_generation_context_commitment, recruitment_offer_binding_fields_are_live,
         refreshed_recruitment_offer_status, renewed_recruitment_offer_expiry,
-        sample_mission_candidate, sanitized_encounter_body_weight,
+        sample_mission_candidate, sanitized_encounter_body_weight, settlement_activity_stage_error,
         unique_default_merchant_provider, validate_quest_generation_authority,
         validated_generated_dialogue_manifest,
     };
@@ -675,6 +678,27 @@ mod healing_tests {
             .and_then(|tail| tail.split("pub struct PartyJourneyItinerary").next())
             .expect("public encounter schema");
         assert!(!encounter.contains("pub seed:"));
+    }
+
+    #[test]
+    fn recovery_direction_is_delegated_only_to_a_ready_member_for_an_unready_leader() {
+        let source = include_str!("strategic.rs");
+        let direction = source
+            .split("pub(crate) fn party_member_can_direct_field_rest")
+            .nth(1)
+            .and_then(|tail| tail.split("fn authoritative_evacuation_settlement").next())
+            .expect("field recovery direction gate");
+        assert!(direction.contains("party.leader_id == character_id"));
+        assert!(direction.contains("party.current_settlement_id.is_none()"));
+        assert!(direction.contains("ready_companion_may_direct_recovery"));
+
+        let time = include_str!("time.rs");
+        let camp = time
+            .split("pub fn rest_at_camp")
+            .nth(1)
+            .and_then(|tail| tail.split("fn party_fatigue_summary").next())
+            .expect("camp reducer");
+        assert!(camp.contains("party_member_can_direct_field_rest"));
     }
 
     #[test]
@@ -1033,6 +1057,27 @@ mod healing_tests {
         assert_eq!(sanitized_encounter_body_weight(300.0), 300.0);
         assert_eq!(sanitized_encounter_body_weight(0.0), 70.0);
         assert_eq!(sanitized_encounter_body_weight(f32::NAN), 70.0);
+    }
+
+    #[test]
+    fn unready_members_keep_their_burden_but_lose_carrying_capacity() {
+        assert_eq!(carrying_capacity_multiplier_for_condition("ready"), 1.0);
+        assert_eq!(carrying_capacity_multiplier_for_condition("staggered"), 0.5);
+        assert_eq!(
+            carrying_capacity_multiplier_for_condition("incapacitated"),
+            0.0
+        );
+        assert_eq!(
+            carrying_capacity_multiplier_for_condition("unavailable"),
+            0.0
+        );
+
+        let unchanged_body_and_load_burden = 95.0;
+        let ready_capacity = 100.0 * carrying_capacity_multiplier_for_condition("ready");
+        let incapacitated_capacity =
+            100.0 * carrying_capacity_multiplier_for_condition("incapacitated");
+        assert!(ready_capacity >= unchanged_body_and_load_burden);
+        assert!(incapacitated_capacity < unchanged_body_and_load_burden);
     }
 
     #[test]
@@ -2231,6 +2276,53 @@ mod healing_tests {
     }
 
     #[test]
+    fn settlement_activity_failures_identify_the_settlement_and_stage() {
+        assert_eq!(
+            settlement_activity_stage_error(
+                "viabundus-0",
+                "NPC recruiting parties",
+                "Party not found"
+            ),
+            "Settlement activity for viabundus-0 failed during NPC recruiting parties: Party not found"
+        );
+
+        let source = include_str!("strategic.rs");
+        let activity = source
+            .rsplit("fn ensure_settlement_activity_inner")
+            .next()
+            .and_then(|tail| tail.split("fn ensure_npc_recruiting_parties").next())
+            .expect("settlement activity implementation");
+        for (callee, stage) in [
+            ("ensure_settlement_population(ctx", "settlement population"),
+            ("refresh_clock(ctx)", "official clock refresh"),
+            (
+                "validate_quest_generation_authority(&authority)",
+                "generated activity validation",
+            ),
+            ("generate_quest_for_settlement(ctx", "quest generation"),
+            ("ensure_generated_incidents(ctx", "generated incidents"),
+            ("ensure_npc_case_interventions(", "NPC case interventions"),
+            (
+                "ensure_npc_recruiting_parties(ctx",
+                "NPC recruiting parties",
+            ),
+        ] {
+            let after_call = activity
+                .split(callee)
+                .nth(1)
+                .unwrap_or_else(|| panic!("settlement activity omits {callee}"));
+            let error_path = after_call
+                .split("?;")
+                .next()
+                .expect("fallible settlement activity call");
+            assert!(
+                error_path.contains(&format!("\"{stage}\"")),
+                "{callee} is not paired with its {stage} context"
+            );
+        }
+    }
+
+    #[test]
     fn world_import_persists_settlement_facts_without_activating_gameplay() {
         let source = include_str!("strategic.rs").replace('\r', "");
         let authority = source
@@ -2355,6 +2447,139 @@ pub(crate) fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Resul
         return Err("Party has no living members".into());
     }
     crate::condition::require_characters_ready(ctx, &character_ids)
+}
+
+fn character_is_publicly_ready_party_member(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+) -> bool {
+    ctx.db
+        .party_member()
+        .party_id()
+        .filter(&party.id)
+        .any(|membership| membership.character_id == character_id)
+        && ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .is_some_and(|character| character.alive)
+        && ctx
+            .db
+            .character_strategic_condition()
+            .character_id()
+            .find(character_id)
+            .is_some_and(|condition| condition.status == "ready")
+        && !ctx
+            .db
+            .character_illness_status()
+            .character_id()
+            .find(character_id)
+            .is_some_and(|illness| illness.symptomatic || illness.critical)
+}
+
+fn party_leader_is_publicly_ready(ctx: &ReducerContext, party: &Party) -> bool {
+    let leader_is_alive = ctx
+        .db
+        .character()
+        .id()
+        .find(party.leader_id)
+        .is_some_and(|character| character.alive);
+    let leader_condition_ready = ctx
+        .db
+        .character_strategic_condition()
+        .character_id()
+        .find(party.leader_id)
+        .is_some_and(|condition| condition.status == "ready");
+    let leader_is_ready = leader_is_alive
+        && leader_condition_ready
+        && !ctx
+            .db
+            .character_illness_status()
+            .character_id()
+            .find(party.leader_id)
+            .is_some_and(|illness| illness.symptomatic || illness.critical);
+    leader_is_ready
+}
+
+fn ready_companion_may_direct_recovery(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+) -> bool {
+    character_id != party.leader_id
+        && character_is_publicly_ready_party_member(ctx, party, character_id)
+        && !party_leader_is_publicly_ready(ctx, party)
+}
+
+pub(crate) fn party_member_can_direct_field_rest(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+) -> bool {
+    party.leader_id == character_id
+        || (party.current_settlement_id.is_none()
+            && ready_companion_may_direct_recovery(ctx, party, character_id))
+}
+
+fn authoritative_evacuation_settlement(ctx: &ReducerContext, party: &Party) -> Option<String> {
+    if let Some(site_id) = party.current_case_site_id.as_ref() {
+        return ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&site_id.value)
+            .map(|site| site.origin_settlement_id);
+    }
+    let journey = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&party.id)?;
+    match (&journey.origin, &journey.destination) {
+        (JourneyEndpoint::CaseSite(_), JourneyEndpoint::Settlement(destination)) => {
+            Some(destination.id.clone())
+        }
+        (JourneyEndpoint::Settlement(origin), JourneyEndpoint::Settlement(destination))
+            if origin.id == destination.id =>
+        {
+            Some(destination.id.clone())
+        }
+        (JourneyEndpoint::Camp(origin_party_id), JourneyEndpoint::Settlement(destination))
+            if origin_party_id == &party.id =>
+        {
+            Some(destination.id.clone())
+        }
+        (JourneyEndpoint::Settlement(origin), _) => Some(origin.id.clone()),
+        _ => None,
+    }
+}
+
+fn ready_companion_may_start_evacuation(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+    settlement_id: &str,
+) -> bool {
+    party.current_settlement_id.is_none()
+        && ready_companion_may_direct_recovery(ctx, party, character_id)
+        && authoritative_evacuation_settlement(ctx, party).as_deref() == Some(settlement_id)
+}
+
+fn ready_companion_may_continue_evacuation(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+) -> bool {
+    if !ready_companion_may_direct_recovery(ctx, party, character_id) {
+        return false;
+    }
+    let Some(JourneyEndpoint::Settlement(camp_destination)) = party.camp_destination.as_ref()
+    else {
+        return false;
+    };
+    authoritative_evacuation_settlement(ctx, party).as_deref() == Some(camp_destination.id.as_str())
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -3717,6 +3942,10 @@ pub struct BackendContract {
     pub opposition_count_wording: String,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
+    /// Conservative public one-way preflight distance: the greatest distance
+    /// among this contract's possible case destinations. Site identity stays
+    /// private until ordinary exact disclosure.
+    pub distance_m: u64,
 }
 
 #[view(accessor = backend_contracts, public)]
@@ -3728,23 +3957,33 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
         .contract_authority()
         .gateway_bucket()
         .filter(0u8)
-        .map(|row| BackendContract {
-            id: row.id,
-            case_id: row.case_id,
-            title: row.title,
-            description: row.description,
-            difficulty: row.difficulty,
-            gold_reward: row.gold_reward,
-            xp_reward: row.xp_reward,
-            settlement_id: row.settlement_id,
-            service_id: row.service_id,
-            issuer_npc_id: row.issuer_npc_id,
-            status: row.status,
-            accepted_by: row.accepted_by,
-            opposition_wording: row.opposition_wording,
-            opposition_count_wording: row.opposition_count_wording,
-            accepted_at_minute: row.accepted_at_minute,
-            paid_at_minute: row.paid_at_minute,
+        .filter_map(|row| {
+            let distance_m = ctx
+                .db
+                .case_site_authority()
+                .case_id()
+                .filter(&row.case_id)
+                .map(|site| site.distance_m)
+                .max()?;
+            Some(BackendContract {
+                id: row.id,
+                case_id: row.case_id,
+                title: row.title,
+                description: row.description,
+                difficulty: row.difficulty,
+                gold_reward: row.gold_reward,
+                xp_reward: row.xp_reward,
+                settlement_id: row.settlement_id,
+                service_id: row.service_id,
+                issuer_npc_id: row.issuer_npc_id,
+                status: row.status,
+                accepted_by: row.accepted_by,
+                opposition_wording: row.opposition_wording,
+                opposition_count_wording: row.opposition_count_wording,
+                accepted_at_minute: row.accepted_at_minute,
+                paid_at_minute: row.paid_at_minute,
+                distance_m,
+            })
         })
         .collect()
 }
@@ -4540,12 +4779,39 @@ pub struct BattleParticipant {
 pub struct BackendCaseBattle {
     #[index(btree)]
     pub gateway_bucket: u8,
-    pub case_id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    /// Observer-safe generated public case ID, or the ordinary manual case ID.
+    pub public_case_id: String,
     pub party_id: String,
     #[primary_key]
     pub battle_id: String,
     pub mission_id: String,
     pub case_site_id: CaseSiteId,
+}
+
+fn mission_public_case_id(
+    ctx: &ReducerContext,
+    mission: &MissionAuthority,
+) -> Result<String, String> {
+    let case = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&mission.case_id)
+        .ok_or("Mission case authority not found")?;
+    let authority = (!case.generated_case_id.is_empty())
+        .then(|| {
+            ctx.db
+                .quest_generation_authority()
+                .case_id()
+                .find(&case.generated_case_id)
+        })
+        .flatten();
+    Ok(
+        validated_generated_dialogue_manifest(&case, authority.as_ref())?
+            .map_or(case.id, |manifest| manifest.public_case_id),
+    )
 }
 
 #[view(accessor = backend_case_battles, public)]
@@ -5321,6 +5587,9 @@ pub struct DialogueTopicOption {
     #[index(btree)]
     pub session_id: String,
     pub topic_id: String,
+    /// Empty for presentation-only topics; otherwise the exact observer-safe
+    /// public case advanced by this projected option.
+    pub public_case_id: String,
     pub label: String,
     pub source_ref_json: String,
 }
@@ -5403,6 +5672,7 @@ pub struct BackendDialogueTopicOption {
     pub id: String,
     pub session_id: String,
     pub topic_id: String,
+    pub public_case_id: String,
     pub label: String,
     pub source_ref_json: String,
     pub owner_character_id: u64,
@@ -5548,6 +5818,7 @@ pub fn backend_dialogue_topic_options(ctx: &ViewContext) -> Vec<BackendDialogueT
                     id: row.id.clone(),
                     session_id: row.session_id.clone(),
                     topic_id: row.topic_id.clone(),
+                    public_case_id: row.public_case_id.clone(),
                     label: row.label.clone(),
                     source_ref_json: row.source_ref_json.clone(),
                     owner_character_id,
@@ -7656,6 +7927,74 @@ fn case_refs_have_exact_dialogue_provenance(
         .any(|case_ref| exact_case_refs.contains(case_ref))
 }
 
+fn dialogue_public_case_id(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    effects: &[(&str, u64, &adventuresim_dialogue::Effect)],
+) -> Result<String, String> {
+    let mut public_case_ids = BTreeSet::new();
+    for (source_scope, issued_revision, effect) in effects {
+        match effect {
+            adventuresim_dialogue::Effect::InvestigationAction { action } => {
+                let binding_id = dialogue_binding_id(
+                    &session.id,
+                    character_id,
+                    source_scope,
+                    action,
+                    *issued_revision,
+                );
+                let binding = ctx
+                    .db
+                    .dialogue_investigation_binding()
+                    .id()
+                    .find(&binding_id)
+                    .ok_or("Projected dialogue action has no exact case binding")?;
+                let case = ctx
+                    .db
+                    .case_authority()
+                    .id()
+                    .find(&binding.case_id)
+                    .ok_or("Projected dialogue case disappeared")?;
+                let authority = (!case.generated_case_id.is_empty())
+                    .then(|| {
+                        ctx.db
+                            .quest_generation_authority()
+                            .case_id()
+                            .find(&case.generated_case_id)
+                    })
+                    .flatten();
+                let public_case_id =
+                    validated_generated_dialogue_manifest(&case, authority.as_ref())?
+                        .map_or(case.id, |manifest| manifest.public_case_id);
+                public_case_ids.insert(public_case_id);
+            }
+            adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
+                let generated = ctx
+                    .db
+                    .dialogue_participant()
+                    .session_id()
+                    .filter(&session.id)
+                    .filter(|participant| participant.character_id.is_none())
+                    .find_map(|participant| {
+                        dialogue_referred_witness(ctx, character_id, session, &participant.actor_id)
+                            .transpose()
+                    })
+                    .transpose()?;
+                if let Some((manifest, _)) = generated {
+                    public_case_ids.insert(manifest.public_case_id);
+                }
+            }
+            _ => {}
+        }
+    }
+    match public_case_ids.len() {
+        0 => Ok(String::new()),
+        1 => Ok(public_case_ids.pop_first().expect("one public case ID")),
+        _ => Err("Dialogue topic would advance more than one public case".into()),
+    }
+}
+
 fn refresh_dialogue_topic_options(
     ctx: &ReducerContext,
     session: &DialogueSession,
@@ -7717,11 +8056,37 @@ fn refresh_dialogue_topic_options(
             if !response_is_bound || !choices_are_bound {
                 continue;
             }
+            let mut case_effects = response
+                .effects
+                .iter()
+                .map(|effect| (response_scope.as_str(), session.revision, effect))
+                .collect::<Vec<_>>();
+            let mut choice_scopes = Vec::new();
+            if let Some(prompt) = &response.prompt {
+                for choice in &prompt.choices {
+                    choice_scopes.push(format!(
+                        "prompt:{}:{}:{}",
+                        prompt.id, response.id, choice.id
+                    ));
+                }
+                for (choice, choice_scope) in prompt.choices.iter().zip(&choice_scopes) {
+                    case_effects.extend(choice.effects.iter().map(|effect| {
+                        (
+                            choice_scope.as_str(),
+                            session.revision.saturating_add(1),
+                            effect,
+                        )
+                    }));
+                }
+            }
+            let public_case_id =
+                dialogue_public_case_id(ctx, character_id, session, &case_effects)?;
             ctx.db.dialogue_topic_option().insert(DialogueTopicOption {
                 id: format!("{}:{}", session.id, topic.id),
                 gateway_bucket: 0,
                 session_id: session.id.clone(),
                 topic_id: topic.id.clone(),
+                public_case_id,
                 label: topic.label.clone(),
                 source_ref_json: serde_json::to_string(&adventuresim_dialogue::source_for_topic(
                     &session.conversation_id,
@@ -11104,18 +11469,20 @@ pub(crate) fn commit_hostile_battle_resolution(
             .id()
             .find(&mission_id.to_string())
             .ok_or("Mission authority not found")?;
-        if let Some(site_id) = mission.case_site_id {
+        if let Some(ref site_id) = mission.case_site_id {
             let site = ctx
                 .db
                 .case_site_authority()
                 .id_key()
                 .find(&site_id.value)
                 .ok_or("Case site authority not found")?;
+            let public_case_id = mission_public_case_id(ctx, &mission)?;
             ctx.db
                 .backend_case_battle_authority()
                 .insert(BackendCaseBattle {
                     gateway_bucket: 0,
-                    case_id: site.case_id,
+                    owner_character_id: mission.observer_character_id,
+                    public_case_id,
                     party_id: party_id.to_string(),
                     battle_id: battle_id.to_string(),
                     mission_id: mission_id.to_string(),
@@ -14610,7 +14977,16 @@ fn party_encumbrance_remaining_basis_points(
             let adjusted_leg_strength = (attributes.left_leg_strength * limbs.left_leg_health
                 + attributes.right_leg_strength * limbs.right_leg_health)
                 * 0.5;
+            let condition_multiplier = ctx
+                .db
+                .character_strategic_condition()
+                .character_id()
+                .find(*member_id)
+                .map_or(0.0, |condition| {
+                    carrying_capacity_multiplier_for_condition(&condition.status)
+                });
             adventuresim_core::equipment::encumbrance_capacity_kg(adjusted_leg_strength)
+                * condition_multiplier
         })
         .sum();
     let body_burden: f32 = member_ids
@@ -14630,6 +15006,14 @@ fn party_encumbrance_remaining_basis_points(
         capacity,
     );
     (remaining.clamp(0.0, 1.0) * 10_000.0).round() as u32
+}
+
+fn carrying_capacity_multiplier_for_condition(status: &str) -> f32 {
+    match status {
+        "ready" => 1.0,
+        "staggered" => 0.5,
+        _ => 0.0,
+    }
 }
 
 fn sanitized_encounter_body_weight(weight_kg: f32) -> f32 {
@@ -15463,10 +15847,19 @@ pub fn resolve_strategic_encounter(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if party.leader_id != character_id {
-        return Err("Only the party leader can resolve an encounter".into());
+    let delegated_recovery = ready_companion_may_continue_evacuation(ctx, &party, character_id);
+    if party.leader_id != character_id && !delegated_recovery {
+        return Err(
+            "Only the party leader, or a ready companion protecting an unready leader, can resolve an encounter"
+                .into(),
+        );
     }
     let parsed = ParsedEncounterChoice::parse(&choice)?;
+    if delegated_recovery && parsed == ParsedEncounterChoice::Attack {
+        return Err(
+            "A delegated evacuation actor may choose only a protective encounter response".into(),
+        );
+    }
     let mut encounter = unresolved_encounter(ctx, &party_id).ok_or("No unresolved encounter")?;
     let seed = ctx
         .db
@@ -16321,6 +16714,7 @@ pub fn travel_to_settlement(
     settlement_id: String,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    require_strategic_character_authority(ctx, character_id)?;
     travel_to_settlement_impl(ctx, character_id, settlement_id, None)
 }
 
@@ -16332,6 +16726,7 @@ pub fn travel_to_settlement_planned(
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    require_strategic_character_authority(ctx, character_id)?;
     travel_to_settlement_impl(ctx, character_id, settlement_id, Some(route))
 }
 
@@ -16361,8 +16756,13 @@ fn travel_to_settlement_impl(
         })
         .transpose()?;
     if let Some(party) = party.as_ref() {
-        if party.leader_id != character_id {
-            return Err("Only the party leader can travel".into());
+        if party.leader_id != character_id
+            && !ready_companion_may_start_evacuation(ctx, party, character_id, &settlement_id)
+        {
+            return Err(
+                "Only the party leader, or a ready companion evacuating an unready leader, can travel"
+                    .into(),
+            );
         }
         require_no_unresolved_encounter(ctx, &party.id)?;
     }
@@ -16463,10 +16863,11 @@ fn travel_to_settlement_impl(
     };
     let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
     if let Some(current_party) = party.as_ref() {
+        let expected_leader_id = current_party.leader_id;
         party = Some(revalidate_party_after_departure_sync(
             ctx,
             &current_party.id,
-            character_id,
+            expected_leader_id,
             (origin_kind == "settlement").then_some(origin_id.as_str()),
             (origin_kind == "case_site").then_some(origin_id.as_str()),
             None,
@@ -16706,6 +17107,7 @@ pub fn set_party_travel_itinerary(
 /// transition between pins.
 #[reducer]
 pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
@@ -16720,8 +17122,13 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if !party_can_continue_travel(&party, character_id) {
-        return Err("Only the party leader can continue travel".into());
+    if !party_can_continue_travel(&party, character_id)
+        && !ready_companion_may_continue_evacuation(ctx, &party, character_id)
+    {
+        return Err(
+            "Only the party leader, or a ready companion evacuating an unready leader, can continue travel"
+                .into(),
+        );
     }
     require_no_unresolved_encounter(ctx, &party_id)?;
     let destination = party
@@ -16929,6 +17336,146 @@ fn custody_holder(
 
 /// Sole typed custody transition. Domain adapters provide the corresponding
 /// outcome fact only after the core custody state machine accepts the move.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CustodyPartyDispatch {
+    Unattributed,
+    OrdinaryPartyContinuity,
+    ResidentNpcAuthority,
+}
+
+fn custody_party_dispatch(
+    party_id: &str,
+    ordinary_party_exists: bool,
+    resident_npc_party_exists: bool,
+) -> Result<CustodyPartyDispatch, String> {
+    match (
+        party_id.is_empty(),
+        ordinary_party_exists,
+        resident_npc_party_exists,
+    ) {
+        (true, false, false) => Ok(CustodyPartyDispatch::Unattributed),
+        (true, _, _) => {
+            Err("Empty custody outcome party ID unexpectedly has party authority".into())
+        }
+        (false, true, false) => Ok(CustodyPartyDispatch::OrdinaryPartyContinuity),
+        (false, false, true) => Ok(CustodyPartyDispatch::ResidentNpcAuthority),
+        (false, false, false) => Err(format!(
+            "Custody outcome party ID is not an ordinary or resident NPC party: {party_id}"
+        )),
+        (false, true, true) => Err(format!(
+            "Custody outcome party ID is ambiguous across ordinary and resident NPC authority: {party_id}"
+        )),
+    }
+}
+
+fn apply_custody_party_continuity(
+    dispatch: CustodyPartyDispatch,
+    ordinary_party_continuity: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if dispatch == CustodyPartyDispatch::OrdinaryPartyContinuity {
+        ordinary_party_continuity()
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_custody_fact_retry_attribution(
+    expected_case_id: &str,
+    expected_party_id: &str,
+    receipt_attribution: Option<(&str, &str)>,
+) -> Result<(), String> {
+    let Some((receipt_case_id, receipt_party_id)) = receipt_attribution else {
+        return Err("Exact custody retry is missing paired outcome fact attribution".into());
+    };
+    if receipt_case_id != expected_case_id || receipt_party_id != expected_party_id {
+        return Err("Conflicting custody retry outcome fact attribution".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod custody_party_dispatch_tests {
+    use super::{
+        CustodyPartyDispatch, apply_custody_party_continuity, custody_party_dispatch,
+        validate_custody_fact_retry_attribution,
+    };
+    use std::cell::Cell;
+
+    #[test]
+    fn ordinary_party_dispatch_preserves_player_continuity() {
+        let dispatch = custody_party_dispatch("party:player", true, false).unwrap();
+        assert_eq!(dispatch, CustodyPartyDispatch::OrdinaryPartyContinuity);
+
+        let continuity_ran = Cell::new(false);
+        apply_custody_party_continuity(dispatch, || {
+            continuity_ran.set(true);
+            Ok(())
+        })
+        .unwrap();
+        assert!(continuity_ran.get());
+    }
+
+    #[test]
+    fn resident_npc_custody_dispatch_cannot_run_player_continuity() {
+        let dispatch = custody_party_dispatch("npc-party:resident-company", false, true).unwrap();
+        assert_eq!(dispatch, CustodyPartyDispatch::ResidentNpcAuthority);
+
+        apply_custody_party_continuity(dispatch, || -> Result<(), String> {
+            panic!("resident NPC Retrieve/Return path reached player continuity")
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn unknown_and_ambiguous_nonempty_party_ids_fail_closed() {
+        let unknown = custody_party_dispatch("party:unknown", false, false).unwrap_err();
+        assert!(unknown.contains("not an ordinary or resident NPC party"));
+        assert!(unknown.contains("party:unknown"));
+
+        let ambiguous = custody_party_dispatch("party:ambiguous", true, true).unwrap_err();
+        assert!(ambiguous.contains("ambiguous"));
+        assert!(ambiguous.contains("party:ambiguous"));
+    }
+
+    #[test]
+    fn empty_party_id_retains_unattributed_custody_seeding() {
+        assert_eq!(
+            custody_party_dispatch("", false, false).unwrap(),
+            CustodyPartyDispatch::Unattributed
+        );
+    }
+
+    #[test]
+    fn exact_fact_retry_requires_matching_durable_case_and_party_attribution() {
+        validate_custody_fact_retry_attribution(
+            "case:test",
+            "npc-party:retired",
+            Some(("case:test", "npc-party:retired")),
+        )
+        .unwrap();
+
+        let missing =
+            validate_custody_fact_retry_attribution("case:test", "npc-party:retired", None)
+                .unwrap_err();
+        assert!(missing.contains("missing paired outcome fact attribution"));
+
+        for attribution in [
+            ("case:other", "npc-party:retired"),
+            ("case:test", "npc-party:other"),
+        ] {
+            assert!(
+                validate_custody_fact_retry_attribution(
+                    "case:test",
+                    "npc-party:retired",
+                    Some(attribution),
+                )
+                .unwrap_err()
+                .contains("Conflicting custody retry outcome fact attribution")
+            );
+        }
+    }
+}
+
 fn transition_case_custody(
     ctx: &ReducerContext,
     source_id: &str,
@@ -16963,11 +17510,34 @@ fn transition_case_custody(
             && existing.holder_id == holder_id
             && existing.version == version
         {
+            if fact.is_some() {
+                let fact_source_id = format!("custody:{source_id}");
+                let paired_fact = ctx.db.case_outcome_fact().source_id().find(&fact_source_id);
+                validate_custody_fact_retry_attribution(
+                    case_id,
+                    party_id,
+                    paired_fact
+                        .as_ref()
+                        .map(|receipt| (receipt.case_id.as_str(), receipt.party_id.as_str())),
+                )?;
+            }
             Ok(false)
         } else {
             Err("Conflicting retry for custody source".into())
         };
     }
+    let party_key = party_id.to_string();
+    let party_dispatch = custody_party_dispatch(
+        party_id,
+        !party_id.is_empty() && ctx.db.party_authority().id().find(&party_key).is_some(),
+        !party_id.is_empty()
+            && ctx
+                .db
+                .npc_adventuring_party_authority()
+                .id()
+                .find(&party_key)
+                .is_some(),
+    )?;
     let mut records = BTreeMap::new();
     if let Some(current) = ctx
         .db
@@ -17019,10 +17589,10 @@ fn transition_case_custody(
             fact,
         )?;
     }
-    if !party_id.is_empty() {
+    apply_custody_party_continuity(party_dispatch, || {
         ensure_objective_continuity_guards(ctx, party_id, case_id)?;
-        reconcile_party_objective_continuity(ctx, party_id)?;
-    }
+        reconcile_party_objective_continuity(ctx, party_id)
+    })?;
     if matches!(
         holder_kind,
         CustodyHolderKind::Destroyed | CustodyHolderKind::Released
@@ -19042,6 +19612,14 @@ fn settlement_activity_target(settlement_id: &str) -> usize {
             % (MAX_QUESTS_PER_SETTLEMENT - MIN_QUESTS_PER_SETTLEMENT + 1)
 }
 
+fn settlement_activity_stage_error(
+    settlement_id: &str,
+    stage: &str,
+    error: impl std::fmt::Display,
+) -> String {
+    format!("Settlement activity for {settlement_id} failed during {stage}: {error}")
+}
+
 fn ensure_settlement_activity_inner(
     ctx: &ReducerContext,
     settlement_id: &str,
@@ -19049,8 +19627,12 @@ fn ensure_settlement_activity_inner(
     // World import writes only canonical settlement facts. These derived
     // service rows are instead materialized when settlement activity is used.
     crate::repair::ensure_settlement_smith(ctx, settlement_id);
-    crate::settlement_population::ensure_settlement_population(ctx, settlement_id)?;
-    let official_minute = crate::time::refresh_clock(ctx)?;
+    crate::settlement_population::ensure_settlement_population(ctx, settlement_id).map_err(
+        |error| settlement_activity_stage_error(settlement_id, "settlement population", error),
+    )?;
+    let official_minute = crate::time::refresh_clock(ctx).map_err(|error| {
+        settlement_activity_stage_error(settlement_id, "official clock refresh", error)
+    })?;
     for mut contract in ctx
         .db
         .contract_authority()
@@ -19097,7 +19679,13 @@ fn ensure_settlement_activity_inner(
         .settlement_id()
         .filter(&settlement_id.to_string())
         .try_fold(0usize, |count, authority| {
-            let validated = validate_quest_generation_authority(&authority)?;
+            let validated = validate_quest_generation_authority(&authority).map_err(|error| {
+                settlement_activity_stage_error(
+                    settlement_id,
+                    "generated activity validation",
+                    error,
+                )
+            })?;
             if validated.context.settlement_id != settlement_id {
                 return Ok(count);
             }
@@ -19116,11 +19704,20 @@ fn ensure_settlement_activity_inner(
         })?;
     let active = active_contracts.saturating_add(active_generated_cases);
     for _ in active..settlement_activity_target(settlement_id) {
-        generate_quest_for_settlement(ctx, settlement_id)?;
+        generate_quest_for_settlement(ctx, settlement_id).map_err(|error| {
+            settlement_activity_stage_error(settlement_id, "quest generation", error)
+        })?;
     }
-    crate::local_problem::ensure_generated_incidents(ctx, settlement_id, official_minute)?;
-    crate::npc_adventurer::ensure_npc_case_interventions(ctx, settlement_id, official_minute)?;
-    ensure_npc_recruiting_parties(ctx, settlement_id)?;
+    crate::local_problem::ensure_generated_incidents(ctx, settlement_id, official_minute).map_err(
+        |error| settlement_activity_stage_error(settlement_id, "generated incidents", error),
+    )?;
+    crate::npc_adventurer::ensure_npc_case_interventions(ctx, settlement_id, official_minute)
+        .map_err(|error| {
+            settlement_activity_stage_error(settlement_id, "NPC case interventions", error)
+        })?;
+    ensure_npc_recruiting_parties(ctx, settlement_id).map_err(|error| {
+        settlement_activity_stage_error(settlement_id, "NPC recruiting parties", error)
+    })?;
     Ok(())
 }
 
@@ -19324,6 +19921,67 @@ fn generated_witness_candidates(
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
     candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
     candidates
+}
+
+/// Developer quest authority must compile from the same player-visible NPC
+/// facts as the gateway preview. Automatic generation intentionally continues
+/// to use `generated_witness_candidates` and its private demographic truth.
+fn developer_witness_candidates(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Vec<adventuresim_core::quest_generation::WitnessCandidate> {
+    use adventuresim_core::{
+        quest_generation::retain_navigable_witnesses, settlement_economy::player_visible_npc_tabs,
+    };
+    let Some(settlement) = ctx.db.settlement().id().find(settlement_id.to_owned()) else {
+        return Vec::new();
+    };
+    let has_keep = matches!(
+        settlement.category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    );
+    let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep);
+    let mut candidates = ctx
+        .db
+        .settlement_npc()
+        .home_settlement_id()
+        .filter(&settlement_id.to_string())
+        .filter_map(|npc| {
+            let presence = ctx.db.settlement_npc_presence().npc_id().find(&npc.id)?;
+            developer_npc_witness_candidate(&npc, &presence)
+        })
+        .collect::<Vec<_>>();
+    candidates = retain_navigable_witnesses(candidates, &visible_tabs);
+    candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
+    candidates
+}
+
+pub(crate) fn developer_npc_witness_candidate(
+    npc: &crate::settlement_population::SettlementNpc,
+    presence: &crate::settlement_population::SettlementNpcPresence,
+) -> Option<adventuresim_core::quest_generation::WitnessCandidate> {
+    use adventuresim_core::quest_generation::{
+        VisibleWitnessCandidateInput, visible_witness_candidate,
+    };
+    let age_band = format!("{:?}", npc.age_band);
+    let presentation = format!("{:?}", npc.presentation);
+    visible_witness_candidate(VisibleWitnessCandidateInput {
+        npc_id: &npc.id,
+        display_name: &npc.name,
+        age_band: &age_band,
+        presentation: &presentation,
+        height: &npc.height,
+        build: &npc.build,
+        hair: &npc.hair,
+        clothing: &npc.clothing,
+        profession: &npc.profession,
+        local_role: &npc.local_role,
+        settlement_id: &presence.settlement_id,
+        location_id: &presence.location_id,
+        start_minute: presence.start_minute,
+        end_minute: presence.end_minute,
+        is_default: presence.is_default,
+    })
 }
 
 pub(crate) fn generated_npc_demographic(
@@ -19659,7 +20317,7 @@ pub fn spawn_developer_quest(
         ordinal,
         now_minute: crate::time::refresh_clock(ctx)?,
         requested_family: Some(definition.family),
-        witness_candidates: generated_witness_candidates(ctx, &settlement_id),
+        witness_candidates: developer_witness_candidates(ctx, &settlement_id),
     };
     let developer_context = dq::DeveloperGenerationContext {
         base: base.clone(),
@@ -19682,6 +20340,8 @@ pub fn spawn_developer_quest(
 
 #[cfg(test)]
 mod developer_quest_source_tests {
+    use super::*;
+
     #[test]
     fn debug_and_automatic_generation_share_materialization_without_disclosure() {
         let source = include_str!("strategic.rs");
@@ -19700,7 +20360,10 @@ mod developer_quest_source_tests {
             .next()
             .unwrap();
         assert!(automatic.contains("materialize_generated_quest"));
+        assert!(automatic.contains("generated_witness_candidates"));
         assert!(debug.contains("materialize_generated_quest"));
+        assert!(debug.contains("developer_witness_candidates"));
+        assert!(!debug.contains("generated_witness_candidates"));
         assert!(debug.contains("current_settlement_id"));
         assert!(!debug.contains("rumor_receipt"));
         assert!(!debug.contains("referral"));
@@ -19721,6 +20384,75 @@ mod developer_quest_source_tests {
         assert!(validator.contains("DeveloperGenerationContext"));
         assert!(validator.contains("developer_quest::compile"));
         assert!(validator.contains("regenerated != manifest"));
+    }
+
+    #[test]
+    fn developer_witness_projection_matches_core_for_every_presentation() {
+        use crate::settlement_population::{
+            NpcAgeBand, NpcPresentation, NpcSex, SettlementNpc, SettlementNpcPresence,
+        };
+        use adventuresim_core::quest_generation::{
+            VisibleWitnessCandidateInput, visible_witness_candidate,
+        };
+
+        let presence = SettlementNpcPresence {
+            npc_id: "npc:visible".into(),
+            settlement_id: "settlement:visible".into(),
+            location_id: "market".into(),
+            start_minute: 480,
+            end_minute: 1_020,
+            is_default: true,
+        };
+        for presentation in [
+            NpcPresentation::Man,
+            NpcPresentation::Woman,
+            NpcPresentation::Ambiguous,
+        ] {
+            let npc = SettlementNpc {
+                id: "npc:visible".into(),
+                projection_id: 42,
+                home_settlement_id: "settlement:visible".into(),
+                name: "Visible Witness".into(),
+                age_band: NpcAgeBand::Adult,
+                sex: NpcSex::Female,
+                presentation,
+                height: "average height".into(),
+                build: "sturdy".into(),
+                hair: "brown hair".into(),
+                facial_hair: "none visible".into(),
+                complexion: "weathered".into(),
+                visible_features: "a scar".into(),
+                clothing: "a wool coat".into(),
+                profession: "laborer".into(),
+                household: "market household".into(),
+                local_role: "resident".into(),
+                service_id: String::new(),
+                conversation_id: "local-resident".into(),
+            };
+            let age_band = format!("{:?}", npc.age_band);
+            let presentation = format!("{:?}", npc.presentation);
+            let direct = visible_witness_candidate(VisibleWitnessCandidateInput {
+                npc_id: &npc.id,
+                display_name: &npc.name,
+                age_band: &age_band,
+                presentation: &presentation,
+                height: &npc.height,
+                build: &npc.build,
+                hair: &npc.hair,
+                clothing: &npc.clothing,
+                profession: &npc.profession,
+                local_role: &npc.local_role,
+                settlement_id: &presence.settlement_id,
+                location_id: &presence.location_id,
+                start_minute: presence.start_minute,
+                end_minute: presence.end_minute,
+                is_default: presence.is_default,
+            })
+            .unwrap();
+            let authoritative = developer_npc_witness_candidate(&npc, &presence).unwrap();
+            assert_eq!(authoritative, direct);
+            assert!(authoritative.sex.is_empty());
+        }
     }
 
     #[test]
@@ -19779,5 +20511,31 @@ mod developer_quest_source_tests {
         assert!(release.contains("fragments.len()"));
         assert!(release.contains("Option::<adventuresim_dialogue::SourceRef>::None"));
         assert!(!release.contains("source_refs_json: \"[null]\""));
+    }
+
+    #[test]
+    fn gateway_battle_and_dialogue_options_expose_only_observer_case_ids() {
+        let source = include_str!("strategic.rs");
+        let battle = source
+            .split("pub struct BackendCaseBattle")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct MissionAuthority").next())
+            .expect("battle gateway projection");
+        assert!(battle.contains("owner_character_id"));
+        assert!(battle.contains("public_case_id"));
+        assert!(!battle.contains("pub case_id:"));
+
+        let options = source
+            .split("pub struct BackendDialogueTopicOption")
+            .nth(1)
+            .and_then(|tail| tail.split("fn player_participant_ids").next())
+            .expect("dialogue topic projection");
+        assert!(options.contains("public_case_id"));
+        let refresh = source
+            .split("fn refresh_dialogue_topic_options")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn choose_dialogue_topic").next())
+            .expect("dialogue topic refresh");
+        assert!(refresh.contains("dialogue_public_case_id"));
     }
 }

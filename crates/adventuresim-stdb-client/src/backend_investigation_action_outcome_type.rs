@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct BackendInvestigationActionOutcome {
     pub owner_character_id: u64,
+    pub case_id: String,
     pub outcome_id: String,
     pub action_id: String,
     pub wording: String,
@@ -23,6 +24,7 @@ impl __sdk::InModule for BackendInvestigationActionOutcome {
 /// Provides typed access to columns for query building.
 pub struct BackendInvestigationActionOutcomeCols {
     pub owner_character_id: __sdk::__query_builder::Col<BackendInvestigationActionOutcome, u64>,
+    pub case_id: __sdk::__query_builder::Col<BackendInvestigationActionOutcome, String>,
     pub outcome_id: __sdk::__query_builder::Col<BackendInvestigationActionOutcome, String>,
     pub action_id: __sdk::__query_builder::Col<BackendInvestigationActionOutcome, String>,
     pub wording: __sdk::__query_builder::Col<BackendInvestigationActionOutcome, String>,
@@ -34,6 +36,7 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationActionOutcome {
     fn cols(table_name: &'static str) -> Self::Cols {
         BackendInvestigationActionOutcomeCols {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
+            case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             outcome_id: __sdk::__query_builder::Col::new(table_name, "outcome_id"),
             action_id: __sdk::__query_builder::Col::new(table_name, "action_id"),
             wording: __sdk::__query_builder::Col::new(table_name, "wording"),

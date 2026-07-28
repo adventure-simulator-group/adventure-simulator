@@ -35,8 +35,73 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
     assert_eq!(report.metrics.joins_accepted, 4);
     assert!(report.metrics.quests_attempted > 0);
     assert!(
+        report.metrics.generated_quests_discovered > 0,
+        "ordinary NPC dialogue should discover at least one player-visible generated case"
+    );
+    assert!(
+        report.trace.iter().any(|event| {
+            event.kind == CoreLoopEventKind::GeneratedQuestDiscovered
+                && event.detail.contains("case=")
+                && event.detail.contains("title=")
+        }),
+        "generated attempts must retain observer-safe discovery provenance"
+    );
+    assert!(
         report.metrics.quests_attempted > 1 || report.metrics.activity_days > 0,
         "the run should exercise repeated autonomous decisions"
+    );
+    assert!(
+        report.trace.iter().any(|event| {
+            event.kind == CoreLoopEventKind::QuestDecision
+                && event.detail.contains("offered_contracts=")
+                && event.detail.contains("open_generated_cases=")
+                && event.detail.contains("projected_investigation_actions=")
+                && event.detail.contains("quest_path=")
+                && event.detail.contains("fallback=")
+        }),
+        "each autonomous choice should expose its observer-safe quest decision"
+    );
+    if report.metrics.activity_days > 0 {
+        assert!(
+            report.trace.iter().any(|event| {
+                event.kind == CoreLoopEventKind::Activity
+                    && event.detail.contains("outcome=completed")
+                    && event.detail.contains("purse_delta=")
+                    && event.detail.contains("condition_before=")
+                    && event.detail.contains("elapsed_delta=")
+            }),
+            "activity diagnostics should retain public pre/post consequences"
+        );
+    }
+    assert!(
+        report.trace.iter().any(|event| {
+            event.kind == CoreLoopEventKind::Activity
+                && event.detail.contains("outcome=completed")
+                && event.detail.contains("effective=Labor")
+                && detail_number(&event.detail, "purse_delta=").is_some_and(|delta| delta > 0.0)
+        }),
+        "the authoritative activity policy should complete productive legal labor"
+    );
+    let inn_activities = report
+        .trace
+        .iter()
+        .filter(|event| {
+            event.kind == CoreLoopEventKind::Activity
+                && event.detail.contains("outcome=completed")
+                && event.detail.contains("venue=inn")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !inn_activities.is_empty(),
+        "the deterministic live fixture should exercise full-board Inn activity"
+    );
+    assert!(
+        inn_activities.iter().all(|event| {
+            let before = detail_number(&event.detail, "hunger_before=");
+            let after = detail_number(&event.detail, "hunger_after=");
+            matches!((before, after), (Some(before), Some(after)) if after <= before + 0.001)
+        }),
+        "full-board Inn activity must not worsen authoritative hunger"
     );
     assert!(
         report.profiles.iter().any(|profile| matches!(
@@ -78,6 +143,17 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
             .iter()
             .all(|agent| agent.personal_gold_coin < 1_000_000),
         "gold-stack deduction must not underflow"
+    );
+    assert!(
+        report.final_agents.iter().all(|agent| {
+            agent.hunger.is_finite()
+                && agent.thirst.is_finite()
+                && agent.food_days.is_finite()
+                && agent.water_days.is_finite()
+                && agent.visible_food_kcal.is_finite()
+                && agent.visible_water_ml.is_finite()
+        }),
+        "successful reports must retain public need and supply diagnostics"
     );
     assert_eq!(report.metrics.reducer_failures, 0);
     assert_eq!(report.metrics.stuck_detections, 0);
@@ -134,6 +210,13 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
         reuse_error.contains("reused or populated") || reuse_error.contains("already claimed"),
         "unexpected reuse error: {reuse_error}"
     );
+}
+
+fn detail_number(detail: &str, key: &str) -> Option<f64> {
+    detail
+        .split(';')
+        .find_map(|field| field.strip_prefix(key))
+        .and_then(|value| value.parse().ok())
 }
 
 fn assert_ordered_subsequence(

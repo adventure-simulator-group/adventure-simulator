@@ -1,4 +1,4 @@
-use super::AppState;
+use super::{AppState, BackendSettlementNpcRow as SettlementNpcRow};
 use crate::spacetimedb::{Settlement, SettlementCategory};
 use crate::{session::Session, spacetimedb::sql_string_literal};
 use axum::{
@@ -82,27 +82,6 @@ struct WitnessClaimRow {
     resolved: bool,
     outcome: String,
     affinity_delta: f32,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-struct SettlementNpcRow {
-    id: String,
-    home_settlement_id: String,
-    name: String,
-    age_band: String,
-    presentation: String,
-    height: String,
-    build: String,
-    hair: String,
-    facial_hair: String,
-    complexion: String,
-    visible_features: String,
-    clothing: String,
-    profession: String,
-    household: String,
-    local_role: String,
-    service_id: String,
-    conversation_id: String,
 }
 
 #[derive(Deserialize)]
@@ -266,13 +245,15 @@ mod npc_navigation_tests {
     #[test]
     fn browser_npc_description_uses_presentation_not_private_sex() {
         let source = include_str!("dialogue.rs");
-        let row = source
-            .split("struct SettlementNpcRow")
+        let transport = include_str!("mod.rs");
+        let row = transport
+            .split("pub(crate) struct BackendSettlementNpcRow {")
             .nth(1)
-            .and_then(|tail| tail.split("struct NpcPresenceRow").next())
+            .and_then(|tail| tail.split_once('}').map(|(body, _)| body))
             .expect("NPC transport row");
         assert!(row.contains("presentation: String"));
         assert!(!row.contains("sex: String"));
+        assert!(!row.contains("projection_id:"));
         let endpoint = source
             .rsplit_once("async fn location_npcs(")
             .map(|(_, tail)| tail)

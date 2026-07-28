@@ -10,7 +10,8 @@ use super::case_site_id_type::CaseSiteId;
 #[sats(crate = __lib)]
 pub struct BackendCaseBattle {
     pub gateway_bucket: u8,
-    pub case_id: String,
+    pub owner_character_id: u64,
+    pub public_case_id: String,
     pub party_id: String,
     pub battle_id: String,
     pub mission_id: String,
@@ -26,7 +27,8 @@ impl __sdk::InModule for BackendCaseBattle {
 /// Provides typed access to columns for query building.
 pub struct BackendCaseBattleCols {
     pub gateway_bucket: __sdk::__query_builder::Col<BackendCaseBattle, u8>,
-    pub case_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
+    pub owner_character_id: __sdk::__query_builder::Col<BackendCaseBattle, u64>,
+    pub public_case_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
     pub party_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
     pub battle_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
     pub mission_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
@@ -38,7 +40,8 @@ impl __sdk::__query_builder::HasCols for BackendCaseBattle {
     fn cols(table_name: &'static str) -> Self::Cols {
         BackendCaseBattleCols {
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
-            case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
+            owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
+            public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             battle_id: __sdk::__query_builder::Col::new(table_name, "battle_id"),
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
@@ -53,6 +56,7 @@ impl __sdk::__query_builder::HasCols for BackendCaseBattle {
 pub struct BackendCaseBattleIxCols {
     pub battle_id: __sdk::__query_builder::IxCol<BackendCaseBattle, String>,
     pub gateway_bucket: __sdk::__query_builder::IxCol<BackendCaseBattle, u8>,
+    pub owner_character_id: __sdk::__query_builder::IxCol<BackendCaseBattle, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for BackendCaseBattle {
@@ -61,6 +65,10 @@ impl __sdk::__query_builder::HasIxCols for BackendCaseBattle {
         BackendCaseBattleIxCols {
             battle_id: __sdk::__query_builder::IxCol::new(table_name, "battle_id"),
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
+            owner_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "owner_character_id",
+            ),
         }
     }
 }
