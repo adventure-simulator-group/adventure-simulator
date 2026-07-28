@@ -333,7 +333,7 @@ mod healing_tests {
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
         quest_generation_context_commitment, recruitment_offer_binding_fields_are_live,
         refreshed_recruitment_offer_status, renewed_recruitment_offer_expiry,
-        sample_mission_candidate, sanitized_encounter_body_weight,
+        sample_mission_candidate, sanitized_encounter_body_weight, settlement_activity_stage_error,
         unique_default_merchant_provider, validate_quest_generation_authority,
         validated_generated_dialogue_manifest,
     };
@@ -2228,6 +2228,53 @@ mod healing_tests {
             .and_then(|tail| tail.split("fn select_case_finale").next())
             .expect("case resolution");
         assert!(resolution.contains("ensure_settlement_activity_inner"));
+    }
+
+    #[test]
+    fn settlement_activity_failures_identify_the_settlement_and_stage() {
+        assert_eq!(
+            settlement_activity_stage_error(
+                "viabundus-0",
+                "NPC recruiting parties",
+                "Party not found"
+            ),
+            "Settlement activity for viabundus-0 failed during NPC recruiting parties: Party not found"
+        );
+
+        let source = include_str!("strategic.rs");
+        let activity = source
+            .rsplit("fn ensure_settlement_activity_inner")
+            .next()
+            .and_then(|tail| tail.split("fn ensure_npc_recruiting_parties").next())
+            .expect("settlement activity implementation");
+        for (callee, stage) in [
+            ("ensure_settlement_population(ctx", "settlement population"),
+            ("refresh_clock(ctx)", "official clock refresh"),
+            (
+                "validate_quest_generation_authority(&authority)",
+                "generated activity validation",
+            ),
+            ("generate_quest_for_settlement(ctx", "quest generation"),
+            ("ensure_generated_incidents(ctx", "generated incidents"),
+            ("ensure_npc_case_interventions(", "NPC case interventions"),
+            (
+                "ensure_npc_recruiting_parties(ctx",
+                "NPC recruiting parties",
+            ),
+        ] {
+            let after_call = activity
+                .split(callee)
+                .nth(1)
+                .unwrap_or_else(|| panic!("settlement activity omits {callee}"));
+            let error_path = after_call
+                .split("?;")
+                .next()
+                .expect("fallible settlement activity call");
+            assert!(
+                error_path.contains(&format!("\"{stage}\"")),
+                "{callee} is not paired with its {stage} context"
+            );
+        }
     }
 
     #[test]
@@ -19042,6 +19089,14 @@ fn settlement_activity_target(settlement_id: &str) -> usize {
             % (MAX_QUESTS_PER_SETTLEMENT - MIN_QUESTS_PER_SETTLEMENT + 1)
 }
 
+fn settlement_activity_stage_error(
+    settlement_id: &str,
+    stage: &str,
+    error: impl std::fmt::Display,
+) -> String {
+    format!("Settlement activity for {settlement_id} failed during {stage}: {error}")
+}
+
 fn ensure_settlement_activity_inner(
     ctx: &ReducerContext,
     settlement_id: &str,
@@ -19049,8 +19104,12 @@ fn ensure_settlement_activity_inner(
     // World import writes only canonical settlement facts. These derived
     // service rows are instead materialized when settlement activity is used.
     crate::repair::ensure_settlement_smith(ctx, settlement_id);
-    crate::settlement_population::ensure_settlement_population(ctx, settlement_id)?;
-    let official_minute = crate::time::refresh_clock(ctx)?;
+    crate::settlement_population::ensure_settlement_population(ctx, settlement_id).map_err(
+        |error| settlement_activity_stage_error(settlement_id, "settlement population", error),
+    )?;
+    let official_minute = crate::time::refresh_clock(ctx).map_err(|error| {
+        settlement_activity_stage_error(settlement_id, "official clock refresh", error)
+    })?;
     for mut contract in ctx
         .db
         .contract_authority()
@@ -19097,7 +19156,13 @@ fn ensure_settlement_activity_inner(
         .settlement_id()
         .filter(&settlement_id.to_string())
         .try_fold(0usize, |count, authority| {
-            let validated = validate_quest_generation_authority(&authority)?;
+            let validated = validate_quest_generation_authority(&authority).map_err(|error| {
+                settlement_activity_stage_error(
+                    settlement_id,
+                    "generated activity validation",
+                    error,
+                )
+            })?;
             if validated.context.settlement_id != settlement_id {
                 return Ok(count);
             }
@@ -19116,11 +19181,20 @@ fn ensure_settlement_activity_inner(
         })?;
     let active = active_contracts.saturating_add(active_generated_cases);
     for _ in active..settlement_activity_target(settlement_id) {
-        generate_quest_for_settlement(ctx, settlement_id)?;
+        generate_quest_for_settlement(ctx, settlement_id).map_err(|error| {
+            settlement_activity_stage_error(settlement_id, "quest generation", error)
+        })?;
     }
-    crate::local_problem::ensure_generated_incidents(ctx, settlement_id, official_minute)?;
-    crate::npc_adventurer::ensure_npc_case_interventions(ctx, settlement_id, official_minute)?;
-    ensure_npc_recruiting_parties(ctx, settlement_id)?;
+    crate::local_problem::ensure_generated_incidents(ctx, settlement_id, official_minute).map_err(
+        |error| settlement_activity_stage_error(settlement_id, "generated incidents", error),
+    )?;
+    crate::npc_adventurer::ensure_npc_case_interventions(ctx, settlement_id, official_minute)
+        .map_err(|error| {
+            settlement_activity_stage_error(settlement_id, "NPC case interventions", error)
+        })?;
+    ensure_npc_recruiting_parties(ctx, settlement_id).map_err(|error| {
+        settlement_activity_stage_error(settlement_id, "NPC recruiting parties", error)
+    })?;
     Ok(())
 }
 
