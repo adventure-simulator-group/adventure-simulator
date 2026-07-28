@@ -218,6 +218,7 @@ pub fn validate_documents(
                 "description",
                 "historical_fantasy_note",
                 "service_id",
+                "public_threat_referrals",
                 "starting_role",
                 "chapters",
                 "recognition",
@@ -230,6 +231,14 @@ pub fn validate_documents(
             source,
             "organization",
         )?;
+        if !org
+            .get("public_threat_referrals")
+            .is_some_and(Value::is_boolean)
+        {
+            return Err(format!(
+                "{source}: organization.public_threat_referrals must be a boolean"
+            ));
+        }
         let id = text(org, source, "id")?;
         if !stable_id(id) {
             return Err(format!(
@@ -665,7 +674,8 @@ mod tests {
                 "training": [{"kind": "fixed_skill", "skill": "cooking", "weight": 1.0}],
                 "reward": "gold"
             },
-            "privileges": []
+            "privileges": [],
+            "public_threat_referrals": false
         })
     }
 

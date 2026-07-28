@@ -399,6 +399,7 @@ pub struct CombatProfile {
     pub temperament: Temperament,
     pub encounter_scale_basis_points: u16,
     pub loot_item_id: Option<&'static str>,
+    pub escalation: crate::threat_escalation::EscalationProfile,
 }
 
 fn has_unsupported_layered_protection(combat: CombatProfile) -> bool {
@@ -421,7 +422,7 @@ pub struct InvestigationProfile {
     pub mistaken_for: &'static [ThreatId],
     pub distinguishing_clues: &'static [EvidenceKind],
     pub preparation_advice: &'static str,
-    pub evidence_visibility: u8,
+    pub investigability: u8,
     pub identification_challenge: bool,
     pub location_challenge: bool,
     /// Leads worth investigating; these do not claim an implemented combat modifier.
@@ -593,6 +594,11 @@ fn compile_profile(
             temperament: Temperament::Cautious,
             encounter_scale_basis_points: 1,
             loot_item_id: None,
+            escalation: crate::threat_escalation::EscalationProfile {
+                mode: crate::threat_escalation::EscalationMode::Mob,
+                growth_rate_bps: 0,
+                baseline_enemy_power: crate::threat_escalation::BASELINE_ORC_POWER,
+            },
         },
         investigation: InvestigationProfile {
             habitats: &[],
@@ -607,7 +613,7 @@ fn compile_profile(
             mistaken_for: &[],
             distinguishing_clues: &[],
             preparation_advice: "",
-            evidence_visibility: 0,
+            investigability: 0,
             identification_challenge: false,
             location_challenge: false,
             countermeasure_hypotheses: &[],
@@ -680,6 +686,11 @@ fn compile_profile(
     };
     profile.combat.encounter_scale_basis_points = authored.combat.encounter_scale_basis_points;
     profile.combat.loot_item_id = authored.combat.loot_item_id.as_deref();
+    profile.combat.escalation = crate::threat_escalation::EscalationProfile {
+        mode: authored.combat.escalation_mode,
+        growth_rate_bps: authored.combat.escalation_growth_rate_bps,
+        baseline_enemy_power: authored.combat.baseline_combat_power,
+    };
     profile.investigation.preparation_advice = authored.investigation.preparation_advice.as_str();
     profile.investigation.habitats = Box::leak(
         authored
@@ -754,7 +765,7 @@ fn compile_profile(
             .collect::<Vec<_>>()
             .into_boxed_slice(),
     );
-    profile.investigation.evidence_visibility = authored.investigation.evidence_visibility;
+    profile.investigation.investigability = authored.investigation.investigability;
     profile.investigation.identification_challenge =
         authored.investigation.identification_challenge;
     profile.investigation.location_challenge = authored.investigation.location_challenge;
@@ -914,13 +925,13 @@ pub fn report_likelihood(
         WitnessCapability::Trained => 100,
     };
     let clarity = (visibility + distance + capability) / 3;
-    let evidence_visibility = u32::from(p.investigation.evidence_visibility);
+    let investigability = u32::from(p.investigation.investigability);
     // Clear observations favor conspicuous threats; poor observations favor
     // elusive threats that plausibly yield only a vague report.
     let observation = if clarity >= 60 {
-        50 + evidence_visibility * clarity / 100
+        50 + investigability * clarity / 100
     } else {
-        50 + (100 - evidence_visibility) * (100 - clarity) / 100
+        50 + (100 - investigability) * (100 - clarity) / 100
     };
     base.saturating_mul(observation).max(1)
 }
@@ -1168,7 +1179,12 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
             || has_duplicates(p.investigation.wounds)
             || has_duplicates(p.investigation.disturbances)
             || has_duplicates(p.investigation.odors)
-            || p.investigation.evidence_visibility > 100
+            || p.investigation.investigability > 100
+            || p.combat.escalation.growth_rate_bps == 0
+            || p.combat.escalation.growth_rate_bps > 10_000
+            || !(crate::threat_escalation::MIN_BASELINE_ENEMY_POWER
+                ..=crate::threat_escalation::MAX_ORC_EQUIVALENT_POWER)
+                .contains(&p.combat.escalation.baseline_enemy_power)
         {
             errors.push(CatalogDiagnostic {
                 message: format!("duplicate or invalid investigation values {}", id.as_str()),

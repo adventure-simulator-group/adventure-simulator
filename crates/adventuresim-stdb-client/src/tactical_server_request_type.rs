@@ -13,6 +13,9 @@ pub struct TacticalServerRequest {
     pub party_id: String,
     pub requested_by: u64,
     pub required_enemy_kills: u32,
+    pub enemy_difficulty: i32,
+    pub enemy_combat_scale_bps: u32,
+    pub normalized_combat_power: u32,
 }
 
 impl __sdk::InModule for TacticalServerRequest {
@@ -29,6 +32,9 @@ pub struct TacticalServerRequestCols {
     pub party_id: __sdk::__query_builder::Col<TacticalServerRequest, String>,
     pub requested_by: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
     pub required_enemy_kills: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
+    pub enemy_difficulty: __sdk::__query_builder::Col<TacticalServerRequest, i32>,
+    pub enemy_combat_scale_bps: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
+    pub normalized_combat_power: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
 }
 
 impl __sdk::__query_builder::HasCols for TacticalServerRequest {
@@ -43,6 +49,15 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
             required_enemy_kills: __sdk::__query_builder::Col::new(
                 table_name,
                 "required_enemy_kills",
+            ),
+            enemy_difficulty: __sdk::__query_builder::Col::new(table_name, "enemy_difficulty"),
+            enemy_combat_scale_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "enemy_combat_scale_bps",
+            ),
+            normalized_combat_power: __sdk::__query_builder::Col::new(
+                table_name,
+                "normalized_combat_power",
             ),
         }
     }

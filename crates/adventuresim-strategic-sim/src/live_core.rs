@@ -4,11 +4,7 @@
 //! SpacetimeDB database and deliberately delegates every game rule to the
 //! normal strategic reducers.
 
-use crate::{
-    ActivityPreference, AgentProfile, ChoiceArguments, ChoiceKind, DecisionArguments,
-    DiscoveryView, EVAL_FORMAT_VERSION, EquipmentStyle, JournalView, LegalChoice, PartyView,
-    PlayerFrame, QuestPolicy, generate_profile,
-};
+use crate::{ActivityPreference, AgentProfile, EquipmentStyle, generate_profile};
 use adventuresim_core::simulation_security::{
     SIM_BOOTSTRAP_TOKEN_ENV as BOOTSTRAP_TOKEN_ENV,
     SIM_BOOTSTRAP_TOKEN_HEX_LEN as BOOTSTRAP_TOKEN_HEX_LEN,
@@ -43,8 +39,6 @@ use adventuresim_stdb_client::{
     backend_investigation_cases_table::BackendInvestigationCasesTableAccess,
     backend_investigation_leads_table::BackendInvestigationLeadsTableAccess,
     backend_local_problem_trade_effects_table::BackendLocalProblemTradeEffectsTableAccess,
-    backend_npc_case_intervention_type::BackendNpcCaseIntervention,
-    backend_npc_case_interventions_table::BackendNpcCaseInterventionsTableAccess,
     backend_settlement_npcs_table::BackendSettlementNpcsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -84,7 +78,6 @@ use adventuresim_stdb_client::{
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_simulation_world_reducer::seed_simulation_world,
-    set_simulation_npc_intervention_strategy_reducer::set_simulation_npc_intervention_strategy,
     settlement_npc_presence_table::SettlementNpcPresenceTableAccess,
     settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
     settlement_table::SettlementTableAccess,
@@ -410,9 +403,6 @@ pub struct CoreLoopReport {
     pub final_agents: Vec<FinalAgentState>,
     pub elapsed_game_minutes: u64,
     pub policy_seed_note: String,
-    /// Concatenated server-authored stories from the authoritative NPC
-    /// intervention transactions observed by this live disposable run.
-    pub npc_intervention_stories_markdown: String,
 }
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
@@ -1397,30 +1387,6 @@ fn bounded_failure_trace(
     )
 }
 
-pub fn render_npc_intervention_stories(
-    rows: impl IntoIterator<Item = BackendNpcCaseIntervention>,
-) -> String {
-    let mut rows = rows.into_iter().collect::<Vec<_>>();
-    rows.sort_by_key(|row| (row.started_at, row.intervention_id.clone()));
-    let mut output = String::from(
-        "# Authoritative NPC adventurer quest stories\n\n\
-         Each entry below was persisted by the SpacetimeDB intervention \
-         transaction that applied its strategic outcome. It contains only \
-         observer-safe events and exact dialogue spoken during that simulation.\n\n",
-    );
-    if rows.is_empty() {
-        output.push_str("_No NPC intervention became eligible during this run._\n");
-    } else {
-        for row in rows {
-            output.push_str(&row.public_story_markdown);
-            if !output.ends_with("\n\n") {
-                output.push('\n');
-            }
-        }
-    }
-    output
-}
-
 struct LiveRunner {
     connection: DbConnection,
     profiles: Vec<AgentProfile>,
@@ -1438,8 +1404,6 @@ struct LiveRunner {
     generated_traveled_cases: HashSet<(u64, String)>,
     generated_finance_blocks: HashMap<(String, u64, String), (u64, u64)>,
     generated_discovery_backoff: HashMap<u64, PublicDiscoveryBackoff>,
-    npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
-    simulation_run_nonce: String,
     failure_recorder: FailureRecorder,
 }
 
@@ -1870,85 +1834,6 @@ macro_rules! reducer_call {
 }
 
 impl LiveRunner {
-    fn choose_pending_npc_strategies(&mut self) -> Result<(), String> {
-        let Some(policy) = self.npc_strategy_policy.as_mut() else {
-            return Ok(());
-        };
-        let candidates = self
-            .connection
-            .db
-            .backend_npc_intervention_candidates()
-            .iter()
-            .filter(|candidate| !candidate.strategy_already_selected)
-            .collect::<Vec<_>>();
-        for candidate in candidates {
-            let strategies: Vec<String> = serde_json::from_str(&candidate.legal_strategies_json)
-                .map_err(|_| "server advertised malformed NPC strategy choices")?;
-            let legal_choices = strategies
-                .iter()
-                .map(|strategy| LegalChoice {
-                    choice_id: format!("choice:npc-strategy:{strategy}"),
-                    kind: ChoiceKind::Conclude,
-                    label: strategy.replace('_', " "),
-                    typed_arguments: ChoiceArguments::default(),
-                })
-                .collect::<Vec<_>>();
-            let frame = PlayerFrame {
-                version: EVAL_FORMAT_VERSION,
-                case_id: candidate.public_case_id.clone(),
-                step: 0,
-                game_minute: candidate.earliest_intervention_minute,
-                discovery: DiscoveryView {
-                    problem_summary: candidate.problem_summary.clone(),
-                    consequence_summary: String::new(),
-                    learned_at: "local reports".into(),
-                    referrals: Vec::new(),
-                },
-                journal: JournalView::default(),
-                party: PartyView {
-                    members: 3,
-                    terrain_skill: 0,
-                    insight: 0,
-                    perception: 0,
-                    combat_readiness: candidate.party_capability.min(u16::from(u8::MAX)) as u8,
-                    supplies: 0,
-                    equipment_tags: Vec::new(),
-                },
-                legal_choices,
-            };
-            let decision = policy.decide(&frame)?;
-            if decision.version != EVAL_FORMAT_VERSION
-                || decision.arguments != DecisionArguments::default()
-            {
-                return Err("NPC strategy policy returned an unsupported decision".into());
-            }
-            let strategy = decision
-                .choice_id
-                .strip_prefix("choice:npc-strategy:")
-                .filter(|choice| strategies.iter().any(|legal| legal == choice))
-                .ok_or("NPC strategy policy selected a forged or stale choice")?
-                .to_owned();
-            let (tx, rx) = mpsc::sync_channel(1);
-            self.connection
-                .reducers
-                .set_simulation_npc_intervention_strategy_then(
-                    self.simulation_run_nonce.clone(),
-                    candidate.case_id,
-                    strategy,
-                    move |_, result| {
-                        let _ = tx.send(
-                            result
-                                .map_err(|error| error.to_string())
-                                .and_then(|result| result),
-                        );
-                    },
-                )
-                .map_err(|error| error.to_string())?;
-            rx.recv_timeout(ACTION_TIMEOUT)
-                .map_err(|_| "NPC strategy reducer timed out".to_string())??;
-        }
-        Ok(())
-    }
     fn event(&mut self, agent_id: u32, kind: CoreLoopEventKind, detail: impl Into<String>) {
         self.sequence += 1;
         let detail = detail.into();
@@ -7272,16 +7157,8 @@ fn equipped_at(equip: &CharacterEquip, slot: ItemSlot, inventory_id: u64) -> boo
 }
 
 pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
-    run_core_loop_with_npc_policy(config, None)
-}
-
-pub fn run_core_loop_with_npc_policy(
-    config: CoreLoopConfig,
-    npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
-) -> Result<CoreLoopReport, String> {
     let failure_recorder = FailureRecorder::new(config.failure_output.clone());
-    let result =
-        run_core_loop_with_npc_policy_inner(config, npc_strategy_policy, failure_recorder.clone());
+    let result = run_core_loop_inner(config, failure_recorder.clone());
     if let Err(error) = &result
         && let Err(diagnostic_error) = failure_recorder.write(error)
     {
@@ -7290,9 +7167,8 @@ pub fn run_core_loop_with_npc_policy(
     result
 }
 
-fn run_core_loop_with_npc_policy_inner(
+fn run_core_loop_inner(
     config: CoreLoopConfig,
-    npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
     failure_recorder: FailureRecorder,
 ) -> Result<CoreLoopReport, String> {
     config.validate()?;
@@ -7334,8 +7210,6 @@ fn run_core_loop_with_npc_policy_inner(
         .add_query(|query| query.from.backend_investigation_cases())
         .add_query(|query| query.from.backend_investigation_journal())
         .add_query(|query| query.from.backend_investigation_leads())
-        .add_query(|query| query.from.backend_npc_case_interventions())
-        .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.backend_local_problem_trade_effects())
         .add_query(|query| query.from.battle_loot_item())
         .add_query(|query| query.from.battle_result())
@@ -7403,8 +7277,6 @@ fn run_core_loop_with_npc_policy_inner(
         generated_traveled_cases: HashSet::new(),
         generated_finance_blocks: HashMap::new(),
         generated_discovery_backoff: HashMap::new(),
-        npc_strategy_policy,
-        simulation_run_nonce: config.run_nonce.clone(),
         failure_recorder,
     };
     if runner
@@ -7483,8 +7355,6 @@ fn run_core_loop_with_npc_policy_inner(
         .add_query(|query| query.from.backend_investigation_cases())
         .add_query(|query| query.from.backend_investigation_journal())
         .add_query(|query| query.from.backend_investigation_leads())
-        .add_query(|query| query.from.backend_npc_case_interventions())
-        .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.backend_local_problem_trade_effects())
         .add_query(|query| query.from.backend_settlement_npcs())
         .add_query(|query| query.from.party())
@@ -7630,7 +7500,6 @@ fn run_core_loop_with_npc_policy_inner(
         .reducers
         .ensure_settlement_activity_then(settlement.clone(), cb));
     runner.call(result)?;
-    runner.choose_pending_npc_strategies()?;
 
     let duration_minutes = u64::from(config.duration_days) * 1_440;
     for cycle in 0..config.cycles {
@@ -7671,7 +7540,6 @@ fn run_core_loop_with_npc_policy_inner(
                         }
                     );
                     runner.call(result)?;
-                    runner.choose_pending_npc_strategies()?;
                     continue;
                 }
                 ExpeditionRecoveryOutcome::Held => {
@@ -7845,7 +7713,6 @@ fn run_core_loop_with_npc_policy_inner(
                 .reducers
                 .ensure_settlement_activity_then(settlement.clone(), cb));
             runner.call(result)?;
-            runner.choose_pending_npc_strategies()?;
         }
         if active {
             let result = reducer_call!(runner, "advance_simulation_world_time", |cb| runner
@@ -7862,7 +7729,6 @@ fn run_core_loop_with_npc_policy_inner(
                 .reducers
                 .ensure_settlement_activity_then(settlement.clone(), cb));
             runner.call(result)?;
-            runner.choose_pending_npc_strategies()?;
         }
         if !active && held {
             break;
@@ -8051,9 +7917,6 @@ fn run_core_loop_with_npc_policy_inner(
         .unwrap_or(0);
     let total_event_count = runner.sequence;
     let trace_truncated = total_event_count > runner.trace.len() as u64;
-    let npc_intervention_stories_markdown = render_npc_intervention_stories(
-        runner.connection.db.backend_npc_case_interventions().iter(),
-    );
     Ok(CoreLoopReport {
         backend_kind: "spacetimedb_authoritative_core_loop".into(),
         seed: config.seed,
@@ -8074,7 +7937,6 @@ fn run_core_loop_with_npc_policy_inner(
         final_agents,
         elapsed_game_minutes,
         policy_seed_note: "seed controls profiles and policy choices only; authoritative autoresolve seeds are server RNG values recorded in the trace".into(),
-        npc_intervention_stories_markdown,
     })
 }
 
@@ -9895,29 +9757,6 @@ mod tests {
     fn repeated_daily_quest_decisions_are_not_semantic_duplicate_failures() {
         assert!(event_is_repeatable(&CoreLoopEventKind::QuestDecision));
         assert!(!event_is_repeatable(&CoreLoopEventKind::AcceptContract));
-    }
-
-    #[test]
-    fn authoritative_npc_story_renderer_preserves_server_markdown() {
-        let exact = "> **Marta:** I heard the cart after midnight.\n";
-        let story = render_npc_intervention_stories([BackendNpcCaseIntervention {
-            intervention_id: "npc-intervention:case:1:1".into(),
-            public_case_id: "journal:one".into(),
-            party_name: "Marta's Company".into(),
-            attempt: 1,
-            started_at: 12,
-            completed_at: 12,
-            strategy: "InvestigateCarefully".into(),
-            route: "Physical trail".into(),
-            lead_summary: "Marta heard a cart after midnight.".into(),
-            preparation_summary: "The company brought lanterns and rope.".into(),
-            outcome: "Resolved".into(),
-            safe_summary: "The incidents ended.".into(),
-            public_story_markdown: format!("## Story\n\n{exact}"),
-        }]);
-        assert!(story.contains(exact));
-        assert!(story.contains("persisted by the SpacetimeDB intervention transaction"));
-        assert!(!story.contains("canonical"));
     }
 
     #[test]

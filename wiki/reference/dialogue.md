@@ -4,6 +4,15 @@ Settlement dialogue is the markerless discovery boundary for local problems.
 Inns surface unknown unresolved symptoms; overview is fallback only when no inn
 NPC is available. Locals repeat referrals. Hidden causes and destinations stay private.
 
+Publicly notorious recurring hostile cases are the exception to investigation
+secrecy. An eligible innkeeper, or an explicitly capable organization chapter
+representative speaking to a dues-current member, may state the canonical
+threat, exact site, and approximate count band. This is one shared authoritative
+dialogue disclosure; it carries no testimony, evidence, preparation advice, or
+client-selected case ID. The disclosure upserts a durable observer journal case
+and exact public-alias pin; later referrals refresh the count without adding a
+second entry.
+
 Witness questioning uses proposition-granular authority. Hearing each atomic
 claim automatically creates a private, fallible Insight assessment for that
 observer. The gateway exposes only an opaque challenge token, the exact

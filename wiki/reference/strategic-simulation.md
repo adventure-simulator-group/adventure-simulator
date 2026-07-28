@@ -279,13 +279,13 @@ After `no_public_rumor_available`, the runner waits two official days before
 repeating the same discovery dialogue. A change to the public settlement,
 visible contact/location set, or active cause-free `LocalProblemSymptom` set
 invalidates that backoff immediately. The runner does not subscribe to private
-problem authority, rumor receipts, causes, or intervention eligibility.
+problem authority, rumor receipts, causes, or private threat disclosures.
 
 The runner records a bounded public attempt and result for that action:
 official minute, coarse active-symptom count and oldest-age bucket, bounded
 visible-candidate count, selected location class, bounded owner open-case
 count, and whether public backoff suppressed the attempt. It does not put case
-IDs, causes, receipt data, or intervention eligibility into these discovery
+IDs, causes, receipt data, or private threat disclosures into these discovery
 diagnostics. A new owner-visible open case is the postcondition for an
 observer-safe `rumor_delivered=true`. Stable result reasons distinguish
 `rumor_delivered`, `no_public_rumor_available`, `no_visible_contacts`, and
@@ -563,71 +563,40 @@ commits or approves a fixture. Only step-limit and dead-end failures can be
 promoted; provider failures, loop detection, and exhausted runtime budgets
 cannot be reproduced from an opaque action list alone.
 
-### Server-simulated NPC adventurers
+### Persistent hostile escalation
 
-The reducer-backed core loop is also the NPC-adventurer evaluator. These are the
-same resident NPC companies that may intervene in old, escalating generated
-cases during normal strategic settlement activity. Eligibility considers case
-age, incident count, prior retry time, company availability, and bounded recent
-player activity. The normal threshold is eight official days. First rumor
-intake, successfully completed investigation work, and current case-site presence can grant
-a two-day grace, but no activity can delay intervention beyond fourteen
-official days of case age. SpacetimeDB selects the company, applies the bounded
-result through the existing case/objective/custody/local-problem authority, and
-persists an idempotent intervention record.
-
-The default policy is deterministic and credential-free. An optional LLM may
-choose only one of the strategies advertised by a gateway-only candidate view:
-investigate carefully, protect locals, confront directly, or defer. The model
-does not receive canonical cause/site/reliability/weight data and cannot apply
-an outcome; a simulation-capability-owned reducer validates its opaque choice.
-The server then selects an evidence-supported physical, pattern, or social
-route from the generated action graph. Retries rotate to a different route when
-the case supplies one. The decisive action uses the same investigation resolver
-as player actions before any strategic finale result is applied.
-
-Every core-loop run writes `npc-adventurer-stories.md` by default. Each entry is
-server-authored in the same transaction as its outcome and records the problem
-being learned, timestamped witness interviews, exact spoken lines, the chosen
-lead, route-specific preparation, an observer-safe chronological projection of
-the generated action chain, and the result.
-Failed attempts state the concrete setback and the alternate route intended for
-the retry instead of reporting a content-free failure. It contains no hidden
-quest truth. The JSON report also carries the same Markdown for archival
-purposes.
+The reducer-backed core loop advances the same scheduled recurring incidents as
+normal settlement activity. NPC adventuring companies remain persistent
+recruiting entities, but there is no NPC quest-intervention policy, candidate
+view, strategy reducer, outcome table, or story anthology. Unresolved hostile
+`RecurringDepredation` cases continue until players resolve them; deterministic
+incident ordinals drive bounded combat escalation and public notoriety.
 
 Because the production world clock is tied to elapsed wall time, a claimed
 disposable simulation has one additional bounded reducer that advances that
 same authoritative clock by a requested number of game minutes. The core loop
 uses it once per active simulated day, then invokes ordinary settlement
-activity so follow-up incidents, escalating penalties, eligibility, and NPC
-interventions all occur through the production systems. The capability is
+activity so follow-up incidents, escalating penalties, notoriety, and
+recruitment all occur through the production systems. The capability is
 absent from normal module builds. Simulation characters receive a small
 starting purse so an inn-only seed settlement cannot deadlock before its first
 labor day; all accommodation and food costs still use ordinary currency rules.
 
-Use the normal isolated recipe for the scripted policy:
+Use the normal isolated recipe:
 
 ```powershell
 just strategic-sim-core-loop-world target/sim-runs/world-001 42 8 20 30 2
 ```
 
-Direct expert invocation can opt into an OpenAI-compatible strategy policy:
+Direct expert invocation needs no NPC policy options:
 
 ```powershell
 cargo run -p adventuresim-strategic-sim -- core-loop `
   --host http://127.0.0.1:3000 --database adventuresim-sim-UNIQUE `
-  --run-nonce UNIQUE-NONCE --npc-strategy-policy openai `
+  --run-nonce UNIQUE-NONCE `
   --imported-world --expected-world-manifest-digest PINNED-DIGEST `
-  --output report.json `
-  --npc-allow-network --npc-api-key-env OPENAI_API_KEY `
-  --npc-stories-output npc-adventurer-stories.md
+  --output report.json
 ```
-
-Provider mode requires explicit network consent and reads the credential only
-from the named environment variable. HTTPS is required except for loopback test
-fixtures. The candidate list and strategy override are gateway/simulation
-capability surfaces, not general player APIs.
 
 ### End-to-end browser quest evaluator
 
@@ -667,8 +636,8 @@ typed subscription, checks the file's size and SHA-256 against
 match that verified file, then runs without calling `seed_simulation_world`. It
 chooses the lexicographically first imported settlement ID so the loaded-world
 start is deterministic. The explicit output directory must not exist. A
-successful run contains `report.json`, `npc-adventurer-stories.md`, and
-`launcher.json`; failed launches retain `launcher.json` with the failed stage.
+successful run contains `report.json` and `launcher.json`; failed launches
+retain `launcher.json` with the failed stage.
 The launcher attempts to delete the disposable database on every exit path and
 reports `cleanup_failed` with a nonzero exit if deletion is not confirmed.
 

@@ -1257,6 +1257,7 @@ fn evidence_kind_from_catalog(id: &str) -> EvidenceKind {
 fn evidence_presentation(
     kind: EvidenceKind,
     evidence_id: &EvidenceId,
+    investigability: u8,
 ) -> (String, String, String, Vec<EvidenceInspectionTopic>) {
     let definition = crate::quest_catalog::catalog()
         .evidence(evidence_catalog_id(kind))
@@ -1275,11 +1276,14 @@ fn evidence_presentation(
                 let width = u64::from(check.difficulty_max_milli - check.difficulty_min_milli) + 1;
                 EvidenceInspectionCheck {
                     stat,
-                    difficulty_milli: check.difficulty_min_milli
-                        + (crate::settlement_population::stable_hash(&format!(
-                            "{}:{}",
-                            evidence_id.0, topic.id
-                        )) % width) as u16,
+                    difficulty_milli: crate::threat_escalation::adjusted_difficulty_milli(
+                        check.difficulty_min_milli
+                            + (crate::settlement_population::stable_hash(&format!(
+                                "{}:{}",
+                                evidence_id.0, topic.id
+                            )) % width) as u16,
+                        investigability,
+                    ),
                     success_description: check.success_description.clone(),
                     reveals_clue: check.reveals_clue,
                 }
@@ -1294,7 +1298,10 @@ fn evidence_presentation(
                     .iter()
                     .map(|implication| BestiaryEvidenceImplication {
                         category: implication.category,
-                        lore_difficulty_milli: implication.lore_difficulty_milli,
+                        lore_difficulty_milli: crate::threat_escalation::adjusted_difficulty_milli(
+                            implication.lore_difficulty_milli,
+                            investigability,
+                        ),
                         diagnostic_kind: implication.diagnostic_kind.clone(),
                         interpretation: implication.interpretation.clone(),
                     })
@@ -1342,9 +1349,10 @@ fn generated_evidence(
     site_id: SiteId,
     safe_description: String,
     corrects_proposition_id: Option<String>,
+    investigability: u8,
 ) -> GeneratedEvidence {
     let (portrait_label, portrait_icon, base_description, inspection_topics) =
-        evidence_presentation(kind, &id);
+        evidence_presentation(kind, &id, investigability);
     GeneratedEvidence {
         id,
         kind,
@@ -2567,6 +2575,14 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let primary = &context.witness_candidates[primary_witness];
     let secondary = &context.witness_candidates[secondary_witness];
     let prefix = observer_scope(context);
+    let investigability = match cause {
+        CanonicalCause::Hostile(threat) => {
+            crate::bestiary::profile(threat)
+                .investigation
+                .investigability
+        }
+        _ => 50,
+    };
     let (reliability, reliability_bridge) = choose(
         context.seed.rotate_left(5),
         "module.reliability",
@@ -2962,6 +2978,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             evidence_site.clone(),
             "This clue preserves a useful lead without identifying the culprit outright.".into(),
             Some(scoped_id(&prefix, "proposition", "description")),
+            investigability,
         ),
         generated_evidence(
             EvidenceId::new(scoped_id(&prefix, "evidence", "token")),
@@ -2971,6 +2988,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             "A dropped token links the report to another person, not necessarily the culprit."
                 .into(),
             None,
+            investigability,
         ),
         generated_evidence(
             pattern_evidence_id.clone(),
@@ -2979,6 +2997,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             evidence_site.clone(),
             format!("Corroborated accounts show: {pattern_truth}"),
             None,
+            investigability,
         ),
     ];
     let area_id = scoped_id(&prefix, "area", "incident");
@@ -3286,6 +3305,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 evidence_site.clone(),
                 item.lead_summary.clone(),
                 None,
+                investigability,
             ));
         }
         if let Some(action) = actions
@@ -5266,7 +5286,7 @@ mod tests {
                     .any(|topic| topic.check.is_none())
                 && evidence.inspection_topics.iter().any(|topic| {
                     topic.check.as_ref().is_some_and(|check| {
-                        (1_200..=4_000).contains(&check.difficulty_milli) && check.reveals_clue
+                        (100..=5_500).contains(&check.difficulty_milli) && check.reveals_clue
                     })
                 })
         }));
@@ -5277,6 +5297,7 @@ mod tests {
         let (_, _, _, topics) = evidence_presentation(
             EvidenceKind::Footprints,
             &EvidenceId("test-pawprint".into()),
+            50,
         );
         let implications = &topics
             .iter()

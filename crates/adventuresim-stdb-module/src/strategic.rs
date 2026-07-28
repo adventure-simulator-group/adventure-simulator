@@ -43,7 +43,9 @@ use crate::{
         party_case_site_tracking, referred_generated_witness,
     },
     item::{InventoryItem, inventory_item, item},
-    local_problem::{local_problem_receipt, local_problem_rumor_delivery},
+    local_problem::{
+        local_problem_receipt, local_problem_rumor_delivery, public_threat_disclosure,
+    },
     npc_adventurer::npc_adventuring_party_authority,
     organization::organization_presentation,
     repair::{item_condition, settlement_smith},
@@ -110,9 +112,15 @@ fn quest_encounter_archetype(
     }
 }
 
-fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Result<Combatant, String> {
+fn autoresolve_enemy(
+    id: u64,
+    enemy_type: &str,
+    difficulty: i32,
+    combat_scale_bps: u32,
+) -> Result<Combatant, String> {
     use adventuresim_core::bestiary::{AttackStyle, Protection};
-    let rating = (1.2 + difficulty.max(1) as f32 * 0.35).min(4.0);
+    let scale = adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps);
+    let rating = (1.2 + difficulty.max(1) as f32 * 0.35) * scale;
     let threat_profile = parse_threat(enemy_type)?.profile();
     let profile = threat_profile.combat;
     let mut combatant = Combatant::new(id);
@@ -358,6 +366,13 @@ mod healing_tests {
             committed_resolution: None,
             committed_capture_subject_id: None,
             scene_key: "crypt".into(),
+            hostile_version: 1,
+            enemy_count: 1,
+            enemy_difficulty: 1,
+            enemy_combat_scale_bps: 10_000,
+            normalized_combat_power: 10_000,
+            drop_item_id: None,
+            drop_quantity: 0,
         };
         let mission_id = mission.id.clone();
         let case_id = mission.case_id.clone();
@@ -2064,8 +2079,15 @@ mod healing_tests {
             id: hostile_group_id.clone(),
             case_site_id: site.id.clone(),
             enemy_type: "test-hostile".into(),
+            base_enemy_count: 1,
+            base_difficulty: 1,
+            baseline_enemy_power: adventuresim_core::threat_escalation::BASELINE_ORC_POWER,
             enemy_count: 1,
             difficulty: 1,
+            escalation_incident_ordinal: 1,
+            escalation_progress_bps: 0,
+            combat_scale_bps: adventuresim_core::threat_escalation::COMBAT_SCALE_BPS,
+            normalized_combat_power: adventuresim_core::threat_escalation::BASELINE_ORC_POWER,
             drop_item_id: None,
             drop_quantity: 0,
             disposition: HostileGroupDisposition::Active,
@@ -2302,7 +2324,6 @@ mod healing_tests {
             ),
             ("generate_quest_for_settlement(ctx", "quest generation"),
             ("ensure_generated_incidents(ctx", "generated incidents"),
-            ("ensure_npc_case_interventions(", "NPC case interventions"),
             (
                 "ensure_npc_recruiting_parties(ctx",
                 "NPC recruiting parties",
@@ -2321,6 +2342,8 @@ mod healing_tests {
                 "{callee} is not paired with its {stage} context"
             );
         }
+        assert!(!activity.contains("ensure_npc_case_interventions"));
+        assert!(activity.contains("ensure_npc_recruiting_parties"));
     }
 
     #[test]
@@ -4848,6 +4871,14 @@ pub struct MissionAuthority {
     pub committed_resolution: Option<HostileResolutionKind>,
     pub committed_capture_subject_id: Option<String>,
     pub scene_key: String,
+    /// Immutable combat/loot snapshot captured when this mission binds.
+    pub hostile_version: u16,
+    pub enemy_count: u32,
+    pub enemy_difficulty: i32,
+    pub enemy_combat_scale_bps: u32,
+    pub normalized_combat_power: u32,
+    pub drop_item_id: Option<String>,
+    pub drop_quantity: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -4953,8 +4984,17 @@ pub struct HostileGroupAuthority {
     #[unique]
     pub case_site_id: CaseSiteId,
     pub enemy_type: String,
+    /// Immutable combat snapshot from initial materialization.
+    pub base_enemy_count: u32,
+    pub base_difficulty: i32,
+    pub baseline_enemy_power: u32,
     pub enemy_count: u32,
     pub difficulty: i32,
+    /// Ordinal of the latest recurring incident incorporated into this group.
+    pub escalation_incident_ordinal: u16,
+    pub escalation_progress_bps: u16,
+    pub combat_scale_bps: u32,
+    pub normalized_combat_power: u32,
     pub drop_item_id: Option<String>,
     pub drop_quantity: u32,
     pub disposition: HostileGroupDisposition,
@@ -4973,10 +5013,10 @@ fn materialize_hostile_group(
     if let Some(existing) = ctx.db.hostile_group_authority().id().find(&group.id) {
         return if existing.case_site_id == group.case_site_id
             && existing.enemy_type == group.enemy_type
-            && existing.enemy_count == group.enemy_count
-            && existing.difficulty == group.difficulty
+            && existing.base_enemy_count == group.base_enemy_count
+            && existing.base_difficulty == group.base_difficulty
+            && existing.baseline_enemy_power == group.baseline_enemy_power
             && existing.drop_item_id == group.drop_item_id
-            && existing.drop_quantity == group.drop_quantity
         {
             Ok(existing)
         } else {
@@ -4997,14 +5037,32 @@ fn hostile_group_authority_row(
     if hostile_group_id.is_empty() {
         return Err("Hostile-group authority requires a canonical ID".into());
     }
+    let base_enemy_count =
+        enemy_count.clamp(1, adventuresim_core::threat_escalation::MAX_MOB_COUNT);
+    let base_difficulty = difficulty.max(1);
+    let threat = parse_threat(&enemy_type)?;
+    let profile = threat.profile().combat.escalation;
+    let base = adventuresim_core::threat_escalation::combat_for_incident(
+        base_enemy_count,
+        base_difficulty,
+        1,
+        profile,
+    );
     Ok(HostileGroupAuthority {
         id: hostile_group_id.to_string(),
         case_site_id: site.id.clone(),
         drop_item_id: autoresolve_drop(&enemy_type)?.map(str::to_string),
-        drop_quantity: enemy_count,
+        drop_quantity: base_enemy_count,
         enemy_type,
-        enemy_count,
-        difficulty,
+        base_enemy_count,
+        base_difficulty,
+        baseline_enemy_power: profile.baseline_enemy_power,
+        enemy_count: base.enemy_count,
+        difficulty: base.difficulty,
+        escalation_incident_ordinal: 1,
+        escalation_progress_bps: 0,
+        combat_scale_bps: base.combat_scale_bps,
+        normalized_combat_power: base.normalized_combat_power,
         disposition: HostileGroupDisposition::Active,
     })
 }
@@ -6168,12 +6226,7 @@ pub fn start_dialogue(
         .filter(&session.id)
         .find(|row| row.character_id == character_id)
     {
-        let receipt = ctx
-            .db
-            .local_problem_receipt()
-            .id()
-            .find(&delivery.receipt_id)
-            .ok_or("Rumor delivery receipt disappeared")?;
+        let authority = referral_delivery_authority(ctx, &delivery)?;
         let speaker_role = ctx
             .db
             .dialogue_participant()
@@ -6188,8 +6241,20 @@ pub fn start_dialogue(
             .session_id()
             .filter(&session.id)
             .count() as u32;
-        let (fragments_json, source_refs_json) =
-            render_quest_referral_variant(ctx, &session, character_id, &npc_actor_id, &delivery)?;
+        let (fragments_json, source_refs_json) = match &authority {
+            ReferralDeliveryAuthority::PublicThreat => (
+                delivery.fragments_json.clone(),
+                serde_json::to_string(&[delivery.receipt_id.clone()])
+                    .map_err(|_| "Could not encode public referral source")?,
+            ),
+            ReferralDeliveryAuthority::LocalProblem(_) => render_quest_referral_variant(
+                ctx,
+                &session,
+                character_id,
+                &npc_actor_id,
+                &delivery,
+            )?,
+        };
         ctx.db.dialogue_event().insert(DialogueEvent {
             id: format!("{}:event:{sequence}", session.id),
             gateway_bucket: 0,
@@ -6201,16 +6266,58 @@ pub fn start_dialogue(
             source_refs_json,
             created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
-        crate::investigation::receive_local_problem_rumor(
-            ctx,
-            character_id,
-            receipt.id.clone(),
-            format!("receive-rumor:{character_id}:{}", receipt.id),
-        )?;
+        if let ReferralDeliveryAuthority::LocalProblem(receipt) = authority {
+            crate::investigation::receive_local_problem_rumor(
+                ctx,
+                character_id,
+                receipt.id.clone(),
+                format!("receive-rumor:{character_id}:{}", receipt.id),
+            )?;
+        }
     }
     crate::social::ensure_dialogue_witness_capability(ctx, &session, character_id, &npc_actor_id)?;
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
+}
+
+enum ReferralDeliveryAuthority {
+    LocalProblem(crate::local_problem::LocalProblemReceipt),
+    PublicThreat,
+}
+
+fn referral_delivery_authority(
+    ctx: &ReducerContext,
+    delivery: &crate::local_problem::LocalProblemRumorDelivery,
+) -> Result<ReferralDeliveryAuthority, String> {
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&delivery.receipt_id);
+    let public_disclosure = ctx
+        .db
+        .public_threat_disclosure()
+        .id()
+        .find(&delivery.receipt_id);
+    match adventuresim_core::threat_escalation::referral_delivery_authority_kind(
+        receipt.is_some(),
+        public_disclosure.is_some(),
+    ) {
+        adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::LocalProblem => {
+            Ok(ReferralDeliveryAuthority::LocalProblem(
+                receipt.expect("classified local-problem receipt"),
+            ))
+        }
+        adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::PublicThreat => {
+            Ok(ReferralDeliveryAuthority::PublicThreat)
+        }
+        adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::Missing => {
+            Err("Rumor delivery authority disappeared".into())
+        }
+        adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::Conflict => {
+            Err("Rumor delivery authority conflicts".into())
+        }
+    }
 }
 
 /// Select presentation-only quest referral prose after the same authoritative
@@ -6235,12 +6342,11 @@ fn render_quest_referral_variant(
     delivery: &crate::local_problem::LocalProblemRumorDelivery,
 ) -> Result<(String, String), String> {
     let facts = dialogue_fact_context(ctx, session, character_id)?;
-    let receipt = ctx
-        .db
-        .local_problem_receipt()
-        .id()
-        .find(&delivery.receipt_id)
-        .ok_or("Rumor delivery receipt disappeared")?;
+    let ReferralDeliveryAuthority::LocalProblem(receipt) =
+        referral_delivery_authority(ctx, delivery)?
+    else {
+        return Err("Quest referral is not a local-problem delivery".into());
+    };
     let contact = ctx
         .db
         .settlement_npc()
@@ -6757,23 +6863,27 @@ fn dialogue_fact_context(
         }
     }
     if let Some(npc) = participants.iter().find(|p| p.character_id.is_none()) {
-        let delivery_receipt = ctx
+        let delivery_authority = ctx
             .db
             .local_problem_rumor_delivery()
             .session_id()
             .filter(&session.id)
             .find(|delivery| delivery.character_id == character_id)
-            .and_then(|delivery| {
-                ctx.db
-                    .local_problem_receipt()
-                    .id()
-                    .find(&delivery.receipt_id)
-            });
+            .map(|delivery| referral_delivery_authority(ctx, &delivery))
+            .transpose()?;
+        let delivery_receipt = match delivery_authority.as_ref() {
+            Some(ReferralDeliveryAuthority::LocalProblem(receipt)) => Some(receipt),
+            _ => None,
+        };
+        let has_public_delivery = matches!(
+            delivery_authority,
+            Some(ReferralDeliveryAuthority::PublicThreat)
+        );
         result.facts.insert(
             FactKey::ParticipantRumorCase {
                 role: npc.role.clone(),
             },
-            FactValue::Bool(delivery_receipt.is_some()),
+            FactValue::Bool(delivery_receipt.is_some() || has_public_delivery),
         );
         let exact_referral = if let Some(receipt) = delivery_receipt.as_ref() {
             referred_generated_witness(
@@ -7214,13 +7324,9 @@ fn dialogue_runtime_bindings(
         .session_id()
         .filter(&session.id)
         .find(|row| row.character_id == character_id)
+        && let ReferralDeliveryAuthority::LocalProblem(receipt) =
+            referral_delivery_authority(ctx, &delivery)?
     {
-        let receipt = ctx
-            .db
-            .local_problem_receipt()
-            .id()
-            .find(&delivery.receipt_id)
-            .ok_or("Rumor delivery has no observer receipt")?;
         let contact = ctx
             .db
             .settlement_npc()
@@ -7303,12 +7409,11 @@ fn receive_referred_testimony(
         .filter(&session.id)
         .find(|delivery| delivery.character_id == character_id)
         .ok_or("Dialogue has no exact local-problem referral")?;
-    let receipt = ctx
-        .db
-        .local_problem_receipt()
-        .id()
-        .find(&delivery.receipt_id)
-        .ok_or("Rumor delivery receipt disappeared")?;
+    let ReferralDeliveryAuthority::LocalProblem(receipt) =
+        referral_delivery_authority(ctx, &delivery)?
+    else {
+        return Err("Dialogue has no exact local-problem referral".into());
+    };
     if receipt.character_id != character_id || receipt.settlement_id != session.settlement_id {
         return Err("Addressed NPC is not the exact referred witness here".into());
     }
@@ -7353,12 +7458,11 @@ pub(crate) fn dialogue_referred_witness(
     else {
         return Ok(None);
     };
-    let receipt = ctx
-        .db
-        .local_problem_receipt()
-        .id()
-        .find(&delivery.receipt_id)
-        .ok_or("Rumor delivery receipt disappeared")?;
+    let ReferralDeliveryAuthority::LocalProblem(receipt) =
+        referral_delivery_authority(ctx, &delivery)?
+    else {
+        return Ok(None);
+    };
     referred_generated_witness(
         ctx,
         character_id,
@@ -8895,21 +8999,32 @@ fn apply_dialogue_effect(
 
 /// Resolve organization business only from the trusted persistent NPC and its
 /// exact authored chapter. Dialogue content and clients never supply this ID.
+pub(crate) fn exact_organization_representative(
+    npc: &crate::settlement_population::SettlementNpc,
+    settlement_id: &str,
+    location_id: &str,
+) -> Option<String> {
+    let organization = adventuresim_core::organization::organization(&npc.organization_id)?;
+    let chapter = organization.chapter_at_location(settlement_id, location_id)?;
+    let expected_id = format!("npc:{settlement_id}:{}:0", chapter.location_id);
+    if !adventuresim_core::organization::exact_representative_fields_match(
+        &npc.id,
+        &expected_id,
+        &npc.home_settlement_id,
+        settlement_id,
+        &npc.conversation_id,
+    ) {
+        return None;
+    }
+    Some(organization.id.clone())
+}
+
 fn dialogue_organization_id(
     session: &DialogueSession,
     npc: &crate::settlement_population::SettlementNpc,
 ) -> Result<String, String> {
-    let organization = adventuresim_core::organization::organization(&npc.organization_id)
-        .ok_or("Dialogue NPC is not bound to an organization")?;
-    if organization
-        .chapter_at_location(&session.settlement_id, &session.location_id)
-        .is_none()
-        || npc.home_settlement_id != session.settlement_id
-        || npc.conversation_id != "organization-representative"
-    {
-        return Err("Dialogue NPC is not the representative of this chapter".into());
-    }
-    Ok(organization.id.clone())
+    exact_organization_representative(npc, &session.settlement_id, &session.location_id)
+        .ok_or_else(|| "Dialogue NPC is not the representative of this chapter".into())
 }
 
 fn dialogue_service_id(ctx: &ReducerContext, session: &DialogueSession) -> Result<String, String> {
@@ -11551,10 +11666,10 @@ pub(crate) fn complete_bound_mission_success(
         return Err("Bound hostile group is already resolved".into());
     }
     let dropped_items = if selected.resolution == HostileResolutionKind::Defeated {
-        group
+        mission
             .drop_item_id
             .clone()
-            .map(|item| vec![(item, group.drop_quantity)])
+            .map(|item| vec![(item, mission.drop_quantity)])
             .unwrap_or_default()
     } else {
         Vec::new()
@@ -11748,7 +11863,24 @@ pub(crate) fn commit_hostile_battle_resolution(
                 });
         }
     }
-    let difficulty = group.as_ref().map_or(1, |group| group.difficulty);
+    // Bound missions own an immutable encounter snapshot. Later recurring
+    // incidents may strengthen the live hostile group while this mission is
+    // still in flight, so rewards and morale use its bound normalized power.
+    let difficulty = mission_id
+        .and_then(|id| {
+            ctx.db
+                .mission_authority()
+                .id()
+                .find(&id.to_string())
+                .map(|mission| {
+                    let normalized = mission
+                        .normalized_combat_power
+                        .div_ceil(adventuresim_core::threat_escalation::BASELINE_ORC_POWER)
+                        .min(i32::MAX as u32) as i32;
+                    mission.enemy_difficulty.max(normalized)
+                })
+        })
+        .unwrap_or_else(|| group.as_ref().map_or(1, |group| group.difficulty));
     for member_id in living_party_member_ids(ctx, party_id) {
         ctx.db.battle_participant().insert(BattleParticipant {
             id: 0,
@@ -16055,6 +16187,7 @@ fn resolve_random_encounter_battle(
                 u64::MAX.saturating_sub(index),
                 &encounter.archetype,
                 difficulty,
+                10_000,
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -19123,6 +19256,12 @@ pub(crate) fn ensure_bound_mission_authority(
     if capabilities.is_empty() {
         return Err("Case site has no unresolved observer-authorized combat approach".into());
     }
+    let hostile_group = ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&hostile_group_id)
+        .ok_or("Bound hostile group disappeared")?;
     let authority = MissionAuthority {
         id: mission_id.to_string(),
         party_id: party_id.to_string(),
@@ -19135,6 +19274,13 @@ pub(crate) fn ensure_bound_mission_authority(
         committed_resolution: None,
         committed_capture_subject_id: None,
         scene_key: scene_key.to_string(),
+        hostile_version: hostile_group.escalation_incident_ordinal,
+        enemy_count: hostile_group.enemy_count,
+        enemy_difficulty: hostile_group.base_difficulty,
+        enemy_combat_scale_bps: hostile_group.combat_scale_bps,
+        normalized_combat_power: hostile_group.normalized_combat_power,
+        drop_item_id: hostile_group.drop_item_id.clone(),
+        drop_quantity: hostile_group.drop_quantity,
     };
     ctx.db.mission_authority().insert(authority.clone());
     for (index, capability) in capabilities.into_iter().enumerate() {
@@ -19349,23 +19495,30 @@ pub fn autoresolve_mission(
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let enemies = (0..u64::from(hostile_group.enemy_count))
+    let enemies = (0..u64::from(mission.enemy_count))
         .map(|index| {
             autoresolve_enemy(
                 u64::MAX.saturating_sub(index),
                 &hostile_group.enemy_type,
-                hostile_group.difficulty,
+                mission.enemy_difficulty,
+                mission.enemy_combat_scale_bps,
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
     let seed = ctx.random();
     let outcome = resolve_battle(allies, enemies, seed, BattleOpening::Normal);
+    let morale_difficulty = mission.enemy_difficulty.max(
+        mission
+            .normalized_combat_power
+            .div_ceil(adventuresim_core::threat_escalation::BASELINE_ORC_POWER)
+            .min(i32::MAX as u32) as i32,
+    );
     commit_autoresolve_outcome(
         ctx,
         &battle_id,
         &party_id,
         &member_ids,
-        5.0 + hostile_group.difficulty.max(0) as f32,
+        5.0 + morale_difficulty.max(0) as f32,
         &outcome,
     )?;
 
@@ -19555,14 +19708,31 @@ pub fn seed_standalone_tactical_mission(
                 id: hostile_group_id.clone(),
                 case_site_id: case_site.id.clone(),
                 enemy_type: "bandit".into(),
-                enemy_count: required_enemy_kills,
+                base_enemy_count: required_enemy_kills
+                    .clamp(1, adventuresim_core::threat_escalation::MAX_MOB_COUNT),
+                base_difficulty: 1,
+                baseline_enemy_power: 10_000,
+                enemy_count: required_enemy_kills
+                    .clamp(1, adventuresim_core::threat_escalation::MAX_MOB_COUNT),
                 difficulty: 1,
+                escalation_incident_ordinal: 1,
+                escalation_progress_bps: 0,
+                combat_scale_bps: 10_000,
+                normalized_combat_power: required_enemy_kills
+                    .clamp(1, adventuresim_core::threat_escalation::MAX_MOB_COUNT)
+                    .saturating_mul(10_000),
                 drop_item_id: autoresolve_drop("bandit")?.map(str::to_string),
                 drop_quantity: required_enemy_kills,
                 disposition: HostileGroupDisposition::Active,
             });
     }
     let case_id = format!("case:standalone:{mission_id}");
+    let group = ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&hostile_group_id)
+        .ok_or("Standalone hostile group disappeared")?;
     let objective_id = format!("objective:standalone:{mission_id}");
     if ctx.db.case_authority().id().find(&case_id).is_none() {
         use adventuresim_core::case::{
@@ -19647,6 +19817,13 @@ pub fn seed_standalone_tactical_mission(
             committed_resolution: None,
             committed_capture_subject_id: None,
             scene_key: scene_key.clone(),
+            hostile_version: group.escalation_incident_ordinal,
+            enemy_count: group.enemy_count,
+            enemy_difficulty: group.base_difficulty,
+            enemy_combat_scale_bps: group.combat_scale_bps,
+            normalized_combat_power: group.normalized_combat_power,
+            drop_item_id: group.drop_item_id.clone(),
+            drop_quantity: group.drop_quantity,
         })
     };
     if mission.hostile_group_id.as_deref() != Some(&hostile_group_id) {
@@ -19686,6 +19863,9 @@ pub fn seed_standalone_tactical_mission(
             party_id,
             requested_by: character_id,
             required_enemy_kills,
+            enemy_difficulty: mission.enemy_difficulty,
+            enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
+            normalized_combat_power: mission.normalized_combat_power,
         });
     Ok(())
 }
@@ -20006,10 +20186,6 @@ fn ensure_settlement_activity_inner(
     crate::local_problem::ensure_generated_incidents(ctx, settlement_id, official_minute).map_err(
         |error| settlement_activity_stage_error(settlement_id, "generated incidents", error),
     )?;
-    crate::npc_adventurer::ensure_npc_case_interventions(ctx, settlement_id, official_minute)
-        .map_err(|error| {
-            settlement_activity_stage_error(settlement_id, "NPC case interventions", error)
-        })?;
     ensure_npc_recruiting_parties(ctx, settlement_id).map_err(|error| {
         settlement_activity_stage_error(settlement_id, "NPC recruiting parties", error)
     })?;

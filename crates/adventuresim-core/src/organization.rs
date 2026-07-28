@@ -26,6 +26,9 @@ pub struct OrganizationDefinition {
     pub historical_fantasy_note: Option<String>,
     #[serde(default)]
     pub service_id: Option<String>,
+    /// Authored authority to refer dues-current members to publicly notorious
+    /// hostile cases. Never inferred from names, ranks, or skills.
+    pub public_threat_referrals: bool,
     #[serde(default)]
     pub starting_role: Option<OrganizationStartingRole>,
     #[serde(default)]
@@ -329,6 +332,18 @@ pub fn organization_chapter_at(
     })
 }
 
+pub fn exact_representative_fields_match(
+    npc_id: &str,
+    expected_id: &str,
+    home_settlement_id: &str,
+    settlement_id: &str,
+    conversation_id: &str,
+) -> bool {
+    npc_id == expected_id
+        && home_settlement_id == settlement_id
+        && conversation_id == "organization-representative"
+}
+
 pub fn settlement_policy(settlement_id: &str) -> Option<&'static SettlementPolicy> {
     catalog()
         .settlement_policies
@@ -403,5 +418,55 @@ mod tests {
                 assert_eq!(found_chapter, chapter);
             }
         }
+    }
+
+    #[test]
+    fn public_threat_referral_capability_is_explicitly_authored_for_three_roles() {
+        for organization in &catalog().organizations {
+            let expected = organization.starting_role.as_ref().is_some_and(|role| {
+                matches!(
+                    role.profession,
+                    StartingProfession::Forester
+                        | StartingProfession::WitchHunter
+                        | StartingProfession::Knight
+                )
+            });
+            assert_eq!(
+                organization.public_threat_referrals, expected,
+                "{}",
+                organization.id
+            );
+        }
+    }
+
+    #[test]
+    fn exact_representative_requires_identity_home_and_conversation() {
+        let valid = (
+            "npc:goslar:ranger-lodge:0",
+            "npc:goslar:ranger-lodge:0",
+            "goslar",
+            "goslar",
+            "organization-representative",
+        );
+        assert!(exact_representative_fields_match(
+            valid.0, valid.1, valid.2, valid.3, valid.4
+        ));
+        assert!(!exact_representative_fields_match(
+            "npc:goslar:ranger-lodge:1",
+            valid.1,
+            valid.2,
+            valid.3,
+            valid.4
+        ));
+        assert!(!exact_representative_fields_match(
+            valid.0, valid.1, "other", valid.3, valid.4
+        ));
+        assert!(!exact_representative_fields_match(
+            valid.0,
+            valid.1,
+            valid.2,
+            valid.3,
+            "innkeeper"
+        ));
     }
 }

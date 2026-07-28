@@ -417,7 +417,6 @@ def strategic_sim(
                     "--cycles", cycles, "--duration-days", duration_days,
                     "--party-size", party_size, "--output", str(output_dir / "report.json"),
                     "--failure-output", str(output_dir / "failure.json"),
-                    "--npc-stories-output", str(output_dir / "npc-adventurer-stories.md"),
                     "--imported-world", "--expected-world-manifest-digest",
                     world_manifest_digest,
                 ]
@@ -434,7 +433,6 @@ def strategic_sim(
                 "--cycles", cycles, "--duration-days", duration_days,
                 "--party-size", party_size, "--output", str(output_dir / "report.json"),
                 "--failure-output", str(output_dir / "failure.json"),
-                "--npc-stories-output", str(output_dir / "npc-adventurer-stories.md"),
             ]
             result_code = run(command, env=environment)
             metadata["status"] = "completed" if result_code == 0 else "simulator_failed"

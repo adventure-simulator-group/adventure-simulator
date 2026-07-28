@@ -52,10 +52,8 @@ The complete authoring and validation contract is documented in
 For deterministic multi-year NPC balance experiments and replay commands, see
 [`strategic-simulation.md`](strategic-simulation.md), `just strategic-sim`, and
 `just test-strategic-sim`. The isolated `just strategic-sim-core-loop <new-output-dir>` command
-also evaluates the authoritative server-side NPC adventurer system and writes a
-Markdown quest-story log. Its default policy is scripted; optional provider
-mode requires explicit network consent and reads a key only from the named
-environment variable. See
+also evaluates the authoritative strategic incident, escalation, recruitment,
+and quest systems. See
 [`strategic-simulation.md`](strategic-simulation.md#quest-evaluators).
 The separate end-to-end web evaluator is LLM-only and drives the same visible
 controls as a player. With a local strategic server running, invoke

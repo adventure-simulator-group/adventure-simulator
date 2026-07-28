@@ -1233,7 +1233,7 @@ pub struct InvestigationSafeLeadReceipt {
 
 /// Dry observer-safe news about a case the character already knew. These rows
 /// contain no inferred cause, probability, or suggested next action.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[table(accessor = investigation_journal_notice)]
 pub struct InvestigationJournalNotice {
     #[primary_key]
@@ -1293,6 +1293,51 @@ pub(crate) fn record_journal_notice(
             source_label: source_label.into(),
             recorded_at,
         });
+    Ok(())
+}
+
+pub(crate) fn upsert_public_threat_journal_notice(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    public_case_id: &str,
+    summary: &str,
+    source_label: &str,
+    recorded_at: u64,
+) -> Result<(), String> {
+    if public_case_id.is_empty()
+        || summary.is_empty()
+        || summary.len() > 1_024
+        || source_label.is_empty()
+        || source_label.len() > 160
+    {
+        return Err("Public threat journal notice is invalid".into());
+    }
+    let id = adventuresim_core::threat_escalation::public_threat_journal_id(
+        owner_character_id,
+        public_case_id,
+    );
+    let notice = InvestigationJournalNotice {
+        id: id.clone(),
+        owner_character_id,
+        public_case_id: public_case_id.into(),
+        source_id: format!("public-threat:{public_case_id}"),
+        summary: summary.into(),
+        source_label: source_label.into(),
+        recorded_at,
+    };
+    if let Some(existing) = ctx.db.investigation_journal_notice().id().find(&id) {
+        if existing.owner_character_id != owner_character_id
+            || existing.public_case_id != public_case_id
+            || existing.source_id != notice.source_id
+        {
+            return Err("Public threat journal identity conflicts with authority".into());
+        }
+        if existing != notice {
+            ctx.db.investigation_journal_notice().id().update(notice);
+        }
+    } else {
+        ctx.db.investigation_journal_notice().insert(notice);
+    }
     Ok(())
 }
 
@@ -2220,6 +2265,39 @@ fn generated_authority_reducer(
             .into_iter()
             .map(|(_, case_id, manifest, context)| (case_id, manifest, context)),
     )
+}
+
+fn generated_investigability(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> Option<u8> {
+    let (_, manifest_json) = generated_authority_reducer(ctx, capability).ok()??;
+    let manifest =
+        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(&manifest_json)
+            .ok()?;
+    let adventuresim_core::quest_generation::CanonicalCause::Hostile(threat) = manifest.cause
+    else {
+        return None;
+    };
+    Some(
+        adventuresim_core::bestiary::profile(threat)
+            .investigation
+            .investigability,
+    )
+}
+
+fn apply_investigability_to_route_skills(
+    mut skills: action::SkillContribution,
+    investigability: u8,
+) -> action::SkillContribution {
+    let modifier = i32::from(adventuresim_core::threat_escalation::check_modifier_milli(
+        investigability,
+    )) * 2;
+    let adjust = |value: u16| (i32::from(value) + modifier).clamp(0, 10_000) as u16;
+    skills.terrain_bps = adjust(skills.terrain_bps);
+    skills.awareness_bps = adjust(skills.awareness_bps);
+    skills.stealth_bps = adjust(skills.stealth_bps);
+    skills
 }
 
 fn observer_pattern_route_has_live_corroborated_clue(
@@ -5262,6 +5340,10 @@ pub(crate) fn perform_investigation_action_authorized(
     let members = validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
     let started_at = synchronize_party_activity_time(ctx, &members, party.leader_id)?;
     validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
+    let mut route_skills = party_action_skills(ctx, &party_id, actor_id, target_terrain)?;
+    if let Some(investigability) = generated_investigability(ctx, &capability) {
+        route_skills = apply_investigability_to_route_skills(route_skills, investigability);
+    }
     let resolution_input = action::ResolutionInput {
         seed: capability.seed,
         attempt_index: expected_version,
@@ -5275,7 +5357,7 @@ pub(crate) fn perform_investigation_action_authorized(
         },
         evidence_age_minutes: started_at.saturating_sub(capability.evidence_age_origin_minute),
         current_uncertainty_bps: capability.uncertainty_bps,
-        skills: party_action_skills(ctx, &party_id, actor_id, target_terrain)?,
+        skills: route_skills,
         weather: action::WeatherAuthority::Unavailable,
     };
     let bounded_progress = capability_uses_bounded_progress(&capability.provenance_kind, kind)
@@ -5773,7 +5855,12 @@ pub(crate) fn disclose_exact_case_site(
     site: &CaseSiteAuthority,
     source_label: &str,
 ) -> Result<(), String> {
-    if site.case_id != case_id {
+    let aliases = case_site_provenance_reducer(ctx, site);
+    if site.case_id != case_id
+        && !aliases
+            .flatten()
+            .is_some_and(|(_, public_case_id)| public_case_id == case_id)
+    {
         return Err("Case-site disclosure does not belong to the disclosed case".into());
     }
     let base_id = format!("case-site-disclosure:{observer_character_id}:{}", site.id);

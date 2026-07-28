@@ -50,6 +50,9 @@ pub struct TacticalServerRequest {
     pub party_id: String,
     pub requested_by: u64,
     pub required_enemy_kills: u32,
+    pub enemy_difficulty: i32,
+    pub enemy_combat_scale_bps: u32,
+    pub normalized_combat_power: u32,
 }
 
 /// Active tactical server instance
@@ -68,6 +71,9 @@ pub struct TacticalServer {
     pub addr: String,
     pub cert_digest: String,
     pub required_enemy_kills: u32,
+    pub enemy_difficulty: i32,
+    pub enemy_combat_scale_bps: u32,
+    pub normalized_combat_power: u32,
 }
 
 #[view(accessor = tactical_server_request, public)]
@@ -542,7 +548,10 @@ pub fn request_tactical_server(
             scene_key,
             party_id,
             requested_by: character_id,
-            required_enemy_kills: group.enemy_count,
+            required_enemy_kills: mission.enemy_count,
+            enemy_difficulty: mission.enemy_difficulty,
+            enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
+            normalized_combat_power: mission.normalized_combat_power,
         });
 
     Ok(())
@@ -604,6 +613,9 @@ pub fn create_tactical_server_for_request(
         request.scene_key,
         request.party_id,
         request.required_enemy_kills,
+        request.enemy_difficulty,
+        request.enemy_combat_scale_bps,
+        request.normalized_combat_power,
         addr,
         cert_digest,
     )
@@ -619,6 +631,9 @@ fn insert_tactical_server(
     scene_key: String,
     party_id: String,
     required_enemy_kills: u32,
+    enemy_difficulty: i32,
+    enemy_combat_scale_bps: u32,
+    normalized_combat_power: u32,
     addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
@@ -653,6 +668,9 @@ fn insert_tactical_server(
         addr,
         cert_digest,
         required_enemy_kills,
+        enemy_difficulty,
+        enemy_combat_scale_bps,
+        normalized_combat_power,
     };
     ctx.db.tactical_server_authority().insert(server);
     Ok(())

@@ -22,6 +22,13 @@ pub struct MissionAuthority {
     pub committed_resolution: Option<HostileResolutionKind>,
     pub committed_capture_subject_id: Option<String>,
     pub scene_key: String,
+    pub hostile_version: u16,
+    pub enemy_count: u32,
+    pub enemy_difficulty: i32,
+    pub enemy_combat_scale_bps: u32,
+    pub normalized_combat_power: u32,
+    pub drop_item_id: Option<String>,
+    pub drop_quantity: u32,
 }
 
 impl __sdk::InModule for MissionAuthority {
@@ -44,6 +51,13 @@ pub struct MissionAuthorityCols {
         __sdk::__query_builder::Col<MissionAuthority, Option<HostileResolutionKind>>,
     pub committed_capture_subject_id: __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
     pub scene_key: __sdk::__query_builder::Col<MissionAuthority, String>,
+    pub hostile_version: __sdk::__query_builder::Col<MissionAuthority, u16>,
+    pub enemy_count: __sdk::__query_builder::Col<MissionAuthority, u32>,
+    pub enemy_difficulty: __sdk::__query_builder::Col<MissionAuthority, i32>,
+    pub enemy_combat_scale_bps: __sdk::__query_builder::Col<MissionAuthority, u32>,
+    pub normalized_combat_power: __sdk::__query_builder::Col<MissionAuthority, u32>,
+    pub drop_item_id: __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
+    pub drop_quantity: __sdk::__query_builder::Col<MissionAuthority, u32>,
 }
 
 impl __sdk::__query_builder::HasCols for MissionAuthority {
@@ -70,6 +84,19 @@ impl __sdk::__query_builder::HasCols for MissionAuthority {
                 "committed_capture_subject_id",
             ),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
+            hostile_version: __sdk::__query_builder::Col::new(table_name, "hostile_version"),
+            enemy_count: __sdk::__query_builder::Col::new(table_name, "enemy_count"),
+            enemy_difficulty: __sdk::__query_builder::Col::new(table_name, "enemy_difficulty"),
+            enemy_combat_scale_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "enemy_combat_scale_bps",
+            ),
+            normalized_combat_power: __sdk::__query_builder::Col::new(
+                table_name,
+                "normalized_combat_power",
+            ),
+            drop_item_id: __sdk::__query_builder::Col::new(table_name, "drop_item_id"),
+            drop_quantity: __sdk::__query_builder::Col::new(table_name, "drop_quantity"),
         }
     }
 }

@@ -80,6 +80,14 @@ reusing membership reducers. Joining is idempotent; the joining fee is charged o
 Crossing a paid-through boundary suspends membership and clears its
 presentation. Paying at a chapter reactivates it without retroactive arrears.
 
+Forester (ranger), witch-hunter, and knightly organizations explicitly author
+`public_threat_referrals`; the capability is never inferred from names, skills,
+or services. At any authored chapter, its representative may disclose public
+hostile cases within that settlement's bounded rumor reach to an active,
+dues-current member. Organization presentation is not required. The dialogue
+uses the same canonical, observer-scoped disclosure path as an eligible
+innkeeper.
+
 Organization training and activity require a current membership and local
 chapter. Their skill mix is read from the catalog, including fixed skills,
 denomination-specific Religion, Bestiary and Terrain leaves, and equipped

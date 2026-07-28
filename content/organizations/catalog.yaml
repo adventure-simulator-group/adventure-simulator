@@ -105,7 +105,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "weaponsmith_guild",
@@ -209,7 +210,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "armourers_guild",
@@ -313,7 +315,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "tailors_guild",
@@ -417,7 +420,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "herbalists_college",
@@ -541,7 +545,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "cooks_guild",
@@ -645,7 +650,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "roman_catholic_learned_chapter",
@@ -733,7 +739,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "reformed_learned_chapter",
@@ -809,7 +816,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "orthodox_learned_brotherhood",
@@ -885,7 +893,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "lutheran_learned_visitation",
@@ -971,7 +980,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "anglican_learned_fellowship",
@@ -1017,7 +1027,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "islamic_learned_fellowship",
@@ -1064,7 +1075,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "jewish_learned_fellowship",
@@ -1111,7 +1123,8 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "brotherhood_saint_peter_martyr",
@@ -1214,7 +1227,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  true
     },
     {
         "id":  "brotherhood_watchful_lamp",
@@ -1302,7 +1316,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  true
     },
     {
         "id":  "commission_false_wonders",
@@ -1358,7 +1373,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "fellowship_kings_watch",
@@ -1414,7 +1430,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "brotherhood_archangel_michael",
@@ -1470,7 +1487,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "order_saint_george",
@@ -1562,7 +1580,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  true
     },
     {
         "id":  "brandenburg_bailiwick_saint_john",
@@ -1649,7 +1668,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  true
     },
     {
         "id":  "covenanted_company_shield",
@@ -1705,7 +1725,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "royal_fellowship_saint_george",
@@ -1761,7 +1782,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "military_brotherhood_saint_george",
@@ -1817,7 +1839,8 @@
         "privileges":  [
                            "bear_arms",
                            "wear_armor"
-                       ]
+                       ],
+        "public_threat_referrals":  false
     },
     {
         "id":  "wardens_harz",
@@ -1919,7 +1942,8 @@
                            "forage_low_game",
                            "forage_fish",
                            "forage_plants"
-                       ]
+                       ],
+        "public_threat_referrals":  true
     },
     {
         "id":  "keepers_solling",
@@ -2006,7 +2030,8 @@
                            "forage_low_game",
                            "forage_fish",
                            "forage_plants"
-                       ]
+                       ],
+        "public_threat_referrals":  true
     },
     {
         "id":  "company_green_staff_thuringia",
@@ -2093,7 +2118,8 @@
                            "forage_low_game",
                            "forage_fish",
                            "forage_plants"
-                       ]
+                       ],
+        "public_threat_referrals":  true
     },
     {
         "id":  "test_catholic_polearm_cooks",
@@ -2166,6 +2192,7 @@
                      },
         "privileges":  [
 
-                       ]
+                       ],
+        "public_threat_referrals":  false
     }
 ]
