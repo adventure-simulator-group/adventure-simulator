@@ -67,6 +67,7 @@ use adventuresim_stdb_client::{
     finalize_merchant_trade_reducer::finalize_merchant_trade, food_lot_table::FoodLotTableAccess,
     inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
+    local_problem_symptom_table::LocalProblemSymptomTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
     party_journey_itinerary_table::PartyJourneyItineraryTableAccess,
@@ -97,7 +98,7 @@ use adventuresim_stdb_client::{
     travel_to_settlement_reducer::travel_to_settlement,
     update_training_schedule_reducer::update_training_schedule,
     withdraw_party_inventory_item_reducer::withdraw_party_inventory_item,
-    world_data_import_table::WorldDataImportTableAccess,
+    world_clock_table::WorldClockTableAccess, world_data_import_table::WorldDataImportTableAccess,
 };
 
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -247,6 +248,7 @@ pub struct CoreLoopMetrics {
     pub generated_discovery_actions_attempted: u32,
     pub generated_discovery_actions_fruitful: u32,
     pub generated_discovery_decisions_unproductive: u32,
+    pub generated_discovery_public_backoff_suppressions: u32,
     pub expedition_recovery_plans: u32,
     pub expedition_recovery_rests: u32,
     pub expedition_evacuations: u32,
@@ -797,6 +799,57 @@ struct PublicNpcCandidate {
     location_id: String,
 }
 
+const PUBLIC_DISCOVERY_BACKOFF_MINUTES: u64 = 2 * 1_440;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicDiscoveryFingerprint {
+    settlement_id: String,
+    contacts: Vec<(String, String, String)>,
+    active_symptoms: Vec<(String, String, u64, u64)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicDiscoveryBackoff {
+    fingerprint: PublicDiscoveryFingerprint,
+    retry_at: u64,
+}
+
+fn public_discovery_backoff_active(
+    backoff: &PublicDiscoveryBackoff,
+    fingerprint: &PublicDiscoveryFingerprint,
+    official_minute: u64,
+) -> bool {
+    backoff.fingerprint == *fingerprint && official_minute < backoff.retry_at
+}
+
+fn public_symptom_age_bucket(oldest_age_minutes: Option<u64>) -> &'static str {
+    match oldest_age_minutes {
+        None => "none",
+        Some(age) if age < 1_440 => "under_1_day",
+        Some(age) if age < 4_320 => "1_to_2_days",
+        Some(age) if age < 11_520 => "3_to_7_days",
+        Some(_) => "8_plus_days",
+    }
+}
+
+fn public_count_bucket(count: usize) -> &'static str {
+    match count {
+        0 => "0",
+        1 => "1",
+        2..=3 => "2_to_3",
+        _ => "4_plus",
+    }
+}
+
+fn discovery_location_class(candidate: Option<&PublicNpcCandidate>) -> &'static str {
+    match candidate.map(|candidate| candidate.location_id.as_str()) {
+        Some("inn") => "inn",
+        Some("overview") => "overview",
+        Some(_) => "other",
+        None => "none",
+    }
+}
+
 fn stable_discovery_action_candidate(
     candidates: Vec<PublicNpcCandidate>,
 ) -> Option<PublicNpcCandidate> {
@@ -817,6 +870,7 @@ enum GeneratedDiscoveryOutcome {
     Discovered,
     NoVisibleContacts,
     NoPublicRumor,
+    PublicBackoff,
 }
 
 impl GeneratedDiscoveryOutcome {
@@ -1383,6 +1437,7 @@ struct LiveRunner {
     generated_exact_site_cases: HashSet<(u64, String)>,
     generated_traveled_cases: HashSet<(u64, String)>,
     generated_finance_blocks: HashMap<(String, u64, String), (u64, u64)>,
+    generated_discovery_backoff: HashMap<u64, PublicDiscoveryBackoff>,
     npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
     simulation_run_nonce: String,
     failure_recorder: FailureRecorder,
@@ -5387,6 +5442,77 @@ impl LiveRunner {
         Ok(session_id)
     }
 
+    fn official_world_minute(&self) -> u64 {
+        self.connection
+            .db
+            .world_clock()
+            .iter()
+            .map(|clock| clock.official_minutes)
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn public_discovery_fingerprint(
+        &self,
+        character_id: u64,
+        official_minute: u64,
+        candidates: &[PublicNpcCandidate],
+    ) -> (PublicDiscoveryFingerprint, usize, &'static str) {
+        let settlement_id = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == character_id)
+            .and_then(|row| row.current_settlement_id)
+            .unwrap_or_default();
+        let mut contacts = candidates
+            .iter()
+            .map(|candidate| {
+                (
+                    candidate.npc_id.clone(),
+                    candidate.conversation_id.clone(),
+                    candidate.location_id.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        contacts.sort();
+        let mut active_symptoms = self
+            .connection
+            .db
+            .local_problem_symptom()
+            .iter()
+            .filter(|symptom| {
+                symptom.settlement_id == settlement_id
+                    && symptom.active_from <= official_minute
+                    && official_minute < symptom.active_until
+            })
+            .map(|symptom| {
+                (
+                    symptom.symptom,
+                    symptom.public_summary,
+                    symptom.active_from,
+                    symptom.active_until,
+                )
+            })
+            .collect::<Vec<_>>();
+        active_symptoms.sort();
+        let oldest_age = active_symptoms
+            .iter()
+            .map(|(_, _, active_from, _)| official_minute.saturating_sub(*active_from))
+            .max();
+        let active_symptom_count = active_symptoms.len();
+        (
+            PublicDiscoveryFingerprint {
+                settlement_id,
+                contacts,
+                active_symptoms,
+            },
+            active_symptom_count,
+            public_symptom_age_bucket(oldest_age),
+        )
+    }
+
     fn discover_generated_case(
         &mut self,
         character_id: u64,
@@ -5403,7 +5529,37 @@ impl LiveRunner {
             .collect::<HashSet<_>>();
         let candidates = self.visible_npc_candidates(character_id, None, None);
         let visible_candidate_count = candidates.len();
-        let Some(candidate) = stable_discovery_action_candidate(candidates) else {
+        let official_minute = self.official_world_minute();
+        let (public_fingerprint, active_symptom_count, oldest_symptom_age_bucket) =
+            self.public_discovery_fingerprint(character_id, official_minute, &candidates);
+        let candidate = stable_discovery_action_candidate(candidates);
+        let location_class = discovery_location_class(candidate.as_ref());
+        let public_backoff = self
+            .generated_discovery_backoff
+            .get(&character_id)
+            .is_some_and(|backoff| {
+                public_discovery_backoff_active(backoff, &public_fingerprint, official_minute)
+            });
+        if public_backoff {
+            self.metrics.generated_discovery_public_backoff_suppressions = self
+                .metrics
+                .generated_discovery_public_backoff_suppressions
+                .saturating_add(1);
+            self.event(
+                agent,
+                CoreLoopEventKind::GeneratedDiscoveryResult,
+                format!(
+                    "official_minute={official_minute};active_symptom_count={};oldest_symptom_age_bucket={oldest_symptom_age_bucket};visible_candidate_count={};location_class={location_class};owner_open_case_count={};public_backoff=true;result=suppressed;reason=unchanged_public_state",
+                    public_count_bucket(active_symptom_count),
+                    visible_candidate_count.min(32),
+                    before.len().min(32),
+                ),
+            );
+            return Ok(GeneratedDiscoveryOutcome::PublicBackoff);
+        }
+        self.generated_discovery_backoff.remove(&character_id);
+
+        let Some(candidate) = candidate else {
             self.metrics.generated_discovery_decisions_unproductive = self
                 .metrics
                 .generated_discovery_decisions_unproductive
@@ -5412,9 +5568,10 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::GeneratedDiscoveryResult,
                 format!(
-                    "visible_candidate_count={visible_candidate_count};candidate_id=none;candidate_name=none;location=none;dialogue_success=false;session_success=false;open_cases_before={};open_cases_after={};new_open_cases=0;rumor_delivered=false;result=unproductive;reason=no_visible_contacts;fallback=no_visible_contacts;activity_fallback=true",
-                    before.len(),
-                    before.len(),
+                    "official_minute={official_minute};active_symptom_count={};oldest_symptom_age_bucket={oldest_symptom_age_bucket};visible_candidate_count={};location_class=none;owner_open_case_count={};public_backoff=false;dialogue_success=false;session_success=false;new_open_cases=0;rumor_delivered=false;result=unproductive;reason=no_visible_contacts;fallback=no_visible_contacts;activity_fallback=true",
+                    public_count_bucket(active_symptom_count),
+                    visible_candidate_count.min(32),
+                    before.len().min(32),
                 ),
             );
             return Ok(GeneratedDiscoveryOutcome::NoVisibleContacts);
@@ -5428,11 +5585,10 @@ impl LiveRunner {
             agent,
             CoreLoopEventKind::GeneratedDiscoveryAttempt,
             format!(
-                "visible_candidate_count={visible_candidate_count};candidate_id={};candidate_name={};location={};open_cases_before={}",
-                bounded_event_field(&candidate.npc_id),
-                bounded_event_field(&candidate.name),
-                bounded_event_field(&candidate.location_id),
-                before.len(),
+                "official_minute={official_minute};active_symptom_count={};oldest_symptom_age_bucket={oldest_symptom_age_bucket};visible_candidate_count={};location_class={location_class};owner_open_case_count={};public_backoff=false",
+                public_count_bucket(active_symptom_count),
+                visible_candidate_count.min(32),
+                before.len().min(32),
             ),
         );
         if let Err(error) = self.start_public_dialogue(character_id, cycle, &candidate, "discover")
@@ -5443,12 +5599,10 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::GeneratedDiscoveryResult,
                 format!(
-                    "visible_candidate_count={visible_candidate_count};candidate_id={};candidate_name={};location={};dialogue_success={dialogue_succeeded};session_success=false;open_cases_before={};open_cases_after={};new_open_cases=0;rumor_delivered=false;result=failed;reason={};fallback=none;activity_fallback=false",
-                    bounded_event_field(&candidate.npc_id),
-                    bounded_event_field(&candidate.name),
-                    bounded_event_field(&candidate.location_id),
-                    before.len(),
-                    before.len(),
+                    "official_minute={official_minute};active_symptom_count={};oldest_symptom_age_bucket={oldest_symptom_age_bucket};visible_candidate_count={};location_class={location_class};owner_open_case_count={};public_backoff=false;dialogue_success={dialogue_succeeded};session_success=false;new_open_cases=0;rumor_delivered=false;result=failed;reason={};fallback=none;activity_fallback=false",
+                    public_count_bucket(active_symptom_count),
+                    visible_candidate_count.min(32),
+                    before.len().min(32),
                     if dialogue_succeeded {
                         "session_projection_missing"
                     } else {
@@ -5483,14 +5637,14 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::GeneratedDiscoveryResult,
                 format!(
-                    "visible_candidate_count={visible_candidate_count};candidate_id={};candidate_name={};location={};dialogue_success=true;session_success=true;open_cases_before={};open_cases_after={};new_open_cases={new_open_cases};rumor_delivered=true;result=fruitful;reason=rumor_delivered;fallback=none;activity_fallback=false",
-                    bounded_event_field(&candidate.npc_id),
-                    bounded_event_field(&candidate.name),
-                    bounded_event_field(&candidate.location_id),
-                    before.len(),
-                    after.len(),
+                    "official_minute={official_minute};active_symptom_count={};oldest_symptom_age_bucket={oldest_symptom_age_bucket};visible_candidate_count={};location_class={location_class};owner_open_case_count={};public_backoff=false;dialogue_success=true;session_success=true;new_open_cases={};rumor_delivered=true;result=fruitful;reason=rumor_delivered;fallback=none;activity_fallback=false",
+                    public_count_bucket(active_symptom_count),
+                    visible_candidate_count.min(32),
+                    after.len().min(32),
+                    new_open_cases.min(32),
                 ),
             );
+            self.generated_discovery_backoff.remove(&character_id);
             self.observe_generated_case_intake(
                 agent,
                 character_id,
@@ -5522,13 +5676,18 @@ impl LiveRunner {
             agent,
             CoreLoopEventKind::GeneratedDiscoveryResult,
             format!(
-                "visible_candidate_count={visible_candidate_count};candidate_id={};candidate_name={};location={};dialogue_success=true;session_success=true;open_cases_before={};open_cases_after={};new_open_cases=0;rumor_delivered=false;result=unproductive;reason=no_public_rumor_available;fallback=no_public_rumor_available;activity_fallback=true",
-                bounded_event_field(&candidate.npc_id),
-                bounded_event_field(&candidate.name),
-                bounded_event_field(&candidate.location_id),
-                before.len(),
-                after.len(),
+                "official_minute={official_minute};active_symptom_count={};oldest_symptom_age_bucket={oldest_symptom_age_bucket};visible_candidate_count={};location_class={location_class};owner_open_case_count={};public_backoff=false;dialogue_success=true;session_success=true;new_open_cases=0;rumor_delivered=false;result=unproductive;reason=no_public_rumor_available;fallback=no_public_rumor_available;activity_fallback=true",
+                public_count_bucket(active_symptom_count),
+                visible_candidate_count.min(32),
+                after.len().min(32),
             ),
+        );
+        self.generated_discovery_backoff.insert(
+            character_id,
+            PublicDiscoveryBackoff {
+                fingerprint: public_fingerprint,
+                retry_at: official_minute.saturating_add(PUBLIC_DISCOVERY_BACKOFF_MINUTES),
+            },
         );
         Ok(GeneratedDiscoveryOutcome::NoPublicRumor)
     }
@@ -7192,6 +7351,7 @@ fn run_core_loop_with_npc_policy_inner(
         .add_query(|query| query.from.food_lot())
         .add_query(|query| query.from.item())
         .add_query(|query| query.from.item_condition())
+        .add_query(|query| query.from.local_problem_symptom())
         .add_query(|query| query.from.party())
         .add_query(|query| query.from.party_inventory_item())
         .add_query(|query| query.from.party_journey())
@@ -7207,6 +7367,7 @@ fn run_core_loop_with_npc_policy_inner(
         .add_query(|query| query.from.settlement_npc_presence())
         .add_query(|query| query.from.settlement_smith())
         .add_query(|query| query.from.simulation_run())
+        .add_query(|query| query.from.world_clock())
         .add_query(|query| query.from.world_data_import())
         .subscribe();
     connection.run_threaded();
@@ -7240,6 +7401,7 @@ fn run_core_loop_with_npc_policy_inner(
         generated_exact_site_cases: HashSet::new(),
         generated_traveled_cases: HashSet::new(),
         generated_finance_blocks: HashMap::new(),
+        generated_discovery_backoff: HashMap::new(),
         npc_strategy_policy,
         simulation_run_nonce: config.run_nonce.clone(),
         failure_recorder,
@@ -8232,6 +8394,44 @@ mod tests {
         assert!(GeneratedDiscoveryOutcome::Discovered.case_discovered());
         assert!(!GeneratedDiscoveryOutcome::NoVisibleContacts.case_discovered());
         assert!(!GeneratedDiscoveryOutcome::NoPublicRumor.case_discovered());
+        assert!(!GeneratedDiscoveryOutcome::PublicBackoff.case_discovered());
+    }
+
+    #[test]
+    fn public_discovery_backoff_expires_or_invalidates_on_public_change() {
+        let initial = PublicDiscoveryFingerprint {
+            settlement_id: "settlement-a".into(),
+            contacts: vec![("npc-a".into(), "conversation-a".into(), "inn".into())],
+            active_symptoms: vec![(
+                "missing livestock".into(),
+                "Several goats have vanished.".into(),
+                1_000,
+                20_000,
+            )],
+        };
+        let backoff = PublicDiscoveryBackoff {
+            fingerprint: initial.clone(),
+            retry_at: 3_880,
+        };
+        assert!(public_discovery_backoff_active(&backoff, &initial, 3_879));
+        assert!(!public_discovery_backoff_active(&backoff, &initial, 3_880));
+
+        let mut changed = initial;
+        changed.contacts[0].2 = "overview".into();
+        assert!(!public_discovery_backoff_active(&backoff, &changed, 2_000));
+    }
+
+    #[test]
+    fn public_symptom_diagnostics_are_coarse() {
+        assert_eq!(public_count_bucket(0), "0");
+        assert_eq!(public_count_bucket(1), "1");
+        assert_eq!(public_count_bucket(3), "2_to_3");
+        assert_eq!(public_count_bucket(99), "4_plus");
+        assert_eq!(public_symptom_age_bucket(None), "none");
+        assert_eq!(public_symptom_age_bucket(Some(1_439)), "under_1_day");
+        assert_eq!(public_symptom_age_bucket(Some(1_440)), "1_to_2_days");
+        assert_eq!(public_symptom_age_bucket(Some(4_320)), "3_to_7_days");
+        assert_eq!(public_symptom_age_bucket(Some(11_520)), "8_plus_days");
     }
 
     #[test]
@@ -8247,7 +8447,12 @@ mod tests {
         assert!(discovery.contains("rumor_delivered=true"));
         assert!(discovery.contains("reason=rumor_delivered"));
         assert!(discovery.contains("reason=no_public_rumor_available"));
+        assert!(source.contains(".add_query(|query| query.from.local_problem_symptom())"));
+        assert!(source.contains(".add_query(|query| query.from.world_clock())"));
+        assert!(discovery.contains("public_backoff=true"));
         assert!(!discovery.contains("local_problem_rumor_delivery"));
+        assert!(!discovery.contains("local_problem_receipt"));
+        assert!(!discovery.contains("npc_intervention"));
         assert!(!discovery.contains("quest_generation_authority"));
     }
 
@@ -9943,6 +10148,7 @@ mod tests {
             generated_discovery_actions_attempted: 8,
             generated_discovery_actions_fruitful: 3,
             generated_discovery_decisions_unproductive: 2,
+            generated_discovery_public_backoff_suppressions: 5,
             expedition_recovery_plans: 2,
             expedition_recovery_rests: 3,
             expedition_evacuations: 1,
@@ -9991,6 +10197,7 @@ mod tests {
             "generated_discovery_actions_attempted",
             "generated_discovery_actions_fruitful",
             "generated_discovery_decisions_unproductive",
+            "generated_discovery_public_backoff_suppressions",
             "expedition_recovery_plans",
             "expedition_recovery_rests",
             "expedition_evacuations",

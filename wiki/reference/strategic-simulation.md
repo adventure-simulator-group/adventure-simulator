@@ -268,23 +268,33 @@ presence. Discovery is discriminated by the public settlement location and
 time, not by the source NPC. Each decision performs exactly one ordinary
 dialogue with the stably first public representative at the inn when one is
 present. The settlement overview is used only when no inn representative is
-present, matching the same public discovery rule enforced by the server. An
-unproductive action falls back to an ordinary settlement activity day before
-another discovery decision.
+present, matching the same public discovery rule enforced by the server.
+Presence alone is insufficient: an inn row must join to a persistent NPC with
+a valid player/NPC dialogue before it suppresses overview fallback. Orphan
+presence and unknown or non-dialogue conversations fail closed and are omitted
+from the gateway's public contact projection. An unproductive action falls
+back to an ordinary settlement activity day before another discovery decision.
+
+After `no_public_rumor_available`, the runner waits two official days before
+repeating the same discovery dialogue. A change to the public settlement,
+visible contact/location set, or active cause-free `LocalProblemSymptom` set
+invalidates that backoff immediately. The runner does not subscribe to private
+problem authority, rumor receipts, causes, or intervention eligibility.
 
 The runner records a bounded public attempt and result for that action:
-visible candidate count, public candidate identity/name/location, dialogue and
-owner-session success, and owner-scoped open-case counts before and after. A
-new owner-visible open case is the postcondition for an observer-safe
-`rumor_delivered=true`; the evaluator does not read private delivery receipts
-or generation eligibility. Stable result reasons distinguish
-`rumor_delivered`, `no_public_rumor_available`, and `no_visible_contacts`.
-Reports separately count attempted and fruitful discovery actions plus
-unproductive discovery decisions, including decisions with no visible
-discovery location. The pre-action quest-decision event distinguishes policy
-intent from selection with `quest_intended` and `quest_selected`; the later
-discovery-result event alone reports the postcondition and whether the ordinary
-activity fallback follows.
+official minute, coarse active-symptom count and oldest-age bucket, bounded
+visible-candidate count, selected location class, bounded owner open-case
+count, and whether public backoff suppressed the attempt. It does not put case
+IDs, causes, receipt data, or intervention eligibility into these discovery
+diagnostics. A new owner-visible open case is the postcondition for an
+observer-safe `rumor_delivered=true`. Stable result reasons distinguish
+`rumor_delivered`, `no_public_rumor_available`, `no_visible_contacts`, and
+unchanged-public-state suppression. Reports separately count actual attempts,
+fruitful attempts, unproductive decisions, and backoff suppressions; a
+suppressed retry is not counted as an attempted action. The pre-action
+quest-decision event distinguishes policy intent from selection with
+`quest_intended` and `quest_selected`; the later discovery-result event alone
+reports the postcondition and whether the ordinary activity fallback follows.
 
 The first observation of each owner-scoped open generated case is a separate
 bounded `generated_case_intake`. Identity is the composite
@@ -558,10 +568,13 @@ cannot be reproduced from an opaque action list alone.
 The reducer-backed core loop is also the NPC-adventurer evaluator. These are the
 same resident NPC companies that may intervene in old, escalating generated
 cases during normal strategic settlement activity. Eligibility considers case
-age, incident count, prior retry time, company availability, and recent player
-activity. SpacetimeDB selects the company, applies the bounded result through
-the existing case/objective/custody/local-problem authority, and persists an
-idempotent intervention record.
+age, incident count, prior retry time, company availability, and bounded recent
+player activity. The normal threshold is eight official days. First rumor
+intake, successfully completed investigation work, and current case-site presence can grant
+a two-day grace, but no activity can delay intervention beyond fourteen
+official days of case age. SpacetimeDB selects the company, applies the bounded
+result through the existing case/objective/custody/local-problem authority, and
+persists an idempotent intervention record.
 
 The default policy is deterministic and credential-free. An optional LLM may
 choose only one of the strategies advertised by a gateway-only candidate view:

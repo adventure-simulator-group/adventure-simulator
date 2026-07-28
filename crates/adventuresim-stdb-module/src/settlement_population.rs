@@ -104,6 +104,19 @@ fn project_backend_settlement_npc(npc: SettlementNpc) -> BackendSettlementNpc {
     }
 }
 
+pub(crate) fn npc_is_dialogue_capable(npc: &SettlementNpc) -> bool {
+    adventuresim_dialogue::find_conversation(&npc.conversation_id).is_some_and(|conversation| {
+        conversation
+            .roles
+            .values()
+            .any(|role| role.kind == adventuresim_dialogue::ParticipantKind::Player)
+            && conversation
+                .roles
+                .values()
+                .any(|role| role.kind == adventuresim_dialogue::ParticipantKind::Npc)
+    })
+}
+
 #[view(accessor = backend_settlement_npcs, public)]
 pub fn backend_settlement_npcs(ctx: &ViewContext) -> Vec<BackendSettlementNpc> {
     let trusted = ctx
@@ -119,6 +132,7 @@ pub fn backend_settlement_npcs(ctx: &ViewContext) -> Vec<BackendSettlementNpc> {
         .settlement_npc()
         .projection_id()
         .filter(0u64..)
+        .filter(npc_is_dialogue_capable)
         .map(project_backend_settlement_npc)
         .collect()
 }
@@ -643,6 +657,7 @@ mod tests {
             .and_then(|tail| tail.split("/// Public presence contains").next())
             .expect("backend settlement NPC view");
         assert!(view.contains("-> Vec<BackendSettlementNpc>"));
+        assert!(view.contains(".filter(npc_is_dialogue_capable)"));
         assert!(view.contains(".map(project_backend_settlement_npc)"));
         assert!(!view.contains("-> Vec<SettlementNpc>"));
     }

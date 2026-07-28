@@ -18,6 +18,7 @@ pub struct LocalProblemReceipt {
     pub expected_location_id: String,
     pub safe_summary: String,
     pub learned_at: u64,
+    pub official_learned_at: u64,
 }
 
 impl __sdk::InModule for LocalProblemReceipt {
@@ -39,6 +40,7 @@ pub struct LocalProblemReceiptCols {
     pub expected_location_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub safe_summary: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub learned_at: __sdk::__query_builder::Col<LocalProblemReceipt, u64>,
+    pub official_learned_at: __sdk::__query_builder::Col<LocalProblemReceipt, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for LocalProblemReceipt {
@@ -62,6 +64,10 @@ impl __sdk::__query_builder::HasCols for LocalProblemReceipt {
             ),
             safe_summary: __sdk::__query_builder::Col::new(table_name, "safe_summary"),
             learned_at: __sdk::__query_builder::Col::new(table_name, "learned_at"),
+            official_learned_at: __sdk::__query_builder::Col::new(
+                table_name,
+                "official_learned_at",
+            ),
         }
     }
 }

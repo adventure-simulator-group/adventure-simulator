@@ -1,19 +1,25 @@
 //! Authoritative strategic NPC-adventurer interventions for old generated cases.
 
 use crate::{
-    investigation::{case_site_authority, investigation_action_outcome, record_journal_notice},
+    investigation::{
+        case_site_authority, case_site_authority__view, investigation_action_attempt,
+        investigation_action_attempt__view, investigation_action_outcome,
+        investigation_action_outcome__view, record_journal_notice,
+    },
     local_problem::{
         LocalProblemOutcomeInput, apply_outcome, local_problem_authority,
-        local_problem_authority__view, local_problem_receipt,
+        local_problem_authority__view, local_problem_receipt, local_problem_receipt__view,
     },
     settlement_population::settlement_npc,
     strategic::{
         CaseResolutionStatus, HostileGroupDisposition, case_authority, case_authority__view,
         case_custody, hostile_group_authority, ingest_case_outcome_fact, party_authority,
-        quest_generation_authority, quest_generation_authority__view, record_asset_retrieved,
-        record_asset_returned_or_exchanged, record_subject_rescued_or_released,
-        strategic_gateway_authority__view, validate_quest_generation_authority,
+        party_authority__view, quest_generation_authority, quest_generation_authority__view,
+        record_asset_retrieved, record_asset_returned_or_exchanged,
+        record_subject_rescued_or_released, strategic_gateway_authority__view,
+        validate_quest_generation_authority,
     },
+    time::world_clock__view,
 };
 use adventuresim_core::{
     case::{ObjectiveRequirement, OutcomeFactKind},
@@ -178,7 +184,12 @@ pub fn backend_npc_intervention_candidates(
             incident_count: problem.incident_count,
             mitigation_bps: problem.mitigation_bps,
             open: true,
-            player_activity_at: None,
+            player_activity_at: latest_player_activity_view(
+                ctx,
+                &case.id,
+                problem.starts_at,
+                official_minute_view(ctx),
+            ),
         };
         let retry_at = ctx
             .db
@@ -357,7 +368,7 @@ pub(crate) fn ensure_npc_case_interventions(
             incident_count: problem.incident_count,
             mitigation_bps: problem.mitigation_bps,
             open: case.resolution_status == CaseResolutionStatus::Open,
-            player_activity_at: latest_player_activity(ctx, &case.id, now),
+            player_activity_at: latest_player_activity(ctx, &case.id, problem.starts_at, now),
         };
         if !case_is_eligible(&snapshot, now) {
             continue;
@@ -779,13 +790,53 @@ fn ensure_npc_adventuring_party(ctx: &ReducerContext, settlement_id: &str) -> Re
     Ok(())
 }
 
-fn latest_player_activity(ctx: &ReducerContext, case_id: &str, now: u64) -> Option<u64> {
+fn bounded_player_activity(
+    opened_at: u64,
+    first_intake_at: Option<u64>,
+    completed_investigation_at: Option<u64>,
+    occupying_at: Option<u64>,
+) -> Option<u64> {
+    let absolute_ceiling = opened_at
+        .saturating_add(adventuresim_core::npc_adventurer::MAX_PLAYER_GRACE_CASE_AGE_MINUTES);
+    [first_intake_at, completed_investigation_at, occupying_at]
+        .into_iter()
+        .flatten()
+        .filter(|activity_at| *activity_at < absolute_ceiling)
+        .max()
+}
+
+fn latest_player_activity(
+    ctx: &ReducerContext,
+    case_id: &str,
+    opened_at: u64,
+    now: u64,
+) -> Option<u64> {
+    let first_intake = ctx
+        .db
+        .local_problem_receipt()
+        .iter()
+        .filter(|receipt| receipt.opaque_case_ref == case_id)
+        .map(|receipt| receipt.official_learned_at)
+        .min();
     let recent_action = ctx
         .db
         .investigation_action_outcome()
         .iter()
-        .filter(|outcome| outcome.case_id == case_id)
-        .map(|outcome| outcome.recorded_at)
+        .filter(|outcome| {
+            outcome.case_id == case_id
+                && !outcome.attempt_id.is_empty()
+                && ctx
+                    .db
+                    .investigation_action_attempt()
+                    .id()
+                    .find(&outcome.attempt_id)
+                    .is_some_and(|attempt| {
+                        attempt.success
+                            && attempt.capability_id == outcome.capability_id
+                            && attempt.owner_character_id == outcome.owner_character_id
+                    })
+        })
+        .map(|outcome| outcome.official_recorded_at)
         .max();
     let occupying = ctx
         .db
@@ -798,7 +849,75 @@ fn latest_player_activity(ctx: &ReducerContext, case_id: &str, now: u64) -> Opti
                 .iter()
                 .any(|party| party.current_case_site_id.as_ref() == Some(&site.id))
         });
-    if occupying { Some(now) } else { recent_action }
+    bounded_player_activity(
+        opened_at,
+        first_intake,
+        recent_action,
+        occupying.then_some(now),
+    )
+}
+
+fn official_minute_view(ctx: &ViewContext) -> u64 {
+    ctx.db
+        .world_clock()
+        .id()
+        .find(0)
+        .map_or(0, |clock| clock.official_minutes)
+}
+
+fn latest_player_activity_view(
+    ctx: &ViewContext,
+    case_id: &str,
+    opened_at: u64,
+    now: u64,
+) -> Option<u64> {
+    let first_intake = ctx
+        .db
+        .local_problem_receipt()
+        .character_id()
+        .filter(0u64..)
+        .filter(|receipt| receipt.opaque_case_ref == case_id)
+        .map(|receipt| receipt.official_learned_at)
+        .min();
+    let recent_action = ctx
+        .db
+        .investigation_action_outcome()
+        .owner_character_id()
+        .filter(0u64..)
+        .filter(|outcome| {
+            outcome.case_id == case_id
+                && !outcome.attempt_id.is_empty()
+                && ctx
+                    .db
+                    .investigation_action_attempt()
+                    .id()
+                    .find(&outcome.attempt_id)
+                    .is_some_and(|attempt| {
+                        attempt.success
+                            && attempt.capability_id == outcome.capability_id
+                            && attempt.owner_character_id == outcome.owner_character_id
+                    })
+        })
+        .map(|outcome| outcome.official_recorded_at)
+        .max();
+    let occupying = ctx
+        .db
+        .case_site_authority()
+        .case_id()
+        .filter(case_id)
+        .any(|site| {
+            ctx.db
+                .party_authority()
+                .gateway_bucket()
+                .filter(0u8..)
+                .any(|party| party.current_case_site_id.as_ref() == Some(&site.id))
+        });
+    bounded_player_activity(
+        opened_at,
+        first_intake,
+        recent_action,
+        occupying.then_some(now),
+    )
 }
 
 fn resolve_generated_case(
@@ -1058,6 +1177,64 @@ mod tests {
         );
         assert!(parse_strategy("resolve_case").is_err());
         assert!(parse_strategy("reveal_true_site").is_err());
+    }
+
+    #[test]
+    fn first_intake_and_completed_work_grant_only_bounded_grace() {
+        let source = include_str!("npc_adventurer.rs");
+        let activity = source
+            .split("fn latest_player_activity")
+            .nth(1)
+            .and_then(|tail| tail.split("fn resolve_generated_case").next())
+            .expect("player activity selection");
+        assert!(activity.contains("attempt.success"));
+        assert!(activity.contains(".find(&outcome.attempt_id)"));
+        assert!(activity.contains("attempt.capability_id == outcome.capability_id"));
+        assert!(activity.contains("outcome.official_recorded_at"));
+        assert!(activity.contains("receipt.official_learned_at"));
+        assert!(!activity.contains("attempt.completed_at == outcome.recorded_at"));
+
+        let candidate_view = source
+            .split("pub fn backend_npc_intervention_candidates")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn backend_npc_case_interventions").next())
+            .expect("candidate projection");
+        assert!(candidate_view.contains("latest_player_activity_view("));
+        assert!(!candidate_view.contains("player_activity_at: None"));
+
+        let opened_at = 1_000;
+        let absolute =
+            opened_at + adventuresim_core::npc_adventurer::MAX_PLAYER_GRACE_CASE_AGE_MINUTES;
+        assert_eq!(
+            bounded_player_activity(opened_at, Some(5_000), Some(6_000), None,),
+            Some(6_000)
+        );
+        assert_eq!(
+            bounded_player_activity(opened_at, Some(5_000), None, None,),
+            Some(5_000)
+        );
+        // A repeated receipt cannot move the immutable first-intake time;
+        // the reducer takes the minimum official_learned_at before this helper.
+        let repeated_receipts = [5_000, 9_000, 12_000];
+        assert_eq!(repeated_receipts.into_iter().min(), Some(5_000));
+        assert_eq!(
+            bounded_player_activity(
+                opened_at,
+                repeated_receipts.into_iter().min(),
+                Some(absolute - 1),
+                Some(absolute + 1),
+            ),
+            Some(absolute - 1)
+        );
+        assert_eq!(
+            bounded_player_activity(
+                opened_at,
+                Some(absolute),
+                Some(absolute + 1),
+                Some(absolute + 2),
+            ),
+            None
+        );
     }
 
     #[test]

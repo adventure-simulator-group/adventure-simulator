@@ -14,8 +14,9 @@ use crate::{
     quest_generation::{FinaleKind, GeneratedCase, RouteClass},
 };
 
-pub const MIN_INTERVENTION_AGE_MINUTES: u64 = 5 * 1_440;
+pub const MIN_INTERVENTION_AGE_MINUTES: u64 = 8 * 1_440;
 pub const PLAYER_ACTIVITY_GRACE_MINUTES: u64 = 2 * 1_440;
+pub const MAX_PLAYER_GRACE_CASE_AGE_MINUTES: u64 = 14 * 1_440;
 pub const RETRY_DELAY_MINUTES: u64 = 3 * 1_440;
 pub const MIN_INTERVENTION_INCIDENTS: u16 = 2;
 pub const MAX_CAPABILITY: u16 = 100;
@@ -93,9 +94,15 @@ pub struct NpcApproachResolution {
 
 pub fn eligible_at(case: &NpcCaseSnapshot) -> u64 {
     let aged = case.opened_at.saturating_add(MIN_INTERVENTION_AGE_MINUTES);
-    case.player_activity_at.map_or(aged, |at| {
-        aged.max(at.saturating_add(PLAYER_ACTIVITY_GRACE_MINUTES))
-    })
+    let absolute_ceiling = case
+        .opened_at
+        .saturating_add(MAX_PLAYER_GRACE_CASE_AGE_MINUTES);
+    case.player_activity_at
+        .filter(|at| *at < absolute_ceiling)
+        .map_or(aged, |at| {
+            aged.max(at.saturating_add(PLAYER_ACTIVITY_GRACE_MINUTES))
+                .min(absolute_ceiling)
+        })
 }
 
 pub fn case_is_eligible(case: &NpcCaseSnapshot, now: u64) -> bool {
@@ -751,6 +758,21 @@ mod tests {
             &value,
             aged + 10 + PLAYER_ACTIVITY_GRACE_MINUTES
         ));
+
+        value.player_activity_at = Some(aged - 1);
+        assert!(!case_is_eligible(&value, aged));
+        assert!(!case_is_eligible(&value, aged + 1_440));
+        assert!(case_is_eligible(
+            &value,
+            aged - 1 + PLAYER_ACTIVITY_GRACE_MINUTES
+        ));
+
+        let absolute = value.opened_at + MAX_PLAYER_GRACE_CASE_AGE_MINUTES;
+        value.player_activity_at = Some(absolute - 1);
+        assert!(!case_is_eligible(&value, absolute - 1));
+        assert!(case_is_eligible(&value, absolute));
+        value.player_activity_at = Some(absolute + 10_000);
+        assert!(case_is_eligible(&value, absolute));
     }
 
     #[test]
@@ -773,9 +795,9 @@ mod tests {
 
     #[test]
     fn same_minute_cases_respect_working_party_availability() {
-        let now = 10_000;
         let mut first_case = case();
         first_case.case_id = "case:first".into();
+        let now = eligible_at(&first_case);
         let mut second_case = case();
         second_case.case_id = "case:second".into();
         let mut third_case = case();

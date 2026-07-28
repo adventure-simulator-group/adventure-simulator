@@ -1048,8 +1048,14 @@ pub struct InvestigationActionOutcome {
     pub owner_character_id: u64,
     pub case_id: String,
     pub capability_id: String,
+    /// Exact completed attempt that produced this outcome. Empty for
+    /// non-attempt events such as dialogue contact and stale-capability refresh.
+    pub attempt_id: String,
     pub safe_wording: String,
+    /// Observer chronology used by owner-facing investigation projections.
     pub recorded_at: u64,
+    /// Authoritative world chronology used only by server-side fairness rules.
+    pub official_recorded_at: u64,
 }
 
 /// Private per-party presentation choice. Tracking does not accept a contract,
@@ -3699,8 +3705,10 @@ fn complete_referred_contact_action(
                 owner_character_id,
                 case_id: canonical_case_id.into(),
                 capability_id: capability.id.clone(),
+                attempt_id: String::new(),
                 safe_wording: outcome_wording,
-                recorded_at: official_minute(ctx),
+                recorded_at: character_strategic_minute(ctx, owner_character_id),
+                official_recorded_at: official_minute(ctx),
             });
     }
     for successor_id in activated_successor_ids {
@@ -4926,10 +4934,12 @@ fn reissue_stale_custody_capability(
         owner_character_id: capability.owner_character_id,
         case_id: capability.case_id.clone(),
         capability_id: capability.id.clone(),
+        attempt_id: String::new(),
         safe_wording:
             "The situation changed before you acted; the lead was refreshed without spending time."
                 .into(),
         recorded_at: character_strategic_minute(ctx, capability.owner_character_id),
+        official_recorded_at: official_minute(ctx),
     });
     Ok(true)
 }
@@ -5352,6 +5362,7 @@ pub(crate) fn perform_investigation_action_authorized(
             owner_character_id: actor_id,
             case_id: outcome_case_id,
             capability_id: action_id.clone(),
+            attempt_id: attempt_id.clone(),
             safe_wording: if resolution.success {
                 if resolution.risk_triggered {
                     format!(
@@ -5370,6 +5381,7 @@ pub(crate) fn perform_investigation_action_authorized(
                 .into()
             },
             recorded_at: completed_at,
+            official_recorded_at: official_minute(ctx),
         });
     Ok(())
 }

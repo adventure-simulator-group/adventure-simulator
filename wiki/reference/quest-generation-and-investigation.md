@@ -298,9 +298,19 @@ an incident-only inverse lookup. The template's authored maximum incident
 count is the current safety ceiling (five in both initial templates). Before
 that ceiling can leave a neglected case
 permanently stalled, an available resident NPC adventuring company may
-intervene after the case has aged and accumulated incidents. Recent player
-investigation or physical presence at a case site grants a grace period so the
-server does not resolve a case out from under an active party.
+intervene after the case has aged eight official days and accumulated
+incidents. The first owner-visible rumor intake grants the existing two-day
+player-activity grace once; later receipts for the same case do not extend it.
+A successfully completed investigation action or physical presence at a case site may
+refresh that grace while the case is younger than fourteen official days. The
+fourteen-day absolute case-age ceiling always resumes background intervention,
+so repeated conversations or lingering at a site cannot keep an escalating
+problem open forever. All of these bounds use the authoritative world clock,
+not a character's observer timeline. Private receipt and investigation-outcome
+authority stores a separate official activity timestamp for this purpose;
+owner-facing `learned_at` and `recorded_at` values remain on the character's
+observer chronology. A successful outcome refreshes grace only when its private
+outcome row names the exact successful attempt that produced it.
 
 Incident authority is private. A character who already knows the problem can
 receive a dry local report when rumor circulation next reaches them; an
