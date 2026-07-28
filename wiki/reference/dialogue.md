@@ -195,6 +195,11 @@ joining fee and admission requirements, the dues amount, interval, and current
 standing, or the current rank and next-rank requirements as applicable.
 Committed prompt answers are retry-safe when a response is lost; a new answer
 or an action receipt from a different prompt cannot mutate a closed prompt.
+The representative's greeting anchors a highlighted organization-business
+topic. Its follow-up links are selected from authoritative membership facts:
+nonmembers see joining, suspended members see dues only where dues exist, and
+current members can follow a gated chain through dues, promotion, and
+presentation without seeing actions unavailable in their current state.
 
 The web conversation surface exposes topics only as highlighted phrases in
 NPC dialogue. Clicking one asks about that subject; there is no separate list

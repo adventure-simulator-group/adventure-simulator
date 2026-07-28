@@ -1150,6 +1150,106 @@ mod tests {
     }
 
     #[test]
+    fn organization_business_topics_are_reachable_only_when_authorized() {
+        fn anchored_topics(response: &Response) -> Vec<String> {
+            response
+                .turns
+                .iter()
+                .flat_map(|turn| &turn.fragments)
+                .filter_map(|fragment| match fragment {
+                    Fragment::Topic { topic, .. } => Some(topic.clone()),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        fn reachable_topics(conversation: &Conversation, facts: &FactContext) -> BTreeSet<String> {
+            let start = select_start_response(conversation, facts).expect("eligible greeting");
+            let mut pending = anchored_topics(start);
+            let mut reachable = BTreeSet::new();
+            while let Some(topic_id) = pending.pop() {
+                if !reachable.insert(topic_id.clone()) {
+                    continue;
+                }
+                let topic = conversation
+                    .topics
+                    .iter()
+                    .find(|topic| topic.id == topic_id)
+                    .expect("anchored topic exists");
+                assert!(
+                    topic.initially_known && facts.matches(&topic.conditions),
+                    "greeting flow exposed unauthorized topic {topic_id}"
+                );
+                let response = select_response(topic, facts).expect("reachable topic response");
+                pending.extend(anchored_topics(response));
+            }
+            reachable
+        }
+
+        let conversation = find_conversation("organization-representative").unwrap();
+        let states = [
+            ("none", false, false, false, vec!["join"]),
+            ("none", true, false, false, vec!["join"]),
+            ("suspended", false, false, false, vec![]),
+            ("suspended", true, false, false, vec!["dues"]),
+            ("current", false, false, false, vec!["present"]),
+            ("current", false, false, true, vec![]),
+            ("current", false, true, false, vec!["promotion", "present"]),
+            ("current", false, true, true, vec!["promotion"]),
+            ("current", true, false, false, vec!["dues", "present"]),
+            ("current", true, false, true, vec!["dues"]),
+            (
+                "current",
+                true,
+                true,
+                false,
+                vec!["dues", "promotion", "present"],
+            ),
+            ("current", true, true, true, vec!["dues", "promotion"]),
+        ];
+        for (membership, dues, promotion, presentation, expected) in states {
+            let mut facts = FactContext::default();
+            facts.facts.insert(
+                FactKey::OrganizationMembership {
+                    player: "player".into(),
+                    representative: "representative".into(),
+                },
+                FactValue::Text(membership.into()),
+            );
+            facts.facts.insert(
+                FactKey::OrganizationDuesRequired {
+                    representative: "representative".into(),
+                },
+                FactValue::Bool(dues),
+            );
+            facts.facts.insert(
+                FactKey::OrganizationPromotionAvailable {
+                    player: "player".into(),
+                    representative: "representative".into(),
+                },
+                FactValue::Bool(promotion),
+            );
+            facts.facts.insert(
+                FactKey::OrganizationPresentation {
+                    player: "player".into(),
+                    representative: "representative".into(),
+                },
+                FactValue::Bool(presentation),
+            );
+            let reachable = reachable_topics(conversation, &facts);
+            let actionable = ["join", "dues", "promotion", "present"]
+                .into_iter()
+                .filter(|topic| reachable.contains(*topic))
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                actionable,
+                expected.into_iter().collect(),
+                "wrong reachable business for membership={membership}, dues={dues}, promotion={promotion}, presentation={presentation}"
+            );
+        }
+    }
+
+    #[test]
     fn build_and_runtime_share_authoring_schema_and_runtime_slot_allowlist() {
         let build = include_str!("../build.rs");
         assert!(build.contains("#[path = \"src/authoring_schema.rs\"]"));

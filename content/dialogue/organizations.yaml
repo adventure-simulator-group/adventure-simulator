@@ -16,7 +16,9 @@
               "fragments": [
                 { "kind": "text", "value": "Welcome to " },
                 { "kind": "runtime", "slot": "organization_name" },
-                { "kind": "text", "value": ". I conduct the institution's business here." }
+                { "kind": "text", "value": ". I conduct the institution's " },
+                { "kind": "topic", "topic": "organization-business", "label": "business" },
+                { "kind": "text", "value": " here." }
               ]
             }
           ],
@@ -25,6 +27,335 @@
         }
       ],
       "topics": [
+        {
+          "id": "organization-business",
+          "label": "Organization business",
+          "initially_known": true,
+          "responses": [
+            {
+              "id": "business-for-nonmember",
+              "priority": 30,
+              "conditions": {
+                "op": "fact",
+                "key": {
+                  "kind": "organization_membership",
+                  "player": "player",
+                  "representative": "representative"
+                },
+                "equals": "none"
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "If you seek a place among us, ask to " },
+                    { "kind": "topic", "topic": "join", "label": "join" },
+                    { "kind": "text", "value": "." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            },
+            {
+              "id": "business-for-suspended-member",
+              "priority": 30,
+              "conditions": {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "fact",
+                    "key": {
+                      "kind": "organization_membership",
+                      "player": "player",
+                      "representative": "representative"
+                    },
+                    "equals": "suspended"
+                  },
+                  {
+                    "op": "fact",
+                    "key": {
+                      "kind": "organization_dues_required",
+                      "representative": "representative"
+                    },
+                    "equals": true
+                  }
+                ]
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "Your membership is suspended. You may " },
+                    { "kind": "topic", "topic": "dues", "label": "pay dues" },
+                    { "kind": "text", "value": " to restore it." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            },
+            {
+              "id": "business-for-suspended-member-without-dues",
+              "priority": 30,
+              "conditions": {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "fact",
+                    "key": {
+                      "kind": "organization_membership",
+                      "player": "player",
+                      "representative": "representative"
+                    },
+                    "equals": "suspended"
+                  },
+                  {
+                    "op": "fact",
+                    "key": {
+                      "kind": "organization_dues_required",
+                      "representative": "representative"
+                    },
+                    "equals": false
+                  }
+                ]
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "Your membership is suspended, but this chapter has no dues payment to receive." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            },
+            {
+              "id": "business-for-current-member",
+              "priority": 30,
+              "conditions": {
+                "op": "fact",
+                "key": {
+                  "kind": "organization_membership",
+                  "player": "player",
+                  "representative": "representative"
+                },
+                "equals": "current"
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "Let us review your " },
+                    { "kind": "topic", "topic": "member-business", "label": "membership" },
+                    { "kind": "text", "value": "." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            }
+          ]
+        },
+        {
+          "id": "member-business",
+          "label": "Membership business",
+          "initially_known": true,
+          "conditions": {
+            "op": "fact",
+            "key": {
+              "kind": "organization_membership",
+              "player": "player",
+              "representative": "representative"
+            },
+            "equals": "current"
+          },
+          "responses": [
+            {
+              "id": "current-member-with-dues",
+              "priority": 10,
+              "conditions": {
+                "op": "fact",
+                "key": {
+                  "kind": "organization_dues_required",
+                  "representative": "representative"
+                },
+                "equals": true
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "You may " },
+                    { "kind": "topic", "topic": "dues", "label": "pay dues" },
+                    { "kind": "text", "value": " for the next interval, or discuss your " },
+                    { "kind": "topic", "topic": "advancement-business", "label": "standing and advancement" },
+                    { "kind": "text", "value": "." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            },
+            {
+              "id": "current-member-without-dues",
+              "priority": 10,
+              "conditions": {
+                "op": "fact",
+                "key": {
+                  "kind": "organization_dues_required",
+                  "representative": "representative"
+                },
+                "equals": false
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "This organization charges no dues. We can discuss your " },
+                    { "kind": "topic", "topic": "advancement-business", "label": "standing and advancement" },
+                    { "kind": "text", "value": "." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            }
+          ]
+        },
+        {
+          "id": "advancement-business",
+          "label": "Standing and advancement",
+          "initially_known": true,
+          "conditions": {
+            "op": "fact",
+            "key": {
+              "kind": "organization_membership",
+              "player": "player",
+              "representative": "representative"
+            },
+            "equals": "current"
+          },
+          "responses": [
+            {
+              "id": "advancement-available",
+              "priority": 10,
+              "conditions": {
+                "op": "fact",
+                "key": {
+                  "kind": "organization_promotion_available",
+                  "player": "player",
+                  "representative": "representative"
+                },
+                "equals": true
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "You may " },
+                    { "kind": "topic", "topic": "promotion", "label": "request promotion" },
+                    { "kind": "text", "value": ", or review how you " },
+                    { "kind": "topic", "topic": "presentation-business", "label": "represent the organization" },
+                    { "kind": "text", "value": "." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            },
+            {
+              "id": "advancement-unavailable",
+              "priority": 10,
+              "conditions": {
+                "op": "fact",
+                "key": {
+                  "kind": "organization_promotion_available",
+                  "player": "player",
+                  "representative": "representative"
+                },
+                "equals": false
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "There is no promotion to record now. We can review how you " },
+                    { "kind": "topic", "topic": "presentation-business", "label": "represent the organization" },
+                    { "kind": "text", "value": "." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            }
+          ]
+        },
+        {
+          "id": "presentation-business",
+          "label": "Organization representation",
+          "initially_known": true,
+          "conditions": {
+            "op": "fact",
+            "key": {
+              "kind": "organization_membership",
+              "player": "player",
+              "representative": "representative"
+            },
+            "equals": "current"
+          },
+          "responses": [
+            {
+              "id": "presentation-available",
+              "priority": 10,
+              "conditions": {
+                "op": "fact",
+                "key": {
+                  "kind": "organization_presentation",
+                  "player": "player",
+                  "representative": "representative"
+                },
+                "equals": false
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "You may choose to " },
+                    { "kind": "topic", "topic": "present", "label": "present this organization" },
+                    { "kind": "text", "value": " in your travels." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            },
+            {
+              "id": "presentation-current",
+              "priority": 10,
+              "conditions": {
+                "op": "fact",
+                "key": {
+                  "kind": "organization_presentation",
+                  "player": "player",
+                  "representative": "representative"
+                },
+                "equals": true
+              },
+              "turns": [
+                {
+                  "speaker": "representative",
+                  "fragments": [
+                    { "kind": "text", "value": "You already travel under this organization's name." }
+                  ]
+                }
+              ],
+              "effects": [],
+              "prompt": null
+            }
+          ]
+        },
         {
           "id": "join",
           "label": "Join",
