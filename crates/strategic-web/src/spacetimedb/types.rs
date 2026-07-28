@@ -126,7 +126,8 @@ pub struct BackendInvestigationCaseSummary {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BackendCaseBattle {
-    pub case_id: String,
+    pub owner_character_id: u64,
+    pub public_case_id: String,
     pub party_id: String,
     pub battle_id: String,
     pub mission_id: String,

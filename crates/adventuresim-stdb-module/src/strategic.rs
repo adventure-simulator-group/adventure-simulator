@@ -4588,12 +4588,39 @@ pub struct BattleParticipant {
 pub struct BackendCaseBattle {
     #[index(btree)]
     pub gateway_bucket: u8,
-    pub case_id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    /// Observer-safe generated public case ID, or the ordinary manual case ID.
+    pub public_case_id: String,
     pub party_id: String,
     #[primary_key]
     pub battle_id: String,
     pub mission_id: String,
     pub case_site_id: CaseSiteId,
+}
+
+fn mission_public_case_id(
+    ctx: &ReducerContext,
+    mission: &MissionAuthority,
+) -> Result<String, String> {
+    let case = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&mission.case_id)
+        .ok_or("Mission case authority not found")?;
+    let authority = (!case.generated_case_id.is_empty())
+        .then(|| {
+            ctx.db
+                .quest_generation_authority()
+                .case_id()
+                .find(&case.generated_case_id)
+        })
+        .flatten();
+    Ok(
+        validated_generated_dialogue_manifest(&case, authority.as_ref())?
+            .map_or(case.id, |manifest| manifest.public_case_id),
+    )
 }
 
 #[view(accessor = backend_case_battles, public)]
@@ -5369,6 +5396,9 @@ pub struct DialogueTopicOption {
     #[index(btree)]
     pub session_id: String,
     pub topic_id: String,
+    /// Empty for presentation-only topics; otherwise the exact observer-safe
+    /// public case advanced by this projected option.
+    pub public_case_id: String,
     pub label: String,
     pub source_ref_json: String,
 }
@@ -5451,6 +5481,7 @@ pub struct BackendDialogueTopicOption {
     pub id: String,
     pub session_id: String,
     pub topic_id: String,
+    pub public_case_id: String,
     pub label: String,
     pub source_ref_json: String,
     pub owner_character_id: u64,
@@ -5596,6 +5627,7 @@ pub fn backend_dialogue_topic_options(ctx: &ViewContext) -> Vec<BackendDialogueT
                     id: row.id.clone(),
                     session_id: row.session_id.clone(),
                     topic_id: row.topic_id.clone(),
+                    public_case_id: row.public_case_id.clone(),
                     label: row.label.clone(),
                     source_ref_json: row.source_ref_json.clone(),
                     owner_character_id,
@@ -7704,6 +7736,74 @@ fn case_refs_have_exact_dialogue_provenance(
         .any(|case_ref| exact_case_refs.contains(case_ref))
 }
 
+fn dialogue_public_case_id(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    effects: &[(&str, u64, &adventuresim_dialogue::Effect)],
+) -> Result<String, String> {
+    let mut public_case_ids = BTreeSet::new();
+    for (source_scope, issued_revision, effect) in effects {
+        match effect {
+            adventuresim_dialogue::Effect::InvestigationAction { action } => {
+                let binding_id = dialogue_binding_id(
+                    &session.id,
+                    character_id,
+                    source_scope,
+                    action,
+                    *issued_revision,
+                );
+                let binding = ctx
+                    .db
+                    .dialogue_investigation_binding()
+                    .id()
+                    .find(&binding_id)
+                    .ok_or("Projected dialogue action has no exact case binding")?;
+                let case = ctx
+                    .db
+                    .case_authority()
+                    .id()
+                    .find(&binding.case_id)
+                    .ok_or("Projected dialogue case disappeared")?;
+                let authority = (!case.generated_case_id.is_empty())
+                    .then(|| {
+                        ctx.db
+                            .quest_generation_authority()
+                            .case_id()
+                            .find(&case.generated_case_id)
+                    })
+                    .flatten();
+                let public_case_id =
+                    validated_generated_dialogue_manifest(&case, authority.as_ref())?
+                        .map_or(case.id, |manifest| manifest.public_case_id);
+                public_case_ids.insert(public_case_id);
+            }
+            adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
+                let generated = ctx
+                    .db
+                    .dialogue_participant()
+                    .session_id()
+                    .filter(&session.id)
+                    .filter(|participant| participant.character_id.is_none())
+                    .find_map(|participant| {
+                        dialogue_referred_witness(ctx, character_id, session, &participant.actor_id)
+                            .transpose()
+                    })
+                    .transpose()?;
+                if let Some((manifest, _)) = generated {
+                    public_case_ids.insert(manifest.public_case_id);
+                }
+            }
+            _ => {}
+        }
+    }
+    match public_case_ids.len() {
+        0 => Ok(String::new()),
+        1 => Ok(public_case_ids.pop_first().expect("one public case ID")),
+        _ => Err("Dialogue topic would advance more than one public case".into()),
+    }
+}
+
 fn refresh_dialogue_topic_options(
     ctx: &ReducerContext,
     session: &DialogueSession,
@@ -7765,11 +7865,37 @@ fn refresh_dialogue_topic_options(
             if !response_is_bound || !choices_are_bound {
                 continue;
             }
+            let mut case_effects = response
+                .effects
+                .iter()
+                .map(|effect| (response_scope.as_str(), session.revision, effect))
+                .collect::<Vec<_>>();
+            let mut choice_scopes = Vec::new();
+            if let Some(prompt) = &response.prompt {
+                for choice in &prompt.choices {
+                    choice_scopes.push(format!(
+                        "prompt:{}:{}:{}",
+                        prompt.id, response.id, choice.id
+                    ));
+                }
+                for (choice, choice_scope) in prompt.choices.iter().zip(&choice_scopes) {
+                    case_effects.extend(choice.effects.iter().map(|effect| {
+                        (
+                            choice_scope.as_str(),
+                            session.revision.saturating_add(1),
+                            effect,
+                        )
+                    }));
+                }
+            }
+            let public_case_id =
+                dialogue_public_case_id(ctx, character_id, session, &case_effects)?;
             ctx.db.dialogue_topic_option().insert(DialogueTopicOption {
                 id: format!("{}:{}", session.id, topic.id),
                 gateway_bucket: 0,
                 session_id: session.id.clone(),
                 topic_id: topic.id.clone(),
+                public_case_id,
                 label: topic.label.clone(),
                 source_ref_json: serde_json::to_string(&adventuresim_dialogue::source_for_topic(
                     &session.conversation_id,
@@ -11152,18 +11278,20 @@ pub(crate) fn commit_hostile_battle_resolution(
             .id()
             .find(&mission_id.to_string())
             .ok_or("Mission authority not found")?;
-        if let Some(site_id) = mission.case_site_id {
+        if let Some(ref site_id) = mission.case_site_id {
             let site = ctx
                 .db
                 .case_site_authority()
                 .id_key()
                 .find(&site_id.value)
                 .ok_or("Case site authority not found")?;
+            let public_case_id = mission_public_case_id(ctx, &mission)?;
             ctx.db
                 .backend_case_battle_authority()
                 .insert(BackendCaseBattle {
                     gateway_bucket: 0,
-                    case_id: site.case_id,
+                    owner_character_id: mission.observer_character_id,
+                    public_case_id,
                     party_id: party_id.to_string(),
                     battle_id: battle_id.to_string(),
                     mission_id: mission_id.to_string(),
@@ -20152,5 +20280,31 @@ mod developer_quest_source_tests {
         assert!(release.contains("fragments.len()"));
         assert!(release.contains("Option::<adventuresim_dialogue::SourceRef>::None"));
         assert!(!release.contains("source_refs_json: \"[null]\""));
+    }
+
+    #[test]
+    fn gateway_battle_and_dialogue_options_expose_only_observer_case_ids() {
+        let source = include_str!("strategic.rs");
+        let battle = source
+            .split("pub struct BackendCaseBattle")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct MissionAuthority").next())
+            .expect("battle gateway projection");
+        assert!(battle.contains("owner_character_id"));
+        assert!(battle.contains("public_case_id"));
+        assert!(!battle.contains("pub case_id:"));
+
+        let options = source
+            .split("pub struct BackendDialogueTopicOption")
+            .nth(1)
+            .and_then(|tail| tail.split("fn player_participant_ids").next())
+            .expect("dialogue topic projection");
+        assert!(options.contains("public_case_id"));
+        let refresh = source
+            .split("fn refresh_dialogue_topic_options")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn choose_dialogue_topic").next())
+            .expect("dialogue topic refresh");
+        assert!(refresh.contains("dialogue_public_case_id"));
     }
 }

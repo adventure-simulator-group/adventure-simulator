@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct BackendInvestigationAction {
     pub owner_character_id: u64,
+    pub case_id: String,
     pub action_id: String,
     pub method: String,
     pub expected_version: u32,
@@ -21,7 +22,9 @@ pub struct BackendInvestigationAction {
     pub required_case_site_id: String,
     pub available: bool,
     pub can_travel_to_required_site: bool,
+    pub unavailable_reason_code: String,
     pub unavailable_reason: String,
+    pub wait_minutes: u32,
 }
 
 impl __sdk::InModule for BackendInvestigationAction {
@@ -33,6 +36,7 @@ impl __sdk::InModule for BackendInvestigationAction {
 /// Provides typed access to columns for query building.
 pub struct BackendInvestigationActionCols {
     pub owner_character_id: __sdk::__query_builder::Col<BackendInvestigationAction, u64>,
+    pub case_id: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
     pub action_id: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
     pub method: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
     pub expected_version: __sdk::__query_builder::Col<BackendInvestigationAction, u32>,
@@ -46,7 +50,9 @@ pub struct BackendInvestigationActionCols {
     pub required_case_site_id: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
     pub available: __sdk::__query_builder::Col<BackendInvestigationAction, bool>,
     pub can_travel_to_required_site: __sdk::__query_builder::Col<BackendInvestigationAction, bool>,
+    pub unavailable_reason_code: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
     pub unavailable_reason: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
+    pub wait_minutes: __sdk::__query_builder::Col<BackendInvestigationAction, u32>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendInvestigationAction {
@@ -54,6 +60,7 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationAction {
     fn cols(table_name: &'static str) -> Self::Cols {
         BackendInvestigationActionCols {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
+            case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             action_id: __sdk::__query_builder::Col::new(table_name, "action_id"),
             method: __sdk::__query_builder::Col::new(table_name, "method"),
             expected_version: __sdk::__query_builder::Col::new(table_name, "expected_version"),
@@ -85,7 +92,12 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationAction {
                 table_name,
                 "can_travel_to_required_site",
             ),
+            unavailable_reason_code: __sdk::__query_builder::Col::new(
+                table_name,
+                "unavailable_reason_code",
+            ),
             unavailable_reason: __sdk::__query_builder::Col::new(table_name, "unavailable_reason"),
+            wait_minutes: __sdk::__query_builder::Col::new(table_name, "wait_minutes"),
         }
     }
 }

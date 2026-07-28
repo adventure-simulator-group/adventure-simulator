@@ -77,8 +77,17 @@ bindings and serializes ordinary reducer calls, waiting for both reducer
 completion and the subscribed state that follows it. It creates several
 independent parties through ordinary join request/accept reducers. Each leader
 then independently chooses settlement activity or questing from its generated
-policy until its in-game duration or cycle bound is reached. Questing selects a
-quest, travels through persisted camp stops, autoresolves, stores loot, returns,
+policy until its in-game duration or cycle bound is reached. Before an outbound
+case-site leg, the evaluator derives a player-visible journey duration from the
+disclosed distance and party walking schedule, forecasts food and water for the
+living party plus a one-day reserve from public needs and inventory, and buys
+any affordable shortfall from visible settlement stock through the ordinary
+merchant reducer. Its budget uses the public local price effect, a conservative
+language-price bound, party and personal coin, and the existing observable
+medical reserve. If either staple is unavailable or unaffordable, the party
+remains at the settlement and performs sustainable activity instead of
+knowingly departing empty. Questing then travels through persisted camp stops,
+autoresolves, stores loot, returns,
 turns in, liquidates party loot, withdraws the member's earned stake, purchases
 from the merchant, and equips an upgrade. Followers travel and run their own
 daily schedules. Defeat causes a retreat, bounded settlement convalescence, and
@@ -100,8 +109,10 @@ authoritative equipment row shows the purchased inventory item.
 Each autonomous party choice records an observer-safe `quest_decision` before
 the selected action. It includes the deterministic policy selector and quest
 propensity, current settlement, count of player-visible offered contracts,
-whether one was chosen, and either `policy_prefers_activity` or
-`no_offered_contract` when activity is the fallback. Repeated daily decisions
+the leader's count of open generated cases and projected investigation actions,
+and the selected direct-contract, generated-discovery, generated-case, or
+activity path. An owned open generated case takes precedence over the random
+activity selector. Repeated daily decisions
 are intentionally exempt from semantic-duplicate alarms. Because this evaluator
 does not open tactical crime incidents, authored Thievery and Raiding schedule
 minutes are explicitly reassigned to legal Labor in the effective schedule
@@ -122,13 +133,58 @@ hunger, thirst, visible food and water, character minutes, and signed deltas,
 with `outcome=completed`. A rejected settlement-rest attempt
 instead emits one `outcome=failed` activity event before the run stops,
 containing its public pre-action state, effective plan and venue, stable stage,
-and safe error category without raw reducer text.
+and safe error category without raw reducer text. Camp handling subscribes only
+to the public `party_journey` and `party_journey_itinerary` projections. At
+each stop it applies the same remaining-interval overlap as the web UI to
+`completed_elapsed_minutes..total_elapsed_minutes`, rests exactly to the end of
+the active forecast camp through `rest_at_camp`, logs bounded pre/post public
+camp state, and re-reads the journey, itinerary, party, health, and leader
+before `continue_camp_travel`. A missing, overlapping, or non-advancing
+projection fails closed instead of guessing a fixed rest duration.
 Successful final-agent rows carry the same public needs, visible food and water,
 settlement services, herbalist quote, and inn full-board cost used by failure
-diagnostics. Failure artifacts use schema version 2 for the expanded strict
-event vocabulary and activity-detail semantics. These fields make poverty,
-starvation, and unavailable-rest deadlocks diagnosable without exposing hidden
-case truth.
+diagnostics. Failure artifacts use schema version 4. In addition to the strict
+event vocabulary and activity-detail semantics, they retain only an allowlisted
+operation name and stable reason code for expected investigation and camp
+failures. `rest_at_camp` and `continue_camp_travel` are allowlisted operations
+with stable daylight-window and journey-projection reason codes; raw reducer
+text is never copied into the artifact. These fields make poverty,
+starvation, unavailable-rest, and stale temporal-action deadlocks diagnosable
+without exposing hidden case truth.
+
+In full-world runs, leaders without an offered direct contract discover local
+generated problems through the same ordinary player dialogue used by the web
+client. The runner uses only public settlement-NPC facts and current public
+presence, preferring a stably ordered NPC at the inn and using the settlement
+overview only when no inn NPC is present. It then follows only owner-scoped
+case, journal, lead, dialogue-topic, action, action-outcome, and exact-site-pin
+projections. Referred witnesses are never inferred from generated truth:
+same-named public candidates are tried in stable order and only the candidate
+whose projected session exposes `referred-testimony` for the selected public
+case is selected. Investigation actions and their outcomes are likewise
+filtered by exact owner and public case before reducers receive the projected
+action ID, method, and version. Exact site travel selects only the pin matching
+the party's current case-site occupancy. Combat requires an owner-scoped,
+public-case-scoped binding matching party, battle, mission, and site. The state
+machine rechecks the current leader and every member's public strategic
+condition after each time-advancing action, travel leg, and combat. A completed
+case returns any surviving party from its occupied site before the case leaves
+the active loop. When a projected action advertises `night_window` with a
+bounded `wait_minutes`, the runner uses the ordinary settlement-rest action
+when an affordable service is available, otherwise ordinary field rest, then
+re-reads the projection, expected version, leader, and party health before
+acting. It never parses action prose or reducer errors to decide to wait. The
+state machine is bounded per cycle and falls back to sustainable settlement
+activity when no legal projected step is available.
+
+Reports separately count generated cases discovered, completed by the
+simulated party's immediate dialogue/action/autoresolve transition, and closed
+externally by background resident NPCs. They also count projected investigation
+actions, temporal waits and wait minutes, and witness dialogues. Generated-case trace events contain only public
+case IDs/titles, NPC names and locations already visible in the selected
+dialogue, projected action summaries, and public outcome wording; they never
+read generation manifests, canonical causes/sites, reliability, hostile
+authority, custody authority, or outcome authority.
 
 Live simulated NPCs inspect persistent equipment condition before choosing quests or settlement
 activity. They submit repairable damaged equipment to the appropriate local smith, wait through the

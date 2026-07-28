@@ -11,6 +11,7 @@ pub struct DialogueTopicOption {
     pub gateway_bucket: u8,
     pub session_id: String,
     pub topic_id: String,
+    pub public_case_id: String,
     pub label: String,
     pub source_ref_json: String,
 }
@@ -27,6 +28,7 @@ pub struct DialogueTopicOptionCols {
     pub gateway_bucket: __sdk::__query_builder::Col<DialogueTopicOption, u8>,
     pub session_id: __sdk::__query_builder::Col<DialogueTopicOption, String>,
     pub topic_id: __sdk::__query_builder::Col<DialogueTopicOption, String>,
+    pub public_case_id: __sdk::__query_builder::Col<DialogueTopicOption, String>,
     pub label: __sdk::__query_builder::Col<DialogueTopicOption, String>,
     pub source_ref_json: __sdk::__query_builder::Col<DialogueTopicOption, String>,
 }
@@ -39,6 +41,7 @@ impl __sdk::__query_builder::HasCols for DialogueTopicOption {
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             session_id: __sdk::__query_builder::Col::new(table_name, "session_id"),
             topic_id: __sdk::__query_builder::Col::new(table_name, "topic_id"),
+            public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
             label: __sdk::__query_builder::Col::new(table_name, "label"),
             source_ref_json: __sdk::__query_builder::Col::new(table_name, "source_ref_json"),
         }

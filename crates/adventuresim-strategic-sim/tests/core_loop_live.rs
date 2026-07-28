@@ -35,6 +35,18 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
     assert_eq!(report.metrics.joins_accepted, 4);
     assert!(report.metrics.quests_attempted > 0);
     assert!(
+        report.metrics.generated_quests_discovered > 0,
+        "ordinary NPC dialogue should discover at least one player-visible generated case"
+    );
+    assert!(
+        report.trace.iter().any(|event| {
+            event.kind == CoreLoopEventKind::GeneratedQuestDiscovered
+                && event.detail.contains("case=")
+                && event.detail.contains("title=")
+        }),
+        "generated attempts must retain observer-safe discovery provenance"
+    );
+    assert!(
         report.metrics.quests_attempted > 1 || report.metrics.activity_days > 0,
         "the run should exercise repeated autonomous decisions"
     );
@@ -42,6 +54,9 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
         report.trace.iter().any(|event| {
             event.kind == CoreLoopEventKind::QuestDecision
                 && event.detail.contains("offered_contracts=")
+                && event.detail.contains("open_generated_cases=")
+                && event.detail.contains("projected_investigation_actions=")
+                && event.detail.contains("quest_path=")
                 && event.detail.contains("fallback=")
         }),
         "each autonomous choice should expose its observer-safe quest decision"

@@ -445,6 +445,12 @@ until the evidence is learned, and the dependent capability requires knowledge
 of the exact evidence ID and successful completion of its authored predecessor,
 rather than inferring from the canonical event. Projection, failed-route
 recovery, and execution all apply those same live-support requirements.
+For a corroborated nighttime condition, the player-facing action projection
+applies the same day/night gate as reducer execution. During daytime it exposes
+the stable `night_window` reason code and an exact bounded `wait_minutes` until
+minute 1200 of the current day, derived from public world time and the
+furthest-advanced living party clock. It does not project the private event,
+cause, or unlearned pattern authority.
 Victim-specific patterns bind an opaque cohort reference to one persistent
 settlement NPC in private authority, including their authored demographic and a
 versioned presence fingerprint. The learned clue exposes only legitimate
@@ -631,6 +637,15 @@ already known to the observer.
 
 ### Strategic investigation actions
 
+Gateway projections correlate every investigation action and public outcome
+with the observer's public case ID. Generated canonical case IDs remain
+private. Dialogue topic options that advance a case carry that same public case
+ID (presentation-only topics carry an empty value), so clients can never apply
+a valid topic from one open case while attributing it to another. Public case
+battle rows similarly contain the observer character and public case ID rather
+than the canonical generated case ID; consumers must match observer, public
+case, party, battle, mission, and exact site.
+
 Investigation opportunities are private, versioned capabilities issued by the
 strategic authority. The browser receives only an opaque action ID, method,
 version, safe description, prerequisites, costs, uncertainty, and contribution
@@ -671,10 +686,14 @@ risk remain authoritative.
 
 Location is revalidated at execution, not merely at issuance. Contact actions
 use the referred NPC's current settlement and presence window (or the same
-settlement as a bound ask-around action). Track actions remain bound to the
-materialized predecessor area until they disclose the site; occupying another
-site from the same case counts only when its valid coordinates fall
-within that area's meter radius. Areas bind the origin settlement's coordinate
+settlement as a bound ask-around action). Physical tracking chains progress
+from an area search through a route segment to a site. Every tracking edge must
+remain same-owner and same-case, its predecessor must have succeeded, and
+position validation recursively follows the coherent chain back to its area
+origin. The same rule gates issuance, observer projection, and execution, so an
+unexecutable successor is never advertised. Occupying another site from the
+same case counts only when its valid coordinates fall within that area's meter
+radius. Areas bind the origin settlement's coordinate
 mode: imported geographic worlds use great-circle meters, while abstract maps
 use the strategic-travel convention of Euclidean coordinate units as
 kilometers. Site and area modes must agree. Later

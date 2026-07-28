@@ -33,11 +33,19 @@ use adventuresim_stdb_client::{
     advance_simulation_world_time_reducer::advance_simulation_world_time,
     autoresolve_mission_reducer::autoresolve_mission,
     autoresolve_report_table::AutoresolveReportTableAccess,
+    backend_case_battles_table::BackendCaseBattlesTableAccess,
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
     backend_contract_type::BackendContract, backend_contracts_table::BackendContractsTableAccess,
+    backend_dialogue_sessions_table::BackendDialogueSessionsTableAccess,
+    backend_dialogue_topic_options_table::BackendDialogueTopicOptionsTableAccess,
+    backend_investigation_action_outcomes_table::BackendInvestigationActionOutcomesTableAccess,
+    backend_investigation_actions_table::BackendInvestigationActionsTableAccess,
+    backend_investigation_cases_table::BackendInvestigationCasesTableAccess,
+    backend_investigation_leads_table::BackendInvestigationLeadsTableAccess,
     backend_local_problem_trade_effects_table::BackendLocalProblemTradeEffectsTableAccess,
     backend_npc_case_intervention_type::BackendNpcCaseIntervention,
     backend_npc_case_interventions_table::BackendNpcCaseInterventionsTableAccess,
+    backend_settlement_npcs_table::BackendSettlementNpcsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
     character_capability_table::CharacterCapabilityTableAccess,
@@ -48,6 +56,7 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess, character_time_table::CharacterTimeTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
+    choose_dialogue_topic_reducer::choose_dialogue_topic,
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
     continue_camp_travel_reducer::continue_camp_travel,
@@ -60,8 +69,11 @@ use adventuresim_stdb_client::{
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
-    party_member_table::PartyMemberTableAccess, party_stake_table::PartyStakeTableAccess,
-    party_table::PartyTableAccess, purchase_from_herbalist_reducer::purchase_from_herbalist,
+    party_journey_itinerary_table::PartyJourneyItineraryTableAccess,
+    party_journey_table::PartyJourneyTableAccess, party_member_table::PartyMemberTableAccess,
+    party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
+    perform_investigation_action_reducer::perform_investigation_action,
+    purchase_from_herbalist_reducer::purchase_from_herbalist,
     register_strategic_gateway_reducer::register_strategic_gateway,
     repair_order_table::RepairOrderTableAccess, report_contract_reducer::report_contract,
     request_general_party_join_reducer::request_general_party_join,
@@ -72,10 +84,12 @@ use adventuresim_stdb_client::{
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_simulation_world_reducer::seed_simulation_world,
     set_simulation_npc_intervention_strategy_reducer::set_simulation_npc_intervention_strategy,
+    settlement_npc_presence_table::SettlementNpcPresenceTableAccess,
     settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
     settlement_table::SettlementTableAccess,
     simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction,
-    simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
+    simulation_run_table::SimulationRunTableAccess, start_dialogue_reducer::start_dialogue,
+    store_battle_loot_reducer::store_battle_loot,
     strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
     travel_to_case_site_reducer::travel_to_case_site,
@@ -95,6 +109,9 @@ const MAX_DEFEAT_RETRIES: u32 = 2;
 const MAX_RECOVERY_ACTIONS: u32 = 128;
 const MAX_CORE_LOOP_WORK: u64 = 100_000;
 const MAX_CORE_TRACE_EVENTS: usize = 100_000;
+const MAX_GENERATED_CASE_STEPS_PER_CYCLE: u32 = 16;
+const TRAVEL_PROVISION_RESERVE_DAYS: f32 = 1.0;
+const MAX_TRAVEL_PROVISION_UNITS_PER_ITEM: u32 = 512;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -205,6 +222,13 @@ pub struct CoreLoopMetrics {
     pub joins_accepted: u32,
     pub quests_attempted: u32,
     pub quests_completed: u32,
+    pub generated_quests_discovered: u32,
+    pub generated_quests_completed: u32,
+    pub generated_quests_closed_externally: u32,
+    pub generated_investigation_actions: u32,
+    pub generated_investigation_waits: u32,
+    pub generated_investigation_wait_minutes: u64,
+    pub generated_witness_dialogues: u32,
     pub defeats: u32,
     pub recovery_rests: u32,
     pub travel_legs: u32,
@@ -272,6 +296,12 @@ pub enum CoreLoopEventKind {
     QuestSuppressed,
     Death,
     QuestDecision,
+    GeneratedQuestDiscovered,
+    GeneratedInvestigationAction,
+    GeneratedInvestigationWait,
+    GeneratedWitnessDialogue,
+    GeneratedQuestCompleted,
+    GeneratedQuestClosedExternally,
     Activity,
     Encounter,
 }
@@ -339,7 +369,8 @@ pub struct CoreLoopReport {
 }
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
-const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 2;
+const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 4;
+const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = 1_440;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -367,6 +398,8 @@ pub struct CoreLoopFailureArtifact {
     pub schema_version: u32,
     pub category: String,
     pub message: String,
+    pub operation: Option<String>,
+    pub reason_code: String,
     pub metrics: CoreLoopMetrics,
     pub total_event_count: u64,
     pub trace_truncated: bool,
@@ -443,21 +476,13 @@ fn visible_activity_committed_reserve(
     medical.saturating_add(profile_cash_reserve_target.min(spendable_after_medical_and_inn))
 }
 
-fn quest_fallback_reason(
-    wants_quest: bool,
-    offered_contracts: usize,
-    quest_chosen: bool,
-) -> &'static str {
-    if quest_chosen {
+fn quest_fallback_reason(wants_quest: bool, quest_path: &str) -> &'static str {
+    if quest_path != "activity" {
         "none"
     } else if !wants_quest {
         "policy_prefers_activity"
     } else {
-        debug_assert_eq!(
-            offered_contracts, 0,
-            "a quest-seeking policy can decline only when no offered contract is visible"
-        );
-        "no_offered_contract"
+        "no_player_visible_quest_step"
     }
 }
 
@@ -468,13 +493,172 @@ fn format_quest_decision_detail(
     quest_propensity: f32,
     settlement_id: Option<&str>,
     offered_contracts: usize,
-    quest_chosen: bool,
+    open_generated_cases: usize,
+    projected_investigation_actions: usize,
+    quest_path: &str,
 ) -> String {
     format!(
-        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};quest_chosen={quest_chosen};fallback={}",
+        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};open_generated_cases={open_generated_cases};projected_investigation_actions={projected_investigation_actions};quest_path={quest_path};quest_chosen={};fallback={}",
         settlement_id.unwrap_or("none"),
-        quest_fallback_reason(wants_quest, offered_contracts, quest_chosen),
+        quest_path != "activity",
+        quest_fallback_reason(wants_quest, quest_path),
     )
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicNpcCandidate {
+    npc_id: String,
+    name: String,
+    profession: String,
+    conversation_id: String,
+    location_id: String,
+}
+
+fn npc_is_publicly_present(start_minute: u16, end_minute: u16, minute: u64) -> bool {
+    let minute = minute % 1_440;
+    let start = u64::from(start_minute);
+    let end = u64::from(end_minute);
+    start != end
+        && if start < end {
+            start <= minute && minute < end
+        } else {
+            minute >= start || minute < end
+        }
+}
+
+fn stable_public_npc_candidates(
+    mut candidates: Vec<PublicNpcCandidate>,
+    preferred_name: Option<&str>,
+    preferred_location: Option<&str>,
+) -> Vec<PublicNpcCandidate> {
+    candidates.sort_by_key(|candidate| {
+        (
+            !preferred_name.is_some_and(|name| candidate.name.eq_ignore_ascii_case(name)),
+            !preferred_location.is_some_and(|location| candidate.location_id == location),
+            candidate.location_id != "inn",
+            candidate.name.to_ascii_lowercase(),
+            candidate.profession.to_ascii_lowercase(),
+            candidate.npc_id.clone(),
+        )
+    });
+    candidates
+}
+
+fn stable_owned_open_cases(
+    owner_character_id: u64,
+    rows: impl IntoIterator<Item = (u64, String, String, String)>,
+) -> Vec<(String, String)> {
+    let mut cases = rows
+        .into_iter()
+        .filter(|(owner, _, _, status)| *owner == owner_character_id && status == "open")
+        .map(|(_, case_id, title, _)| (case_id, title))
+        .collect::<Vec<_>>();
+    cases.sort();
+    cases
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeneratedClosureAttribution {
+    StillOpen,
+    OwnImmediateTransition,
+    ExternalTransition,
+}
+
+fn generated_closure_attribution(
+    before_status: &str,
+    after_status: Option<&str>,
+    immediately_after_own_action: bool,
+) -> GeneratedClosureAttribution {
+    if before_status == "open" && after_status == Some("completed") {
+        if immediately_after_own_action {
+            GeneratedClosureAttribution::OwnImmediateTransition
+        } else {
+            GeneratedClosureAttribution::ExternalTransition
+        }
+    } else {
+        GeneratedClosureAttribution::StillOpen
+    }
+}
+
+fn projected_case_row_matches(
+    owner_character_id: u64,
+    selected_case_id: &str,
+    row_owner_character_id: u64,
+    row_public_case_id: &str,
+) -> bool {
+    row_owner_character_id == owner_character_id && row_public_case_id == selected_case_id
+}
+
+fn occupied_case_pin_matches(
+    owner_character_id: u64,
+    selected_case_id: &str,
+    occupied_site_id: &str,
+    pin_owner_character_id: u64,
+    pin_public_case_id: &str,
+    pin_site_id: &str,
+) -> bool {
+    projected_case_row_matches(
+        owner_character_id,
+        selected_case_id,
+        pin_owner_character_id,
+        pin_public_case_id,
+    ) && pin_site_id == occupied_site_id
+}
+
+fn generated_actor_can_continue(
+    owner_character_id: u64,
+    current_leader_id: Option<u64>,
+    unsafe_party_members: usize,
+) -> bool {
+    current_leader_id == Some(owner_character_id) && unsafe_party_members == 0
+}
+
+fn projected_investigation_wait_minutes(reason_code: &str, wait_minutes: u32) -> Option<u32> {
+    (reason_code == "night_window"
+        && (1..=MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES).contains(&wait_minutes))
+    .then_some(wait_minutes)
+}
+
+fn projected_case_site_journey_minutes(
+    distance_m: u64,
+    walking_minutes_per_day: u16,
+) -> Option<u64> {
+    if distance_m == 0 || walking_minutes_per_day == 0 || walking_minutes_per_day > 1_440 {
+        return None;
+    }
+    let movement_minutes = ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64;
+    let walking_minutes = u64::from(walking_minutes_per_day);
+    let completed_walking_days = movement_minutes.saturating_sub(1) / walking_minutes;
+    Some(movement_minutes.saturating_add(
+        completed_walking_days.saturating_mul(1_440_u64.saturating_sub(walking_minutes)),
+    ))
+}
+
+fn projected_camp_rest_minutes(
+    completed_elapsed_minutes: u64,
+    total_elapsed_minutes: u64,
+    intervals: &[JourneyCampInterval],
+) -> Option<(u64, u64)> {
+    if completed_elapsed_minutes >= total_elapsed_minutes {
+        return None;
+    }
+    let mut active = intervals.iter().filter_map(|camp| {
+        let camp_start = camp.elapsed_start_minute.max(completed_elapsed_minutes);
+        let camp_end = camp
+            .elapsed_start_minute
+            .saturating_add(camp.elapsed_minutes)
+            .min(total_elapsed_minutes);
+        (camp.elapsed_start_minute <= completed_elapsed_minutes && camp_end > camp_start)
+            .then(|| (camp_start, camp_end - camp_start))
+    });
+    let result = active.next()?;
+    active.next().is_none().then_some(result)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TravelProvisionDecision {
+    Ready,
+    Deferred(&'static str),
 }
 
 fn signed_delta(after: u64, before: u64) -> String {
@@ -487,6 +671,22 @@ fn signed_delta(after: u64, before: u64) -> String {
 
 fn signed_float_delta(after: f32, before: f32) -> String {
     format!("{:+.3}", after - before)
+}
+
+fn bounded_event_field(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else if character == ';' {
+                ','
+            } else {
+                character
+            }
+        })
+        .take(240)
+        .collect()
 }
 
 fn format_activity_detail(
@@ -572,6 +772,7 @@ fn event_is_repeatable(kind: &CoreLoopEventKind) -> bool {
             | CoreLoopEventKind::Travel
             | CoreLoopEventKind::AutoresolveDefeat
             | CoreLoopEventKind::QuestDecision
+            | CoreLoopEventKind::GeneratedInvestigationWait
     )
 }
 
@@ -609,6 +810,8 @@ impl FailureRecorder {
             schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
             category: category.into(),
             message: message.into(),
+            operation: safe_failure_operation(error).map(str::to_owned),
+            reason_code: safe_failure_reason_code(error, category).into(),
             metrics: draft.metrics,
             total_event_count: draft.total_event_count,
             trace_truncated: draft.trace_truncated,
@@ -629,8 +832,75 @@ impl FailureRecorder {
     }
 }
 
+fn safe_failure_operation(error: &str) -> Option<&'static str> {
+    [
+        "perform_investigation_action",
+        "wait_for_investigation_window_settlement",
+        "wait_for_investigation_window_camp",
+        "travel_to_generated_case_site",
+        "choose_dialogue_topic",
+        "rest_at_camp",
+        "continue_camp_travel",
+    ]
+    .into_iter()
+    .find(|operation| {
+        error.starts_with(&format!("{operation} failed:"))
+            || error.starts_with(&format!("{operation} timed out"))
+            || error.starts_with(&format!("could not send {operation}:"))
+    })
+}
+
+fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
+    if error.contains("Rest until the party reaches its next daylight walking window") {
+        "journey_daylight_window_rest_required"
+    } else if error.contains("journey camp projection is incoherent")
+        || error.contains("journey provisioning projection is incoherent")
+    {
+        "journey_projection_inconsistent"
+    } else if error.contains("learned pattern requires acting during the nighttime window") {
+        "investigation_night_window"
+    } else if error.contains("Investigation track origin no longer matches the projected route") {
+        "invalid_investigation_route"
+    } else if error.contains("Investigation action is stale") {
+        "investigation_action_stale"
+    } else if error.contains("Investigation action is unavailable") {
+        "investigation_action_unavailable"
+    } else {
+        match category {
+            "rest_service_unavailable" => "rest_service_unavailable",
+            "insufficient_visible_resources" => "insufficient_visible_resources",
+            "bounded_progress_exhausted" => "bounded_progress_exhausted",
+            "authoritative_backend_unavailable" => "authoritative_backend_unavailable",
+            "invalid_run_environment" => "invalid_run_environment",
+            _ => "unclassified_core_loop_error",
+        }
+    }
+}
+
 fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
-    if error.contains("offers neither an Inn nor a Temple") {
+    if error.contains("Rest until the party reaches its next daylight walking window") {
+        (
+            "journey_temporally_unavailable",
+            "Camp travel was continued outside its public projected walking window.",
+        )
+    } else if error.contains("journey camp projection is incoherent")
+        || error.contains("journey provisioning projection is incoherent")
+    {
+        (
+            "journey_projection_inconsistent",
+            "The public journey and camp projections were not coherent enough to continue safely.",
+        )
+    } else if error.contains("learned pattern requires acting during the nighttime window") {
+        (
+            "investigation_temporally_unavailable",
+            "A projected investigation action was attempted outside its learned time window.",
+        )
+    } else if error.contains("Investigation track origin no longer matches the projected route") {
+        (
+            "invalid_investigation_route",
+            "The projected investigation route no longer has a coherent completed origin.",
+        )
+    } else if error.contains("offers neither an Inn nor a Temple") {
         (
             "rest_service_unavailable",
             "The settlement offers no player-visible rest service.",
@@ -705,9 +975,12 @@ struct LiveRunner {
     metrics: CoreLoopMetrics,
     trace: Vec<CoreLoopEvent>,
     sequence: u64,
+    dialogue_nonce: u64,
     last_semantic_event: Option<String>,
     recorded_deaths: HashSet<u64>,
     medically_paused_schedules: HashSet<u64>,
+    generated_case_owners: HashMap<String, u64>,
+    generated_terminal_cases: HashSet<String>,
     npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
     simulation_run_nonce: String,
     failure_recorder: FailureRecorder,
@@ -1485,6 +1758,274 @@ impl LiveRunner {
         }
     }
 
+    fn provision_case_site_journey(
+        &mut self,
+        party_id: &str,
+        leader: u64,
+        agent: u32,
+        distance_m: u64,
+    ) -> Result<TravelProvisionDecision, String> {
+        let party = self.party_by_id(party_id)?;
+        let Some(settlement_id) = party.current_settlement_id.clone() else {
+            return Ok(TravelProvisionDecision::Deferred(
+                "provisioning_requires_settlement",
+            ));
+        };
+        let planning_minutes =
+            projected_case_site_journey_minutes(distance_m, party.walking_minutes_per_day)
+                .ok_or("journey provisioning projection is incoherent")?;
+        let settlement = self
+            .connection
+            .db
+            .settlement()
+            .iter()
+            .find(|row| row.id == settlement_id)
+            .ok_or("journey provisioning projection is incoherent")?;
+        let ration = self
+            .connection
+            .db
+            .item()
+            .iter()
+            .find(|row| {
+                row.id == adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID
+                    && row.nutrition_kcal > 0.0
+            })
+            .ok_or("journey provisioning projection is incoherent")?;
+        let waterskin = self
+            .connection
+            .db
+            .item()
+            .iter()
+            .find(|row| {
+                row.id == adventuresim_core::provisioning::STANDARD_WATERSKIN_ID
+                    && row.water_capacity_ml > 0
+            })
+            .ok_or("journey provisioning projection is incoherent")?;
+        let members = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|row| row.party_id == party_id)
+            .filter_map(|membership| {
+                self.connection
+                    .db
+                    .character()
+                    .iter()
+                    .find(|row| row.id == membership.character_id && row.alive)
+            })
+            .collect::<Vec<_>>();
+        if members.is_empty() {
+            return Err("journey provisioning projection is incoherent".into());
+        }
+        let member_ids = members.iter().map(|row| row.id).collect::<HashSet<_>>();
+        let personal_inventory = self
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| member_ids.contains(&row.character_id))
+            .collect::<Vec<_>>();
+        let personal_inventory_ids = personal_inventory
+            .iter()
+            .map(|row| row.id)
+            .collect::<HashSet<_>>();
+        let party_inventory = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .filter(|row| row.party_id == party_id)
+            .collect::<Vec<_>>();
+        let party_inventory_ids = party_inventory
+            .iter()
+            .map(|row| row.id)
+            .collect::<HashSet<_>>();
+        let food_reserve_kcal = members
+            .iter()
+            .filter_map(|member| {
+                self.connection
+                    .db
+                    .character_needs()
+                    .iter()
+                    .find(|row| row.character_id == member.id)
+            })
+            .map(|needs| needs.food_balance_kcal.max(0.0))
+            .sum();
+        let water_reserve_ml = members
+            .iter()
+            .filter_map(|member| {
+                self.connection
+                    .db
+                    .character_needs()
+                    .iter()
+                    .find(|row| row.character_id == member.id)
+            })
+            .map(|needs| needs.water_balance_ml.max(0.0))
+            .sum();
+        let food_lot_kcal = self
+            .connection
+            .db
+            .food_lot()
+            .iter()
+            .filter(|lot| {
+                lot.inventory_item_id
+                    .is_some_and(|id| personal_inventory_ids.contains(&id))
+                    || lot
+                        .party_inventory_item_id
+                        .is_some_and(|id| party_inventory_ids.contains(&id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum();
+        let count_item = |item_id: &str| {
+            personal_inventory
+                .iter()
+                .filter(|row| row.item_id == item_id)
+                .map(|row| row.quantity)
+                .chain(
+                    party_inventory
+                        .iter()
+                        .filter(|row| row.item_id == item_id)
+                        .map(|row| row.quantity),
+                )
+                .sum::<u32>()
+        };
+        let inputs = adventuresim_core::provisioning::PartyProvisioningInputs {
+            planning_minutes,
+            target_surplus_days: TRAVEL_PROVISION_RESERVE_DAYS,
+            living_members: members.len() as u32,
+            food_reserve_kcal,
+            food_lot_kcal,
+            water_reserve_ml,
+            ration_count: count_item(adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID),
+            waterskin_count: count_item(adventuresim_core::provisioning::STANDARD_WATERSKIN_ID),
+            ration_kcal: ration.nutrition_kcal,
+            waterskin_capacity_ml: waterskin.water_capacity_ml,
+            emergency_alcohol_hydration_ml: 0,
+        };
+        let forecast = inputs.forecast();
+        let rations_to_buy = forecast.rations_to_buy;
+        let waterskins_to_buy = forecast.waterskins_to_buy;
+        if rations_to_buy == 0 && waterskins_to_buy == 0 {
+            self.event(
+                agent,
+                CoreLoopEventKind::Purchase,
+                format!(
+                    "journey_provisions=ready;planning_minutes={planning_minutes};reserve_days={TRAVEL_PROVISION_RESERVE_DAYS:.1};food_days={:.2};water_days={:.2}",
+                    forecast.food_days, forecast.water_days,
+                ),
+            );
+            return Ok(TravelProvisionDecision::Ready);
+        }
+        if rations_to_buy > MAX_TRAVEL_PROVISION_UNITS_PER_ITEM
+            || waterskins_to_buy > MAX_TRAVEL_PROVISION_UNITS_PER_ITEM
+        {
+            return Err("journey provisioning projection is incoherent".into());
+        }
+        // The public storefront contract guarantees both travel staples at
+        // every General storefront. Read the generated public settlement
+        // projection directly rather than converting it to server schema
+        // types or inspecting private merchant authority.
+        let general_storefront_visible = settlement.economy.services.iter().any(|service| {
+            matches!(
+                service,
+                SettlementService::Market | SettlementService::GeneralStore
+            )
+        });
+        let ration_stocked = general_storefront_visible;
+        let waterskin_stocked = general_storefront_visible;
+        if (rations_to_buy > 0 && !ration_stocked) || (waterskins_to_buy > 0 && !waterskin_stocked)
+        {
+            self.event(
+                agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "reason=journey_essentials_unavailable;planning_minutes={planning_minutes};rations_needed={rations_to_buy};waterskins_needed={waterskins_to_buy}"
+                ),
+            );
+            return Ok(TravelProvisionDecision::Deferred(
+                "journey_essentials_unavailable",
+            ));
+        }
+        let buy_bps = self
+            .connection
+            .db
+            .backend_local_problem_trade_effects()
+            .iter()
+            .find(|row| row.character_id == leader && row.settlement_id == settlement_id)
+            .map_or(0, |row| row.buy_bps);
+        let upper_bound_unit_price = |item: &Item| {
+            let base = adventuresim_core::strategic_economy::merchant_buy_price(
+                item.base_value.unwrap_or(1),
+            );
+            let language_bound =
+                adventuresim_core::strategic_economy::language_adjusted_buy_price(base, 0.0);
+            adventuresim_core::local_problem::adjust_price(language_bound, buy_bps)
+        };
+        let ration_cost = u64::from(upper_bound_unit_price(&ration))
+            .checked_mul(u64::from(rations_to_buy))
+            .ok_or("journey provisioning projection is incoherent")?;
+        let waterskin_cost = u64::from(upper_bound_unit_price(&waterskin))
+            .checked_mul(u64::from(waterskins_to_buy))
+            .ok_or("journey provisioning projection is incoherent")?;
+        let upper_bound_cost = ration_cost
+            .checked_add(waterskin_cost)
+            .ok_or("journey provisioning projection is incoherent")?;
+        let party_coin = party_inventory
+            .iter()
+            .filter(|row| is_currency_id(&row.item_id))
+            .map(|row| u64::from(row.quantity))
+            .sum::<u64>();
+        let purse = party_coin.saturating_add(self.personal_gold(leader));
+        let committed_reserve = self
+            .observable_medical_reserve(leader, &settlement_id)
+            .unwrap_or(0);
+        if upper_bound_cost > purse.saturating_sub(committed_reserve) {
+            self.event(
+                agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "reason=journey_essentials_unaffordable;planning_minutes={planning_minutes};upper_bound_cost={upper_bound_cost};purse={purse};committed_reserve={committed_reserve};rations_needed={rations_to_buy};waterskins_needed={waterskins_to_buy}"
+                ),
+            );
+            return Ok(TravelProvisionDecision::Deferred(
+                "journey_essentials_unaffordable",
+            ));
+        }
+        let mut item_ids = Vec::new();
+        let mut quantities = Vec::new();
+        if rations_to_buy > 0 {
+            item_ids.push(ration.id.clone());
+            quantities.push(rations_to_buy);
+        }
+        if waterskins_to_buy > 0 {
+            item_ids.push(waterskin.id.clone());
+            quantities.push(waterskins_to_buy);
+        }
+        let result = reducer_call!(self, "purchase_journey_provisions", |cb| self
+            .connection
+            .reducers
+            .finalize_merchant_trade_then(
+                leader,
+                settlement_id.clone(),
+                item_ids.clone(),
+                quantities.clone(),
+                vec![],
+                vec![],
+                true,
+                cb,
+            ));
+        self.call(result)?;
+        self.event(
+            agent,
+            CoreLoopEventKind::Purchase,
+            format!(
+                "journey_provisions=purchased;planning_minutes={planning_minutes};reserve_days={TRAVEL_PROVISION_RESERVE_DAYS:.1};upper_bound_cost={upper_bound_cost};rations={rations_to_buy};waterskins={waterskins_to_buy}"
+            ),
+        );
+        Ok(TravelProvisionDecision::Ready)
+    }
+
     fn travel_camps(&mut self, party_id: &str) -> Result<(), String> {
         for _ in 0..MAX_CAMPS_PER_LEG {
             let party = self.party_by_id(party_id)?;
@@ -1572,15 +2113,85 @@ impl LiveRunner {
                 }
                 continue;
             }
+            let journey = self
+                .connection
+                .db
+                .party_journey()
+                .iter()
+                .find(|row| row.party_id == party_id)
+                .ok_or("journey camp projection is incoherent: active journey missing")?;
+            let itinerary = self
+                .connection
+                .db
+                .party_journey_itinerary()
+                .iter()
+                .find(|row| row.party_id == party_id)
+                .ok_or("journey camp projection is incoherent: itinerary missing")?;
+            let (camp_start, rest_minutes) = projected_camp_rest_minutes(
+                journey.completed_elapsed_minutes,
+                journey.total_elapsed_minutes,
+                &itinerary.forecast_camp_intervals,
+            )
+            .ok_or("journey camp projection is incoherent: no active forecast interval")?;
+            self.event(
+                self.current_leader(party_id).map_or(0, |(_, agent)| agent),
+                CoreLoopEventKind::Camp,
+                format!(
+                    "phase=pre_rest;party={};completed_elapsed={};total_elapsed={};camp_start={camp_start};rest_minutes={rest_minutes};remaining_movement={remaining_before}",
+                    bounded_event_field(party_id),
+                    journey.completed_elapsed_minutes,
+                    journey.total_elapsed_minutes,
+                ),
+            );
+            let expected_completed_elapsed = camp_start.saturating_add(rest_minutes);
             let result = reducer_call!(self, "rest_at_camp", |cb| self
                 .connection
                 .reducers
-                .rest_at_camp_then(leader, 1_440, cb));
+                .rest_at_camp_then(leader, rest_minutes, cb));
             self.call(result)?;
             self.observe_deaths();
             let Some((leader, agent)) = self.current_leader(party_id) else {
                 return Ok(());
             };
+            let unsafe_after_rest = self.unsafe_party_agents(&self.party_agents(leader)?);
+            let after_rest_party = self.party_by_id(party_id)?;
+            let after_rest_journey = self
+                .connection
+                .db
+                .party_journey()
+                .iter()
+                .find(|row| row.party_id == party_id)
+                .ok_or("journey camp projection is incoherent: journey disappeared after rest")?;
+            let after_rest_itinerary = self
+                .connection
+                .db
+                .party_journey_itinerary()
+                .iter()
+                .find(|row| row.party_id == party_id)
+                .ok_or("journey camp projection is incoherent: itinerary disappeared after rest")?;
+            if after_rest_party.camp_destination.is_none()
+                || after_rest_journey.completed_elapsed_minutes != expected_completed_elapsed
+                || after_rest_journey.completed_elapsed_minutes
+                    > after_rest_journey.total_elapsed_minutes
+                || after_rest_itinerary.party_id != party_id
+                || !unsafe_after_rest.is_empty()
+            {
+                return Err(
+                    "journey camp projection is incoherent: rest did not produce a safe forecast boundary"
+                        .into(),
+                );
+            }
+            self.event(
+                agent,
+                CoreLoopEventKind::Camp,
+                format!(
+                    "phase=post_rest;party={};completed_elapsed={};total_elapsed={};rest_minutes={rest_minutes};remaining_movement={}",
+                    bounded_event_field(party_id),
+                    after_rest_journey.completed_elapsed_minutes,
+                    after_rest_journey.total_elapsed_minutes,
+                    after_rest_party.camp_remaining_minutes,
+                ),
+            );
             let result = reducer_call!(self, "continue_camp_travel", |cb| self
                 .connection
                 .reducers
@@ -1591,7 +2202,11 @@ impl LiveRunner {
             self.event(
                 agent,
                 CoreLoopEventKind::Camp,
-                format!("remaining_before={remaining_before}"),
+                format!(
+                    "phase=post_continue;party={};remaining_before={remaining_before};remaining_after={}",
+                    bounded_event_field(party_id),
+                    self.party_by_id(party_id)?.camp_remaining_minutes,
+                ),
             );
             let after = self.party_by_id(party_id)?;
             if after.camp_destination.is_some() && after.camp_remaining_minutes >= remaining_before
@@ -2651,6 +3266,800 @@ impl LiveRunner {
         unsafe_agents
     }
 
+    fn owned_open_generated_cases(&self, character_id: u64) -> Vec<(String, String)> {
+        stable_owned_open_cases(
+            character_id,
+            self.connection
+                .db
+                .backend_investigation_cases()
+                .iter()
+                .map(|row| (row.owner_character_id, row.case_id, row.title, row.status)),
+        )
+    }
+
+    fn generated_case_status(&self, character_id: u64, case_id: &str) -> Option<String> {
+        self.connection
+            .db
+            .backend_investigation_cases()
+            .iter()
+            .find(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .map(|row| row.status)
+    }
+
+    fn observe_generated_case_transition(
+        &mut self,
+        agent: u32,
+        character_id: u64,
+        case_id: &str,
+        title: &str,
+        immediately_after_own_action: bool,
+    ) {
+        if self.generated_terminal_cases.contains(case_id) {
+            return;
+        }
+        let attribution = generated_closure_attribution(
+            "open",
+            self.generated_case_status(character_id, case_id).as_deref(),
+            immediately_after_own_action,
+        );
+        match attribution {
+            GeneratedClosureAttribution::StillOpen => {}
+            GeneratedClosureAttribution::OwnImmediateTransition => {
+                self.generated_terminal_cases.insert(case_id.to_owned());
+                self.metrics.generated_quests_completed += 1;
+                self.metrics.quests_completed += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::GeneratedQuestCompleted,
+                    format!(
+                        "case={};title={};attribution=own_immediate_transition",
+                        bounded_event_field(case_id),
+                        bounded_event_field(title)
+                    ),
+                );
+            }
+            GeneratedClosureAttribution::ExternalTransition => {
+                self.generated_terminal_cases.insert(case_id.to_owned());
+                self.metrics.generated_quests_closed_externally += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::GeneratedQuestClosedExternally,
+                    format!(
+                        "case={};title={};attribution=external_transition",
+                        bounded_event_field(case_id),
+                        bounded_event_field(title)
+                    ),
+                );
+            }
+        }
+    }
+
+    fn observe_external_generated_closures(&mut self) {
+        let tracked = self
+            .generated_case_owners
+            .iter()
+            .map(|(case_id, owner)| (case_id.clone(), *owner))
+            .collect::<Vec<_>>();
+        for (case_id, owner) in tracked {
+            let Some(agent) = self.character_ids.iter().position(|id| *id == owner) else {
+                continue;
+            };
+            let title = self
+                .connection
+                .db
+                .backend_investigation_cases()
+                .iter()
+                .find(|row| row.owner_character_id == owner && row.case_id == case_id)
+                .map_or_else(|| "Unlabelled problem".into(), |row| row.title);
+            self.observe_generated_case_transition(agent as u32, owner, &case_id, &title, false);
+        }
+    }
+
+    fn visible_npc_candidates(
+        &self,
+        character_id: u64,
+        preferred_name: Option<&str>,
+        preferred_location: Option<&str>,
+    ) -> Vec<PublicNpcCandidate> {
+        let Some(character) = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == character_id)
+        else {
+            return Vec::new();
+        };
+        let Some(settlement_id) = character.current_settlement_id else {
+            return Vec::new();
+        };
+        let minute = self
+            .connection
+            .db
+            .character_time()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .map_or(720, |row| row.minutes);
+        let candidates = self
+            .connection
+            .db
+            .settlement_npc_presence()
+            .iter()
+            .filter(|presence| {
+                presence.settlement_id == settlement_id
+                    && npc_is_publicly_present(presence.start_minute, presence.end_minute, minute)
+            })
+            .filter_map(|presence| {
+                self.connection
+                    .db
+                    .backend_settlement_npcs()
+                    .iter()
+                    .find(|npc| {
+                        npc.id == presence.npc_id && npc.home_settlement_id == settlement_id
+                    })
+                    .map(|npc| PublicNpcCandidate {
+                        npc_id: npc.id,
+                        name: npc.name,
+                        profession: npc.profession,
+                        conversation_id: npc.conversation_id,
+                        location_id: presence.location_id,
+                    })
+            })
+            .collect();
+        stable_public_npc_candidates(candidates, preferred_name, preferred_location)
+    }
+
+    fn start_public_dialogue(
+        &mut self,
+        character_id: u64,
+        cycle: u32,
+        candidate: &PublicNpcCandidate,
+        purpose: &str,
+    ) -> Result<String, String> {
+        self.dialogue_nonce = self.dialogue_nonce.saturating_add(1);
+        let session_id = format!(
+            "dialogue:{character_id}:sim-{cycle}-{}-{purpose}",
+            self.dialogue_nonce
+        );
+        let result = reducer_call!(self, "start_dialogue", |cb| self
+            .connection
+            .reducers
+            .start_dialogue_then(
+                character_id,
+                session_id.clone(),
+                candidate.conversation_id.clone(),
+                candidate.npc_id.clone(),
+                candidate.location_id.clone(),
+                adventuresim_dialogue::CATALOG_DIGEST.to_owned(),
+                cb,
+            ));
+        self.call(result)?;
+        let session_is_owned = self
+            .connection
+            .db
+            .backend_dialogue_sessions()
+            .iter()
+            .any(|row| row.id == session_id && row.owner_character_id == character_id);
+        if !session_is_owned {
+            return Err("dialogue reducer completed without an owner-scoped session".into());
+        }
+        Ok(session_id)
+    }
+
+    fn discover_generated_case(
+        &mut self,
+        character_id: u64,
+        agent: u32,
+        cycle: u32,
+    ) -> Result<bool, String> {
+        let before = self
+            .connection
+            .db
+            .backend_investigation_cases()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id)
+            .map(|row| row.case_id)
+            .collect::<HashSet<_>>();
+        let mut candidates = self.visible_npc_candidates(character_id, None, Some("inn"));
+        if candidates
+            .iter()
+            .any(|candidate| candidate.location_id == "inn")
+        {
+            candidates.retain(|candidate| candidate.location_id == "inn");
+        } else {
+            candidates.retain(|candidate| candidate.location_id == "overview");
+        }
+        let Some(candidate) = candidates.first() else {
+            return Ok(false);
+        };
+        self.start_public_dialogue(character_id, cycle, candidate, "discover")?;
+        let mut discovered = self
+            .owned_open_generated_cases(character_id)
+            .into_iter()
+            .filter(|(case_id, _)| !before.contains(case_id))
+            .collect::<Vec<_>>();
+        discovered.sort();
+        let Some((case_id, title)) = discovered.into_iter().next() else {
+            return Ok(false);
+        };
+        self.generated_case_owners
+            .insert(case_id.clone(), character_id);
+        self.metrics.generated_quests_discovered += 1;
+        self.metrics.quests_attempted += 1;
+        self.event(
+            agent,
+            CoreLoopEventKind::GeneratedQuestDiscovered,
+            format!(
+                "case={};title={};npc={};location={}",
+                bounded_event_field(&case_id),
+                bounded_event_field(&title),
+                bounded_event_field(&candidate.name),
+                bounded_event_field(&candidate.location_id)
+            ),
+        );
+        Ok(true)
+    }
+
+    fn try_generated_dialogue_topic(
+        &mut self,
+        character_id: u64,
+        agent: u32,
+        cycle: u32,
+        case_id: &str,
+        title: &str,
+        topics: &[&str],
+        preferred_name: Option<&str>,
+        preferred_location: Option<&str>,
+    ) -> Result<bool, String> {
+        let mut candidates =
+            self.visible_npc_candidates(character_id, preferred_name, preferred_location);
+        if let Some(name) = preferred_name {
+            candidates.retain(|candidate| candidate.name.eq_ignore_ascii_case(name));
+        }
+        for candidate in candidates.into_iter().take(8) {
+            let session_id = self.start_public_dialogue(character_id, cycle, &candidate, "case")?;
+            let mut options = self
+                .connection
+                .db
+                .backend_dialogue_topic_options()
+                .iter()
+                .filter(|row| {
+                    row.owner_character_id == character_id
+                        && row.session_id == session_id
+                        && topics.contains(&row.topic_id.as_str())
+                        && row.public_case_id == case_id
+                })
+                .collect::<Vec<_>>();
+            options.sort_by_key(|row| (row.topic_id.clone(), row.id.clone()));
+            let Some(option) = options.into_iter().next() else {
+                continue;
+            };
+            let session = self
+                .connection
+                .db
+                .backend_dialogue_sessions()
+                .iter()
+                .find(|row| row.owner_character_id == character_id && row.id == session_id)
+                .ok_or("projected dialogue session disappeared")?;
+            let action_id = format!("sim-topic-{cycle}-{}", self.sequence.saturating_add(1));
+            let topic_id = option.topic_id.clone();
+            let result = reducer_call!(self, "choose_dialogue_topic", |cb| self
+                .connection
+                .reducers
+                .choose_dialogue_topic_then(
+                    character_id,
+                    session_id.clone(),
+                    topic_id.clone(),
+                    action_id.clone(),
+                    session.revision,
+                    session.catalog_revision.clone(),
+                    cb,
+                ));
+            self.call(result)?;
+            if topic_id == "referred-testimony" {
+                self.metrics.generated_witness_dialogues += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::GeneratedWitnessDialogue,
+                    format!(
+                        "case={};title={};npc={};location={};topic={}",
+                        bounded_event_field(case_id),
+                        bounded_event_field(title),
+                        bounded_event_field(&candidate.name),
+                        bounded_event_field(&candidate.location_id),
+                        bounded_event_field(&topic_id)
+                    ),
+                );
+            } else {
+                self.event(
+                    agent,
+                    CoreLoopEventKind::GeneratedInvestigationAction,
+                    format!(
+                        "case={};title={};npc={};location={};topic={}",
+                        bounded_event_field(case_id),
+                        bounded_event_field(title),
+                        bounded_event_field(&candidate.name),
+                        bounded_event_field(&candidate.location_id),
+                        bounded_event_field(&topic_id)
+                    ),
+                );
+            }
+            self.observe_generated_case_transition(agent, character_id, case_id, title, true);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn generated_actor_ready_after_time(
+        &mut self,
+        party_id: &str,
+        owner_character_id: u64,
+        case_id: &str,
+    ) -> Result<bool, String> {
+        self.observe_deaths();
+        let current_leader = self.current_leader(party_id).map(|(leader, _)| leader);
+        if current_leader != Some(owner_character_id) {
+            return Ok(false);
+        }
+        let current_leader = current_leader.expect("owner is the current leader");
+        let party_agents = self.party_agents(current_leader)?;
+        let unsafe_agents = self.unsafe_party_agents(&party_agents);
+        for unsafe_agent in &unsafe_agents {
+            self.metrics.quests_suppressed_for_health += 1;
+            self.event(
+                *unsafe_agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!("generated_case={case_id};after_time_advance"),
+            );
+        }
+        Ok(generated_actor_can_continue(
+            owner_character_id,
+            Some(current_leader),
+            unsafe_agents.len(),
+        ))
+    }
+
+    fn wait_for_generated_investigation_window(
+        &mut self,
+        party_id: &str,
+        owner_character_id: u64,
+        agent: u32,
+        case_id: &str,
+        action_id: &str,
+        wait_minutes: u32,
+    ) -> Result<bool, String> {
+        let wait_minutes = projected_investigation_wait_minutes("night_window", wait_minutes)
+            .ok_or("projected investigation wait hint was invalid")?;
+        let at_settlement = self
+            .party_for(owner_character_id)?
+            .current_settlement_id
+            .is_some();
+        let settlement_venue = (at_settlement && wait_minutes >= 60)
+            .then(|| self.settlement_activity_venue(owner_character_id, 0).ok())
+            .flatten();
+        let wait_mode = if let Some(venue) = settlement_venue {
+            let result = reducer_call!(self, "wait_for_investigation_window_settlement", |cb| {
+                self.connection.reducers.rest_at_settlement_hours_then(
+                    owner_character_id,
+                    u64::from(wait_minutes),
+                    venue.at_inn(),
+                    cb,
+                )
+            });
+            self.call(result)?;
+            if venue.at_inn() {
+                "settlement_inn"
+            } else {
+                "settlement_temple"
+            }
+        } else {
+            let result = reducer_call!(self, "wait_for_investigation_window_camp", |cb| self
+                .connection
+                .reducers
+                .rest_at_camp_then(owner_character_id, u64::from(wait_minutes), cb));
+            self.call(result)?;
+            "field_rest"
+        };
+        self.metrics.generated_investigation_waits += 1;
+        self.metrics.generated_investigation_wait_minutes = self
+            .metrics
+            .generated_investigation_wait_minutes
+            .saturating_add(u64::from(wait_minutes));
+        self.event(
+            agent,
+            CoreLoopEventKind::GeneratedInvestigationWait,
+            format!(
+                "case={};action={};reason=night_window;wait_minutes={wait_minutes};mode={wait_mode}",
+                bounded_event_field(case_id),
+                bounded_event_field(action_id),
+            ),
+        );
+        self.generated_actor_ready_after_time(party_id, owner_character_id, case_id)
+    }
+
+    fn return_completed_generated_party_to_origin(
+        &mut self,
+        party_id: &str,
+        owner_character_id: u64,
+        case_id: &str,
+    ) -> Result<(), String> {
+        let Some(occupied_site_id) = self
+            .party_by_id(party_id)?
+            .current_case_site_id
+            .map(|site| site.value)
+        else {
+            return Ok(());
+        };
+        let pin = self
+            .connection
+            .db
+            .backend_case_site_pins()
+            .iter()
+            .find(|pin| {
+                occupied_case_pin_matches(
+                    owner_character_id,
+                    case_id,
+                    &occupied_site_id,
+                    pin.owner_character_id,
+                    &pin.case_id,
+                    &pin.case_site_id,
+                )
+            })
+            .ok_or("completed generated case site has no exact owner-scoped return pin")?;
+        let Some((current_leader, current_agent)) = self.current_leader(party_id) else {
+            return Ok(());
+        };
+        let settlement_id = pin.origin_settlement_id.clone();
+        let result = reducer_call!(self, "return_completed_generated_case", |cb| self
+            .connection
+            .reducers
+            .travel_to_settlement_then(current_leader, settlement_id.clone(), cb,));
+        self.call(result)?;
+        self.event(
+            current_agent,
+            CoreLoopEventKind::Travel,
+            format!("generated_case={case_id};completed_return={settlement_id}"),
+        );
+        self.travel_camps(party_id)?;
+        self.observe_deaths();
+        Ok(())
+    }
+
+    fn advance_generated_case(
+        &mut self,
+        party_id: &str,
+        character_id: u64,
+        agent: u32,
+        cycle: u32,
+        case_id: &str,
+        title: &str,
+    ) -> Result<bool, String> {
+        for party_agent in self.party_agents(character_id)? {
+            if !self.ensure_medically_safe(party_agent)? {
+                self.metrics.quests_suppressed_for_health += 1;
+                self.event(
+                    party_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!("generated_case={case_id};cycle={cycle}"),
+                );
+                return Ok(false);
+            }
+            self.maintain_equipment(party_agent)?;
+        }
+        for _ in 0..MAX_GENERATED_CASE_STEPS_PER_CYCLE {
+            if self.generated_case_status(character_id, case_id).as_deref() != Some("open") {
+                self.return_completed_generated_party_to_origin(party_id, character_id, case_id)?;
+                return Ok(true);
+            }
+            let at_settlement = self
+                .party_for(character_id)?
+                .current_settlement_id
+                .is_some();
+            let mut actions = self
+                .connection
+                .db
+                .backend_investigation_actions()
+                .iter()
+                .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+                .collect::<Vec<_>>();
+            actions.sort_by_key(|row| row.action_id.clone());
+            if let Some(action) = actions.iter().find(|row| row.available) {
+                let known_outcomes = self
+                    .connection
+                    .db
+                    .backend_investigation_action_outcomes()
+                    .iter()
+                    .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+                    .map(|row| row.outcome_id)
+                    .collect::<HashSet<_>>();
+                let result = reducer_call!(self, "perform_investigation_action", |cb| self
+                    .connection
+                    .reducers
+                    .perform_investigation_action_then(
+                        character_id,
+                        action.action_id.clone(),
+                        action.method.clone(),
+                        action.expected_version,
+                        cb,
+                    ));
+                self.call(result)?;
+                let mut outcomes = self
+                    .connection
+                    .db
+                    .backend_investigation_action_outcomes()
+                    .iter()
+                    .filter(|row| {
+                        row.owner_character_id == character_id
+                            && row.case_id == case_id
+                            && row.action_id == action.action_id
+                            && !known_outcomes.contains(&row.outcome_id)
+                    })
+                    .collect::<Vec<_>>();
+                outcomes.sort_by_key(|row| (row.recorded_at, row.outcome_id.clone()));
+                let wording = outcomes
+                    .last()
+                    .map_or("No new public outcome wording", |row| row.wording.as_str());
+                self.metrics.generated_investigation_actions += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::GeneratedInvestigationAction,
+                    format!(
+                        "case={};title={};action={};method={};summary={};outcome={}",
+                        bounded_event_field(case_id),
+                        bounded_event_field(title),
+                        bounded_event_field(&action.action_id),
+                        bounded_event_field(&action.method),
+                        bounded_event_field(&action.summary),
+                        bounded_event_field(wording)
+                    ),
+                );
+                self.observe_generated_case_transition(agent, character_id, case_id, title, true);
+                if self.generated_case_status(character_id, case_id).as_deref() != Some("open") {
+                    self.return_completed_generated_party_to_origin(
+                        party_id,
+                        character_id,
+                        case_id,
+                    )?;
+                    return Ok(true);
+                }
+                if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
+                    return Ok(false);
+                }
+                continue;
+            }
+            if let Some(action) = actions.iter().find(|row| row.can_travel_to_required_site) {
+                let pin = self
+                    .connection
+                    .db
+                    .backend_case_site_pins()
+                    .iter()
+                    .find(|pin| {
+                        pin.owner_character_id == character_id
+                            && pin.case_id == case_id
+                            && pin.case_site_id == action.required_case_site_id
+                    })
+                    .ok_or("projected action travel had no exact owner-scoped site pin")?;
+                let site_id = pin.case_site_id.clone();
+                let distance_m = pin.distance_m;
+                if matches!(
+                    self.provision_case_site_journey(party_id, character_id, agent, distance_m,)?,
+                    TravelProvisionDecision::Deferred(_)
+                ) {
+                    return Ok(false);
+                }
+                let result = reducer_call!(self, "travel_to_generated_case_site", |cb| self
+                    .connection
+                    .reducers
+                    .travel_to_case_site_then(
+                        character_id,
+                        CaseSiteId {
+                            value: site_id.clone(),
+                        },
+                        cb,
+                    ));
+                self.call(result)?;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::Travel,
+                    format!("generated_case={case_id};outbound={site_id}"),
+                );
+                self.travel_camps(party_id)?;
+                if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
+                    return Ok(false);
+                }
+                continue;
+            }
+            if let Some((action, wait_minutes)) = actions.iter().find_map(|action| {
+                projected_investigation_wait_minutes(
+                    &action.unavailable_reason_code,
+                    action.wait_minutes,
+                )
+                .map(|wait_minutes| (action, wait_minutes))
+            }) {
+                if !self.wait_for_generated_investigation_window(
+                    party_id,
+                    character_id,
+                    agent,
+                    case_id,
+                    &action.action_id,
+                    wait_minutes,
+                )? {
+                    return Ok(false);
+                }
+                // Rest may clip at a disease/injury boundary or synchronize a
+                // lagging member. Re-read the projected action and its exact
+                // expected version before attempting it.
+                continue;
+            }
+            if at_settlement {
+                let witness = self
+                    .connection
+                    .db
+                    .backend_investigation_leads()
+                    .iter()
+                    .filter(|row| {
+                        row.owner_character_id == character_id
+                            && row.case_id == case_id
+                            && !row.witness_name.is_empty()
+                            && row.corrected_by.is_empty()
+                    })
+                    .max_by_key(|row| (row.recorded_at, row.lead_id.clone()));
+                if let Some(witness) = witness
+                    && self.try_generated_dialogue_topic(
+                        character_id,
+                        agent,
+                        cycle,
+                        case_id,
+                        title,
+                        &["referred-testimony"],
+                        Some(&witness.witness_name),
+                        Some(if witness.current_learned_location.is_empty() {
+                            &witness.expected_location
+                        } else {
+                            &witness.current_learned_location
+                        }),
+                    )?
+                {
+                    continue;
+                }
+                if self.try_generated_dialogue_topic(
+                    character_id,
+                    agent,
+                    cycle,
+                    case_id,
+                    title,
+                    &["return-recovered-property", "expose-false-account"],
+                    None,
+                    None,
+                )? {
+                    continue;
+                }
+            }
+            let party = self.party_for(character_id)?;
+            let occupied_site_id = party.current_case_site_id.map(|site| site.value);
+            let pin = occupied_site_id.as_deref().and_then(|occupied_site_id| {
+                self.connection
+                    .db
+                    .backend_case_site_pins()
+                    .iter()
+                    .find(|pin| {
+                        occupied_case_pin_matches(
+                            character_id,
+                            case_id,
+                            occupied_site_id,
+                            pin.owner_character_id,
+                            &pin.case_id,
+                            &pin.case_site_id,
+                        )
+                    })
+            });
+            if let Some(pin) = pin {
+                if pin.combat_available {
+                    let mission_id = format!(
+                        "mission:sim-generated:{party_id}:{}:{}",
+                        pin.case_site_id, self.sequence
+                    );
+                    let battle_id = format!("battle:{mission_id}");
+                    let result = reducer_call!(self, "autoresolve_generated_mission", |cb| self
+                        .connection
+                        .reducers
+                        .autoresolve_mission_then(character_id, mission_id.clone(), cb));
+                    self.call(result)?;
+                    let public_binding =
+                        self.connection.db.backend_case_battles().iter().any(|row| {
+                            row.owner_character_id == character_id
+                                && row.public_case_id == case_id
+                                && row.party_id == party_id
+                                && row.battle_id == battle_id
+                                && row.mission_id == mission_id
+                                && row.case_site_id.value == pin.case_site_id
+                        });
+                    if !public_binding {
+                        return Err(
+                            "generated autoresolve had no public case-battle binding".into()
+                        );
+                    }
+                    if self
+                        .connection
+                        .db
+                        .battle_result()
+                        .iter()
+                        .any(|row| row.battle_id == battle_id)
+                    {
+                        self.event(
+                            agent,
+                            CoreLoopEventKind::AutoresolveVictory,
+                            format!("generated_case={case_id};battle={battle_id}"),
+                        );
+                    } else {
+                        self.metrics.defeats += 1;
+                        self.event(
+                            agent,
+                            CoreLoopEventKind::AutoresolveDefeat,
+                            format!("generated_case={case_id};battle={battle_id}"),
+                        );
+                        let settlement_id = pin.origin_settlement_id.clone();
+                        let result =
+                            reducer_call!(self, "generated_defeat_retreat_to_settlement", |cb| {
+                                self.connection.reducers.travel_to_settlement_then(
+                                    character_id,
+                                    settlement_id.clone(),
+                                    cb,
+                                )
+                            });
+                        self.call(result)?;
+                        self.travel_camps(party_id)?;
+                        self.observe_deaths();
+                        if let Some((current_leader, _)) = self.current_leader(party_id) {
+                            for party_agent in self.party_agents(current_leader)? {
+                                self.ensure_medically_safe(party_agent)?;
+                            }
+                        }
+                        return Ok(false);
+                    }
+                    self.observe_generated_case_transition(
+                        agent,
+                        character_id,
+                        case_id,
+                        title,
+                        true,
+                    );
+                    if self.generated_case_status(character_id, case_id).as_deref() != Some("open")
+                    {
+                        self.return_completed_generated_party_to_origin(
+                            party_id,
+                            character_id,
+                            case_id,
+                        )?;
+                        return Ok(true);
+                    }
+                    if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
+                        return Ok(false);
+                    }
+                    continue;
+                }
+                let settlement_id = pin.origin_settlement_id.clone();
+                let result = reducer_call!(self, "return_from_generated_case_site", |cb| self
+                    .connection
+                    .reducers
+                    .travel_to_settlement_then(character_id, settlement_id.clone(), cb,));
+                self.call(result)?;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::Travel,
+                    format!("generated_case={case_id};return={settlement_id}"),
+                );
+                self.travel_camps(party_id)?;
+                if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
+                    return Ok(false);
+                }
+                continue;
+            }
+            return Ok(false);
+        }
+        Ok(false)
+    }
+
     fn cycle(&mut self, party_id: &str, cycle: u32) -> Result<(), String> {
         let Some((mut leader, authoritative_agent)) = self.current_leader(party_id) else {
             self.observe_deaths();
@@ -2711,6 +4120,22 @@ impl LiveRunner {
             ),
         );
 
+        if let TravelProvisionDecision::Deferred(reason) =
+            self.provision_case_site_journey(party_id, leader, leader_agent, case_site.distance_m)?
+        {
+            let result = reducer_call!(self, "defer_unprovisioned_contract", |cb| self
+                .connection
+                .reducers
+                .abandon_contract_then(leader, quest.id.clone(), cb));
+            self.call(result)?;
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::AbandonQuest,
+                format!("quest={};reason={reason}", bounded_event_field(&quest.id)),
+            );
+            self.settlement_activity_day(leader_agent)?;
+            return Ok(());
+        }
         let result = reducer_call!(self, "travel_to_case_site", |cb| self
             .connection
             .reducers
@@ -2840,6 +4265,33 @@ impl LiveRunner {
                 return Ok(());
             };
             leader = current;
+            if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
+                party_id,
+                leader,
+                leader_agent,
+                case_site.distance_m,
+            )? {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!(
+                        "quest={};retry_deferred={reason}",
+                        bounded_event_field(&quest.id)
+                    ),
+                );
+                let result = reducer_call!(self, "defer_unprovisioned_retry", |cb| self
+                    .connection
+                    .reducers
+                    .abandon_contract_then(leader, quest.id.clone(), cb));
+                self.call(result)?;
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::AbandonQuest,
+                    format!("quest={};reason={reason}", bounded_event_field(&quest.id)),
+                );
+                self.settlement_activity_day(leader_agent)?;
+                return Ok(());
+            }
             let result = reducer_call!(self, "retry_travel_to_case_site", |cb| self
                 .connection
                 .reducers
@@ -3335,7 +4787,15 @@ fn run_core_loop_with_npc_policy_inner(
         // particular, never transport backend infection episodes, committed
         // cuts, or full medical examinations into the simulator process.
         .add_query(|query| query.from.autoresolve_report())
+        .add_query(|query| query.from.backend_case_battles())
         .add_query(|query| query.from.backend_case_site_pins())
+        .add_query(|query| query.from.backend_dialogue_sessions())
+        .add_query(|query| query.from.backend_dialogue_topic_options())
+        .add_query(|query| query.from.backend_investigation_action_outcomes())
+        .add_query(|query| query.from.backend_investigation_actions())
+        .add_query(|query| query.from.backend_investigation_cases())
+        .add_query(|query| query.from.backend_investigation_journal())
+        .add_query(|query| query.from.backend_investigation_leads())
         .add_query(|query| query.from.backend_npc_case_interventions())
         .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.backend_local_problem_trade_effects())
@@ -3356,13 +4816,17 @@ fn run_core_loop_with_npc_policy_inner(
         .add_query(|query| query.from.item_condition())
         .add_query(|query| query.from.party())
         .add_query(|query| query.from.party_inventory_item())
+        .add_query(|query| query.from.party_journey())
+        .add_query(|query| query.from.party_journey_itinerary())
         .add_query(|query| query.from.party_join_request())
         .add_query(|query| query.from.party_member())
         .add_query(|query| query.from.party_stake())
         .add_query(|query| query.from.backend_contracts())
+        .add_query(|query| query.from.backend_settlement_npcs())
         .add_query(|query| query.from.strategic_encounter())
         .add_query(|query| query.from.repair_order())
         .add_query(|query| query.from.settlement())
+        .add_query(|query| query.from.settlement_npc_presence())
         .add_query(|query| query.from.settlement_smith())
         .add_query(|query| query.from.simulation_run())
         .add_query(|query| query.from.world_data_import())
@@ -3389,9 +4853,12 @@ fn run_core_loop_with_npc_policy_inner(
         metrics: CoreLoopMetrics::default(),
         trace: Vec::new(),
         sequence: 0,
+        dialogue_nonce: 0,
         last_semantic_event: None,
         recorded_deaths: HashSet::new(),
         medically_paused_schedules: HashSet::new(),
+        generated_case_owners: HashMap::new(),
+        generated_terminal_cases: HashSet::new(),
         npc_strategy_policy,
         simulation_run_nonce: config.run_nonce.clone(),
         failure_recorder,
@@ -3462,12 +4929,22 @@ fn run_core_loop_with_npc_policy_inner(
         .on_error(move |_, error| {
             let _ = gateway_subscription_error_tx.send(Err(error.to_string()));
         })
+        .add_query(|query| query.from.backend_case_battles())
         .add_query(|query| query.from.backend_case_site_pins())
         .add_query(|query| query.from.backend_contracts())
+        .add_query(|query| query.from.backend_dialogue_sessions())
+        .add_query(|query| query.from.backend_dialogue_topic_options())
+        .add_query(|query| query.from.backend_investigation_action_outcomes())
+        .add_query(|query| query.from.backend_investigation_actions())
+        .add_query(|query| query.from.backend_investigation_cases())
+        .add_query(|query| query.from.backend_investigation_journal())
+        .add_query(|query| query.from.backend_investigation_leads())
         .add_query(|query| query.from.backend_npc_case_interventions())
         .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.backend_local_problem_trade_effects())
+        .add_query(|query| query.from.backend_settlement_npcs())
         .add_query(|query| query.from.party())
+        .add_query(|query| query.from.settlement_npc_presence())
         .subscribe();
     gateway_subscription_rx
         .recv_timeout(ACTION_TIMEOUT)
@@ -3616,6 +5093,7 @@ fn run_core_loop_with_npc_policy_inner(
         let mut active = false;
         for party_id in &party_ids {
             runner.observe_deaths();
+            runner.observe_external_generated_closures();
             let Some((leader, leader_agent)) = runner.current_leader(party_id) else {
                 continue;
             };
@@ -3652,7 +5130,29 @@ fn run_core_loop_with_npc_policy_inner(
                     })
                     .count()
             });
-            let quest_chosen = wants_quest && runner.choose_quest(&party, profile).is_some();
+            let open_generated_cases = runner.owned_open_generated_cases(leader);
+            let projected_investigation_actions = runner
+                .connection
+                .db
+                .backend_investigation_actions()
+                .iter()
+                .filter(|row| {
+                    row.owner_character_id == leader
+                        && open_generated_cases
+                            .iter()
+                            .any(|(case_id, _)| case_id == &row.case_id)
+                })
+                .count();
+            let direct_quest_chosen = wants_quest && runner.choose_quest(&party, profile).is_some();
+            let quest_path = if !open_generated_cases.is_empty() {
+                "generated_open_case"
+            } else if direct_quest_chosen {
+                "direct_contract"
+            } else if wants_quest {
+                "generated_discovery"
+            } else {
+                "activity"
+            };
             runner.event(
                 leader_agent,
                 CoreLoopEventKind::QuestDecision,
@@ -3663,13 +5163,55 @@ fn run_core_loop_with_npc_policy_inner(
                     quest_propensity,
                     settlement_id,
                     offered_contracts,
-                    quest_chosen,
+                    open_generated_cases.len(),
+                    projected_investigation_actions,
+                    quest_path,
                 ),
             );
-            if quest_chosen {
-                runner.cycle(party_id, cycle)?;
-            } else {
-                runner.settlement_activity_day(leader_agent)?;
+            match quest_path {
+                "generated_open_case" => {
+                    let (case_id, title) = open_generated_cases[0].clone();
+                    runner
+                        .generated_case_owners
+                        .entry(case_id.clone())
+                        .or_insert(leader);
+                    let progressed = runner.advance_generated_case(
+                        party_id,
+                        leader,
+                        leader_agent,
+                        cycle,
+                        &case_id,
+                        &title,
+                    )?;
+                    if !progressed && runner.party_for(leader)?.current_settlement_id.is_some() {
+                        runner.settlement_activity_day(leader_agent)?;
+                    }
+                }
+                "direct_contract" => runner.cycle(party_id, cycle)?,
+                "generated_discovery" => {
+                    if runner.discover_generated_case(leader, leader_agent, cycle)? {
+                        let Some((case_id, title)) =
+                            runner.owned_open_generated_cases(leader).into_iter().next()
+                        else {
+                            continue;
+                        };
+                        let progressed = runner.advance_generated_case(
+                            party_id,
+                            leader,
+                            leader_agent,
+                            cycle,
+                            &case_id,
+                            &title,
+                        )?;
+                        if !progressed && runner.party_for(leader)?.current_settlement_id.is_some()
+                        {
+                            runner.settlement_activity_day(leader_agent)?;
+                        }
+                    } else {
+                        runner.settlement_activity_day(leader_agent)?;
+                    }
+                }
+                _ => runner.settlement_activity_day(leader_agent)?,
             }
             let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
                 .connection
@@ -4066,23 +5608,282 @@ mod tests {
     #[test]
     fn quest_decision_classifies_each_observer_safe_fallback() {
         assert_eq!(
-            quest_fallback_reason(false, 3, false),
+            quest_fallback_reason(false, "activity"),
             "policy_prefers_activity"
         );
-        assert_eq!(quest_fallback_reason(true, 0, false), "no_offered_contract");
-        assert_eq!(quest_fallback_reason(true, 2, true), "none");
+        assert_eq!(
+            quest_fallback_reason(true, "activity"),
+            "no_player_visible_quest_step"
+        );
+        assert_eq!(quest_fallback_reason(true, "generated_open_case"), "none");
     }
 
     #[test]
     fn quest_decision_detail_is_bounded_and_stably_formatted() {
         assert_eq!(
-            format_quest_decision_detail(7, true, 0.25, 0.75, Some("lubeck"), 2, true),
-            "cycle=7;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=lubeck;offered_contracts=2;quest_chosen=true;fallback=none"
+            format_quest_decision_detail(
+                7,
+                true,
+                0.25,
+                0.75,
+                Some("lubeck"),
+                2,
+                1,
+                3,
+                "generated_open_case",
+            ),
+            "cycle=7;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=lubeck;offered_contracts=2;open_generated_cases=1;projected_investigation_actions=3;quest_path=generated_open_case;quest_chosen=true;fallback=none"
         );
         assert_eq!(
-            format_quest_decision_detail(8, true, 0.25, 0.75, None, 0, false),
-            "cycle=8;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=none;offered_contracts=0;quest_chosen=false;fallback=no_offered_contract"
+            format_quest_decision_detail(8, true, 0.25, 0.75, None, 0, 0, 0, "activity",),
+            "cycle=8;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=none;offered_contracts=0;open_generated_cases=0;projected_investigation_actions=0;quest_path=activity;quest_chosen=false;fallback=no_player_visible_quest_step"
         );
+    }
+
+    #[test]
+    fn generated_case_views_filter_by_owner_and_sort_stably() {
+        let rows = vec![
+            (9, "case-b".into(), "B".into(), "open".into()),
+            (7, "case-z".into(), "Z".into(), "open".into()),
+            (9, "case-a".into(), "A".into(), "open".into()),
+            (9, "case-c".into(), "C".into(), "completed".into()),
+        ];
+        assert_eq!(
+            stable_owned_open_cases(9, rows),
+            vec![
+                ("case-a".to_owned(), "A".to_owned()),
+                ("case-b".to_owned(), "B".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn ambiguous_public_npc_candidates_remain_bounded_and_stable() {
+        let candidates = vec![
+            PublicNpcCandidate {
+                npc_id: "npc-z".into(),
+                name: "Marta".into(),
+                profession: "Baker".into(),
+                conversation_id: "local-resident".into(),
+                location_id: "market".into(),
+            },
+            PublicNpcCandidate {
+                npc_id: "npc-a".into(),
+                name: "Marta".into(),
+                profession: "Baker".into(),
+                conversation_id: "local-resident".into(),
+                location_id: "market".into(),
+            },
+        ];
+        let sorted = stable_public_npc_candidates(candidates, Some("Marta"), Some("market"));
+        assert_eq!(
+            sorted
+                .iter()
+                .map(|candidate| candidate.npc_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["npc-a", "npc-z"]
+        );
+        assert_eq!(
+            sorted.len(),
+            2,
+            "ambiguity must be resolved only by projected topic eligibility, not guessed identity"
+        );
+    }
+
+    #[test]
+    fn generated_completion_is_attributed_only_to_the_immediate_own_transition() {
+        assert_eq!(
+            generated_closure_attribution("open", Some("completed"), true),
+            GeneratedClosureAttribution::OwnImmediateTransition
+        );
+        assert_eq!(
+            generated_closure_attribution("open", Some("completed"), false),
+            GeneratedClosureAttribution::ExternalTransition
+        );
+        assert_eq!(
+            generated_closure_attribution("open", Some("open"), true),
+            GeneratedClosureAttribution::StillOpen
+        );
+    }
+
+    #[test]
+    fn generated_projection_rows_require_exact_owner_and_public_case() {
+        assert!(projected_case_row_matches(7, "public-a", 7, "public-a"));
+        assert!(!projected_case_row_matches(7, "public-a", 8, "public-a"));
+        assert!(!projected_case_row_matches(7, "public-a", 7, "public-b"));
+    }
+
+    #[test]
+    fn generated_site_selection_requires_the_exact_occupied_pin() {
+        assert!(occupied_case_pin_matches(
+            7, "public-a", "site-2", 7, "public-a", "site-2"
+        ));
+        assert!(!occupied_case_pin_matches(
+            7, "public-a", "site-2", 7, "public-a", "site-1"
+        ));
+    }
+
+    #[test]
+    fn generated_time_gate_stops_leader_changes_and_incapacitation() {
+        assert!(generated_actor_can_continue(7, Some(7), 0));
+        assert!(!generated_actor_can_continue(7, Some(8), 0));
+        assert!(!generated_actor_can_continue(7, Some(7), 1));
+        assert!(!generated_actor_can_continue(7, None, 0));
+    }
+
+    #[test]
+    fn case_site_duration_includes_public_daily_camp_schedule() {
+        assert_eq!(projected_case_site_journey_minutes(1_250, 480), Some(60));
+        assert_eq!(
+            projected_case_site_journey_minutes(20_000, 480),
+            Some(1_920)
+        );
+        assert_eq!(projected_case_site_journey_minutes(20_000, 0), None);
+        assert_eq!(projected_case_site_journey_minutes(0, 480), None);
+    }
+
+    #[test]
+    fn camp_rest_uses_only_remaining_active_public_forecast_interval() {
+        let intervals = vec![
+            JourneyCampInterval {
+                movement_minute: 480,
+                elapsed_start_minute: 480,
+                elapsed_minutes: 960,
+                average_fatigue_start: 0.5,
+                average_fatigue_end: 0.0,
+                maximum_fatigue_end: 0.0,
+            },
+            JourneyCampInterval {
+                movement_minute: 960,
+                elapsed_start_minute: 1_920,
+                elapsed_minutes: 960,
+                average_fatigue_start: 0.5,
+                average_fatigue_end: 0.0,
+                maximum_fatigue_end: 0.0,
+            },
+        ];
+        assert_eq!(
+            projected_camp_rest_minutes(480, 2_500, &intervals),
+            Some((480, 960))
+        );
+        assert_eq!(
+            projected_camp_rest_minutes(1_200, 2_500, &intervals),
+            Some((1_200, 240))
+        );
+        assert_eq!(
+            projected_camp_rest_minutes(1_920, 2_500, &intervals),
+            Some((1_920, 580))
+        );
+        assert_eq!(projected_camp_rest_minutes(1_500, 2_500, &intervals), None);
+    }
+
+    #[test]
+    fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
+        let source = include_str!("live_core.rs");
+        let travel = source
+            .split("fn travel_camps")
+            .nth(1)
+            .and_then(|tail| tail.split("fn choose_quest").next())
+            .expect("travel camp driver");
+        assert!(travel.contains(".party_journey()"));
+        assert!(travel.contains(".party_journey_itinerary()"));
+        assert!(travel.contains("row.party_id == party_id"));
+        assert!(travel.contains("projected_camp_rest_minutes("));
+        assert!(travel.contains(".rest_at_camp_then(leader, rest_minutes"));
+        assert!(!travel.contains(".rest_at_camp_then(leader, 1_440"));
+        for phase in ["phase=pre_rest", "phase=post_rest", "phase=post_continue"] {
+            assert!(travel.contains(phase));
+        }
+
+        let provisioning = source
+            .split("fn provision_case_site_journey")
+            .nth(1)
+            .and_then(|tail| tail.split("fn travel_camps").next())
+            .expect("journey provisioner");
+        for public_surface in [
+            ".character_needs()",
+            ".inventory_item()",
+            ".party_inventory_item()",
+            ".food_lot()",
+            ".settlement()",
+            "SettlementService::Market | SettlementService::GeneralStore",
+            "finalize_merchant_trade_then(",
+        ] {
+            assert!(provisioning.contains(public_surface), "{public_surface}");
+        }
+        assert!(provisioning.contains("target_surplus_days: TRAVEL_PROVISION_RESERVE_DAYS"));
+        assert!(!provisioning.contains("party_journey_route"));
+    }
+
+    #[test]
+    fn generated_event_fields_are_single_line_and_bounded() {
+        let field = bounded_event_field(&format!("title;\n{}", "x".repeat(400)));
+        assert!(!field.contains(';'));
+        assert!(!field.contains('\n'));
+        assert_eq!(field.chars().count(), 240);
+    }
+
+    #[test]
+    fn generated_case_state_machine_is_bounded_and_precedes_direct_contracts() {
+        assert!(MAX_GENERATED_CASE_STEPS_PER_CYCLE <= 32);
+        let source = include_str!("live_core.rs");
+        let loop_start = source.find("let quest_path = if").unwrap();
+        let decision =
+            &source[loop_start..source[loop_start..].find("runner.event(").unwrap() + loop_start];
+        assert!(
+            decision.find("!open_generated_cases.is_empty()").unwrap()
+                < decision.find("direct_quest_chosen").unwrap()
+        );
+        let driver = source
+            .split("fn advance_generated_case")
+            .nth(1)
+            .and_then(|tail| tail.split("fn cycle").next())
+            .expect("generated case driver");
+        assert!(driver.contains("action.unavailable_reason_code"));
+        assert!(driver.contains("action.wait_minutes"));
+        assert!(driver.contains("wait_for_generated_investigation_window"));
+        assert!(!driver.contains("action.unavailable_reason.contains"));
+    }
+
+    #[test]
+    fn generated_runner_subscribes_only_to_public_projection_inventory() {
+        let source = include_str!("live_core.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        for required in [
+            ".backend_settlement_npcs()",
+            ".settlement_npc_presence()",
+            ".backend_dialogue_sessions()",
+            ".backend_dialogue_topic_options()",
+            ".backend_investigation_cases()",
+            ".backend_investigation_journal()",
+            ".backend_investigation_leads()",
+            ".backend_investigation_actions()",
+            ".backend_investigation_action_outcomes()",
+            ".backend_case_site_pins()",
+            ".party_journey()",
+            ".party_journey_itinerary()",
+        ] {
+            assert!(
+                production.contains(required),
+                "missing safe projection {required}"
+            );
+        }
+        for forbidden in [
+            ".quest_generation_authority()",
+            ".case_authority()",
+            ".case_finale_authority()",
+            ".hostile_group_authority()",
+            ".mission_authority()",
+            ".party_journey_route()",
+            ".case_outcome()",
+            ".case_outcome_fact()",
+        ] {
+            assert!(
+                !production.contains(forbidden),
+                "runner must not import private authority {forbidden}"
+            );
+        }
+        assert!(!production.contains("receive_local_problem_rumor_then"));
     }
 
     #[test]
@@ -4182,11 +5983,15 @@ mod tests {
     }
 
     #[test]
-    fn failure_artifact_version_two_serializes_quest_decisions() {
+    fn failure_artifact_version_four_serializes_safe_operation_context() {
         let artifact = CoreLoopFailureArtifact {
             schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
-            category: "core_loop_error".into(),
-            message: "The authoritative core loop stopped before completion.".into(),
+            category: "investigation_temporally_unavailable".into(),
+            message:
+                "A projected investigation action was attempted outside its learned time window."
+                    .into(),
+            operation: Some("perform_investigation_action".into()),
+            reason_code: "investigation_night_window".into(),
             metrics: CoreLoopMetrics::default(),
             total_event_count: 1,
             trace_truncated: false,
@@ -4194,13 +5999,105 @@ mod tests {
                 sequence: 1,
                 agent_id: 0,
                 kind: CoreLoopEventKind::QuestDecision,
-                detail: "fallback=no_offered_contract".into(),
+                detail: "quest_path=generated_discovery;fallback=none".into(),
             }],
             final_agents: Vec::new(),
         };
         let value = serde_json::to_value(artifact).unwrap();
-        assert_eq!(value["schema_version"], serde_json::json!(2));
+        assert_eq!(value["schema_version"], serde_json::json!(4));
+        assert_eq!(
+            value["operation"],
+            serde_json::json!("perform_investigation_action")
+        );
+        assert_eq!(
+            value["reason_code"],
+            serde_json::json!("investigation_night_window")
+        );
         assert_eq!(value["trace"][0]["kind"], "quest_decision");
+    }
+
+    #[test]
+    fn expected_investigation_failure_is_allowlisted_without_raw_text() {
+        let raw = "perform_investigation_action failed: The learned pattern requires acting during the nighttime window; hidden authority";
+        let (category, message) = safe_core_loop_failure(raw);
+        assert_eq!(category, "investigation_temporally_unavailable");
+        assert_eq!(
+            safe_failure_operation(raw),
+            Some("perform_investigation_action")
+        );
+        assert_eq!(
+            safe_failure_reason_code(raw, category),
+            "investigation_night_window"
+        );
+        assert!(!message.contains("hidden authority"));
+    }
+
+    #[test]
+    fn invalid_investigation_route_is_allowlisted_without_raw_text() {
+        let raw = "perform_investigation_action failed: Investigation track origin no longer matches the projected route; hidden canonical action";
+        let (category, message) = safe_core_loop_failure(raw);
+        assert_eq!(category, "invalid_investigation_route");
+        assert_eq!(
+            safe_failure_operation(raw),
+            Some("perform_investigation_action")
+        );
+        assert_eq!(
+            safe_failure_reason_code(raw, category),
+            "invalid_investigation_route"
+        );
+        assert!(!message.contains("hidden canonical action"));
+        assert!(!message.contains(raw));
+    }
+
+    #[test]
+    fn journey_camp_failures_are_allowlisted_without_raw_text() {
+        let temporal = "continue_camp_travel failed: Rest until the party reaches its next daylight walking window; hidden route authority";
+        let (category, message) = safe_core_loop_failure(temporal);
+        assert_eq!(category, "journey_temporally_unavailable");
+        assert_eq!(
+            safe_failure_operation(temporal),
+            Some("continue_camp_travel")
+        );
+        assert_eq!(
+            safe_failure_operation(
+                "rest_at_camp failed: journey camp projection is incoherent; hidden details"
+            ),
+            Some("rest_at_camp")
+        );
+        assert_eq!(
+            safe_failure_reason_code(temporal, category),
+            "journey_daylight_window_rest_required"
+        );
+        assert!(!message.contains("hidden route authority"));
+
+        let incoherent = "journey camp projection is incoherent: hidden itinerary implementation";
+        let (category, message) = safe_core_loop_failure(incoherent);
+        assert_eq!(category, "journey_projection_inconsistent");
+        assert_eq!(
+            safe_failure_reason_code(incoherent, category),
+            "journey_projection_inconsistent"
+        );
+        assert!(!message.contains("hidden itinerary implementation"));
+    }
+
+    #[test]
+    fn projected_night_wait_hints_are_strictly_bounded() {
+        assert_eq!(
+            projected_investigation_wait_minutes("night_window", 840),
+            Some(840)
+        );
+        assert_eq!(
+            projected_investigation_wait_minutes("travel_required", 840),
+            None
+        );
+        assert_eq!(
+            projected_investigation_wait_minutes("night_window", 0),
+            None
+        );
+        assert_eq!(
+            projected_investigation_wait_minutes("night_window", 1_441),
+            None
+        );
     }
 
     #[test]
@@ -4404,6 +6301,13 @@ mod tests {
     #[test]
     fn report_metrics_expose_encounter_frequency_choices_losses_and_wipes() {
         let metrics = CoreLoopMetrics {
+            generated_quests_discovered: 3,
+            generated_quests_completed: 2,
+            generated_quests_closed_externally: 1,
+            generated_investigation_actions: 7,
+            generated_investigation_waits: 2,
+            generated_investigation_wait_minutes: 480,
+            generated_witness_dialogues: 4,
             encounters: 5,
             encounter_sneaks: 1,
             encounter_detours: 1,
@@ -4420,6 +6324,13 @@ mod tests {
         };
         let value = serde_json::to_value(metrics).unwrap();
         for field in [
+            "generated_quests_discovered",
+            "generated_quests_completed",
+            "generated_quests_closed_externally",
+            "generated_investigation_actions",
+            "generated_investigation_waits",
+            "generated_investigation_wait_minutes",
+            "generated_witness_dialogues",
             "encounters",
             "encounter_sneaks",
             "encounter_detours",

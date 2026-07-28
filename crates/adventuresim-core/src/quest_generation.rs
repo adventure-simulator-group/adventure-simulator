@@ -3711,6 +3711,33 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         {
             errors.push(format!("{} has a missing prerequisite", action.id.0));
         }
+        if matches!(
+            action.kind,
+            InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks
+        ) {
+            let coherent = action
+                .prerequisite
+                .as_ref()
+                .and_then(|required| {
+                    case.actions
+                        .iter()
+                        .find(|candidate| candidate.id == *required)
+                })
+                .is_some_and(|predecessor| {
+                    crate::investigation_action::tracking_route_edge_is_coherent(
+                        action.kind,
+                        &action.target_kind,
+                        predecessor.kind,
+                        &predecessor.target_kind,
+                    )
+                });
+            if !coherent {
+                errors.push(format!(
+                    "{} has an incoherent physical tracking predecessor",
+                    action.id.0
+                ));
+            }
+        }
         if action.prerequisite.as_ref() == Some(&action.id) {
             errors.push(format!("{} dominates itself", action.id.0));
         }
@@ -4556,6 +4583,29 @@ mod tests {
             .unwrap();
         final_action.prerequisite = None;
         assert!(validate(&skipped).is_err());
+
+        let mut crossed = generated.clone();
+        let area_action_id = crossed
+            .actions
+            .iter()
+            .find(|action| {
+                action.kind == InvestigationActionKind::SearchArea && action.target_kind == "area"
+            })
+            .unwrap()
+            .id
+            .clone();
+        crossed
+            .actions
+            .iter_mut()
+            .find(|action| action.track_segment_id.as_ref() == Some(&final_id))
+            .unwrap()
+            .prerequisite = Some(area_action_id);
+        assert!(
+            validate(&crossed)
+                .unwrap_err()
+                .iter()
+                .any(|error| { error.contains("incoherent physical tracking predecessor") })
+        );
 
         let mut leaked = generated.clone();
         let first_id = leaked.track_segments[0].id.clone();
