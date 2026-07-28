@@ -83,9 +83,9 @@ just dev
 Open http://localhost:8080
 
 Ordinary `just dev` / `just web` startup publishes without deleting database
-data. Publication failures stop startup before the seed reducer, tactical
-spawner, or web process starts and print the server/database identity plus
-recovery choices. Canonical reset recipes are intentionally disabled.
+data. Publication failures stop startup before the tactical spawner or web
+process starts and print the server/database identity plus recovery choices.
+Canonical reset recipes are intentionally disabled.
 
 For a disposable demo or worktree, use an explicit isolated profile:
 
@@ -189,6 +189,10 @@ package `gcc-mingw-w64-x86-64` must already be installed.
 - wasm-bindgen (`cargo install wasm-bindgen-cli`) - for WASM builds
 - Caddy (for the HTTPS HTTP/2 development entry point)
 
+Run `spacetime login` before starting the strategic web stack. Canonical local
+startup reads the authenticated token without printing it and passes it only to
+the trusted strategic-web child process.
+
 The `justfile` and repository automation do not require Bash. Stateful or
 compound recipes are implemented in Python, and simple recipes are compatible
 with the host shell. On Windows the default interpreter is `python`; on other
@@ -288,10 +292,10 @@ the normal world and visual test fixtures, and discards only that profile's
 contents. Its data remains available in the profile directory for inspection
 until the next run resets the same profile.
 
-`bootstrap_development_world` is itself idempotent: it inserts only missing demo rows. The local
-seed workflow then resets `Sick Demo` and its party of staggered patients plus a
-high-Physiology physician so symptoms, diagnosis, and treatment can be tested
-immediately. It propagates every reducer failure
+`bootstrap_development_world` is itself idempotent: it inserts only missing demo
+rows. The isolated profile seed workflow then resets `Sick Demo` and its party
+of staggered patients plus a high-Physiology physician so symptoms, diagnosis,
+and treatment can be tested immediately. It propagates every reducer failure
 instead of treating arbitrary errors as evidence that seeding already happened.
 
 Individual fixture reducers are not published. The isolated profile launcher

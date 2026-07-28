@@ -55,11 +55,11 @@ dev-full: web
 dev-strategic: web-strategic
 
 # Start the local browser stack.
-web: preflight spacetime-start publish _seed-world build-wasm build-tactical
+web: preflight spacetime-start publish build-wasm build-tactical
     @{{ python_bin }} scripts/just_tasks.py web --spacetime-url {{ spacetime_url }} --database {{ spacetime_module }} --bind-address 127.0.0.1:{{ web_port }} --static-dir {{ quote(strategic_web_dir + "/static") }} --tactical-static-dir {{ quote(strategic_static) }} --tactical-web-port {{ tactical_web_port }}
 
 # Start the strategic browser stack without building or running tactical services.
-web-strategic: preflight spacetime-start publish _seed-world verify-db-client
+web-strategic: preflight spacetime-start publish verify-db-client
     @{{ python_bin }} scripts/just_tasks.py web --strategic-only --spacetime-url {{ spacetime_url }} --database {{ spacetime_module }} --bind-address 127.0.0.1:{{ web_port }} --static-dir {{ quote(strategic_web_dir + "/static") }} --tactical-static-dir {{ quote(strategic_static) }}
 
 # Start a disposable, worktree-safe stack. Every destructive target is derived
@@ -77,7 +77,7 @@ web-reset:
 
 # Start the browser stack behind locally trusted HTTPS. Caddy negotiates HTTP/2
 # (and HTTP/3 when available) while strategic-web remains internal on port 8080.
-web-secure: preflight caddy-preflight spacetime-start publish _seed-world build-wasm build-tactical
+web-secure: preflight caddy-preflight spacetime-start publish build-wasm build-tactical
     @{{ python_bin }} scripts/just_tasks.py web --secure --spacetime-url {{ spacetime_url }} --database {{ spacetime_module }} --bind-address 127.0.0.1:{{ web_port }} --static-dir {{ quote(strategic_web_dir + "/static") }} --tactical-static-dir {{ quote(strategic_static) }} --tactical-web-port {{ tactical_web_port }} --secure-port {{ secure_web_port }} --caddy-config {{ quote(caddy_config) }}
 
 # Install Caddy's development root certificate in the host trust store.
@@ -87,10 +87,6 @@ secure-web-trust: caddy-preflight
 # Start a fresh local stack with an injured character for stat-bar UI verification.
 web-damaged:
     @{{ python_bin }} scripts/just_tasks.py refuse "Canonical reset demos are disabled. Start an isolated profile, then seed the damaged character there."
-
-# Seed the world with initial settlements and quests
-_seed-world server=spacetime_url: spacetime-version-check
-    @{{ python_bin }} scripts/dev_stack.py seed --server {{ server }} --database {{ spacetime_module }}
 
 # Create or reset the injured Wounded Demo character used to verify damage bars.
 _seed-damaged-character server=spacetime_url: spacetime-version-check

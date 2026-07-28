@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import signal
@@ -28,6 +29,7 @@ WEB_STATIC = ROOT / "crates" / "strategic-web" / "static"
 SPACETIME_VERSION = "2.6.1"
 SPACETIME_URL = "http://localhost:3000"
 SPACETIME_DATABASE = "adventuresim-stdb-module"
+JWT_RE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 
 
 def executable(name: str, message: str | None = None) -> str:
@@ -166,6 +168,7 @@ def web_environment(
     bind_address: str = "127.0.0.1:8080",
     static_dir: Path = WEB_STATIC,
     tactical_static_dir: Path = STRATEGIC_STATIC,
+    spacetime_token: str | None = None,
 ) -> dict[str, str]:
     environment = os.environ.copy()
     environment.update({
@@ -175,13 +178,40 @@ def web_environment(
         "STATIC_DIR": str(static_dir.resolve()),
         "TACTICAL_STATIC_DIR": str(tactical_static_dir.resolve()),
     })
+    if spacetime_token is not None:
+        environment["SPACETIMEDB_TOKEN"] = spacetime_token
     return environment
 
 
+def spacetime_auth_token() -> str:
+    result = subprocess.run(
+        [executable("spacetime"), "login", "show", "--token"],
+        cwd=ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if result.returncode:
+        raise RuntimeError(
+            "SpacetimeDB login is required for the strategic gateway; "
+            "run `spacetime login` and retry"
+        )
+    tokens = JWT_RE.findall(result.stdout)
+    if len(tokens) != 1:
+        raise RuntimeError(
+            "SpacetimeDB CLI did not return exactly one authenticated gateway token"
+        )
+    return tokens[0]
+
+
 def web(args: argparse.Namespace) -> int:
+    spacetime_token = os.environ.get("SPACETIMEDB_TOKEN") or spacetime_auth_token()
     environment = web_environment(
         args.spacetime_url, args.database, args.bind_address,
         Path(args.static_dir), Path(args.tactical_static_dir),
+        spacetime_token,
     )
     if args.strategic_only:
         if run([executable("just"), "_spawner-stop"]):
