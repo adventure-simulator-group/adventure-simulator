@@ -3068,22 +3068,13 @@ fn set_action_active(ctx: &ReducerContext, action_id: &str, active: bool) -> Res
     Ok(())
 }
 
-fn validate_action_route_graph(
-    ctx: &ReducerContext,
-    owner_character_id: u64,
-    case_id: &str,
+fn validate_action_route_graph_structure(
+    capabilities: &[InvestigationActionCapability],
 ) -> Result<(), String> {
-    let capabilities: Vec<_> = ctx
-        .db
-        .investigation_action_capability()
-        .owner_character_id()
-        .filter(owner_character_id)
-        .filter(|capability| capability.case_id == case_id)
-        .collect();
     if capabilities.len() < 2 {
         return Err("Investigation needs at least two playable routes".into());
     }
-    for capability in &capabilities {
+    for capability in capabilities {
         let alternate = capabilities
             .iter()
             .find(|candidate| candidate.id == capability.alternate_route_action_id)
@@ -3120,6 +3111,12 @@ fn validate_action_route_graph(
             }
         }
     }
+    Ok(())
+}
+
+fn validate_initial_action_frontier(
+    capabilities: &[InvestigationActionCapability],
+) -> Result<(), String> {
     let active = capabilities
         .iter()
         .filter(|capability| capability.active)
@@ -3156,6 +3153,86 @@ fn validate_action_route_graph(
     Ok(())
 }
 
+fn validate_evolved_action_frontier(
+    capabilities: &[InvestigationActionCapability],
+    mut predecessor_succeeded: impl FnMut(&str) -> bool,
+) -> Result<(), String> {
+    for capability in capabilities
+        .iter()
+        .filter(|capability| capability.active && !capability.required_action_id.is_empty())
+    {
+        let predecessor = capabilities
+            .iter()
+            .find(|candidate| candidate.id == capability.required_action_id)
+            .ok_or("Active investigation route predecessor is missing")?;
+        if predecessor.owner_character_id != capability.owner_character_id
+            || predecessor.case_id != capability.case_id
+        {
+            return Err(
+                "Active investigation route predecessor crosses authority boundaries".into(),
+            );
+        }
+        if !predecessor_succeeded(&predecessor.id) {
+            return Err("Active investigation route predecessor has not succeeded".into());
+        }
+    }
+    Ok(())
+}
+
+fn action_route_capabilities(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    case_id: &str,
+) -> Vec<InvestigationActionCapability> {
+    ctx.db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|capability| capability.case_id == case_id)
+        .collect()
+}
+
+fn validate_action_route_graph(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    case_id: &str,
+) -> Result<(), String> {
+    let capabilities = action_route_capabilities(ctx, owner_character_id, case_id);
+    validate_action_route_graph_structure(&capabilities)?;
+    validate_evolved_action_frontier(&capabilities, |predecessor_id| {
+        ctx.db
+            .investigation_action_attempt()
+            .capability_id()
+            .filter(predecessor_id)
+            .any(|attempt| attempt.success)
+    })
+}
+
+fn validate_newly_issued_action_route_graph(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    case_id: &str,
+) -> Result<(), String> {
+    let capabilities = action_route_capabilities(ctx, owner_character_id, case_id);
+    validate_action_route_graph_structure(&capabilities)?;
+    validate_initial_action_frontier(&capabilities)
+}
+
+fn successful_action_successor_ids(
+    capabilities: &[InvestigationActionCapability],
+    capability: &InvestigationActionCapability,
+) -> Vec<String> {
+    capabilities
+        .iter()
+        .filter(|candidate| {
+            candidate.owner_character_id == capability.owner_character_id
+                && candidate.case_id == capability.case_id
+                && candidate.required_action_id == capability.id
+        })
+        .map(|candidate| candidate.id.clone())
+        .collect()
+}
+
 fn activate_action_successors(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
@@ -3163,17 +3240,9 @@ fn activate_action_successors(
 ) -> Result<bool, String> {
     let mut activate = Vec::new();
     if succeeded {
-        activate.extend(
-            ctx.db
-                .investigation_action_capability()
-                .owner_character_id()
-                .filter(capability.owner_character_id)
-                .filter(|candidate| {
-                    candidate.case_id == capability.case_id
-                        && candidate.required_action_id == capability.id
-                })
-                .map(|candidate| candidate.id),
-        );
+        let capabilities =
+            action_route_capabilities(ctx, capability.owner_character_id, &capability.case_id);
+        activate.extend(successful_action_successor_ids(&capabilities, capability));
     } else {
         use adventuresim_core::quest_generation::{
             FailedActionAlternateTransition, ReferredContactActionState,
@@ -3652,6 +3721,23 @@ fn complete_referred_contact_action(
     Ok(())
 }
 
+fn generated_action_graph_is_complete(
+    expected_ids: &[String],
+    existing: &[InvestigationActionCapability],
+) -> Result<bool, String> {
+    if existing.is_empty() {
+        return Ok(false);
+    }
+    if existing.len() != expected_ids.len()
+        || expected_ids
+            .iter()
+            .any(|expected| !existing.iter().any(|capability| capability.id == *expected))
+    {
+        return Err("Generated investigation action graph is partial".into());
+    }
+    Ok(true)
+}
+
 fn issue_rumor_action_graph(
     ctx: &ReducerContext,
     owner_character_id: u64,
@@ -3670,6 +3756,24 @@ fn issue_rumor_action_graph(
         let validated = validate_quest_generation_authority(&authority)?;
         let manifest = validated.manifest;
         let generation_context = validated.context;
+        let expected_capability_ids = manifest
+            .actions
+            .iter()
+            .map(|generated| {
+                adventuresim_core::quest_generation::observer_scoped_id(
+                    &generation_context,
+                    "capability",
+                    &format!("{owner_character_id}:{}", generated.id.0),
+                )
+            })
+            .collect::<Vec<_>>();
+        let existing_capabilities = action_route_capabilities(ctx, owner_character_id, case_id);
+        if generated_action_graph_is_complete(&expected_capability_ids, &existing_capabilities)? {
+            for capability in &existing_capabilities {
+                validate_capability_blueprint_reducer(ctx, capability)?;
+            }
+            return validate_action_route_graph(ctx, owner_character_id, case_id);
+        }
         for target in &manifest.pattern_targets {
             let row = InvestigationPatternTargetAuthority {
                 cohort_id: target.cohort_id.clone(),
@@ -3711,15 +3815,6 @@ fn issue_rumor_action_graph(
                 "capability",
                 &format!("{owner_character_id}:{}", generated.id.0),
             );
-            if let Some(existing) = ctx
-                .db
-                .investigation_action_capability()
-                .id()
-                .find(&capability_id)
-            {
-                validate_capability_blueprint_reducer(ctx, &existing)?;
-                continue;
-            }
             let remap = |id: &adventuresim_core::quest_generation::ActionId| {
                 adventuresim_core::quest_generation::observer_scoped_id(
                     &generation_context,
@@ -3806,7 +3901,7 @@ fn issue_rumor_action_graph(
                 true,
             )?;
         }
-        return validate_action_route_graph(ctx, owner_character_id, case_id);
+        return validate_newly_issued_action_route_graph(ctx, owner_character_id, case_id);
     }
     let area_id = inv::compound_id(&["area", lead_id]);
     if ctx
@@ -4031,7 +4126,7 @@ fn issue_rumor_action_graph(
     }
     set_action_active(ctx, &locate, true)?;
     set_action_active(ctx, &watch, true)?;
-    validate_action_route_graph(ctx, owner_character_id, case_id)
+    validate_newly_issued_action_route_graph(ctx, owner_character_id, case_id)
 }
 
 fn skill_bps(skill: Skill, hours: f32, attributes: &crate::CharacterAttributes) -> u16 {
@@ -9236,6 +9331,162 @@ mod tests {
     }
 
     #[test]
+    fn progressed_single_patrol_frontier_is_valid_after_public_night_wait() {
+        let mut inspect = InvestigationActionCapability {
+            id: "inspect".into(),
+            alternate_route_action_id: "patrol".into(),
+            ..exact_capability(7, "case-a", "site-a")
+        };
+        let mut patrol = InvestigationActionCapability {
+            id: "patrol".into(),
+            method: "patrol".into(),
+            target_kind: "area".into(),
+            target_id: "area-a".into(),
+            required_action_id: inspect.id.clone(),
+            alternate_route_action_id: inspect.id.clone(),
+            active: false,
+            ..exact_capability(7, "case-a", "site-a")
+        };
+
+        assert_eq!(night_window_wait_minutes(360), 840);
+        assert_eq!(night_window_wait_minutes(1_200), 0);
+        assert_eq!(
+            successful_action_successor_ids(&[inspect.clone(), patrol.clone()], &inspect),
+            [patrol.id.clone()]
+        );
+
+        inspect.active = false;
+        patrol.active = true;
+        let progressed = [inspect, patrol];
+        assert!(validate_action_route_graph_structure(&progressed).is_ok());
+        assert!(
+            validate_evolved_action_frontier(&progressed, |predecessor_id| {
+                predecessor_id == "inspect"
+            })
+            .is_ok()
+        );
+        assert_eq!(
+            validate_evolved_action_frontier(&progressed, |_| false).unwrap_err(),
+            "Active investigation route predecessor has not succeeded"
+        );
+        let mut missing_predecessor = progressed.clone();
+        missing_predecessor[1].required_action_id = "missing-inspect".into();
+        assert_eq!(
+            validate_evolved_action_frontier(&missing_predecessor, |_| true).unwrap_err(),
+            "Active investigation route predecessor is missing"
+        );
+        assert_eq!(
+            validate_initial_action_frontier(&progressed).unwrap_err(),
+            "A single investigation entry must be an exact referred contact"
+        );
+
+        let source = include_str!("investigation.rs");
+        let execution = source
+            .split("pub(crate) fn perform_investigation_action_authorized")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn perform_investigation_action").next())
+            .expect("authorized action execution");
+        assert!(execution.contains("validate_action_route_graph("));
+        assert!(!execution.contains("validate_newly_issued_action_route_graph("));
+    }
+
+    #[test]
+    fn newly_issued_graph_rejects_a_sole_non_contact_root() {
+        let patrol = InvestigationActionCapability {
+            id: "patrol".into(),
+            method: "patrol".into(),
+            target_kind: "area".into(),
+            target_id: "area-a".into(),
+            alternate_route_action_id: "inspect".into(),
+            ..exact_capability(7, "case-a", "site-a")
+        };
+        let inspect = InvestigationActionCapability {
+            id: "inspect".into(),
+            alternate_route_action_id: patrol.id.clone(),
+            active: false,
+            ..exact_capability(7, "case-a", "site-a")
+        };
+        let newly_issued = [patrol, inspect];
+
+        assert!(validate_action_route_graph_structure(&newly_issued).is_ok());
+        assert_eq!(
+            validate_initial_action_frontier(&newly_issued).unwrap_err(),
+            "A single investigation entry must be an exact referred contact"
+        );
+    }
+
+    #[test]
+    fn complete_generated_graph_reissue_preserves_progressed_frontier() {
+        let inspect = InvestigationActionCapability {
+            id: "inspect".into(),
+            version: 2,
+            active: false,
+            alternate_route_action_id: "patrol".into(),
+            ..exact_capability(7, "case-a", "site-a")
+        };
+        let patrol = InvestigationActionCapability {
+            id: "patrol".into(),
+            method: "patrol".into(),
+            version: 4,
+            target_kind: "area".into(),
+            target_id: "area-a".into(),
+            required_action_id: inspect.id.clone(),
+            alternate_route_action_id: inspect.id.clone(),
+            active: true,
+            ..exact_capability(7, "case-a", "site-a")
+        };
+        let expected_ids = vec![inspect.id.clone(), patrol.id.clone()];
+        let existing = vec![inspect, patrol];
+        let snapshot = existing
+            .iter()
+            .map(|capability| (capability.id.clone(), capability.version, capability.active))
+            .collect::<Vec<_>>();
+
+        let first_action_key = "receive-rumor:first";
+        let distinct_action_key = "receive-rumor:reissue";
+        assert_ne!(first_action_key, distinct_action_key);
+        for _action_key in [first_action_key, distinct_action_key] {
+            assert_eq!(
+                generated_action_graph_is_complete(&expected_ids, &existing),
+                Ok(true)
+            );
+        }
+        assert_eq!(
+            existing
+                .iter()
+                .map(|capability| {
+                    (capability.id.clone(), capability.version, capability.active)
+                })
+                .collect::<Vec<_>>(),
+            snapshot
+        );
+        assert_eq!(
+            generated_action_graph_is_complete(&expected_ids, &existing[..1]).unwrap_err(),
+            "Generated investigation action graph is partial"
+        );
+
+        let source = include_str!("investigation.rs");
+        let issuer = source
+            .split("fn issue_rumor_action_graph")
+            .nth(1)
+            .and_then(|tail| tail.split("let area_id =").next())
+            .expect("generated graph issuer");
+        let complete = issuer
+            .find("generated_action_graph_is_complete")
+            .expect("complete graph classification");
+        let blueprint = issuer
+            .find("validate_capability_blueprint_reducer")
+            .expect("stored blueprint validation");
+        let evolved = issuer
+            .find("return validate_action_route_graph")
+            .expect("evolved graph validation");
+        let activation = issuer
+            .find("set_action_active")
+            .expect("fresh graph activation");
+        assert!(complete < blueprint && blueprint < evolved && evolved < activation);
+    }
+
+    #[test]
     fn action_graph_covers_all_methods_and_enforces_authoritative_boundaries() {
         let source = include_str!("investigation.rs");
         let graph = source
@@ -9256,7 +9507,7 @@ mod tests {
         ] {
             assert!(graph.contains(method), "missing action method {method}");
         }
-        assert!(graph.contains("validate_action_route_graph"));
+        assert!(graph.contains("validate_newly_issued_action_route_graph"));
         assert!(source.contains("require_party_ready(ctx, party_id)?"));
         assert!(source.contains("require_no_unresolved_encounter(ctx, party_id)?"));
         assert!(source.contains("synchronize_party_activity_time"));
@@ -9756,15 +10007,11 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn issue_investigation_actions").next())
             .unwrap();
-        assert!(issuer.contains("if let Some(existing)"));
-        assert!(issuer.contains("validate_capability_blueprint_reducer(ctx, &existing)?"));
+        assert!(issuer.contains("generated_action_graph_is_complete"));
+        assert!(issuer.contains("for capability in &existing_capabilities"));
+        assert!(issuer.contains("validate_capability_blueprint_reducer(ctx, capability)?"));
+        assert!(issuer.contains("return validate_action_route_graph"));
         assert!(issuer.contains("generated_capability_safe_text(&manifest, generated)"));
-        assert!(
-            issuer
-                .find("validate_capability_blueprint_reducer(ctx, &existing)?")
-                .unwrap()
-                < issuer.find("continue;").unwrap()
-        );
     }
 
     #[test]

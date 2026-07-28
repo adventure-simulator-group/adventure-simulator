@@ -668,6 +668,12 @@ Rumors materialize all nine as two linked routes: witness-led search and
 observation-led interception. A recurring case begins with the exact referred
 contact; succeeding there unlocks inactive approach and watch branches.
 Disappearance/loss cases instead retain independent physical and witness roots.
+Issuance validates that initial frontier shape. Execution revalidates the
+immutable same-owner, same-case topology, while allowing the active frontier to
+advance to a single non-contact successor such as a patrol only when its
+authoritative predecessor attempt succeeded. Reissuing an already complete
+generated graph validates its stored blueprints and evolved frontier without
+reactivating initial roots; a partial generated graph fails closed.
 Successful actions unlock their successors, and failed actions reactivate a
 validated same-owner, same-case alternate. Failure text reports whether any
 other currently live-supported case route remains, including a patrol already
