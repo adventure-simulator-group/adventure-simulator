@@ -68,16 +68,17 @@ document does not claim issue #62 complete.
 
 ## Native routing skill mixture
 
-The separate native terrain-routing pack (schema 5) retains canopy and hill coverage
-independently. Runtime routing cells normalize them to exactly 1,000 permille:
-Forest follows canopy density, Hills receives the hill-covered share of the
-remaining non-forest ground, and Plains receives the remainder. Urban is part
+The separate native terrain-routing pack (schema 6) retains wetland, canopy,
+and hill coverage independently. Runtime routing cells normalize them to
+exactly 1,000 permille: Wetlands receives its area share first, Forest follows
+canopy density over the remaining land, Hills receives the hill-covered share
+of the remaining non-forest ground, and Plains receives the remainder. Urban is part
 of the Terrain skill domain but has zero route weight until an authoritative
 built-up-land source is added; roads are infrastructure over their underlying
 terrain and are never treated as Urban.
 
-Plains, Forest, Hills, and Urban are intuitive mental checks using Instinct,
-Intelligence, focus, and training on the shared rank-zero-to-five curve. Party
+Plains, Forest, Hills, Wetlands, and Urban are intuitive mental checks governed
+by Intelligence on the shared rank-zero-to-five curve. Party
 checks use bounded party aggregation, then the cell mixture's dot product.
 Movement speed is multiplied by `1 + check / 10`. The departure profile is in
 the A* cache key and the resulting adjusted spans are validated and persisted,
@@ -88,14 +89,16 @@ normalized mixture. Non-road movement grants one exposure hour per movement
 hour. Roads still train their underlying terrain, discounted by underlying
 off-road speed divided by 5 km/h: 0.25 open, 0.20 sparse woods, and 0.15 deep
 woods. Camp intervals grant no Terrain training.
+Wetland road exposure is 0.10, from 0.5 km/h divided by 5 km/h.
 
-`terrain-routing-base-v2` is a documented-road-only inference input and cannot
-be served as the final pack. `terrain-routing-v2` is rebuilt after world
+`terrain-routing-base-v3` is a documented-road-only inference input and cannot
+be served as the final pack. `terrain-routing-v3` is rebuilt after world
 compilation with the accepted inferred polylines. Both manifests carry a purpose,
 road-geometry digest, Jung wetland source digest, and package digest. Wetland
 ground moves at 0.5 km/h unless overridden by water or a road.
-Schema 5 uses a previously reserved flag bit for the canonical EPSG:3035 1 km
-cultivation classification, so cells remain five bytes. The manifest validates
+Schema 6 uses one flag bit for the canonical EPSG:3035 1 km cultivation
+classification and another for native wetland coverage, so cells remain five
+bytes. Both bits decode to area fractions when cells are coarsened. The manifest validates
 the grid CRS/resolution, HYDE dependency digest, allocator rules version, and
 square/native-cell counts. Runtime sampling is bounded by the existing chunk
 LRU.

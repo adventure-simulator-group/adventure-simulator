@@ -177,7 +177,7 @@ Normal development consumes the separately pinned compiled runtime bundle:
 
 - `world-1544.json`;
 - the schema-5 strategic map manifest and AVIF tile pack;
-- the final schema-5 terrain-routing pack;
+- the final schema-6 terrain-routing pack;
 - generated licensing and source notices.
 
 The strategic map is presentation data served from immutable file-backed

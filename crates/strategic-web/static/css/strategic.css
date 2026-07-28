@@ -4924,6 +4924,7 @@ body.chat-resizing {
 .stat-icon-plains,
 .stat-icon-forest,
 .stat-icon-hills,
+.stat-icon-wetlands,
 .stat-icon-urban { --stat-icon-color: var(--icon-mental); }
 
 .bestiary-primary-row .stat-icon,

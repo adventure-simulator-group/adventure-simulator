@@ -397,6 +397,7 @@ async fn environment(
         plains: weights.plains + weights.urban,
         forest: weights.forest,
         hills: weights.hills,
+        wetlands: weights.wetlands,
     };
     let environment = adventuresim_core::foraging::ForageEnvironment {
         terrain: mixture,
@@ -415,6 +416,7 @@ async fn environment(
         "plains": mixture.plains,
         "forest": mixture.forest,
         "hills": mixture.hills,
+        "wetlands": mixture.wetlands,
         "river_or_wet_ground": environment.river_or_wet_ground,
         "sea_or_coast": environment.sea_or_coast,
         "cultivated": environment.cultivated,
@@ -605,6 +607,7 @@ mod tests {
                 plains: 400,
                 forest: 400,
                 hills: 200,
+                wetlands: 0,
             },
             river_or_wet_ground: true,
             sea_or_coast: false,

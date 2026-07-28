@@ -18,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-pub const SCHEMA: u32 = 5;
+pub const SCHEMA: u32 = 6;
 pub const CHUNK_SIDE: u16 = 256;
 pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PACK_BYTES: usize = 2 * 1024 * 1024 * 1024;
@@ -88,6 +88,9 @@ pub struct Cell {
     /// Area share whose native neighbours form slopes steeper than 15 degrees.
     /// Native pack bits decode to 0 or 100; coarser cells retain the average.
     pub hilly_fraction_percent: u8,
+    /// Area share covered by wetlands. Native pack bits decode to 0 or 100;
+    /// coarser routing cells retain the average.
+    pub wetland_fraction_percent: u8,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -96,19 +99,27 @@ pub struct TerrainWeights {
     pub plains: u16,
     pub forest: u16,
     pub hills: u16,
+    pub wetlands: u16,
     pub urban: u16,
 }
 
 impl TerrainWeights {
     pub const TOTAL: u16 = 1_000;
-    pub fn from_cover(canopy_percent: u8, hilly_fraction_percent: u8) -> Self {
-        let forest = u16::from(canopy_percent.min(100)) * 10;
-        let hills = (u32::from(Self::TOTAL - forest) * u32::from(hilly_fraction_percent.min(100))
+    pub fn from_cover(
+        canopy_percent: u8,
+        hilly_fraction_percent: u8,
+        wetland_fraction_percent: u8,
+    ) -> Self {
+        let wetlands = u16::from(wetland_fraction_percent.min(100)) * 10;
+        let remainder = Self::TOTAL - wetlands;
+        let forest = (u32::from(remainder) * u32::from(canopy_percent.min(100)) / 100) as u16;
+        let hills = (u32::from(remainder - forest) * u32::from(hilly_fraction_percent.min(100))
             / 100) as u16;
         Self {
-            plains: Self::TOTAL - forest - hills,
+            plains: remainder - forest - hills,
             forest,
             hills,
+            wetlands,
             urban: 0,
         }
     }
@@ -116,14 +127,16 @@ impl TerrainWeights {
         self.plains <= Self::TOTAL
             && self.forest <= Self::TOTAL
             && self.hills <= Self::TOTAL
+            && self.wetlands <= Self::TOTAL
             && self.urban <= Self::TOTAL
-            && self.plains + self.forest + self.hills + self.urban == Self::TOTAL
+            && self.plains + self.forest + self.hills + self.wetlands + self.urban == Self::TOTAL
     }
     pub fn dot(self, profile: TerrainSkillProfile) -> u16 {
         debug_assert!(self.is_normalized());
         ((u32::from(self.plains) * u32::from(profile.plains)
             + u32::from(self.forest) * u32::from(profile.forest)
             + u32::from(self.hills) * u32::from(profile.hills)
+            + u32::from(self.wetlands) * u32::from(profile.wetlands)
             + u32::from(self.urban) * u32::from(profile.urban))
             / u32::from(Self::TOTAL)) as u16
     }
@@ -135,6 +148,7 @@ pub struct TerrainSkillProfile {
     pub plains: u16,
     pub forest: u16,
     pub hills: u16,
+    pub wetlands: u16,
     pub urban: u16,
 }
 
@@ -144,15 +158,23 @@ impl TerrainSkillProfile {
         self.plains <= Self::MAX
             && self.forest <= Self::MAX
             && self.hills <= Self::MAX
+            && self.wetlands <= Self::MAX
             && self.urban <= Self::MAX
     }
 }
 
 impl Cell {
     pub fn terrain_weights(self) -> TerrainWeights {
-        TerrainWeights::from_cover(self.canopy_percent, self.hilly_fraction_percent)
+        TerrainWeights::from_cover(
+            self.canopy_percent,
+            self.hilly_fraction_percent,
+            self.wetland_fraction_percent,
+        )
     }
     fn underlying_surface(self) -> Surface {
+        if self.wetland_fraction_percent >= 50 {
+            return Surface::Wetland;
+        }
         match self.canopy_percent {
             45..=u8::MAX => Surface::DeepWoods,
             10..=44 => Surface::SparseWoods,
@@ -409,7 +431,7 @@ impl TerrainPack {
         }
         if decoded
             .chunks_exact(CELL_BYTES)
-            .any(|bytes| bytes[2] > 5 || bytes[3] & !0b111 != 0)
+            .any(|bytes| bytes[2] > 5 || bytes[3] & !0b1111 != 0)
         {
             return Err(Error::Validation(
                 "chunk contains an unknown surface or flag discriminant".into(),
@@ -431,6 +453,7 @@ impl TerrainPack {
                 crossing: bytes[3] & 1 != 0,
                 hilly_fraction_percent: if bytes[3] & 2 != 0 { 100 } else { 0 },
                 cultivated: bytes[3] & 4 != 0,
+                wetland_fraction_percent: if bytes[3] & 8 != 0 { 100 } else { 0 },
                 canopy_percent: bytes[4],
             })
             .collect::<Vec<_>>()
@@ -628,6 +651,7 @@ impl TerrainPack {
                             cultivated: false,
                             canopy_percent: 0,
                             hilly_fraction_percent: 0,
+                            wetland_fraction_percent: 0,
                         }),
                 );
             }
@@ -684,6 +708,11 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
                 .map(|cell| u64::from(cell.hilly_fraction_percent))
                 .sum::<u64>()
                 / cells.len() as u64) as u8,
+            wetland_fraction_percent: (cells
+                .iter()
+                .map(|cell| u64::from(cell.wetland_fraction_percent))
+                .sum::<u64>()
+                / cells.len() as u64) as u8,
         };
     }
     let passable = cells
@@ -698,6 +727,7 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             cultivated: false,
             canopy_percent: 0,
             hilly_fraction_percent: 0,
+            wetland_fraction_percent: 0,
         };
     }
     let mut counts = [0_usize; 4];
@@ -738,6 +768,11 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
         hilly_fraction_percent: (passable
             .iter()
             .map(|cell| u64::from(cell.hilly_fraction_percent))
+            .sum::<u64>()
+            / passable.len() as u64) as u8,
+        wetland_fraction_percent: (passable
+            .iter()
+            .map(|cell| u64::from(cell.wetland_fraction_percent))
             .sum::<u64>()
             / passable.len() as u64) as u8,
     }
@@ -1193,7 +1228,7 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
         let mut durations = [0_u64; 6];
         let mut training_mass = 0_u128;
         let mut check_mass = 0_u128;
-        let mut terrain_training_mass = [0_u128; 4];
+        let mut terrain_training_mass = [0_u128; 5];
         for span in &source {
             let span_end = span.start_minute + span.duration_minutes;
             let overlap = end
@@ -1208,6 +1243,7 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
                 span.terrain.plains,
                 span.terrain.forest,
                 span.terrain.hills,
+                span.terrain.wetlands,
                 span.terrain.urban,
             ]) {
                 *mass += overlap * training * u128::from(weight);
@@ -1234,7 +1270,8 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
             plains: weights[0],
             forest: weights[1],
             hills: weights[2],
-            urban: weights[3],
+            wetlands: weights[3],
+            urban: weights[4],
         };
         if let Some(previous) = compacted.last_mut().filter(|previous| {
             previous.surface == surface
@@ -1257,20 +1294,20 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
     *spans = compacted;
 }
 
-fn normalized_weighted_parts(numerators: [u128; 4], denominator: u128) -> [u16; 4] {
+fn normalized_weighted_parts(numerators: [u128; 5], denominator: u128) -> [u16; 5] {
     if denominator == 0 {
-        return [TerrainWeights::TOTAL, 0, 0, 0];
+        return [TerrainWeights::TOTAL, 0, 0, 0, 0];
     }
-    let mut result = [0_u16; 4];
-    let mut remainders = [0_u128; 4];
-    for index in 0..4 {
+    let mut result = [0_u16; 5];
+    let mut remainders = [0_u128; 5];
+    for index in 0..5 {
         result[index] = (numerators[index] / denominator) as u16;
         remainders[index] = numerators[index] % denominator;
     }
     let mut missing = TerrainWeights::TOTAL - result.iter().sum::<u16>();
-    let mut awarded = [false; 4];
+    let mut awarded = [false; 5];
     while missing > 0 {
-        let index = (0..4)
+        let index = (0..5)
             .filter(|index| !awarded[*index])
             .max_by_key(|index| (remainders[*index], Reverse(*index)))
             .expect("normalization deficit is at most one unit per terrain");
@@ -1428,9 +1465,9 @@ mod tests {
 
     #[test]
     fn terrain_weights_are_normalized_monotonic_and_keep_mixed_hills() {
-        let open_hills = TerrainWeights::from_cover(0, 100);
-        let mixed = TerrainWeights::from_cover(40, 50);
-        let dense = TerrainWeights::from_cover(80, 50);
+        let open_hills = TerrainWeights::from_cover(0, 100, 0);
+        let mixed = TerrainWeights::from_cover(40, 50, 0);
+        let dense = TerrainWeights::from_cover(80, 50, 0);
         assert!(open_hills.is_normalized() && mixed.is_normalized() && dense.is_normalized());
         assert_eq!(
             open_hills,
@@ -1438,6 +1475,7 @@ mod tests {
                 plains: 0,
                 forest: 0,
                 hills: 1_000,
+                wetlands: 0,
                 urban: 0
             }
         );
@@ -1447,10 +1485,21 @@ mod tests {
                 plains: 300,
                 forest: 400,
                 hills: 300,
+                wetlands: 0,
                 urban: 0
             }
         );
         assert!(dense.forest > mixed.forest && dense.hills < mixed.hills);
+        assert_eq!(
+            TerrainWeights::from_cover(40, 50, 25),
+            TerrainWeights {
+                plains: 225,
+                forest: 300,
+                hills: 225,
+                wetlands: 250,
+                urban: 0,
+            }
+        );
     }
 
     #[test]
@@ -1475,8 +1524,24 @@ mod tests {
             g.cells[0].canopy_percent = canopy;
             let span = astar(&g, (0, 0), (1, 0)).unwrap().spans[0].clone();
             assert_eq!(span.training_multiplier_permille, expected);
-            assert_eq!(span.terrain, TerrainWeights::from_cover(canopy, 0));
+            assert_eq!(span.terrain, TerrainWeights::from_cover(canopy, 0, 0));
         }
+    }
+
+    #[test]
+    fn road_over_wetland_uses_and_trains_wetlands() {
+        let mut g = grid(2, 1);
+        g.cells[0].surface = Surface::Road;
+        g.cells[0].wetland_fraction_percent = 100;
+        let profile = TerrainSkillProfile {
+            wetlands: 5_000,
+            ..Default::default()
+        };
+        let plan = astar_with_profile(&g, (0, 0), (1, 0), profile).unwrap();
+        let span = &plan.spans[0];
+        assert_eq!(span.terrain.wetlands, 1_000);
+        assert_eq!(span.check_millirank, 5_000);
+        assert_eq!(span.training_multiplier_permille, 100);
     }
 
     #[test]
@@ -1566,24 +1631,28 @@ mod tests {
                 plains: 1_000,
                 forest: 0,
                 hills: 0,
+                wetlands: 0,
                 urban: 0,
             },
             TerrainWeights {
                 plains: 0,
                 forest: 1_000,
                 hills: 0,
+                wetlands: 0,
                 urban: 0,
             },
             TerrainWeights {
                 plains: 0,
                 forest: 0,
                 hills: 1_000,
+                wetlands: 0,
                 urban: 0,
             },
             TerrainWeights {
                 plains: 400,
-                forest: 300,
-                hills: 300,
+                forest: 200,
+                hills: 200,
+                wetlands: 200,
                 urban: 0,
             },
         ];
@@ -1606,12 +1675,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let exposure = |values: &[TerrainSpan]| {
-            let mut result = [0.0_f64; 4];
+            let mut result = [0.0_f64; 5];
             for span in values {
                 for (total, weight) in result.iter_mut().zip([
                     span.terrain.plains,
                     span.terrain.forest,
                     span.terrain.hills,
+                    span.terrain.wetlands,
                     span.terrain.urban,
                 ]) {
                     *total += span.duration_minutes as f64

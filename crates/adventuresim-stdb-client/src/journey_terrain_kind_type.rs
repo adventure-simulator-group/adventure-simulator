@@ -15,6 +15,8 @@ pub enum JourneyTerrainKind {
     SparseWoods,
 
     DeepWoods,
+
+    Wetland,
 }
 
 impl __sdk::InModule for JourneyTerrainKind {

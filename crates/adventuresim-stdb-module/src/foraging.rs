@@ -32,6 +32,7 @@ pub struct ForageEnvironmentAttestation {
     pub plains: u16,
     pub forest: u16,
     pub hills: u16,
+    pub wetlands: u16,
     pub river_or_wet_ground: bool,
     pub sea_or_coast: bool,
     pub cultivated: bool,
@@ -258,7 +259,7 @@ fn validate_attestation(
         .id()
         .find(0)
         .ok_or("Strategic gateway is not registered")?;
-    if gateway.terrain_schema != 2
+    if gateway.terrain_schema != 3
         || gateway.terrain_package_digest.as_deref() != Some(&attestation.package_digest)
     {
         return Err("Forage environment uses a stale terrain package".into());
@@ -275,6 +276,7 @@ fn validate_attestation(
         plains: attestation.plains,
         forest: attestation.forest,
         hills: attestation.hills,
+        wetlands: attestation.wetlands,
     };
     if !terrain.is_normalized() {
         return Err("Forage environment terrain mixture is invalid".into());
@@ -337,7 +339,8 @@ fn acting_checks(
     };
     let terrain_training = check(Skill::TerrainPlains) * f32::from(mixture.plains) / 1_000.0
         + check(Skill::TerrainForest) * f32::from(mixture.forest) / 1_000.0
-        + check(Skill::TerrainHills) * f32::from(mixture.hills) / 1_000.0;
+        + check(Skill::TerrainHills) * f32::from(mixture.hills) / 1_000.0
+        + check(Skill::TerrainWetlands) * f32::from(mixture.wetlands) / 1_000.0;
     let stealth_training = check(Skill::Stealth);
     Ok((
         (terrain_training.clamp(0.0, 5.0) * 1_000.0).round() as u16,
@@ -449,6 +452,11 @@ pub fn forage_current_vicinity(
                 &mut skills.terrain_hills_hours,
                 Skill::TerrainHills,
                 gains[2],
+            ),
+            (
+                &mut skills.terrain_wetlands_hours,
+                Skill::TerrainWetlands,
+                gains[3],
             ),
         ] {
             excess += adventuresim_core::skill::apply_direct_training(

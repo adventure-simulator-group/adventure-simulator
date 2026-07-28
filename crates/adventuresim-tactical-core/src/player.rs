@@ -223,6 +223,7 @@ impl PlayerSkills for Skills {
             Skill::TerrainPlains
             | Skill::TerrainForest
             | Skill::TerrainHills
+            | Skill::TerrainWetlands
             | Skill::TerrainUrban => 0.0,
             Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,

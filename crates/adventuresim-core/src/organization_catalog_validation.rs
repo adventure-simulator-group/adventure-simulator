@@ -28,6 +28,7 @@ const SKILLS: &[&str] = &[
     "terrain_plains",
     "terrain_forest",
     "terrain_hills",
+    "terrain_wetlands",
     "terrain_urban",
     "tailoring",
     "smithing",

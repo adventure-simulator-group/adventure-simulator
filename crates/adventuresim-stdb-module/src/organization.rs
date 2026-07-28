@@ -121,6 +121,7 @@ fn skill_hours(skills: &CharacterSkills, skill: &str, leaf: Option<&str>) -> Opt
         "terrain_plains" => (Skill::TerrainPlains, skills.terrain_plains_hours),
         "terrain_forest" => (Skill::TerrainForest, skills.terrain_forest_hours),
         "terrain_hills" => (Skill::TerrainHills, skills.terrain_hills_hours),
+        "terrain_wetlands" => (Skill::TerrainWetlands, skills.terrain_wetlands_hours),
         "terrain_urban" => (Skill::TerrainUrban, skills.terrain_urban_hours),
         "tailoring" => (Skill::Tailoring, skills.tailoring_hours),
         "smithing" => (Skill::Smithing, skills.smithing_hours),

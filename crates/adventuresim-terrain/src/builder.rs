@@ -153,7 +153,8 @@ pub fn build(
                             decoded.push(
                                 u8::from(crossing)
                                     | (u8::from(hilly) << 1)
-                                    | (u8::from(is_cultivated) << 2),
+                                    | (u8::from(is_cultivated) << 2)
+                                    | (u8::from(on_wetland) << 3),
                             );
                             decoded.push(canopy);
                         }

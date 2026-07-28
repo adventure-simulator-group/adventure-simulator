@@ -15,6 +15,7 @@ pub struct ForageEnvironmentAttestation {
     pub plains: u16,
     pub forest: u16,
     pub hills: u16,
+    pub wetlands: u16,
     pub river_or_wet_ground: bool,
     pub sea_or_coast: bool,
     pub cultivated: bool,

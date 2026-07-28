@@ -353,7 +353,7 @@ The build chain is:
 1. `just build-base-terrain` creates the documented-road-only inference pack.
 2. `just compile-world` compiles and validates `target/world-1544.json`.
 3. `just build-strategic-map` produces the schema-5 map manifest, AVIF tile
-   pack, and final schema-5 terrain-routing pack.
+   pack, and final schema-6 terrain-routing pack.
 
 The base terrain pack is an inference input and must not be served. The final
 map and terrain artifacts must be distributed with their generated data-license

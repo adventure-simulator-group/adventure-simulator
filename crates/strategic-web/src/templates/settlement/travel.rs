@@ -607,13 +607,14 @@ fn format_terrain_spans(destination: &TravelDestination) -> String {
                         adventuresim_terrain::Surface::Water => return None,
                     };
                     Some(format!(
-                        "{kind},{},{},{},{},{},{},{}",
+                        "{kind},{},{},{},{},{},{},{},{}",
                         span.start_minute.saturating_add(offset),
                         span.duration_minutes,
                         span.check_millirank,
                         span.terrain.plains,
                         span.terrain.forest,
                         span.terrain.hills,
+                        span.terrain.wetlands,
                         span.terrain.urban,
                     ))
                 })
@@ -992,15 +993,17 @@ fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
                     JourneyTerrainKind::Open => "open",
                     JourneyTerrainKind::SparseWoods => "sparse-woods",
                     JourneyTerrainKind::DeepWoods => "deep-woods",
+                    JourneyTerrainKind::Wetland => "wetland",
                 };
                 format!(
-                    "{kind},{},{},{},{},{},{},{}",
+                    "{kind},{},{},{},{},{},{},{},{}",
                     span.start_minute.saturating_add(offset),
                     span.duration_minutes,
                     span.check_millirank,
                     span.terrain.plains,
                     span.terrain.forest,
                     span.terrain.hills,
+                    span.terrain.wetlands,
                     span.terrain.urban,
                 )
             })

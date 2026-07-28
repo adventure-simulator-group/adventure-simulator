@@ -444,6 +444,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             terrain_plains_hours: spec.skills.terrain_plains,
             terrain_forest_hours: spec.skills.terrain_forest,
             terrain_hills_hours: spec.skills.terrain_hills,
+            terrain_wetlands_hours: spec.skills.terrain_wetlands,
             terrain_urban_hours: spec.skills.terrain_urban,
             bestiary_hours: spec.skills.bestiary,
             anatomy_hours: spec.skills.anatomy,

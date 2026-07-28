@@ -450,7 +450,8 @@ both procedures merely because their unrelated third skill is high.
 ### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
 
 Terrain stores no hours of its own. Its expandable subskills are Plains,
-Forest, Hills, and Urban. A route cell supplies a normalized mixture, and the
+Forest, Hills, Wetlands, and Urban. Each is an intuitive, Intelligence-governed
+mental skill. A route cell supplies a normalized mixture, and the
 displayed route/local Terrain value is the weighted combination of those
 subskills; without context the character rail shows their unweighted mean.
 Urban is stored and displayed now but has zero routing weight until the world
