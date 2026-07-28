@@ -645,7 +645,7 @@ mod tests {
         OrganizationMembership {
             id: 1,
             character_id: 7,
-            organization_id: "wardens_harz".into(),
+            organization_id: "lodge_hart_king".into(),
             rank_id: rank_id.into(),
             joined_minute: 0,
             dues_paid_through_minute: paid_through,
@@ -659,7 +659,7 @@ mod tests {
     fn advisory_licenses_require_matching_current_presentation_and_rank() {
         use adventuresim_core::organization::Privilege;
         let warden = ranger_membership("warden", "active", 100);
-        let common = advisory_privileges_for(Some("wardens_harz"), &[warden.clone()], Some(100));
+        let common = advisory_privileges_for(Some("lodge_hart_king"), &[warden.clone()], Some(100));
         assert!(common.contains(&Privilege::ForageLowGame));
         assert!(common.contains(&Privilege::ForageFish));
         assert!(common.contains(&Privilege::ForagePlants));
@@ -667,18 +667,20 @@ mod tests {
 
         let master = ranger_membership("master", "active", 100);
         assert!(
-            advisory_privileges_for(Some("wardens_harz"), &[master], Some(100))
+            advisory_privileges_for(Some("lodge_hart_king"), &[master], Some(100))
                 .contains(&Privilege::ForageHighGame)
         );
         assert!(advisory_privileges_for(None, &[warden.clone()], Some(100)).is_empty());
         assert!(
-            advisory_privileges_for(Some("keepers_solling"), &[warden.clone()], Some(100))
+            advisory_privileges_for(Some("hunt_pale_lantern"), &[warden.clone()], Some(100))
                 .is_empty()
         );
         let lapsed = ranger_membership("master", "active", 99);
-        assert!(advisory_privileges_for(Some("wardens_harz"), &[lapsed], Some(100)).is_empty());
+        assert!(advisory_privileges_for(Some("lodge_hart_king"), &[lapsed], Some(100)).is_empty());
         let suspended = ranger_membership("master", "suspended", 100);
-        assert!(advisory_privileges_for(Some("wardens_harz"), &[suspended], Some(100)).is_empty());
+        assert!(
+            advisory_privileges_for(Some("lodge_hart_king"), &[suspended], Some(100)).is_empty()
+        );
     }
 
     #[test]

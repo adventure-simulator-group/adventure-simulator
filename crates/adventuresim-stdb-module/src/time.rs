@@ -2539,9 +2539,9 @@ mod tests {
     fn camp_schedule_excludes_organization_training_and_activity() {
         let schedule = ScheduleAllocation {
             apprenticeship_minutes: 120,
-            apprenticeship_organization_id: Some("wardens_harz".into()),
+            apprenticeship_organization_id: Some("lodge_hart_king".into()),
             profession_practice_minutes: 180,
-            practice_organization_id: Some("wardens_harz".into()),
+            practice_organization_id: Some("lodge_hart_king".into()),
             prayer_minutes: 60,
             ..Default::default()
         };

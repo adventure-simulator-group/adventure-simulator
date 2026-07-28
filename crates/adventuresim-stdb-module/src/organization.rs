@@ -510,7 +510,7 @@ mod tests {
         OrganizationMembership {
             id: 1,
             character_id: 7,
-            organization_id: "wardens_harz".into(),
+            organization_id: "lodge_hart_king".into(),
             rank_id: rank_id.into(),
             joined_minute: 0,
             dues_paid_through_minute: paid_through,
@@ -522,7 +522,7 @@ mod tests {
 
     #[test]
     fn global_license_requires_current_membership_and_right_rank() {
-        let definition = organization("wardens_harz").unwrap();
+        let definition = organization("lodge_hart_king").unwrap();
         let warden = membership_at("warden", MEMBERSHIP_ACTIVE, 100);
         assert!(current_membership_grants(
             definition,

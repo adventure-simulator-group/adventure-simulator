@@ -44,7 +44,9 @@ characters are age 16 and professionless; adults are age 22 and newly
 journeyman-equivalent in one of ten profession families; old characters are
 age 40 and master-equivalent. Professional rosters contain one candidate per
 family, with the specific eligible organization selected deterministically
-from the tab's private seed. Candidate state remains untrusted browser
+from the tab's private seed when a family has multiple options. Witch hunters,
+knights, and foresters each have one denomination-neutral organization and
+therefore always receive that family's organization. Candidate state remains untrusted browser
 coordinates until confirmation authoritatively regenerates and atomically
 persists the selected character.
 Confirmed characters accumulate in a browser-scoped roster and can be switched
