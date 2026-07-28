@@ -268,7 +268,8 @@ as player actions before any strategic finale result is applied.
 Every core-loop run writes `npc-adventurer-stories.md` by default. Each entry is
 server-authored in the same transaction as its outcome and records the problem
 being learned, timestamped witness interviews, exact spoken lines, the chosen
-lead, route-specific preparation, the generated action chain, and the result.
+lead, route-specific preparation, an observer-safe chronological projection of
+the generated action chain, and the result.
 Failed attempts state the concrete setback and the alternate route intended for
 the retry instead of reporting a content-free failure. It contains no hidden
 quest truth. The JSON report also carries the same Markdown for archival

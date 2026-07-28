@@ -24,7 +24,9 @@ use adventuresim_core::{
         select_investigation_approach_after, select_party, supported_investigation_approaches,
         update_party_availability,
     },
-    quest_generation::GeneratedCase,
+    quest_generation::{
+        GeneratedCase, TestimonyDraft, WitnessBinding, player_visible_testimony_sequence,
+    },
     settlement_population::stable_hash,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
@@ -407,11 +409,9 @@ pub(crate) fn ensure_npc_case_interventions(
                     )
                 }),
         );
-        let story_started_at = public_story_started_at(
-            &validated.manifest,
-            approach.map_or(0, |plan| plan.step_summaries.len()),
-            now,
-        );
+        let projected_action_plan = project_public_action_plan(approach)?;
+        let story_started_at =
+            public_story_started_at(&validated.manifest, projected_action_plan.steps.len(), now);
         let intervention_id = format!("npc-intervention:{}:{attempt}", case.id);
         if ctx
             .db
@@ -441,10 +441,7 @@ pub(crate) fn ensure_npc_case_interventions(
                 || "No preparation was undertaken.".into(),
                 |plan| plan.preparation_summary.clone(),
             ),
-            action_plan_json: serde_json::to_string(
-                &approach.map_or_else(Vec::new, |plan| plan.step_summaries.clone()),
-            )
-            .map_err(|_| "Could not encode NPC investigation action plan")?,
+            action_plan_json: projected_action_plan.json.clone(),
             outcome: format!("{:?}", decision.outcome),
             mitigation_bps: decision.mitigation_bps,
             next_retry_at: decision.next_available_at,
@@ -458,6 +455,7 @@ pub(crate) fn ensure_npc_case_interventions(
                 approach,
                 approach_resolution.as_ref(),
                 next_approach,
+                &projected_action_plan.steps,
                 story_started_at,
                 now,
             ),
@@ -539,6 +537,51 @@ fn parse_strategy(value: &str) -> Result<NpcInterventionStrategy, String> {
     }
 }
 
+fn project_post_testimony_action_steps(step_summaries: &[String]) -> Vec<String> {
+    step_summaries
+        .iter()
+        .map(|step| {
+            if step == "Find the referred witness." {
+                "Follow up on the referred witness's account.".into()
+            } else {
+                step.clone()
+            }
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ProjectedPublicActionPlan {
+    steps: Vec<String>,
+    json: String,
+}
+
+fn project_public_action_plan(
+    approach: Option<&NpcInvestigationApproach>,
+) -> Result<ProjectedPublicActionPlan, String> {
+    let steps = approach.map_or_else(Vec::new, |plan| {
+        project_post_testimony_action_steps(&plan.step_summaries)
+    });
+    let json = serde_json::to_string(&steps)
+        .map_err(|_| "Could not encode NPC investigation action plan")?;
+    Ok(ProjectedPublicActionPlan { steps, json })
+}
+
+fn distinct_visible_witnesses<'a>(
+    visible_testimony: &[(&'a WitnessBinding, &'a TestimonyDraft)],
+) -> Vec<&'a WitnessBinding> {
+    let mut visible_witnesses = Vec::new();
+    for (witness, _) in visible_testimony {
+        if !visible_witnesses
+            .iter()
+            .any(|candidate: &&WitnessBinding| candidate.id == witness.id)
+        {
+            visible_witnesses.push(*witness);
+        }
+    }
+    visible_witnesses
+}
+
 fn render_public_story(
     generated: &GeneratedCase,
     party_name: &str,
@@ -548,6 +591,7 @@ fn render_public_story(
     approach: Option<&NpcInvestigationApproach>,
     approach_resolution: Option<&NpcApproachResolution>,
     next_approach: Option<&NpcInvestigationApproach>,
+    projected_step_summaries: &[String],
     started_at: u64,
     completed_at: u64,
 ) -> String {
@@ -581,18 +625,8 @@ fn render_public_story(
     )
     .unwrap();
     event_at = event_at.saturating_add(15);
-    let visible_testimony =
-        adventuresim_core::quest_generation::player_visible_testimony_sequence(generated);
-    let mut visible_witnesses = Vec::new();
-    for (witness, _) in &visible_testimony {
-        if !visible_witnesses.iter().any(
-            |candidate: &&adventuresim_core::quest_generation::WitnessBinding| {
-                candidate.id == witness.id
-            },
-        ) {
-            visible_witnesses.push(*witness);
-        }
-    }
+    let visible_testimony = player_visible_testimony_sequence(generated);
+    let visible_witnesses = distinct_visible_witnesses(&visible_testimony);
     for witness in visible_witnesses {
         writeln!(story).unwrap();
         writeln!(
@@ -637,7 +671,7 @@ fn render_public_story(
         writeln!(story, "### World minute {event_at}: preparation").unwrap();
         writeln!(story).unwrap();
         writeln!(story, "{}", approach.preparation_summary).unwrap();
-        for step in &approach.step_summaries {
+        for step in projected_step_summaries {
             event_at = event_at.saturating_add(15);
             writeln!(story).unwrap();
             writeln!(story, "- World minute {event_at}: {step}").unwrap();
@@ -690,8 +724,10 @@ fn public_story_started_at(
     planned_steps: usize,
     completed_at: u64,
 ) -> u64 {
+    let visible_testimony = player_visible_testimony_sequence(generated);
+    let visible_witness_count = distinct_visible_witnesses(&visible_testimony).len() as u64;
     let duration = 15u64
-        .saturating_add((generated.witnesses.len() as u64).saturating_mul(20))
+        .saturating_add(visible_witness_count.saturating_mul(20))
         .saturating_add((planned_steps as u64).saturating_mul(15))
         .saturating_add(15)
         .saturating_add(30);
@@ -934,6 +970,81 @@ fn record_news_for_informed_characters(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_core::{
+        local_problem::Scope,
+        quest_generation::{GenerationContext, TemplateFamily, generate, test_witnesses},
+    };
+
+    fn generated_recurring_case() -> GeneratedCase {
+        generate(&GenerationContext {
+            seed: 17,
+            observer_entropy_hi: 1,
+            observer_entropy_lo: 2,
+            settlement_id: "lubeck".into(),
+            settlement_name: "Lubeck".into(),
+            scope: Scope::Settlement {
+                settlement_id: "lubeck".into(),
+            },
+            ordinal: 0,
+            now_minute: 1_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        })
+        .unwrap()
+    }
+
+    fn rendered_referred_witness_story() -> (Vec<String>, String, String, String) {
+        let generated = generated_recurring_case();
+        let approach = supported_investigation_approaches(&generated)
+            .into_iter()
+            .find(|candidate| {
+                candidate
+                    .step_summaries
+                    .iter()
+                    .any(|step| step == "Find the referred witness.")
+            })
+            .expect("generated recurring route with referred-witness step");
+        let projected_action_plan = project_public_action_plan(Some(&approach)).unwrap();
+        let spoken_testimony = player_visible_testimony_sequence(&generated)
+            .first()
+            .expect("player-visible testimony")
+            .1
+            .spoken_text
+            .clone();
+        let decision = NpcInterventionDecision {
+            strategy: NpcInterventionStrategy::InvestigateCarefully,
+            outcome: NpcInterventionOutcome::Resolved,
+            mitigation_bps: 10_000,
+            next_available_at: 20_000,
+            roll_bps: 1,
+            safe_summary: "The company resolved the problem.".into(),
+        };
+        let resolution = NpcApproachResolution {
+            succeeded: true,
+            effective_skill_bps: 8_000,
+            risk_triggered: false,
+            failure_summary: None,
+        };
+        let story = render_public_story(
+            &generated,
+            "Test Company",
+            1,
+            NpcInterventionStrategy::InvestigateCarefully,
+            &decision,
+            Some(&approach),
+            Some(&resolution),
+            None,
+            &projected_action_plan.steps,
+            10_000,
+            11_000,
+        );
+        (
+            projected_action_plan.steps,
+            projected_action_plan.json,
+            spoken_testimony,
+            story,
+        )
+    }
 
     #[test]
     fn external_policy_is_limited_to_bounded_strategies() {
@@ -963,6 +1074,90 @@ mod tests {
         assert!(!reducer.contains("apply_outcome("));
         assert!(!reducer.contains("resolve_generated_case("));
         assert!(source.contains("let decision = decide_after_supported_approach("));
+    }
+
+    #[test]
+    fn post_testimony_projection_maps_only_the_exact_locate_witness_step() {
+        assert_eq!(
+            project_post_testimony_action_steps(&["Find the referred witness.".into()]),
+            vec!["Follow up on the referred witness's account.".to_string()]
+        );
+        assert_eq!(
+            project_post_testimony_action_steps(&[
+                "Find the referred witness".into(),
+                "Find another referred witness.".into(),
+            ]),
+            vec![
+                "Find the referred witness".to_string(),
+                "Find another referred witness.".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn post_testimony_projection_leaves_unrelated_steps_unchanged() {
+        let steps = vec![
+            "Inspect the tracks.".into(),
+            "Prepare an ambush.".into(),
+            "Confront the hostile group.".into(),
+        ];
+        assert_eq!(project_post_testimony_action_steps(&steps), steps);
+    }
+
+    #[test]
+    fn action_json_and_story_share_the_post_testimony_projection() {
+        let (projected, action_plan_json, _, story) = rendered_referred_witness_story();
+        let persisted: Vec<String> = serde_json::from_str(&action_plan_json).unwrap();
+
+        assert_eq!(persisted, projected);
+        for step in persisted {
+            assert!(
+                story.contains(&step),
+                "story omitted projected step: {step}"
+            );
+        }
+    }
+
+    #[test]
+    fn public_story_follows_up_after_retaining_spoken_testimony() {
+        let (_, _, spoken_testimony, story) = rendered_referred_witness_story();
+        let interview = story.find("interview with").expect("interview heading");
+        let spoken = story
+            .find(&spoken_testimony)
+            .expect("spoken testimony remains in story");
+
+        assert!(interview < spoken);
+        assert!(!story[interview..].contains("Find the referred witness."));
+        assert!(story[interview..].contains("Follow up on the referred witness's account."));
+    }
+
+    #[test]
+    fn hidden_unreferenced_witness_does_not_shift_public_story_chronology() {
+        let mut generated = generated_recurring_case();
+        let visible_before = player_visible_testimony_sequence(&generated);
+        let visible_witnesses_before = distinct_visible_witnesses(&visible_before).len();
+        let started_before = public_story_started_at(&generated, 3, 20_000);
+
+        let mut hidden_witness = generated.witnesses.last().unwrap().clone();
+        hidden_witness.id =
+            adventuresim_core::quest_generation::WitnessId::try_new("hidden-witness").unwrap();
+        hidden_witness.display_name = "Hidden Witness".into();
+        generated.witnesses.push(hidden_witness);
+
+        let visible_after = player_visible_testimony_sequence(&generated);
+        assert_eq!(
+            distinct_visible_witnesses(&visible_after).len(),
+            visible_witnesses_before
+        );
+        assert!(
+            visible_after
+                .iter()
+                .all(|(witness, _)| witness.display_name != "Hidden Witness")
+        );
+        assert_eq!(
+            public_story_started_at(&generated, 3, 20_000),
+            started_before
+        );
     }
 
     #[test]
