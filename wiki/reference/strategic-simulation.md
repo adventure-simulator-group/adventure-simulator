@@ -147,7 +147,9 @@ each stop it applies the same remaining-interval overlap as the web UI to
 the active forecast camp through `rest_at_camp`, logs bounded pre/post public
 camp state, and re-reads the journey, itinerary, party, health, and leader
 before `continue_camp_travel`. A missing, overlapping, or non-advancing
-projection fails closed instead of guessing a fixed rest duration.
+projection fails closed instead of guessing a fixed rest duration. Camp
+coherence failures distinguish zero active forecast intervals from overlapping
+intervals and include bounded public elapsed totals and forecast counts.
 The travel driver returns an explicit `Completed`,
 `HeldNoActionableActor`, or `HeldForRecovery` outcome. A hold is nonfatal:
 the current quest, return, or turn-in step stops without claiming arrival,
@@ -663,3 +665,12 @@ encounter frequency; sneak, detour, attack, run, and surrender choices; escape
 eligibility; exact surrendered item/value losses; encounter defeats; and full
 party wipes. Encounter events in the trace retain the canonical encounter ID,
 chosen action, and authoritative outcome for replay diagnostics.
+After any encounter resolves with a living party, the runner re-reads public
+encounter, journey, itinerary, health, and destination projections. A normal
+journey with an unsafe member holds for recovery, while an evacuation may
+continue under its existing ready-companion policy. Exactly one active forecast
+camp proceeds through ordinary camp handling; zero active intervals calls
+`continue_camp_travel` once, and overlapping intervals fail closed. The
+encounter reducer owns its delay once; continuation neither repurchases
+provisions nor increments camp-stop metrics, and the next public state may be
+another encounter, a journey hold, a camp, or the destination.

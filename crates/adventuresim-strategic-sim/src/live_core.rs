@@ -115,6 +115,8 @@ const MAX_EXPEDITION_RECOVERY_RESTS: u32 = 2;
 const EXPEDITION_RECOVERY_REST_MINUTES: u64 = 1_440;
 const TRAVEL_PROVISION_RESERVE_DAYS: f32 = 1.0;
 const MAX_TRAVEL_PROVISION_UNITS_PER_ITEM: u32 = 512;
+const MAX_PUBLIC_JOURNEY_DIAGNOSTIC_MINUTES: u64 = u32::MAX as u64;
+const MAX_PUBLIC_JOURNEY_DIAGNOSTIC_INTERVALS: usize = MAX_CAMPS_PER_LEG as usize;
 /// Public fail-safe bound for a disclosed one-way distance. The ordinary
 /// daylight projection covers schedule downtime; four times that projection
 /// covers fatigue-expanded outbound travel plus the return leg. The separate
@@ -660,6 +662,50 @@ struct PublicActiveCampObservation {
     active_interval_minutes: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PublicPostEncounterJourneyState {
+    unresolved_encounter: bool,
+    active_destination: bool,
+    journey_count: usize,
+    itinerary_count: usize,
+    destination_matches: bool,
+    active_interval_count: usize,
+    actionable_actor: bool,
+    unsafe_member_count: usize,
+    evacuation: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PostEncounterJourneyAction {
+    ReclassifyPublicState,
+    HoldNoActionableActor,
+    HoldForRecovery,
+    HandleActiveCamp,
+    ContinueTravel,
+}
+
+fn classify_post_encounter_journey(
+    state: PublicPostEncounterJourneyState,
+) -> Result<PostEncounterJourneyAction, &'static str> {
+    if state.unresolved_encounter || !state.active_destination {
+        return Ok(PostEncounterJourneyAction::ReclassifyPublicState);
+    }
+    if state.journey_count != 1 || state.itinerary_count != 1 || !state.destination_matches {
+        return Err("post_encounter_journey_projection_mismatch");
+    }
+    if !state.actionable_actor {
+        return Ok(PostEncounterJourneyAction::HoldNoActionableActor);
+    }
+    if state.unsafe_member_count > 0 && !state.evacuation {
+        return Ok(PostEncounterJourneyAction::HoldForRecovery);
+    }
+    match state.active_interval_count {
+        0 => Ok(PostEncounterJourneyAction::ContinueTravel),
+        1 => Ok(PostEncounterJourneyAction::HandleActiveCamp),
+        _ => Err("post_encounter_overlapping_active_camps"),
+    }
+}
+
 fn select_expedition_encounter_choice(
     available_choices: &[String],
     roll_index: u64,
@@ -922,6 +968,35 @@ fn projected_camp_rest_minutes(
     });
     let result = active.next()?;
     active.next().is_none().then_some(result)
+}
+
+fn projected_active_camp_interval_count(
+    completed_elapsed_minutes: u64,
+    total_elapsed_minutes: u64,
+    intervals: &[JourneyCampInterval],
+) -> usize {
+    if completed_elapsed_minutes >= total_elapsed_minutes {
+        return 0;
+    }
+    intervals
+        .iter()
+        .filter(|camp| {
+            let camp_start = camp.elapsed_start_minute.max(completed_elapsed_minutes);
+            let camp_end = camp
+                .elapsed_start_minute
+                .saturating_add(camp.elapsed_minutes)
+                .min(total_elapsed_minutes);
+            camp.elapsed_start_minute <= completed_elapsed_minutes && camp_end > camp_start
+        })
+        .count()
+}
+
+fn bounded_public_journey_diagnostic(value: u64) -> u64 {
+    value.min(MAX_PUBLIC_JOURNEY_DIAGNOSTIC_MINUTES)
+}
+
+fn bounded_public_forecast_count(value: usize) -> usize {
+    value.min(MAX_PUBLIC_JOURNEY_DIAGNOSTIC_INTERVALS)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2558,6 +2633,112 @@ impl LiveRunner {
         })
     }
 
+    fn public_camp_coherence_error(&self, party_id: &str, reason: &str) -> String {
+        let journeys = self
+            .connection
+            .db
+            .party_journey()
+            .iter()
+            .filter(|journey| journey.party_id == party_id)
+            .collect::<Vec<_>>();
+        let itineraries = self
+            .connection
+            .db
+            .party_journey_itinerary()
+            .iter()
+            .filter(|itinerary| itinerary.party_id == party_id)
+            .collect::<Vec<_>>();
+        let completed_elapsed = journeys.first().map_or_else(
+            || "none".into(),
+            |journey| {
+                bounded_public_journey_diagnostic(journey.completed_elapsed_minutes).to_string()
+            },
+        );
+        let total_elapsed = journeys.first().map_or_else(
+            || "none".into(),
+            |journey| bounded_public_journey_diagnostic(journey.total_elapsed_minutes).to_string(),
+        );
+        let forecast_count = itineraries.first().map_or_else(
+            || "none".into(),
+            |itinerary| {
+                bounded_public_forecast_count(itinerary.forecast_camp_intervals.len()).to_string()
+            },
+        );
+        let active_interval_count: String = journeys.first().zip(itineraries.first()).map_or_else(
+            || "unavailable".to_string(),
+            |(journey, itinerary)| {
+                match projected_active_camp_interval_count(
+                    journey.completed_elapsed_minutes,
+                    journey.total_elapsed_minutes,
+                    &itinerary.forecast_camp_intervals,
+                ) {
+                    0 => "0",
+                    1 => "1",
+                    _ => ">1",
+                }
+                .to_string()
+            },
+        );
+        format!(
+            "travel_camps failed: journey camp projection is incoherent: reason={};active_interval_count={active_interval_count};completed_elapsed={completed_elapsed};total_elapsed={total_elapsed};forecast_count={forecast_count};journey_count={};itinerary_count={}",
+            bounded_event_field(reason),
+            journeys.len(),
+            itineraries.len(),
+        )
+    }
+
+    fn public_post_encounter_journey_action(
+        &self,
+        party_id: &str,
+        actionable_actor: bool,
+        unsafe_member_count: usize,
+        evacuation: bool,
+    ) -> Result<PostEncounterJourneyAction, String> {
+        let unresolved_encounter = self.party_has_unresolved_public_encounter(party_id);
+        let party = self.party_by_id(party_id)?;
+        let journeys = self
+            .connection
+            .db
+            .party_journey()
+            .iter()
+            .filter(|journey| journey.party_id == party_id)
+            .collect::<Vec<_>>();
+        let itineraries = self
+            .connection
+            .db
+            .party_journey_itinerary()
+            .iter()
+            .filter(|itinerary| itinerary.party_id == party_id)
+            .collect::<Vec<_>>();
+        let destination_matches = party.camp_destination.as_ref().is_some_and(|destination| {
+            matches!(
+                (journeys.as_slice(), itineraries.as_slice()),
+                ([journey], [itinerary])
+                    if &journey.destination == destination && itinerary.party_id == party_id
+            )
+        });
+        let active_interval_count = match (journeys.as_slice(), itineraries.as_slice()) {
+            ([journey], [itinerary]) => projected_active_camp_interval_count(
+                journey.completed_elapsed_minutes,
+                journey.total_elapsed_minutes,
+                &itinerary.forecast_camp_intervals,
+            ),
+            _ => 0,
+        };
+        classify_post_encounter_journey(PublicPostEncounterJourneyState {
+            unresolved_encounter,
+            active_destination: party.camp_destination.is_some(),
+            journey_count: journeys.len(),
+            itinerary_count: itineraries.len(),
+            destination_matches,
+            active_interval_count,
+            actionable_actor,
+            unsafe_member_count,
+            evacuation,
+        })
+        .map_err(|reason| self.public_camp_coherence_error(party_id, reason))
+    }
+
     fn party_has_unresolved_public_encounter(&self, party_id: &str) -> bool {
         self.connection
             .db
@@ -2663,11 +2844,95 @@ impl LiveRunner {
                         "journey_held_no_actionable_actor",
                     );
                 }
+                let recovery_actor = self.expedition_recovery_actor(party_id);
+                let unsafe_after_encounter = recovery_actor
+                    .map(|(actor, _, _)| self.party_agents(actor))
+                    .transpose()?
+                    .map_or_else(Vec::new, |agents| self.unsafe_party_agents(&agents));
+                let post_encounter_action = self.public_post_encounter_journey_action(
+                    party_id,
+                    recovery_actor.is_some(),
+                    unsafe_after_encounter.len(),
+                    self.public_journey_is_evacuation(party_id),
+                )?;
+                match post_encounter_action {
+                    PostEncounterJourneyAction::ReclassifyPublicState
+                    | PostEncounterJourneyAction::HandleActiveCamp => {}
+                    PostEncounterJourneyAction::HoldNoActionableActor => {
+                        return self.record_journey_hold(
+                            party_id,
+                            "journey_stalled_after_encounter",
+                            "journey_held_no_actionable_actor",
+                        );
+                    }
+                    PostEncounterJourneyAction::HoldForRecovery => {
+                        self.metrics.expedition_holds =
+                            self.metrics.expedition_holds.saturating_add(1);
+                        for unsafe_agent in unsafe_after_encounter {
+                            self.metrics.quests_suppressed_for_health =
+                                self.metrics.quests_suppressed_for_health.saturating_add(1);
+                            self.event(
+                                unsafe_agent,
+                                CoreLoopEventKind::QuestSuppressed,
+                                "reason=journey_encounter_member_not_ready;plan=off_settlement_recovery_next_cycle",
+                            );
+                        }
+                        return Ok(JourneyTravelOutcome::HeldForRecovery);
+                    }
+                    PostEncounterJourneyAction::ContinueTravel => {
+                        let Some((continue_actor, agent, continue_actor_role)) = recovery_actor
+                        else {
+                            return self.record_journey_hold(
+                                party_id,
+                                "journey_stalled_after_encounter",
+                                "journey_held_no_actionable_actor",
+                            );
+                        };
+                        let leg_members_before = self.expedition_member_observations(party_id)?;
+                        let leg_supplies_before = self.expedition_supplies(party_id);
+                        let result = reducer_call!(self, "continue_camp_travel", |cb| self
+                            .connection
+                            .reducers
+                            .continue_camp_travel_then(continue_actor, cb));
+                        self.call(result)?;
+                        self.observe_deaths();
+                        let leg_members_after = self.expedition_member_observations(party_id)?;
+                        let leg_supplies_after = self.expedition_supplies(party_id);
+                        self.emit_expedition_diagnostics(
+                            party_id,
+                            "journey_leg",
+                            "continue_camp_travel",
+                            &format!("quest_leg_resumed_after_{choice}_{continue_actor_role}"),
+                            &leg_members_before,
+                            &leg_members_after,
+                            leg_supplies_before,
+                            leg_supplies_after,
+                        );
+                        if self.current_leader(party_id).is_none() {
+                            return self.record_journey_hold(
+                                party_id,
+                                "journey_stalled_after_encounter_continuation",
+                                "journey_held_no_actionable_actor",
+                            );
+                        }
+                        self.event(
+                            agent,
+                            CoreLoopEventKind::Travel,
+                            format!(
+                                "phase=post_encounter_continue;party={};choice={choice};remaining_movement={}",
+                                bounded_event_field(party_id),
+                                self.party_by_id(party_id)?.camp_remaining_minutes,
+                            ),
+                        );
+                    }
+                }
                 continue;
             }
             let camp = self
                 .public_active_camp_observation(party_id)
-                .ok_or("journey camp projection is incoherent: no unique active public camp")?;
+                .ok_or_else(|| {
+                    self.public_camp_coherence_error(party_id, "no_unique_active_public_camp")
+                })?;
             let camp_start = camp.active_interval_start;
             let rest_minutes = camp.active_interval_minutes;
             self.event(
@@ -8073,6 +8338,224 @@ mod tests {
             Some((1_920, 580))
         );
         assert_eq!(projected_camp_rest_minutes(1_500, 2_500, &intervals), None);
+    }
+
+    #[test]
+    fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
+        let resumable = PublicPostEncounterJourneyState {
+            unresolved_encounter: false,
+            active_destination: true,
+            journey_count: 1,
+            itinerary_count: 1,
+            destination_matches: true,
+            active_interval_count: 0,
+            actionable_actor: true,
+            unsafe_member_count: 0,
+            evacuation: false,
+        };
+        for resolved_choice in ["sneak", "surrender", "attack", "detour", "run"] {
+            assert_eq!(
+                classify_post_encounter_journey(resumable),
+                Ok(PostEncounterJourneyAction::ContinueTravel),
+                "{resolved_choice}"
+            );
+        }
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                active_interval_count: 1,
+                ..resumable
+            }),
+            Ok(PostEncounterJourneyAction::HandleActiveCamp)
+        );
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                unsafe_member_count: 1,
+                ..resumable
+            }),
+            Ok(PostEncounterJourneyAction::HoldForRecovery)
+        );
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                unsafe_member_count: 1,
+                evacuation: true,
+                ..resumable
+            }),
+            Ok(PostEncounterJourneyAction::ContinueTravel)
+        );
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                active_interval_count: 1,
+                unsafe_member_count: 1,
+                ..resumable
+            }),
+            Ok(PostEncounterJourneyAction::HoldForRecovery)
+        );
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                active_interval_count: 1,
+                unsafe_member_count: 1,
+                evacuation: true,
+                ..resumable
+            }),
+            Ok(PostEncounterJourneyAction::HandleActiveCamp)
+        );
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                actionable_actor: false,
+                ..resumable
+            }),
+            Ok(PostEncounterJourneyAction::HoldNoActionableActor)
+        );
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                active_destination: false,
+                ..resumable
+            }),
+            Ok(PostEncounterJourneyAction::ReclassifyPublicState)
+        );
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                unresolved_encounter: true,
+                ..resumable
+            }),
+            Ok(PostEncounterJourneyAction::ReclassifyPublicState)
+        );
+        assert_eq!(
+            classify_post_encounter_journey(PublicPostEncounterJourneyState {
+                active_interval_count: 2,
+                ..resumable
+            }),
+            Err("post_encounter_overlapping_active_camps")
+        );
+
+        let source = include_str!("live_core.rs");
+        let travel = source
+            .split("fn travel_camps")
+            .nth(1)
+            .and_then(|tail| tail.split("fn continue_public_active_journey").next())
+            .expect("travel camp driver");
+        let encounter = travel
+            .split("if let Some(encounter) = pending_encounter")
+            .nth(1)
+            .and_then(|tail| tail.split("let camp = self").next())
+            .expect("encounter branch");
+        let resolve = encounter
+            .find(".resolve_strategic_encounter_then(")
+            .expect("encounter resolution");
+        let projected_recheck = encounter
+            .find("public_post_encounter_journey_action")
+            .expect("public journey recheck");
+        let continuation = encounter
+            .find(".continue_camp_travel_then(")
+            .expect("journey continuation");
+        assert!(resolve < projected_recheck && projected_recheck < continuation);
+        assert_eq!(
+            encounter
+                .matches(".resolve_strategic_encounter_then(")
+                .count(),
+            1
+        );
+        assert_eq!(encounter.matches(".continue_camp_travel_then(").count(), 1);
+        assert!(!encounter.contains("self.metrics.camp_stops"));
+        assert!(!encounter.contains("purchase_journey_provisions"));
+        for observation in [
+            "leg_members_before",
+            "leg_supplies_before",
+            "leg_members_after",
+            "leg_supplies_after",
+            "self.observe_deaths()",
+            "self.expedition_recovery_actor(party_id)",
+            "self.unsafe_party_agents",
+            "PostEncounterJourneyAction::HandleActiveCamp",
+            "PostEncounterJourneyAction::HoldForRecovery",
+        ] {
+            assert!(encounter.contains(observation), "{observation}");
+        }
+        assert!(
+            travel
+                .find(".continue_camp_travel_then(")
+                .expect("post-encounter continuation")
+                < travel
+                    .find("public_active_camp_observation(party_id)")
+                    .expect("camp observation")
+        );
+        let resume_projection = source
+            .split("fn public_post_encounter_journey_action")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn party_has_unresolved_public_encounter")
+                    .next()
+            })
+            .expect("post-encounter public projection check");
+        for public_state in [
+            "party_has_unresolved_public_encounter",
+            "party_by_id",
+            ".party_journey()",
+            ".party_journey_itinerary()",
+            "projected_active_camp_interval_count",
+            "classify_post_encounter_journey",
+        ] {
+            assert!(resume_projection.contains(public_state), "{public_state}");
+        }
+    }
+
+    #[test]
+    fn camp_coherence_diagnostic_distinguishes_missing_and_overlapping_intervals() {
+        let single = JourneyCampInterval {
+            movement_minute: 480,
+            elapsed_start_minute: 480,
+            elapsed_minutes: 960,
+            average_fatigue_start: 0.5,
+            average_fatigue_end: 0.0,
+            maximum_fatigue_end: 0.0,
+        };
+        assert_eq!(
+            projected_active_camp_interval_count(1_500, 2_500, std::slice::from_ref(&single)),
+            0
+        );
+        let overlapping = JourneyCampInterval {
+            movement_minute: 500,
+            elapsed_start_minute: 500,
+            elapsed_minutes: 120,
+            ..single.clone()
+        };
+        assert_eq!(
+            projected_active_camp_interval_count(500, 2_500, &[single, overlapping]),
+            2
+        );
+        assert_eq!(
+            bounded_public_journey_diagnostic(u64::MAX),
+            MAX_PUBLIC_JOURNEY_DIAGNOSTIC_MINUTES
+        );
+        assert_eq!(
+            bounded_public_forecast_count(usize::MAX),
+            MAX_PUBLIC_JOURNEY_DIAGNOSTIC_INTERVALS
+        );
+
+        let source = include_str!("live_core.rs");
+        let diagnostic = source
+            .split("fn public_camp_coherence_error")
+            .nth(1)
+            .and_then(|tail| tail.split("fn public_post_encounter_journey_action").next())
+            .expect("public camp coherence diagnostic");
+        for field in [
+            "active_interval_count=",
+            "completed_elapsed=",
+            "total_elapsed=",
+            "forecast_count=",
+            "journey_count=",
+            "itinerary_count=",
+        ] {
+            assert!(diagnostic.contains(field), "{field}");
+        }
+        assert!(diagnostic.contains("bounded_public_journey_diagnostic"));
+        assert!(diagnostic.contains("bounded_public_forecast_count"));
+        assert_eq!(
+            safe_failure_operation(
+                "travel_camps failed: journey camp projection is incoherent: active_interval_count=0"
+            ),
+            Some("travel_camps")
+        );
     }
 
     #[test]
