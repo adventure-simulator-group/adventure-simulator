@@ -11,9 +11,10 @@ use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, tab
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
-use crate::condition::character_condition as _;
+use crate::condition::{character_condition as _, character_strategic_condition as _};
+use crate::disease::character_illness_status as _;
 use crate::organization::organization_membership as _;
-use crate::strategic::party_authority;
+use crate::strategic::{party_authority, party_member as _};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
     character_limbs, character_skills, character_stats, settlement,
@@ -1307,6 +1308,7 @@ pub fn rest_at_settlement(
         at_inn,
         true,
         true,
+        None,
     )
     .map(|_| ())
 }
@@ -1323,7 +1325,98 @@ pub fn rest_at_settlement_hours(
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     require_character_rest_service(ctx, character_id, at_inn)?;
-    rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true, true).map(|_| ())
+    rest_for_minutes(
+        ctx,
+        character_id,
+        requested_minutes,
+        at_inn,
+        true,
+        true,
+        None,
+    )
+    .map(|_| ())
+}
+
+fn patient_publicly_needs_rest(ctx: &ReducerContext, patient_id: u64) -> Result<bool, String> {
+    let condition = ctx
+        .db
+        .character_strategic_condition()
+        .character_id()
+        .find(patient_id)
+        .ok_or("Patient's public strategic condition is unavailable")?;
+    let publicly_ill = ctx
+        .db
+        .character_illness_status()
+        .character_id()
+        .find(patient_id)
+        .is_some_and(|illness| illness.symptomatic || illness.critical);
+    Ok(condition.status != "ready" || publicly_ill)
+}
+
+/// Pay an inn directly for one day of a co-located party member's medically
+/// necessary convalescence. The payer authorizes only the exact public quote;
+/// no currency is transferred to the patient.
+#[reducer]
+pub fn sponsor_party_member_inn_rest(
+    ctx: &ReducerContext,
+    payer_id: u64,
+    patient_id: u64,
+    settlement_id: String,
+    expected_cost: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, payer_id)?;
+    if payer_id == patient_id {
+        return Err("A patient who can pay must use ordinary settlement rest".into());
+    }
+    let payer = crate::character::require_living_character(ctx, payer_id)?;
+    let patient = crate::character::require_living_character(ctx, patient_id)?;
+    let party_id = payer
+        .party_id
+        .as_deref()
+        .filter(|party_id| patient.party_id.as_deref() == Some(*party_id))
+        .ok_or("Payer and patient must belong to the same party")?;
+    for character_id in [payer_id, patient_id] {
+        if !ctx
+            .db
+            .party_member()
+            .party_id()
+            .filter(party_id)
+            .any(|member| member.character_id == character_id)
+        {
+            return Err("Payer and patient must have current party membership".into());
+        }
+    }
+    if payer.current_settlement_id.as_deref() != Some(&settlement_id)
+        || patient.current_settlement_id.as_deref() != Some(&settlement_id)
+    {
+        return Err("Payer and patient must be together at the named settlement".into());
+    }
+    require_character_rest_service(ctx, patient_id, true)?;
+    if !patient_publicly_needs_rest(ctx, patient_id)? {
+        return Err("Sponsored inn rest requires a patient who publicly needs recovery".into());
+    }
+    let authoritative_cost = inn_stay_cost(MINUTES_PER_DAY)?;
+    if expected_cost != authoritative_cost {
+        return Err("Sponsored inn quote is stale or invalid".into());
+    }
+    let patient_funds = crate::item::personal_currency_total(ctx, patient_id);
+    if patient_funds >= authoritative_cost {
+        return Err("Patient can afford ordinary inn rest without sponsorship".into());
+    }
+    let sponsorship_gap = authoritative_cost.saturating_sub(patient_funds);
+    if crate::item::personal_currency_total(ctx, payer_id) < sponsorship_gap {
+        return Err("Payer cannot afford the authoritative inn gap".into());
+    }
+    rest_for_minutes(
+        ctx,
+        patient_id,
+        MINUTES_PER_DAY,
+        true,
+        true,
+        true,
+        Some(payer_id),
+    )
+    .map(|_| ())
 }
 
 fn require_settlement_rest_service(
@@ -1369,6 +1462,7 @@ fn rest_for_minutes(
     at_inn: bool,
     explicit: bool,
     automatic_social: bool,
+    inn_sponsor_id: Option<u64>,
 ) -> Result<u64, String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
     if character.current_settlement_id.is_none() {
@@ -1421,7 +1515,17 @@ fn rest_for_minutes(
 
     let requested_cost = inn_stay_cost(requested_minutes)?;
     if at_inn {
-        if crate::item::personal_currency_total(ctx, character_id) < requested_cost {
+        let patient_funds = crate::item::personal_currency_total(ctx, character_id);
+        let sponsor_gap = requested_cost.saturating_sub(patient_funds);
+        let payment_available = if sponsor_gap == 0 {
+            true
+        } else {
+            inn_sponsor_id.is_some_and(|sponsor_id| {
+                sponsor_id != character_id
+                    && crate::item::personal_currency_total(ctx, sponsor_id) >= sponsor_gap
+            })
+        };
+        if !payment_available {
             return Err("Not enough coin to pay for the inn stay".into());
         }
     }
@@ -1475,8 +1579,16 @@ fn rest_for_minutes(
         .update(character_time);
     if at_inn {
         let elapsed_cost = inn_stay_cost(elapsed)?;
-        crate::item::consume_personal_currency(ctx, character_id, elapsed_cost)
+        let patient_contribution =
+            crate::item::personal_currency_total(ctx, character_id).min(elapsed_cost);
+        let sponsor_contribution = elapsed_cost.saturating_sub(patient_contribution);
+        crate::item::consume_personal_currency(ctx, character_id, patient_contribution)
             .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
+        if sponsor_contribution > 0 {
+            let sponsor_id = inn_sponsor_id.ok_or("Inn sponsorship became unavailable")?;
+            crate::item::consume_personal_currency(ctx, sponsor_id, sponsor_contribution)
+                .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
+        }
     }
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
@@ -1602,7 +1714,16 @@ pub(crate) fn spend_private_settlement_downtime(
         ),
         None
     );
-    rest_for_minutes(ctx, character_id, requested_minutes, false, explicit, true).map(|_| ())
+    rest_for_minutes(
+        ctx,
+        character_id,
+        requested_minutes,
+        false,
+        explicit,
+        true,
+        None,
+    )
+    .map(|_| ())
 }
 
 fn spend_private_settlement_downtime_deferred_social(
@@ -1610,7 +1731,15 @@ fn spend_private_settlement_downtime_deferred_social(
     character_id: u64,
     requested_minutes: u64,
 ) -> Result<u64, String> {
-    rest_for_minutes(ctx, character_id, requested_minutes, false, false, false)
+    rest_for_minutes(
+        ctx,
+        character_id,
+        requested_minutes,
+        false,
+        false,
+        false,
+        None,
+    )
 }
 
 /// Move living party clocks forward to their latest member without ever
@@ -2243,6 +2372,45 @@ mod tests {
         assert_eq!(inn_stay_cost(2 * MINUTES_PER_DAY), Ok(4));
         assert_eq!(inn_stay_cost(1), Ok(2));
         assert_eq!(inn_stay_cost(MINUTES_PER_DAY + 1), Ok(4));
+    }
+
+    #[test]
+    fn sponsored_inn_rest_is_one_day_exact_cost_and_never_transfers_coin() {
+        let source = include_str!("time.rs");
+        let sponsored = source
+            .split("pub fn sponsor_party_member_inn_rest")
+            .nth(1)
+            .and_then(|tail| tail.split("fn require_settlement_rest_service").next())
+            .expect("sponsored rest reducer");
+        for gate in [
+            "require_strategic_character_authority(ctx, payer_id)",
+            "payer_id == patient_id",
+            "same party",
+            "current party membership",
+            "named settlement",
+            "require_character_rest_service(ctx, patient_id, true)",
+            "patient_publicly_needs_rest(ctx, patient_id)",
+            "expected_cost != authoritative_cost",
+            "Patient can afford ordinary inn rest",
+            "payer_id,",
+        ] {
+            assert!(sponsored.contains(gate), "missing sponsorship gate {gate}");
+        }
+        assert!(sponsored.contains("MINUTES_PER_DAY"));
+        assert!(sponsored.contains("sponsorship_gap"));
+        assert!(sponsored.contains("Some(payer_id)"));
+        assert!(!sponsored.contains("credit_personal_currency"));
+        assert!(!sponsored.contains("party_inventory_item().insert"));
+
+        let rest = source
+            .split("fn rest_for_minutes")
+            .nth(1)
+            .and_then(|tail| tail.split("fn inn_stay_cost").next())
+            .expect("settlement rest payment boundary");
+        assert!(rest.contains("patient_contribution"));
+        assert!(rest.contains("sponsor_contribution"));
+        assert!(rest.contains("consume_personal_currency(ctx, character_id"));
+        assert!(rest.contains("consume_personal_currency(ctx, sponsor_id"));
     }
 
     #[test]

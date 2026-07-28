@@ -601,6 +601,7 @@ pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
 pub mod spawn_developer_quest_reducer;
 pub mod spend_time_with_settlement_npc_reducer;
+pub mod sponsor_party_member_inn_rest_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
 pub mod starting_age_tier_coordinate_type;
@@ -1266,6 +1267,7 @@ pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
 pub use spawn_developer_quest_reducer::spawn_developer_quest;
 pub use spend_time_with_settlement_npc_reducer::spend_time_with_settlement_npc;
+pub use sponsor_party_member_inn_rest_reducer::sponsor_party_member_inn_rest;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
 pub use starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
@@ -1857,6 +1859,12 @@ pub enum Reducer {
         requested_minutes: u64,
         action_id: String,
     },
+    SponsorPartyMemberInnRest {
+        payer_id: u64,
+        patient_id: u64,
+        settlement_id: String,
+        expected_cost: u64,
+    },
     StageInvestigationLead {
         character_id: u64,
         receipt_id: String,
@@ -2099,6 +2107,7 @@ impl __sdk::Reducer for Reducer {
             }
             Reducer::SpawnDeveloperQuest { .. } => "spawn_developer_quest",
             Reducer::SpendTimeWithSettlementNpc { .. } => "spend_time_with_settlement_npc",
+            Reducer::SponsorPartyMemberInnRest { .. } => "sponsor_party_member_inn_rest",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StopPreparation { .. } => "stop_preparation",
@@ -3047,6 +3056,17 @@ Reducer::BeginWorldDataImport{
                 npc_id: npc_id.clone(),
                 requested_minutes: requested_minutes.clone(),
                 action_id: action_id.clone(),
+}),
+            Reducer::SponsorPartyMemberInnRest{
+                payer_id,
+                patient_id,
+                settlement_id,
+                expected_cost,
+}             => __sats::bsatn::to_vec(&sponsor_party_member_inn_rest_reducer::SponsorPartyMemberInnRestArgs {
+                payer_id: payer_id.clone(),
+                patient_id: patient_id.clone(),
+                settlement_id: settlement_id.clone(),
+                expected_cost: expected_cost.clone(),
 }),
             Reducer::StageInvestigationLead{
                 character_id,

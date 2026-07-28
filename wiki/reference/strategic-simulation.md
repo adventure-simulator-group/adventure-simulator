@@ -388,6 +388,37 @@ affordability, action, and reason. Recovery completion records
 `recovery_context=public_symptoms` and keeps the pre-rest symptomatic
 observation separate from the newly read post-rest observation; it does not
 claim a private physiological cause.
+For a nonsymptomatic patient who cannot afford the inn and lacks a supplied
+temple rest, the policy deterministically selects the solvent co-located living
+party member with the greatest public purse after retaining that payer's own
+visible medical reserve (lowest character ID breaks a tie). The patient still
+pays normally whenever able. Sponsorship invokes a narrow ordinary reducer:
+the patient contributes their available purse and the authenticated payer pays
+only the remaining portion of the inn's exact authoritative one-day quote
+directly for the named patient. It rejects stale quotes, self-sponsorship,
+affordable patients, missing party membership, different settlements, missing
+Inn service, insufficient payer funds, and patients without a public recovery
+need; it never transfers arbitrary coin. Party treasury and payer stake are
+diagnostic context, not an extra source of spendable personal funds. If neither
+self-payment nor sponsorship is available, an available Temple remains a
+free, time-advancing last resort even without a full day of visible food, with
+ordinary hunger consequences instead of a zero-time suppression loop.
+Sponsored-rest metrics and bounded events record payer, patient, public quote
+and split, the payer's reserve and spendable funds, public treasury/stake, exact spend,
+pre/post purses, and pre/post public condition. They do not read private disease
+or exposure state. Medication itself remains patient-funded; sponsorship is
+deliberately limited to lodging until treatment purchase and custody can be
+extended without broad transfer authority.
+The sponsored-rest requested-minute and elapsed-minute metrics are separate:
+elapsed time is the public patient-clock delta observed after the reducer, so a
+terminal zero-minute or partial interval is not reported as a full day.
+`sponsored_settlement_rests` counts successful reducer callbacks, including a
+zero-time terminal clip; `sponsored_settlement_rest_elapsed_minutes` also
+contributes to the broader `treatment_rest_minutes`, and sponsored payment
+contributes to `treatment_gold_spent`, so those aggregates intentionally
+overlap rather than representing disjoint categories. Medical-decision events
+derive `rest_venue` from the selected action: natural, sponsored, and emergency
+recovery use the natural venue, while buy-and-rest uses the medicated venue.
 While recovery is active it authoritatively replaces the saved
 personality schedule with pure rest, then restores that profile schedule after recovery so labor or
 thievery cannot interrupt convalescence with an incident. Quests remain suppressed while a member is unsafe. Reports audit

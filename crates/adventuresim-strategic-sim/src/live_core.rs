@@ -88,8 +88,9 @@ use adventuresim_stdb_client::{
     settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
     settlement_table::SettlementTableAccess,
     simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction,
-    simulation_run_table::SimulationRunTableAccess, start_dialogue_reducer::start_dialogue,
-    store_battle_loot_reducer::store_battle_loot,
+    simulation_run_table::SimulationRunTableAccess,
+    sponsor_party_member_inn_rest_reducer::sponsor_party_member_inn_rest,
+    start_dialogue_reducer::start_dialogue, store_battle_loot_reducer::store_battle_loot,
     strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
     travel_to_case_site_reducer::travel_to_case_site,
@@ -273,6 +274,10 @@ pub struct CoreLoopMetrics {
     pub interventions_administered: u32,
     pub treatment_gold_spent: u64,
     pub treatment_rest_minutes: u64,
+    pub sponsored_settlement_rests: u32,
+    pub sponsored_settlement_rest_gold_spent: u64,
+    pub sponsored_settlement_rest_requested_minutes: u64,
+    pub sponsored_settlement_rest_elapsed_minutes: u64,
     pub illness_recoveries: u32,
     pub disease_deaths: u32,
     pub quests_suppressed_for_health: u32,
@@ -469,6 +474,19 @@ struct ActivityObservation {
     visible_food_kcal: f32,
     visible_water_ml: f32,
     elapsed_minutes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SettlementRestSponsor {
+    payer_id: u64,
+    payer_agent_id: u32,
+    purse: u64,
+    medical_reserve: u64,
+    spendable: u64,
+    patient_contribution: u64,
+    sponsor_quote: u64,
+    party_treasury: u64,
+    party_stake: u64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1111,6 +1129,7 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "continue_camp_travel",
         "travel_camps",
         "passive_no_actionable_rest",
+        "sponsor_party_member_inn_rest",
         "purchase_journey_provisions",
     ]
     .into_iter()
@@ -2908,6 +2927,91 @@ impl LiveRunner {
             .sum()
     }
 
+    fn settlement_rest_sponsor(
+        &self,
+        patient_id: u64,
+        settlement_id: &str,
+        public_quote: u64,
+    ) -> Option<SettlementRestSponsor> {
+        let patient_purse = self.personal_gold(patient_id);
+        if patient_purse >= public_quote {
+            return None;
+        }
+        let patient_contribution = patient_purse.min(public_quote);
+        let sponsor_quote = public_quote.saturating_sub(patient_contribution);
+        let patient = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == patient_id && row.alive)?;
+        let party_id = patient.party_id.as_deref()?;
+        if patient.current_settlement_id.as_deref() != Some(settlement_id)
+            || !self
+                .connection
+                .db
+                .party_member()
+                .iter()
+                .any(|member| member.party_id == party_id && member.character_id == patient_id)
+        {
+            return None;
+        }
+        let party_treasury = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
+            .map(|row| u64::from(row.quantity))
+            .sum();
+        let mut options = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|member| member.party_id == party_id && member.character_id != patient_id)
+            .filter_map(|member| {
+                let payer = self.connection.db.character().iter().find(|row| {
+                    row.id == member.character_id
+                        && row.alive
+                        && row.current_settlement_id.as_deref() == Some(settlement_id)
+                })?;
+                let payer_agent_id =
+                    self.character_ids.iter().position(|id| *id == payer.id)? as u32;
+                let purse = self.personal_gold(payer.id);
+                let medical_reserve = self
+                    .observable_medical_reserve(payer.id, settlement_id)
+                    .unwrap_or(0);
+                let spendable = purse.saturating_sub(medical_reserve);
+                (spendable >= sponsor_quote).then(|| SettlementRestSponsor {
+                    payer_id: payer.id,
+                    payer_agent_id,
+                    purse,
+                    medical_reserve,
+                    spendable,
+                    patient_contribution,
+                    sponsor_quote,
+                    party_treasury,
+                    party_stake: self
+                        .connection
+                        .db
+                        .party_stake()
+                        .iter()
+                        .find(|stake| stake.party_id == party_id && stake.character_id == payer.id)
+                        .map_or(0, |stake| stake.value),
+                })
+            })
+            .collect::<Vec<_>>();
+        options.sort_by_key(|option| {
+            (
+                std::cmp::Reverse(option.spendable),
+                option.payer_id,
+                option.payer_agent_id,
+            )
+        });
+        options.into_iter().next()
+    }
+
     fn activity_observation(&self, character_id: u64) -> Result<ActivityObservation, String> {
         let condition = self
             .connection
@@ -3267,13 +3371,29 @@ impl LiveRunner {
                 });
             let (visible_food_kcal, visible_water_ml) = self.visible_rest_supplies(character_id);
             let temple_food_covers_day = temple_food_covers_one_day(visible_food_kcal);
-            let natural_rest_venue = affordable_medical_rest_venue(
+            let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440);
+            let self_funded_natural_rest_venue = affordable_medical_rest_venue(
                 inn_available,
                 temple_available,
                 temple_food_covers_day,
                 purse,
                 0,
             );
+            let rest_sponsor = if !symptomatic && inn_available {
+                settlement.as_deref().and_then(|settlement_id| {
+                    inn_cost.and_then(|quote| {
+                        self.settlement_rest_sponsor(character_id, settlement_id, quote)
+                    })
+                })
+            } else {
+                None
+            };
+            let emergency_temple_rest = self_funded_natural_rest_venue.is_none()
+                && rest_sponsor.is_none()
+                && temple_available;
+            let natural_rest_venue = self_funded_natural_rest_venue
+                .or_else(|| rest_sponsor.as_ref().map(|_| true))
+                .or_else(|| emergency_temple_rest.then_some(false));
             let medicated_rest_venue = observable_quote.and_then(|quote| {
                 affordable_medical_rest_venue(
                     inn_available,
@@ -3314,17 +3434,30 @@ impl LiveRunner {
                 natural_rest_venue,
                 medicated_rest_venue,
             );
+            let selected_rest_venue = match choice {
+                MedicalChoice::RestNaturally => natural_rest_venue,
+                MedicalChoice::BuyAndRest => medicated_rest_venue,
+                MedicalChoice::Ready | MedicalChoice::SuppressQuest => None,
+            };
             self.event(
                 agent,
                 CoreLoopEventKind::MedicalDecision,
                 format!(
-                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_food_covers_day={temple_food_covers_day};care_affordable={};action={choice:?};reason={reason}",
+                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_food_covers_day={temple_food_covers_day};emergency_temple_rest={emergency_temple_rest};sponsor={};sponsor_purse={};sponsor_medical_reserve={};sponsor_spendable={};patient_contribution_quote={};sponsor_quote={};party_treasury={};sponsor_stake={};care_affordable={};action={choice:?};reason={reason}",
                     condition.status,
                     settlement.as_deref().unwrap_or("none"),
                     observable_quote.map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
                     required_rest_cost.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
                     observable_care_total.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
-                    medicated_rest_venue.map_or("unavailable", |at_inn| if at_inn { "inn" } else { "temple" }),
+                    selected_rest_venue.map_or("unavailable", |at_inn| if at_inn { "inn" } else { "temple" }),
+                    rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.payer_id.to_string()),
+                    rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.purse.to_string()),
+                    rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.medical_reserve.to_string()),
+                    rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.spendable.to_string()),
+                    rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.patient_contribution.to_string()),
+                    rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.sponsor_quote.to_string()),
+                    rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.party_treasury.to_string()),
+                    rest_sponsor.as_ref().map_or_else(|| "none".into(), |sponsor| sponsor.party_stake.to_string()),
                     observable_quote.is_some() && medicated_rest_venue.is_some(),
                 ),
             );
@@ -3347,17 +3480,120 @@ impl LiveRunner {
             self.set_medical_rest_schedule(agent)?;
             if choice == MedicalChoice::RestNaturally {
                 let at_inn = natural_rest_venue.expect("natural rest choice requires a venue");
-                let result = reducer_call!(self, "natural_illness_recovery_rest", |cb| self
+                let rest_started_at = self
                     .connection
-                    .reducers
-                    .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
-                self.call(result)?;
-                self.metrics.treatment_rest_minutes += 1_440;
+                    .db
+                    .character_time()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .ok_or("missing patient clock before natural recovery rest")?
+                    .minutes;
+                let actual_rest_minutes = if at_inn
+                    && purse < inn_cost.expect("inn venue requires a public quote")
+                {
+                    let sponsor = rest_sponsor
+                        .as_ref()
+                        .expect("unaffordable inn venue requires a selected sponsor");
+                    let payer_purse_before = sponsor.purse;
+                    let patient_purse_before = purse;
+                    let condition_before = condition.status.clone();
+                    let public_quote = inn_cost.expect("sponsored inn rest requires a quote");
+                    let result = reducer_call!(self, "sponsor_party_member_inn_rest", |cb| self
+                        .connection
+                        .reducers
+                        .sponsor_party_member_inn_rest_then(
+                            sponsor.payer_id,
+                            character_id,
+                            settlement.clone(),
+                            public_quote,
+                            cb
+                        ));
+                    self.call(result)?;
+                    let rest_ended_at = self
+                        .connection
+                        .db
+                        .character_time()
+                        .iter()
+                        .find(|row| row.character_id == character_id)
+                        .ok_or("missing patient clock after sponsored recovery rest")?
+                        .minutes;
+                    let actual_rest_minutes = rest_ended_at.saturating_sub(rest_started_at);
+                    let payer_purse_after = self.personal_gold(sponsor.payer_id);
+                    let patient_purse_after = self.personal_gold(character_id);
+                    let sponsor_spend = payer_purse_before.saturating_sub(payer_purse_after);
+                    let patient_spend = patient_purse_before.saturating_sub(patient_purse_after);
+                    let actual_spend = sponsor_spend.saturating_add(patient_spend);
+                    let condition_after = self
+                        .connection
+                        .db
+                        .character_strategic_condition()
+                        .iter()
+                        .find(|row| row.character_id == character_id)
+                        .map_or_else(|| "unavailable".into(), |row| row.status);
+                    self.metrics.sponsored_settlement_rests =
+                        self.metrics.sponsored_settlement_rests.saturating_add(1);
+                    self.metrics.sponsored_settlement_rest_gold_spent = self
+                        .metrics
+                        .sponsored_settlement_rest_gold_spent
+                        .saturating_add(sponsor_spend);
+                    self.metrics.sponsored_settlement_rest_requested_minutes = self
+                        .metrics
+                        .sponsored_settlement_rest_requested_minutes
+                        .saturating_add(1_440);
+                    self.metrics.sponsored_settlement_rest_elapsed_minutes = self
+                        .metrics
+                        .sponsored_settlement_rest_elapsed_minutes
+                        .saturating_add(actual_rest_minutes);
+                    self.metrics.treatment_gold_spent = self
+                        .metrics
+                        .treatment_gold_spent
+                        .saturating_add(actual_spend);
+                    self.event(
+                        sponsor.payer_agent_id,
+                        CoreLoopEventKind::Recover,
+                        format!(
+                            "sponsored_settlement_rest=completed;payer={};patient={character_id};settlement={};venue=inn;public_quote={public_quote};patient_contribution_quote={};sponsor_quote={};payer_medical_reserve={};payer_spendable={};party_treasury={};payer_party_stake={};patient_spend={patient_spend};sponsor_spend={sponsor_spend};actual_spend={actual_spend};payer_purse_before={payer_purse_before};payer_purse_after={payer_purse_after};patient_purse_before={patient_purse_before};patient_purse_after={patient_purse_after};condition_before={};condition_after={};symptomatic={symptomatic};exposure=not_publicly_projected;requested_minutes=1440;actual_elapsed_minutes={actual_rest_minutes}",
+                            sponsor.payer_id,
+                            bounded_event_field(&settlement),
+                            sponsor.patient_contribution,
+                            sponsor.sponsor_quote,
+                            sponsor.medical_reserve,
+                            sponsor.spendable,
+                            sponsor.party_treasury,
+                            sponsor.party_stake,
+                            bounded_event_field(&condition_before),
+                            bounded_event_field(&condition_after),
+                        ),
+                    );
+                    actual_rest_minutes
+                } else {
+                    let result = reducer_call!(self, "natural_illness_recovery_rest", |cb| self
+                        .connection
+                        .reducers
+                        .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
+                    self.call(result)?;
+                    let rest_ended_at = self
+                        .connection
+                        .db
+                        .character_time()
+                        .iter()
+                        .find(|row| row.character_id == character_id)
+                        .ok_or("missing patient clock after natural recovery rest")?
+                        .minutes;
+                    rest_ended_at.saturating_sub(rest_started_at)
+                };
+                self.metrics.treatment_rest_minutes = self
+                    .metrics
+                    .treatment_rest_minutes
+                    .saturating_add(actual_rest_minutes);
                 self.metrics.recovery_rests += 1;
                 self.event(
                     agent,
                     CoreLoopEventKind::Recover,
-                    format!("natural_recovery_minutes=1440;reason={reason}"),
+                    format!(
+                        "natural_recovery_requested_minutes=1440;natural_recovery_actual_minutes={actual_rest_minutes};venue={};emergency_free_rest={emergency_temple_rest};reason={reason}",
+                        if at_inn { "inn" } else { "temple" }
+                    ),
                 );
                 continue;
             }
@@ -9149,6 +9385,48 @@ mod tests {
     }
 
     #[test]
+    fn settlement_rest_sponsorship_is_public_bounded_and_self_payment_first() {
+        let source = include_str!("live_core.rs");
+        let selector = source
+            .split("fn settlement_rest_sponsor")
+            .nth(1)
+            .and_then(|tail| tail.split("fn activity_observation").next())
+            .expect("settlement rest sponsor selector");
+        for public_input in [
+            "personal_gold(patient_id)",
+            ".party_member()",
+            ".character()",
+            "current_settlement_id",
+            "observable_medical_reserve",
+            ".party_inventory_item()",
+            ".party_stake()",
+        ] {
+            assert!(selector.contains(public_input), "missing {public_input}");
+        }
+        assert!(selector.contains("spendable >= sponsor_quote"));
+        assert!(selector.contains("Reverse(option.spendable)"));
+        assert!(!selector.contains("infection_episode"));
+
+        let recovery = source
+            .split("fn ensure_medically_safe")
+            .nth(1)
+            .and_then(|tail| tail.split("fn settlement_activity_day").next())
+            .expect("medical recovery driver");
+        assert!(recovery.contains(".sponsor_party_member_inn_rest_then("));
+        assert!(recovery.contains("sponsored_settlement_rest=completed"));
+        assert!(recovery.contains("exposure=not_publicly_projected"));
+        assert!(recovery.contains("emergency_temple_rest"));
+        assert!(recovery.contains("actual_elapsed_minutes={actual_rest_minutes}"));
+        assert!(recovery.contains("saturating_sub(rest_started_at)"));
+        assert!(recovery.contains("sponsored_settlement_rest_requested_minutes"));
+        assert!(recovery.contains("sponsored_settlement_rest_elapsed_minutes"));
+        assert!(recovery.contains("MedicalChoice::RestNaturally => natural_rest_venue"));
+        assert!(recovery.contains("MedicalChoice::BuyAndRest => medicated_rest_venue"));
+        assert!(recovery.contains("selected_rest_venue.map_or(\"unavailable\""));
+        assert!(!recovery.contains("infection_episode"));
+    }
+
+    #[test]
     fn medical_quote_requires_player_visible_herbalist_stock() {
         assert!(observable_herbalist_stocks_medication(true, true, true));
         assert!(!observable_herbalist_stocks_medication(false, true, true));
@@ -9195,6 +9473,10 @@ mod tests {
             generated_case_site_traveled: 1,
             journey_provision_purchases: 1,
             journey_provision_party_gold_spent: 115,
+            sponsored_settlement_rests: 2,
+            sponsored_settlement_rest_gold_spent: 4,
+            sponsored_settlement_rest_requested_minutes: 2_880,
+            sponsored_settlement_rest_elapsed_minutes: 2_100,
             encounters: 5,
             encounter_sneaks: 1,
             encounter_detours: 1,
@@ -9239,6 +9521,10 @@ mod tests {
             "generated_case_site_traveled",
             "journey_provision_purchases",
             "journey_provision_party_gold_spent",
+            "sponsored_settlement_rests",
+            "sponsored_settlement_rest_gold_spent",
+            "sponsored_settlement_rest_requested_minutes",
+            "sponsored_settlement_rest_elapsed_minutes",
             "encounters",
             "encounter_sneaks",
             "encounter_detours",
