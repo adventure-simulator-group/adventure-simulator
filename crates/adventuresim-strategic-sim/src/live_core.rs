@@ -112,6 +112,11 @@ const MAX_CORE_TRACE_EVENTS: usize = 100_000;
 const MAX_GENERATED_CASE_STEPS_PER_CYCLE: u32 = 16;
 const TRAVEL_PROVISION_RESERVE_DAYS: f32 = 1.0;
 const MAX_TRAVEL_PROVISION_UNITS_PER_ITEM: u32 = 512;
+/// Public fail-safe bound for a disclosed one-way distance. The ordinary
+/// daylight projection covers schedule downtime; four times that projection
+/// covers fatigue-expanded outbound travel plus the return leg. The separate
+/// reserve day remains available for delays and encounters.
+const JOURNEY_PROVISION_ELAPSED_BOUND_FACTOR: u64 = 4;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -229,6 +234,12 @@ pub struct CoreLoopMetrics {
     pub generated_investigation_waits: u32,
     pub generated_investigation_wait_minutes: u64,
     pub generated_witness_dialogues: u32,
+    pub generated_unique_party_cases_discovered: u32,
+    pub generated_exact_site_ready: u32,
+    pub generated_finance_blocked_cycles: u32,
+    pub generated_case_site_traveled: u32,
+    pub journey_provision_purchases: u32,
+    pub journey_provision_party_gold_spent: u64,
     pub defeats: u32,
     pub recovery_rests: u32,
     pub travel_legs: u32,
@@ -629,9 +640,13 @@ fn projected_case_site_journey_minutes(
     let movement_minutes = ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64;
     let walking_minutes = u64::from(walking_minutes_per_day);
     let completed_walking_days = movement_minutes.saturating_sub(1) / walking_minutes;
-    Some(movement_minutes.saturating_add(
-        completed_walking_days.saturating_mul(1_440_u64.saturating_sub(walking_minutes)),
-    ))
+    Some(
+        movement_minutes
+            .saturating_add(
+                completed_walking_days.saturating_mul(1_440_u64.saturating_sub(walking_minutes)),
+            )
+            .saturating_mul(JOURNEY_PROVISION_ELAPSED_BOUND_FACTOR),
+    )
 }
 
 fn projected_camp_rest_minutes(
@@ -841,6 +856,7 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "choose_dialogue_topic",
         "rest_at_camp",
         "continue_camp_travel",
+        "purchase_journey_provisions",
     ]
     .into_iter()
     .find(|operation| {
@@ -853,6 +869,8 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
 fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
     if error.contains("Rest until the party reaches its next daylight walking window") {
         "journey_daylight_window_rest_required"
+    } else if error.contains("purchase_journey_provisions") {
+        "journey_provision_purchase_failed"
     } else if error.contains("journey camp projection is incoherent")
         || error.contains("journey provisioning projection is incoherent")
     {
@@ -882,6 +900,11 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
         (
             "journey_temporally_unavailable",
             "Camp travel was continued outside its public projected walking window.",
+        )
+    } else if error.contains("purchase_journey_provisions") {
+        (
+            "journey_provision_purchase_failed",
+            "The public journey-provision purchase could not be completed.",
         )
     } else if error.contains("journey camp projection is incoherent")
         || error.contains("journey provisioning projection is incoherent")
@@ -981,6 +1004,9 @@ struct LiveRunner {
     medically_paused_schedules: HashSet<u64>,
     generated_case_owners: HashMap<String, u64>,
     generated_terminal_cases: HashSet<String>,
+    generated_exact_site_cases: HashSet<String>,
+    generated_traveled_cases: HashSet<String>,
+    generated_finance_blocks: HashMap<String, (u64, u64)>,
     npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
     simulation_run_nonce: String,
     failure_recorder: FailureRecorder,
@@ -1761,8 +1787,9 @@ impl LiveRunner {
     fn provision_case_site_journey(
         &mut self,
         party_id: &str,
-        leader: u64,
+        _leader: u64,
         agent: u32,
+        finance_key: &str,
         distance_m: u64,
     ) -> Result<TravelProvisionDecision, String> {
         let party = self.party_by_id(party_id)?;
@@ -1947,51 +1974,136 @@ impl LiveRunner {
                 "journey_essentials_unavailable",
             ));
         }
-        let buy_bps = self
-            .connection
-            .db
-            .backend_local_problem_trade_effects()
-            .iter()
-            .find(|row| row.character_id == leader && row.settlement_id == settlement_id)
-            .map_or(0, |row| row.buy_bps);
-        let upper_bound_unit_price = |item: &Item| {
-            let base = adventuresim_core::strategic_economy::merchant_buy_price(
-                item.base_value.unwrap_or(1),
-            );
-            let language_bound =
-                adventuresim_core::strategic_economy::language_adjusted_buy_price(base, 0.0);
-            adventuresim_core::local_problem::adjust_price(language_bound, buy_bps)
-        };
-        let ration_cost = u64::from(upper_bound_unit_price(&ration))
-            .checked_mul(u64::from(rations_to_buy))
-            .ok_or("journey provisioning projection is incoherent")?;
-        let waterskin_cost = u64::from(upper_bound_unit_price(&waterskin))
-            .checked_mul(u64::from(waterskins_to_buy))
-            .ok_or("journey provisioning projection is incoherent")?;
-        let upper_bound_cost = ration_cost
-            .checked_add(waterskin_cost)
-            .ok_or("journey provisioning projection is incoherent")?;
         let party_coin = party_inventory
             .iter()
             .filter(|row| is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum::<u64>();
-        let purse = party_coin.saturating_add(self.personal_gold(leader));
-        let committed_reserve = self
-            .observable_medical_reserve(leader, &settlement_id)
-            .unwrap_or(0);
-        if upper_bound_cost > purse.saturating_sub(committed_reserve) {
+        let upper_bound_cost_for = |buy_bps: i32| -> Option<u64> {
+            let unit_price = |item: &Item| {
+                let base = adventuresim_core::strategic_economy::merchant_buy_price(
+                    item.base_value.unwrap_or(1),
+                );
+                let language_bound =
+                    adventuresim_core::strategic_economy::language_adjusted_buy_price(base, 0.0);
+                adventuresim_core::local_problem::adjust_price(language_bound, buy_bps)
+            };
+            u64::from(unit_price(&ration))
+                .checked_mul(u64::from(rations_to_buy))?
+                .checked_add(
+                    u64::from(unit_price(&waterskin)).checked_mul(u64::from(waterskins_to_buy))?,
+                )
+        };
+        let mut payer_options = members
+            .iter()
+            .filter(|member| member.current_settlement_id.as_deref() == Some(&settlement_id))
+            .filter_map(|member| {
+                let payer_minute = self
+                    .connection
+                    .db
+                    .character_time()
+                    .iter()
+                    .find(|row| row.character_id == member.id)?
+                    .minutes;
+                let merchant_count = self
+                    .connection
+                    .db
+                    .backend_settlement_npcs()
+                    .iter()
+                    .filter(|npc| {
+                        npc.home_settlement_id == settlement_id && npc.service_id == "merchants"
+                    })
+                    .filter(|npc| {
+                        self.connection
+                            .db
+                            .settlement_npc_presence()
+                            .iter()
+                            .any(|presence| {
+                                presence.npc_id == npc.id
+                                    && presence.settlement_id == settlement_id
+                                    && presence.location_id == "market"
+                                    && presence.is_default
+                                    && npc_is_publicly_present(
+                                        presence.start_minute,
+                                        presence.end_minute,
+                                        payer_minute,
+                                    )
+                            })
+                    })
+                    .count();
+                if merchant_count != 1 {
+                    return None;
+                }
+                let buy_bps = self
+                    .connection
+                    .db
+                    .backend_local_problem_trade_effects()
+                    .iter()
+                    .find(|row| {
+                        row.character_id == member.id && row.settlement_id == settlement_id
+                    })?
+                    .buy_bps;
+                let upper_bound_cost = upper_bound_cost_for(buy_bps)?;
+                let personal = self.personal_gold(member.id);
+                let committed_reserve = self
+                    .observable_medical_reserve(member.id, &settlement_id)
+                    .unwrap_or(0);
+                let spendable = party_coin
+                    .saturating_add(personal)
+                    .saturating_sub(committed_reserve);
+                Some((
+                    spendable >= upper_bound_cost,
+                    spendable,
+                    member.id,
+                    personal,
+                    committed_reserve,
+                    upper_bound_cost,
+                ))
+            })
+            .collect::<Vec<_>>();
+        payer_options.sort_by_key(|option| (option.0, option.1, option.2));
+        let Some((affordable, spendable, payer, personal, committed_reserve, upper_bound_cost)) =
+            payer_options.pop()
+        else {
+            return Ok(TravelProvisionDecision::Deferred(
+                "journey_payer_provider_projection_unavailable",
+            ));
+        };
+        let stake = self
+            .connection
+            .db
+            .party_stake()
+            .iter()
+            .find(|row| row.party_id == party_id && row.character_id == payer)
+            .map_or(0, |row| row.value);
+        if !affordable {
+            if self.generated_case_owners.contains_key(finance_key) {
+                self.metrics.generated_finance_blocked_cycles = self
+                    .metrics
+                    .generated_finance_blocked_cycles
+                    .saturating_add(1);
+            }
+            let public_funds = party_coin.saturating_add(personal);
+            let signature = (upper_bound_cost, public_funds);
+            let finance_key = format!("{party_id}:{finance_key}");
+            if self.generated_finance_blocks.get(&finance_key) == Some(&signature) {
+                return Ok(TravelProvisionDecision::Deferred("journey_finance_backoff"));
+            }
+            self.generated_finance_blocks.insert(finance_key, signature);
             self.event(
                 agent,
                 CoreLoopEventKind::QuestSuppressed,
                 format!(
-                    "reason=journey_essentials_unaffordable;planning_minutes={planning_minutes};upper_bound_cost={upper_bound_cost};purse={purse};committed_reserve={committed_reserve};rations_needed={rations_to_buy};waterskins_needed={waterskins_to_buy}"
+                    "reason=journey_essentials_unaffordable;planning_minutes={planning_minutes};payer={payer};upper_bound_cost={upper_bound_cost};treasury={party_coin};payer_purse={personal};claimable_stake={stake};committed_reserve={committed_reserve};spendable={spendable};deficit={};rations_needed={rations_to_buy};waterskins_needed={waterskins_to_buy}",
+                    upper_bound_cost.saturating_sub(spendable),
                 ),
             );
             return Ok(TravelProvisionDecision::Deferred(
                 "journey_essentials_unaffordable",
             ));
         }
+        self.generated_finance_blocks
+            .remove(&format!("{party_id}:{finance_key}"));
         let mut item_ids = Vec::new();
         let mut quantities = Vec::new();
         if rations_to_buy > 0 {
@@ -2006,7 +2118,7 @@ impl LiveRunner {
             .connection
             .reducers
             .finalize_merchant_trade_then(
-                leader,
+                payer,
                 settlement_id.clone(),
                 item_ids.clone(),
                 quantities.clone(),
@@ -2016,11 +2128,27 @@ impl LiveRunner {
                 cb,
             ));
         self.call(result)?;
+        let after_party_coin = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
+            .map(|row| u64::from(row.quantity))
+            .sum::<u64>();
+        let actual_spent = party_coin
+            .saturating_add(personal)
+            .saturating_sub(after_party_coin.saturating_add(self.personal_gold(payer)));
+        self.metrics.journey_provision_purchases += 1;
+        self.metrics.journey_provision_party_gold_spent = self
+            .metrics
+            .journey_provision_party_gold_spent
+            .saturating_add(actual_spent);
         self.event(
             agent,
             CoreLoopEventKind::Purchase,
             format!(
-                "journey_provisions=purchased;planning_minutes={planning_minutes};reserve_days={TRAVEL_PROVISION_RESERVE_DAYS:.1};upper_bound_cost={upper_bound_cost};rations={rations_to_buy};waterskins={waterskins_to_buy}"
+                "journey_provisions=purchased;planning_minutes={planning_minutes};reserve_days={TRAVEL_PROVISION_RESERVE_DAYS:.1};payer={payer};treasury_before={party_coin};payer_purse_before={personal};claimable_stake={stake};upper_bound_cost={upper_bound_cost};actual_spent={actual_spent};rations={rations_to_buy};waterskins={waterskins_to_buy}"
             ),
         );
         Ok(TravelProvisionDecision::Ready)
@@ -2786,19 +2914,26 @@ impl LiveRunner {
                 .ok_or("missing condition after medical rest")?
                 .status;
             if status == "ready" {
-                let symptomatic = self
+                let symptomatic_after = self
                     .connection
                     .db
                     .character_illness_status()
                     .iter()
                     .find(|row| row.character_id == character_id)
                     .is_some_and(|row| row.symptomatic);
-                if symptomatic {
+                if symptomatic_after {
                     continue;
                 }
                 self.restore_profile_schedule(agent)?;
                 self.metrics.illness_recoveries += 1;
-                self.event(agent, CoreLoopEventKind::IllnessRecovered, "status=ready");
+                self.event(
+                    agent,
+                    CoreLoopEventKind::IllnessRecovered,
+                    format!(
+                        "recovery_context=public_symptoms;condition_before={};condition_after=ready;symptomatic_before={symptomatic};symptomatic_after={symptomatic_after}",
+                        condition.status,
+                    ),
+                );
                 return Ok(true);
             }
         }
@@ -3273,7 +3408,7 @@ impl LiveRunner {
                 .db
                 .backend_investigation_cases()
                 .iter()
-                .map(|row| (row.owner_character_id, row.case_id, row.title, row.status)),
+                .map(|row| (row.owner_character_id, row.case_id, row.subject, row.status)),
         )
     }
 
@@ -3350,7 +3485,7 @@ impl LiveRunner {
                 .backend_investigation_cases()
                 .iter()
                 .find(|row| row.owner_character_id == owner && row.case_id == case_id)
-                .map_or_else(|| "Unlabelled problem".into(), |row| row.title);
+                .map_or_else(|| "Unlabelled problem".into(), |row| row.subject);
             self.observe_generated_case_transition(agent as u32, owner, &case_id, &title, false);
         }
     }
@@ -3485,6 +3620,7 @@ impl LiveRunner {
         self.generated_case_owners
             .insert(case_id.clone(), character_id);
         self.metrics.generated_quests_discovered += 1;
+        self.metrics.generated_unique_party_cases_discovered += 1;
         self.metrics.quests_attempted += 1;
         self.event(
             agent,
@@ -3828,6 +3964,10 @@ impl LiveRunner {
                 continue;
             }
             if let Some(action) = actions.iter().find(|row| row.can_travel_to_required_site) {
+                let funnel_key = format!("{character_id}:{case_id}");
+                if self.generated_exact_site_cases.insert(funnel_key.clone()) {
+                    self.metrics.generated_exact_site_ready += 1;
+                }
                 let pin = self
                     .connection
                     .db
@@ -3842,7 +3982,13 @@ impl LiveRunner {
                 let site_id = pin.case_site_id.clone();
                 let distance_m = pin.distance_m;
                 if matches!(
-                    self.provision_case_site_journey(party_id, character_id, agent, distance_m,)?,
+                    self.provision_case_site_journey(
+                        party_id,
+                        character_id,
+                        agent,
+                        case_id,
+                        distance_m,
+                    )?,
                     TravelProvisionDecision::Deferred(_)
                 ) {
                     return Ok(false);
@@ -3858,6 +4004,9 @@ impl LiveRunner {
                         cb,
                     ));
                 self.call(result)?;
+                if self.generated_traveled_cases.insert(funnel_key) {
+                    self.metrics.generated_case_site_traveled += 1;
+                }
                 self.event(
                     agent,
                     CoreLoopEventKind::Travel,
@@ -4083,6 +4232,24 @@ impl LiveRunner {
         let quest = self
             .choose_quest(&party, &self.profiles[leader_agent as usize])
             .ok_or("no suitable available quest")?;
+        if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
+            party_id,
+            leader,
+            leader_agent,
+            &quest.case_id,
+            quest.distance_m,
+        )? {
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "quest={};acceptance_deferred={reason}",
+                    bounded_event_field(&quest.id)
+                ),
+            );
+            self.settlement_activity_day(leader_agent)?;
+            return Ok(());
+        }
         self.metrics.quests_attempted += 1;
         let result = reducer_call!(self, "interact_accept_contract", |cb| self
             .connection
@@ -4104,8 +4271,23 @@ impl LiveRunner {
             .db
             .backend_case_site_pins()
             .iter()
-            .find(|site| site.owner_character_id == leader && site.case_id == quest.case_id)
+            .filter(|site| site.owner_character_id == leader && site.case_id == quest.case_id)
+            .min_by_key(|site| (site.distance_m, site.case_site_id.clone()))
             .ok_or("accepted quest did not disclose an exact case site")?;
+        if matches!(
+            self.provision_case_site_journey(
+                party_id,
+                leader,
+                leader_agent,
+                &quest.case_id,
+                case_site.distance_m,
+            )?,
+            TravelProvisionDecision::Deferred(_)
+        ) {
+            return Err(
+                "accepted contract provisioning projection changed after disclosure".into(),
+            );
+        }
         self.event(
             leader_agent,
             CoreLoopEventKind::AcceptContract,
@@ -4120,22 +4302,6 @@ impl LiveRunner {
             ),
         );
 
-        if let TravelProvisionDecision::Deferred(reason) =
-            self.provision_case_site_journey(party_id, leader, leader_agent, case_site.distance_m)?
-        {
-            let result = reducer_call!(self, "defer_unprovisioned_contract", |cb| self
-                .connection
-                .reducers
-                .abandon_contract_then(leader, quest.id.clone(), cb));
-            self.call(result)?;
-            self.event(
-                leader_agent,
-                CoreLoopEventKind::AbandonQuest,
-                format!("quest={};reason={reason}", bounded_event_field(&quest.id)),
-            );
-            self.settlement_activity_day(leader_agent)?;
-            return Ok(());
-        }
         let result = reducer_call!(self, "travel_to_case_site", |cb| self
             .connection
             .reducers
@@ -4269,6 +4435,7 @@ impl LiveRunner {
                 party_id,
                 leader,
                 leader_agent,
+                &quest.case_id,
                 case_site.distance_m,
             )? {
                 self.event(
@@ -4279,15 +4446,19 @@ impl LiveRunner {
                         bounded_event_field(&quest.id)
                     ),
                 );
-                let result = reducer_call!(self, "defer_unprovisioned_retry", |cb| self
-                    .connection
-                    .reducers
-                    .abandon_contract_then(leader, quest.id.clone(), cb));
+                let result =
+                    reducer_call!(self, "abandon_failed_unprovisioned_contract", |cb| self
+                        .connection
+                        .reducers
+                        .abandon_contract_then(leader, quest.id.clone(), cb));
                 self.call(result)?;
                 self.event(
                     leader_agent,
                     CoreLoopEventKind::AbandonQuest,
-                    format!("quest={};reason={reason}", bounded_event_field(&quest.id)),
+                    format!(
+                        "quest={};reason=failed_expedition_cannot_reprovision;detail={reason}",
+                        bounded_event_field(&quest.id)
+                    ),
                 );
                 self.settlement_activity_day(leader_agent)?;
                 return Ok(());
@@ -4859,6 +5030,9 @@ fn run_core_loop_with_npc_policy_inner(
         medically_paused_schedules: HashSet::new(),
         generated_case_owners: HashMap::new(),
         generated_terminal_cases: HashSet::new(),
+        generated_exact_site_cases: HashSet::new(),
+        generated_traveled_cases: HashSet::new(),
+        generated_finance_blocks: HashMap::new(),
         npc_strategy_policy,
         simulation_run_nonce: config.run_nonce.clone(),
         failure_recorder,
@@ -5732,12 +5906,14 @@ mod tests {
     }
 
     #[test]
-    fn case_site_duration_includes_public_daily_camp_schedule() {
-        assert_eq!(projected_case_site_journey_minutes(1_250, 480), Some(60));
+    fn case_site_duration_bounds_fatigue_expanded_round_trip_and_cycle16_shape() {
+        assert_eq!(projected_case_site_journey_minutes(1_250, 480), Some(240));
         assert_eq!(
             projected_case_site_journey_minutes(20_000, 480),
-            Some(1_920)
+            Some(7_680)
         );
+        assert_eq!(1_503 * JOURNEY_PROVISION_ELAPSED_BOUND_FACTOR, 6_012);
+        assert!(1_503 * JOURNEY_PROVISION_ELAPSED_BOUND_FACTOR > 3_461);
         assert_eq!(projected_case_site_journey_minutes(20_000, 0), None);
         assert_eq!(projected_case_site_journey_minutes(0, 480), None);
     }
@@ -5806,13 +5982,58 @@ mod tests {
             ".party_inventory_item()",
             ".food_lot()",
             ".settlement()",
+            ".backend_settlement_npcs()",
+            ".settlement_npc_presence()",
+            ".backend_local_problem_trade_effects()",
+            ".party_stake()",
             "SettlementService::Market | SettlementService::GeneralStore",
             "finalize_merchant_trade_then(",
         ] {
             assert!(provisioning.contains(public_surface), "{public_surface}");
         }
         assert!(provisioning.contains("target_surplus_days: TRAVEL_PROVISION_RESERVE_DAYS"));
+        assert!(provisioning.contains("payer_options"));
+        assert!(provisioning.contains("payer_minute"));
+        assert!(provisioning.contains("merchant_count != 1"));
+        assert!(provisioning.contains("journey_finance_backoff"));
+        assert!(!provisioning.contains(".map_or(0, |row| row.buy_bps)"));
         assert!(!provisioning.contains("party_journey_route"));
+    }
+
+    #[test]
+    fn direct_contract_provisions_before_acceptance_and_never_defers_by_abandoning() {
+        let source = include_str!("live_core.rs");
+        let quest = source
+            .split("fn cycle")
+            .nth(1)
+            .and_then(|tail| tail.split("fn try_upgrade").next())
+            .expect("direct contract driver");
+        assert!(
+            quest.find("provision_case_site_journey").unwrap()
+                < quest.find("accept_contract_then").unwrap()
+        );
+        assert!(!quest.contains("defer_unprovisioned_contract"));
+        assert!(quest.contains("failed_expedition_cannot_reprovision"));
+        assert!(quest.contains(".min_by_key(|site| (site.distance_m, site.case_site_id.clone()))"));
+        assert!(quest.matches("provision_case_site_journey").count() >= 2);
+        assert!(
+            quest.contains("accepted contract provisioning projection changed after disclosure")
+        );
+    }
+
+    #[test]
+    fn recovery_audit_separates_public_before_and_after_observations() {
+        let source = include_str!("live_core.rs");
+        let recovery = source
+            .split("fn ensure_medically_safe")
+            .nth(1)
+            .and_then(|tail| tail.split("fn settlement_activity_day").next())
+            .expect("medical recovery driver");
+        assert!(recovery.contains("let symptomatic_after ="));
+        assert!(recovery.contains("recovery_context=public_symptoms"));
+        assert!(recovery.contains("symptomatic_before={symptomatic}"));
+        assert!(recovery.contains("symptomatic_after={symptomatic_after}"));
+        assert!(!recovery.contains("cause=public_symptomatic_illness"));
     }
 
     #[test]
@@ -6078,6 +6299,19 @@ mod tests {
             "journey_projection_inconsistent"
         );
         assert!(!message.contains("hidden itinerary implementation"));
+
+        let purchase = "purchase_journey_provisions failed: Merchant service provider is not available; hidden provider";
+        let (category, message) = safe_core_loop_failure(purchase);
+        assert_eq!(category, "journey_provision_purchase_failed");
+        assert_eq!(
+            safe_failure_operation(purchase),
+            Some("purchase_journey_provisions")
+        );
+        assert_eq!(
+            safe_failure_reason_code(purchase, category),
+            "journey_provision_purchase_failed"
+        );
+        assert!(!message.contains("hidden provider"));
     }
 
     #[test]
@@ -6308,6 +6542,12 @@ mod tests {
             generated_investigation_waits: 2,
             generated_investigation_wait_minutes: 480,
             generated_witness_dialogues: 4,
+            generated_unique_party_cases_discovered: 3,
+            generated_exact_site_ready: 2,
+            generated_finance_blocked_cycles: 5,
+            generated_case_site_traveled: 1,
+            journey_provision_purchases: 1,
+            journey_provision_party_gold_spent: 115,
             encounters: 5,
             encounter_sneaks: 1,
             encounter_detours: 1,
@@ -6331,6 +6571,12 @@ mod tests {
             "generated_investigation_waits",
             "generated_investigation_wait_minutes",
             "generated_witness_dialogues",
+            "generated_unique_party_cases_discovered",
+            "generated_exact_site_ready",
+            "generated_finance_blocked_cycles",
+            "generated_case_site_traveled",
+            "journey_provision_purchases",
+            "journey_provision_party_gold_spent",
             "encounters",
             "encounter_sneaks",
             "encounter_detours",

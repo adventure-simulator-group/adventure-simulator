@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct BackendInvestigationCaseSummary {
     pub owner_character_id: u64,
     pub case_id: String,
-    pub title: String,
+    pub subject: String,
     pub status: String,
     pub latest_update_at: u64,
 }
@@ -24,7 +24,7 @@ impl __sdk::InModule for BackendInvestigationCaseSummary {
 pub struct BackendInvestigationCaseSummaryCols {
     pub owner_character_id: __sdk::__query_builder::Col<BackendInvestigationCaseSummary, u64>,
     pub case_id: __sdk::__query_builder::Col<BackendInvestigationCaseSummary, String>,
-    pub title: __sdk::__query_builder::Col<BackendInvestigationCaseSummary, String>,
+    pub subject: __sdk::__query_builder::Col<BackendInvestigationCaseSummary, String>,
     pub status: __sdk::__query_builder::Col<BackendInvestigationCaseSummary, String>,
     pub latest_update_at: __sdk::__query_builder::Col<BackendInvestigationCaseSummary, u64>,
 }
@@ -35,7 +35,7 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationCaseSummary {
         BackendInvestigationCaseSummaryCols {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
-            title: __sdk::__query_builder::Col::new(table_name, "title"),
+            subject: __sdk::__query_builder::Col::new(table_name, "subject"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
             latest_update_at: __sdk::__query_builder::Col::new(table_name, "latest_update_at"),
         }

@@ -25,6 +25,7 @@ pub struct BackendContract {
     pub opposition_count_wording: String,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
+    pub distance_m: u64,
 }
 
 impl __sdk::InModule for BackendContract {
@@ -51,6 +52,7 @@ pub struct BackendContractCols {
     pub opposition_count_wording: __sdk::__query_builder::Col<BackendContract, String>,
     pub accepted_at_minute: __sdk::__query_builder::Col<BackendContract, Option<u64>>,
     pub paid_at_minute: __sdk::__query_builder::Col<BackendContract, Option<u64>>,
+    pub distance_m: __sdk::__query_builder::Col<BackendContract, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendContract {
@@ -76,6 +78,7 @@ impl __sdk::__query_builder::HasCols for BackendContract {
             ),
             accepted_at_minute: __sdk::__query_builder::Col::new(table_name, "accepted_at_minute"),
             paid_at_minute: __sdk::__query_builder::Col::new(table_name, "paid_at_minute"),
+            distance_m: __sdk::__query_builder::Col::new(table_name, "distance_m"),
         }
     }
 }

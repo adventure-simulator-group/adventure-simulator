@@ -1389,7 +1389,9 @@ pub struct BackendInvestigationActionOutcome {
 pub struct BackendInvestigationCaseSummary {
     pub owner_character_id: u64,
     pub case_id: String,
-    pub title: String,
+    /// Immutable observer-safe subject established by the first journal entry.
+    /// Later leads and journal headlines never replace it.
+    pub subject: String,
     pub status: String,
     pub latest_update_at: u64,
 }
@@ -1439,48 +1441,39 @@ pub fn backend_investigation_cases(ctx: &ViewContext) -> Vec<BackendInvestigatio
     let journal = backend_investigation_journal(ctx);
     let leads = backend_investigation_leads(ctx);
     let mut cases: BTreeMap<(u64, String), (u64, String, u64)> = BTreeMap::new();
-    for (owner_character_id, case_id, summary, recorded_at, eligible_title) in journal
-        .into_iter()
-        .map(|row| {
-            (
-                row.owner_character_id,
-                row.case_id,
-                row.summary,
-                row.recorded_at,
-                true,
-            )
-        })
-        .chain(leads.into_iter().map(|row| {
-            let eligible_title = row.source_label != "witness referral";
-            (
-                row.owner_character_id,
-                row.case_id,
-                row.summary,
-                row.recorded_at,
-                eligible_title,
-            )
-        }))
-    {
+    for (owner_character_id, case_id, summary, recorded_at) in journal.into_iter().map(|row| {
+        (
+            row.owner_character_id,
+            row.case_id,
+            row.summary,
+            row.recorded_at,
+        )
+    }) {
         let case = cases.entry((owner_character_id, case_id)).or_insert((
             u64::MAX,
             "Unlabelled problem".into(),
             0,
         ));
         case.2 = case.2.max(recorded_at);
-        if eligible_title && recorded_at < case.0 {
+        if recorded_at < case.0 {
             case.0 = recorded_at;
             case.1 = summary;
+        }
+    }
+    for lead in leads {
+        if let Some(case) = cases.get_mut(&(lead.owner_character_id, lead.case_id)) {
+            case.2 = case.2.max(lead.recorded_at);
         }
     }
     cases
         .into_iter()
         .map(
-            |((owner_character_id, case_id), (_title_at, title, visible_update_at))| {
+            |((owner_character_id, case_id), (_subject_at, subject, visible_update_at))| {
                 let (status, status_update_at) = journal_case_resolution(ctx, &case_id);
                 BackendInvestigationCaseSummary {
                     owner_character_id,
                     case_id,
-                    title,
+                    subject,
                     status,
                     latest_update_at: visible_update_at.max(status_update_at),
                 }
@@ -9834,5 +9827,19 @@ mod tests {
         assert!(outcome_projection.contains("capability.case_id != outcome.case_id"));
         assert!(outcome_projection.contains("projected_action_public_case_id"));
         assert!(outcome_projection.contains("filter_map"));
+    }
+
+    #[test]
+    fn case_summary_subject_comes_only_from_immutable_journal_history() {
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("pub fn backend_investigation_cases")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct BackendCaseSitePin").next())
+            .expect("case summary projection");
+        assert!(projection.contains("for (owner_character_id, case_id, summary, recorded_at)"));
+        assert!(projection.contains("for lead in leads"));
+        assert!(projection.contains("case.2 = case.2.max(lead.recorded_at)"));
+        assert!(!projection.contains("case.1 = lead.summary"));
     }
 }

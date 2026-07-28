@@ -639,7 +639,10 @@ already known to the observer.
 
 Gateway projections correlate every investigation action and public outcome
 with the observer's public case ID. Generated canonical case IDs remain
-private. Dialogue topic options that advance a case carry that same public case
+private. A public case summary carries an immutable subject established by its
+first observer journal entry; later leads and journal headlines update recency
+without replacing it in summaries or evaluator events. Dialogue topic options
+that advance a case carry that same public case
 ID (presentation-only topics carry an empty value), so clients can never apply
 a valid topic from one open case while attributing it to another. Public case
 battle rows similarly contain the observer character and public case ID rather

@@ -107,7 +107,7 @@ pub fn journal_page(
                             tabindex=(if index == 0 { "0" } else { "-1" })
                             aria-controls=(format!("journal-case-panel-{index}"))
                             data-journal-case-select=(case.case_id.as_str()) {
-                            span class="journal-case-title" { (&case.title) }
+                            span class="journal-case-title" { (&case.subject) }
                             span class=(format!("journal-case-status journal-case-status-{}", case.status)) {
                                 (status_label(&case.status))
                             }
@@ -131,7 +131,7 @@ pub fn journal_page(
                     data-journal-case-panel=(case.case_id.as_str())
                     hidden[index != 0] {
                     header class="journal-log-header" {
-                        h2 { (&case.title) }
+                        h2 { (&case.subject) }
                         span class=(format!("journal-case-status journal-case-status-{}", case.status)) {
                             (status_label(&case.status))
                         }
@@ -190,7 +190,7 @@ mod tests {
         BackendInvestigationCaseSummary {
             owner_character_id: 1,
             case_id: case_id.into(),
-            title: title.into(),
+            subject: title.into(),
             status: status.into(),
             latest_update_at,
         }

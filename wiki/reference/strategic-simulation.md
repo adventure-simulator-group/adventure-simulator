@@ -78,13 +78,17 @@ completion and the subscribed state that follows it. It creates several
 independent parties through ordinary join request/accept reducers. Each leader
 then independently chooses settlement activity or questing from its generated
 policy until its in-game duration or cycle bound is reached. Before an outbound
-case-site leg, the evaluator derives a player-visible journey duration from the
-disclosed distance and party walking schedule, forecasts food and water for the
-living party plus a one-day reserve from public needs and inventory, and buys
-any affordable shortfall from visible settlement stock through the ordinary
-merchant reducer. Its budget uses the public local price effect, a conservative
-language-price bound, party and personal coin, and the existing observable
-medical reserve. If either staple is unavailable or unaffordable, the party
+case-site leg, the evaluator derives a conservative public provisioning horizon
+from disclosed distance and walking schedule. Four times the ordinary daylight
+elapsed projection covers fatigue-expanded outbound travel plus the return leg;
+a further one-day reserve covers delays and encounters. It forecasts food and
+water for the living party from public needs and inventory and buys an
+affordable shortfall through the ordinary merchant reducer. A co-located living
+party member may pay using the shared treasury plus their purse, while retaining
+their observable medical reserve. Pricing fails closed without that payer's
+public local-price effect and exactly one public default merchant present at
+that payer's own public character time. If
+either staple is unavailable or unaffordable, the party
 remains at the settlement and performs sustainable activity instead of
 knowingly departing empty. Questing then travels through persisted camp stops,
 autoresolves, stores loot, returns,
@@ -185,6 +189,17 @@ case IDs/titles, NPC names and locations already visible in the selected
 dialogue, projected action summaries, and public outcome wording; they never
 read generation manifests, canonical causes/sites, reliability, hostile
 authority, custody authority, or outcome authority.
+The same report exposes unique owner-party discoveries, exact-site-ready cases,
+finance-blocked cycles, case-site journeys, provision purchases, and actual
+public gold spent. Identical affordability signatures enter backoff until the
+required budget or observable funds change. Direct contracts preflight against
+the greatest public distance among their case destinations before acceptance,
+then select the disclosed owner-scoped pin by minimum-distance, stable-site
+ordering and re-run observer-safe provisioning for that exact pin before
+travel. Thus a temporary shortfall does not withdraw the offer or fund travel
+to a different destination. An explicit post-defeat
+cannot-reprovision abandonment is
+reported as abandonment rather than deferral.
 
 Live simulated NPCs inspect persistent equipment condition before choosing quests or settlement
 activity. They submit repairable damaged equipment to the appropriate local smith, wait through the
@@ -205,9 +220,13 @@ visible cost of the required one-day rest venue, preferring a free temple to a p
 an unaffordable character, a settlement without an herbalist, or a nonsymptomatic convalescent
 instead takes bounded one-day natural recovery. Equipment maintenance retains one locally quoted
 course as an emergency reserve rather than consuming every coin before a later symptom becomes
-visible. It rests in bounded one-day steps until ready. Before each choice, the trace records public
-condition, symptomatic status, settlement, purse, quote, affordability, action, and reason. While
-recovery is active it authoritatively replaces the saved
+visible. It rests in bounded one-day steps until ready. Before each choice, the
+trace records public condition, symptomatic status, settlement, purse, quote,
+affordability, action, and reason. Recovery completion records
+`recovery_context=public_symptoms` and keeps the pre-rest symptomatic
+observation separate from the newly read post-rest observation; it does not
+claim a private physiological cause.
+While recovery is active it authoritatively replaces the saved
 personality schedule with pure rest, then restores that profile schedule after recovery so labor or
 thievery cannot interrupt convalescence with an incident. Quests remain suppressed while a member is unsafe. Reports audit
 diagnosis attempts/results, crafting or purchases, medication equips, treatment gold and time,

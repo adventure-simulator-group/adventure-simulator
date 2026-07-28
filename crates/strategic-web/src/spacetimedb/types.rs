@@ -119,7 +119,7 @@ pub struct BackendInvestigationAction {
 pub struct BackendInvestigationCaseSummary {
     pub owner_character_id: u64,
     pub case_id: String,
-    pub title: String,
+    pub subject: String,
     pub status: String,
     pub latest_update_at: u64,
 }

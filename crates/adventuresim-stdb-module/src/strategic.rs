@@ -34,9 +34,9 @@ use crate::{
     inventory_amount::{inventory_item_amount, party_item_amount},
     investigation::{
         CaseSiteAuthority, CaseSiteId, EvidencePresentationKind, PartyCaseSiteTracking,
-        case_site_authority, case_site_provenance_reducer, disclose_exact_case_site,
-        exact_case_site_for_observer, investigation_area_authority, investigation_belief,
-        investigation_case_authority, investigation_event_authority,
+        case_site_authority, case_site_authority__view, case_site_provenance_reducer,
+        disclose_exact_case_site, exact_case_site_for_observer, investigation_area_authority,
+        investigation_belief, investigation_case_authority, investigation_event_authority,
         investigation_evidence_authority, investigation_evidence_knowledge, investigation_lead,
         investigation_received_testimony, investigation_testimony_bundle, mark_case_site_visited,
         party_case_site_tracking, referred_generated_witness,
@@ -3765,6 +3765,10 @@ pub struct BackendContract {
     pub opposition_count_wording: String,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
+    /// Conservative public one-way preflight distance: the greatest distance
+    /// among this contract's possible case destinations. Site identity stays
+    /// private until ordinary exact disclosure.
+    pub distance_m: u64,
 }
 
 #[view(accessor = backend_contracts, public)]
@@ -3776,23 +3780,33 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
         .contract_authority()
         .gateway_bucket()
         .filter(0u8)
-        .map(|row| BackendContract {
-            id: row.id,
-            case_id: row.case_id,
-            title: row.title,
-            description: row.description,
-            difficulty: row.difficulty,
-            gold_reward: row.gold_reward,
-            xp_reward: row.xp_reward,
-            settlement_id: row.settlement_id,
-            service_id: row.service_id,
-            issuer_npc_id: row.issuer_npc_id,
-            status: row.status,
-            accepted_by: row.accepted_by,
-            opposition_wording: row.opposition_wording,
-            opposition_count_wording: row.opposition_count_wording,
-            accepted_at_minute: row.accepted_at_minute,
-            paid_at_minute: row.paid_at_minute,
+        .filter_map(|row| {
+            let distance_m = ctx
+                .db
+                .case_site_authority()
+                .case_id()
+                .filter(&row.case_id)
+                .map(|site| site.distance_m)
+                .max()?;
+            Some(BackendContract {
+                id: row.id,
+                case_id: row.case_id,
+                title: row.title,
+                description: row.description,
+                difficulty: row.difficulty,
+                gold_reward: row.gold_reward,
+                xp_reward: row.xp_reward,
+                settlement_id: row.settlement_id,
+                service_id: row.service_id,
+                issuer_npc_id: row.issuer_npc_id,
+                status: row.status,
+                accepted_by: row.accepted_by,
+                opposition_wording: row.opposition_wording,
+                opposition_count_wording: row.opposition_count_wording,
+                accepted_at_minute: row.accepted_at_minute,
+                paid_at_minute: row.paid_at_minute,
+                distance_m,
+            })
         })
         .collect()
 }
