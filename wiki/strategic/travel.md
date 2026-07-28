@@ -76,6 +76,15 @@ carried along the existing journey rather than abandoned or teleported. Their
 body and inventory remain part of the party's burden, while staggered members
 contribute reduced carrying capacity and incapacitated members contribute none.
 
+If no living member is actionable, ordinary action authority remains
+unavailable. At a coherent persisted off-settlement journey camp only, an alive
+authoritative leader may nevertheless attempt supplied passive camp rest when
+all condition statuses are known and nobody is critical. Publicly symptomatic
+members may convalesce this way. An unresolved encounter or incoherent
+party/journey/itinerary forecast holds before rest. This permission models the
+party remaining at rest; it cannot be used to continue the journey, choose an
+encounter response, pursue a case, manage a contract, or exercise leadership.
+
 ## Food and water
 
 Every living traveler consumes food and water over elapsed strategic time.

@@ -167,9 +167,11 @@ Off-settlement health is an explicit expedition state, not a reason to repeat
 quest suppression indefinitely. Before selecting another quest action, the
 runner reads only public party membership/location, strategic condition,
 illness signal, needs, concrete supplies, journey itinerary, and owner-visible
-case-site pins. It immediately records a recovery plan, takes at most two
-one-day field rests when pooled concrete stored food and portable water cover
-every living member's daily requirement and nobody is critical, and resumes
+case-site pins. It immediately records a recovery plan and makes at most two
+one-day field-rest attempts when pooled concrete stored food and portable water
+cover every living member's daily requirement and nobody is critical. Injury
+or disease boundaries may clip an attempt, so actual elapsed minutes are
+measured rather than assuming a completed day. The expedition resumes
 only when there is a living actionable member and every living member is ready
 and asymptomatic. A successful field recovery resumes the same bounded policy
 cycle, allowing an already-public on-site action to proceed instead of losing
@@ -188,8 +190,37 @@ state shows a living party at that settlement with no remaining camp
 destination; an incomplete leg is logged as stalled.
 The recovery loop reselects a public ready, asymptomatic, noncritical actor
 before every individual field rest. If the previous rest leaves nobody
-actionable, it records the typed no-actionable hold instead of reusing the
-stale actor.
+actionable, it does not reuse the stale actor. One narrow passive-recovery mode
+may still apply when no living member is publicly actionable. Public symptoms
+may be the reason even when a member's condition status is `ready`; every
+living member must have a known ready, staggered, or incapacitated status and
+none may be critical. The authoritative leader must be alive, the party must
+be off-settlement at a coherent persisted journey camp, and concrete pooled
+supplies must cover the requested day. The simulator represents this with a
+separate typed `PassiveNoActionable` rest actor which can reach only the camp
+rest call boundary. It cannot continue travel, resolve an encounter, perform a
+case action, accept or report a contract, vote on leadership, or invoke any
+other reducer. This is passive convalescence—the state is resting—not action
+authority.
+
+Passive eligibility and the public member/supply state are recalculated before
+each of at most two rest attempts. If any member becomes actionable, the
+ordinary ready-actor recovery path takes over; if everyone becomes ready and
+asymptomatic, the expedition may resume. A critical member, insufficient
+supplies, a dead leader, an unresolved public encounter, or a missing,
+ambiguous, mismatched, completed, or forecast-incoherent public camp journey
+fails closed to a typed hold before invoking the reducer. Both ordinary and
+passive recovery rests use this same public camp predicate: party destination,
+unique matching journey and itinerary, incomplete elapsed journey, and a valid
+active forecast camp interval.
+
+`expedition_passive_rest_attempts` counts reducer attempts, while
+`expedition_passive_rest_minutes` sums the actual public maximum-member clock
+delta. The event records requested and actual minutes, so a disease or injury
+boundary that clips a request never masquerades as a completed day. The
+ordinary public per-member and concrete-supply before/after diagnostics remain
+attached to `phase=passive_no_actionable_rest`. The policy never reads private
+disease or exposure state.
 
 Every recovery camp and evacuation leg records each member's public before and
 after condition, hunger, thirst, food/water days, symptom/critical flags, and

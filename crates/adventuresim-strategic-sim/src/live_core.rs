@@ -249,6 +249,8 @@ pub struct CoreLoopMetrics {
     pub expedition_evacuations: u32,
     pub expedition_resumes: u32,
     pub expedition_holds: u32,
+    pub expedition_passive_rest_attempts: u32,
+    pub expedition_passive_rest_minutes: u64,
     pub generated_unique_party_cases_discovered: u32,
     pub generated_exact_site_ready: u32,
     pub generated_finance_blocked_cycles: u32,
@@ -505,6 +507,52 @@ enum JourneyTravelOutcome {
     HeldForRecovery,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ActionableRecoveryRestActor {
+    character_id: u64,
+    agent_id: u32,
+    role: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PassiveNoActionableRestActor {
+    leader_id: u64,
+    agent_id: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExpeditionRecoveryRestActor {
+    Actionable(ActionableRecoveryRestActor),
+    PassiveNoActionable(PassiveNoActionableRestActor),
+}
+
+impl ExpeditionRecoveryRestActor {
+    fn character_id(self) -> u64 {
+        match self {
+            Self::Actionable(actor) => actor.character_id,
+            Self::PassiveNoActionable(actor) => actor.leader_id,
+        }
+    }
+
+    fn agent_id(self) -> u32 {
+        match self {
+            Self::Actionable(actor) => actor.agent_id,
+            Self::PassiveNoActionable(actor) => actor.agent_id,
+        }
+    }
+
+    fn role(self) -> &'static str {
+        match self {
+            Self::Actionable(actor) => actor.role,
+            Self::PassiveNoActionable(_) => "passive_no_actionable_rest",
+        }
+    }
+
+    fn is_passive(self) -> bool {
+        matches!(self, Self::PassiveNoActionable(_))
+    }
+}
+
 fn expedition_member_needs_recovery(member: &ExpeditionMemberObservation) -> bool {
     member.alive && (member.condition_status != "ready" || member.symptomatic || member.critical)
 }
@@ -541,6 +589,57 @@ fn expedition_supplies_cover_one_rest_day(
             >= living * adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
         && supplies.portable_water_ml
             >= living * adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY
+}
+
+fn passive_no_actionable_rest_allowed(
+    members: &[ExpeditionMemberObservation],
+    supplies: ExpeditionSuppliesObservation,
+    off_settlement: bool,
+    persisted_camp_journey: bool,
+    leader_id: u64,
+    actionable_actor_exists: bool,
+) -> bool {
+    let living = members
+        .iter()
+        .filter(|member| member.alive)
+        .collect::<Vec<_>>();
+    off_settlement
+        && persisted_camp_journey
+        && !actionable_actor_exists
+        && !living.is_empty()
+        && living.iter().any(|member| member.character_id == leader_id)
+        && living.iter().all(|member| {
+            matches!(
+                member.condition_status.as_str(),
+                "ready" | "staggered" | "incapacitated"
+            ) && !member.critical
+        })
+        && expedition_supplies_cover_one_rest_day(members, supplies)
+}
+
+fn expedition_elapsed_delta(
+    before: &[ExpeditionMemberObservation],
+    after: &[ExpeditionMemberObservation],
+) -> u64 {
+    let before_max = before
+        .iter()
+        .map(|member| member.elapsed_minutes)
+        .max()
+        .unwrap_or(0);
+    let after_max = after
+        .iter()
+        .map(|member| member.elapsed_minutes)
+        .max()
+        .unwrap_or(before_max);
+    after_max.saturating_sub(before_max)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PublicActiveCampObservation {
+    completed_elapsed_minutes: u64,
+    total_elapsed_minutes: u64,
+    active_interval_start: u64,
+    active_interval_minutes: u64,
 }
 
 fn select_expedition_encounter_choice(
@@ -1011,6 +1110,7 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "rest_at_camp",
         "continue_camp_travel",
         "travel_camps",
+        "passive_no_actionable_rest",
         "purchase_journey_provisions",
     ]
     .into_iter()
@@ -2387,6 +2487,66 @@ impl LiveRunner {
         Ok(TravelProvisionDecision::Ready)
     }
 
+    fn public_active_camp_observation(
+        &self,
+        party_id: &str,
+    ) -> Option<PublicActiveCampObservation> {
+        let party = self
+            .connection
+            .db
+            .party()
+            .iter()
+            .find(|party| party.id == party_id)?;
+        let camp_destination = party.camp_destination.as_ref()?;
+        if party.current_settlement_id.is_some() || party.camp_remaining_minutes == 0 {
+            return None;
+        }
+        let journeys = self
+            .connection
+            .db
+            .party_journey()
+            .iter()
+            .filter(|journey| journey.party_id == party_id)
+            .collect::<Vec<_>>();
+        let itineraries = self
+            .connection
+            .db
+            .party_journey_itinerary()
+            .iter()
+            .filter(|itinerary| itinerary.party_id == party_id)
+            .collect::<Vec<_>>();
+        let [journey] = journeys.as_slice() else {
+            return None;
+        };
+        let [itinerary] = itineraries.as_slice() else {
+            return None;
+        };
+        if &journey.destination != camp_destination
+            || journey.completed_elapsed_minutes >= journey.total_elapsed_minutes
+        {
+            return None;
+        }
+        let (active_interval_start, active_interval_minutes) = projected_camp_rest_minutes(
+            journey.completed_elapsed_minutes,
+            journey.total_elapsed_minutes,
+            &itinerary.forecast_camp_intervals,
+        )?;
+        (active_interval_minutes > 0).then_some(PublicActiveCampObservation {
+            completed_elapsed_minutes: journey.completed_elapsed_minutes,
+            total_elapsed_minutes: journey.total_elapsed_minutes,
+            active_interval_start,
+            active_interval_minutes,
+        })
+    }
+
+    fn party_has_unresolved_public_encounter(&self, party_id: &str) -> bool {
+        self.connection
+            .db
+            .strategic_encounter()
+            .iter()
+            .any(|row| row.party_id == party_id && row.status == "awaiting_choice")
+    }
+
     fn travel_camps(&mut self, party_id: &str) -> Result<JourneyTravelOutcome, String> {
         for _ in 0..MAX_CAMPS_PER_LEG {
             let party = self.party_by_id(party_id)?;
@@ -2397,7 +2557,11 @@ impl LiveRunner {
             let remaining_before = party.camp_remaining_minutes;
             let Some((travel_actor, _, _)) = self.expedition_recovery_actor(party_id) else {
                 self.observe_deaths();
-                return self.record_journey_hold(party_id, "journey_stalled");
+                return self.record_journey_hold(
+                    party_id,
+                    "journey_stalled",
+                    "journey_held_no_actionable_actor",
+                );
             };
             let pending_encounter = {
                 let table = self.connection.db.strategic_encounter();
@@ -2474,38 +2638,27 @@ impl LiveRunner {
                     format!("id={encounter_id};choice={choice};outcome={resolved_outcome:?}"),
                 );
                 if self.current_leader(party_id).is_none() {
-                    return self.record_journey_hold(party_id, "journey_stalled_after_encounter");
+                    return self.record_journey_hold(
+                        party_id,
+                        "journey_stalled_after_encounter",
+                        "journey_held_no_actionable_actor",
+                    );
                 }
                 continue;
             }
-            let journey = self
-                .connection
-                .db
-                .party_journey()
-                .iter()
-                .find(|row| row.party_id == party_id)
-                .ok_or("journey camp projection is incoherent: active journey missing")?;
-            let itinerary = self
-                .connection
-                .db
-                .party_journey_itinerary()
-                .iter()
-                .find(|row| row.party_id == party_id)
-                .ok_or("journey camp projection is incoherent: itinerary missing")?;
-            let (camp_start, rest_minutes) = projected_camp_rest_minutes(
-                journey.completed_elapsed_minutes,
-                journey.total_elapsed_minutes,
-                &itinerary.forecast_camp_intervals,
-            )
-            .ok_or("journey camp projection is incoherent: no active forecast interval")?;
+            let camp = self
+                .public_active_camp_observation(party_id)
+                .ok_or("journey camp projection is incoherent: no unique active public camp")?;
+            let camp_start = camp.active_interval_start;
+            let rest_minutes = camp.active_interval_minutes;
             self.event(
                 self.current_leader(party_id).map_or(0, |(_, agent)| agent),
                 CoreLoopEventKind::Camp,
                 format!(
                     "phase=pre_rest;party={};completed_elapsed={};total_elapsed={};camp_start={camp_start};rest_minutes={rest_minutes};remaining_movement={remaining_before}",
                     bounded_event_field(party_id),
-                    journey.completed_elapsed_minutes,
-                    journey.total_elapsed_minutes,
+                    camp.completed_elapsed_minutes,
+                    camp.total_elapsed_minutes,
                 ),
             );
             let camp_members_before = self.expedition_member_observations(party_id)?;
@@ -2520,7 +2673,11 @@ impl LiveRunner {
             let Some((continue_actor, agent, continue_actor_role)) =
                 self.expedition_recovery_actor(party_id)
             else {
-                return self.record_journey_hold(party_id, "journey_stalled_after_rest");
+                return self.record_journey_hold(
+                    party_id,
+                    "journey_stalled_after_rest",
+                    "journey_held_no_actionable_actor",
+                );
             };
             let unsafe_after_rest = self.unsafe_party_agents(&self.party_agents(continue_actor)?);
             let camp_members_after = self.expedition_member_observations(party_id)?;
@@ -2668,7 +2825,11 @@ impl LiveRunner {
         self.observe_deaths();
         let Some((leader, agent)) = self.current_leader(party_id) else {
             return self
-                .record_journey_hold(party_id, "journey_arrival_revalidation")
+                .record_journey_hold(
+                    party_id,
+                    "journey_arrival_revalidation",
+                    "journey_held_arrival_not_proven",
+                )
                 .map(Some);
         };
         let party_agents = self.party_agents(leader)?;
@@ -3973,6 +4134,7 @@ impl LiveRunner {
         &mut self,
         party_id: &str,
         phase: &str,
+        reason: &str,
     ) -> Result<JourneyTravelOutcome, String> {
         let party = self.party_by_id(party_id)?;
         let members = self.expedition_member_observations(party_id)?;
@@ -4039,9 +4201,10 @@ impl LiveRunner {
             diagnostic_agent,
             CoreLoopEventKind::ExpeditionRecovery,
             format!(
-                "party={};phase={};action=hold_position;reason=journey_held_no_actionable_actor;journey_completed_elapsed={journey_completed_elapsed};journey_total_elapsed={journey_total_elapsed};journey_remaining_elapsed={journey_remaining_elapsed};journey_destination={};camp_remaining_minutes={};active_forecast_interval_start={active_interval_start};active_forecast_interval_minutes={active_interval_minutes};living_count={living_count};one_day_food_kcal_required={required_food_kcal:.0};stored_food_kcal={:.0};one_day_water_ml_required={required_water_ml:.0};portable_water_ml={:.0};supplies_cover_one_rest_day={supplies_cover_one_day}",
+                "party={};phase={};action=hold_position;reason={};journey_completed_elapsed={journey_completed_elapsed};journey_total_elapsed={journey_total_elapsed};journey_remaining_elapsed={journey_remaining_elapsed};journey_destination={};camp_remaining_minutes={};active_forecast_interval_start={active_interval_start};active_forecast_interval_minutes={active_interval_minutes};living_count={living_count};one_day_food_kcal_required={required_food_kcal:.0};stored_food_kcal={:.0};one_day_water_ml_required={required_water_ml:.0};portable_water_ml={:.0};supplies_cover_one_rest_day={supplies_cover_one_day}",
                 bounded_event_field(party_id),
                 bounded_event_field(phase),
+                bounded_event_field(reason),
                 bounded_event_field(&journey_destination),
                 party.camp_remaining_minutes,
                 supplies.stored_food_kcal,
@@ -4052,7 +4215,7 @@ impl LiveRunner {
             party_id,
             phase,
             "hold_position",
-            "journey_held_no_actionable_actor",
+            reason,
             &members,
             &members,
             supplies,
@@ -4089,6 +4252,72 @@ impl LiveRunner {
             return Some((actor.character_id, actor.agent_id, role));
         }
         None
+    }
+
+    fn expedition_recovery_rest_actor(
+        &self,
+        party_id: &str,
+    ) -> Option<ExpeditionRecoveryRestActor> {
+        let party = self
+            .connection
+            .db
+            .party()
+            .iter()
+            .find(|party| party.id == party_id)?;
+        let members = self.expedition_member_observations(party_id).ok()?;
+        let supplies = self.expedition_supplies(party_id);
+        if self.party_has_unresolved_public_encounter(party_id)
+            || self.public_active_camp_observation(party_id).is_none()
+        {
+            return None;
+        }
+        if let Some((character_id, agent_id, role)) = self.expedition_recovery_actor(party_id) {
+            return Some(ExpeditionRecoveryRestActor::Actionable(
+                ActionableRecoveryRestActor {
+                    character_id,
+                    agent_id,
+                    role,
+                },
+            ));
+        }
+        if !passive_no_actionable_rest_allowed(
+            &members,
+            supplies,
+            party.current_settlement_id.is_none(),
+            true,
+            party.leader_id,
+            false,
+        ) {
+            return None;
+        }
+        let leader = members
+            .iter()
+            .find(|member| member.character_id == party.leader_id && member.alive)?;
+        Some(ExpeditionRecoveryRestActor::PassiveNoActionable(
+            PassiveNoActionableRestActor {
+                leader_id: leader.character_id,
+                agent_id: leader.agent_id,
+            },
+        ))
+    }
+
+    fn perform_expedition_recovery_rest(
+        &mut self,
+        actor: ExpeditionRecoveryRestActor,
+    ) -> Result<(), String> {
+        let (character_id, operation) = match actor {
+            ExpeditionRecoveryRestActor::Actionable(actor) => {
+                (actor.character_id, "expedition_recovery_rest")
+            }
+            ExpeditionRecoveryRestActor::PassiveNoActionable(actor) => {
+                (actor.leader_id, "passive_no_actionable_rest")
+            }
+        };
+        let result = reducer_call!(self, operation, |cb| self
+            .connection
+            .reducers
+            .rest_at_camp_then(character_id, EXPEDITION_RECOVERY_REST_MINUTES, cb));
+        self.call(result)
     }
 
     fn public_expedition_return_settlement(&self, party_id: &str) -> Option<String> {
@@ -4180,14 +4409,52 @@ impl LiveRunner {
                     .filter(|member| expedition_member_needs_recovery(member))
                     .count() as u32,
             );
-        let Some((actor_id, actor_agent, actor_role)) = self.expedition_recovery_actor(party_id)
-        else {
-            self.record_journey_hold(party_id, "recovery_plan")?;
+        if self.party_has_unresolved_public_encounter(party_id) {
+            self.record_journey_hold(
+                party_id,
+                "recovery_plan",
+                "journey_held_unresolved_encounter",
+            )?;
             self.emit_expedition_diagnostics(
                 party_id,
                 "plan",
                 "hold_position",
-                "no_actionable_recovery_actor",
+                "journey_held_unresolved_encounter",
+                &before,
+                &before,
+                supplies_before,
+                supplies_before,
+            );
+            return Ok(ExpeditionRecoveryOutcome::Held);
+        }
+        let actionable_actor = self.expedition_recovery_actor(party_id);
+        let coherent_camp = self.public_active_camp_observation(party_id);
+        if party.camp_destination.is_some() && coherent_camp.is_none() {
+            self.record_journey_hold(
+                party_id,
+                "recovery_plan",
+                "journey_held_incoherent_public_camp",
+            )?;
+            return Ok(ExpeditionRecoveryOutcome::Held);
+        }
+        let plan_actor = coherent_camp
+            .and_then(|_| self.expedition_recovery_rest_actor(party_id))
+            .or_else(|| {
+                actionable_actor.map(|(character_id, agent_id, role)| {
+                    ExpeditionRecoveryRestActor::Actionable(ActionableRecoveryRestActor {
+                        character_id,
+                        agent_id,
+                        role,
+                    })
+                })
+            });
+        let Some(plan_actor) = plan_actor else {
+            self.record_journey_hold(party_id, "recovery_plan", "journey_held_no_recovery_actor")?;
+            self.emit_expedition_diagnostics(
+                party_id,
+                "plan",
+                "hold_position",
+                "journey_held_no_recovery_actor",
                 &before,
                 &before,
                 supplies_before,
@@ -4195,6 +4462,9 @@ impl LiveRunner {
             );
             return Ok(ExpeditionRecoveryOutcome::Held);
         };
+        let actor_id = plan_actor.character_id();
+        let actor_agent = plan_actor.agent_id();
+        let actor_role = plan_actor.role();
         self.emit_expedition_diagnostics(
             party_id,
             "plan",
@@ -4213,34 +4483,80 @@ impl LiveRunner {
             ),
         );
 
-        let can_attempt_field_recovery = before
-            .iter()
-            .all(|member| !member.alive || !member.critical)
+        let can_attempt_field_recovery = coherent_camp.is_some()
+            && before
+                .iter()
+                .all(|member| !member.alive || !member.critical)
             && expedition_supplies_cover_one_rest_day(&before, supplies_before);
         if can_attempt_field_recovery {
             for rest_ordinal in 1..=MAX_EXPEDITION_RECOVERY_RESTS {
-                let Some((rest_actor_id, _, _)) = self.expedition_recovery_actor(party_id) else {
-                    self.record_journey_hold(party_id, "field_recovery_actor_reselection")?;
+                if self.party_has_unresolved_public_encounter(party_id) {
+                    self.record_journey_hold(
+                        party_id,
+                        "field_recovery_actor_reselection",
+                        "journey_held_unresolved_encounter",
+                    )?;
+                    return Ok(ExpeditionRecoveryOutcome::Held);
+                }
+                let party_before_rest = self.party_by_id(party_id)?;
+                if party_before_rest.camp_destination.is_some()
+                    && self.public_active_camp_observation(party_id).is_none()
+                {
+                    self.record_journey_hold(
+                        party_id,
+                        "field_recovery_actor_reselection",
+                        "journey_held_incoherent_public_camp",
+                    )?;
+                    return Ok(ExpeditionRecoveryOutcome::Held);
+                }
+                let Some(rest_actor) = self.expedition_recovery_rest_actor(party_id) else {
+                    self.record_journey_hold(
+                        party_id,
+                        "field_recovery_actor_reselection",
+                        "journey_held_no_recovery_actor",
+                    )?;
                     return Ok(ExpeditionRecoveryOutcome::Held);
                 };
                 let rest_before = self.expedition_member_observations(party_id)?;
                 let rest_supplies_before = self.expedition_supplies(party_id);
-                let result = reducer_call!(self, "expedition_recovery_rest", |cb| self
-                    .connection
-                    .reducers
-                    .rest_at_camp_then(rest_actor_id, EXPEDITION_RECOVERY_REST_MINUTES, cb));
-                self.call(result)?;
+                if rest_actor.is_passive() {
+                    self.metrics.expedition_passive_rest_attempts = self
+                        .metrics
+                        .expedition_passive_rest_attempts
+                        .saturating_add(1);
+                }
+                self.perform_expedition_recovery_rest(rest_actor)?;
                 self.observe_deaths();
                 let rest_after = self.expedition_member_observations(party_id)?;
                 let rest_supplies_after = self.expedition_supplies(party_id);
+                let actual_elapsed_minutes = expedition_elapsed_delta(&rest_before, &rest_after);
                 self.metrics.expedition_recovery_rests =
                     self.metrics.expedition_recovery_rests.saturating_add(1);
                 self.metrics.recovery_rests = self.metrics.recovery_rests.saturating_add(1);
+                if rest_actor.is_passive() {
+                    self.metrics.expedition_passive_rest_minutes = self
+                        .metrics
+                        .expedition_passive_rest_minutes
+                        .saturating_add(actual_elapsed_minutes);
+                    self.event(
+                        rest_actor.agent_id(),
+                        CoreLoopEventKind::ExpeditionRecovery,
+                        format!(
+                            "party={};phase=passive_no_actionable_rest;action=rest_at_camp;rest_attempt={rest_ordinal};leader={};requested_minutes={EXPEDITION_RECOVERY_REST_MINUTES};actual_elapsed_minutes={actual_elapsed_minutes}",
+                            bounded_event_field(party_id),
+                            rest_actor.character_id(),
+                        ),
+                    );
+                }
                 self.emit_expedition_diagnostics(
                     party_id,
                     "field_rest",
                     "rest_at_camp",
-                    &format!("bounded_recovery_rest_{rest_ordinal}"),
+                    &if rest_actor.is_passive() {
+                        format!("passive_no_actionable_rest_attempt_{rest_ordinal}")
+                    } else {
+                        format!("bounded_recovery_rest_{rest_ordinal}")
+                    },
                     &rest_before,
                     &rest_after,
                     rest_supplies_before,
@@ -4289,7 +4605,11 @@ impl LiveRunner {
         let Some((evacuation_actor_id, evacuation_actor_agent, evacuation_actor_role)) =
             self.expedition_recovery_actor(party_id)
         else {
-            self.record_journey_hold(party_id, "evacuation_plan")?;
+            self.record_journey_hold(
+                party_id,
+                "evacuation_plan",
+                "journey_held_no_evacuation_actor",
+            )?;
             return Ok(ExpeditionRecoveryOutcome::Held);
         };
         self.emit_expedition_diagnostics(
@@ -7527,10 +7847,32 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn choose_quest").next())
             .expect("travel camp driver");
-        assert!(travel.contains(".party_journey()"));
-        assert!(travel.contains(".party_journey_itinerary()"));
+        assert!(travel.contains("public_active_camp_observation(party_id)"));
         assert!(travel.contains("row.party_id == party_id"));
-        assert!(travel.contains("projected_camp_rest_minutes("));
+        assert!(!travel.contains("projected_camp_rest_minutes("));
+        let coherent_camp = source
+            .split("fn public_active_camp_observation")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn party_has_unresolved_public_encounter")
+                    .next()
+            })
+            .expect("shared coherent public camp helper");
+        for public_projection in [".party()", ".party_journey()", ".party_journey_itinerary()"] {
+            assert!(
+                coherent_camp.contains(public_projection),
+                "{public_projection}"
+            );
+        }
+        assert!(coherent_camp.contains("let [journey] = journeys.as_slice()"));
+        assert!(coherent_camp.contains("let [itinerary] = itineraries.as_slice()"));
+        assert!(coherent_camp.contains("&journey.destination != camp_destination"));
+        assert!(
+            coherent_camp
+                .contains("journey.completed_elapsed_minutes >= journey.total_elapsed_minutes")
+        );
+        assert!(coherent_camp.contains("&itinerary.forecast_camp_intervals"));
+        assert!(coherent_camp.contains("projected_camp_rest_minutes("));
         assert!(
             travel.contains(
                 "let Some((travel_actor, _, _)) = self.expedition_recovery_actor(party_id)"
@@ -7549,9 +7891,9 @@ mod tests {
             assert!(source.contains(outcome), "{outcome}");
         }
         for hold in [
-            "record_journey_hold(party_id, \"journey_stalled\")",
-            "record_journey_hold(party_id, \"journey_stalled_after_encounter\")",
-            "record_journey_hold(party_id, \"journey_stalled_after_rest\")",
+            "\"journey_stalled\"",
+            "\"journey_stalled_after_encounter\"",
+            "\"journey_stalled_after_rest\"",
         ] {
             assert!(travel.contains(hold), "{hold}");
         }
@@ -7620,7 +7962,7 @@ mod tests {
             .and_then(|tail| tail.split("fn expedition_recovery_actor").next())
             .expect("journey hold diagnostics");
         for public_field in [
-            "reason=journey_held_no_actionable_actor",
+            "reason={}",
             "journey_completed_elapsed=",
             "journey_total_elapsed=",
             "journey_remaining_elapsed=",
@@ -7637,6 +7979,7 @@ mod tests {
         ] {
             assert!(hold.contains(public_field), "{public_field}");
         }
+        assert!(hold.contains("bounded_event_field(reason)"));
         assert!(hold.contains(".party_journey()"));
         assert!(hold.contains(".party_journey_itinerary()"));
         assert!(!hold.contains("infection_episode"));
@@ -7660,8 +8003,8 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn generated_case_status").next())
             .expect("expedition recovery driver");
-        assert!(recovery.contains("record_journey_hold(party_id, \"recovery_plan\")"));
-        assert!(recovery.contains("record_journey_hold(party_id, \"evacuation_plan\")"));
+        assert!(recovery.contains("\"recovery_plan\""));
+        assert!(recovery.contains("\"evacuation_plan\""));
         assert!(
             recovery.contains("self.travel_camps(party_id)? != JourneyTravelOutcome::Completed")
         );
@@ -7796,6 +8139,202 @@ mod tests {
     }
 
     #[test]
+    fn passive_no_actionable_recovery_is_camp_only_typed_and_publicly_gated() {
+        let staggered_leader = ExpeditionMemberObservation {
+            agent_id: 0,
+            character_id: 7,
+            alive: true,
+            condition_status: "staggered".into(),
+            hunger: 0.1,
+            thirst: 0.2,
+            food_days: 3.0,
+            water_days: 3.0,
+            symptomatic: false,
+            critical: false,
+            elapsed_minutes: 1_440,
+        };
+        let incapacitated_companion = ExpeditionMemberObservation {
+            agent_id: 1,
+            character_id: 8,
+            condition_status: "incapacitated".into(),
+            ..staggered_leader.clone()
+        };
+        let members = [staggered_leader.clone(), incapacitated_companion.clone()];
+        let supplies = ExpeditionSuppliesObservation {
+            stored_food_kcal: 2.0 * adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY,
+            portable_water_ml: 2.0
+                * adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
+        };
+        assert!(passive_no_actionable_rest_allowed(
+            &members, supplies, true, true, 7, false
+        ));
+        assert!(!passive_no_actionable_rest_allowed(
+            &members, supplies, false, true, 7, false
+        ));
+        assert!(!passive_no_actionable_rest_allowed(
+            &members, supplies, true, false, 7, false
+        ));
+        assert!(!passive_no_actionable_rest_allowed(
+            &members, supplies, true, true, 99, false
+        ));
+        assert!(passive_no_actionable_rest_allowed(
+            &[
+                ExpeditionMemberObservation {
+                    condition_status: "ready".into(),
+                    symptomatic: true,
+                    ..staggered_leader.clone()
+                },
+                incapacitated_companion.clone(),
+            ],
+            supplies,
+            true,
+            true,
+            7,
+            false,
+        ));
+        assert!(!passive_no_actionable_rest_allowed(
+            &[
+                ExpeditionMemberObservation {
+                    critical: true,
+                    ..staggered_leader
+                },
+                incapacitated_companion,
+            ],
+            supplies,
+            true,
+            true,
+            7,
+            false,
+        ));
+        assert!(!passive_no_actionable_rest_allowed(
+            &[
+                ExpeditionMemberObservation {
+                    condition_status: "unavailable".into(),
+                    ..members[0].clone()
+                },
+                members[1].clone(),
+            ],
+            supplies,
+            true,
+            true,
+            7,
+            false,
+        ));
+        assert!(!passive_no_actionable_rest_allowed(
+            &members,
+            ExpeditionSuppliesObservation {
+                stored_food_kcal: supplies.stored_food_kcal - 1.0,
+                ..supplies
+            },
+            true,
+            true,
+            7,
+            false,
+        ));
+        assert!(!passive_no_actionable_rest_allowed(
+            &members, supplies, true, true, 7, true,
+        ));
+
+        let source = include_str!("live_core.rs");
+        let selector = source
+            .split("fn expedition_recovery_rest_actor")
+            .nth(1)
+            .and_then(|tail| tail.split("fn perform_expedition_recovery_rest").next())
+            .expect("typed recovery-rest actor selector");
+        assert!(selector.contains("ExpeditionRecoveryRestActor::Actionable"));
+        assert!(selector.contains("ExpeditionRecoveryRestActor::PassiveNoActionable"));
+        assert!(selector.contains("passive_no_actionable_rest_allowed"));
+        assert!(selector.contains("party_has_unresolved_public_encounter"));
+        assert!(selector.contains("public_active_camp_observation"));
+
+        let camp_predicate = source
+            .split("fn public_active_camp_observation")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn party_has_unresolved_public_encounter")
+                    .next()
+            })
+            .expect("coherent public active-camp predicate");
+        assert!(camp_predicate.contains("let [journey] = journeys.as_slice()"));
+        assert!(camp_predicate.contains("let [itinerary] = itineraries.as_slice()"));
+        assert!(camp_predicate.contains("&journey.destination != camp_destination"));
+        assert!(
+            camp_predicate
+                .contains("journey.completed_elapsed_minutes >= journey.total_elapsed_minutes")
+        );
+        assert!(camp_predicate.contains("projected_camp_rest_minutes("));
+
+        let passive_call_boundary = source
+            .split("fn perform_expedition_recovery_rest")
+            .nth(1)
+            .and_then(|tail| tail.split("fn public_expedition_return_settlement").next())
+            .expect("passive recovery-rest call boundary");
+        assert!(passive_call_boundary.contains("PassiveNoActionable"));
+        assert!(passive_call_boundary.contains(".rest_at_camp_then("));
+        for forbidden in [
+            "continue_camp_travel",
+            "resolve_strategic_encounter",
+            "travel_to_case_site",
+            "travel_to_settlement",
+            "perform_investigation_action",
+            "accept_contract",
+            "report_contract",
+            "vote_for_party_leader",
+        ] {
+            assert!(
+                !passive_call_boundary.contains(forbidden),
+                "passive actor reached {forbidden}"
+            );
+        }
+
+        let recovery = source
+            .split("fn recover_or_evacuate_off_settlement")
+            .nth(1)
+            .and_then(|tail| tail.split("fn generated_case_status").next())
+            .expect("expedition recovery policy");
+        assert!(recovery.contains("self.expedition_recovery_rest_actor(party_id)"));
+        assert!(recovery.contains("self.perform_expedition_recovery_rest(rest_actor)"));
+        assert!(recovery.contains("passive_no_actionable_rest_"));
+        assert!(!recovery.contains(".rest_at_camp_then("));
+        assert!(recovery.contains("journey_held_unresolved_encounter"));
+        assert!(recovery.contains("journey_held_incoherent_public_camp"));
+
+        let before = [
+            ExpeditionMemberObservation {
+                elapsed_minutes: 100,
+                ..members[0].clone()
+            },
+            ExpeditionMemberObservation {
+                elapsed_minutes: 120,
+                ..members[1].clone()
+            },
+        ];
+        let after = [
+            ExpeditionMemberObservation {
+                elapsed_minutes: 160,
+                ..members[0].clone()
+            },
+            ExpeditionMemberObservation {
+                elapsed_minutes: 180,
+                ..members[1].clone()
+            },
+        ];
+        assert_eq!(expedition_elapsed_delta(&before, &after), 60);
+        assert!(recovery.contains("requested_minutes={EXPEDITION_RECOVERY_REST_MINUTES}"));
+        assert!(recovery.contains("actual_elapsed_minutes={actual_elapsed_minutes}"));
+        assert!(
+            recovery.find("expedition_passive_rest_attempts").unwrap()
+                < recovery
+                    .find("perform_expedition_recovery_rest(rest_actor)")
+                    .unwrap()
+        );
+        assert!(
+            recovery.find("expedition_passive_rest_minutes").unwrap()
+                > recovery.find("actual_elapsed_minutes =").unwrap()
+        );
+    }
+
+    #[test]
     fn recovery_outcomes_resume_same_cycle_but_consume_evacuation_or_hold() {
         assert_ne!(
             ExpeditionRecoveryOutcome::Resumed,
@@ -7901,10 +8440,10 @@ mod tests {
             .find("for rest_ordinal in 1..=MAX_EXPEDITION_RECOVERY_RESTS")
             .unwrap();
         let reselection = recovery[loop_start..]
-            .find("self.expedition_recovery_actor(party_id)")
+            .find("self.expedition_recovery_rest_actor(party_id)")
             .unwrap();
         let rest_call = recovery[loop_start..]
-            .find(".rest_at_camp_then(rest_actor_id")
+            .find("self.perform_expedition_recovery_rest(rest_actor)")
             .unwrap();
         assert!(reselection < rest_call);
         assert!(recovery.contains("field_recovery_actor_reselection"));
@@ -8648,6 +9187,8 @@ mod tests {
             expedition_evacuations: 1,
             expedition_resumes: 1,
             expedition_holds: 2,
+            expedition_passive_rest_attempts: 2,
+            expedition_passive_rest_minutes: 1_500,
             generated_unique_party_cases_discovered: 3,
             generated_exact_site_ready: 2,
             generated_finance_blocked_cycles: 5,
@@ -8690,6 +9231,8 @@ mod tests {
             "expedition_evacuations",
             "expedition_resumes",
             "expedition_holds",
+            "expedition_passive_rest_attempts",
+            "expedition_passive_rest_minutes",
             "generated_unique_party_cases_discovered",
             "generated_exact_site_ready",
             "generated_finance_blocked_cycles",
