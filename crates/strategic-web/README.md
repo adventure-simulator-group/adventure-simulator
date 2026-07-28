@@ -68,7 +68,7 @@ Environment variables:
 | `TACTICAL_STATIC_DIR` | `crates/adventuresim-stdb-module/static` | Path to tactical web client static files |
 | `SPACETIMEDB_HOST` | `http://localhost:3000` | SpacetimeDB HTTP API URL |
 | `SPACETIMEDB_DATABASE` | `adventuresim-stdb-module` | SpacetimeDB database name |
-| `SPACETIMEDB_TOKEN` | (none) | Optional auth token |
+| `SPACETIMEDB_TOKEN` | (none) | Required auth token for the registered strategic gateway identity |
 
 ## Routes
 

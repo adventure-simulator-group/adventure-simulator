@@ -76,12 +76,45 @@ class JustTaskTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_web_environment_uses_absolute_cross_platform_paths(self):
-        environment = just_tasks.web_environment()
+        environment = just_tasks.web_environment(spacetime_token="header.payload.signature")
 
         self.assertEqual(environment["SPACETIMEDB_HOST"], "http://localhost:3000")
         self.assertEqual(environment["BIND_ADDRESS"], "127.0.0.1:8080")
+        self.assertEqual(
+            environment["SPACETIMEDB_TOKEN"], "header.payload.signature"
+        )
         self.assertTrue(Path(environment["STATIC_DIR"]).is_absolute())
         self.assertTrue(Path(environment["TACTICAL_STATIC_DIR"]).is_absolute())
+
+    @mock.patch.object(just_tasks.shutil, "which", return_value="spacetime")
+    @mock.patch.object(just_tasks.subprocess, "run")
+    def test_spacetime_auth_token_is_captured_without_logging(self, run, _which):
+        run.return_value = mock.Mock(
+            returncode=0,
+            stdout="Authenticated token: header.payload.signature\n",
+        )
+
+        self.assertEqual(
+            just_tasks.spacetime_auth_token(), "header.payload.signature"
+        )
+        self.assertEqual(
+            run.call_args.args[0], ["spacetime", "login", "show", "--token"]
+        )
+        self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(run.call_args.kwargs["errors"], "replace")
+
+    @mock.patch.object(just_tasks.shutil, "which", return_value="spacetime")
+    @mock.patch.object(just_tasks.subprocess, "run")
+    def test_spacetime_auth_token_rejects_missing_or_ambiguous_tokens(
+        self, run, _which
+    ):
+        for output in (
+            "not logged in",
+            "one.two.three and four.five.six",
+        ):
+            run.return_value = mock.Mock(returncode=0, stdout=output)
+            with self.subTest(output=output), self.assertRaises(RuntimeError):
+                just_tasks.spacetime_auth_token()
 
     @mock.patch.object(just_tasks.shutil, "which", return_value="spacetime")
     @mock.patch.object(just_tasks.subprocess, "run")

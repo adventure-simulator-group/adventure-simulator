@@ -329,6 +329,16 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn("build-wasm", line)
             self.assertNotIn("build-tactical", line)
 
+    def test_canonical_web_recipes_do_not_invoke_private_fixture_bootstrap(self):
+        source = Path(dev_stack.ROOT, "justfile").read_text()
+        recipes = [
+            next(line for line in source.splitlines() if line.startswith(prefix))
+            for prefix in ("web:", "web-strategic:", "web-secure:")
+        ]
+        for recipe in recipes:
+            self.assertNotIn("_seed-world", recipe)
+        self.assertNotIn("\n_seed-world ", source)
+
 
 if __name__ == "__main__":
     unittest.main()
