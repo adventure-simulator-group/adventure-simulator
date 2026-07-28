@@ -475,6 +475,17 @@ pub(crate) fn ensure_npc_case_interventions(
                 .delete(&case.id);
         }
 
+        if let Some(mut row) = ctx
+            .db
+            .npc_adventuring_party_authority()
+            .id()
+            .find(&party.party_id)
+        {
+            row.available_at = decision.next_available_at;
+            ctx.db.npc_adventuring_party_authority().id().update(row);
+        }
+        update_working_party_availability(&mut parties, &party, decision.next_available_at)?;
+
         match decision.outcome {
             NpcInterventionOutcome::Resolved => {
                 resolve_generated_case(ctx, &validated.manifest, &party.party_id, &intervention_id)?
@@ -491,16 +502,6 @@ pub(crate) fn ensure_npc_case_interventions(
             )?,
             NpcInterventionOutcome::Failed | NpcInterventionOutcome::Delayed => {}
         }
-        if let Some(mut row) = ctx
-            .db
-            .npc_adventuring_party_authority()
-            .id()
-            .find(&party.party_id)
-        {
-            row.available_at = decision.next_available_at;
-            ctx.db.npc_adventuring_party_authority().id().update(row);
-        }
-        update_working_party_availability(&mut parties, &party, decision.next_available_at)?;
         record_news_for_informed_characters(
             ctx,
             &problem.id,
@@ -1006,10 +1007,13 @@ mod tests {
         let working = activity
             .find("update_working_party_availability(")
             .expect("working party availability");
-        let next_stage = activity
-            .find("record_news_for_informed_characters(")
-            .expect("next intervention stage");
-        let working_call = &activity[working..next_stage];
+        let outcome_match = activity
+            .find("match decision.outcome")
+            .expect("outcome application");
+        let resolution = activity
+            .find("resolve_generated_case(")
+            .expect("resolved-case application");
+        let working_call = &activity[working..outcome_match];
 
         assert!(
             activity.contains("let Some(party) = select_party(&snapshot, now, &parties).cloned()")
@@ -1028,7 +1032,10 @@ mod tests {
         );
         assert!(working_call.contains(")?;"));
         assert!(persisted < working);
-        assert!(working < next_stage);
+        assert!(persisted < outcome_match);
+        assert!(working < outcome_match);
+        assert!(persisted < resolution);
+        assert!(working < resolution);
     }
 
     #[test]

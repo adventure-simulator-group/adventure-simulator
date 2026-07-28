@@ -617,11 +617,18 @@ fn decision(
     roll_bps: u16,
     safe_summary: String,
 ) -> NpcInterventionDecision {
+    let next_available_at = now
+        .checked_add(RETRY_DELAY_MINUTES)
+        .expect("NPC intervention retry delay must fit in world time");
+    assert!(
+        next_available_at > now,
+        "NPC intervention must reserve its party beyond the current world minute"
+    );
     NpcInterventionDecision {
         strategy,
         outcome,
         mitigation_bps,
-        next_available_at: now.saturating_add(RETRY_DELAY_MINUTES),
+        next_available_at,
         roll_bps,
         safe_summary,
     }
@@ -771,6 +778,27 @@ mod tests {
         );
         assert_eq!(decision.outcome, NpcInterventionOutcome::Delayed);
         assert_eq!(decision.mitigation_bps, value.mitigation_bps);
+    }
+
+    #[test]
+    fn every_intervention_outcome_reserves_the_party_beyond_now() {
+        let now = 5_000;
+        for outcome in [
+            NpcInterventionOutcome::Resolved,
+            NpcInterventionOutcome::Mitigated,
+            NpcInterventionOutcome::Failed,
+            NpcInterventionOutcome::Delayed,
+        ] {
+            let value = decision(
+                NpcInterventionStrategy::InvestigateCarefully,
+                outcome,
+                0,
+                now,
+                0,
+                "safe summary".into(),
+            );
+            assert!(value.next_available_at > now, "{outcome:?}");
+        }
     }
 
     #[test]
