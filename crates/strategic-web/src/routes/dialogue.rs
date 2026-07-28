@@ -175,28 +175,21 @@ struct EventView {
 }
 #[derive(Serialize)]
 struct FragmentView {
-    fragment: adventuresim_dialogue::Fragment,
+    fragment: adventuresim_dialogue::ResolvedFragment,
     source: Option<EditSource>,
-    claim_segments: Option<Vec<ClaimSegmentView>>,
+    claim: Option<ClaimView>,
 }
 #[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum ClaimSegmentView {
-    Text {
-        value: String,
-    },
-    Claim {
-        value: String,
-        challenge_token: String,
-        charm_response: Option<String>,
-        command_response: Option<String>,
-        bluff_response: Option<String>,
-        assessment_direction: String,
-        assessment_strength: f32,
-        resolved: bool,
-        outcome: String,
-        affinity_delta: f32,
-    },
+struct ClaimView {
+    challenge_token: String,
+    charm_response: Option<String>,
+    command_response: Option<String>,
+    bluff_response: Option<String>,
+    assessment_direction: String,
+    assessment_strength: f32,
+    resolved: bool,
+    outcome: String,
+    affinity_delta: f32,
 }
 #[derive(Serialize)]
 struct TopicView {
@@ -603,39 +596,28 @@ async fn chat_with_npc(
     ))
 }
 
-fn claim_segments(text: &str, claims: &[WitnessClaimRow]) -> Option<Vec<ClaimSegmentView>> {
-    if claims.is_empty() {
-        return None;
-    }
-    let mut segments = Vec::new();
-    let mut remainder = text;
-    for claim in claims {
-        let (before, after) = remainder.split_once(&claim.displayed_text)?;
-        if !before.is_empty() {
-            segments.push(ClaimSegmentView::Text {
-                value: before.into(),
-            });
-        }
-        segments.push(ClaimSegmentView::Claim {
-            value: claim.displayed_text.clone(),
-            challenge_token: claim.challenge_token.clone(),
-            charm_response: claim.charm_response.clone(),
-            command_response: claim.command_response.clone(),
-            bluff_response: claim.bluff_response.clone(),
-            assessment_direction: claim.assessment_direction.clone(),
-            assessment_strength: claim.assessment_strength.clamp(0.0, 1.0),
-            resolved: claim.resolved,
-            outcome: claim.outcome.clone(),
-            affinity_delta: claim.affinity_delta,
-        });
-        remainder = after;
-    }
-    if !remainder.is_empty() {
-        segments.push(ClaimSegmentView::Text {
-            value: remainder.into(),
-        });
-    }
-    Some(segments)
+fn claim_view(
+    event_sequence: u32,
+    claim_order: u32,
+    displayed_text: &str,
+    claims: &[WitnessClaimRow],
+) -> Option<ClaimView> {
+    let claim = claims.iter().find(|claim| {
+        claim.event_sequence == event_sequence
+            && claim.claim_order == claim_order
+            && claim.displayed_text == displayed_text
+    })?;
+    Some(ClaimView {
+        challenge_token: claim.challenge_token.clone(),
+        charm_response: claim.charm_response.clone(),
+        command_response: claim.command_response.clone(),
+        bluff_response: claim.bluff_response.clone(),
+        assessment_direction: claim.assessment_direction.clone(),
+        assessment_strength: claim.assessment_strength.clamp(0.0, 1.0),
+        resolved: claim.resolved,
+        outcome: claim.outcome.clone(),
+        affinity_delta: claim.affinity_delta,
+    })
 }
 
 async fn build_view(
@@ -692,7 +674,7 @@ async fn build_view(
     let events: Vec<_> = events
         .into_iter()
         .map(|event| {
-            let fragments: Vec<adventuresim_dialogue::Fragment> =
+            let fragments: Vec<adventuresim_dialogue::ResolvedFragment> =
                 serde_json::from_str(&event.fragments_json).unwrap_or_default();
             let sources: Vec<Option<adventuresim_dialogue::SourceRef>> =
                 serde_json::from_str(&event.source_refs_json).unwrap_or_default();
@@ -700,11 +682,6 @@ async fn build_view(
                 .iter()
                 .find(|p| p.role == event.speaker_role)
                 .is_some_and(|p| p.character_id.is_some());
-            let event_claims = claims
-                .iter()
-                .filter(|claim| claim.event_sequence == event.sequence)
-                .cloned()
-                .collect::<Vec<_>>();
             EventView {
                 sequence: event.sequence,
                 speaker_name: names
@@ -717,16 +694,17 @@ async fn build_view(
                     .into_iter()
                     .enumerate()
                     .map(|(index, fragment)| {
-                        let segments = match &fragment {
-                            adventuresim_dialogue::Fragment::Text { value } => {
-                                claim_segments(value, &event_claims)
-                            }
+                        let claim = match &fragment {
+                            adventuresim_dialogue::ResolvedFragment::Claim {
+                                value,
+                                claim_order,
+                            } => claim_view(event.sequence, *claim_order, value, &claims),
                             _ => None,
                         };
                         FragmentView {
                             fragment,
                             source: sources.get(index).cloned().flatten().and_then(edit_source),
-                            claim_segments: segments,
+                            claim,
                         }
                     })
                     .collect(),
@@ -1039,15 +1017,12 @@ mod tests {
     }
 
     #[test]
-    fn claim_segmentation_preserves_authoritative_order_and_fails_closed() {
+    fn structured_claim_projection_requires_exact_event_order_and_text() {
         let rows = vec![claim("alone", 0), claim("a creature as tall as a tree", 1)];
-        let segments = claim_segments(
-            "I was there alone and saw a creature as tall as a tree.",
-            &rows,
-        )
-        .expect("authoritative boundaries match");
-        assert_eq!(segments.len(), 5);
-        assert!(claim_segments("I was there with company.", &rows).is_none());
-        assert!(claim_segments("A creature as tall as a tree saw me alone.", &rows).is_none());
+        assert!(claim_view(4, 0, "alone", &rows).is_some());
+        assert!(claim_view(4, 1, "a creature as tall as a tree", &rows).is_some());
+        assert!(claim_view(3, 0, "alone", &rows).is_none());
+        assert!(claim_view(4, 1, "alone", &rows).is_none());
+        assert!(claim_view(4, 0, "different text", &rows).is_none());
     }
 }

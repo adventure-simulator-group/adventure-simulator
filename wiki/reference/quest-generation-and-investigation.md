@@ -123,14 +123,23 @@ sites, and rare bridges. `generation.yaml` owns templates and separate
 plausibility/curation weights, including explicit hard zeros.
 
 Quest files may also declare `dialogue_variants`: bounded inert templates for
-generated `referral` or `testimony` prose. Variants reuse dialogue's typed
+generated `referral` prose. Variants reuse dialogue's typed
 condition tree and highest-priority selection semantics. They are presentation
 only: no variant can change canonical facts, reliability, recipient, route,
 or eligibility. Templates are rendered only from server-supplied values. The
 quest compiler records the exact template scalar source span, so generated
-referrals and testimony use the existing developer-mode edit link to the
+referrals use the existing developer-mode edit link to the
 selected quest YAML. Contract and finale exchanges remain ordinary compiled
 dialogue content; use `content/dialogue/` for those surfaces.
+
+Generated testimony does not use a parallel quest prose wrapper. Its authored
+`spoken_text` and exact `challenge_text` are expanded by a generic dialogue
+response's typed testimony binding into structured resolved fragments. This
+preserves punctuation and duplicate surrounding text without browser
+substring reconstruction. Volunteered and socially released withheld drafts
+use the same emitter, and private claim authority is attached to the exact
+emitted event sequence and event-local claim order before the gateway can
+project an opaque challenge token.
 
 Run `cargo run -p adventuresim-core --bin questgen-check -- validate` after an
 edit. Build-time embedding, process startup, and the authoring checker use the

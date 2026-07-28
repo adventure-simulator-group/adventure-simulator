@@ -60,7 +60,6 @@ pub struct QuestDialogueVariant {
 #[serde(rename_all = "snake_case")]
 pub enum QuestDialogueVariantKind {
     Referral,
-    Testimony,
 }
 
 impl QuestDialogueVariant {
@@ -886,24 +885,6 @@ mod tests {
         assert_eq!(source.file, "content/quests/investigation.yaml");
         assert!(source.line > 1);
         assert!(source.path.ends_with(".template"));
-    }
-
-    #[test]
-    fn testimony_variant_does_not_repeat_speaker_attribution() {
-        let catalog = catalog();
-        let variant = catalog
-            .dialogue_variant(QuestDialogueVariantKind::Testimony, &FactContext::default())
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            variant
-                .render(&BTreeMap::from([(
-                    "testimony".into(),
-                    "I saw a lantern.".into()
-                )]))
-                .unwrap(),
-            "I saw a lantern."
-        );
     }
 
     #[test]

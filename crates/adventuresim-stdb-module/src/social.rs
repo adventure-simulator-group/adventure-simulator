@@ -1044,6 +1044,7 @@ pub(crate) fn passively_assess_dialogue_witness(
     ctx: &ReducerContext,
     observer_character_id: u64,
     session_id: &str,
+    event_sequence: u32,
 ) -> Result<(), String> {
     let session = crate::strategic::require_session_member(ctx, session_id, observer_character_id)?;
     let capability = ctx
@@ -1052,12 +1053,13 @@ pub(crate) fn passively_assess_dialogue_witness(
         .id()
         .find(&format!("{session_id}:{observer_character_id}"))
         .ok_or("Dialogue has no witness social capability")?;
-    let (event_sequence, claims) = crate::strategic::referred_testimony_claims(
+    let claims = crate::strategic::referred_testimony_claims(
         ctx,
         observer_character_id,
         &session,
         &capability.npc_id,
         false,
+        event_sequence,
     )?;
     persist_claim_assessments(
         ctx,
@@ -1074,13 +1076,15 @@ fn passively_assess_released_testimony(
     observer_character_id: u64,
     session: &crate::strategic::DialogueSession,
     npc_id: &str,
+    event_sequence: u32,
 ) -> Result<(), String> {
-    let (event_sequence, claims) = crate::strategic::referred_testimony_claims(
+    let claims = crate::strategic::referred_testimony_claims(
         ctx,
         observer_character_id,
         session,
         npc_id,
         true,
+        event_sequence,
     )?;
     persist_claim_assessments(
         ctx,
@@ -1388,7 +1392,7 @@ pub fn approach_dialogue_witness(
         .challenge_token()
         .update(claim.clone());
     if released {
-        crate::strategic::release_referred_withheld_testimony(
+        let released_event_sequence = crate::strategic::release_referred_withheld_testimony(
             ctx,
             observer_character_id,
             &session,
@@ -1401,6 +1405,7 @@ pub fn approach_dialogue_witness(
             observer_character_id,
             &session,
             &capability.npc_id,
+            released_event_sequence,
         )?;
     }
     ctx.db

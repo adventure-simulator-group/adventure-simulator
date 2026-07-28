@@ -227,12 +227,13 @@
       const timestamp = document.createElement("span"); timestamp.className = "chat-timestamp"; timestamp.textContent = "[--:--] ";
       const speaker = document.createElement("strong"); speaker.textContent = `${event.speaker_name}: `;
       row.append(timestamp, speaker);
-      event.fragments.forEach(({ fragment, source, claim_segments }) => {
+      event.fragments.forEach(({ fragment, source, claim }) => {
         if (fragment.kind === "text") {
-          if (claim_segments) claim_segments.forEach((segment) => {
-            row.append(segment.kind === "claim" ? claimControl(segment, binding, row) : document.createTextNode(segment.value));
-          });
-          else row.append(document.createTextNode(fragment.value));
+          row.append(document.createTextNode(fragment.value));
+          const edit = sourceLink(source); if (edit) row.append(edit);
+        }
+        else if (fragment.kind === "claim") {
+          row.append(claim ? claimControl({ ...claim, value: fragment.value }, binding, row) : document.createTextNode(fragment.value));
           const edit = sourceLink(source); if (edit) row.append(edit);
         }
         else if (fragment.kind === "period_claim") { const claim = document.createElement("q"); claim.className = "dialogue-period-claim"; claim.textContent = fragment.value; row.append(claim); const edit = sourceLink(source); if (edit) row.append(edit); }
@@ -240,8 +241,9 @@
         else if (fragment.kind === "topic") row.append(topicAnchor({ id: fragment.topic, label: fragment.label, source }, { ...binding, topicId: fragment.topic }));
       });
       messages.append(row);
-      const expanded = event.fragments.flatMap((entry) => entry.claim_segments || [])
-        .find((segment) => segment.kind === "claim" && segment.challenge_token === expandedClaimToken);
+      const expanded = event.fragments
+        .map((entry) => entry.fragment.kind === "claim" && entry.claim ? { ...entry.claim, value: entry.fragment.value } : null)
+        .find((claim) => claim?.challenge_token === expandedClaimToken);
       if (expanded) row.append(claimResponsePanel(expanded, binding));
     });
     renderPrompt(view.open_prompt);

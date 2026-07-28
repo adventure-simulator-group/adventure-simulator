@@ -86,6 +86,22 @@ servers do not read loose content files.
 
 ## Authoring model
 
+The distinction between generic and quest dialogue is authority, not a
+separate rendering system. A direct topic response may contain the typed
+`runtime: testimony` binding when—and only when—the same response applies
+`receive_referred_testimony`. For the exact generated witness, the server
+expands that slot through the normal turn pipeline into persisted `text`,
+`claim`, and `text` fragments. A claim fragment transports only its displayed
+value and event-local order. Proposition identity, reliability, factual
+accuracy, demeanor, checks, and rolls never enter event JSON. The private
+assessment row must match the exact session event, claim order, and displayed
+text before the gateway makes the fragment interactive; a missing or
+mismatched row leaves ordinary inert text. `period_claim` remains display-only
+and literal YAML cannot manufacture claim authority.
+Conversation-start responses and prompt result turns cannot contain
+authoritative testimony because those execution paths do not carry the exact
+emitted claim-event sequence into the receiving effect.
+
 Each conversation has a stable ID and named participant roles. A role declares
 `player` or `npc` plus minimum/maximum cardinality, so one authored exchange can
 require a shopkeeper and assistant or address several players. Optional
@@ -101,6 +117,11 @@ evidence, testimony, or contract terms. Authored literals and runtime slots
 remain distinct in the compiled catalog and source map. The server resolves
 slots from authoritative strategic rows and persists only bounded inert text;
 generated values are never scripts, conditions, effects, or canonical truth.
+Runtime testimony is the one structured binding: each authoritative draft
+becomes a claim boundary with surrounding punctuation retained as text, and
+multiple drafts retain deterministic event-local order. The compiler rejects
+a testimony slot without its receive effect, the effect without exactly one
+slot, and attempts to place more than one testimony slot in a response.
 Prompts support `yes_no`, `single`, and `multi` choices and
 `first_response`, `unanimous`, `majority`, or `all_respondents` resolution.
 Choices may contain `result_turns`; these are appended to the durable transcript

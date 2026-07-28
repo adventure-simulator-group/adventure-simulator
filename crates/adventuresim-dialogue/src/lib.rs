@@ -6,14 +6,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
+mod authoring_schema;
+pub use authoring_schema::{Condition, FactKey, FactValue, PromptMode, ResolutionPolicy};
+
 include!(concat!(env!("OUT_DIR"), "/dialogue_catalog.rs"));
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogDocument {
     pub conversations: Vec<Conversation>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Conversation {
     pub id: String,
     pub roles: BTreeMap<String, Role>,
@@ -24,6 +29,7 @@ pub struct Conversation {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Role {
     pub kind: ParticipantKind,
     #[serde(default = "one")]
@@ -43,6 +49,7 @@ pub enum ParticipantKind {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Topic {
     pub id: String,
     pub label: String,
@@ -54,6 +61,7 @@ pub struct Topic {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Response {
     pub id: String,
     pub priority: i32,
@@ -66,13 +74,14 @@ pub struct Response {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Turn {
     pub speaker: String,
     pub fragments: Vec<Fragment>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Fragment {
     Text {
         value: String,
@@ -127,6 +136,7 @@ pub enum RuntimeSlot {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RuntimeBindings {
     values: BTreeMap<RuntimeSlot, String>,
+    testimony: Option<Vec<TestimonyLine>>,
 }
 
 impl RuntimeBindings {
@@ -134,10 +144,55 @@ impl RuntimeBindings {
         self.values.insert(slot, value.into());
     }
 
-    pub fn resolve(&self, fragments: &[Fragment]) -> Result<Vec<Fragment>, DialogueError> {
-        fragments
-            .iter()
-            .map(|fragment| match fragment {
+    pub fn bind_testimony(&mut self, testimony: Vec<TestimonyLine>) {
+        self.testimony = Some(testimony);
+    }
+
+    pub fn resolve(&self, fragments: &[Fragment]) -> Result<Vec<ResolvedFragment>, DialogueError> {
+        let mut resolved = Vec::new();
+        let mut claim_order = 0u32;
+        for fragment in fragments {
+            match fragment {
+                Fragment::Runtime {
+                    slot: RuntimeSlot::Testimony,
+                } => {
+                    let testimony = self
+                        .testimony
+                        .as_ref()
+                        .ok_or_else(|| DialogueError::MissingRuntimeSlot(RuntimeSlot::Testimony))?;
+                    for (line_index, line) in testimony.iter().enumerate() {
+                        if line.spoken_text.chars().count() > 512
+                            || line.claim_text.is_empty()
+                            || line.claim_text.chars().count() > 512
+                            || line.spoken_text.chars().any(char::is_control)
+                            || line.claim_text.chars().any(char::is_control)
+                        {
+                            return Err(DialogueError::InvalidRuntimeValue(RuntimeSlot::Testimony));
+                        }
+                        let Some(claim_at) = line.spoken_text.find(&line.claim_text) else {
+                            return Err(DialogueError::InvalidRuntimeValue(RuntimeSlot::Testimony));
+                        };
+                        let claim_end = claim_at + line.claim_text.len();
+                        if line_index > 0 {
+                            resolved.push(ResolvedFragment::Text { value: " ".into() });
+                        }
+                        if claim_at > 0 {
+                            resolved.push(ResolvedFragment::Text {
+                                value: line.spoken_text[..claim_at].into(),
+                            });
+                        }
+                        resolved.push(ResolvedFragment::Claim {
+                            value: line.claim_text.clone(),
+                            claim_order,
+                        });
+                        claim_order = claim_order.saturating_add(1);
+                        if claim_end < line.spoken_text.len() {
+                            resolved.push(ResolvedFragment::Text {
+                                value: line.spoken_text[claim_end..].into(),
+                            });
+                        }
+                    }
+                }
                 Fragment::Runtime { slot } => {
                     let value = self
                         .values
@@ -146,17 +201,80 @@ impl RuntimeBindings {
                     if value.chars().count() > 512 || value.chars().any(char::is_control) {
                         return Err(DialogueError::InvalidRuntimeValue(slot.clone()));
                     }
-                    Ok(Fragment::Text {
+                    resolved.push(ResolvedFragment::Text {
+                        value: value.clone(),
+                    });
+                }
+                Fragment::Text { value } => resolved.push(ResolvedFragment::Text {
+                    value: value.clone(),
+                }),
+                Fragment::Topic { topic, label } => resolved.push(ResolvedFragment::Topic {
+                    topic: topic.clone(),
+                    label: label.clone(),
+                }),
+                Fragment::PeriodClaim { value } => resolved.push(ResolvedFragment::PeriodClaim {
+                    value: value.clone(),
+                }),
+                Fragment::AuthoritativeExplanation { reference, value } => {
+                    resolved.push(ResolvedFragment::AuthoritativeExplanation {
+                        reference: reference.clone(),
                         value: value.clone(),
                     })
                 }
-                authored => Ok(authored.clone()),
+            }
+        }
+        Ok(resolved)
+    }
+
+    pub fn resolve_turn(
+        &self,
+        turn: &Turn,
+        authored_sources: &[Option<SourceRef>],
+    ) -> Result<ResolvedTurn, DialogueError> {
+        if turn.fragments.len() != authored_sources.len() {
+            return Err(DialogueError::SourceAlignment);
+        }
+        let fragments = self.resolve(&turn.fragments)?;
+        let ordinary_count = turn
+            .fragments
+            .iter()
+            .filter(|fragment| {
+                !matches!(
+                    fragment,
+                    Fragment::Runtime {
+                        slot: RuntimeSlot::Testimony
+                    }
+                )
             })
-            .collect()
+            .count();
+        let testimony_count = fragments.len().saturating_sub(ordinary_count);
+        let mut source_refs = Vec::with_capacity(fragments.len());
+        for (fragment, source) in turn.fragments.iter().zip(authored_sources) {
+            let count = if matches!(
+                fragment,
+                Fragment::Runtime {
+                    slot: RuntimeSlot::Testimony
+                }
+            ) {
+                testimony_count
+            } else {
+                1
+            };
+            source_refs.extend(std::iter::repeat(source.clone()).take(count));
+        }
+        if source_refs.len() != fragments.len() {
+            return Err(DialogueError::SourceAlignment);
+        }
+        Ok(ResolvedTurn {
+            speaker: turn.speaker.clone(),
+            fragments,
+            source_refs,
+        })
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Prompt {
     pub id: String,
     pub respondent: String,
@@ -177,23 +295,7 @@ fn first_response() -> ResolutionPolicy {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum PromptMode {
-    YesNo,
-    Single,
-    Multi,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ResolutionPolicy {
-    FirstResponse,
-    Unanimous,
-    Majority,
-    AllRespondents,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Choice {
     pub id: String,
     pub label: String,
@@ -206,7 +308,7 @@ pub struct Choice {
 
 /// Closed, auditable effect vocabulary. Clients submit only response/choice IDs.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Effect {
     LearnTopic { topic: String },
     AcceptContract { contract: String },
@@ -232,269 +334,56 @@ pub enum InvestigationAction {
     ReportToIssuer,
 }
 
-/// Authoring pattern for how a witness transmits individual propositions.
-/// This is private generation input; topic eligibility must use only the
-/// resulting observer-safe claims, never this classification.
+/// Persisted and transported dialogue output. Unlike [`Fragment`], this type
+/// cannot contain unresolved runtime slots. `Claim` carries only its
+/// event-local presentation identity; all proposition and assessment authority
+/// remains private to the strategic server.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TestimonyReliability {
-    Truthful,
-    Mistaken,
-    Evasive,
-    Deceptive,
-    PartlyTruthful,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ResolvedFragment {
+    Text { value: String },
+    Topic { topic: String, label: String },
+    PeriodClaim { value: String },
+    AuthoritativeExplanation { reference: String, value: String },
+    Claim { value: String, claim_order: u32 },
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct PropositionTestimony {
-    pub proposition_id: String,
-    pub statement: String,
-    pub confidence_bps: u16,
-    pub disclosed: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct TestimonyStageDraft {
-    pub proposition_id: String,
-    pub perceived_text: String,
-    pub recalled_text: String,
-    pub disclosed_text: Option<String>,
-    pub transmitted_text: String,
-    pub confidence_bps: u16,
-}
-
-/// Production authoring path for proposition-level testimony. The alternate
-/// account is server-authored; no model or client invents canonical facts.
-pub fn build_testimony_bundle(
-    reliability: TestimonyReliability,
-    event: PropositionTestimony,
-    circumstance: PropositionTestimony,
-    mistaken_account: &str,
-    deceptive_account: &str,
-) -> Vec<TestimonyStageDraft> {
-    let stage = |source: &PropositionTestimony,
-                 recalled: String,
-                 disclosed: Option<String>,
-                 transmitted: String,
-                 confidence_bps| TestimonyStageDraft {
-        proposition_id: source.proposition_id.clone(),
-        perceived_text: source.statement.clone(),
-        recalled_text: recalled,
-        disclosed_text: disclosed,
-        transmitted_text: transmitted,
-        confidence_bps,
-    };
-    match reliability {
-        TestimonyReliability::Truthful => vec![
-            stage(
-                &event,
-                event.statement.clone(),
-                Some(event.statement.clone()),
-                event.statement.clone(),
-                event.confidence_bps,
-            ),
-            stage(
-                &circumstance,
-                circumstance.statement.clone(),
-                Some(circumstance.statement.clone()),
-                circumstance.statement.clone(),
-                circumstance.confidence_bps,
-            ),
-        ],
-        TestimonyReliability::Mistaken => vec![stage(
-            &event,
-            mistaken_account.into(),
-            Some(mistaken_account.into()),
-            mistaken_account.into(),
-            event.confidence_bps.min(4_000),
-        )],
-        TestimonyReliability::Evasive => vec![
-            stage(
-                &event,
-                event.statement.clone(),
-                Some(event.statement.clone()),
-                event.statement.clone(),
-                event.confidence_bps,
-            ),
-            stage(
-                &circumstance,
-                circumstance.statement.clone(),
-                None,
-                String::new(),
-                circumstance.confidence_bps,
-            ),
-        ],
-        TestimonyReliability::Deceptive => vec![stage(
-            &event,
-            event.statement.clone(),
-            Some(deceptive_account.into()),
-            deceptive_account.into(),
-            event.confidence_bps.min(6_000),
-        )],
-        TestimonyReliability::PartlyTruthful => vec![
-            stage(
-                &event,
-                event.statement.clone(),
-                Some(event.statement.clone()),
-                event.statement.clone(),
-                event.confidence_bps,
-            ),
-            stage(
-                &circumstance,
-                circumstance.statement.clone(),
-                None,
-                String::new(),
-                circumstance.confidence_bps,
-            ),
-        ],
+impl ResolvedFragment {
+    pub fn from_authored(fragment: &Fragment) -> Option<Self> {
+        match fragment {
+            Fragment::Text { value } => Some(Self::Text {
+                value: value.clone(),
+            }),
+            Fragment::Topic { topic, label } => Some(Self::Topic {
+                topic: topic.clone(),
+                label: label.clone(),
+            }),
+            Fragment::PeriodClaim { value } => Some(Self::PeriodClaim {
+                value: value.clone(),
+            }),
+            Fragment::AuthoritativeExplanation { reference, value } => {
+                Some(Self::AuthoritativeExplanation {
+                    reference: reference.clone(),
+                    value: value.clone(),
+                })
+            }
+            Fragment::Runtime { .. } => None,
+        }
     }
 }
 
-pub fn testimony_pattern(
-    reliability: TestimonyReliability,
-    event: PropositionTestimony,
-    circumstance: PropositionTestimony,
-) -> Vec<PropositionTestimony> {
-    match reliability {
-        TestimonyReliability::Truthful => vec![event, circumstance],
-        TestimonyReliability::Mistaken => vec![PropositionTestimony {
-            confidence_bps: event.confidence_bps.min(4_000),
-            ..event
-        }],
-        TestimonyReliability::Evasive => vec![PropositionTestimony {
-            disclosed: false,
-            ..circumstance
-        }],
-        TestimonyReliability::Deceptive => vec![PropositionTestimony {
-            confidence_bps: event.confidence_bps.min(6_000),
-            ..event
-        }],
-        TestimonyReliability::PartlyTruthful => vec![
-            event,
-            PropositionTestimony {
-                disclosed: false,
-                ..circumstance
-            },
-        ],
-    }
-}
-
-/// Typed fact predicates. New game systems extend this enum and the server-side fact resolver.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(tag = "op", rename_all = "snake_case")]
-pub enum Condition {
-    #[default]
-    Always,
-    All {
-        conditions: Vec<Condition>,
-    },
-    Any {
-        conditions: Vec<Condition>,
-    },
-    Not {
-        condition: Box<Condition>,
-    },
-    Fact {
-        key: FactKey,
-        equals: FactValue,
-    },
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum FactKey {
-    /// An NPC's occupational description, or a player's canonical profession
-    /// derived from their locally effective presented organization.
-    ParticipantProfession {
-        role: String,
-    },
-    /// A player's locally effective presented organization. This deliberately
-    /// differs from profession: a guild chapter and its profession family are
-    /// separate authoring concerns.
-    ParticipantOrganization {
-        role: String,
-    },
-    /// A player's authoritative profession of faith.
-    ParticipantReligion {
-        role: String,
-    },
-    ParticipantAgeBand {
-        role: String,
-    },
-    ParticipantSex {
-        role: String,
-    },
-    ParticipantLocalRole {
-        role: String,
-    },
-    ParticipantStatus {
-        role: String,
-    },
-    ParticipantLanguageCompatibility {
-        left: String,
-        right: String,
-    },
-    ParticipantFamiliarity {
-        left: String,
-        right: String,
-    },
-    ParticipantClothingCategory {
-        role: String,
-    },
-    ParticipantHasVisibleClothing {
-        role: String,
-    },
-    ParticipantPriorInteraction {
-        left: String,
-        right: String,
-    },
-    ParticipantCount {
-        role: String,
-    },
-    ParticipantPresent {
-        role: String,
-    },
-    ParticipantRumorCase {
-        role: String,
-    },
-    ParticipantReferralContact {
-        role: String,
-    },
-    KnownClaim,
-    KnownLead,
-    PriorQuestioning {
-        role: String,
-    },
-    Confidence,
-    LanguageCheck {
-        left: String,
-        right: String,
-    },
-    SocialCheck,
-    PartyLeader {
-        role: String,
-    },
-    Service {
-        role: String,
-    },
-    Location,
-    LocationRole,
-    LocalCircumstance,
-    TimePeriod,
-    ContractState {
-        contract: String,
-    },
-    Flag {
-        flag: String,
-    },
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum FactValue {
-    Bool(bool),
-    Integer(i64),
-    Text(String),
+#[serde(deny_unknown_fields)]
+pub struct ResolvedTurn {
+    pub speaker: String,
+    pub fragments: Vec<ResolvedFragment>,
+    pub source_refs: Vec<Option<SourceRef>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TestimonyLine {
+    pub spoken_text: String,
+    pub claim_text: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -531,13 +420,142 @@ pub enum DialogueError {
     AmbiguousPriority { topic: String, priority: i32 },
     NoEligibleResponse(String),
     InvalidPrompt(String),
+    EmptyContent(String),
+    DanglingTopic(String),
+    InvalidTestimonyContract(String),
+    SourceAlignment,
     MissingRuntimeSlot(RuntimeSlot),
     InvalidRuntimeValue(RuntimeSlot),
+}
+
+fn validate_condition_roles(
+    condition: &Condition,
+    roles: &BTreeMap<String, Role>,
+    errors: &mut Vec<DialogueError>,
+) {
+    match condition {
+        Condition::All { conditions } | Condition::Any { conditions } => {
+            for child in conditions {
+                validate_condition_roles(child, roles, errors);
+            }
+        }
+        Condition::Not { condition } => validate_condition_roles(condition, roles, errors),
+        Condition::Fact { key, .. } => {
+            for role in key.participant_roles() {
+                if !roles.contains_key(role) {
+                    errors.push(DialogueError::UnknownRole(role.into()));
+                }
+            }
+        }
+        Condition::Always => {}
+    }
+}
+
+fn validate_response_semantics(
+    conversation: &Conversation,
+    response: &Response,
+    errors: &mut Vec<DialogueError>,
+) {
+    validate_condition_roles(&response.conditions, &conversation.roles, errors);
+    if response.turns.is_empty() {
+        errors.push(DialogueError::EmptyContent(response.id.clone()));
+    }
+    let mut testimony_slots = 0usize;
+    let topic_ids = conversation
+        .topics
+        .iter()
+        .map(|topic| topic.id.as_str())
+        .collect::<BTreeSet<_>>();
+    for turn in &response.turns {
+        testimony_slots +=
+            validate_turn_semantics(turn, &response.id, &conversation.roles, &topic_ids, errors);
+    }
+    let primary_testimony_slots = testimony_slots;
+    let receives = response
+        .effects
+        .iter()
+        .filter(|effect| matches!(effect, Effect::ReceiveReferredTestimony))
+        .count();
+    for effect in &response.effects {
+        if let Effect::LearnTopic { topic } = effect
+            && !topic_ids.contains(topic.as_str())
+        {
+            errors.push(DialogueError::DanglingTopic(topic.clone()));
+        }
+    }
+    if let Some(prompt) = &response.prompt {
+        for choice in &prompt.choices {
+            for turn in &choice.result_turns {
+                testimony_slots += validate_turn_semantics(
+                    turn,
+                    &response.id,
+                    &conversation.roles,
+                    &topic_ids,
+                    errors,
+                );
+            }
+            for effect in &choice.effects {
+                match effect {
+                    Effect::LearnTopic { topic } if !topic_ids.contains(topic.as_str()) => {
+                        errors.push(DialogueError::DanglingTopic(topic.clone()));
+                    }
+                    Effect::ReceiveReferredTestimony => {
+                        errors.push(DialogueError::InvalidTestimonyContract(response.id.clone()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    if !((primary_testimony_slots == 1 && testimony_slots == 1 && receives == 1)
+        || (testimony_slots == 0 && receives == 0))
+    {
+        errors.push(DialogueError::InvalidTestimonyContract(response.id.clone()));
+    }
+}
+
+fn validate_turn_semantics(
+    turn: &Turn,
+    response_id: &str,
+    roles: &BTreeMap<String, Role>,
+    topic_ids: &BTreeSet<&str>,
+    errors: &mut Vec<DialogueError>,
+) -> usize {
+    if !roles.contains_key(&turn.speaker) {
+        errors.push(DialogueError::UnknownRole(turn.speaker.clone()));
+    }
+    if turn.fragments.is_empty() {
+        errors.push(DialogueError::EmptyContent(response_id.into()));
+    }
+    let mut testimony_slots = 0;
+    for fragment in &turn.fragments {
+        match fragment {
+            Fragment::Text { value }
+            | Fragment::PeriodClaim { value }
+            | Fragment::AuthoritativeExplanation { value, .. }
+                if value.is_empty() =>
+            {
+                errors.push(DialogueError::EmptyContent(response_id.into()));
+            }
+            Fragment::Topic { topic, label } => {
+                if label.is_empty() || !topic_ids.contains(topic.as_str()) {
+                    errors.push(DialogueError::DanglingTopic(topic.clone()));
+                }
+            }
+            Fragment::Runtime {
+                slot: RuntimeSlot::Testimony,
+            } => testimony_slots += 1,
+            _ => {}
+        }
+    }
+    testimony_slots
 }
 
 pub fn catalog() -> &'static [CatalogDocument] {
     static CATALOG: OnceLock<Vec<CatalogDocument>> = OnceLock::new();
     CATALOG.get_or_init(|| {
+        let _: Vec<authoring_schema::AuthoringDocument> =
+            serde_json::from_str(CATALOG_JSON).expect("strict build-shared dialogue schema");
         serde_json::from_str(CATALOG_JSON).expect("build-validated dialogue catalog")
     })
 }
@@ -615,10 +633,25 @@ pub fn validate(documents: &[CatalogDocument]) -> Result<(), Vec<DialogueError>>
                 if !ids.insert(format!("{}:start:{}", conversation.id, response.id)) {
                     errors.push(DialogueError::DuplicateId(response.id.clone()));
                 }
-                for turn in &response.turns {
-                    if !conversation.roles.contains_key(&turn.speaker) {
-                        errors.push(DialogueError::UnknownRole(turn.speaker.clone()));
-                    }
+                validate_response_semantics(conversation, response, &mut errors);
+                if response
+                    .turns
+                    .iter()
+                    .flat_map(|turn| &turn.fragments)
+                    .any(|fragment| {
+                        matches!(
+                            fragment,
+                            Fragment::Runtime {
+                                slot: RuntimeSlot::Testimony
+                            }
+                        )
+                    })
+                    || response
+                        .effects
+                        .iter()
+                        .any(|effect| matches!(effect, Effect::ReceiveReferredTestimony))
+                {
+                    errors.push(DialogueError::InvalidTestimonyContract(response.id.clone()));
                 }
                 if response.prompt.is_some() {
                     errors.push(DialogueError::InvalidPrompt(response.id.clone()));
@@ -635,6 +668,7 @@ pub fn validate(documents: &[CatalogDocument]) -> Result<(), Vec<DialogueError>>
                 }
             }
             for topic in &conversation.topics {
+                validate_condition_roles(&topic.conditions, &conversation.roles, &mut errors);
                 if !ids.insert(format!("{}:{}", conversation.id, topic.id)) {
                     errors.push(DialogueError::DuplicateId(topic.id.clone()));
                 }
@@ -642,11 +676,7 @@ pub fn validate(documents: &[CatalogDocument]) -> Result<(), Vec<DialogueError>>
                     if !ids.insert(format!("{}:{}:{}", conversation.id, topic.id, response.id)) {
                         errors.push(DialogueError::DuplicateId(response.id.clone()));
                     }
-                    for turn in &response.turns {
-                        if !conversation.roles.contains_key(&turn.speaker) {
-                            errors.push(DialogueError::UnknownRole(turn.speaker.clone()));
-                        }
-                    }
+                    validate_response_semantics(conversation, response, &mut errors);
                     if let Some(prompt) = &response.prompt {
                         if !ids.insert(format!("{}:prompt:{}", conversation.id, prompt.id)) {
                             errors.push(DialogueError::DuplicateId(prompt.id.clone()));
@@ -1090,6 +1120,128 @@ mod tests {
     }
 
     #[test]
+    fn shared_authoring_schema_is_strict_and_covers_on_start() {
+        let unknown = r#"{"conversations":[{"id":"strict","roles":{"player":{"kind":"player"},"npc":{"kind":"npc"}},"on_start":[],"topics":[],"surprise":true}]}"#;
+        assert!(
+            serde_json::from_str::<authoring_schema::AuthoringDocument>(unknown).is_err(),
+            "unknown authoring fields must fail in the schema shared by build and runtime"
+        );
+
+        let malformed: CatalogDocument = serde_json::from_str(
+            r#"{"conversations":[{"id":"start","roles":{"player":{"kind":"player"},"npc":{"kind":"npc"}},"on_start":[{"id":"bad","priority":0,"turns":[{"speaker":"missing","fragments":[{"kind":"text","value":"Hello"}]}],"effects":[],"prompt":null}],"topics":[]}]}"#,
+        )
+        .unwrap();
+        assert!(
+            validate(&[malformed]).unwrap_err().iter().any(
+                |error| matches!(error, DialogueError::UnknownRole(role) if role == "missing")
+            )
+        );
+
+        let mut start_testimony = catalog().to_vec();
+        let start = start_testimony
+            .iter_mut()
+            .flat_map(|document| &mut document.conversations)
+            .find_map(|conversation| conversation.on_start.first_mut())
+            .expect("compiled dialogue has an authored start response");
+        let start_id = start.id.clone();
+        start.turns[0].fragments.push(Fragment::Runtime {
+            slot: RuntimeSlot::Testimony,
+        });
+        start.effects.push(Effect::ReceiveReferredTestimony);
+        assert!(validate(&start_testimony).unwrap_err().iter().any(
+            |error| matches!(error, DialogueError::InvalidTestimonyContract(id) if id == &start_id)
+        ));
+    }
+
+    #[test]
+    fn shared_prompt_schema_closes_mode_and_resolution_with_a_real_default() {
+        let prefix = r#"{"conversations":[{"id":"prompt","roles":{"player":{"kind":"player"},"npc":{"kind":"npc"}},"on_start":[],"topics":[{"id":"topic","label":"Topic","responses":[{"id":"response","priority":0,"turns":[{"speaker":"npc","fragments":[{"kind":"text","value":"Choose."}]}],"effects":[],"prompt":{"id":"choice","respondent":"player","mode":"single","#;
+        let suffix = r#""min_choices":1,"max_choices":1,"choices":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}}]}]}]}"#;
+        let omitted = format!("{prefix}{suffix}");
+        let parsed: authoring_schema::AuthoringDocument = serde_json::from_str(&omitted).unwrap();
+        assert_eq!(
+            parsed.conversations[0].topics[0].responses[0]
+                .prompt
+                .as_ref()
+                .unwrap()
+                .resolution,
+            ResolutionPolicy::FirstResponse
+        );
+        for invalid in [
+            format!("{prefix}\"resolution\":null,{suffix}"),
+            omitted.replace("\"mode\":\"single\"", "\"mode\":\"bogus\""),
+            format!("{prefix}\"resolution\":\"bogus\",{suffix}"),
+        ] {
+            assert!(serde_json::from_str::<authoring_schema::AuthoringDocument>(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn validation_rejects_dangling_topics_and_testimony_contract_mismatches() {
+        let mut documents = catalog().to_vec();
+        let conversation = &mut documents[0].conversations[0];
+        conversation.topics[0].responses[0]
+            .effects
+            .push(Effect::LearnTopic {
+                topic: "does-not-exist".into(),
+            });
+        conversation.topics[0].responses[0].turns[0]
+            .fragments
+            .push(Fragment::Runtime {
+                slot: RuntimeSlot::Testimony,
+            });
+        let errors = validate(&documents).unwrap_err();
+        assert!(errors.iter().any(
+            |error| matches!(error, DialogueError::DanglingTopic(topic) if topic == "does-not-exist")
+        ));
+        assert!(
+            errors
+                .iter()
+                .any(|error| matches!(error, DialogueError::InvalidTestimonyContract(_)))
+        );
+    }
+
+    #[test]
+    fn prompt_results_share_turn_and_effect_semantic_validation() {
+        let mut documents = catalog().to_vec();
+        let response = documents
+            .iter_mut()
+            .flat_map(|document| &mut document.conversations)
+            .flat_map(|conversation| &mut conversation.topics)
+            .flat_map(|topic| &mut topic.responses)
+            .find(|response| response.prompt.is_some())
+            .unwrap();
+        let speaker = response.turns[0].speaker.clone();
+        let choice = &mut response.prompt.as_mut().unwrap().choices[0];
+        choice.result_turns.push(Turn {
+            speaker: speaker.clone(),
+            fragments: Vec::new(),
+        });
+        choice.result_turns.push(Turn {
+            speaker,
+            fragments: vec![Fragment::Topic {
+                topic: "missing-inline-topic".into(),
+                label: "missing".into(),
+            }],
+        });
+        choice.effects.push(Effect::LearnTopic {
+            topic: "missing-result-topic".into(),
+        });
+        let errors = validate(&documents).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|error| matches!(error, DialogueError::EmptyContent(_)))
+        );
+        assert!(errors.iter().any(
+            |error| matches!(error, DialogueError::DanglingTopic(topic) if topic == "missing-result-topic")
+        ));
+        assert!(errors.iter().any(
+            |error| matches!(error, DialogueError::DanglingTopic(topic) if topic == "missing-inline-topic")
+        ));
+    }
+
+    #[test]
     fn runtime_slots_are_typed_and_resolve_to_inert_text() {
         let authored = vec![
             Fragment::Text {
@@ -1106,7 +1258,7 @@ mod tests {
         );
         assert_eq!(
             bindings.resolve(&authored).unwrap()[1],
-            Fragment::Text {
+            ResolvedFragment::Text {
                 value: "<img src=x onerror=alert(1)>".into()
             }
         );
@@ -1114,77 +1266,83 @@ mod tests {
     }
 
     #[test]
-    fn testimony_reliability_is_per_proposition() {
-        let event = PropositionTestimony {
-            proposition_id: "event".into(),
-            statement: "I saw an upright shape.".into(),
-            confidence_bps: 8_000,
-            disclosed: true,
-        };
-        let motive = PropositionTestimony {
-            proposition_id: "circumstance".into(),
-            statement: "I was meeting someone there.".into(),
-            confidence_bps: 9_000,
-            disclosed: true,
-        };
-        let partial =
-            testimony_pattern(TestimonyReliability::PartlyTruthful, event.clone(), motive);
-        assert_eq!(partial[0], event);
-        assert!(!partial[1].disclosed);
-        for reliability in [
-            TestimonyReliability::Truthful,
-            TestimonyReliability::Mistaken,
-            TestimonyReliability::Evasive,
-            TestimonyReliability::Deceptive,
-            TestimonyReliability::PartlyTruthful,
-        ] {
-            assert!(
-                !testimony_pattern(
-                    reliability,
-                    event.clone(),
-                    PropositionTestimony {
-                        proposition_id: "why".into(),
-                        statement: "I was fishing.".into(),
-                        confidence_bps: 7_000,
-                        disclosed: true,
-                    },
-                )
-                .is_empty()
-            );
-        }
-        let mistaken = build_testimony_bundle(
-            TestimonyReliability::Mistaken,
-            event.clone(),
-            PropositionTestimony {
-                proposition_id: "why".into(),
-                statement: "I was fishing.".into(),
-                confidence_bps: 7_000,
-                disclosed: true,
+    fn testimony_resolves_exact_claim_boundaries_and_order() {
+        let authored = vec![Fragment::Runtime {
+            slot: RuntimeSlot::Testimony,
+        }];
+        let mut bindings = RuntimeBindings::default();
+        bindings.bind_testimony(vec![
+            TestimonyLine {
+                spoken_text: "Before repeated words; repeated words after.".into(),
+                claim_text: "repeated words".into(),
             },
-            "I saw a stooped child.",
-            "I saw nothing.",
-        );
-        assert_eq!(mistaken[0].recalled_text, "I saw a stooped child.");
-        assert_ne!(mistaken[0].recalled_text, mistaken[0].perceived_text);
-        let deceptive = build_testimony_bundle(
-            TestimonyReliability::Deceptive,
-            event,
-            PropositionTestimony {
-                proposition_id: "why".into(),
-                statement: "I was fishing.".into(),
-                confidence_bps: 7_000,
-                disclosed: true,
+            TestimonyLine {
+                spoken_text: "“The gate was open,” I insist.".into(),
+                claim_text: "The gate was open".into(),
             },
-            "I saw a stooped child.",
-            "I saw nothing.",
-        );
+        ]);
         assert_eq!(
-            deceptive[0].disclosed_text.as_deref(),
-            Some("I saw nothing.")
+            bindings.resolve(&authored).unwrap(),
+            vec![
+                ResolvedFragment::Text {
+                    value: "Before ".into()
+                },
+                ResolvedFragment::Claim {
+                    value: "repeated words".into(),
+                    claim_order: 0
+                },
+                ResolvedFragment::Text {
+                    value: "; repeated words after.".into()
+                },
+                ResolvedFragment::Text { value: " ".into() },
+                ResolvedFragment::Text {
+                    value: "“".into()
+                },
+                ResolvedFragment::Claim {
+                    value: "The gate was open".into(),
+                    claim_order: 1
+                },
+                ResolvedFragment::Text {
+                    value: ",” I insist.".into()
+                },
+            ]
         );
-        assert_ne!(
-            deceptive[0].disclosed_text.as_deref(),
-            Some(deceptive[0].perceived_text.as_str())
+        let encoded = serde_json::to_string(&bindings.resolve(&authored).unwrap()).unwrap();
+        for private in [
+            "proposition",
+            "reliability",
+            "factually",
+            "demeanor",
+            "roll",
+            "threshold",
+            "chance",
+        ] {
+            assert!(!encoded.contains(private));
+        }
+        let source = SourceRef {
+            document: 0,
+            path: "conversations.0.topics.0.responses.0.turns.0.fragments.0.slot".into(),
+            file: "content/dialogue/test.yaml".into(),
+            line: 12,
+            column: 4,
+            value_json: "\"testimony\"".into(),
+        };
+        let turn = Turn {
+            speaker: "npc".into(),
+            fragments: authored,
+        };
+        let resolved_turn = bindings
+            .resolve_turn(&turn, &[Some(source.clone())])
+            .unwrap();
+        assert_eq!(
+            resolved_turn.fragments.len(),
+            resolved_turn.source_refs.len()
+        );
+        assert!(
+            resolved_turn
+                .source_refs
+                .iter()
+                .all(|resolved| resolved.as_ref() == Some(&source))
         );
     }
 }
