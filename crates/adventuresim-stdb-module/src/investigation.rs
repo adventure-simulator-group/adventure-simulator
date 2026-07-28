@@ -4095,8 +4095,6 @@ fn validate_generated_pattern_condition(
                 .npc_id()
                 .find(&target.npc_id)
                 .ok_or("Victim cohort target is unavailable")?;
-            let current_demographic = crate::strategic::generated_npc_demographic(&npc);
-            let current_version = crate::strategic::generated_npc_presence_version(&npc, &presence);
             let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
                 cohort_id: target.cohort_id.clone(),
                 npc_id: target.npc_id.clone(),
@@ -4109,18 +4107,25 @@ fn validate_generated_pattern_condition(
                 expected_location_label: String::new(),
                 presence_version: target.presence_version,
             };
-            let current = adventuresim_core::quest_generation::WitnessCandidate {
-                npc_id: npc.id.clone(),
-                display_name: npc.name.clone(),
-                demographic: current_demographic,
-                age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
-                sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
-                profession: npc.profession.clone(),
-                visible_description: String::new(),
-                expected_location: presence.location_id.clone(),
-                expected_location_label: presence.location_id.clone(),
-                presence_version: current_version,
-                allowed_circumstances: Default::default(),
+            let current = if target.sex.is_empty() {
+                crate::strategic::developer_npc_witness_candidate(&npc, &presence)
+                    .ok_or("Victim cohort NPC no longer has a visible demographic")?
+            } else {
+                adventuresim_core::quest_generation::WitnessCandidate {
+                    npc_id: npc.id.clone(),
+                    display_name: npc.name.clone(),
+                    demographic: crate::strategic::generated_npc_demographic(&npc),
+                    age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
+                    sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
+                    profession: npc.profession.clone(),
+                    visible_description: String::new(),
+                    expected_location: presence.location_id.clone(),
+                    expected_location_label: presence.location_id.clone(),
+                    presence_version: crate::strategic::generated_npc_presence_version(
+                        &npc, &presence,
+                    ),
+                    allowed_circumstances: Default::default(),
+                }
             };
             if !adventuresim_core::quest_generation::pattern_target_matches(
                 &expected,
@@ -8753,6 +8758,8 @@ mod tests {
         assert!(validator.contains("investigation_pattern_target_authority()"));
         assert!(validator.contains("pattern_target_matches"));
         assert!(validator.contains("generated_npc_presence_version"));
+        assert!(validator.contains("developer_npc_witness_candidate"));
+        assert!(validator.contains("target.sex.is_empty()"));
         assert!(validator.contains("npc_is_present"));
         assert!(validator.contains("capability.target_id != *cohort_id"));
         assert!(

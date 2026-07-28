@@ -3,7 +3,7 @@
 //! Developer mode is browser-local UI hiding, not authorization. These routes
 //! require an active character but intentionally add no developer credential.
 
-use super::AppState;
+use super::{AppState, BackendSettlementNpcRow as NpcRow};
 use crate::{
     session::Session,
     spacetimedb::{Character, CharacterTime, Settlement, sql_string_literal},
@@ -11,8 +11,8 @@ use crate::{
 use adventuresim_core::{
     developer_quest::{self as dq, DeveloperGenerationContext, DeveloperQuestDefinition},
     quest_generation::{
-        Circumstance, GenerationContext, TemplateFamily, WitnessCandidate, WitnessDemographic,
-        retain_navigable_witnesses,
+        GenerationContext, TemplateFamily, VisibleWitnessCandidateInput,
+        retain_navigable_witnesses, visible_witness_candidate,
     },
     settlement_economy::player_visible_npc_tabs,
 };
@@ -25,21 +25,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
-
-#[derive(Clone, Deserialize)]
-struct NpcRow {
-    id: String,
-    name: String,
-    age_band: String,
-    sex: String,
-    height: String,
-    build: String,
-    hair: String,
-    clothing: String,
-    profession: String,
-    local_role: String,
-}
 
 #[derive(Clone, Deserialize)]
 struct PresenceRow {
@@ -122,53 +107,22 @@ async fn active_context(
         .into_iter()
         .filter_map(|npc| {
             let presence = presences.iter().find(|row| row.npc_id == npc.id)?;
-            let authored = adventuresim_core::quest_catalog::catalog().witness_demographic_for(
-                &npc.age_band.to_ascii_lowercase(),
-                &npc.sex.to_ascii_lowercase(),
-                &npc.profession,
-                &npc.local_role,
-            )?;
-            let demographic = WitnessDemographic::try_new(&authored.id).ok()?;
-            let mut allowed_circumstances = BTreeSet::from([
-                Circumstance::NightWindow,
-                Circumstance::RoadJourney,
-                Circumstance::LivestockWatch,
-            ]);
-            if presence.location_id == "church" {
-                allowed_circumstances.insert(Circumstance::GraveDuty);
-            }
-            if presence.location_id == "adult_venue" || demographic != WitnessDemographic::Child {
-                allowed_circumstances.insert(Circumstance::AdultVenue);
-            }
-            if demographic != WitnessDemographic::Child {
-                allowed_circumstances.insert(Circumstance::SecretRiversideMeeting);
-            }
-            Some(WitnessCandidate {
-                npc_id: npc.id.clone(),
-                display_name: npc.name,
-                demographic,
-                age_band: npc.age_band.to_ascii_lowercase(),
-                sex: npc.sex.to_ascii_lowercase(),
-                profession: npc.profession.clone(),
-                visible_description: format!(
-                    "{}, {}, with {}, wearing {}",
-                    npc.height, npc.build, npc.hair, npc.clothing
-                ),
-                expected_location: presence.location_id.clone(),
-                expected_location_label: String::new(),
-                presence_version: adventuresim_core::settlement_population::stable_hash(&format!(
-                    "victim-presence-v1:{}:{}:{}:{}:{}:{}:{}:{}:{}",
-                    npc.id,
-                    npc.age_band,
-                    npc.sex,
-                    npc.profession,
-                    presence.settlement_id,
-                    presence.location_id,
-                    presence.start_minute,
-                    presence.end_minute,
-                    presence.is_default
-                )),
-                allowed_circumstances,
+            visible_witness_candidate(VisibleWitnessCandidateInput {
+                npc_id: &npc.id,
+                display_name: &npc.name,
+                age_band: &npc.age_band,
+                presentation: &npc.presentation,
+                height: &npc.height,
+                build: &npc.build,
+                hair: &npc.hair,
+                clothing: &npc.clothing,
+                profession: &npc.profession,
+                local_role: &npc.local_role,
+                settlement_id: &presence.settlement_id,
+                location_id: &presence.location_id,
+                start_minute: presence.start_minute,
+                end_minute: presence.end_minute,
+                is_default: presence.is_default,
             })
         })
         .collect::<Vec<_>>();
@@ -325,5 +279,27 @@ mod tests {
         assert!(!source.contains("struct SpawnRequest {\n    settlement"));
         assert!(source.contains("StatusCode::UNPROCESSABLE_ENTITY"));
         assert!(source.contains("allow_implausible"));
+    }
+
+    #[test]
+    fn quest_preview_uses_only_the_gateway_npc_projection() {
+        let source = include_str!("developer_quests.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("developer quest production source");
+        let transport = include_str!("mod.rs");
+        let row = transport
+            .split("pub(crate) struct BackendSettlementNpcRow {")
+            .nth(1)
+            .and_then(|tail| tail.split_once('}').map(|(body, _)| body))
+            .expect("NPC transport row");
+        assert!(source.contains("BackendSettlementNpcRow as NpcRow"));
+        assert!(row.contains("presentation: String"));
+        assert!(!row.contains("sex: String"));
+        assert!(!row.contains("projection_id:"));
+        assert!(!production.contains("npc.sex"));
+        assert!(production.contains("visible_witness_candidate"));
+        assert!(production.contains("presentation: &npc.presentation"));
     }
 }

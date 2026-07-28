@@ -56,8 +56,56 @@ pub struct SettlementNpc {
     pub conversation_id: String,
 }
 
+/// Settlement NPC facts that the registered gateway may project to players.
+///
+/// Keep this row explicit: `SettlementNpc` also contains private demographic
+/// and traversal authority that must never become subscription data merely
+/// because the authoritative table gains another field.
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendSettlementNpc {
+    pub id: String,
+    pub home_settlement_id: String,
+    pub name: String,
+    pub age_band: NpcAgeBand,
+    pub presentation: NpcPresentation,
+    pub height: String,
+    pub build: String,
+    pub hair: String,
+    pub facial_hair: String,
+    pub complexion: String,
+    pub visible_features: String,
+    pub clothing: String,
+    pub profession: String,
+    pub household: String,
+    pub local_role: String,
+    pub service_id: String,
+    pub conversation_id: String,
+}
+
+fn project_backend_settlement_npc(npc: SettlementNpc) -> BackendSettlementNpc {
+    BackendSettlementNpc {
+        id: npc.id,
+        home_settlement_id: npc.home_settlement_id,
+        name: npc.name,
+        age_band: npc.age_band,
+        presentation: npc.presentation,
+        height: npc.height,
+        build: npc.build,
+        hair: npc.hair,
+        facial_hair: npc.facial_hair,
+        complexion: npc.complexion,
+        visible_features: npc.visible_features,
+        clothing: npc.clothing,
+        profession: npc.profession,
+        household: npc.household,
+        local_role: npc.local_role,
+        service_id: npc.service_id,
+        conversation_id: npc.conversation_id,
+    }
+}
+
 #[view(accessor = backend_settlement_npcs, public)]
-pub fn backend_settlement_npcs(ctx: &ViewContext) -> Vec<SettlementNpc> {
+pub fn backend_settlement_npcs(ctx: &ViewContext) -> Vec<BackendSettlementNpc> {
     let trusted = ctx
         .db
         .strategic_gateway_authority()
@@ -71,6 +119,7 @@ pub fn backend_settlement_npcs(ctx: &ViewContext) -> Vec<SettlementNpc> {
         .settlement_npc()
         .projection_id()
         .filter(0u64..)
+        .map(project_backend_settlement_npc)
         .collect()
 }
 
@@ -442,6 +491,30 @@ pub fn npc_presence_remaining_minutes(
 mod tests {
     use super::*;
 
+    fn settlement_npc() -> SettlementNpc {
+        SettlementNpc {
+            id: "npc:test".into(),
+            projection_id: 42,
+            home_settlement_id: "settlement:test".into(),
+            name: "Klara Example".into(),
+            age_band: NpcAgeBand::Adult,
+            sex: NpcSex::Female,
+            presentation: NpcPresentation::Ambiguous,
+            height: "average height".into(),
+            build: "sturdy".into(),
+            hair: "braided brown hair".into(),
+            facial_hair: "none visible".into(),
+            complexion: "weathered".into(),
+            visible_features: "a scar over one eyebrow".into(),
+            clothing: "a wool coat".into(),
+            profession: "merchant".into(),
+            household: "market household".into(),
+            local_role: "market steward".into(),
+            service_id: "merchants".into(),
+            conversation_id: "service-professions".into(),
+        }
+    }
+
     fn presence(start_minute: u16, end_minute: u16) -> SettlementNpcPresence {
         SettlementNpcPresence {
             npc_id: "npc".into(),
@@ -505,5 +578,72 @@ mod tests {
         }
         assert!((40..160).contains(&female_cross_or_ambiguous));
         assert!((40..160).contains(&male_cross_or_ambiguous));
+    }
+
+    #[test]
+    fn backend_settlement_npc_projection_contains_only_visible_fields() {
+        let row = project_backend_settlement_npc(settlement_npc());
+        assert_eq!(row.id, "npc:test");
+        assert_eq!(row.home_settlement_id, "settlement:test");
+        assert_eq!(row.name, "Klara Example");
+        assert!(matches!(row.age_band, NpcAgeBand::Adult));
+        assert!(matches!(row.presentation, NpcPresentation::Ambiguous));
+        assert_eq!(row.height, "average height");
+        assert_eq!(row.build, "sturdy");
+        assert_eq!(row.hair, "braided brown hair");
+        assert_eq!(row.facial_hair, "none visible");
+        assert_eq!(row.complexion, "weathered");
+        assert_eq!(row.visible_features, "a scar over one eyebrow");
+        assert_eq!(row.clothing, "a wool coat");
+        assert_eq!(row.profession, "merchant");
+        assert_eq!(row.household, "market household");
+        assert_eq!(row.local_role, "market steward");
+        assert_eq!(row.service_id, "merchants");
+        assert_eq!(row.conversation_id, "service-professions");
+    }
+
+    #[test]
+    fn backend_settlement_npc_view_is_an_explicit_fail_closed_projection() {
+        let source = include_str!("settlement_population.rs");
+        let row = source
+            .split("pub struct BackendSettlementNpc {")
+            .nth(1)
+            .and_then(|tail| tail.split_once('}').map(|(body, _)| body))
+            .expect("backend settlement NPC row");
+        for field in [
+            "id",
+            "home_settlement_id",
+            "name",
+            "age_band",
+            "presentation",
+            "height",
+            "build",
+            "hair",
+            "facial_hair",
+            "complexion",
+            "visible_features",
+            "clothing",
+            "profession",
+            "household",
+            "local_role",
+            "service_id",
+            "conversation_id",
+        ] {
+            assert!(
+                row.contains(&format!("pub {field}:")),
+                "missing player-visible field {field}"
+            );
+        }
+        assert!(!row.contains("sex:"));
+        assert!(!row.contains("projection_id:"));
+
+        let view = source
+            .split("pub fn backend_settlement_npcs")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Public presence contains").next())
+            .expect("backend settlement NPC view");
+        assert!(view.contains("-> Vec<BackendSettlementNpc>"));
+        assert!(view.contains(".map(project_backend_settlement_npc)"));
+        assert!(!view.contains("-> Vec<SettlementNpc>"));
     }
 }

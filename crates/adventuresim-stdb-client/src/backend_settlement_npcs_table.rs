@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::backend_settlement_npc_type::BackendSettlementNpc;
 use super::npc_age_band_type::NpcAgeBand;
 use super::npc_presentation_type::NpcPresentation;
-use super::npc_sex_type::NpcSex;
-use super::settlement_npc_type::SettlementNpc;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_settlement_npcs`.
@@ -17,7 +16,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 /// but to directly chain method calls,
 /// like `ctx.db.backend_settlement_npcs().on_insert(...)`.
 pub struct BackendSettlementNpcsTableHandle<'ctx> {
-    imp: __sdk::TableHandle<SettlementNpc>,
+    imp: __sdk::TableHandle<BackendSettlementNpc>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -36,7 +35,7 @@ impl BackendSettlementNpcsTableAccess for super::RemoteTables {
         BackendSettlementNpcsTableHandle {
             imp: self
                 .imp
-                .get_table::<SettlementNpc>("backend_settlement_npcs"),
+                .get_table::<BackendSettlementNpc>("backend_settlement_npcs"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -46,13 +45,13 @@ pub struct BackendSettlementNpcsInsertCallbackId(__sdk::CallbackId);
 pub struct BackendSettlementNpcsDeleteCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::Table for BackendSettlementNpcsTableHandle<'ctx> {
-    type Row = SettlementNpc;
+    type Row = BackendSettlementNpc;
     type EventContext = super::EventContext;
 
     fn count(&self) -> u64 {
         self.imp.count()
     }
-    fn iter(&self) -> impl Iterator<Item = SettlementNpc> + '_ {
+    fn iter(&self) -> impl Iterator<Item = BackendSettlementNpc> + '_ {
         self.imp.iter()
     }
 
@@ -85,32 +84,32 @@ impl<'ctx> __sdk::Table for BackendSettlementNpcsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<SettlementNpc>("backend_settlement_npcs");
+    let _table = client_cache.get_or_make_table::<BackendSettlementNpc>("backend_settlement_npcs");
 }
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
-) -> __sdk::Result<__sdk::TableUpdate<SettlementNpc>> {
+) -> __sdk::Result<__sdk::TableUpdate<BackendSettlementNpc>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<SettlementNpc>", "TableUpdate")
+        __sdk::InternalError::failed_parse("TableUpdate<BackendSettlementNpc>", "TableUpdate")
             .with_cause(e)
             .into()
     })
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `SettlementNpc`.
+/// Extension trait for query builder access to the table `BackendSettlementNpc`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
 pub trait backend_settlement_npcsQueryTableAccess {
     #[allow(non_snake_case)]
-    /// Get a query builder for the table `SettlementNpc`.
-    fn backend_settlement_npcs(&self) -> __sdk::__query_builder::Table<SettlementNpc>;
+    /// Get a query builder for the table `BackendSettlementNpc`.
+    fn backend_settlement_npcs(&self) -> __sdk::__query_builder::Table<BackendSettlementNpc>;
 }
 
 impl backend_settlement_npcsQueryTableAccess for __sdk::QueryTableAccessor {
-    fn backend_settlement_npcs(&self) -> __sdk::__query_builder::Table<SettlementNpc> {
+    fn backend_settlement_npcs(&self) -> __sdk::__query_builder::Table<BackendSettlementNpc> {
         __sdk::__query_builder::Table::new("backend_settlement_npcs")
     }
 }

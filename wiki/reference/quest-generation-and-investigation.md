@@ -272,6 +272,20 @@ has no public table accessor. Gateway projections expose only symptoms and
 observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
+Persistent settlement NPCs also cross that boundary through a dedicated
+`BackendSettlementNpc` projection. The projected row contains the NPC's stable
+identity, home settlement, player-visible appearance, profession, household,
+local role, service, and conversation identity. It deliberately excludes the
+authoritative NPC's private `sex` and internal `projection_id`. Gateway-side
+developer quest previews use visible age, presentation, profession, and role
+for witness discovery. Preview, authoritative developer compilation, and later
+victim-profile target validation share one visible-field candidate and
+presence-commitment scheme. The scheme records presentation in that commitment
+but leaves the candidate's sex selector empty for every presentation; it never
+infers private sex from `Man`, `Woman`, or `Ambiguous`. Automatic procedural
+generation remains a separate authoritative path and may use private
+demographic truth.
+
 The initial manifest remains immutable, but an unresolved generated problem
 may acquire append-only follow-up incidents as authoritative world time
 advances. At the template's authored interval, settlement activity materializes the next due

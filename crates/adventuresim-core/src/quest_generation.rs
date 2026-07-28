@@ -296,6 +296,96 @@ pub struct WitnessCandidate {
     pub allowed_circumstances: BTreeSet<Circumstance>,
 }
 
+/// Player-visible settlement NPC and presence facts used by developer quest
+/// preview, compilation, and later live-target validation.
+///
+/// `presentation` participates in the commitment but is never converted back
+/// into private demographic sex.
+#[derive(Clone, Copy, Debug)]
+pub struct VisibleWitnessCandidateInput<'a> {
+    pub npc_id: &'a str,
+    pub display_name: &'a str,
+    pub age_band: &'a str,
+    pub presentation: &'a str,
+    pub height: &'a str,
+    pub build: &'a str,
+    pub hair: &'a str,
+    pub clothing: &'a str,
+    pub profession: &'a str,
+    pub local_role: &'a str,
+    pub settlement_id: &'a str,
+    pub location_id: &'a str,
+    pub start_minute: u16,
+    pub end_minute: u16,
+    pub is_default: bool,
+}
+
+pub fn visible_witness_presence_version(input: &VisibleWitnessCandidateInput<'_>) -> u64 {
+    let commitment = serde_json::to_string(&(
+        "visible-witness-presence-v1",
+        input.npc_id,
+        input.age_band.to_ascii_lowercase(),
+        input.presentation.to_ascii_lowercase(),
+        input.profession,
+        input.local_role,
+        input.settlement_id,
+        input.location_id,
+        input.start_minute,
+        input.end_minute,
+        input.is_default,
+    ))
+    .expect("visible witness commitment tuple is serializable");
+    crate::settlement_population::stable_hash(&commitment)
+}
+
+/// Build the exact witness candidate available to the developer quest UI.
+///
+/// The empty sex selector is intentional. The current catalog has no
+/// sex-specific demographic rules, and future rules must fall back rather than
+/// turn visible presentation into private sex.
+pub fn visible_witness_candidate(
+    input: VisibleWitnessCandidateInput<'_>,
+) -> Option<WitnessCandidate> {
+    let age_band = input.age_band.to_ascii_lowercase();
+    let authored = crate::quest_catalog::catalog().witness_demographic_for(
+        &age_band,
+        "",
+        input.profession,
+        input.local_role,
+    )?;
+    let demographic = WitnessDemographic::try_new(&authored.id).ok()?;
+    let mut allowed_circumstances = BTreeSet::from([
+        Circumstance::NightWindow,
+        Circumstance::RoadJourney,
+        Circumstance::LivestockWatch,
+    ]);
+    if input.location_id == "church" {
+        allowed_circumstances.insert(Circumstance::GraveDuty);
+    }
+    if input.location_id == "adult_venue" || demographic != WitnessDemographic::Child {
+        allowed_circumstances.insert(Circumstance::AdultVenue);
+    }
+    if demographic != WitnessDemographic::Child {
+        allowed_circumstances.insert(Circumstance::SecretRiversideMeeting);
+    }
+    Some(WitnessCandidate {
+        npc_id: input.npc_id.into(),
+        display_name: input.display_name.into(),
+        demographic,
+        age_band,
+        sex: String::new(),
+        profession: input.profession.into(),
+        visible_description: format!(
+            "{}, {}, with {}, wearing {}",
+            input.height, input.build, input.hair, input.clothing
+        ),
+        expected_location: input.location_id.into(),
+        expected_location_label: String::new(),
+        presence_version: visible_witness_presence_version(&input),
+        allowed_circumstances,
+    })
+}
+
 /// Removes witness/location combinations that the player cannot reach through
 /// the settlement UI. Absence from `visible_tabs` is an authoritative hard
 /// zero, not a low-probability candidate.
@@ -6238,6 +6328,88 @@ mod tests {
                 &source.settlement_id
             ));
         }
+    }
+
+    #[test]
+    fn visible_developer_witnesses_preserve_all_presentations_and_pattern_targets() {
+        let candidates = ["Man", "Woman", "Ambiguous"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, presentation)| {
+                let npc_id = format!("npc:visible:{index}");
+                let name = format!("Visible Witness {index}");
+                let mut candidate = visible_witness_candidate(VisibleWitnessCandidateInput {
+                    npc_id: &npc_id,
+                    display_name: &name,
+                    age_band: "Adult",
+                    presentation,
+                    height: "average height",
+                    build: "sturdy",
+                    hair: "brown hair",
+                    clothing: "a wool coat",
+                    profession: "laborer",
+                    local_role: "resident",
+                    settlement_id: "riverdale",
+                    location_id: "market",
+                    start_minute: 480,
+                    end_minute: 1_020,
+                    is_default: true,
+                })
+                .unwrap();
+                candidate.expected_location_label = "General Market".into();
+                candidate
+            })
+            .collect::<Vec<_>>();
+        assert!(candidates.iter().all(|candidate| candidate.sex.is_empty()));
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.demographic)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            1,
+            "visible presentation must not alter demographic selection"
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.presence_version)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            3,
+            "presentation remains part of the visible commitment"
+        );
+
+        let (source, generated) = (0..4_096)
+            .map(|seed| {
+                let mut source = context(seed, TemplateFamily::RecurringDepredation);
+                source.witness_candidates = candidates.clone();
+                let generated = generate(&source).unwrap();
+                (source, generated)
+            })
+            .find(|(_, generated)| !generated.pattern_targets.is_empty())
+            .expect("visible candidates must support a victim-specific pattern");
+        let definition =
+            crate::developer_quest::DeveloperQuestDefinition::from_generated(generated);
+        let compiled =
+            crate::developer_quest::compile(&crate::developer_quest::DeveloperGenerationContext {
+                base: source.clone(),
+                definition,
+                allow_implausible: true,
+            })
+            .unwrap();
+        let target = compiled.pattern_targets.first().unwrap();
+        let current = source
+            .witness_candidates
+            .iter()
+            .find(|candidate| candidate.npc_id == target.npc_id)
+            .unwrap();
+        assert!(pattern_target_matches(
+            target,
+            current,
+            &source.settlement_id
+        ));
+        assert!(target.sex.is_empty());
     }
 
     #[test]

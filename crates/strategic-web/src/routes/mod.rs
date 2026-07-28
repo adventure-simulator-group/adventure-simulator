@@ -26,7 +26,7 @@ use axum::{
     routing::get,
 };
 use axum_extra::extract::CookieJar;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -47,6 +47,34 @@ pub struct AppState {
     pub live: LiveState,
     pub strategic_map: Option<std::sync::Arc<crate::strategic_map::StrategicMap>>,
     pub terrain: Option<std::sync::Arc<travel::TerrainPlanner>>,
+}
+
+/// Serde transport for the gateway's player-visible settlement NPC projection.
+///
+/// This deliberately mirrors `BackendSettlementNpc` instead of the private
+/// authoritative settlement population row.
+#[derive(Clone, Deserialize)]
+pub(crate) struct BackendSettlementNpcRow {
+    pub id: String,
+    pub home_settlement_id: String,
+    pub name: String,
+    pub age_band: String,
+    pub presentation: String,
+    pub height: String,
+    pub build: String,
+    pub hair: String,
+    pub facial_hair: String,
+    pub complexion: String,
+    pub visible_features: String,
+    pub clothing: String,
+    pub profession: String,
+    pub household: String,
+    pub local_role: String,
+    /// Retained so this fail-closed transport mirrors the complete public row;
+    /// service-provider routes currently deserialize their own minimal DTO.
+    #[allow(dead_code)]
+    pub service_id: String,
+    pub conversation_id: String,
 }
 
 pub(crate) use party_actions::PartyAction;

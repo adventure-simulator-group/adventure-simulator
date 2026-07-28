@@ -19564,6 +19564,67 @@ fn generated_witness_candidates(
     candidates
 }
 
+/// Developer quest authority must compile from the same player-visible NPC
+/// facts as the gateway preview. Automatic generation intentionally continues
+/// to use `generated_witness_candidates` and its private demographic truth.
+fn developer_witness_candidates(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Vec<adventuresim_core::quest_generation::WitnessCandidate> {
+    use adventuresim_core::{
+        quest_generation::retain_navigable_witnesses, settlement_economy::player_visible_npc_tabs,
+    };
+    let Some(settlement) = ctx.db.settlement().id().find(settlement_id.to_owned()) else {
+        return Vec::new();
+    };
+    let has_keep = matches!(
+        settlement.category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    );
+    let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep);
+    let mut candidates = ctx
+        .db
+        .settlement_npc()
+        .home_settlement_id()
+        .filter(&settlement_id.to_string())
+        .filter_map(|npc| {
+            let presence = ctx.db.settlement_npc_presence().npc_id().find(&npc.id)?;
+            developer_npc_witness_candidate(&npc, &presence)
+        })
+        .collect::<Vec<_>>();
+    candidates = retain_navigable_witnesses(candidates, &visible_tabs);
+    candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
+    candidates
+}
+
+pub(crate) fn developer_npc_witness_candidate(
+    npc: &crate::settlement_population::SettlementNpc,
+    presence: &crate::settlement_population::SettlementNpcPresence,
+) -> Option<adventuresim_core::quest_generation::WitnessCandidate> {
+    use adventuresim_core::quest_generation::{
+        VisibleWitnessCandidateInput, visible_witness_candidate,
+    };
+    let age_band = format!("{:?}", npc.age_band);
+    let presentation = format!("{:?}", npc.presentation);
+    visible_witness_candidate(VisibleWitnessCandidateInput {
+        npc_id: &npc.id,
+        display_name: &npc.name,
+        age_band: &age_band,
+        presentation: &presentation,
+        height: &npc.height,
+        build: &npc.build,
+        hair: &npc.hair,
+        clothing: &npc.clothing,
+        profession: &npc.profession,
+        local_role: &npc.local_role,
+        settlement_id: &presence.settlement_id,
+        location_id: &presence.location_id,
+        start_minute: presence.start_minute,
+        end_minute: presence.end_minute,
+        is_default: presence.is_default,
+    })
+}
+
 pub(crate) fn generated_npc_demographic(
     npc: &crate::settlement_population::SettlementNpc,
 ) -> adventuresim_core::quest_generation::WitnessDemographic {
@@ -19897,7 +19958,7 @@ pub fn spawn_developer_quest(
         ordinal,
         now_minute: crate::time::refresh_clock(ctx)?,
         requested_family: Some(definition.family),
-        witness_candidates: generated_witness_candidates(ctx, &settlement_id),
+        witness_candidates: developer_witness_candidates(ctx, &settlement_id),
     };
     let developer_context = dq::DeveloperGenerationContext {
         base: base.clone(),
@@ -19920,6 +19981,8 @@ pub fn spawn_developer_quest(
 
 #[cfg(test)]
 mod developer_quest_source_tests {
+    use super::*;
+
     #[test]
     fn debug_and_automatic_generation_share_materialization_without_disclosure() {
         let source = include_str!("strategic.rs");
@@ -19938,7 +20001,10 @@ mod developer_quest_source_tests {
             .next()
             .unwrap();
         assert!(automatic.contains("materialize_generated_quest"));
+        assert!(automatic.contains("generated_witness_candidates"));
         assert!(debug.contains("materialize_generated_quest"));
+        assert!(debug.contains("developer_witness_candidates"));
+        assert!(!debug.contains("generated_witness_candidates"));
         assert!(debug.contains("current_settlement_id"));
         assert!(!debug.contains("rumor_receipt"));
         assert!(!debug.contains("referral"));
@@ -19959,6 +20025,75 @@ mod developer_quest_source_tests {
         assert!(validator.contains("DeveloperGenerationContext"));
         assert!(validator.contains("developer_quest::compile"));
         assert!(validator.contains("regenerated != manifest"));
+    }
+
+    #[test]
+    fn developer_witness_projection_matches_core_for_every_presentation() {
+        use crate::settlement_population::{
+            NpcAgeBand, NpcPresentation, NpcSex, SettlementNpc, SettlementNpcPresence,
+        };
+        use adventuresim_core::quest_generation::{
+            VisibleWitnessCandidateInput, visible_witness_candidate,
+        };
+
+        let presence = SettlementNpcPresence {
+            npc_id: "npc:visible".into(),
+            settlement_id: "settlement:visible".into(),
+            location_id: "market".into(),
+            start_minute: 480,
+            end_minute: 1_020,
+            is_default: true,
+        };
+        for presentation in [
+            NpcPresentation::Man,
+            NpcPresentation::Woman,
+            NpcPresentation::Ambiguous,
+        ] {
+            let npc = SettlementNpc {
+                id: "npc:visible".into(),
+                projection_id: 42,
+                home_settlement_id: "settlement:visible".into(),
+                name: "Visible Witness".into(),
+                age_band: NpcAgeBand::Adult,
+                sex: NpcSex::Female,
+                presentation,
+                height: "average height".into(),
+                build: "sturdy".into(),
+                hair: "brown hair".into(),
+                facial_hair: "none visible".into(),
+                complexion: "weathered".into(),
+                visible_features: "a scar".into(),
+                clothing: "a wool coat".into(),
+                profession: "laborer".into(),
+                household: "market household".into(),
+                local_role: "resident".into(),
+                service_id: String::new(),
+                conversation_id: "local-resident".into(),
+            };
+            let age_band = format!("{:?}", npc.age_band);
+            let presentation = format!("{:?}", npc.presentation);
+            let direct = visible_witness_candidate(VisibleWitnessCandidateInput {
+                npc_id: &npc.id,
+                display_name: &npc.name,
+                age_band: &age_band,
+                presentation: &presentation,
+                height: &npc.height,
+                build: &npc.build,
+                hair: &npc.hair,
+                clothing: &npc.clothing,
+                profession: &npc.profession,
+                local_role: &npc.local_role,
+                settlement_id: &presence.settlement_id,
+                location_id: &presence.location_id,
+                start_minute: presence.start_minute,
+                end_minute: presence.end_minute,
+                is_default: presence.is_default,
+            })
+            .unwrap();
+            let authoritative = developer_npc_witness_candidate(&npc, &presence).unwrap();
+            assert_eq!(authoritative, direct);
+            assert!(authoritative.sex.is_empty());
+        }
     }
 
     #[test]
