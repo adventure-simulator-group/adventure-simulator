@@ -105,7 +105,10 @@ for quest results, activity days, camps, loot value, proceeds, earned stake
 withdrawals, purchases, upgrades, unexpected reducer failures/retries, stuck
 detection, and duplicate semantic events. Final agent rows distinguish the
 legacy character gold field, personal gold-coin stacks, party treasury, and
-party stake. Generated preferences drive quest/activity choice, quest risk, and
+party stake. They also expose the public settlement or exact case-site
+occupancy, active public journey destination, and symptomatic/critical flags,
+so `ready` does not conceal illness and a remote party is not mistaken for a
+stranded journey. Generated preferences drive quest/activity choice, quest risk, and
 weighted equipment utility (protection, mobility, price, and reach) for
 unarmored, light, heavy, and ranged styles. An upgrade counts only after the
 authoritative equipment row shows the purchased inventory item.
@@ -145,6 +148,20 @@ the active forecast camp through `rest_at_camp`, logs bounded pre/post public
 camp state, and re-reads the journey, itinerary, party, health, and leader
 before `continue_camp_travel`. A missing, overlapping, or non-advancing
 projection fails closed instead of guessing a fixed rest duration.
+The travel driver returns an explicit `Completed`,
+`HeldNoActionableActor`, or `HeldForRecovery` outcome. A hold is nonfatal:
+the current quest, return, or turn-in step stops without claiming arrival,
+marking a case site traveled, or substituting an incapacitated leader.
+Before ordinary quest selection on each in-budget cycle, the runner continues
+any active public journey. After a completed leg it revalidates the current
+leader, owner, party health, and exact public settlement or case-site
+occupancy. An open generated owner case then resumes at its arrived site.
+A direct contract resumes from the party's public `active_contract_id`, public
+party ownership, and `Accepted` or `ReadyToReport` contract status rather than
+searching only offered contracts. Resumption does not increment contract
+attempt metrics again. Reporting is attempted only after public state proves
+arrival at the contract's origin settlement; the ready-to-report status gate
+prevents duplicate completion metrics.
 
 Off-settlement health is an explicit expedition state, not a reason to repeat
 quest suppression indefinitely. Before selecting another quest action, the
@@ -154,7 +171,14 @@ case-site pins. It immediately records a recovery plan, takes at most two
 one-day field rests when pooled concrete stored food and portable water cover
 every living member's daily requirement and nobody is critical, and resumes
 only when there is a living actionable member and every living member is ready
-and asymptomatic. Otherwise a ready companion directs an ordinary journey back
+and asymptomatic. A successful field recovery resumes the same bounded policy
+cycle, allowing an already-public on-site action to proceed instead of losing
+the final cycle to recovery bookkeeping. When recovery began inside the
+configured duration but its bounded rests cross the duration threshold, only
+that same cycle's one public quest/on-site action is allowed; the next cycle
+observes the ordinary duration cutoff. A cycle with no recovery does not cross
+the cutoff, and the final bounded rescue pass never selects a quest action.
+Evacuation or a fail-closed hold consumes the cycle. Otherwise a ready companion directs an ordinary journey back
 to the one public origin settlement. If the leader is unready, reducers
 narrowly permit that ready party member to direct off-settlement camp rest,
 return-route continuation, and protective (never attack/objective) encounter
@@ -162,6 +186,10 @@ choices; this does not transfer leadership or grant contract, combat-objective,
 or ordinary quest authority. Evacuation counts as complete only when public
 state shows a living party at that settlement with no remaining camp
 destination; an incomplete leg is logged as stalled.
+The recovery loop reselects a public ready, asymptomatic, noncritical actor
+before every individual field rest. If the previous rest leaves nobody
+actionable, it records the typed no-actionable hold instead of reusing the
+stale actor.
 
 Every recovery camp and evacuation leg records each member's public before and
 after condition, hunger, thirst, food/water days, symptom/critical flags, and
@@ -169,16 +197,34 @@ elapsed time. It also records changes in concrete stored food and portable
 water. Private disease episodes and exposure are not subscribed; diagnostics
 state `exposure=not_publicly_projected` rather than inferring it. Stable reasons
 distinguish health suppression, bounded field recovery, safe resumption, and
-settlement evacuation, so an incapacitated member is never silently stranded.
+settlement evacuation. A journey leg may claim that every member is ready only
+after its public post-leg member projection proves that condition; otherwise
+it explicitly requests off-settlement recovery on the next cycle.
+When no living member is actionable, a
+`journey_held_no_actionable_actor` diagnostic records only bounded public
+evidence: elapsed, total, and remaining journey time; destination; remaining
+camp movement; the active public forecast interval when present; living-member
+count; one-day food and water requirements; concrete stored food and portable
+water; and whether those supplies cover one rest day. The report counts these
+and health-driven journey holds in `expedition_holds`. It does not expose or
+infer private exposure or disease authority.
+A held party is tracked separately from a party that performed an action.
+A hold with no public character-time progress does not make the cycle active
+and cannot by itself advance authoritative world time. If another party acts,
+that independent activity may still advance the shared world; a recovery rest
+that advanced public party time also counts as real progress even when a later
+step holds.
 
 Successful final-agent rows carry the same public needs, visible food and water,
-settlement services, herbalist quote, and inn full-board cost used by failure
-diagnostics. Failure artifacts use schema version 4. In addition to the strict
+remote location, journey destination, illness flags, settlement services,
+herbalist quote, and inn full-board cost used by failure diagnostics. Failure
+artifacts use schema version 5. In addition to the strict
 event vocabulary and activity-detail semantics, they retain only an allowlisted
 operation name and stable reason code for expected investigation and camp
-failures. `rest_at_camp` and `continue_camp_travel` are allowlisted operations
-with stable daylight-window and journey-projection reason codes; raw reducer
-text is never copied into the artifact. These fields make poverty,
+failures. `travel_camps`, `rest_at_camp`, and `continue_camp_travel` are
+allowlisted operations with stable held-journey, daylight-window, and
+journey-projection reason codes; raw reducer text is never copied into the
+artifact. These fields make poverty,
 starvation, unavailable-rest, and stale temporal-action deadlocks diagnosable
 without exposing hidden case truth.
 
@@ -206,6 +252,18 @@ discovery location. The pre-action quest-decision event distinguishes policy
 intent from selection with `quest_intended` and `quest_selected`; the later
 discovery-result event alone reports the postcondition and whether the ordinary
 activity fallback follows.
+
+The first observation of each owner-scoped open generated case is a separate
+bounded `generated_case_intake`. Identity is the composite
+`(owner_character_id, case_id)`, because the same public case ID may be
+continued independently by more than one owner. Dialogue-created intakes use
+the public `dialogue_rumor` source. A case that first appears in the ordinary
+owner projection uses `owner_projection_continuation`; the simulator does not
+infer hidden provenance. Every unique intake counts exactly one generic quest
+attempt, while dialogue discovery and projection continuation retain separate
+metrics. Terminal, exact-site, travel, and seen state use the same composite
+identity, so one owner's terminal transition cannot suppress another owner's
+case clone.
 
 Generated local-problem authority uses the official world clock for its active
 window. Dialogue discovery therefore checks problem `starts_at`, `ends_at`, and
@@ -250,7 +308,8 @@ error.
 The state machine is bounded per cycle and falls back to sustainable settlement
 activity when no legal projected step is available.
 
-Reports separately count generated cases discovered, completed by the
+Reports separately count direct-contract attempts/completions, generated case
+intakes and owner-projection continuations, generated cases discovered, completed by the
 simulated party's immediate dialogue/action/autoresolve transition, and closed
 externally by background resident NPCs. They also count projected investigation
 actions, temporal waits and wait minutes, observer-safe replans, and witness
@@ -262,7 +321,9 @@ authority, custody authority, or outcome authority.
 The same report exposes unique owner-party discoveries, exact-site-ready cases,
 finance-blocked cycles, case-site journeys, provision purchases, and actual
 public gold spent. Identical affordability signatures enter backoff until the
-required budget or observable funds change. Direct contracts preflight against
+required budget or observable funds change. That cache is scoped by party,
+acting owner, and public case/contract finance key, so two owners cannot inherit
+one another's backoff. Direct contracts preflight against
 the greatest public distance among their case destinations before acceptance,
 then select the disclosed owner-scoped pin by minimum-distance, stable-site
 ordering and re-run observer-safe provisioning for that exact pin before
@@ -301,6 +362,11 @@ personality schedule with pure rest, then restores that profile schedule after r
 thievery cannot interrupt convalescence with an incident. Quests remain suppressed while a member is unsafe. Reports audit
 diagnosis attempts/results, crafting or purchases, medication equips, treatment gold and time,
 recoveries, suppression, and terminal deaths.
+Because preparation and treatment can advance time, both generated-case and
+direct-contract drivers re-read the public current leader, owner relationship,
+party membership, life, and readiness after each such batch. They defer before
+choosing a projection or invoking the next quest reducer if ownership changed
+or any member remains unsafe.
 
 Safety is intentionally strict. URLs are parsed structurally and must be an
 exact credential-free HTTP loopback origin with no path, query, or fragment.

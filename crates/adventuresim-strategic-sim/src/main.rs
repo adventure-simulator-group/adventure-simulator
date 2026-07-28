@@ -352,9 +352,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", String::from_utf8(json)?);
         }
         eprintln!(
-            "authoritative core loop: {} completed / {} attempted, {} quest defeats, {} encounters ({} encounter defeats, {} wipes), {} camps, {} upgrades",
+            "authoritative core loop: {} completed / {} owner-scoped quest intakes or direct-contract attempts (direct {}/{}, generated {}/{}), {} quest defeats, {} encounters ({} encounter defeats, {} wipes), {} camps, {} upgrades",
             report.metrics.quests_completed,
             report.metrics.quests_attempted,
+            report.metrics.direct_contracts_completed,
+            report.metrics.direct_contracts_attempted,
+            report.metrics.generated_quests_completed,
+            report.metrics.generated_case_intakes,
             report.metrics.defeats,
             report.metrics.encounters,
             report.metrics.encounter_defeats,

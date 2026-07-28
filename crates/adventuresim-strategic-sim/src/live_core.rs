@@ -229,6 +229,10 @@ pub struct CoreLoopMetrics {
     pub joins_accepted: u32,
     pub quests_attempted: u32,
     pub quests_completed: u32,
+    pub direct_contracts_attempted: u32,
+    pub direct_contracts_completed: u32,
+    pub generated_case_intakes: u32,
+    pub generated_case_continuations: u32,
     pub generated_quests_discovered: u32,
     pub generated_quests_completed: u32,
     pub generated_quests_closed_externally: u32,
@@ -244,6 +248,7 @@ pub struct CoreLoopMetrics {
     pub expedition_recovery_rests: u32,
     pub expedition_evacuations: u32,
     pub expedition_resumes: u32,
+    pub expedition_holds: u32,
     pub generated_unique_party_cases_discovered: u32,
     pub generated_exact_site_ready: u32,
     pub generated_finance_blocked_cycles: u32,
@@ -319,6 +324,7 @@ pub enum CoreLoopEventKind {
     QuestDecision,
     GeneratedDiscoveryAttempt,
     GeneratedDiscoveryResult,
+    GeneratedCaseIntake,
     ExpeditionRecovery,
     GeneratedQuestDiscovered,
     GeneratedInvestigationAttempt,
@@ -364,6 +370,10 @@ pub struct FinalAgentState {
     pub visible_food_kcal: f32,
     pub visible_water_ml: f32,
     pub settlement_id: Option<String>,
+    pub current_case_site_id: Option<String>,
+    pub journey_destination: Option<String>,
+    pub symptomatic: bool,
+    pub critical: bool,
     pub settlement_services: Vec<String>,
     pub visible_herbalist_quote: Option<u64>,
     pub visible_inn_full_board_cost: Option<u64>,
@@ -395,7 +405,7 @@ pub struct CoreLoopReport {
 }
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
-const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 4;
+const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 5;
 const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = 1_440;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -413,6 +423,10 @@ pub struct CoreLoopFailureAgent {
     pub visible_water_ml: f32,
     pub personal_gold_coin: u64,
     pub settlement_id: Option<String>,
+    pub current_case_site_id: Option<String>,
+    pub journey_destination: Option<String>,
+    pub symptomatic: bool,
+    pub critical: bool,
     pub settlement_services: Vec<String>,
     pub visible_herbalist_quote: Option<u64>,
     pub visible_inn_full_board_cost: Option<u64>,
@@ -476,8 +490,31 @@ struct ExpeditionSuppliesObservation {
     portable_water_ml: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExpeditionRecoveryOutcome {
+    None,
+    Resumed,
+    Evacuated,
+    Held,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum JourneyTravelOutcome {
+    Completed,
+    HeldNoActionableActor,
+    HeldForRecovery,
+}
+
 fn expedition_member_needs_recovery(member: &ExpeditionMemberObservation) -> bool {
     member.alive && (member.condition_status != "ready" || member.symptomatic || member.critical)
+}
+
+fn public_journey_endpoint(endpoint: &JourneyEndpoint) -> String {
+    match endpoint {
+        JourneyEndpoint::Settlement(settlement) => format!("settlement:{}", settlement.id),
+        JourneyEndpoint::CaseSite(site) => format!("case_site:{}", site.id.value),
+        JourneyEndpoint::Camp(camp) => format!("camp:{}", bounded_event_field(camp)),
+    }
 }
 
 fn expedition_party_can_resume(members: &[ExpeditionMemberObservation]) -> bool {
@@ -973,6 +1010,7 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "choose_dialogue_topic",
         "rest_at_camp",
         "continue_camp_travel",
+        "travel_camps",
         "purchase_journey_provisions",
     ]
     .into_iter()
@@ -984,7 +1022,12 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
 }
 
 fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
-    if error.contains("Rest until the party reaches its next daylight walking window") {
+    if error.contains("journey_held_no_actionable_actor")
+        || error.contains("journey has no ready, asymptomatic, noncritical actor")
+        || error.contains("camp rest left no ready, asymptomatic, noncritical actor")
+    {
+        "journey_held_no_actionable_actor"
+    } else if error.contains("Rest until the party reaches its next daylight walking window") {
         "journey_daylight_window_rest_required"
     } else if error.contains("start_discovery_dialogue") {
         "discovery_contact_failed"
@@ -1017,7 +1060,15 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
 }
 
 fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
-    if error.contains("Rest until the party reaches its next daylight walking window") {
+    if error.contains("journey_held_no_actionable_actor")
+        || error.contains("journey has no ready, asymptomatic, noncritical actor")
+        || error.contains("camp rest left no ready, asymptomatic, noncritical actor")
+    {
+        (
+            "journey_held_no_actionable_actor",
+            "The public journey is held because no living party member is currently able to direct it.",
+        )
+    } else if error.contains("Rest until the party reaches its next daylight walking window") {
         (
             "journey_temporally_unavailable",
             "Camp travel was continued outside its public projected walking window.",
@@ -1133,11 +1184,11 @@ struct LiveRunner {
     last_semantic_event: Option<String>,
     recorded_deaths: HashSet<u64>,
     medically_paused_schedules: HashSet<u64>,
-    generated_case_owners: HashMap<String, u64>,
-    generated_terminal_cases: HashSet<String>,
-    generated_exact_site_cases: HashSet<String>,
-    generated_traveled_cases: HashSet<String>,
-    generated_finance_blocks: HashMap<String, (u64, u64)>,
+    generated_seen_cases: HashSet<(u64, String)>,
+    generated_terminal_cases: HashSet<(u64, String)>,
+    generated_exact_site_cases: HashSet<(u64, String)>,
+    generated_traveled_cases: HashSet<(u64, String)>,
+    generated_finance_blocks: HashMap<(String, u64, String), (u64, u64)>,
     npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
     simulation_run_nonce: String,
     failure_recorder: FailureRecorder,
@@ -1712,7 +1763,32 @@ impl LiveRunner {
             .character_strategic_condition()
             .iter()
             .find(|row| row.character_id == character_id)?;
+        let illness = self
+            .connection
+            .db
+            .character_illness_status()
+            .iter()
+            .find(|row| row.character_id == character_id);
         let (visible_food_kcal, visible_water_ml) = self.visible_rest_supplies(character_id);
+        let party = character.party_id.as_deref().and_then(|party_id| {
+            self.connection
+                .db
+                .party()
+                .iter()
+                .find(|row| row.id == party_id)
+        });
+        let current_case_site_id = party
+            .as_ref()
+            .and_then(|row| row.current_case_site_id.as_ref())
+            .map(|site| site.value.clone());
+        let journey_destination = party.as_ref().and_then(|party| {
+            self.connection
+                .db
+                .party_journey()
+                .iter()
+                .find(|journey| journey.party_id == party.id)
+                .map(|journey| public_journey_endpoint(&journey.destination))
+        });
         let settlement = character
             .current_settlement_id
             .as_deref()
@@ -1752,6 +1828,10 @@ impl LiveRunner {
             visible_water_ml,
             personal_gold_coin: self.personal_gold(character_id),
             settlement_id,
+            current_case_site_id,
+            journey_destination,
+            symptomatic: illness.as_ref().is_some_and(|row| row.symptomatic),
+            critical: illness.as_ref().is_some_and(|row| row.critical),
             settlement_services,
             visible_herbalist_quote,
             visible_inn_full_board_cost,
@@ -1884,6 +1964,25 @@ impl LiveRunner {
         Some((leader.id, agent))
     }
 
+    fn public_party_elapsed_max(&self, party_id: &str) -> u64 {
+        let member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|row| row.party_id == party_id)
+            .map(|row| row.character_id)
+            .collect::<HashSet<_>>();
+        self.connection
+            .db
+            .character_time()
+            .iter()
+            .filter(|row| member_ids.contains(&row.character_id))
+            .map(|row| row.minutes)
+            .max()
+            .unwrap_or(0)
+    }
+
     fn observe_deaths(&mut self) {
         let mut newly_dead = self
             .connection
@@ -1918,7 +2017,7 @@ impl LiveRunner {
     fn provision_case_site_journey(
         &mut self,
         party_id: &str,
-        _leader: u64,
+        leader: u64,
         agent: u32,
         finance_key: &str,
         distance_m: u64,
@@ -2207,8 +2306,12 @@ impl LiveRunner {
             .iter()
             .find(|row| row.party_id == party_id && row.character_id == payer)
             .map_or(0, |row| row.value);
+        let finance_cache_key = (party_id.to_owned(), leader, finance_key.to_owned());
         if !affordable {
-            if self.generated_case_owners.contains_key(finance_key) {
+            if self
+                .generated_seen_cases
+                .contains(&(leader, finance_key.to_owned()))
+            {
                 self.metrics.generated_finance_blocked_cycles = self
                     .metrics
                     .generated_finance_blocked_cycles
@@ -2216,11 +2319,11 @@ impl LiveRunner {
             }
             let public_funds = party_coin.saturating_add(personal);
             let signature = (upper_bound_cost, public_funds);
-            let finance_key = format!("{party_id}:{finance_key}");
-            if self.generated_finance_blocks.get(&finance_key) == Some(&signature) {
+            if self.generated_finance_blocks.get(&finance_cache_key) == Some(&signature) {
                 return Ok(TravelProvisionDecision::Deferred("journey_finance_backoff"));
             }
-            self.generated_finance_blocks.insert(finance_key, signature);
+            self.generated_finance_blocks
+                .insert(finance_cache_key, signature);
             self.event(
                 agent,
                 CoreLoopEventKind::QuestSuppressed,
@@ -2233,8 +2336,7 @@ impl LiveRunner {
                 "journey_essentials_unaffordable",
             ));
         }
-        self.generated_finance_blocks
-            .remove(&format!("{party_id}:{finance_key}"));
+        self.generated_finance_blocks.remove(&finance_cache_key);
         let mut item_ids = Vec::new();
         let mut quantities = Vec::new();
         if rations_to_buy > 0 {
@@ -2285,29 +2387,17 @@ impl LiveRunner {
         Ok(TravelProvisionDecision::Ready)
     }
 
-    fn travel_camps(&mut self, party_id: &str) -> Result<(), String> {
+    fn travel_camps(&mut self, party_id: &str) -> Result<JourneyTravelOutcome, String> {
         for _ in 0..MAX_CAMPS_PER_LEG {
             let party = self.party_by_id(party_id)?;
             if party.camp_destination.is_none() {
                 self.metrics.travel_legs += 1;
-                return Ok(());
+                return Ok(JourneyTravelOutcome::Completed);
             }
             let remaining_before = party.camp_remaining_minutes;
             let Some((travel_actor, _, _)) = self.expedition_recovery_actor(party_id) else {
                 self.observe_deaths();
-                let members = self.expedition_member_observations(party_id)?;
-                let supplies = self.expedition_supplies(party_id);
-                self.emit_expedition_diagnostics(
-                    party_id,
-                    "journey_stalled",
-                    "hold_position",
-                    "no_ready_asymptomatic_noncritical_actor",
-                    &members,
-                    &members,
-                    supplies,
-                    supplies,
-                );
-                return Err("journey has no ready, asymptomatic, noncritical actor".into());
+                return self.record_journey_hold(party_id, "journey_stalled");
             };
             let pending_encounter = {
                 let table = self.connection.db.strategic_encounter();
@@ -2384,7 +2474,7 @@ impl LiveRunner {
                     format!("id={encounter_id};choice={choice};outcome={resolved_outcome:?}"),
                 );
                 if self.current_leader(party_id).is_none() {
-                    return Ok(());
+                    return self.record_journey_hold(party_id, "journey_stalled_after_encounter");
                 }
                 continue;
             }
@@ -2430,19 +2520,7 @@ impl LiveRunner {
             let Some((continue_actor, agent, continue_actor_role)) =
                 self.expedition_recovery_actor(party_id)
             else {
-                let members = self.expedition_member_observations(party_id)?;
-                let supplies = self.expedition_supplies(party_id);
-                self.emit_expedition_diagnostics(
-                    party_id,
-                    "journey_stalled_after_rest",
-                    "hold_position",
-                    "no_ready_asymptomatic_noncritical_actor",
-                    &members,
-                    &members,
-                    supplies,
-                    supplies,
-                );
-                return Err("camp rest left no ready, asymptomatic, noncritical actor".into());
+                return self.record_journey_hold(party_id, "journey_stalled_after_rest");
             };
             let unsafe_after_rest = self.unsafe_party_agents(&self.party_agents(continue_actor)?);
             let camp_members_after = self.expedition_member_observations(party_id)?;
@@ -2503,6 +2581,7 @@ impl LiveRunner {
                 Some(JourneyEndpoint::Settlement(_))
             );
             if !unsafe_after_rest.is_empty() && !evacuation_leg {
+                self.metrics.expedition_holds = self.metrics.expedition_holds.saturating_add(1);
                 for unsafe_agent in unsafe_after_rest {
                     self.metrics.quests_suppressed_for_health =
                         self.metrics.quests_suppressed_for_health.saturating_add(1);
@@ -2512,7 +2591,7 @@ impl LiveRunner {
                         "reason=journey_camp_member_not_ready;plan=off_settlement_recovery_next_cycle",
                     );
                 }
-                return Ok(());
+                return Ok(JourneyTravelOutcome::HeldForRecovery);
             }
             let leg_members_before = self.expedition_member_observations(party_id)?;
             let leg_supplies_before = self.expedition_supplies(party_id);
@@ -2534,8 +2613,14 @@ impl LiveRunner {
             );
             let leg_members_after = self.expedition_member_observations(party_id)?;
             let leg_supplies_after = self.expedition_supplies(party_id);
+            let recovery_needed = leg_members_after
+                .iter()
+                .any(expedition_member_needs_recovery);
             let leg_reason = if evacuation_leg {
                 format!("quest_suppressed_evacuation_continues_{continue_actor_role}")
+            } else if recovery_needed {
+                "quest_suppressed_member_not_ready_after_leg;plan=off_settlement_recovery_next_cycle"
+                    .into()
             } else {
                 "quest_leg_resumed_all_members_ready".into()
             };
@@ -2560,6 +2645,66 @@ impl LiveRunner {
         Err("camp bound exhausted".into())
     }
 
+    fn continue_public_active_journey(
+        &mut self,
+        party_id: &str,
+    ) -> Result<Option<JourneyTravelOutcome>, String> {
+        let party = self.party_by_id(party_id)?;
+        let has_public_journey = party.camp_destination.is_some()
+            || self
+                .connection
+                .db
+                .party_journey()
+                .iter()
+                .any(|journey| journey.party_id == party_id);
+        if !has_public_journey {
+            return Ok(None);
+        }
+        let outcome = self.travel_camps(party_id)?;
+        if outcome != JourneyTravelOutcome::Completed {
+            return Ok(Some(outcome));
+        }
+
+        self.observe_deaths();
+        let Some((leader, agent)) = self.current_leader(party_id) else {
+            return self
+                .record_journey_hold(party_id, "journey_arrival_revalidation")
+                .map(Some);
+        };
+        let party_agents = self.party_agents(leader)?;
+        let arrived = self.party_by_id(party_id)?;
+        let location_is_publicly_coherent = arrived.camp_destination.is_none()
+            && (arrived.current_settlement_id.is_some() ^ arrived.current_case_site_id.is_some());
+        if arrived.id != party_id
+            || !self.unsafe_party_agents(&party_agents).is_empty()
+            || !location_is_publicly_coherent
+        {
+            self.metrics.expedition_holds = self.metrics.expedition_holds.saturating_add(1);
+            self.event(
+                agent,
+                CoreLoopEventKind::QuestSuppressed,
+                "reason=journey_continuation_arrival_not_actionable",
+            );
+            return Ok(Some(JourneyTravelOutcome::HeldForRecovery));
+        }
+        self.event(
+            agent,
+            CoreLoopEventKind::Travel,
+            format!(
+                "journey_continuation=completed;settlement={};case_site={}",
+                arrived
+                    .current_settlement_id
+                    .as_deref()
+                    .map_or_else(|| "none".into(), bounded_event_field),
+                arrived
+                    .current_case_site_id
+                    .as_ref()
+                    .map_or_else(|| "none".into(), |site| bounded_event_field(&site.value)),
+            ),
+        );
+        Ok(Some(JourneyTravelOutcome::Completed))
+    }
+
     fn choose_quest(&self, party: &Party, profile: &AgentProfile) -> Option<BackendContract> {
         let settlement = party.current_settlement_id.as_ref()?;
         let mut quests: Vec<_> = self
@@ -2574,6 +2719,22 @@ impl LiveRunner {
             ((q.difficulty - risk_target).abs(), q.id.clone())
         });
         quests.into_iter().next()
+    }
+
+    fn active_direct_contract(&self, party: &Party) -> Option<BackendContract> {
+        let contract_id = party.active_contract_id.as_ref()?;
+        self.connection
+            .db
+            .backend_contracts()
+            .iter()
+            .find(|contract| {
+                contract.id == *contract_id
+                    && contract.accepted_by.as_deref() == Some(party.id.as_str())
+                    && matches!(
+                        contract.status,
+                        ContractStatus::Accepted | ContractStatus::ReadyToReport
+                    )
+            })
     }
 
     fn personal_gold(&self, character_id: u64) -> u64 {
@@ -3808,6 +3969,98 @@ impl LiveRunner {
         }
     }
 
+    fn record_journey_hold(
+        &mut self,
+        party_id: &str,
+        phase: &str,
+    ) -> Result<JourneyTravelOutcome, String> {
+        let party = self.party_by_id(party_id)?;
+        let members = self.expedition_member_observations(party_id)?;
+        let supplies = self.expedition_supplies(party_id);
+        let living_count = members.iter().filter(|member| member.alive).count() as u32;
+        let required_food_kcal =
+            living_count as f32 * adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY;
+        let required_water_ml = living_count as f32
+            * adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
+        let supplies_cover_one_day = expedition_supplies_cover_one_rest_day(&members, supplies);
+        let journey = self
+            .connection
+            .db
+            .party_journey()
+            .iter()
+            .find(|row| row.party_id == party_id);
+        let itinerary = self
+            .connection
+            .db
+            .party_journey_itinerary()
+            .iter()
+            .find(|row| row.party_id == party_id);
+        let active_interval = journey.as_ref().and_then(|journey| {
+            itinerary.as_ref().and_then(|itinerary| {
+                projected_camp_rest_minutes(
+                    journey.completed_elapsed_minutes,
+                    journey.total_elapsed_minutes,
+                    &itinerary.forecast_camp_intervals,
+                )
+            })
+        });
+        let journey_completed_elapsed = journey.as_ref().map_or_else(
+            || "none".into(),
+            |row| row.completed_elapsed_minutes.to_string(),
+        );
+        let journey_total_elapsed = journey.as_ref().map_or_else(
+            || "none".into(),
+            |row| row.total_elapsed_minutes.to_string(),
+        );
+        let journey_remaining_elapsed = journey.as_ref().map_or_else(
+            || "none".into(),
+            |row| {
+                row.total_elapsed_minutes
+                    .saturating_sub(row.completed_elapsed_minutes)
+                    .to_string()
+            },
+        );
+        let journey_destination = journey.as_ref().map_or_else(
+            || {
+                party
+                    .camp_destination
+                    .as_ref()
+                    .map_or_else(|| "none".into(), public_journey_endpoint)
+            },
+            |row| public_journey_endpoint(&row.destination),
+        );
+        let (active_interval_start, active_interval_minutes) = active_interval.map_or_else(
+            || ("none".into(), "none".into()),
+            |(start, minutes)| (start.to_string(), minutes.to_string()),
+        );
+        self.metrics.expedition_holds = self.metrics.expedition_holds.saturating_add(1);
+        let diagnostic_agent = members.first().map_or(0, |member| member.agent_id);
+        self.event(
+            diagnostic_agent,
+            CoreLoopEventKind::ExpeditionRecovery,
+            format!(
+                "party={};phase={};action=hold_position;reason=journey_held_no_actionable_actor;journey_completed_elapsed={journey_completed_elapsed};journey_total_elapsed={journey_total_elapsed};journey_remaining_elapsed={journey_remaining_elapsed};journey_destination={};camp_remaining_minutes={};active_forecast_interval_start={active_interval_start};active_forecast_interval_minutes={active_interval_minutes};living_count={living_count};one_day_food_kcal_required={required_food_kcal:.0};stored_food_kcal={:.0};one_day_water_ml_required={required_water_ml:.0};portable_water_ml={:.0};supplies_cover_one_rest_day={supplies_cover_one_day}",
+                bounded_event_field(party_id),
+                bounded_event_field(phase),
+                bounded_event_field(&journey_destination),
+                party.camp_remaining_minutes,
+                supplies.stored_food_kcal,
+                supplies.portable_water_ml,
+            ),
+        );
+        self.emit_expedition_diagnostics(
+            party_id,
+            phase,
+            "hold_position",
+            "journey_held_no_actionable_actor",
+            &members,
+            &members,
+            supplies,
+            supplies,
+        );
+        Ok(JourneyTravelOutcome::HeldNoActionableActor)
+    }
+
     fn expedition_recovery_actor(&self, party_id: &str) -> Option<(u64, u32, &'static str)> {
         let party = self
             .connection
@@ -3908,30 +4161,16 @@ impl LiveRunner {
         &mut self,
         party_id: &str,
         cycle: u32,
-    ) -> Result<bool, String> {
+    ) -> Result<ExpeditionRecoveryOutcome, String> {
         let party = self.party_by_id(party_id)?;
         if party.current_settlement_id.is_some() {
-            return Ok(false);
+            return Ok(ExpeditionRecoveryOutcome::None);
         }
         let mut before = self.expedition_member_observations(party_id)?;
         if !before.iter().any(expedition_member_needs_recovery) {
-            return Ok(false);
+            return Ok(ExpeditionRecoveryOutcome::None);
         }
         let supplies_before = self.expedition_supplies(party_id);
-        let Some((actor_id, actor_agent, actor_role)) = self.expedition_recovery_actor(party_id)
-        else {
-            self.emit_expedition_diagnostics(
-                party_id,
-                "plan",
-                "hold_position",
-                "no_living_recovery_actor",
-                &before,
-                &before,
-                supplies_before,
-                supplies_before,
-            );
-            return Err("off-settlement party has no living recovery actor".into());
-        };
         self.metrics.expedition_recovery_plans =
             self.metrics.expedition_recovery_plans.saturating_add(1);
         self.metrics.quests_suppressed_for_health =
@@ -3941,6 +4180,21 @@ impl LiveRunner {
                     .filter(|member| expedition_member_needs_recovery(member))
                     .count() as u32,
             );
+        let Some((actor_id, actor_agent, actor_role)) = self.expedition_recovery_actor(party_id)
+        else {
+            self.record_journey_hold(party_id, "recovery_plan")?;
+            self.emit_expedition_diagnostics(
+                party_id,
+                "plan",
+                "hold_position",
+                "no_actionable_recovery_actor",
+                &before,
+                &before,
+                supplies_before,
+                supplies_before,
+            );
+            return Ok(ExpeditionRecoveryOutcome::Held);
+        };
         self.emit_expedition_diagnostics(
             party_id,
             "plan",
@@ -3965,12 +4219,16 @@ impl LiveRunner {
             && expedition_supplies_cover_one_rest_day(&before, supplies_before);
         if can_attempt_field_recovery {
             for rest_ordinal in 1..=MAX_EXPEDITION_RECOVERY_RESTS {
+                let Some((rest_actor_id, _, _)) = self.expedition_recovery_actor(party_id) else {
+                    self.record_journey_hold(party_id, "field_recovery_actor_reselection")?;
+                    return Ok(ExpeditionRecoveryOutcome::Held);
+                };
                 let rest_before = self.expedition_member_observations(party_id)?;
                 let rest_supplies_before = self.expedition_supplies(party_id);
                 let result = reducer_call!(self, "expedition_recovery_rest", |cb| self
                     .connection
                     .reducers
-                    .rest_at_camp_then(actor_id, EXPEDITION_RECOVERY_REST_MINUTES, cb));
+                    .rest_at_camp_then(rest_actor_id, EXPEDITION_RECOVERY_REST_MINUTES, cb));
                 self.call(result)?;
                 self.observe_deaths();
                 let rest_after = self.expedition_member_observations(party_id)?;
@@ -4001,7 +4259,7 @@ impl LiveRunner {
                         rest_supplies_after,
                         rest_supplies_after,
                     );
-                    return Ok(true);
+                    return Ok(ExpeditionRecoveryOutcome::Resumed);
                 }
                 before = rest_after;
                 if before.iter().any(|member| member.alive && member.critical)
@@ -4024,14 +4282,15 @@ impl LiveRunner {
                 supplies_after,
                 supplies_after,
             );
-            return Err("off-settlement recovery has no public evacuation route".into());
+            return Ok(ExpeditionRecoveryOutcome::Held);
         };
         let evacuation_before = self.expedition_member_observations(party_id)?;
         let evacuation_supplies_before = self.expedition_supplies(party_id);
         let Some((evacuation_actor_id, evacuation_actor_agent, evacuation_actor_role)) =
             self.expedition_recovery_actor(party_id)
         else {
-            return Err("off-settlement party lost every living evacuation actor".into());
+            self.record_journey_hold(party_id, "evacuation_plan")?;
+            return Ok(ExpeditionRecoveryOutcome::Held);
         };
         self.emit_expedition_diagnostics(
             party_id,
@@ -4048,7 +4307,9 @@ impl LiveRunner {
             .reducers
             .travel_to_settlement_then(evacuation_actor_id, return_settlement.clone(), cb));
         self.call(result)?;
-        self.travel_camps(party_id)?;
+        if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+            return Ok(ExpeditionRecoveryOutcome::Held);
+        }
         self.observe_deaths();
         let evacuation_after = self.expedition_member_observations(party_id)?;
         let evacuation_supplies_after = self.expedition_supplies(party_id);
@@ -4068,7 +4329,7 @@ impl LiveRunner {
                 evacuation_supplies_before,
                 evacuation_supplies_after,
             );
-            return Ok(true);
+            return Ok(ExpeditionRecoveryOutcome::Held);
         }
         self.metrics.expedition_evacuations = self.metrics.expedition_evacuations.saturating_add(1);
         self.event(
@@ -4090,7 +4351,7 @@ impl LiveRunner {
             evacuation_supplies_before,
             evacuation_supplies_after,
         );
-        Ok(true)
+        Ok(ExpeditionRecoveryOutcome::Evacuated)
     }
 
     fn owned_open_generated_cases(&self, character_id: u64) -> Vec<(String, String)> {
@@ -4113,6 +4374,37 @@ impl LiveRunner {
             .map(|row| row.status)
     }
 
+    fn observe_generated_case_intake(
+        &mut self,
+        agent: u32,
+        owner_character_id: u64,
+        case_id: &str,
+        subject: &str,
+        source: &str,
+    ) -> bool {
+        let key = (owner_character_id, case_id.to_owned());
+        if !self.generated_seen_cases.insert(key) {
+            return false;
+        }
+        self.metrics.generated_case_intakes = self.metrics.generated_case_intakes.saturating_add(1);
+        self.metrics.quests_attempted = self.metrics.quests_attempted.saturating_add(1);
+        if source == "owner_projection_continuation" {
+            self.metrics.generated_case_continuations =
+                self.metrics.generated_case_continuations.saturating_add(1);
+        }
+        self.event(
+            agent,
+            CoreLoopEventKind::GeneratedCaseIntake,
+            format!(
+                "owner={owner_character_id};case={};subject={};source={}",
+                bounded_event_field(case_id),
+                bounded_event_field(subject),
+                bounded_event_field(source),
+            ),
+        );
+        true
+    }
+
     fn observe_generated_case_transition(
         &mut self,
         agent: u32,
@@ -4121,7 +4413,8 @@ impl LiveRunner {
         title: &str,
         immediately_after_own_action: bool,
     ) {
-        if self.generated_terminal_cases.contains(case_id) {
+        let key = (character_id, case_id.to_owned());
+        if self.generated_terminal_cases.contains(&key) {
             return;
         }
         let attribution = generated_closure_attribution(
@@ -4132,7 +4425,7 @@ impl LiveRunner {
         match attribution {
             GeneratedClosureAttribution::StillOpen => {}
             GeneratedClosureAttribution::OwnImmediateTransition => {
-                self.generated_terminal_cases.insert(case_id.to_owned());
+                self.generated_terminal_cases.insert(key);
                 self.metrics.generated_quests_completed += 1;
                 self.metrics.quests_completed += 1;
                 self.event(
@@ -4146,7 +4439,7 @@ impl LiveRunner {
                 );
             }
             GeneratedClosureAttribution::ExternalTransition => {
-                self.generated_terminal_cases.insert(case_id.to_owned());
+                self.generated_terminal_cases.insert(key);
                 self.metrics.generated_quests_closed_externally += 1;
                 self.event(
                     agent,
@@ -4163,9 +4456,9 @@ impl LiveRunner {
 
     fn observe_external_generated_closures(&mut self) {
         let tracked = self
-            .generated_case_owners
+            .generated_seen_cases
             .iter()
-            .map(|(case_id, owner)| (case_id.clone(), *owner))
+            .map(|(owner, case_id)| (case_id.clone(), *owner))
             .collect::<Vec<_>>();
         for (case_id, owner) in tracked {
             let Some(agent) = self.character_ids.iter().position(|id| *id == owner) else {
@@ -4377,11 +4670,15 @@ impl LiveRunner {
                     after.len(),
                 ),
             );
-            self.generated_case_owners
-                .insert(case_id.clone(), character_id);
+            self.observe_generated_case_intake(
+                agent,
+                character_id,
+                &case_id,
+                &subject,
+                "dialogue_rumor",
+            );
             self.metrics.generated_quests_discovered += 1;
             self.metrics.generated_unique_party_cases_discovered += 1;
-            self.metrics.quests_attempted += 1;
             self.event(
                 agent,
                 CoreLoopEventKind::GeneratedQuestDiscovered,
@@ -4534,6 +4831,29 @@ impl LiveRunner {
         ))
     }
 
+    fn refreshed_safe_party_for_owner(
+        &mut self,
+        party_id: &str,
+        owner_character_id: u64,
+    ) -> Result<Option<(u32, Party)>, String> {
+        self.observe_deaths();
+        let Some((current_leader, current_agent)) = self.current_leader(party_id) else {
+            return Ok(None);
+        };
+        if current_leader != owner_character_id {
+            return Ok(None);
+        }
+        let party_agents = self.party_agents(current_leader)?;
+        if !self.unsafe_party_agents(&party_agents).is_empty() {
+            return Ok(None);
+        }
+        let party = self.party_for(current_leader)?;
+        if party.id != party_id {
+            return Ok(None);
+        }
+        Ok(Some((current_agent, party)))
+    }
+
     fn emit_generated_investigation_attempt(
         &mut self,
         party_id: &str,
@@ -4669,13 +4989,13 @@ impl LiveRunner {
         party_id: &str,
         owner_character_id: u64,
         case_id: &str,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let Some(occupied_site_id) = self
             .party_by_id(party_id)?
             .current_case_site_id
             .map(|site| site.value)
         else {
-            return Ok(());
+            return Ok(true);
         };
         let pin = self
             .connection
@@ -4694,7 +5014,7 @@ impl LiveRunner {
             })
             .ok_or("completed generated case site has no exact owner-scoped return pin")?;
         let Some((current_leader, current_agent)) = self.current_leader(party_id) else {
-            return Ok(());
+            return Ok(false);
         };
         let settlement_id = pin.origin_settlement_id.clone();
         let result = reducer_call!(self, "return_completed_generated_case", |cb| self
@@ -4705,11 +5025,18 @@ impl LiveRunner {
         self.event(
             current_agent,
             CoreLoopEventKind::Travel,
-            format!("generated_case={case_id};completed_return={settlement_id}"),
+            format!("generated_case={case_id};case_completed=true;return_started={settlement_id}"),
         );
-        self.travel_camps(party_id)?;
+        let journey_outcome = self.travel_camps(party_id)?;
         self.observe_deaths();
-        Ok(())
+        if journey_outcome == JourneyTravelOutcome::Completed {
+            self.event(
+                current_agent,
+                CoreLoopEventKind::Travel,
+                format!("generated_case={case_id};return_completed={settlement_id}"),
+            );
+        }
+        Ok(journey_outcome == JourneyTravelOutcome::Completed)
     }
 
     fn advance_generated_case(
@@ -4733,10 +5060,19 @@ impl LiveRunner {
             }
             self.maintain_equipment(party_agent)?;
         }
+        if self
+            .refreshed_safe_party_for_owner(party_id, character_id)?
+            .is_none()
+        {
+            return Ok(false);
+        }
         for _ in 0..MAX_GENERATED_CASE_STEPS_PER_CYCLE {
             if self.generated_case_status(character_id, case_id).as_deref() != Some("open") {
-                self.return_completed_generated_party_to_origin(party_id, character_id, case_id)?;
-                return Ok(true);
+                return self.return_completed_generated_party_to_origin(
+                    party_id,
+                    character_id,
+                    case_id,
+                );
             }
             let at_settlement = self
                 .party_for(character_id)?
@@ -4874,12 +5210,11 @@ impl LiveRunner {
                 );
                 self.observe_generated_case_transition(agent, character_id, case_id, subject, true);
                 if self.generated_case_status(character_id, case_id).as_deref() != Some("open") {
-                    self.return_completed_generated_party_to_origin(
+                    return self.return_completed_generated_party_to_origin(
                         party_id,
                         character_id,
                         case_id,
-                    )?;
-                    return Ok(true);
+                    );
                 }
                 if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
                     return Ok(false);
@@ -4887,7 +5222,7 @@ impl LiveRunner {
                 continue;
             }
             if let Some(action) = actions.iter().find(|row| row.can_travel_to_required_site) {
-                let funnel_key = format!("{character_id}:{case_id}");
+                let funnel_key = (character_id, case_id.to_owned());
                 if self.generated_exact_site_cases.insert(funnel_key.clone()) {
                     self.metrics.generated_exact_site_ready += 1;
                 }
@@ -4927,15 +5262,18 @@ impl LiveRunner {
                         cb,
                     ));
                 self.call(result)?;
-                if self.generated_traveled_cases.insert(funnel_key) {
-                    self.metrics.generated_case_site_traveled += 1;
-                }
                 self.event(
                     agent,
                     CoreLoopEventKind::Travel,
                     format!("generated_case={case_id};outbound={site_id}"),
                 );
-                self.travel_camps(party_id)?;
+                let journey_outcome = self.travel_camps(party_id)?;
+                if journey_outcome != JourneyTravelOutcome::Completed {
+                    return Ok(false);
+                }
+                if self.generated_traveled_cases.insert(funnel_key) {
+                    self.metrics.generated_case_site_traveled += 1;
+                }
                 if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
                     return Ok(false);
                 }
@@ -5080,7 +5418,9 @@ impl LiveRunner {
                                 )
                             });
                         self.call(result)?;
-                        self.travel_camps(party_id)?;
+                        if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                            return Ok(false);
+                        }
                         self.observe_deaths();
                         if let Some((current_leader, _)) = self.current_leader(party_id) {
                             for party_agent in self.party_agents(current_leader)? {
@@ -5098,12 +5438,11 @@ impl LiveRunner {
                     );
                     if self.generated_case_status(character_id, case_id).as_deref() != Some("open")
                     {
-                        self.return_completed_generated_party_to_origin(
+                        return self.return_completed_generated_party_to_origin(
                             party_id,
                             character_id,
                             case_id,
-                        )?;
-                        return Ok(true);
+                        );
                     }
                     if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
                         return Ok(false);
@@ -5121,7 +5460,9 @@ impl LiveRunner {
                     CoreLoopEventKind::Travel,
                     format!("generated_case={case_id};return={settlement_id}"),
                 );
-                self.travel_camps(party_id)?;
+                if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                    return Ok(false);
+                }
                 if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
                     return Ok(false);
                 }
@@ -5132,13 +5473,67 @@ impl LiveRunner {
         Ok(false)
     }
 
+    fn turn_in_ready_direct_contract(
+        &mut self,
+        party_id: &str,
+        leader: u64,
+        leader_agent: u32,
+        quest: &BackendContract,
+    ) -> Result<(), String> {
+        let party = self.party_by_id(party_id)?;
+        let publicly_ready = party.current_settlement_id.as_deref()
+            == Some(quest.settlement_id.as_str())
+            && party.current_case_site_id.is_none()
+            && party.camp_destination.is_none()
+            && party.active_contract_id.as_deref() == Some(quest.id.as_str())
+            && self
+                .connection
+                .db
+                .backend_contracts()
+                .iter()
+                .any(|contract| {
+                    contract.id == quest.id
+                        && contract.status == ContractStatus::ReadyToReport
+                        && contract.accepted_by.as_deref() == Some(party_id)
+                });
+        if !publicly_ready {
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "quest={};reason=direct_contract_report_arrival_not_proven",
+                    bounded_event_field(&quest.id)
+                ),
+            );
+            return Ok(());
+        }
+        let result = reducer_call!(self, "interact_report_contract", |cb| self
+            .connection
+            .reducers
+            .simulate_contract_issuer_interaction_then(
+                leader,
+                quest.id.clone(),
+                ContractInteractionStage::Report,
+                cb,
+            ));
+        self.call(result)?;
+        let result = reducer_call!(self, "turn_in_quest", |cb| self
+            .connection
+            .reducers
+            .report_contract_then(leader, quest.id.clone(), cb));
+        self.call(result)?;
+        self.metrics.quests_completed += 1;
+        self.metrics.direct_contracts_completed += 1;
+        self.event(leader_agent, CoreLoopEventKind::TurnIn, quest.id.clone());
+        Ok(())
+    }
+
     fn cycle(&mut self, party_id: &str, cycle: u32) -> Result<(), String> {
-        let Some((mut leader, authoritative_agent)) = self.current_leader(party_id) else {
+        let Some((quest_owner, _)) = self.current_leader(party_id) else {
             self.observe_deaths();
             return Ok(());
         };
-        let mut leader_agent = authoritative_agent;
-        let party_agents = self.party_agents(leader)?;
+        let party_agents = self.party_agents(quest_owner)?;
         for &agent in &party_agents {
             if !self.ensure_medically_safe(agent)? {
                 self.metrics.quests_suppressed_for_health += 1;
@@ -5151,44 +5546,57 @@ impl LiveRunner {
             }
             self.maintain_equipment(agent)?;
         }
-        let party = self.party_for(leader)?;
-        let quest = self
-            .choose_quest(&party, &self.profiles[leader_agent as usize])
-            .ok_or("no suitable available quest")?;
-        if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
-            party_id,
-            leader,
-            leader_agent,
-            &quest.case_id,
-            quest.distance_m,
-        )? {
-            self.event(
-                leader_agent,
-                CoreLoopEventKind::QuestSuppressed,
-                format!(
-                    "quest={};acceptance_deferred={reason}",
-                    bounded_event_field(&quest.id)
-                ),
-            );
-            self.settlement_activity_day(leader_agent)?;
+        let Some((mut leader_agent, party)) =
+            self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+        else {
             return Ok(());
+        };
+        let mut leader = quest_owner;
+        let active_contract = self.active_direct_contract(&party);
+        let resuming_contract = active_contract.is_some();
+        let quest = active_contract
+            .or_else(|| self.choose_quest(&party, &self.profiles[leader_agent as usize]))
+            .ok_or("no suitable available or accepted quest")?;
+        if quest.status == ContractStatus::ReadyToReport {
+            return self.turn_in_ready_direct_contract(party_id, leader, leader_agent, &quest);
         }
-        self.metrics.quests_attempted += 1;
-        let result = reducer_call!(self, "interact_accept_contract", |cb| self
-            .connection
-            .reducers
-            .simulate_contract_issuer_interaction_then(
+        if !resuming_contract {
+            if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
+                party_id,
                 leader,
-                quest.id.clone(),
-                ContractInteractionStage::Accept,
-                cb,
-            ));
-        self.call(result)?;
-        let result = reducer_call!(self, "accept_quest", |cb| self
-            .connection
-            .reducers
-            .accept_contract_then(leader, quest.id.clone(), cb));
-        self.call(result)?;
+                leader_agent,
+                &quest.case_id,
+                quest.distance_m,
+            )? {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!(
+                        "quest={};acceptance_deferred={reason}",
+                        bounded_event_field(&quest.id)
+                    ),
+                );
+                self.settlement_activity_day(leader_agent)?;
+                return Ok(());
+            }
+            self.metrics.quests_attempted += 1;
+            self.metrics.direct_contracts_attempted += 1;
+            let result = reducer_call!(self, "interact_accept_contract", |cb| self
+                .connection
+                .reducers
+                .simulate_contract_issuer_interaction_then(
+                    leader,
+                    quest.id.clone(),
+                    ContractInteractionStage::Accept,
+                    cb,
+                ));
+            self.call(result)?;
+            let result = reducer_call!(self, "accept_quest", |cb| self
+                .connection
+                .reducers
+                .accept_contract_then(leader, quest.id.clone(), cb));
+            self.call(result)?;
+        }
         let case_site = self
             .connection
             .db
@@ -5197,69 +5605,98 @@ impl LiveRunner {
             .filter(|site| site.owner_character_id == leader && site.case_id == quest.case_id)
             .min_by_key(|site| (site.distance_m, site.case_site_id.clone()))
             .ok_or("accepted quest did not disclose an exact case site")?;
-        if matches!(
-            self.provision_case_site_journey(
+        let already_at_case_site = party
+            .current_case_site_id
+            .as_ref()
+            .is_some_and(|site| site.value == case_site.case_site_id);
+        if !already_at_case_site {
+            if matches!(
+                self.provision_case_site_journey(
+                    party_id,
+                    leader,
+                    leader_agent,
+                    &quest.case_id,
+                    case_site.distance_m,
+                )?,
+                TravelProvisionDecision::Deferred(_)
+            ) {
+                return Err(
+                    "accepted contract provisioning projection changed after disclosure".into(),
+                );
+            }
+            if !resuming_contract {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::AcceptContract,
+                    format!(
+                        "cycle={cycle};quest={};title={};difficulty={};opposition={} {};distance_m={}",
+                        quest.id,
+                        quest.title,
+                        quest.difficulty,
+                        quest.opposition_count_wording,
+                        quest.opposition_wording,
+                        case_site.distance_m
+                    ),
+                );
+            } else {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::Travel,
+                    format!(
+                        "direct_contract={};continuation=outbound;case_site={}",
+                        bounded_event_field(&quest.id),
+                        bounded_event_field(&case_site.case_site_id),
+                    ),
+                );
+            }
+
+            let outbound_before = self.expedition_member_observations(party_id)?;
+            let outbound_supplies_before = self.expedition_supplies(party_id);
+            let result = reducer_call!(self, "travel_to_case_site", |cb| self
+                .connection
+                .reducers
+                .travel_to_case_site_then(
+                    leader,
+                    CaseSiteId {
+                        value: case_site.case_site_id.clone(),
+                    },
+                    cb,
+                ));
+            self.call(result)?;
+            let outbound_after = self.expedition_member_observations(party_id)?;
+            let outbound_supplies_after = self.expedition_supplies(party_id);
+            self.emit_expedition_diagnostics(
                 party_id,
-                leader,
+                "journey_leg",
+                "travel_to_case_site",
+                if outbound_after.iter().any(expedition_member_needs_recovery) {
+                    "quest_suppressed_member_not_ready_after_outbound_leg"
+                } else {
+                    "quest_leg_outbound_all_members_ready"
+                },
+                &outbound_before,
+                &outbound_after,
+                outbound_supplies_before,
+                outbound_supplies_after,
+            );
+            self.event(
                 leader_agent,
-                &quest.case_id,
-                case_site.distance_m,
-            )?,
-            TravelProvisionDecision::Deferred(_)
-        ) {
-            return Err(
-                "accepted contract provisioning projection changed after disclosure".into(),
+                CoreLoopEventKind::Travel,
+                format!("outbound={}", case_site.case_site_id),
+            );
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
+        } else {
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::Travel,
+                format!(
+                    "direct_contract={};continuation=arrived_case_site",
+                    bounded_event_field(&quest.id)
+                ),
             );
         }
-        self.event(
-            leader_agent,
-            CoreLoopEventKind::AcceptContract,
-            format!(
-                "cycle={cycle};quest={};title={};difficulty={};opposition={} {};distance_m={}",
-                quest.id,
-                quest.title,
-                quest.difficulty,
-                quest.opposition_count_wording,
-                quest.opposition_wording,
-                case_site.distance_m
-            ),
-        );
-
-        let outbound_before = self.expedition_member_observations(party_id)?;
-        let outbound_supplies_before = self.expedition_supplies(party_id);
-        let result = reducer_call!(self, "travel_to_case_site", |cb| self
-            .connection
-            .reducers
-            .travel_to_case_site_then(
-                leader,
-                CaseSiteId {
-                    value: case_site.case_site_id.clone(),
-                },
-                cb,
-            ));
-        self.call(result)?;
-        let outbound_after = self.expedition_member_observations(party_id)?;
-        let outbound_supplies_after = self.expedition_supplies(party_id);
-        self.emit_expedition_diagnostics(
-            party_id,
-            "journey_leg",
-            "travel_to_case_site",
-            if outbound_after.iter().any(expedition_member_needs_recovery) {
-                "quest_suppressed_member_not_ready_after_outbound_leg"
-            } else {
-                "quest_leg_outbound_all_members_ready"
-            },
-            &outbound_before,
-            &outbound_after,
-            outbound_supplies_before,
-            outbound_supplies_after,
-        );
-        self.event(
-            leader_agent,
-            CoreLoopEventKind::Travel,
-            format!("outbound={}", case_site.case_site_id),
-        );
-        self.travel_camps(party_id)?;
 
         // Travel advances every member's disease clock. Re-observe public
         // life/condition state before attempting a living-only combat reducer.
@@ -5283,10 +5720,19 @@ impl LiveRunner {
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
             self.call(result)?;
-            self.travel_camps(party_id)?;
-            for agent in party_agents {
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
+            for &agent in &party_agents {
                 self.ensure_medically_safe(agent)?;
             }
+            let Some((current_agent, _)) =
+                self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+            else {
+                return Ok(());
+            };
+            leader = quest_owner;
+            leader_agent = current_agent;
             let result = reducer_call!(self, "abandon_unsafe_quest", |cb| self
                 .connection
                 .reducers
@@ -5359,7 +5805,9 @@ impl LiveRunner {
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
             self.call(result)?;
-            self.travel_camps(party_id)?;
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
             self.observe_deaths();
             let Some((current, _)) = self.current_leader(party_id) else {
                 return Ok(());
@@ -5368,10 +5816,13 @@ impl LiveRunner {
             for agent in self.party_agents(leader)? {
                 self.ensure_medically_safe(agent)?;
             }
-            let Some((current, _)) = self.current_leader(party_id) else {
+            let Some((current_agent, _)) =
+                self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+            else {
                 return Ok(());
             };
-            leader = current;
+            leader = quest_owner;
+            leader_agent = current_agent;
             if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
                 party_id,
                 leader,
@@ -5415,7 +5866,9 @@ impl LiveRunner {
                     cb,
                 ));
             self.call(result)?;
-            self.travel_camps(party_id)?;
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
             self.observe_deaths();
             let Some((current, current_agent)) = self.current_leader(party_id) else {
                 return Ok(());
@@ -5435,7 +5888,9 @@ impl LiveRunner {
                 .reducers
                 .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
             self.call(result)?;
-            self.travel_camps(party_id)?;
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
             self.observe_deaths();
             let Some((current, _)) = self.current_leader(party_id) else {
                 return Ok(());
@@ -5444,10 +5899,12 @@ impl LiveRunner {
             for agent in self.party_agents(leader)? {
                 self.ensure_medically_safe(agent)?;
             }
-            let Some((current, current_agent)) = self.current_leader(party_id) else {
+            let Some((current_agent, _)) =
+                self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+            else {
                 return Ok(());
             };
-            leader = current;
+            leader = quest_owner;
             leader_agent = current_agent;
             let result = reducer_call!(self, "abandon_defeated_quest", |cb| self
                 .connection
@@ -5511,30 +5968,16 @@ impl LiveRunner {
             CoreLoopEventKind::Travel,
             format!("return={}", quest.settlement_id),
         );
-        self.travel_camps(party_id)?;
+        if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+            return Ok(());
+        }
         self.observe_deaths();
         let Some((current, current_agent)) = self.current_leader(party_id) else {
             return Ok(());
         };
         leader = current;
         leader_agent = current_agent;
-        let result = reducer_call!(self, "interact_report_contract", |cb| self
-            .connection
-            .reducers
-            .simulate_contract_issuer_interaction_then(
-                leader,
-                quest.id.clone(),
-                ContractInteractionStage::Report,
-                cb,
-            ));
-        self.call(result)?;
-        let result = reducer_call!(self, "turn_in_quest", |cb| self
-            .connection
-            .reducers
-            .report_contract_then(leader, quest.id.clone(), cb));
-        self.call(result)?;
-        self.metrics.quests_completed += 1;
-        self.event(leader_agent, CoreLoopEventKind::TurnIn, quest.id.clone());
+        self.turn_in_ready_direct_contract(party_id, leader, leader_agent, &quest)?;
 
         let party = self.party_for(leader)?;
         let sale: Vec<_> = self
@@ -5587,7 +6030,9 @@ impl LiveRunner {
                 self.maintain_equipment(agent)?;
             }
         }
-        if let Some((_, current_agent)) = self.current_leader(party_id) {
+        if let Some((current_agent, _)) =
+            self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+        {
             self.try_upgrade(current_agent, &quest.settlement_id)?;
         }
         Ok(())
@@ -5969,7 +6414,7 @@ fn run_core_loop_with_npc_policy_inner(
         last_semantic_event: None,
         recorded_deaths: HashSet::new(),
         medically_paused_schedules: HashSet::new(),
-        generated_case_owners: HashMap::new(),
+        generated_seen_cases: HashSet::new(),
         generated_terminal_cases: HashSet::new(),
         generated_exact_site_cases: HashSet::new(),
         generated_traveled_cases: HashSet::new(),
@@ -6206,28 +6651,56 @@ fn run_core_loop_with_npc_policy_inner(
     let duration_minutes = u64::from(config.duration_days) * 1_440;
     for cycle in 0..config.cycles {
         let mut active = false;
+        let mut held = false;
         for party_id in &party_ids {
             runner.observe_deaths();
             runner.observe_external_generated_closures();
-            let Some((leader, leader_agent)) = runner.current_leader(party_id) else {
+            let party_time_before = runner.public_party_elapsed_max(party_id);
+            let Some((pre_recovery_leader, _)) = runner.current_leader(party_id) else {
                 continue;
             };
-            if runner.recover_or_evacuate_off_settlement(party_id, cycle)? {
-                active = true;
-                let result = reducer_call!(
-                    runner,
-                    "ensure_settlement_activity_after_evacuation",
-                    |cb| {
-                        runner
-                            .connection
-                            .reducers
-                            .ensure_settlement_activity_then(settlement.clone(), cb)
-                    }
-                );
-                runner.call(result)?;
-                runner.choose_pending_npc_strategies()?;
+            let recovery_started_in_budget = runner
+                .connection
+                .db
+                .character_time()
+                .iter()
+                .find(|row| row.character_id == pre_recovery_leader)
+                .ok_or("missing pre-recovery leader clock")?
+                .minutes
+                < duration_minutes;
+            if !recovery_started_in_budget {
                 continue;
             }
+            let recovery_outcome = runner.recover_or_evacuate_off_settlement(party_id, cycle)?;
+            match recovery_outcome {
+                ExpeditionRecoveryOutcome::None | ExpeditionRecoveryOutcome::Resumed => {}
+                ExpeditionRecoveryOutcome::Evacuated => {
+                    active = true;
+                    let result = reducer_call!(
+                        runner,
+                        "ensure_settlement_activity_after_evacuation",
+                        |cb| {
+                            runner
+                                .connection
+                                .reducers
+                                .ensure_settlement_activity_then(settlement.clone(), cb)
+                        }
+                    );
+                    runner.call(result)?;
+                    runner.choose_pending_npc_strategies()?;
+                    continue;
+                }
+                ExpeditionRecoveryOutcome::Held => {
+                    held = true;
+                    if runner.public_party_elapsed_max(party_id) > party_time_before {
+                        active = true;
+                    }
+                    continue;
+                }
+            }
+            let Some((leader, _)) = runner.current_leader(party_id) else {
+                continue;
+            };
             let elapsed = runner
                 .connection
                 .db
@@ -6236,11 +6709,30 @@ fn run_core_loop_with_npc_policy_inner(
                 .find(|row| row.character_id == leader)
                 .ok_or("missing leader clock")?
                 .minutes;
-            if elapsed >= duration_minutes {
+            if elapsed >= duration_minutes
+                && !(recovery_outcome == ExpeditionRecoveryOutcome::Resumed
+                    && recovery_started_in_budget)
+            {
                 continue;
             }
+            match runner.continue_public_active_journey(party_id)? {
+                None | Some(JourneyTravelOutcome::Completed) => {}
+                Some(
+                    JourneyTravelOutcome::HeldNoActionableActor
+                    | JourneyTravelOutcome::HeldForRecovery,
+                ) => {
+                    held = true;
+                    if runner.public_party_elapsed_max(party_id) > party_time_before {
+                        active = true;
+                    }
+                    continue;
+                }
+            }
+            let Some((leader, leader_agent)) = runner.current_leader(party_id) else {
+                continue;
+            };
             active = true;
-            let profile = &runner.profiles[leader_agent as usize];
+            let profile = runner.profiles[leader_agent as usize].clone();
             let mixed = config.seed
                 ^ u64::from(leader_agent).wrapping_mul(0x9e37_79b9_7f4a_7c15)
                 ^ u64::from(cycle).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -6262,6 +6754,15 @@ fn run_core_loop_with_npc_policy_inner(
                     .count()
             });
             let open_generated_cases = runner.owned_open_generated_cases(leader);
+            for (case_id, title) in &open_generated_cases {
+                runner.observe_generated_case_intake(
+                    leader_agent,
+                    leader,
+                    case_id,
+                    title,
+                    "owner_projection_continuation",
+                );
+            }
             let projected_investigation_actions = runner
                 .connection
                 .db
@@ -6274,8 +6775,12 @@ fn run_core_loop_with_npc_policy_inner(
                             .any(|(case_id, _)| case_id == &row.case_id)
                 })
                 .count();
-            let direct_quest_chosen = wants_quest && runner.choose_quest(&party, profile).is_some();
-            let quest_path = if !open_generated_cases.is_empty() {
+            let direct_quest_chosen =
+                wants_quest && runner.choose_quest(&party, &profile).is_some();
+            let active_direct_contract = runner.active_direct_contract(&party);
+            let quest_path = if active_direct_contract.is_some() {
+                "direct_contract_continuation"
+            } else if !open_generated_cases.is_empty() {
                 "generated_open_case"
             } else if direct_quest_chosen {
                 "direct_contract"
@@ -6310,10 +6815,6 @@ fn run_core_loop_with_npc_policy_inner(
             match quest_path {
                 "generated_open_case" => {
                     let (case_id, title) = open_generated_cases[0].clone();
-                    runner
-                        .generated_case_owners
-                        .entry(case_id.clone())
-                        .or_insert(leader);
                     let progressed = runner.advance_generated_case(
                         party_id,
                         leader,
@@ -6326,7 +6827,9 @@ fn run_core_loop_with_npc_policy_inner(
                         runner.settlement_activity_day(leader_agent)?;
                     }
                 }
-                "direct_contract" => runner.cycle(party_id, cycle)?,
+                "direct_contract" | "direct_contract_continuation" => {
+                    runner.cycle(party_id, cycle)?
+                }
                 "generated_discovery" => {
                     let discovery = runner.discover_generated_case(leader, leader_agent, cycle)?;
                     if discovery.case_discovered() {
@@ -6376,6 +6879,9 @@ fn run_core_loop_with_npc_policy_inner(
                 .ensure_settlement_activity_then(settlement.clone(), cb));
             runner.call(result)?;
             runner.choose_pending_npc_strategies()?;
+        }
+        if !active && held {
+            break;
         }
         if !active {
             break;
@@ -6544,6 +7050,10 @@ fn run_core_loop_with_npc_policy_inner(
                 visible_food_kcal: public.visible_food_kcal,
                 visible_water_ml: public.visible_water_ml,
                 settlement_id: public.settlement_id,
+                current_case_site_id: public.current_case_site_id,
+                journey_destination: public.journey_destination,
+                symptomatic: public.symptomatic,
+                critical: public.critical,
                 settlement_services: public.settlement_services,
                 visible_herbalist_quote: public.visible_herbalist_quote,
                 visible_inn_full_board_cost: public.visible_inn_full_board_cost,
@@ -7028,6 +7538,32 @@ mod tests {
         );
         assert!(travel.contains(".rest_at_camp_then(travel_actor, rest_minutes"));
         assert!(!travel.contains(".rest_at_camp_then(travel_actor, 1_440"));
+        assert!(source.contains(
+            "fn travel_camps(&mut self, party_id: &str) -> Result<JourneyTravelOutcome, String>"
+        ));
+        for outcome in [
+            "JourneyTravelOutcome::Completed",
+            "JourneyTravelOutcome::HeldNoActionableActor",
+            "JourneyTravelOutcome::HeldForRecovery",
+        ] {
+            assert!(source.contains(outcome), "{outcome}");
+        }
+        for hold in [
+            "record_journey_hold(party_id, \"journey_stalled\")",
+            "record_journey_hold(party_id, \"journey_stalled_after_encounter\")",
+            "record_journey_hold(party_id, \"journey_stalled_after_rest\")",
+        ] {
+            assert!(travel.contains(hold), "{hold}");
+        }
+        assert!(
+            !travel
+                .contains("return Err(\"journey has no ready, asymptomatic, noncritical actor\"")
+        );
+        assert!(
+            !travel.contains(
+                "return Err(\"camp rest left no ready, asymptomatic, noncritical actor\""
+            )
+        );
         for phase in ["phase=pre_rest", "phase=post_rest", "phase=post_continue"] {
             assert!(travel.contains(phase));
         }
@@ -7070,8 +7606,66 @@ mod tests {
         assert!(provisioning.contains("payer_minute"));
         assert!(provisioning.contains("merchant_count != 1"));
         assert!(provisioning.contains("journey_finance_backoff"));
+        assert!(provisioning.contains("(party_id.to_owned(), leader, finance_key.to_owned())"));
         assert!(!provisioning.contains(".map_or(0, |row| row.buy_bps)"));
         assert!(!provisioning.contains("party_journey_route"));
+    }
+
+    #[test]
+    fn journey_holds_are_publicly_diagnosable_and_block_arrival_assumptions() {
+        let source = include_str!("live_core.rs");
+        let hold = source
+            .split("fn record_journey_hold")
+            .nth(1)
+            .and_then(|tail| tail.split("fn expedition_recovery_actor").next())
+            .expect("journey hold diagnostics");
+        for public_field in [
+            "reason=journey_held_no_actionable_actor",
+            "journey_completed_elapsed=",
+            "journey_total_elapsed=",
+            "journey_remaining_elapsed=",
+            "journey_destination=",
+            "camp_remaining_minutes=",
+            "active_forecast_interval_start=",
+            "active_forecast_interval_minutes=",
+            "living_count=",
+            "one_day_food_kcal_required=",
+            "stored_food_kcal=",
+            "one_day_water_ml_required=",
+            "portable_water_ml=",
+            "supplies_cover_one_rest_day=",
+        ] {
+            assert!(hold.contains(public_field), "{public_field}");
+        }
+        assert!(hold.contains(".party_journey()"));
+        assert!(hold.contains(".party_journey_itinerary()"));
+        assert!(!hold.contains("infection_episode"));
+        assert!(!hold.contains("disease"));
+
+        let generated = source
+            .split("fn advance_generated_case")
+            .nth(1)
+            .and_then(|tail| tail.split("fn cycle").next())
+            .expect("generated case driver");
+        let travel_guard = generated
+            .find("journey_outcome != JourneyTravelOutcome::Completed")
+            .expect("typed generated travel guard");
+        let traveled_marker = generated
+            .find("self.generated_traveled_cases.insert(funnel_key)")
+            .expect("generated traveled marker");
+        assert!(travel_guard < traveled_marker);
+
+        let recovery = source
+            .split("fn recover_or_evacuate_off_settlement")
+            .nth(1)
+            .and_then(|tail| tail.split("fn generated_case_status").next())
+            .expect("expedition recovery driver");
+        assert!(recovery.contains("record_journey_hold(party_id, \"recovery_plan\")"));
+        assert!(recovery.contains("record_journey_hold(party_id, \"evacuation_plan\")"));
+        assert!(
+            recovery.contains("self.travel_camps(party_id)? != JourneyTravelOutcome::Completed")
+        );
+        assert!(recovery.contains("return Ok(ExpeditionRecoveryOutcome::Held)"));
     }
 
     #[test]
@@ -7093,6 +7687,7 @@ mod tests {
         assert!(
             quest.contains("accepted contract provisioning projection changed after disclosure")
         );
+        assert!(quest.contains("refreshed_safe_party_for_owner(party_id, quest_owner)"));
     }
 
     #[test]
@@ -7201,6 +7796,225 @@ mod tests {
     }
 
     #[test]
+    fn recovery_outcomes_resume_same_cycle_but_consume_evacuation_or_hold() {
+        assert_ne!(
+            ExpeditionRecoveryOutcome::Resumed,
+            ExpeditionRecoveryOutcome::Evacuated
+        );
+        let source = include_str!("live_core.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        let cycle = production
+            .split("for cycle in 0..config.cycles")
+            .nth(1)
+            .expect("core loop");
+        assert!(cycle.contains("let recovery_outcome ="));
+        assert!(cycle.contains("let recovery_started_in_budget ="));
+        assert!(cycle.contains("if !recovery_started_in_budget"));
+        assert!(cycle.contains("recovery_outcome == ExpeditionRecoveryOutcome::Resumed"));
+        assert!(cycle.contains("&& recovery_started_in_budget"));
+        assert!(cycle.contains("ExpeditionRecoveryOutcome::Evacuated =>"));
+        assert!(cycle.contains("ExpeditionRecoveryOutcome::Held =>"));
+        let resumed = cycle.find("ExpeditionRecoveryOutcome::Resumed").unwrap();
+        let quest_decision = cycle.find("CoreLoopEventKind::QuestDecision").unwrap();
+        assert!(resumed < quest_decision);
+        assert!(
+            cycle.find("if !recovery_started_in_budget").unwrap()
+                < cycle.find("recover_or_evacuate_off_settlement").unwrap()
+        );
+    }
+
+    #[test]
+    fn public_journeys_resume_generated_and_direct_state_without_duplicate_metrics() {
+        let source = include_str!("live_core.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        let core_loop = production
+            .split("for cycle in 0..config.cycles")
+            .nth(1)
+            .expect("core loop");
+        assert!(
+            core_loop.find("continue_public_active_journey").unwrap()
+                < core_loop.find("CoreLoopEventKind::QuestDecision").unwrap()
+        );
+        assert!(core_loop.contains("\"generated_open_case\""));
+        assert!(core_loop.contains("\"direct_contract_continuation\""));
+        assert!(core_loop.contains("runner.active_direct_contract(&party)"));
+
+        let active_contract = production
+            .split("fn active_direct_contract")
+            .nth(1)
+            .and_then(|tail| tail.split("fn personal_gold").next())
+            .expect("public active contract selector");
+        for public_identity in [
+            "party.active_contract_id",
+            ".backend_contracts()",
+            "contract.accepted_by",
+            "ContractStatus::Accepted | ContractStatus::ReadyToReport",
+        ] {
+            assert!(
+                active_contract.contains(public_identity),
+                "{public_identity}"
+            );
+        }
+
+        let direct = production
+            .split("fn cycle")
+            .nth(1)
+            .and_then(|tail| tail.split("fn try_upgrade").next())
+            .expect("direct contract driver");
+        let attempt_metrics = direct.find("self.metrics.quests_attempted += 1").unwrap();
+        let new_contract_guard = direct.find("if !resuming_contract").unwrap();
+        assert!(new_contract_guard < attempt_metrics);
+        assert!(direct.contains("if quest.status == ContractStatus::ReadyToReport"));
+        assert!(direct.contains("already_at_case_site"));
+
+        let turn_in = production
+            .split("fn turn_in_ready_direct_contract")
+            .nth(1)
+            .and_then(|tail| tail.split("fn cycle").next())
+            .expect("direct contract turn-in");
+        assert!(turn_in.contains("direct_contract_report_arrival_not_proven"));
+        assert!(turn_in.contains("ContractStatus::ReadyToReport"));
+        assert_eq!(
+            turn_in
+                .matches("self.metrics.quests_completed += 1")
+                .count(),
+            1
+        );
+        assert_eq!(
+            turn_in
+                .matches("self.metrics.direct_contracts_completed += 1")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn recovery_reselects_each_rest_actor_and_held_only_cycles_do_not_advance_time() {
+        let source = include_str!("live_core.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        let recovery = production
+            .split("fn recover_or_evacuate_off_settlement")
+            .nth(1)
+            .and_then(|tail| tail.split("fn owned_open_generated_cases").next())
+            .expect("expedition recovery policy");
+        let loop_start = recovery
+            .find("for rest_ordinal in 1..=MAX_EXPEDITION_RECOVERY_RESTS")
+            .unwrap();
+        let reselection = recovery[loop_start..]
+            .find("self.expedition_recovery_actor(party_id)")
+            .unwrap();
+        let rest_call = recovery[loop_start..]
+            .find(".rest_at_camp_then(rest_actor_id")
+            .unwrap();
+        assert!(reselection < rest_call);
+        assert!(recovery.contains("field_recovery_actor_reselection"));
+
+        let core_loop = production
+            .split("for cycle in 0..config.cycles")
+            .nth(1)
+            .expect("core loop");
+        let held_branch = core_loop
+            .split("ExpeditionRecoveryOutcome::Held =>")
+            .nth(1)
+            .and_then(|tail| tail.split("let Some((leader, leader_agent))").next())
+            .expect("held branch");
+        assert!(held_branch.contains("held = true"));
+        assert!(!held_branch.contains("active = true;\n                    continue"));
+        assert!(held_branch.contains("public_party_elapsed_max(party_id) > party_time_before"));
+        assert!(core_loop.contains("if active {"));
+        assert!(core_loop.contains("advance_simulation_world_time"));
+        assert!(core_loop.contains("if !active && held"));
+    }
+
+    #[test]
+    fn generated_case_tracking_is_owner_scoped_and_intake_drives_attempts() {
+        let mut seen = HashSet::new();
+        assert!(seen.insert((7_u64, "same-case".to_owned())));
+        assert!(seen.insert((8_u64, "same-case".to_owned())));
+        assert!(!seen.insert((7_u64, "same-case".to_owned())));
+        let mut finance_blocks = HashMap::new();
+        finance_blocks.insert(
+            ("party".to_owned(), 7_u64, "same-case".to_owned()),
+            (12_u64, 3_u64),
+        );
+        assert!(
+            finance_blocks
+                .get(&("party".to_owned(), 8_u64, "same-case".to_owned()))
+                .is_none()
+        );
+
+        let source = include_str!("live_core.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("generated_seen_cases: HashSet<(u64, String)>"));
+        assert!(production.contains("generated_terminal_cases: HashSet<(u64, String)>"));
+        assert!(
+            production
+                .contains("generated_finance_blocks: HashMap<(String, u64, String), (u64, u64)>")
+        );
+        assert!(production.contains("CoreLoopEventKind::GeneratedCaseIntake"));
+        assert!(production.contains("source == \"owner_projection_continuation\""));
+        assert!(production.contains(
+            "self.metrics.quests_attempted = self.metrics.quests_attempted.saturating_add(1)"
+        ));
+        assert!(!production.contains("generated_case_owners: HashMap<String, u64>"));
+    }
+
+    #[test]
+    fn quest_preparation_revalidates_public_owner_leadership_and_party_safety() {
+        let source = include_str!("live_core.rs");
+        let helper = source
+            .split("fn refreshed_safe_party_for_owner")
+            .nth(1)
+            .and_then(|tail| tail.split("fn emit_generated_investigation_attempt").next())
+            .expect("post-preparation safety gate");
+        assert!(helper.contains("self.observe_deaths()"));
+        assert!(helper.contains("current_leader != owner_character_id"));
+        assert!(helper.contains("self.unsafe_party_agents(&party_agents)"));
+        assert!(helper.contains("party.id != party_id"));
+
+        let generated = source
+            .split("fn advance_generated_case")
+            .nth(1)
+            .and_then(|tail| tail.split("fn cycle").next())
+            .expect("generated case driver");
+        assert!(generated.contains("refreshed_safe_party_for_owner(party_id, character_id)"));
+    }
+
+    #[test]
+    fn final_agent_diagnostics_expose_public_remote_and_illness_state() {
+        let value = serde_json::to_value(CoreLoopFailureAgent {
+            agent_id: 0,
+            character_id: 7,
+            alive: true,
+            condition_status: "ready".into(),
+            hunger: 0.0,
+            thirst: 0.0,
+            food_days: 0.0,
+            water_days: 0.0,
+            visible_food_kcal: 0.0,
+            visible_water_ml: 0.0,
+            personal_gold_coin: 0,
+            settlement_id: None,
+            current_case_site_id: Some("site:known".into()),
+            journey_destination: Some("settlement:return".into()),
+            symptomatic: true,
+            critical: false,
+            settlement_services: Vec::new(),
+            visible_herbalist_quote: None,
+            visible_inn_full_board_cost: None,
+        })
+        .unwrap();
+        for field in [
+            "current_case_site_id",
+            "journey_destination",
+            "symptomatic",
+            "critical",
+        ] {
+            assert!(value.get(field).is_some(), "missing {field}");
+        }
+    }
+
+    #[test]
     fn expedition_diagnostics_include_each_public_health_and_supply_boundary() {
         let source = include_str!("live_core.rs");
         let diagnostics = source
@@ -7226,6 +8040,10 @@ mod tests {
         ] {
             assert!(diagnostics.contains(field), "missing {field}");
         }
+        assert!(source.contains(
+            "quest_suppressed_member_not_ready_after_leg;plan=off_settlement_recovery_next_cycle"
+        ));
+        assert!(source.contains(".any(expedition_member_needs_recovery)"));
     }
 
     #[test]
@@ -7402,7 +8220,7 @@ mod tests {
     }
 
     #[test]
-    fn failure_artifact_version_four_serializes_safe_operation_context() {
+    fn failure_artifact_version_five_serializes_safe_operation_context() {
         let artifact = CoreLoopFailureArtifact {
             schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
             category: "investigation_temporally_unavailable".into(),
@@ -7423,7 +8241,7 @@ mod tests {
             final_agents: Vec::new(),
         };
         let value = serde_json::to_value(artifact).unwrap();
-        assert_eq!(value["schema_version"], serde_json::json!(4));
+        assert_eq!(value["schema_version"], serde_json::json!(5));
         assert_eq!(
             value["operation"],
             serde_json::json!("perform_investigation_action")
@@ -7577,6 +8395,16 @@ mod tests {
             "journey_provision_purchase_failed"
         );
         assert!(!message.contains("hidden provider"));
+
+        let held = "travel_camps failed: journey has no ready, asymptomatic, noncritical actor; hidden health authority";
+        let (category, message) = safe_core_loop_failure(held);
+        assert_eq!(category, "journey_held_no_actionable_actor");
+        assert_eq!(safe_failure_operation(held), Some("travel_camps"));
+        assert_eq!(
+            safe_failure_reason_code(held, category),
+            "journey_held_no_actionable_actor"
+        );
+        assert!(!message.contains("hidden health authority"));
     }
 
     #[test]
@@ -7800,6 +8628,10 @@ mod tests {
     #[test]
     fn report_metrics_expose_encounter_frequency_choices_losses_and_wipes() {
         let metrics = CoreLoopMetrics {
+            direct_contracts_attempted: 4,
+            direct_contracts_completed: 2,
+            generated_case_intakes: 3,
+            generated_case_continuations: 1,
             generated_quests_discovered: 3,
             generated_quests_completed: 2,
             generated_quests_closed_externally: 1,
@@ -7815,6 +8647,7 @@ mod tests {
             expedition_recovery_rests: 3,
             expedition_evacuations: 1,
             expedition_resumes: 1,
+            expedition_holds: 2,
             generated_unique_party_cases_discovered: 3,
             generated_exact_site_ready: 2,
             generated_finance_blocked_cycles: 5,
@@ -7837,6 +8670,10 @@ mod tests {
         };
         let value = serde_json::to_value(metrics).unwrap();
         for field in [
+            "direct_contracts_attempted",
+            "direct_contracts_completed",
+            "generated_case_intakes",
+            "generated_case_continuations",
             "generated_quests_discovered",
             "generated_quests_completed",
             "generated_quests_closed_externally",
@@ -7852,6 +8689,7 @@ mod tests {
             "expedition_recovery_rests",
             "expedition_evacuations",
             "expedition_resumes",
+            "expedition_holds",
             "generated_unique_party_cases_discovered",
             "generated_exact_site_ready",
             "generated_finance_blocked_cycles",
