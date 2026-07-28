@@ -457,6 +457,13 @@ versioned presence fingerprint. The learned clue exposes only legitimate
 demographic, physical, and referral details; patrol and ambush execution
 revalidate the NPC's identity, profile, location, and availability immediately
 before resolving the action.
+The player-facing action projection applies the same current cohort-authority,
+case-binding, NPC, presence, expected-place, profile, demographic, presence
+version, and schedule predicates. If any no longer holds, the action remains
+visible but unavailable with the single observer-safe `target_changed` reason;
+the projection never identifies the NPC or reveals which private predicate
+failed. This keeps alternate public actions usable while preventing a
+permanently invalid cohort capability from remaining actionable.
 
 Generated cases create no `Contract` rows. Tavern discovery and NPC referrals
 are their entry points. Settlement activity counts open generated cases

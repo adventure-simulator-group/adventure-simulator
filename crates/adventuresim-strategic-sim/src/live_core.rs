@@ -233,6 +233,7 @@ pub struct CoreLoopMetrics {
     pub generated_investigation_actions: u32,
     pub generated_investigation_waits: u32,
     pub generated_investigation_wait_minutes: u64,
+    pub generated_investigation_replans: u32,
     pub generated_witness_dialogues: u32,
     pub generated_unique_party_cases_discovered: u32,
     pub generated_exact_site_ready: u32,
@@ -308,8 +309,10 @@ pub enum CoreLoopEventKind {
     Death,
     QuestDecision,
     GeneratedQuestDiscovered,
+    GeneratedInvestigationAttempt,
     GeneratedInvestigationAction,
     GeneratedInvestigationWait,
+    GeneratedInvestigationReplan,
     GeneratedWitnessDialogue,
     GeneratedQuestCompleted,
     GeneratedQuestClosedExternally,
@@ -791,6 +794,22 @@ fn event_is_repeatable(kind: &CoreLoopEventKind) -> bool {
     )
 }
 
+const VICTIM_COHORT_STATE_CHANGED_DETAILS: [&str; 7] = [
+    "Victim cohort authority no longer exists",
+    "Victim cohort target is unavailable",
+    "Victim cohort target moved from the learned location",
+    "Victim cohort profile no longer matches its authority",
+    "Victim cohort NPC no longer exists",
+    "Victim cohort NPC no longer has a visible demographic",
+    "Victim cohort target moved, changed, or is unavailable",
+];
+
+fn victim_cohort_state_changed_failure(error: &str) -> bool {
+    error
+        .strip_prefix("perform_investigation_action failed: ")
+        .is_some_and(|detail| VICTIM_COHORT_STATE_CHANGED_DETAILS.contains(&detail))
+}
+
 #[derive(Clone)]
 struct FailureRecorder {
     output: Option<PathBuf>,
@@ -883,6 +902,8 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
         "investigation_action_stale"
     } else if error.contains("Investigation action is unavailable") {
         "investigation_action_unavailable"
+    } else if victim_cohort_state_changed_failure(error) {
+        "investigation_victim_cohort_state_changed"
     } else {
         match category {
             "rest_service_unavailable" => "rest_service_unavailable",
@@ -922,6 +943,11 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
         (
             "invalid_investigation_route",
             "The projected investigation route no longer has a coherent completed origin.",
+        )
+    } else if victim_cohort_state_changed_failure(error) {
+        (
+            "investigation_state_changed",
+            "A publicly projected investigation target changed before the action completed.",
         )
     } else if error.contains("offers neither an Inn nor a Temple") {
         (
@@ -3447,7 +3473,7 @@ impl LiveRunner {
                     agent,
                     CoreLoopEventKind::GeneratedQuestCompleted,
                     format!(
-                        "case={};title={};attribution=own_immediate_transition",
+                        "case={};subject={};attribution=own_immediate_transition",
                         bounded_event_field(case_id),
                         bounded_event_field(title)
                     ),
@@ -3460,7 +3486,7 @@ impl LiveRunner {
                     agent,
                     CoreLoopEventKind::GeneratedQuestClosedExternally,
                     format!(
-                        "case={};title={};attribution=external_transition",
+                        "case={};subject={};attribution=external_transition",
                         bounded_event_field(case_id),
                         bounded_event_field(title)
                     ),
@@ -3626,7 +3652,7 @@ impl LiveRunner {
             agent,
             CoreLoopEventKind::GeneratedQuestDiscovered,
             format!(
-                "case={};title={};npc={};location={}",
+                "case={};subject={};npc={};location={}",
                 bounded_event_field(&case_id),
                 bounded_event_field(&title),
                 bounded_event_field(&candidate.name),
@@ -3642,7 +3668,7 @@ impl LiveRunner {
         agent: u32,
         cycle: u32,
         case_id: &str,
-        title: &str,
+        subject: &str,
         topics: &[&str],
         preferred_name: Option<&str>,
         preferred_location: Option<&str>,
@@ -3698,9 +3724,9 @@ impl LiveRunner {
                     agent,
                     CoreLoopEventKind::GeneratedWitnessDialogue,
                     format!(
-                        "case={};title={};npc={};location={};topic={}",
+                        "case={};subject={};npc={};location={};topic={}",
                         bounded_event_field(case_id),
-                        bounded_event_field(title),
+                        bounded_event_field(subject),
                         bounded_event_field(&candidate.name),
                         bounded_event_field(&candidate.location_id),
                         bounded_event_field(&topic_id)
@@ -3711,16 +3737,16 @@ impl LiveRunner {
                     agent,
                     CoreLoopEventKind::GeneratedInvestigationAction,
                     format!(
-                        "case={};title={};npc={};location={};topic={}",
+                        "case={};subject={};npc={};location={};topic={}",
                         bounded_event_field(case_id),
-                        bounded_event_field(title),
+                        bounded_event_field(subject),
                         bounded_event_field(&candidate.name),
                         bounded_event_field(&candidate.location_id),
                         bounded_event_field(&topic_id)
                     ),
                 );
             }
-            self.observe_generated_case_transition(agent, character_id, case_id, title, true);
+            self.observe_generated_case_transition(agent, character_id, case_id, subject, true);
             return Ok(true);
         }
         Ok(false)
@@ -3753,6 +3779,78 @@ impl LiveRunner {
             Some(current_leader),
             unsafe_agents.len(),
         ))
+    }
+
+    fn emit_generated_investigation_attempt(
+        &mut self,
+        party_id: &str,
+        character_id: u64,
+        agent: u32,
+        case_id: &str,
+        subject: &str,
+        action: &BackendInvestigationAction,
+        attempt: &str,
+    ) -> Result<(), String> {
+        let actor_time = self
+            .connection
+            .db
+            .character_time()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .map(|row| row.minutes)
+            .ok_or("projected investigation actor clock is unavailable")?;
+        let party_member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|row| row.party_id == party_id)
+            .map(|row| row.character_id)
+            .collect::<Vec<_>>();
+        let mut party_times = party_member_ids
+            .iter()
+            .map(|member_id| {
+                self.connection
+                    .db
+                    .character_time()
+                    .iter()
+                    .find(|row| row.character_id == *member_id)
+                    .map(|row| row.minutes)
+                    .ok_or("projected investigation party clock is unavailable")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        party_times.sort_unstable();
+        let party_time_min = party_times
+            .first()
+            .copied()
+            .ok_or("projected investigation party clock is unavailable")?;
+        let party_time_max = party_times
+            .last()
+            .copied()
+            .ok_or("projected investigation party clock is unavailable")?;
+        let reason_code = if action.unavailable_reason_code.is_empty() {
+            "none"
+        } else {
+            &action.unavailable_reason_code
+        };
+        self.event(
+            agent,
+            CoreLoopEventKind::GeneratedInvestigationAttempt,
+            format!(
+                "case={};subject={};action={};method={};summary={};attempt={};expected_version={};available={};unavailable_reason_code={};wait_minutes={};actor_time={actor_time};party_time_min={party_time_min};party_time_max={party_time_max}",
+                bounded_event_field(case_id),
+                bounded_event_field(subject),
+                bounded_event_field(&action.action_id),
+                bounded_event_field(&action.method),
+                bounded_event_field(&action.summary),
+                bounded_event_field(attempt),
+                action.expected_version,
+                action.available,
+                bounded_event_field(reason_code),
+                action.wait_minutes,
+            ),
+        );
+        Ok(())
     }
 
     fn wait_for_generated_investigation_window(
@@ -3868,7 +3966,7 @@ impl LiveRunner {
         agent: u32,
         cycle: u32,
         case_id: &str,
-        title: &str,
+        subject: &str,
     ) -> Result<bool, String> {
         for party_agent in self.party_agents(character_id)? {
             if !self.ensure_medically_safe(party_agent)? {
@@ -3899,7 +3997,7 @@ impl LiveRunner {
                 .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
                 .collect::<Vec<_>>();
             actions.sort_by_key(|row| row.action_id.clone());
-            if let Some(action) = actions.iter().find(|row| row.available) {
+            if let Some(action) = actions.iter().find(|row| row.available).cloned() {
                 let known_outcomes = self
                     .connection
                     .db
@@ -3908,6 +4006,15 @@ impl LiveRunner {
                     .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
                     .map(|row| row.outcome_id)
                     .collect::<HashSet<_>>();
+                self.emit_generated_investigation_attempt(
+                    party_id,
+                    character_id,
+                    agent,
+                    case_id,
+                    subject,
+                    &action,
+                    "initial",
+                )?;
                 let result = reducer_call!(self, "perform_investigation_action", |cb| self
                     .connection
                     .reducers
@@ -3918,7 +4025,70 @@ impl LiveRunner {
                         action.expected_version,
                         cb,
                     ));
-                self.call(result)?;
+                if let Err(error) = self.call(result) {
+                    if !victim_cohort_state_changed_failure(&error) {
+                        return Err(error);
+                    }
+                    self.metrics.generated_investigation_replans = self
+                        .metrics
+                        .generated_investigation_replans
+                        .saturating_add(1);
+                    let refreshed = self
+                        .connection
+                        .db
+                        .backend_investigation_actions()
+                        .iter()
+                        .find(|row| {
+                            row.owner_character_id == character_id
+                                && row.case_id == case_id
+                                && row.action_id == action.action_id
+                        });
+                    let refreshed_version = refreshed
+                        .as_ref()
+                        .map_or_else(|| "none".into(), |row| row.expected_version.to_string());
+                    let refreshed_available = refreshed
+                        .as_ref()
+                        .map_or_else(|| "none".into(), |row| row.available.to_string());
+                    let refreshed_wait_minutes = refreshed
+                        .as_ref()
+                        .map_or_else(|| "none".into(), |row| row.wait_minutes.to_string());
+                    let refreshed_reason = refreshed.as_ref().map_or("removed", |row| {
+                        if row.unavailable_reason_code.is_empty() {
+                            "none"
+                        } else {
+                            row.unavailable_reason_code.as_str()
+                        }
+                    });
+                    let refresh_label = match refreshed.as_ref() {
+                        None => "removed",
+                        Some(row) if !row.available => "unavailable",
+                        Some(row)
+                            if row.expected_version != action.expected_version
+                                || row.method != action.method =>
+                        {
+                            "changed"
+                        }
+                        Some(_) => "identical_pending_subscription",
+                    };
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::GeneratedInvestigationReplan,
+                        format!(
+                            "case={};action={};reason=investigation_victim_cohort_state_changed;refresh={refresh_label};previous_version={};refreshed_version={};refreshed_available={};refreshed_reason_code={};refreshed_wait_minutes={}",
+                            bounded_event_field(case_id),
+                            bounded_event_field(&action.action_id),
+                            action.expected_version,
+                            bounded_event_field(&refreshed_version),
+                            bounded_event_field(&refreshed_available),
+                            bounded_event_field(refreshed_reason),
+                            bounded_event_field(&refreshed_wait_minutes),
+                        ),
+                    );
+                    // A failed reducer transaction cannot provide a subscription
+                    // update barrier. Defer once so the next cycle chooses from
+                    // a freshly applied public projection.
+                    return Ok(false);
+                }
                 let mut outcomes = self
                     .connection
                     .db
@@ -3940,16 +4110,16 @@ impl LiveRunner {
                     agent,
                     CoreLoopEventKind::GeneratedInvestigationAction,
                     format!(
-                        "case={};title={};action={};method={};summary={};outcome={}",
+                        "case={};subject={};action={};method={};summary={};outcome={}",
                         bounded_event_field(case_id),
-                        bounded_event_field(title),
+                        bounded_event_field(subject),
                         bounded_event_field(&action.action_id),
                         bounded_event_field(&action.method),
                         bounded_event_field(&action.summary),
                         bounded_event_field(wording)
                     ),
                 );
-                self.observe_generated_case_transition(agent, character_id, case_id, title, true);
+                self.observe_generated_case_transition(agent, character_id, case_id, subject, true);
                 if self.generated_case_status(character_id, case_id).as_deref() != Some("open") {
                     self.return_completed_generated_party_to_origin(
                         party_id,
@@ -4059,7 +4229,7 @@ impl LiveRunner {
                         agent,
                         cycle,
                         case_id,
-                        title,
+                        subject,
                         &["referred-testimony"],
                         Some(&witness.witness_name),
                         Some(if witness.current_learned_location.is_empty() {
@@ -4076,7 +4246,7 @@ impl LiveRunner {
                     agent,
                     cycle,
                     case_id,
-                    title,
+                    subject,
                     &["return-recovered-property", "expose-false-account"],
                     None,
                     None,
@@ -4170,7 +4340,7 @@ impl LiveRunner {
                         agent,
                         character_id,
                         case_id,
-                        title,
+                        subject,
                         true,
                     );
                     if self.generated_case_status(character_id, case_id).as_deref() != Some("open")
@@ -6271,6 +6441,56 @@ mod tests {
     }
 
     #[test]
+    fn victim_cohort_state_changes_are_narrowly_classified_without_raw_text() {
+        for detail in VICTIM_COHORT_STATE_CHANGED_DETAILS {
+            let raw = format!("perform_investigation_action failed: {detail}");
+            let (category, message) = safe_core_loop_failure(&raw);
+            assert_eq!(category, "investigation_state_changed");
+            assert_eq!(
+                safe_failure_operation(&raw),
+                Some("perform_investigation_action")
+            );
+            assert_eq!(
+                safe_failure_reason_code(&raw, category),
+                "investigation_victim_cohort_state_changed"
+            );
+            assert!(!message.contains(detail));
+        }
+        assert!(!victim_cohort_state_changed_failure(
+            "perform_investigation_action failed: Victim cohort belongs to another case"
+        ));
+        assert!(!victim_cohort_state_changed_failure(
+            "choose_dialogue_topic failed: Victim cohort target is unavailable"
+        ));
+    }
+
+    #[test]
+    fn generated_action_trace_uses_subject_and_public_attempt_evidence() {
+        let source = include_str!("live_core.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production live core");
+        let advance = source
+            .split("fn advance_generated_case")
+            .nth(1)
+            .and_then(|tail| tail.split("fn cycle").next())
+            .expect("generated case driver");
+        assert!(advance.contains("emit_generated_investigation_attempt"));
+        assert!(source.contains("actor_time={actor_time};party_time_min={party_time_min};party_time_max={party_time_max}"));
+        assert!(
+            advance.contains("\"case={};subject={};action={};method={};summary={};outcome={}\"")
+        );
+        assert!(
+            !advance.contains("\"case={};title={};action={};method={};summary={};outcome={}\"")
+        );
+        assert!(advance.contains("identical_pending_subscription"));
+        assert!(advance.contains("Defer once so the next cycle chooses"));
+        assert!(!advance.contains("bounded_retry"));
+        assert!(!production.contains("generated_investigation_retries"));
+    }
+
+    #[test]
     fn journey_camp_failures_are_allowlisted_without_raw_text() {
         let temporal = "continue_camp_travel failed: Rest until the party reaches its next daylight walking window; hidden route authority";
         let (category, message) = safe_core_loop_failure(temporal);
@@ -6541,6 +6761,7 @@ mod tests {
             generated_investigation_actions: 7,
             generated_investigation_waits: 2,
             generated_investigation_wait_minutes: 480,
+            generated_investigation_replans: 2,
             generated_witness_dialogues: 4,
             generated_unique_party_cases_discovered: 3,
             generated_exact_site_ready: 2,
@@ -6570,6 +6791,7 @@ mod tests {
             "generated_investigation_actions",
             "generated_investigation_waits",
             "generated_investigation_wait_minutes",
+            "generated_investigation_replans",
             "generated_witness_dialogues",
             "generated_unique_party_cases_discovered",
             "generated_exact_site_ready",

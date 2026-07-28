@@ -7,7 +7,10 @@ use crate::{
     },
     condition::character_strategic_condition__view,
     local_problem::local_problem_receipt,
-    settlement_population::{settlement_npc, settlement_npc_presence},
+    settlement_population::{
+        settlement_npc, settlement_npc__view, settlement_npc_presence,
+        settlement_npc_presence__view,
+    },
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_authority__view, case_custody,
         case_finale_authority__view, case_outcome__view, case_outcome_fact__view,
@@ -1800,7 +1803,7 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
             let required_case_site_id =
                 exact_action_site_for_observer(ctx, &capability, kind).unwrap_or_default();
             let availability =
-                action_unavailable_reason_view(ctx, &capability, &required_case_site_id);
+                action_unavailable_reason_view(ctx, &capability, kind, &required_case_site_id);
             let case_id = projected_action_public_case_id(ctx, &capability)?;
             Some(BackendInvestigationAction {
                 owner_character_id: capability.owner_character_id,
@@ -2525,6 +2528,17 @@ fn projected_action_availability(
     }
 }
 
+fn projected_target_changed_availability() -> ProjectedActionAvailability {
+    ProjectedActionAvailability {
+        unavailable_reason: Some(
+            "The circumstances supporting this action changed. Replan before acting.".into(),
+        ),
+        unavailable_reason_code: "target_changed".into(),
+        can_travel_to_required_site: false,
+        wait_minutes: 0,
+    }
+}
+
 fn night_window_wait_minutes(minute: u64) -> u32 {
     let minute = minute % 1_440;
     if (360..1_200).contains(&minute) {
@@ -2600,9 +2614,129 @@ fn projected_night_window_wait_minutes(
     night_window_wait_minutes(started_at)
 }
 
+fn victim_cohort_is_current_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+) -> bool {
+    if capability.target_kind != "cohort" {
+        return true;
+    }
+    let Some(actor) = ctx.db.character().id().find(capability.owner_character_id) else {
+        return false;
+    };
+    let Some(party_id) = actor.party_id.as_deref() else {
+        return false;
+    };
+    let Some(started_at) = projected_party_activity_minute(ctx, party_id) else {
+        return false;
+    };
+    let Some(target) = ctx
+        .db
+        .investigation_pattern_target_authority()
+        .cohort_id()
+        .find(&capability.target_id)
+    else {
+        return false;
+    };
+    if target.case_id != capability.case_id {
+        return false;
+    }
+    let Some(npc) = ctx.db.settlement_npc().id().find(&target.npc_id) else {
+        return false;
+    };
+    let Some(presence) = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&target.npc_id)
+    else {
+        return false;
+    };
+    if actor.current_settlement_id.as_deref() != Some(presence.settlement_id.as_str())
+        || presence.settlement_id != target.expected_settlement_id
+        || presence.location_id != target.expected_location
+    {
+        return false;
+    }
+
+    let output = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id);
+    let authority = generated_authority_view(ctx, capability).ok().flatten();
+    let GeneratedPatternAuthority::Pattern {
+        condition:
+            adventuresim_core::quest_generation::GeneratedPatternCondition::VictimProfile {
+                cohort_id,
+                demographic,
+                age_band,
+                sex,
+                profession,
+            },
+        ..
+    } = generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|row| row.outputs_json.as_str()),
+    )
+    else {
+        return true;
+    };
+    if kind != action::InvestigationActionKind::Patrol
+        || capability.target_id != cohort_id
+        || target.demographic != format!("{demographic:?}").to_ascii_lowercase()
+        || target.age_band != age_band
+        || target.sex != sex
+        || target.profession != profession
+    {
+        return false;
+    }
+    let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
+        cohort_id: target.cohort_id.clone(),
+        npc_id: target.npc_id.clone(),
+        demographic,
+        age_band: target.age_band.clone(),
+        sex: target.sex.clone(),
+        profession: target.profession.clone(),
+        expected_settlement_id: target.expected_settlement_id.clone(),
+        expected_location: target.expected_location.clone(),
+        expected_location_label: String::new(),
+        presence_version: target.presence_version,
+    };
+    let Some(current) = (if target.sex.is_empty() {
+        crate::strategic::developer_npc_witness_candidate(&npc, &presence)
+    } else {
+        Some(adventuresim_core::quest_generation::WitnessCandidate {
+            npc_id: npc.id.clone(),
+            display_name: npc.name.clone(),
+            demographic: crate::strategic::generated_npc_demographic(&npc),
+            age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
+            sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
+            profession: npc.profession.clone(),
+            visible_description: String::new(),
+            expected_location: presence.location_id.clone(),
+            expected_location_label: presence.location_id.clone(),
+            presence_version: crate::strategic::generated_npc_presence_version(&npc, &presence),
+            allowed_circumstances: Default::default(),
+        })
+    }) else {
+        return false;
+    };
+    adventuresim_core::quest_generation::pattern_target_matches(
+        &expected,
+        &current,
+        &presence.settlement_id,
+    ) && crate::settlement_population::npc_is_present(&presence, started_at)
+}
+
 fn action_unavailable_reason_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
     required_case_site_id: &str,
 ) -> ProjectedActionAvailability {
     let Some(character) = ctx.db.character().id().find(capability.owner_character_id) else {
@@ -2661,6 +2795,9 @@ fn action_unavailable_reason_view(
         .map_or(0, |started_at| {
             projected_night_window_wait_minutes(ctx, capability, started_at)
         });
+    if !victim_cohort_is_current_view(ctx, capability, kind) {
+        return projected_target_changed_availability();
+    }
     projected_action_availability(
         party_ready,
         required_case_site_id,
@@ -9015,6 +9152,61 @@ mod tests {
         let ready_on_site = projected_action_availability(true, "site", true, 0);
         assert!(ready_on_site.unavailable_reason.is_none());
         assert!(!ready_on_site.can_travel_to_required_site);
+    }
+
+    #[test]
+    fn changed_victim_cohort_projects_one_generic_observer_safe_reason() {
+        let unavailable = projected_target_changed_availability();
+        assert_eq!(unavailable.unavailable_reason_code, "target_changed");
+        assert_eq!(unavailable.wait_minutes, 0);
+        assert!(!unavailable.can_travel_to_required_site);
+        let wording = unavailable.unavailable_reason.unwrap();
+        for private_detail in [
+            "victim",
+            "cohort",
+            "NPC",
+            "demographic",
+            "profile",
+            "location",
+        ] {
+            assert!(
+                !wording.contains(private_detail),
+                "private predicate leaked through generic wording"
+            );
+        }
+
+        let source = include_str!("investigation.rs");
+        let live_check = source
+            .split("fn victim_cohort_is_current_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn action_unavailable_reason_view").next())
+            .expect("victim cohort public availability check");
+        for predicate in [
+            "investigation_pattern_target_authority()",
+            "target.case_id != capability.case_id",
+            "settlement_npc()",
+            "settlement_npc_presence()",
+            "target.expected_settlement_id",
+            "target.expected_location",
+            "target.demographic",
+            "target.age_band",
+            "target.sex",
+            "target.profession",
+            "pattern_target_matches",
+            "npc_is_present",
+        ] {
+            assert!(live_check.contains(predicate), "missing {predicate}");
+        }
+        let availability = source
+            .split("fn action_unavailable_reason_view")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub fn backend_investigation_action_outcomes")
+                    .next()
+            })
+            .expect("action availability projection");
+        assert!(availability.contains("victim_cohort_is_current_view"));
+        assert!(availability.contains("projected_target_changed_availability"));
     }
 
     #[test]

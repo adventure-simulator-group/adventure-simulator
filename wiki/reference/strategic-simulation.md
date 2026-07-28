@@ -178,14 +178,29 @@ bounded `wait_minutes`, the runner uses the ordinary settlement-rest action
 when an affordable service is available, otherwise ordinary field rest, then
 re-reads the projection, expected version, leader, and party health before
 acting. It never parses action prose or reducer errors to decide to wait. The
-state machine is bounded per cycle and falls back to sustainable settlement
+runner records bounded pre-call evidence for each generated investigation
+attempt: immutable public case subject, public case/action IDs, projected
+method and summary, expected version, availability reason and wait, and the
+actor/party public clocks. A narrowly allowlisted victim-cohort
+moved/changed/unavailable reducer result triggers one observer-safe projection
+refresh and then defers to the next cycle without aborting, even if the local
+subscription cache has not applied a new row yet. The authoritative gateway
+projection independently checks the current private cohort binding and exposes
+only generic `target_changed` unavailability; it never reveals which target
+predicate changed. On the next cycle the runner can choose another available
+public action instead of deterministically retrying the stale one. Reports
+count replans, and neither events nor failure artifacts copy the raw authority
+error.
+
+The state machine is bounded per cycle and falls back to sustainable settlement
 activity when no legal projected step is available.
 
 Reports separately count generated cases discovered, completed by the
 simulated party's immediate dialogue/action/autoresolve transition, and closed
 externally by background resident NPCs. They also count projected investigation
-actions, temporal waits and wait minutes, and witness dialogues. Generated-case trace events contain only public
-case IDs/titles, NPC names and locations already visible in the selected
+actions, temporal waits and wait minutes, observer-safe replans, and witness
+dialogues. Generated-case trace events contain only public
+case IDs/subjects, NPC names and locations already visible in the selected
 dialogue, projected action summaries, and public outcome wording; they never
 read generation manifests, canonical causes/sites, reliability, hostile
 authority, custody authority, or outcome authority.
