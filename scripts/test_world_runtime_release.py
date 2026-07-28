@@ -57,7 +57,7 @@ def write_fixture(root: Path, blocked: bool = False) -> None:
         },
     }
     terrain_manifest = {
-        "schema": 5,
+        "schema": 6,
         "purpose": "final",
         "content_sha256": terrain_digest,
         "package_sha256": terrain_package,
@@ -69,8 +69,8 @@ def write_fixture(root: Path, blocked: bool = False) -> None:
     }
     (map_dir / "strategic-map-v1.json").write_text(json.dumps(map_manifest), encoding="utf-8")
     (map_dir / "strategic-map-tiles-v1.pack").write_bytes(tile_pack)
-    (map_dir / "terrain-routing-v2.json").write_text(json.dumps(terrain_manifest), encoding="utf-8")
-    (map_dir / "terrain-routing-v2.pack").write_bytes(terrain_pack)
+    (map_dir / "terrain-routing-v3.json").write_text(json.dumps(terrain_manifest), encoding="utf-8")
+    (map_dir / "terrain-routing-v3.pack").write_bytes(terrain_pack)
     (map_dir / "STRATEGIC_MAP_DATA_LICENSE.md").write_text("fixture map notice\n", encoding="utf-8")
 
 

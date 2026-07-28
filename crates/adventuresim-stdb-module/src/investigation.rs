@@ -29,7 +29,7 @@ use crate::{
 };
 use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
-use adventuresim_core::skill::Skill;
+use adventuresim_core::skill::{PlayerSkills, Skill};
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -4143,6 +4143,33 @@ fn skill_bps(skill: Skill, hours: f32, attributes: &crate::CharacterAttributes) 
         .clamp(0.0, 10_000.0) as u16
 }
 
+fn investigation_terrain_skill(terrain: action::Terrain) -> Skill {
+    match terrain {
+        action::Terrain::Forest => Skill::TerrainForest,
+        action::Terrain::Hills | action::Terrain::Underground => Skill::TerrainHills,
+        action::Terrain::Settlement | action::Terrain::Ruins => Skill::TerrainUrban,
+        action::Terrain::Marsh => Skill::TerrainWetlands,
+        action::Terrain::Plains | action::Terrain::Road => Skill::TerrainPlains,
+    }
+}
+
+#[cfg(test)]
+mod terrain_skill_tests {
+    use super::*;
+
+    #[test]
+    fn marsh_investigation_uses_wetlands() {
+        assert_eq!(
+            investigation_terrain_skill(action::Terrain::Marsh),
+            Skill::TerrainWetlands
+        );
+        assert_eq!(
+            investigation_terrain_skill(action::Terrain::Road),
+            Skill::TerrainPlains
+        );
+    }
+}
+
 fn party_action_skills(
     ctx: &ReducerContext,
     party_id: &str,
@@ -4161,28 +4188,12 @@ fn party_action_skills(
         .character_id()
         .find(actor_id)
         .ok_or("Character attributes not found")?;
-    let terrain_bps = match terrain {
-        action::Terrain::Forest => skill_bps(
-            Skill::TerrainForest,
-            actor.terrain_forest_hours,
-            &actor_attributes,
-        ),
-        action::Terrain::Hills | action::Terrain::Underground => skill_bps(
-            Skill::TerrainHills,
-            actor.terrain_hills_hours,
-            &actor_attributes,
-        ),
-        action::Terrain::Settlement | action::Terrain::Ruins => skill_bps(
-            Skill::TerrainUrban,
-            actor.terrain_urban_hours,
-            &actor_attributes,
-        ),
-        action::Terrain::Plains | action::Terrain::Road | action::Terrain::Marsh => skill_bps(
-            Skill::TerrainPlains,
-            actor.terrain_plains_hours,
-            &actor_attributes,
-        ),
-    };
+    let terrain_skill = investigation_terrain_skill(terrain);
+    let terrain_bps = skill_bps(
+        terrain_skill,
+        actor.effective_skill_hours(terrain_skill),
+        &actor_attributes,
+    );
     let mut assistance = 0u16;
     for member_id in living_party_member_ids(ctx, party_id) {
         if member_id == actor_id {
@@ -4193,26 +4204,11 @@ fn party_action_skills(
             else {
                 continue;
             };
-            let contribution = match terrain {
-                action::Terrain::Forest => skill_bps(
-                    Skill::TerrainForest,
-                    skills.terrain_forest_hours,
-                    &attributes,
-                ),
-                action::Terrain::Hills | action::Terrain::Underground => {
-                    skill_bps(Skill::TerrainHills, skills.terrain_hills_hours, &attributes)
-                }
-                action::Terrain::Settlement | action::Terrain::Ruins => {
-                    skill_bps(Skill::TerrainUrban, skills.terrain_urban_hours, &attributes)
-                }
-                action::Terrain::Plains | action::Terrain::Road | action::Terrain::Marsh => {
-                    skill_bps(
-                        Skill::TerrainPlains,
-                        skills.terrain_plains_hours,
-                        &attributes,
-                    )
-                }
-            } / 4;
+            let contribution = skill_bps(
+                terrain_skill,
+                skills.effective_skill_hours(terrain_skill),
+                &attributes,
+            ) / 4;
             assistance = assistance.saturating_add(contribution).min(2_000);
         }
     }

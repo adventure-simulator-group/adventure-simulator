@@ -32,8 +32,8 @@ MEMBER_DESTINATIONS = {
     "world-1544.json": "target/world-1544.json",
     "strategic-map/strategic-map-v1.json": "target/strategic-map/strategic-map-v1.json",
     "strategic-map/strategic-map-tiles-v1.pack": "target/strategic-map/strategic-map-tiles-v1.pack",
-    "strategic-map/terrain-routing-v2.json": "target/strategic-map/terrain-routing-v2.json",
-    "strategic-map/terrain-routing-v2.pack": "target/strategic-map/terrain-routing-v2.pack",
+    "strategic-map/terrain-routing-v3.json": "target/strategic-map/terrain-routing-v3.json",
+    "strategic-map/terrain-routing-v3.pack": "target/strategic-map/terrain-routing-v3.pack",
     "strategic-map/STRATEGIC_MAP_DATA_LICENSE.md": "target/strategic-map/STRATEGIC_MAP_DATA_LICENSE.md",
     "WORLD_RUNTIME_DATA_NOTICE.md": "target/WORLD_RUNTIME_DATA_NOTICE.md",
 }
@@ -119,9 +119,9 @@ def validate_runtime_sources(repository: Path) -> tuple[dict[str, object], dict[
     if tiles.get("content_sha256") != sha256(tile_pack):
         fail("strategic map tile pack does not match its manifest")
 
-    terrain = load_json(repository / SOURCE_PATHS["strategic-map/terrain-routing-v2.json"])
-    if terrain.get("schema") != 5 or terrain.get("purpose") != "final":
-        fail("terrain routing package is not the final schema-5 runtime pack")
+    terrain = load_json(repository / SOURCE_PATHS["strategic-map/terrain-routing-v3.json"])
+    if terrain.get("schema") != 6 or terrain.get("purpose") != "final":
+        fail("terrain routing package is not the final schema-6 runtime pack")
     if (
         terrain.get("cultivation_grid_crs") != "EPSG:3035"
         or terrain.get("cultivation_grid_resolution_m") != 1000
@@ -132,7 +132,7 @@ def validate_runtime_sources(repository: Path) -> tuple[dict[str, object], dict[
         or not valid_sha256(terrain.get("cultivation_source_sha256", ""))
     ):
         fail("terrain routing package has an invalid cultivation contract")
-    terrain_pack = repository / SOURCE_PATHS["strategic-map/terrain-routing-v2.pack"]
+    terrain_pack = repository / SOURCE_PATHS["strategic-map/terrain-routing-v3.pack"]
     if terrain.get("content_sha256") != sha256(terrain_pack):
         fail("terrain routing pack does not match its manifest")
     if map_manifest.get("terrain_package_sha256") != terrain.get("package_sha256"):

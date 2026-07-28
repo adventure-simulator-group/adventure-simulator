@@ -748,6 +748,7 @@ pub enum JourneyTerrainKind {
     Open,
     SparseWoods,
     DeepWoods,
+    Wetland,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -771,6 +772,7 @@ pub struct JourneyTerrainWeights {
     pub plains: u16,
     pub forest: u16,
     pub hills: u16,
+    pub wetlands: u16,
     pub urban: u16,
 }
 
@@ -1379,6 +1381,7 @@ pub struct CharacterSkills {
     pub terrain_plains_hours: f32,
     pub terrain_forest_hours: f32,
     pub terrain_hills_hours: f32,
+    pub terrain_wetlands_hours: f32,
     pub terrain_urban_hours: f32,
     pub anatomy_hours: f32,
     pub tailoring_hours: f32,

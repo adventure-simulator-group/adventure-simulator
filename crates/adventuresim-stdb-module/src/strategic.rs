@@ -4417,6 +4417,7 @@ pub enum JourneyTerrainKind {
     Open,
     SparseWoods,
     DeepWoods,
+    Wetland,
 }
 
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]
@@ -4430,6 +4431,7 @@ pub struct JourneyTerrainWeights {
     pub plains: u16,
     pub forest: u16,
     pub hills: u16,
+    pub wetlands: u16,
     pub urban: u16,
 }
 
@@ -4544,7 +4546,7 @@ pub fn register_strategic_gateway(
     if terrain_package_digest
         .as_deref()
         .is_some_and(|digest| !valid_route_digest(digest))
-        || (terrain_package_digest.is_some() && terrain_schema != 2)
+        || (terrain_package_digest.is_some() && terrain_schema != 3)
         || (terrain_package_digest.is_none() && terrain_schema != 0)
     {
         return Err("Strategic gateway terrain package metadata is invalid".into());
@@ -13486,7 +13488,7 @@ fn validate_journey_route(
     destination: (f64, f64),
 ) -> Result<(), String> {
     let authority = require_strategic_gateway(ctx)?;
-    if authority.terrain_schema != 2
+    if authority.terrain_schema != 3
         || authority.terrain_package_digest.as_deref() != Some(route.package_digest.as_str())
     {
         return Err("Terrain route does not match the gateway terrain package".into());
@@ -13562,6 +13564,7 @@ fn validate_journey_route_payload(
         let weight_sum = u32::from(span.terrain.plains)
             + u32::from(span.terrain.forest)
             + u32::from(span.terrain.hills)
+            + u32::from(span.terrain.wetlands)
             + u32::from(span.terrain.urban);
         if weight_sum != 1_000
             || span.terrain.urban != 0
@@ -14391,9 +14394,14 @@ fn train_party_terrain_movement(
                     exposure[2],
                 ),
                 (
+                    &mut skills.terrain_wetlands_hours,
+                    Skill::TerrainWetlands,
+                    exposure[3],
+                ),
+                (
                     &mut skills.terrain_urban_hours,
                     Skill::TerrainUrban,
-                    exposure[3],
+                    exposure[4],
                 ),
             ] {
                 excess += adventuresim_core::skill::apply_direct_training(
@@ -14466,8 +14474,8 @@ fn train_party_oral_communication(
     excess_by_character
 }
 
-fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 4] {
-    let mut exposure = [0.0_f32; 4];
+fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 5] {
+    let mut exposure = [0.0_f32; 5];
     for span in spans {
         let overlap = end
             .min(span.start_minute.saturating_add(span.duration_minutes))
@@ -14479,7 +14487,8 @@ fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64)
         exposure[0] += hours * f32::from(span.terrain.plains) / 1_000.0;
         exposure[1] += hours * f32::from(span.terrain.forest) / 1_000.0;
         exposure[2] += hours * f32::from(span.terrain.hills) / 1_000.0;
-        exposure[3] += hours * f32::from(span.terrain.urban) / 1_000.0;
+        exposure[3] += hours * f32::from(span.terrain.wetlands) / 1_000.0;
+        exposure[4] += hours * f32::from(span.terrain.urban) / 1_000.0;
     }
     exposure
 }
@@ -14882,6 +14891,8 @@ fn core_encounter_terrain(
         JourneyTerrainKind::Open => EncounterTerrain::Open,
         JourneyTerrainKind::SparseWoods => EncounterTerrain::SparseWoods,
         JourneyTerrainKind::DeepWoods => EncounterTerrain::DeepWoods,
+        // Encounter placement still has a four-surface tactical vocabulary.
+        JourneyTerrainKind::Wetland => EncounterTerrain::Open,
     }
 }
 
@@ -15363,6 +15374,7 @@ fn commit_encounter_scan(
         "open" => JourneyTerrainKind::Open,
         "sparsewoods" | "sparse_woods" => JourneyTerrainKind::SparseWoods,
         "deepwoods" | "deep_woods" => JourneyTerrainKind::DeepWoods,
+        "wetland" => JourneyTerrainKind::Wetland,
         _ => JourneyTerrainKind::Open,
     });
     encounter.enemy_count = adventuresim_core::encounter::scale_enemy_count(
@@ -16137,7 +16149,7 @@ mod departure_invariant_tests {
         CampDurationMode, CaseSiteId, JourneyCaseSiteEndpoint, JourneyEndpoint, JourneyRoutePlan,
         JourneyRoutePoint, JourneySettlementEndpoint, JourneyTerrainKind, JourneyTerrainSpan,
         JourneyTerrainWeights, Party, PartyJourneyRoute, common_movement_prefix,
-        departure_requires_ready_party, departure_snapshot_allows_travel,
+        core_encounter_terrain, departure_requires_ready_party, departure_snapshot_allows_travel,
         party_can_continue_travel, pending_incident_allows_departure,
         reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
         straight_line_distance_m, terrain_training_exposure, validate_journey_route_payload,
@@ -16245,6 +16257,7 @@ mod departure_invariant_tests {
                         plains: 1_000,
                         forest: 0,
                         hills: 0,
+                        wetlands: 0,
                         urban: 0,
                     },
                     training_multiplier_permille: 250,
@@ -16258,6 +16271,7 @@ mod departure_invariant_tests {
                         plains: 1_000,
                         forest: 0,
                         hills: 0,
+                        wetlands: 0,
                         urban: 0,
                     },
                     training_multiplier_permille: 1_000,
@@ -16306,6 +16320,7 @@ mod departure_invariant_tests {
                 plains: 1_000,
                 forest: 0,
                 hills: 0,
+                wetlands: 0,
                 urban: 0,
             },
             training_multiplier_permille: 250,
@@ -16340,9 +16355,33 @@ mod departure_invariant_tests {
         let exposure = terrain_training_exposure(&spans, 3, 9);
         // Two road minutes at 25%, then four open minutes at full exposure.
         assert!((exposure[0] - 4.5 / 60.0).abs() < 0.0001);
-        assert_eq!(exposure[1..], [0.0, 0.0, 0.0]);
+        assert_eq!(exposure[1..], [0.0, 0.0, 0.0, 0.0]);
         let none = terrain_training_exposure(&spans, 12, 30);
-        assert_eq!(none, [0.0; 4]);
+        assert_eq!(none, [0.0; 5]);
+    }
+
+    #[test]
+    fn persisted_wetland_weight_produces_wetland_exposure() {
+        let mut span = route_fixture().spans.remove(0);
+        span.duration_minutes = 60;
+        span.training_multiplier_permille = 100;
+        span.terrain = JourneyTerrainWeights {
+            plains: 0,
+            forest: 0,
+            hills: 0,
+            wetlands: 1_000,
+            urban: 0,
+        };
+        let exposure = terrain_training_exposure(&[span], 0, 60);
+        assert_eq!(exposure, [0.0, 0.0, 0.0, 0.1, 0.0]);
+    }
+
+    #[test]
+    fn wetland_journey_kind_uses_existing_open_encounter_class() {
+        assert_eq!(
+            core_encounter_terrain(JourneyTerrainKind::Wetland),
+            adventuresim_core::encounter::EncounterTerrain::Open
+        );
     }
 
     #[test]

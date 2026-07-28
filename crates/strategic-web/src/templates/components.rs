@@ -205,7 +205,7 @@ mod icon_tests {
 
     #[test]
     fn terrain_skill_family_uses_generated_local_masks() {
-        for icon in ["terrain", "plains", "forest", "hills", "urban"] {
+        for icon in ["terrain", "plains", "forest", "hills", "wetlands", "urban"] {
             assert_eq!(
                 stat_icon_path("terrain", icon),
                 format!("/static/icons/stats/terrain/{icon}.png")

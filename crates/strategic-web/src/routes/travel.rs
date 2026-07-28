@@ -99,8 +99,7 @@ impl TerrainPlanner {
             })
             .count();
         let coastal = water_samples >= 4;
-        let river_or_wet = center.surface == adventuresim_terrain::Surface::Wetland
-            || (1..4).contains(&water_samples);
+        let river_or_wet = river_or_wet_ground(center, water_samples);
         Ok((center, river_or_wet, coastal))
     }
 
@@ -152,6 +151,12 @@ impl TerrainPlanner {
         }
         Ok(plan)
     }
+}
+
+fn river_or_wet_ground(center: adventuresim_terrain::Cell, water_samples: usize) -> bool {
+    center.surface == adventuresim_terrain::Surface::Wetland
+        || center.wetland_fraction_percent > 0
+        || (1..4).contains(&water_samples)
 }
 
 pub(crate) fn active_contract_summary(contract: &ContractPresentation) -> String {
@@ -513,6 +518,23 @@ mod tests {
     use super::*;
     use crate::spacetimedb::ContractPresentationStatus;
     use adventuresim_world_schema::{FallbackIndustry, IndustryEvidence, InferredIndustryProfile};
+
+    #[test]
+    fn road_over_authoritative_wetland_counts_as_wet_ground() {
+        let road = adventuresim_terrain::Cell {
+            surface: adventuresim_terrain::Surface::Road,
+            wetland_fraction_percent: 100,
+            ..Default::default()
+        };
+        assert!(river_or_wet_ground(road, 0));
+        assert!(!river_or_wet_ground(
+            adventuresim_terrain::Cell {
+                surface: adventuresim_terrain::Surface::Road,
+                ..Default::default()
+            },
+            0
+        ));
+    }
 
     fn settlement(id: &str, node: u64) -> Settlement {
         Settlement {

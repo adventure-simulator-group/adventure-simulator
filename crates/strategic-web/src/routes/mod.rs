@@ -331,7 +331,7 @@ pub(crate) async fn party_terrain_profile(
     } else {
         vec![actor.id]
     };
-    let mut checks = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    let mut checks = [Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()];
     for id in member_ids {
         let Some(character) = state
             .db
@@ -374,27 +374,30 @@ pub(crate) async fn party_terrain_profile(
         else {
             continue;
         };
-        for (index, (skill, hours)) in [
-            (
-                adventuresim_core::skill::Skill::TerrainPlains,
-                skills.terrain_plains_hours,
-            ),
-            (
-                adventuresim_core::skill::Skill::TerrainForest,
-                skills.terrain_forest_hours,
-            ),
-            (
-                adventuresim_core::skill::Skill::TerrainHills,
-                skills.terrain_hills_hours,
-            ),
-            (
-                adventuresim_core::skill::Skill::TerrainUrban,
-                skills.terrain_urban_hours,
-            ),
+        let direct_hours = |skill| match skill {
+            adventuresim_core::skill::Skill::TerrainPlains => skills.terrain_plains_hours,
+            adventuresim_core::skill::Skill::TerrainForest => skills.terrain_forest_hours,
+            adventuresim_core::skill::Skill::TerrainHills => skills.terrain_hills_hours,
+            adventuresim_core::skill::Skill::TerrainWetlands => skills.terrain_wetlands_hours,
+            adventuresim_core::skill::Skill::TerrainUrban => skills.terrain_urban_hours,
+            _ => 0.0,
+        };
+        for (index, skill) in [
+            adventuresim_core::skill::Skill::TerrainPlains,
+            adventuresim_core::skill::Skill::TerrainForest,
+            adventuresim_core::skill::Skill::TerrainHills,
+            adventuresim_core::skill::Skill::TerrainWetlands,
+            adventuresim_core::skill::Skill::TerrainUrban,
         ]
         .into_iter()
         .enumerate()
         {
+            let hours = direct_hours(skill)
+                + skill
+                    .ordinary_correlations()
+                    .iter()
+                    .map(|(source, coefficient)| direct_hours(*source) * coefficient)
+                    .sum::<f32>();
             checks[index].push(terrain_mental_check(
                 skill.training_rank(hours),
                 attributes.intelligence,
@@ -412,7 +415,8 @@ pub(crate) async fn party_terrain_profile(
         plains: aggregate(&checks[0]),
         forest: aggregate(&checks[1]),
         hills: aggregate(&checks[2]),
-        urban: aggregate(&checks[3]),
+        wetlands: aggregate(&checks[3]),
+        urban: aggregate(&checks[4]),
     })
 }
 
@@ -630,6 +634,36 @@ fn terrain_route_json(
         "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Wetland=>"Wetland",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"terrain":span.terrain,"training_multiplier_permille":span.training_multiplier_permille,"check_millirank":span.check_millirank,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>(),
         "return_route": return_plan.map(leg_json)
     })
+}
+
+#[cfg(test)]
+mod terrain_route_payload_tests {
+    use super::terrain_route_json;
+    use crate::spacetimedb::{JourneyTerrainKind, JourneyTerrainSpan};
+
+    #[test]
+    fn wetland_span_survives_gateway_payload_boundary() {
+        let plan = adventuresim_terrain::RoutePlan {
+            points: vec![],
+            spans: vec![adventuresim_terrain::TerrainSpan {
+                surface: adventuresim_terrain::Surface::Wetland,
+                terrain: adventuresim_terrain::TerrainWeights {
+                    wetlands: 1_000,
+                    ..Default::default()
+                },
+                training_multiplier_permille: 1_000,
+                check_millirank: 2_500,
+                start_minute: 0,
+                duration_minutes: 60,
+            }],
+            distance_m: 500,
+            minutes: 60,
+        };
+        let payload = terrain_route_json(&"a".repeat(64), &plan, None);
+        let span: JourneyTerrainSpan = serde_json::from_value(payload["spans"][0].clone()).unwrap();
+        assert!(matches!(span.kind, JourneyTerrainKind::Wetland));
+        assert_eq!(span.terrain.wetlands, 1_000);
+    }
 }
 
 #[cfg(test)]

@@ -80,6 +80,7 @@ fn terrain_family_rank(skills: &CharacterSkills, aptitude: f32) -> f32 {
         Skill::TerrainPlains,
         Skill::TerrainForest,
         Skill::TerrainHills,
+        Skill::TerrainWetlands,
         Skill::TerrainUrban,
     ]
     .into_iter()
@@ -91,7 +92,7 @@ fn terrain_family_rank(skills: &CharacterSkills, aptitude: f32) -> f32 {
     })
     .map(finite_rank)
     .sum::<f32>()
-        / 4.0
+        / 5.0
 }
 
 fn strongest_oral_language(skills: &CharacterSkills) -> OralLanguage {
@@ -446,6 +447,7 @@ pub(super) fn character_summary_icons(
         ("Plains", Skill::TerrainPlains),
         ("Forest", Skill::TerrainForest),
         ("Hills", Skill::TerrainHills),
+        ("Wetlands", Skill::TerrainWetlands),
         ("Urban", Skill::TerrainUrban),
     ]
     .into_iter()
@@ -731,6 +733,7 @@ fn training_target_skill(
             "terrain_plains" => Some(Skill::TerrainPlains),
             "terrain_forest" => Some(Skill::TerrainForest),
             "terrain_hills" => Some(Skill::TerrainHills),
+            "terrain_wetlands" => Some(Skill::TerrainWetlands),
             "terrain_urban" => Some(Skill::TerrainUrban),
             "tailoring" => Some(Skill::Tailoring),
             "smithing" => Some(Skill::Smithing),
@@ -742,6 +745,7 @@ fn training_target_skill(
             "plains" => Some(Skill::TerrainPlains),
             "forest" => Some(Skill::TerrainForest),
             "hills" => Some(Skill::TerrainHills),
+            "wetlands" => Some(Skill::TerrainWetlands),
             "urban" => Some(Skill::TerrainUrban),
             _ => None,
         },
@@ -1051,6 +1055,12 @@ fn terrain_skill_rows(
             skills.terrain_hills_hours,
         ),
         (
+            "Wetlands",
+            "wetlands",
+            Skill::TerrainWetlands,
+            skills.terrain_wetlands_hours,
+        ),
+        (
             "Urban",
             "urban",
             Skill::TerrainUrban,
@@ -1062,12 +1072,12 @@ fn terrain_skill_rows(
         .iter()
         .map(|entry| finite_hours(entry.3))
         .sum::<f32>()
-        / 4.0;
+        / 5.0;
     let average_effective_hours = entries
         .iter()
         .map(|entry| CharacterSkillHours(skills).effective_skill_hours(entry.2))
         .sum::<f32>()
-        / 4.0;
+        / 5.0;
     html! {
         tr class="party-skill-row terrain-primary-row" data-terrain-primary {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
@@ -1777,6 +1787,7 @@ impl PlayerSkills for CharacterSkillHours<'_> {
             Skill::TerrainPlains => skills.terrain_plains_hours,
             Skill::TerrainForest => skills.terrain_forest_hours,
             Skill::TerrainHills => skills.terrain_hills_hours,
+            Skill::TerrainWetlands => skills.terrain_wetlands_hours,
             Skill::TerrainUrban => skills.terrain_urban_hours,
             Skill::Anatomy => skills.anatomy_hours,
             Skill::Tailoring => skills.tailoring_hours,
@@ -2542,6 +2553,7 @@ mod tests {
             terrain_plains_hours: 0.0,
             terrain_forest_hours: 0.0,
             terrain_hills_hours: 0.0,
+            terrain_wetlands_hours: 0.0,
             terrain_urban_hours: 0.0,
             anatomy_hours: 0.0,
             tailoring_hours: 0.0,
@@ -2756,6 +2768,8 @@ mod tests {
         assert!(rendered.contains("Forest | 20%"));
         assert!(rendered.contains("1000.0 direct hours trained"));
         assert!(rendered.contains("Plains | 20%"));
+        assert!(rendered.contains("Wetlands"));
+        assert!(rendered.contains("/static/icons/stats/terrain/wetlands.png"));
     }
 
     #[test]

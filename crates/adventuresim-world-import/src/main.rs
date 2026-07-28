@@ -62,12 +62,12 @@ struct Args {
     hydrology_dir: PathBuf,
     #[arg(
         long,
-        default_value = "target/strategic-map/terrain-routing-base-v2.json"
+        default_value = "target/strategic-map/terrain-routing-base-v3.json"
     )]
     base_terrain: PathBuf,
     #[arg(
         long,
-        default_value = "target/strategic-map/terrain-routing-base-v2.pack"
+        default_value = "target/strategic-map/terrain-routing-base-v3.pack"
     )]
     base_terrain_pack: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]

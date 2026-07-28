@@ -25,12 +25,12 @@
     let cursor = 0;
     for (const entry of entries) {
       const fields = entry.split(",");
-      if (fields.length !== 8) return [];
-      const [kind, startText, durationText, checkText, plainsText, forestText, hillsText, urbanText] = fields;
+      if (fields.length !== 9) return [];
+      const [kind, startText, durationText, checkText, plainsText, forestText, hillsText, wetlandsText, urbanText] = fields;
       const start = Number(startText);
       const duration = Number(durationText);
       const check = Number(checkText) / 1000;
-      const weights = [plainsText, forestText, hillsText, urbanText].map(Number);
+      const weights = [plainsText, forestText, hillsText, wetlandsText, urbanText].map(Number);
       if (!["road", "open", "sparse-woods", "deep-woods", "wetland"].includes(kind)
           || !Number.isSafeInteger(start) || start < 0
           || !Number.isSafeInteger(duration) || duration <= 0

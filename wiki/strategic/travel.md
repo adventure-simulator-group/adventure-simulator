@@ -15,6 +15,10 @@ directional elevation. A party with stronger Terrain skills may prefer a
 different path because its members move more efficiently through the terrain
 they understand.
 
+The five Terrain leaves are Plains, Forest, Hills, Wetlands, and Urban. Native
+wetland coverage is retained beneath roads, so marsh crossings use and train
+Wetlands even when the road itself supplies the faster travel surface.
+
 Players should make strategic choices about resources, danger, and timing
 rather than manually approximate the shortest geometric line.
 
@@ -29,6 +33,10 @@ The source and artifact contracts are documented separately:
 
 Road travel is fastest. Open ground, sparse woods, deep woods, wetlands, steep
 grades, and off-road case sites impose progressively greater costs.
+
+Off-road wetland movement is 0.5 km/h. A road over wetland trains the
+underlying Wetlands skill at 10% exposure, the ratio between 0.5 km/h wetland
+movement and the road's 5 km/h.
 
 The party moves at the pace of its limiting members after attributes,
 encumbrance, fatigue, terrain skill, and route surface are considered.

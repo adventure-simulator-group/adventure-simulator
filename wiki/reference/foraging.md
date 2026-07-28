@@ -8,9 +8,9 @@ encounters, unlocated characters, and stale locations are rejected.
 
 The browser gateway samples the immutable final terrain pack at that coordinate
 and attests the package digest, coordinate, location context, normalized
-Plains/Forest/Hills mixture, wet/coast access, and cultivation bit. The reducer
-accepts this only from the registered gateway, requires terrain schema 5 through
-gateway contract version 2, re-derives the character's location, and rejects
+Plains/Forest/Hills/Wetlands mixture, wet/coast access, and cultivation bit. The reducer
+accepts this only from the registered gateway, requires terrain routing schema
+6 through gateway contract version 3, re-derives the character's location, and rejects
 stale digests or mismatched coordinates/context. A browser never supplies a
 trusted cultivated boolean.
 
@@ -30,6 +30,10 @@ Discovery frequency scales with the fraction of local terrain matching the
 resource's habitat; a trace of forest no longer grants full forest output, but
 a successful find retains the resource's ordinary per-discovery yield.
 Wet-ground and coast attestations count as complete matching microhabitats.
+Only the routing pack's authoritative wetland coverage contributes Wetlands
+skill weight. The broader river-or-wet-ground microhabitat boolean remains a
+resource-availability signal and is intentionally not converted into an
+invented wetland area fraction.
 Food alone receives a 1.75× subsistence calibration: an eight-hour low-skill
 search for the best food in an ideal habitat averages roughly the 2,000 kcal
 spent during that interval. Medicinal rarity is unchanged.
@@ -46,7 +50,8 @@ fungible stacks. Yields are never truncated for carrying capacity; ordinary
 encumbrance consequences apply afterward.
 
 Actual elapsed time is clipped once at the existing injury/disease boundary.
-That elapsed time is conserved over concrete Plains, Forest, and Hills training
+That elapsed time is conserved over concrete Plains, Forest, Hills, and
+Wetlands training
 according to the normalized local mixture. Terrain has no stored parent value,
 and settlement illegality does not turn training into Urban.
 Checks and training use the same aptitude-capped, injury-adjusted path as

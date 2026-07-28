@@ -607,6 +607,7 @@ fn apply_training(
         terrain_plains: skills.terrain_plains_hours,
         terrain_forest: skills.terrain_forest_hours,
         terrain_hills: skills.terrain_hills_hours,
+        terrain_wetlands: skills.terrain_wetlands_hours,
         terrain_urban: skills.terrain_urban_hours,
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
@@ -712,6 +713,7 @@ fn apply_training(
     skills.terrain_plains_hours = hours.terrain_plains;
     skills.terrain_forest_hours = hours.terrain_forest;
     skills.terrain_hills_hours = hours.terrain_hills;
+    skills.terrain_wetlands_hours = hours.terrain_wetlands;
     skills.terrain_urban_hours = hours.terrain_urban;
     skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
@@ -779,6 +781,9 @@ fn apply_organization_training(
                 "terrain_hills" => {
                     award_direct(Skill::TerrainHills, &mut hours.terrain_hills, award)
                 }
+                "terrain_wetlands" => {
+                    award_direct(Skill::TerrainWetlands, &mut hours.terrain_wetlands, award)
+                }
                 "terrain_urban" => {
                     award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award)
                 }
@@ -803,6 +808,9 @@ fn apply_organization_training(
                 "plains" => award_direct(Skill::TerrainPlains, &mut hours.terrain_plains, award),
                 "forest" => award_direct(Skill::TerrainForest, &mut hours.terrain_forest, award),
                 "hills" => award_direct(Skill::TerrainHills, &mut hours.terrain_hills, award),
+                "wetlands" => {
+                    award_direct(Skill::TerrainWetlands, &mut hours.terrain_wetlands, award)
+                }
                 "urban" => award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award),
                 _ => {}
             },

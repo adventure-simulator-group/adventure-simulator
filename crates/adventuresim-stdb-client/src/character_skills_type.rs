@@ -40,6 +40,7 @@ pub struct CharacterSkills {
     pub terrain_plains_hours: f32,
     pub terrain_forest_hours: f32,
     pub terrain_hills_hours: f32,
+    pub terrain_wetlands_hours: f32,
     pub terrain_urban_hours: f32,
     pub anatomy_hours: f32,
     pub tailoring_hours: f32,
@@ -82,6 +83,7 @@ pub struct CharacterSkillsCols {
     pub terrain_plains_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub terrain_forest_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub terrain_hills_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub terrain_wetlands_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub terrain_urban_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub anatomy_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub tailoring_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
@@ -128,6 +130,10 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
             terrain_hills_hours: __sdk::__query_builder::Col::new(
                 table_name,
                 "terrain_hills_hours",
+            ),
+            terrain_wetlands_hours: __sdk::__query_builder::Col::new(
+                table_name,
+                "terrain_wetlands_hours",
             ),
             terrain_urban_hours: __sdk::__query_builder::Col::new(
                 table_name,

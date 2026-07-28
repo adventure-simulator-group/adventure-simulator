@@ -789,6 +789,7 @@ impl PlayerSkills for SimSkills {
             Skill::TerrainPlains
             | Skill::TerrainForest
             | Skill::TerrainHills
+            | Skill::TerrainWetlands
             | Skill::TerrainUrban => 0.0,
             Skill::Tailoring => self.0.tailoring,
             Skill::Smithing => self.0.smithing,

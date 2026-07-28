@@ -268,6 +268,7 @@ pub struct LocalTerrainMixture {
     pub plains: u16,
     pub forest: u16,
     pub hills: u16,
+    pub wetlands: u16,
 }
 
 impl LocalTerrainMixture {
@@ -276,7 +277,8 @@ impl LocalTerrainMixture {
         self.plains <= Self::TOTAL
             && self.forest <= Self::TOTAL
             && self.hills <= Self::TOTAL
-            && self.plains + self.forest + self.hills == Self::TOTAL
+            && self.wetlands <= Self::TOTAL
+            && self.plains + self.forest + self.hills + self.wetlands == Self::TOTAL
     }
 }
 
@@ -486,15 +488,16 @@ fn random_below(seed: u64, target: u64, stream: u64, upper: u64) -> u64 {
 }
 
 /// Conserve actual elapsed search time over concrete Terrain leaf skills.
-pub fn training_hours(mixture: LocalTerrainMixture, elapsed_minutes: u64) -> [f32; 3] {
+pub fn training_hours(mixture: LocalTerrainMixture, elapsed_minutes: u64) -> [f32; 4] {
     if !mixture.is_normalized() {
-        return [0.0; 3];
+        return [0.0; 4];
     }
     let hours = elapsed_minutes as f32 / 60.0;
     [
         hours * f32::from(mixture.plains) / 1_000.0,
         hours * f32::from(mixture.forest) / 1_000.0,
         hours * f32::from(mixture.hills) / 1_000.0,
+        hours * f32::from(mixture.wetlands) / 1_000.0,
     ]
 }
 
@@ -508,6 +511,7 @@ mod tests {
                 plains: 500,
                 forest: 300,
                 hills: 200,
+                wetlands: 0,
             },
             ..Default::default()
         }
@@ -620,6 +624,18 @@ mod tests {
     }
 
     #[test]
+    fn authoritative_wetland_share_trains_wetlands() {
+        let gains = training_hours(
+            LocalTerrainMixture {
+                wetlands: 1_000,
+                ..Default::default()
+            },
+            60,
+        );
+        assert_eq!(gains, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
     fn habitat_share_scales_mixed_biome_resources() {
         assert_eq!(
             habitat_share_permille(resource("hazelnuts").unwrap(), legal()),
@@ -638,6 +654,7 @@ mod tests {
                 plains: 0,
                 forest: 1_000,
                 hills: 0,
+                wetlands: 0,
             },
             ..Default::default()
         };

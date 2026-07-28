@@ -218,6 +218,7 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
         terrain_plains: MAX_INITIAL_SKILL_HOURS,
         terrain_forest: MAX_INITIAL_SKILL_HOURS,
         terrain_hills: MAX_INITIAL_SKILL_HOURS,
+        terrain_wetlands: MAX_INITIAL_SKILL_HOURS,
         terrain_urban: MAX_INITIAL_SKILL_HOURS,
         tailoring: MAX_INITIAL_SKILL_HOURS,
         smithing: MAX_INITIAL_SKILL_HOURS,

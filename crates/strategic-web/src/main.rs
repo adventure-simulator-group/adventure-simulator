@@ -94,10 +94,10 @@ async fn main() -> anyhow::Result<()> {
         let pack = adventuresim_terrain::TerrainPack::load(
             &config
                 .strategic_map_bundle_dir
-                .join("terrain-routing-v2.json"),
+                .join("terrain-routing-v3.json"),
             &config
                 .strategic_map_bundle_dir
-                .join("terrain-routing-v2.pack"),
+                .join("terrain-routing-v3.pack"),
         )?;
         map.validate_terrain_identity(&pack)?;
         let digest = pack.digest().to_string();
@@ -123,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
         "register_strategic_gateway",
         &[
             sats_option_string(terrain.as_ref().map(|planner| planner.digest())),
-            serde_json::json!(if terrain.is_some() { 2_u32 } else { 0_u32 }),
+            serde_json::json!(if terrain.is_some() { 3_u32 } else { 0_u32 }),
         ],
     )
     .await

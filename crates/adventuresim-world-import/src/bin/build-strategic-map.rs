@@ -49,18 +49,18 @@ struct Args {
         default_value = "target/strategic-map/strategic-map-tiles-v1.pack"
     )]
     tiles_output: PathBuf,
-    #[arg(long, default_value = "target/strategic-map/terrain-routing-v2.json")]
+    #[arg(long, default_value = "target/strategic-map/terrain-routing-v3.json")]
     terrain_output: PathBuf,
-    #[arg(long, default_value = "target/strategic-map/terrain-routing-v2.pack")]
+    #[arg(long, default_value = "target/strategic-map/terrain-routing-v3.pack")]
     terrain_pack_output: PathBuf,
     #[arg(
         long,
-        default_value = "target/strategic-map/terrain-routing-base-v2.json"
+        default_value = "target/strategic-map/terrain-routing-base-v3.json"
     )]
     base_terrain_output: PathBuf,
     #[arg(
         long,
-        default_value = "target/strategic-map/terrain-routing-base-v2.pack"
+        default_value = "target/strategic-map/terrain-routing-base-v3.pack"
     )]
     base_terrain_pack_output: PathBuf,
 }

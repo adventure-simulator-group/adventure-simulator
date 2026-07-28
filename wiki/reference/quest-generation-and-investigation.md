@@ -40,7 +40,8 @@ Field action skills are deliberately narrow. `FollowTracks` and
 `ReacquireTracks` use the matching Terrain skill; other investigation actions
 use observation, with ambushes combining observation and Stealth. Until mixed
 terrain exists, Forest maps to Forest, Hills and Underground to Hills,
-Settlement and Ruins to Urban, and Plains, Road, and Marsh to Plains.
+Settlement and Ruins to Urban, Plains and Road to Plains, and Marsh to
+Wetlands.
 
 Generated physical trails are immutable private manifest authority. A
 `TrackTrail` owns an ordered chain of observer-scoped `TrackSegment` IDs; every

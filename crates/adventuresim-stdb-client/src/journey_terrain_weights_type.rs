@@ -10,6 +10,7 @@ pub struct JourneyTerrainWeights {
     pub plains: u16,
     pub forest: u16,
     pub hills: u16,
+    pub wetlands: u16,
     pub urban: u16,
 }
 
