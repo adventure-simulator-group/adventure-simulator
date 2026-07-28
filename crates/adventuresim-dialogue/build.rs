@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -8,86 +7,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Deserialize)]
-struct BuildDocument {
-    conversations: Vec<BuildConversation>,
-}
-#[derive(Deserialize)]
-struct BuildConversation {
-    id: String,
-    roles: BTreeMap<String, BuildRole>,
-    topics: Vec<BuildTopic>,
-}
-#[derive(Deserialize)]
-struct BuildRole {
-    kind: String,
-    #[serde(default = "build_one")]
-    min: u8,
-    #[serde(default = "build_one")]
-    max: u8,
-}
-#[derive(Deserialize)]
-struct BuildTopic {
-    id: String,
-    #[serde(default)]
-    conditions: serde_json::Value,
-    responses: Vec<BuildResponse>,
-}
-#[derive(Deserialize)]
-struct BuildResponse {
-    id: String,
-    priority: i32,
-    #[serde(default)]
-    conditions: serde_json::Value,
-    turns: Vec<BuildTurn>,
-    #[serde(default)]
-    effects: Vec<BuildEffect>,
-    prompt: Option<BuildPrompt>,
-}
-#[derive(Deserialize)]
-struct BuildTurn {
-    speaker: String,
-    fragments: Vec<BuildFragment>,
-}
-#[derive(Deserialize)]
-struct BuildPrompt {
-    id: String,
-    respondent: String,
-    mode: String,
-    #[serde(default = "build_one_usize")]
-    min_choices: usize,
-    #[serde(default = "build_one_usize")]
-    max_choices: usize,
-    choices: Vec<BuildChoice>,
-}
-#[derive(Deserialize)]
-struct BuildChoice {
-    id: String,
-    #[serde(default)]
-    effects: Vec<BuildEffect>,
-    #[serde(default)]
-    result_turns: Vec<BuildTurn>,
-}
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum BuildFragment {
-    Text { value: String },
-    Topic { topic: String, label: String },
-    PeriodClaim { value: String },
-    AuthoritativeExplanation { reference: String, value: String },
-    Runtime { slot: String },
-}
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum BuildEffect {
-    LearnTopic { topic: String },
-    AcceptContract { contract: String },
-    ReportContract { contract: String },
-    BeginApprenticeship { profession: String },
-    SetFlag { flag: String, value: bool },
-    ReceiveReferredTestimony,
-    InvestigationAction { action: String },
-}
+#[path = "src/authoring_schema.rs"]
+mod authoring_schema;
+use authoring_schema::{
+    AuthoringDocument as BuildDocument, AuthoringEffect as BuildEffect,
+    AuthoringFragment as BuildFragment, AuthoringResponse as BuildResponse,
+    AuthoringRole as BuildRole, AuthoringTurn as BuildTurn, Condition, PromptMode,
+};
 
 fn validate_fragment(fragment: &BuildFragment, relative: &str) {
     if let BuildFragment::Runtime { slot } = fragment {
@@ -139,79 +65,120 @@ fn validate_effect(effect: &BuildEffect, relative: &str) {
         );
     }
 }
-fn build_one() -> u8 {
-    1
-}
-fn build_one_usize() -> usize {
-    1
-}
-
-fn validate_condition(value: &serde_json::Value, relative: &str) {
-    if value.is_null() {
-        return;
-    }
-    let object = value
-        .as_object()
-        .unwrap_or_else(|| panic!("condition must be an object in {relative}"));
-    match object.get("op").and_then(serde_json::Value::as_str) {
-        Some("always") => {}
-        Some("all" | "any") => {
-            for child in object
-                .get("conditions")
-                .and_then(serde_json::Value::as_array)
-                .unwrap_or_else(|| panic!("compound condition has no children in {relative}"))
-            {
-                validate_condition(child, relative);
+fn validate_condition_roles(
+    value: &Condition,
+    roles: &BTreeMap<String, BuildRole>,
+    relative: &str,
+) {
+    match value {
+        Condition::All { conditions } | Condition::Any { conditions } => {
+            for child in conditions {
+                validate_condition_roles(child, roles, relative);
             }
         }
-        Some("not") => validate_condition(
-            object
-                .get("condition")
-                .unwrap_or_else(|| panic!("not condition has no child in {relative}")),
-            relative,
-        ),
-        Some("fact") => {
-            let kind = object
-                .get("key")
-                .and_then(serde_json::Value::as_object)
-                .and_then(|key| key.get("kind"))
-                .and_then(serde_json::Value::as_str);
-            assert!(
-                matches!(
-                    kind,
-                    Some(
-                        "participant_profession"
-                            | "participant_organization"
-                            | "participant_religion"
-                            | "participant_age_band"
-                            | "participant_sex"
-                            | "participant_local_role"
-                            | "participant_status"
-                            | "participant_language_compatibility"
-                            | "participant_familiarity"
-                            | "participant_clothing_category"
-                            | "participant_count"
-                            | "participant_present"
-                            | "participant_rumor_case"
-                            | "participant_referral_contact"
-                            | "known_claim"
-                            | "known_lead"
-                            | "prior_questioning"
-                            | "confidence"
-                            | "language_check"
-                            | "social_check"
-                            | "party_leader"
-                            | "service"
-                            | "location"
-                            | "time_period"
-                            | "contract_state"
-                            | "flag"
-                    )
-                ) && object.contains_key("equals"),
-                "unknown or incomplete fact condition in {relative}"
-            );
+        Condition::Not { condition } => validate_condition_roles(condition, roles, relative),
+        Condition::Fact { key, .. } => {
+            for role in key.participant_roles() {
+                assert!(
+                    roles.contains_key(role),
+                    "unknown fact role {role} in {relative}"
+                );
+            }
         }
-        _ => panic!("unknown condition operation in {relative}"),
+        Condition::Always => {}
+    }
+}
+
+fn validate_response_contract(
+    response: &BuildResponse,
+    roles: &BTreeMap<String, BuildRole>,
+    topics: &BTreeSet<&str>,
+    relative: &str,
+) {
+    assert!(
+        !response.turns.is_empty(),
+        "response has no turns in {relative}"
+    );
+    let mut testimony_slots = 0usize;
+    for turn in &response.turns {
+        testimony_slots += validate_turn_contract(turn, roles, topics, relative, true);
+    }
+    let receives = response
+        .effects
+        .iter()
+        .filter(|effect| matches!(effect, BuildEffect::ReceiveReferredTestimony))
+        .count();
+    assert!(
+        (testimony_slots == 1 && receives == 1) || (testimony_slots == 0 && receives == 0),
+        "Runtime(testimony) and receive_referred_testimony must occur exactly once together in {relative}"
+    );
+    for effect in &response.effects {
+        validate_effect_contract(effect, topics, relative, true);
+    }
+}
+
+fn validate_turn_contract(
+    turn: &BuildTurn,
+    roles: &BTreeMap<String, BuildRole>,
+    topics: &BTreeSet<&str>,
+    relative: &str,
+    allow_testimony: bool,
+) -> usize {
+    assert!(
+        roles.contains_key(&turn.speaker),
+        "unknown speaker role {} in {relative}",
+        turn.speaker
+    );
+    assert!(
+        !turn.fragments.is_empty(),
+        "dialogue turn has no fragments in {relative}"
+    );
+    let mut testimony_slots = 0;
+    for fragment in &turn.fragments {
+        validate_fragment(fragment, relative);
+        match fragment {
+            BuildFragment::Text { value }
+            | BuildFragment::PeriodClaim { value }
+            | BuildFragment::AuthoritativeExplanation { value, .. } => {
+                assert!(!value.is_empty(), "empty dialogue content in {relative}");
+            }
+            BuildFragment::Topic { topic, label } => {
+                assert!(!label.is_empty(), "empty topic label in {relative}");
+                assert!(
+                    topics.contains(topic.as_str()),
+                    "dangling inline topic {topic} in {relative}"
+                );
+            }
+            BuildFragment::Runtime { slot } if slot == "testimony" => {
+                assert!(
+                    allow_testimony,
+                    "runtime testimony is not supported in this dialogue position in {relative}"
+                );
+                testimony_slots += 1;
+            }
+            BuildFragment::Runtime { .. } => {}
+        }
+    }
+    testimony_slots
+}
+
+fn validate_effect_contract(
+    effect: &BuildEffect,
+    topics: &BTreeSet<&str>,
+    relative: &str,
+    allow_testimony: bool,
+) {
+    validate_effect(effect, relative);
+    match effect {
+        BuildEffect::LearnTopic { topic } => assert!(
+            topics.contains(topic.as_str()),
+            "dangling LearnTopic {topic} in {relative}"
+        ),
+        BuildEffect::ReceiveReferredTestimony => assert!(
+            allow_testimony,
+            "receive_referred_testimony is not supported in this dialogue position in {relative}"
+        ),
+        _ => {}
     }
 }
 
@@ -245,8 +212,51 @@ fn validate_document(document: &BuildDocument, relative: &str, global_ids: &mut 
                 "invalid role cardinality {relative}:{role_name}"
             );
         }
+        let topic_ids = conversation
+            .topics
+            .iter()
+            .map(|topic| topic.id.as_str())
+            .collect::<BTreeSet<_>>();
+        for response in &conversation.on_start {
+            validate_condition_roles(&response.conditions, &conversation.roles, relative);
+            assert!(
+                global_ids.insert(format!("{}:start:{}", conversation.id, response.id)),
+                "duplicate start response id {relative}:{}",
+                response.id
+            );
+            validate_response_contract(response, &conversation.roles, &topic_ids, relative);
+            assert!(
+                !response
+                    .turns
+                    .iter()
+                    .flat_map(|turn| &turn.fragments)
+                    .any(|fragment| matches!(
+                        fragment,
+                        BuildFragment::Runtime { slot } if slot == "testimony"
+                    ))
+                    && !response
+                        .effects
+                        .iter()
+                        .any(|effect| matches!(effect, BuildEffect::ReceiveReferredTestimony)),
+                "on_start does not support authoritative testimony in {relative}:{}",
+                response.id
+            );
+            assert!(
+                response.prompt.is_none(),
+                "on_start response cannot prompt in {relative}"
+            );
+        }
+        for (index, response) in conversation.on_start.iter().enumerate() {
+            assert!(
+                !conversation.on_start[index + 1..]
+                    .iter()
+                    .any(|other| other.priority == response.priority
+                        && other.conditions == response.conditions),
+                "ambiguous equal-priority start responses in {relative}"
+            );
+        }
         for topic in &conversation.topics {
-            validate_condition(&topic.conditions, relative);
+            validate_condition_roles(&topic.conditions, &conversation.roles, relative);
             assert!(
                 global_ids.insert(format!("{}:{}", conversation.id, topic.id)),
                 "duplicate topic id {relative}:{}",
@@ -258,12 +268,13 @@ fn validate_document(document: &BuildDocument, relative: &str, global_ids: &mut 
                 topic.id
             );
             for response in &topic.responses {
-                validate_condition(&response.conditions, relative);
+                validate_condition_roles(&response.conditions, &conversation.roles, relative);
                 assert!(
                     !response.id.is_empty(),
                     "response has empty id {relative}:{}",
                     topic.id
                 );
+                validate_response_contract(response, &conversation.roles, &topic_ids, relative);
                 assert!(
                     global_ids.insert(format!("{}:{}:{}", conversation.id, topic.id, response.id)),
                     "duplicate response id {relative}:{}",
@@ -307,13 +318,13 @@ fn validate_document(document: &BuildDocument, relative: &str, global_ids: &mut 
                         prompt.id
                     );
                     assert!(
-                        prompt.mode == "multi"
+                        prompt.mode == PromptMode::Multi
                             || (prompt.min_choices == 1 && prompt.max_choices == 1),
                         "single-choice prompt has invalid bounds {relative}:{}",
                         prompt.id
                     );
                     assert!(
-                        prompt.mode != "yes_no" || prompt.choices.len() == 2,
+                        prompt.mode != PromptMode::YesNo || prompt.choices.len() == 2,
                         "yes/no prompt must have two choices {relative}:{}",
                         prompt.id
                     );
@@ -325,22 +336,16 @@ fn validate_document(document: &BuildDocument, relative: &str, global_ids: &mut 
                             choice.id
                         );
                         for turn in &choice.result_turns {
-                            assert!(
-                                conversation.roles.contains_key(&turn.speaker),
-                                "unknown result speaker role {relative}:{}",
-                                turn.speaker
+                            validate_turn_contract(
+                                turn,
+                                &conversation.roles,
+                                &topic_ids,
+                                relative,
+                                false,
                             );
-                            assert!(
-                                !turn.fragments.is_empty(),
-                                "dialogue result turn has no fragments {relative}:{}",
-                                choice.id
-                            );
-                            for fragment in &turn.fragments {
-                                validate_fragment(fragment, relative);
-                            }
                         }
                         for effect in &choice.effects {
-                            validate_effect(effect, relative);
+                            validate_effect_contract(effect, &topic_ids, relative, false);
                         }
                     }
                 }

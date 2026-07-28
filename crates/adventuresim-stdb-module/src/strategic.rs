@@ -5872,6 +5872,7 @@ pub fn start_dialogue(
                 "start",
                 session.revision,
                 effect,
+                None,
             )?;
         }
     }
@@ -6791,29 +6792,20 @@ fn dialogue_runtime_bindings(
             &session.settlement_id,
             &session.location_id,
         )? {
-            let mut testimony_parts =
-                adventuresim_core::quest_generation::initial_testimony_projection(
-                    &selected_witness,
-                )
-                .into_iter()
-                .map(|(_, draft)| draft.spoken_text.trim().to_owned())
-                .filter(|text| !text.is_empty())
-                .collect::<Vec<_>>();
-            if let Some(variant) = adventuresim_core::quest_catalog::catalog().dialogue_variant(
-                adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
-                &dialogue_fact_context(ctx, session, character_id)?,
-            )? {
-                for testimony in &mut testimony_parts {
-                    let mut values = std::collections::BTreeMap::new();
-                    values.insert("testimony".into(), testimony.clone());
-                    *testimony = variant.render(&values)?;
-                }
-            }
-            let testimony = testimony_parts.join(" ");
-            if testimony.is_empty() || testimony.len() > 4_096 {
+            let testimony = adventuresim_core::quest_generation::initial_testimony_projection(
+                &selected_witness,
+            )
+            .into_iter()
+            .map(|(_, draft)| adventuresim_dialogue::TestimonyLine {
+                spoken_text: draft.spoken_text.trim().to_owned(),
+                claim_text: draft.challenge_text.clone(),
+            })
+            .filter(|line| !line.spoken_text.is_empty())
+            .collect::<Vec<_>>();
+            if testimony.is_empty() {
                 return Err("Generated witness testimony is unavailable or too large".into());
             }
-            bindings.bind(S::Testimony, testimony);
+            bindings.bind_testimony(testimony);
         }
     }
     Ok(bindings)
@@ -6851,30 +6843,12 @@ fn receive_referred_testimony(
         &session.location_id,
     )?
     .ok_or("Addressed NPC is not the exact referred witness here")?;
-    // Select once before the claim/lead pipeline runs. Only the observer's
-    // wording is changed; proposition IDs, reliability, destinations, and all
-    // authority remain those in the validated manifest.
-    let presentation_texts = if let Some(variant) = adventuresim_core::quest_catalog::catalog()
-        .dialogue_variant(
-            adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
-            &dialogue_fact_context(ctx, session, character_id)?,
-        )? {
-        let mut texts = Vec::with_capacity(witness.testimony.len());
-        for draft in &witness.testimony {
-            let mut values = std::collections::BTreeMap::new();
-            values.insert("testimony".into(), draft.spoken_text.clone());
-            texts.push(variant.render(&values)?);
-        }
-        Some(texts)
-    } else {
-        None
-    };
     crate::investigation::persist_generated_testimony(
         ctx,
         character_id,
         &generated,
         &witness,
-        presentation_texts.as_deref(),
+        None,
         action_id,
         false,
     )
@@ -6936,7 +6910,8 @@ pub(crate) fn referred_testimony_claims(
     session: &DialogueSession,
     npc_id: &str,
     withheld: bool,
-) -> Result<(u32, Vec<ReferredTestimonyClaim>), String> {
+    event_sequence: u32,
+) -> Result<Vec<ReferredTestimonyClaim>, String> {
     let (_, witness) = dialogue_referred_witness(ctx, character_id, session, npc_id)?
         .ok_or("Dialogue has no bound witness testimony")?;
     let claims = witness
@@ -6964,21 +6939,35 @@ pub(crate) fn referred_testimony_claims(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let response_id = if withheld {
-        "witness-social-release"
-    } else {
-        "hear-referred-testimony"
-    };
-    let event_sequence = ctx
+    let event = ctx
         .db
         .dialogue_event()
         .session_id()
         .filter(&session.id)
-        .filter(|event| event.response_id == response_id)
-        .map(|event| event.sequence)
-        .max()
+        .find(|event| event.sequence == event_sequence)
         .ok_or("Heard witness claim event is unavailable")?;
-    Ok((event_sequence, claims))
+    let fragments: Vec<adventuresim_dialogue::ResolvedFragment> =
+        serde_json::from_str(&event.fragments_json)
+            .map_err(|_| "Heard witness claim event is malformed")?;
+    let emitted = fragments
+        .iter()
+        .filter_map(|fragment| match fragment {
+            adventuresim_dialogue::ResolvedFragment::Claim { value, claim_order } => {
+                Some((*claim_order, value.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if emitted.len() != claims.len()
+        || emitted.iter().zip(&claims).enumerate().any(
+            |(order, ((emitted_order, emitted_text), claim))| {
+                *emitted_order != order as u32 || *emitted_text != claim.displayed_text
+            },
+        )
+    {
+        return Err("Heard witness claim projection does not match private authority".into());
+    }
+    Ok(claims)
 }
 
 pub(crate) fn release_referred_withheld_testimony(
@@ -6987,36 +6976,22 @@ pub(crate) fn release_referred_withheld_testimony(
     session: &DialogueSession,
     npc_id: &str,
     action_id: &str,
-) -> Result<(), String> {
+) -> Result<u32, String> {
     let (generated, witness) = dialogue_referred_witness(ctx, character_id, session, npc_id)?
         .ok_or("Dialogue has no bound witness testimony")?;
-    let variant = adventuresim_core::quest_catalog::catalog().dialogue_variant(
-        adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
-        &dialogue_fact_context(ctx, session, character_id)?,
-    )?;
-    let mut presentation_texts = Vec::with_capacity(witness.testimony.len());
-    for draft in &witness.testimony {
-        let text = if let Some(variant) = variant {
-            let mut values = std::collections::BTreeMap::new();
-            values.insert("testimony".into(), draft.spoken_text.clone());
-            variant.render(&values)?
-        } else {
-            draft.spoken_text.clone()
-        };
-        presentation_texts.push(text);
-    }
     let released = witness
         .testimony
         .iter()
-        .enumerate()
-        .filter(|(_, draft)| {
+        .filter(|draft| {
             draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
         })
-        .map(|(index, _)| presentation_texts[index].trim())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    if released.is_empty() || released.chars().count() > 4_096 {
+        .map(|draft| adventuresim_dialogue::TestimonyLine {
+            spoken_text: draft.spoken_text.trim().to_owned(),
+            claim_text: draft.challenge_text.clone(),
+        })
+        .filter(|line| !line.spoken_text.is_empty())
+        .collect::<Vec<_>>();
+    if released.is_empty() {
         return Err("Bound witness testimony is unavailable or too large".into());
     }
     crate::investigation::persist_generated_testimony(
@@ -7024,7 +6999,7 @@ pub(crate) fn release_referred_withheld_testimony(
         character_id,
         &generated,
         &witness,
-        Some(&presentation_texts),
+        None,
         action_id,
         true,
     )?;
@@ -7042,21 +7017,30 @@ pub(crate) fn release_referred_withheld_testimony(
         .session_id()
         .filter(&session.id)
         .count() as u32;
+    let mut bindings = adventuresim_dialogue::RuntimeBindings::default();
+    bindings.bind_testimony(released);
+    let fragments = bindings
+        .resolve(&[adventuresim_dialogue::Fragment::Runtime {
+            slot: adventuresim_dialogue::RuntimeSlot::Testimony,
+        }])
+        .map_err(|_| "Could not resolve released witness testimony")?;
     ctx.db.dialogue_event().insert(DialogueEvent {
         id: format!("{}:event:{sequence}", session.id),
         gateway_bucket: 0,
         session_id: session.id.clone(),
         sequence,
-        response_id: "witness-social-release".into(),
+        response_id: format!("claim-release:{action_id}"),
         speaker_role,
-        fragments_json: serde_json::to_string(&vec![adventuresim_dialogue::Fragment::Text {
-            value: released,
-        }])
-        .map_err(|_| "Could not encode released witness testimony")?,
-        source_refs_json: "[null]".into(),
+        fragments_json: serde_json::to_string(&fragments)
+            .map_err(|_| "Could not encode released witness testimony")?,
+        source_refs_json: serde_json::to_string(&vec![
+            Option::<adventuresim_dialogue::SourceRef>::None;
+            fragments.len()
+        ])
+        .map_err(|_| "Could not encode released witness testimony sources")?,
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
     });
-    Ok(())
+    Ok(sequence)
 }
 
 fn resolve_dialogue_fragments(
@@ -7065,7 +7049,7 @@ fn resolve_dialogue_fragments(
     character_id: u64,
     speaker_role: &str,
     fragments: &[adventuresim_dialogue::Fragment],
-) -> Result<Vec<adventuresim_dialogue::Fragment>, String> {
+) -> Result<Vec<adventuresim_dialogue::ResolvedFragment>, String> {
     if fragments
         .iter()
         .any(|fragment| matches!(fragment, adventuresim_dialogue::Fragment::Runtime { .. }))
@@ -7074,8 +7058,35 @@ fn resolve_dialogue_fragments(
             .resolve(fragments)
             .map_err(|_| "Dialogue runtime binding is incomplete or unsafe".into())
     } else {
-        Ok(fragments.to_vec())
+        fragments
+            .iter()
+            .map(|fragment| {
+                adventuresim_dialogue::ResolvedFragment::from_authored(fragment)
+                    .ok_or_else(|| "Dialogue fragment remained unresolved".into())
+            })
+            .collect()
     }
+}
+
+fn resolve_dialogue_turn(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    character_id: u64,
+    turn: &adventuresim_dialogue::Turn,
+    authored_sources: &[Option<adventuresim_dialogue::SourceRef>],
+) -> Result<adventuresim_dialogue::ResolvedTurn, String> {
+    let bindings = if turn
+        .fragments
+        .iter()
+        .any(|fragment| matches!(fragment, adventuresim_dialogue::Fragment::Runtime { .. }))
+    {
+        dialogue_runtime_bindings(ctx, session, character_id, &turn.speaker)?
+    } else {
+        adventuresim_dialogue::RuntimeBindings::default()
+    };
+    bindings
+        .resolve_turn(turn, authored_sources)
+        .map_err(|_| "Dialogue turn binding or source alignment is invalid".into())
 }
 
 fn dialogue_binding_id(
@@ -7777,44 +7788,46 @@ pub fn choose_dialogue_topic(
         .session_id()
         .filter(&session_id)
         .count() as u32;
+    let mut testimony_event_sequence = None;
     for (offset, turn) in response.turns.iter().enumerate() {
-        let source_refs: Vec<_> =
-            turn.fragments
-                .iter()
-                .enumerate()
-                .map(|(fragment, authored)| {
-                    if matches!(
-                        authored,
-                        adventuresim_dialogue::Fragment::Runtime {
-                            slot: adventuresim_dialogue::RuntimeSlot::Testimony
-                        }
-                    ) {
-                        if let Ok(Some(variant)) = adventuresim_core::quest_catalog::catalog()
-                            .dialogue_variant(
-                            adventuresim_core::quest_catalog::QuestDialogueVariantKind::Testimony,
-                            &facts,
-                        ) {
-                            return adventuresim_core::quest_catalog::catalog()
-                                .dialogue_variant_source(variant);
-                        }
-                    }
-                    let field = match authored {
-                        adventuresim_dialogue::Fragment::Text { .. } => "value",
-                        adventuresim_dialogue::Fragment::Topic { .. } => "label",
-                        adventuresim_dialogue::Fragment::PeriodClaim { .. } => "value",
-                        adventuresim_dialogue::Fragment::AuthoritativeExplanation { .. } => "value",
-                        adventuresim_dialogue::Fragment::Runtime { .. } => "slot",
-                    };
-                    adventuresim_dialogue::source_for_fragment(
-                        &session.conversation_id,
-                        &topic.id,
-                        &response.id,
-                        offset,
-                        fragment,
-                        field,
-                    )
-                })
-                .collect();
+        let authored_sources = turn
+            .fragments
+            .iter()
+            .enumerate()
+            .map(|(fragment, authored)| {
+                let field = match authored {
+                    adventuresim_dialogue::Fragment::Text { .. } => "value",
+                    adventuresim_dialogue::Fragment::Topic { .. } => "label",
+                    adventuresim_dialogue::Fragment::PeriodClaim { .. } => "value",
+                    adventuresim_dialogue::Fragment::AuthoritativeExplanation { .. } => "value",
+                    adventuresim_dialogue::Fragment::Runtime { .. } => "slot",
+                };
+                adventuresim_dialogue::source_for_fragment(
+                    &session.conversation_id,
+                    &topic.id,
+                    &response.id,
+                    offset,
+                    fragment,
+                    field,
+                )
+                .cloned()
+            })
+            .collect::<Vec<_>>();
+        let resolved_turn =
+            resolve_dialogue_turn(ctx, &session, character_id, turn, &authored_sources)?;
+        let resolved = resolved_turn.fragments;
+        let source_refs = resolved_turn.source_refs;
+        if resolved.iter().any(|fragment| {
+            matches!(
+                fragment,
+                adventuresim_dialogue::ResolvedFragment::Claim { .. }
+            )
+        }) {
+            let emitted_sequence = sequence + offset as u32;
+            if testimony_event_sequence.replace(emitted_sequence).is_some() {
+                return Err("Testimony binding expanded into more than one event".into());
+            }
+        }
         ctx.db.dialogue_event().insert(DialogueEvent {
             id: format!("{session_id}:event:{}", sequence + offset as u32),
             gateway_bucket: 0,
@@ -7822,14 +7835,8 @@ pub fn choose_dialogue_topic(
             sequence: sequence + offset as u32,
             response_id: response.id.clone(),
             speaker_role: turn.speaker.clone(),
-            fragments_json: serde_json::to_string(&resolve_dialogue_fragments(
-                ctx,
-                &session,
-                character_id,
-                &turn.speaker,
-                &turn.fragments,
-            )?)
-            .map_err(|_| "Could not encode dialogue turn")?,
+            fragments_json: serde_json::to_string(&resolved)
+                .map_err(|_| "Could not encode dialogue turn")?,
             source_refs_json: serde_json::to_string(&source_refs)
                 .map_err(|_| "Could not encode dialogue sources")?,
             created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
@@ -7845,6 +7852,7 @@ pub fn choose_dialogue_topic(
             &action_id,
             session.revision.saturating_add(1),
             effect,
+            testimony_event_sequence,
         )?;
     }
     if let Some(prompt) = &response.prompt {
@@ -8051,6 +8059,7 @@ pub fn answer_dialogue_prompt(
                     &action_id,
                     session.revision.saturating_add(1),
                     effect,
+                    None,
                 )?;
             }
             let mut sequence = ctx
@@ -8133,6 +8142,7 @@ fn apply_dialogue_effect(
     action_id: &str,
     resulting_revision: u64,
     effect: &adventuresim_dialogue::Effect,
+    testimony_event_sequence: Option<u32>,
 ) -> Result<(), String> {
     let live_npc = require_live_dialogue_presence(ctx, session, character_id)?;
     match effect {
@@ -8177,8 +8187,15 @@ fn apply_dialogue_effect(
             crate::organization::join_organization(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
+            let event_sequence = testimony_event_sequence
+                .ok_or("Testimony effect has no structured emitted claim event")?;
             receive_referred_testimony(ctx, character_id, session, &live_npc, action_id)?;
-            crate::social::passively_assess_dialogue_witness(ctx, character_id, &session.id)
+            crate::social::passively_assess_dialogue_witness(
+                ctx,
+                character_id,
+                &session.id,
+                event_sequence,
+            )
         }
         adventuresim_dialogue::Effect::InvestigationAction { action } => {
             apply_dialogue_investigation_action(
@@ -19749,5 +19766,18 @@ mod developer_quest_source_tests {
             .expect("passive Insight assessment");
         assert!(receive < assess);
         assert!(effect.contains("?;"));
+    }
+
+    #[test]
+    fn released_testimony_aligns_one_source_entry_per_resolved_fragment() {
+        let source = include_str!("strategic.rs");
+        let release = source
+            .split("pub(crate) fn release_referred_withheld_testimony")
+            .nth(1)
+            .and_then(|tail| tail.split("fn resolve_dialogue_fragments").next())
+            .expect("released testimony emitter");
+        assert!(release.contains("fragments.len()"));
+        assert!(release.contains("Option::<adventuresim_dialogue::SourceRef>::None"));
+        assert!(!release.contains("source_refs_json: \"[null]\""));
     }
 }

@@ -39,7 +39,9 @@ test("client renders only persisted authoritative views and enforces prompt boun
 });
 
 test("atomic witness claims use observer-safe projections and authoritative responses", () => {
-  assert.match(source, /claim_segments/);
+  assert.match(source, /fragment\.kind === "claim"/);
+  assert.match(source, /fragment\.kind === "claim"[\s\S]*sourceLink\(source\)/);
+  assert.doesNotMatch(source, /claim_segments|split_once/);
   assert.doesNotMatch(source, /api\/dialogue\/spend-time/);
   assert.doesNotMatch(source, /api\/dialogue\/insight/);
   assert.match(source, /api\/dialogue\/claim-response/);

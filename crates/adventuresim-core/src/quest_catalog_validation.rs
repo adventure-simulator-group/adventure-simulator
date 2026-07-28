@@ -1105,7 +1105,7 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                     "dialogue_variants" => {
                         enum_value(
                             string(item, "kind", &at)?,
-                            &["referral", "testimony"],
+                            &["referral"],
                             &format!("{at}.kind"),
                         )?;
                         signed(item, "priority", -10_000, 10_000, &at)?;
