@@ -502,9 +502,9 @@ fn testimony_for_route(generated: &GeneratedCase, route: RouteClass) -> Option<(
     let selected = match route {
         RouteClass::PhysicalTrail => statements
             .iter()
+            .rev()
             .copied()
-            .filter(|(_, statement)| statement.site_id.is_some())
-            .next(),
+            .find(|(_, statement)| statement.site_id.is_some()),
         RouteClass::PatternSurveillance => statements
             .iter()
             .copied()
@@ -645,7 +645,10 @@ mod tests {
     use super::*;
     use crate::{
         local_problem::Scope,
-        quest_generation::{GenerationContext, TemplateFamily, generate, test_witnesses},
+        quest_generation::{
+            GenerationContext, Reliability, TemplateFamily, generate,
+            player_visible_testimony_sequence, test_witnesses,
+        },
     };
 
     fn case() -> NpcCaseSnapshot {
@@ -671,9 +674,9 @@ mod tests {
         }
     }
 
-    fn generated(family: TemplateFamily) -> GeneratedCase {
+    fn generated_with_seed(seed: u64, family: TemplateFamily) -> GeneratedCase {
         generate(&GenerationContext {
-            seed: 17,
+            seed,
             observer_entropy_hi: 1,
             observer_entropy_lo: 2,
             settlement_id: "lubeck".into(),
@@ -687,6 +690,47 @@ mod tests {
             witness_candidates: test_witnesses(),
         })
         .unwrap()
+    }
+
+    fn generated(family: TemplateFamily) -> GeneratedCase {
+        generated_with_seed(17, family)
+    }
+
+    fn generated_with_primary_location_accuracy(truthful: bool) -> GeneratedCase {
+        (0..4_096)
+            .find_map(|seed| {
+                let generated = generated_with_seed(seed, TemplateFamily::RecurringDepredation);
+                let primary_is_truthful =
+                    generated.witnesses[0].testimony[0].reliability == Reliability::Truthful;
+                (primary_is_truthful == truthful).then_some(generated)
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "bounded generation sweep did not find a {} primary location account",
+                    if truthful { "truthful" } else { "unreliable" }
+                )
+            })
+    }
+
+    fn assert_physical_lead_is_latest_public_site_testimony(generated: &GeneratedCase) {
+        let visible = player_visible_testimony_sequence(generated);
+        let (latest_witness, latest_statement) = visible
+            .iter()
+            .rev()
+            .find(|(_, statement)| statement.site_id.is_some())
+            .copied()
+            .expect("generated case exposes site-bearing testimony");
+        let approach = supported_investigation_approaches(generated)
+            .into_iter()
+            .find(|approach| approach.route == RouteClass::PhysicalTrail)
+            .expect("generated case supports a physical route");
+
+        assert_eq!(approach.lead_source, latest_witness.display_name);
+        assert_eq!(approach.lead_quote, latest_statement.spoken_text);
+        assert!(visible.iter().any(|(witness, statement)| {
+            witness.display_name == approach.lead_source
+                && statement.spoken_text == approach.lead_quote
+        }));
     }
 
     #[test]
@@ -841,6 +885,73 @@ mod tests {
         )
         .unwrap();
         assert_ne!(first.route, changed_strategy_retry.route);
+    }
+
+    #[test]
+    fn physical_route_uses_latest_public_truthful_corroboration() {
+        let generated = generated_with_primary_location_accuracy(true);
+        let primary = &generated.witnesses[0].testimony[0];
+        let secondary = &generated.witnesses[1].testimony[0];
+
+        assert_eq!(primary.reliability, Reliability::Truthful);
+        assert_eq!(secondary.corrects_proposition_id, None);
+        assert_physical_lead_is_latest_public_site_testimony(&generated);
+
+        let approach = supported_investigation_approaches(&generated)
+            .into_iter()
+            .find(|approach| approach.route == RouteClass::PhysicalTrail)
+            .unwrap();
+        assert_eq!(approach.lead_source, generated.witnesses[1].display_name);
+        assert_eq!(approach.lead_quote, secondary.spoken_text);
+    }
+
+    #[test]
+    fn physical_route_uses_latest_public_unreliable_account_correction() {
+        let generated = generated_with_primary_location_accuracy(false);
+        let primary = &generated.witnesses[0].testimony[0];
+        let secondary = &generated.witnesses[1].testimony[0];
+
+        assert_ne!(primary.reliability, Reliability::Truthful);
+        assert_eq!(
+            secondary.corrects_proposition_id.as_deref(),
+            Some(primary.proposition_id.as_str())
+        );
+        assert_physical_lead_is_latest_public_site_testimony(&generated);
+
+        let approach = supported_investigation_approaches(&generated)
+            .into_iter()
+            .find(|approach| approach.route == RouteClass::PhysicalTrail)
+            .unwrap();
+        assert_eq!(approach.lead_source, generated.witnesses[1].display_name);
+        assert_eq!(approach.lead_quote, secondary.spoken_text);
+    }
+
+    #[test]
+    fn physical_route_falls_back_to_earlier_public_site_testimony() {
+        let mut generated = generated_with_primary_location_accuracy(false);
+        let expected_source = generated.witnesses[0].display_name.clone();
+        let expected_quote = generated.witnesses[0].testimony[0].spoken_text.clone();
+        generated.witnesses[0].testimony[0]
+            .referred_witness_ids
+            .clear();
+        for statement in generated.witnesses[0].testimony.iter_mut().skip(1) {
+            statement.site_id = None;
+        }
+
+        let visible = player_visible_testimony_sequence(&generated);
+        assert!(
+            visible
+                .iter()
+                .all(|(witness, _)| witness.id == generated.witnesses[0].id)
+        );
+        assert_physical_lead_is_latest_public_site_testimony(&generated);
+
+        let approach = supported_investigation_approaches(&generated)
+            .into_iter()
+            .find(|approach| approach.route == RouteClass::PhysicalTrail)
+            .unwrap();
+        assert_eq!(approach.lead_source, expected_source);
+        assert_eq!(approach.lead_quote, expected_quote);
     }
 
     #[test]
