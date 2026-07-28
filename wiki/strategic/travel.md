@@ -66,6 +66,16 @@ Choosing a new endpoint changes the plan from the party's current physical
 location; it does not teleport the party or reuse an obsolete straight-line
 duration. The leader may also turn back.
 
+If the leader becomes unable to act during an expedition, a ready party member
+may direct field rest and an evacuation journey on the party's behalf. This is
+a narrow rescue authority: it applies only while the leader is publicly
+unready and does not transfer leadership or permit the companion to accept
+quests, initiate ordinary travel, or command combat objectives. Incapacitated
+members remain with the party, consume ordinary time and supplies, and are
+carried along the existing journey rather than abandoned or teleported. Their
+body and inventory remain part of the party's burden, while staggered members
+contribute reduced carrying capacity and incapacitated members contribute none.
+
 ## Food and water
 
 Every living traveler consumes food and water over elapsed strategic time.

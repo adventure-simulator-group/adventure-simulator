@@ -30,7 +30,8 @@ use crate::{
         character, character_attributes, character_equip, character_limbs, character_skills,
         character_stats, starting_character_claim,
     },
-    condition::character_condition,
+    condition::{character_condition, character_strategic_condition},
+    disease::character_illness_status,
     inventory_amount::{inventory_item_amount, party_item_amount},
     investigation::{
         CaseSiteAuthority, CaseSiteId, EvidencePresentationKind, PartyCaseSiteTracking,
@@ -326,9 +327,10 @@ mod healing_tests {
         MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate, QuestGenerationAuthority,
         RecruitmentOffer, RecruitmentOfferBindingFields, RecruitmentOfferId,
         RecruitmentOfferStatus, RecruitmentSourceId, activity_incident_source_id, autoresolve_drop,
-        case_refs_have_exact_dialogue_provenance, generated_case_site_combat_eligible,
-        generated_dialogue_action_matches, generated_dialogue_producer_recipient,
-        generated_scene_key, generated_witness_visible_description, hostile_group_authority_row,
+        carrying_capacity_multiplier_for_condition, case_refs_have_exact_dialogue_provenance,
+        generated_case_site_combat_eligible, generated_dialogue_action_matches,
+        generated_dialogue_producer_recipient, generated_scene_key,
+        generated_witness_visible_description, hostile_group_authority_row,
         hostile_resolution_for_objective, incident_group_matches, merchant_storefront,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
@@ -676,6 +678,27 @@ mod healing_tests {
             .and_then(|tail| tail.split("pub struct PartyJourneyItinerary").next())
             .expect("public encounter schema");
         assert!(!encounter.contains("pub seed:"));
+    }
+
+    #[test]
+    fn recovery_direction_is_delegated_only_to_a_ready_member_for_an_unready_leader() {
+        let source = include_str!("strategic.rs");
+        let direction = source
+            .split("pub(crate) fn party_member_can_direct_field_rest")
+            .nth(1)
+            .and_then(|tail| tail.split("fn authoritative_evacuation_settlement").next())
+            .expect("field recovery direction gate");
+        assert!(direction.contains("party.leader_id == character_id"));
+        assert!(direction.contains("party.current_settlement_id.is_none()"));
+        assert!(direction.contains("ready_companion_may_direct_recovery"));
+
+        let time = include_str!("time.rs");
+        let camp = time
+            .split("pub fn rest_at_camp")
+            .nth(1)
+            .and_then(|tail| tail.split("fn party_fatigue_summary").next())
+            .expect("camp reducer");
+        assert!(camp.contains("party_member_can_direct_field_rest"));
     }
 
     #[test]
@@ -1034,6 +1057,27 @@ mod healing_tests {
         assert_eq!(sanitized_encounter_body_weight(300.0), 300.0);
         assert_eq!(sanitized_encounter_body_weight(0.0), 70.0);
         assert_eq!(sanitized_encounter_body_weight(f32::NAN), 70.0);
+    }
+
+    #[test]
+    fn unready_members_keep_their_burden_but_lose_carrying_capacity() {
+        assert_eq!(carrying_capacity_multiplier_for_condition("ready"), 1.0);
+        assert_eq!(carrying_capacity_multiplier_for_condition("staggered"), 0.5);
+        assert_eq!(
+            carrying_capacity_multiplier_for_condition("incapacitated"),
+            0.0
+        );
+        assert_eq!(
+            carrying_capacity_multiplier_for_condition("unavailable"),
+            0.0
+        );
+
+        let unchanged_body_and_load_burden = 95.0;
+        let ready_capacity = 100.0 * carrying_capacity_multiplier_for_condition("ready");
+        let incapacitated_capacity =
+            100.0 * carrying_capacity_multiplier_for_condition("incapacitated");
+        assert!(ready_capacity >= unchanged_body_and_load_burden);
+        assert!(incapacitated_capacity < unchanged_body_and_load_burden);
     }
 
     #[test]
@@ -2403,6 +2447,139 @@ pub(crate) fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Resul
         return Err("Party has no living members".into());
     }
     crate::condition::require_characters_ready(ctx, &character_ids)
+}
+
+fn character_is_publicly_ready_party_member(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+) -> bool {
+    ctx.db
+        .party_member()
+        .party_id()
+        .filter(&party.id)
+        .any(|membership| membership.character_id == character_id)
+        && ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .is_some_and(|character| character.alive)
+        && ctx
+            .db
+            .character_strategic_condition()
+            .character_id()
+            .find(character_id)
+            .is_some_and(|condition| condition.status == "ready")
+        && !ctx
+            .db
+            .character_illness_status()
+            .character_id()
+            .find(character_id)
+            .is_some_and(|illness| illness.symptomatic || illness.critical)
+}
+
+fn party_leader_is_publicly_ready(ctx: &ReducerContext, party: &Party) -> bool {
+    let leader_is_alive = ctx
+        .db
+        .character()
+        .id()
+        .find(party.leader_id)
+        .is_some_and(|character| character.alive);
+    let leader_condition_ready = ctx
+        .db
+        .character_strategic_condition()
+        .character_id()
+        .find(party.leader_id)
+        .is_some_and(|condition| condition.status == "ready");
+    let leader_is_ready = leader_is_alive
+        && leader_condition_ready
+        && !ctx
+            .db
+            .character_illness_status()
+            .character_id()
+            .find(party.leader_id)
+            .is_some_and(|illness| illness.symptomatic || illness.critical);
+    leader_is_ready
+}
+
+fn ready_companion_may_direct_recovery(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+) -> bool {
+    character_id != party.leader_id
+        && character_is_publicly_ready_party_member(ctx, party, character_id)
+        && !party_leader_is_publicly_ready(ctx, party)
+}
+
+pub(crate) fn party_member_can_direct_field_rest(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+) -> bool {
+    party.leader_id == character_id
+        || (party.current_settlement_id.is_none()
+            && ready_companion_may_direct_recovery(ctx, party, character_id))
+}
+
+fn authoritative_evacuation_settlement(ctx: &ReducerContext, party: &Party) -> Option<String> {
+    if let Some(site_id) = party.current_case_site_id.as_ref() {
+        return ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&site_id.value)
+            .map(|site| site.origin_settlement_id);
+    }
+    let journey = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&party.id)?;
+    match (&journey.origin, &journey.destination) {
+        (JourneyEndpoint::CaseSite(_), JourneyEndpoint::Settlement(destination)) => {
+            Some(destination.id.clone())
+        }
+        (JourneyEndpoint::Settlement(origin), JourneyEndpoint::Settlement(destination))
+            if origin.id == destination.id =>
+        {
+            Some(destination.id.clone())
+        }
+        (JourneyEndpoint::Camp(origin_party_id), JourneyEndpoint::Settlement(destination))
+            if origin_party_id == &party.id =>
+        {
+            Some(destination.id.clone())
+        }
+        (JourneyEndpoint::Settlement(origin), _) => Some(origin.id.clone()),
+        _ => None,
+    }
+}
+
+fn ready_companion_may_start_evacuation(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+    settlement_id: &str,
+) -> bool {
+    party.current_settlement_id.is_none()
+        && ready_companion_may_direct_recovery(ctx, party, character_id)
+        && authoritative_evacuation_settlement(ctx, party).as_deref() == Some(settlement_id)
+}
+
+fn ready_companion_may_continue_evacuation(
+    ctx: &ReducerContext,
+    party: &Party,
+    character_id: u64,
+) -> bool {
+    if !ready_companion_may_direct_recovery(ctx, party, character_id) {
+        return false;
+    }
+    let Some(JourneyEndpoint::Settlement(camp_destination)) = party.camp_destination.as_ref()
+    else {
+        return false;
+    };
+    authoritative_evacuation_settlement(ctx, party).as_deref() == Some(camp_destination.id.as_str())
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -14800,7 +14977,16 @@ fn party_encumbrance_remaining_basis_points(
             let adjusted_leg_strength = (attributes.left_leg_strength * limbs.left_leg_health
                 + attributes.right_leg_strength * limbs.right_leg_health)
                 * 0.5;
+            let condition_multiplier = ctx
+                .db
+                .character_strategic_condition()
+                .character_id()
+                .find(*member_id)
+                .map_or(0.0, |condition| {
+                    carrying_capacity_multiplier_for_condition(&condition.status)
+                });
             adventuresim_core::equipment::encumbrance_capacity_kg(adjusted_leg_strength)
+                * condition_multiplier
         })
         .sum();
     let body_burden: f32 = member_ids
@@ -14820,6 +15006,14 @@ fn party_encumbrance_remaining_basis_points(
         capacity,
     );
     (remaining.clamp(0.0, 1.0) * 10_000.0).round() as u32
+}
+
+fn carrying_capacity_multiplier_for_condition(status: &str) -> f32 {
+    match status {
+        "ready" => 1.0,
+        "staggered" => 0.5,
+        _ => 0.0,
+    }
 }
 
 fn sanitized_encounter_body_weight(weight_kg: f32) -> f32 {
@@ -15653,10 +15847,19 @@ pub fn resolve_strategic_encounter(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if party.leader_id != character_id {
-        return Err("Only the party leader can resolve an encounter".into());
+    let delegated_recovery = ready_companion_may_continue_evacuation(ctx, &party, character_id);
+    if party.leader_id != character_id && !delegated_recovery {
+        return Err(
+            "Only the party leader, or a ready companion protecting an unready leader, can resolve an encounter"
+                .into(),
+        );
     }
     let parsed = ParsedEncounterChoice::parse(&choice)?;
+    if delegated_recovery && parsed == ParsedEncounterChoice::Attack {
+        return Err(
+            "A delegated evacuation actor may choose only a protective encounter response".into(),
+        );
+    }
     let mut encounter = unresolved_encounter(ctx, &party_id).ok_or("No unresolved encounter")?;
     let seed = ctx
         .db
@@ -16511,6 +16714,7 @@ pub fn travel_to_settlement(
     settlement_id: String,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    require_strategic_character_authority(ctx, character_id)?;
     travel_to_settlement_impl(ctx, character_id, settlement_id, None)
 }
 
@@ -16522,6 +16726,7 @@ pub fn travel_to_settlement_planned(
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    require_strategic_character_authority(ctx, character_id)?;
     travel_to_settlement_impl(ctx, character_id, settlement_id, Some(route))
 }
 
@@ -16551,8 +16756,13 @@ fn travel_to_settlement_impl(
         })
         .transpose()?;
     if let Some(party) = party.as_ref() {
-        if party.leader_id != character_id {
-            return Err("Only the party leader can travel".into());
+        if party.leader_id != character_id
+            && !ready_companion_may_start_evacuation(ctx, party, character_id, &settlement_id)
+        {
+            return Err(
+                "Only the party leader, or a ready companion evacuating an unready leader, can travel"
+                    .into(),
+            );
         }
         require_no_unresolved_encounter(ctx, &party.id)?;
     }
@@ -16653,10 +16863,11 @@ fn travel_to_settlement_impl(
     };
     let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
     if let Some(current_party) = party.as_ref() {
+        let expected_leader_id = current_party.leader_id;
         party = Some(revalidate_party_after_departure_sync(
             ctx,
             &current_party.id,
-            character_id,
+            expected_leader_id,
             (origin_kind == "settlement").then_some(origin_id.as_str()),
             (origin_kind == "case_site").then_some(origin_id.as_str()),
             None,
@@ -16896,6 +17107,7 @@ pub fn set_party_travel_itinerary(
 /// transition between pins.
 #[reducer]
 pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
@@ -16910,8 +17122,13 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if !party_can_continue_travel(&party, character_id) {
-        return Err("Only the party leader can continue travel".into());
+    if !party_can_continue_travel(&party, character_id)
+        && !ready_companion_may_continue_evacuation(ctx, &party, character_id)
+    {
+        return Err(
+            "Only the party leader, or a ready companion evacuating an unready leader, can continue travel"
+                .into(),
+        );
     }
     require_no_unresolved_encounter(ctx, &party_id)?;
     let destination = party

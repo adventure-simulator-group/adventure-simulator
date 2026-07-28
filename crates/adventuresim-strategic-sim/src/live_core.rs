@@ -110,6 +110,8 @@ const MAX_RECOVERY_ACTIONS: u32 = 128;
 const MAX_CORE_LOOP_WORK: u64 = 100_000;
 const MAX_CORE_TRACE_EVENTS: usize = 100_000;
 const MAX_GENERATED_CASE_STEPS_PER_CYCLE: u32 = 16;
+const MAX_EXPEDITION_RECOVERY_RESTS: u32 = 2;
+const EXPEDITION_RECOVERY_REST_MINUTES: u64 = 1_440;
 const TRAVEL_PROVISION_RESERVE_DAYS: f32 = 1.0;
 const MAX_TRAVEL_PROVISION_UNITS_PER_ITEM: u32 = 512;
 /// Public fail-safe bound for a disclosed one-way distance. The ordinary
@@ -238,6 +240,10 @@ pub struct CoreLoopMetrics {
     pub generated_discovery_actions_attempted: u32,
     pub generated_discovery_actions_fruitful: u32,
     pub generated_discovery_decisions_unproductive: u32,
+    pub expedition_recovery_plans: u32,
+    pub expedition_recovery_rests: u32,
+    pub expedition_evacuations: u32,
+    pub expedition_resumes: u32,
     pub generated_unique_party_cases_discovered: u32,
     pub generated_exact_site_ready: u32,
     pub generated_finance_blocked_cycles: u32,
@@ -313,6 +319,7 @@ pub enum CoreLoopEventKind {
     QuestDecision,
     GeneratedDiscoveryAttempt,
     GeneratedDiscoveryResult,
+    ExpeditionRecovery,
     GeneratedQuestDiscovered,
     GeneratedInvestigationAttempt,
     GeneratedInvestigationAction,
@@ -441,9 +448,74 @@ struct ActivityObservation {
     condition_status: String,
     hunger: f32,
     thirst: f32,
+    food_days: f32,
+    water_days: f32,
     visible_food_kcal: f32,
     visible_water_ml: f32,
     elapsed_minutes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ExpeditionMemberObservation {
+    agent_id: u32,
+    character_id: u64,
+    alive: bool,
+    condition_status: String,
+    hunger: f32,
+    thirst: f32,
+    food_days: f32,
+    water_days: f32,
+    symptomatic: bool,
+    critical: bool,
+    elapsed_minutes: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ExpeditionSuppliesObservation {
+    stored_food_kcal: f32,
+    portable_water_ml: f32,
+}
+
+fn expedition_member_needs_recovery(member: &ExpeditionMemberObservation) -> bool {
+    member.alive && (member.condition_status != "ready" || member.symptomatic || member.critical)
+}
+
+fn expedition_party_can_resume(members: &[ExpeditionMemberObservation]) -> bool {
+    let living = members
+        .iter()
+        .filter(|member| member.alive)
+        .collect::<Vec<_>>();
+    !living.is_empty()
+        && living.iter().any(|member| {
+            member.condition_status == "ready" && !member.symptomatic && !member.critical
+        })
+        && living
+            .iter()
+            .all(|member| !expedition_member_needs_recovery(member))
+}
+
+fn expedition_supplies_cover_one_rest_day(
+    members: &[ExpeditionMemberObservation],
+    supplies: ExpeditionSuppliesObservation,
+) -> bool {
+    let living = members.iter().filter(|member| member.alive).count() as f32;
+    living > 0.0
+        && supplies.stored_food_kcal
+            >= living * adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
+        && supplies.portable_water_ml
+            >= living * adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY
+}
+
+fn select_expedition_encounter_choice(
+    available_choices: &[String],
+    roll_index: u64,
+    evacuation: bool,
+) -> Option<String> {
+    let eligible = available_choices
+        .iter()
+        .filter(|choice| !evacuation || choice.as_str() != "attack")
+        .collect::<Vec<_>>();
+    (!eligible.is_empty()).then(|| (*eligible[(roll_index as usize) % eligible.len()]).clone())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2221,9 +2293,21 @@ impl LiveRunner {
                 return Ok(());
             }
             let remaining_before = party.camp_remaining_minutes;
-            let Some((leader, _)) = self.current_leader(party_id) else {
+            let Some((travel_actor, _, _)) = self.expedition_recovery_actor(party_id) else {
                 self.observe_deaths();
-                return Ok(());
+                let members = self.expedition_member_observations(party_id)?;
+                let supplies = self.expedition_supplies(party_id);
+                self.emit_expedition_diagnostics(
+                    party_id,
+                    "journey_stalled",
+                    "hold_position",
+                    "no_ready_asymptomatic_noncritical_actor",
+                    &members,
+                    &members,
+                    supplies,
+                    supplies,
+                );
+                return Err("journey has no ready, asymptomatic, noncritical actor".into());
             };
             let pending_encounter = {
                 let table = self.connection.db.strategic_encounter();
@@ -2238,9 +2322,13 @@ impl LiveRunner {
                 } else {
                     self.metrics.encounter_escape_ineligible += 1;
                 }
-                let choice = encounter.available_choices
-                    [(encounter.roll_index as usize) % encounter.available_choices.len()]
-                .clone();
+                let evacuation = self.public_journey_is_evacuation(party_id);
+                let choice = select_expedition_encounter_choice(
+                    &encounter.available_choices,
+                    encounter.roll_index,
+                    evacuation,
+                )
+                .ok_or("encounter offers no protective evacuation choice")?;
                 match choice.as_str() {
                     "sneak" => self.metrics.encounter_sneaks += 1,
                     "detour" => self.metrics.encounter_detours += 1,
@@ -2273,7 +2361,7 @@ impl LiveRunner {
                 let result = reducer_call!(self, "resolve_strategic_encounter", |cb| self
                     .connection
                     .reducers
-                    .resolve_strategic_encounter_then(leader, choice.clone(), cb));
+                    .resolve_strategic_encounter_then(travel_actor, choice.clone(), cb));
                 self.call(result)?;
                 self.observe_deaths();
                 let resolved_outcome = {
@@ -2330,17 +2418,49 @@ impl LiveRunner {
                     journey.total_elapsed_minutes,
                 ),
             );
+            let camp_members_before = self.expedition_member_observations(party_id)?;
+            let camp_supplies_before = self.expedition_supplies(party_id);
             let expected_completed_elapsed = camp_start.saturating_add(rest_minutes);
             let result = reducer_call!(self, "rest_at_camp", |cb| self
                 .connection
                 .reducers
-                .rest_at_camp_then(leader, rest_minutes, cb));
+                .rest_at_camp_then(travel_actor, rest_minutes, cb));
             self.call(result)?;
             self.observe_deaths();
-            let Some((leader, agent)) = self.current_leader(party_id) else {
-                return Ok(());
+            let Some((continue_actor, agent, continue_actor_role)) =
+                self.expedition_recovery_actor(party_id)
+            else {
+                let members = self.expedition_member_observations(party_id)?;
+                let supplies = self.expedition_supplies(party_id);
+                self.emit_expedition_diagnostics(
+                    party_id,
+                    "journey_stalled_after_rest",
+                    "hold_position",
+                    "no_ready_asymptomatic_noncritical_actor",
+                    &members,
+                    &members,
+                    supplies,
+                    supplies,
+                );
+                return Err("camp rest left no ready, asymptomatic, noncritical actor".into());
             };
-            let unsafe_after_rest = self.unsafe_party_agents(&self.party_agents(leader)?);
+            let unsafe_after_rest = self.unsafe_party_agents(&self.party_agents(continue_actor)?);
+            let camp_members_after = self.expedition_member_observations(party_id)?;
+            let camp_supplies_after = self.expedition_supplies(party_id);
+            self.emit_expedition_diagnostics(
+                party_id,
+                "journey_camp",
+                "rest_at_camp",
+                if unsafe_after_rest.is_empty() {
+                    "quest_leg_rest_complete"
+                } else {
+                    "quest_suppressed_member_not_ready_after_camp"
+                },
+                &camp_members_before,
+                &camp_members_after,
+                camp_supplies_before,
+                camp_supplies_after,
+            );
             let after_rest_party = self.party_by_id(party_id)?;
             let after_rest_journey = self
                 .connection
@@ -2361,7 +2481,6 @@ impl LiveRunner {
                 || after_rest_journey.completed_elapsed_minutes
                     > after_rest_journey.total_elapsed_minutes
                 || after_rest_itinerary.party_id != party_id
-                || !unsafe_after_rest.is_empty()
             {
                 return Err(
                     "journey camp projection is incoherent: rest did not produce a safe forecast boundary"
@@ -2379,10 +2498,28 @@ impl LiveRunner {
                     after_rest_party.camp_remaining_minutes,
                 ),
             );
+            let evacuation_leg = matches!(
+                after_rest_party.camp_destination,
+                Some(JourneyEndpoint::Settlement(_))
+            );
+            if !unsafe_after_rest.is_empty() && !evacuation_leg {
+                for unsafe_agent in unsafe_after_rest {
+                    self.metrics.quests_suppressed_for_health =
+                        self.metrics.quests_suppressed_for_health.saturating_add(1);
+                    self.event(
+                        unsafe_agent,
+                        CoreLoopEventKind::QuestSuppressed,
+                        "reason=journey_camp_member_not_ready;plan=off_settlement_recovery_next_cycle",
+                    );
+                }
+                return Ok(());
+            }
+            let leg_members_before = self.expedition_member_observations(party_id)?;
+            let leg_supplies_before = self.expedition_supplies(party_id);
             let result = reducer_call!(self, "continue_camp_travel", |cb| self
                 .connection
                 .reducers
-                .continue_camp_travel_then(leader, cb));
+                .continue_camp_travel_then(continue_actor, cb));
             self.call(result)?;
             self.observe_deaths();
             self.metrics.camp_stops += 1;
@@ -2394,6 +2531,23 @@ impl LiveRunner {
                     bounded_event_field(party_id),
                     self.party_by_id(party_id)?.camp_remaining_minutes,
                 ),
+            );
+            let leg_members_after = self.expedition_member_observations(party_id)?;
+            let leg_supplies_after = self.expedition_supplies(party_id);
+            let leg_reason = if evacuation_leg {
+                format!("quest_suppressed_evacuation_continues_{continue_actor_role}")
+            } else {
+                "quest_leg_resumed_all_members_ready".into()
+            };
+            self.emit_expedition_diagnostics(
+                party_id,
+                "journey_leg",
+                "continue_camp_travel",
+                &leg_reason,
+                &leg_members_before,
+                &leg_members_after,
+                leg_supplies_before,
+                leg_supplies_after,
             );
             let after = self.party_by_id(party_id)?;
             if after.camp_destination.is_some() && after.camp_remaining_minutes >= remaining_before
@@ -2454,6 +2608,8 @@ impl LiveRunner {
             condition_status: condition.status,
             hunger: condition.hunger,
             thirst: condition.thirst,
+            food_days: condition.food_days,
+            water_days: condition.water_days,
             visible_food_kcal,
             visible_water_ml,
             elapsed_minutes,
@@ -3452,12 +3608,489 @@ impl LiveRunner {
                     .character_strategic_condition()
                     .iter()
                     .find(|row| row.character_id == id)
-                    .is_some_and(|row| row.status == "ready");
+                    .is_some_and(|row| row.status == "ready")
+                    && !self
+                        .connection
+                        .db
+                        .character_illness_status()
+                        .iter()
+                        .find(|row| row.character_id == id)
+                        .is_some_and(|row| row.symptomatic || row.critical);
                 !alive || !ready
             })
             .collect::<Vec<_>>();
         unsafe_agents.sort_unstable();
         unsafe_agents
+    }
+
+    fn expedition_member_observations(
+        &self,
+        party_id: &str,
+    ) -> Result<Vec<ExpeditionMemberObservation>, String> {
+        let mut member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|membership| membership.party_id == party_id)
+            .map(|membership| membership.character_id)
+            .collect::<Vec<_>>();
+        member_ids.sort_unstable();
+        member_ids
+            .into_iter()
+            .map(|character_id| {
+                let agent_id = self
+                    .character_ids
+                    .iter()
+                    .position(|id| *id == character_id)
+                    .ok_or("expedition member is outside the simulator roster")?
+                    as u32;
+                let character = self
+                    .connection
+                    .db
+                    .character()
+                    .iter()
+                    .find(|row| row.id == character_id)
+                    .ok_or("expedition member projection is unavailable")?;
+                let condition = self
+                    .connection
+                    .db
+                    .character_strategic_condition()
+                    .iter()
+                    .find(|row| row.character_id == character_id);
+                let illness = self
+                    .connection
+                    .db
+                    .character_illness_status()
+                    .iter()
+                    .find(|row| row.character_id == character_id);
+                let elapsed_minutes = self
+                    .connection
+                    .db
+                    .character_time()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .map_or(0, |row| row.minutes);
+                Ok(ExpeditionMemberObservation {
+                    agent_id,
+                    character_id,
+                    alive: character.alive,
+                    condition_status: condition
+                        .as_ref()
+                        .map_or_else(|| "unavailable".into(), |row| row.status.clone()),
+                    hunger: condition.as_ref().map_or(0.0, |row| row.hunger),
+                    thirst: condition.as_ref().map_or(0.0, |row| row.thirst),
+                    food_days: condition.as_ref().map_or(0.0, |row| row.food_days),
+                    water_days: condition.as_ref().map_or(0.0, |row| row.water_days),
+                    symptomatic: illness.as_ref().is_some_and(|row| row.symptomatic),
+                    critical: illness.as_ref().is_some_and(|row| row.critical),
+                    elapsed_minutes,
+                })
+            })
+            .collect()
+    }
+
+    fn expedition_supplies(&self, party_id: &str) -> ExpeditionSuppliesObservation {
+        let member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|membership| membership.party_id == party_id)
+            .map(|membership| membership.character_id)
+            .collect::<HashSet<_>>();
+        let personal_inventory_ids = self
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| member_ids.contains(&row.character_id))
+            .map(|row| row.id)
+            .collect::<HashSet<_>>();
+        let party_inventory_ids = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .filter(|row| row.party_id == party_id)
+            .map(|row| row.id)
+            .collect::<HashSet<_>>();
+        let stored_food_kcal = self
+            .connection
+            .db
+            .food_lot()
+            .iter()
+            .filter(|lot| {
+                lot.inventory_item_id
+                    .is_some_and(|id| personal_inventory_ids.contains(&id))
+                    || lot
+                        .party_inventory_item_id
+                        .is_some_and(|id| party_inventory_ids.contains(&id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum();
+        let carried_water_ml = self
+            .connection
+            .db
+            .character_needs()
+            .iter()
+            .filter(|needs| member_ids.contains(&needs.character_id))
+            .map(|needs| needs.carried_water_ml.max(0.0))
+            .sum::<f32>();
+        let pooled_water_ml = self
+            .connection
+            .db
+            .party()
+            .iter()
+            .find(|party| party.id == party_id)
+            .map_or(0.0, |party| party.pooled_water_ml.max(0.0));
+        ExpeditionSuppliesObservation {
+            stored_food_kcal,
+            portable_water_ml: carried_water_ml + pooled_water_ml,
+        }
+    }
+
+    fn emit_expedition_diagnostics(
+        &mut self,
+        party_id: &str,
+        phase: &str,
+        action: &str,
+        reason: &str,
+        before: &[ExpeditionMemberObservation],
+        after: &[ExpeditionMemberObservation],
+        supplies_before: ExpeditionSuppliesObservation,
+        supplies_after: ExpeditionSuppliesObservation,
+    ) {
+        for member_before in before {
+            let member_after = after
+                .iter()
+                .find(|candidate| candidate.character_id == member_before.character_id)
+                .unwrap_or(member_before);
+            self.event(
+                member_before.agent_id,
+                CoreLoopEventKind::ExpeditionRecovery,
+                format!(
+                    "party={};phase={};action={};reason={};member={};alive_before={};alive_after={};condition_before={};condition_after={};hunger_before={:.3};hunger_after={:.3};thirst_before={:.3};thirst_after={:.3};food_days_before={:.2};food_days_after={:.2};water_days_before={:.2};water_days_after={:.2};symptomatic_before={};symptomatic_after={};critical_before={};critical_after={};exposure=not_publicly_projected;elapsed_before={};elapsed_after={};elapsed_delta={};stored_food_kcal_before={:.0};stored_food_kcal_after={:.0};stored_food_kcal_consumed={:.0};portable_water_ml_before={:.0};portable_water_ml_after={:.0};portable_water_ml_consumed={:.0}",
+                    bounded_event_field(party_id),
+                    bounded_event_field(phase),
+                    bounded_event_field(action),
+                    bounded_event_field(reason),
+                    member_before.character_id,
+                    member_before.alive,
+                    member_after.alive,
+                    bounded_event_field(&member_before.condition_status),
+                    bounded_event_field(&member_after.condition_status),
+                    member_before.hunger,
+                    member_after.hunger,
+                    member_before.thirst,
+                    member_after.thirst,
+                    member_before.food_days,
+                    member_after.food_days,
+                    member_before.water_days,
+                    member_after.water_days,
+                    member_before.symptomatic,
+                    member_after.symptomatic,
+                    member_before.critical,
+                    member_after.critical,
+                    member_before.elapsed_minutes,
+                    member_after.elapsed_minutes,
+                    member_after
+                        .elapsed_minutes
+                        .saturating_sub(member_before.elapsed_minutes),
+                    supplies_before.stored_food_kcal,
+                    supplies_after.stored_food_kcal,
+                    (supplies_before.stored_food_kcal - supplies_after.stored_food_kcal).max(0.0),
+                    supplies_before.portable_water_ml,
+                    supplies_after.portable_water_ml,
+                    (supplies_before.portable_water_ml - supplies_after.portable_water_ml).max(0.0),
+                ),
+            );
+        }
+    }
+
+    fn expedition_recovery_actor(&self, party_id: &str) -> Option<(u64, u32, &'static str)> {
+        let party = self
+            .connection
+            .db
+            .party()
+            .iter()
+            .find(|party| party.id == party_id)?;
+        let mut ready = self
+            .expedition_member_observations(party_id)
+            .ok()?
+            .into_iter()
+            .filter(|member| {
+                member.alive
+                    && member.condition_status == "ready"
+                    && !member.symptomatic
+                    && !member.critical
+            })
+            .collect::<Vec<_>>();
+        ready.sort_by_key(|member| (member.character_id != party.leader_id, member.character_id));
+        if let Some(actor) = ready.into_iter().next() {
+            let role = if actor.character_id == party.leader_id {
+                "ready_leader"
+            } else {
+                "ready_companion"
+            };
+            return Some((actor.character_id, actor.agent_id, role));
+        }
+        None
+    }
+
+    fn public_expedition_return_settlement(&self, party_id: &str) -> Option<String> {
+        if let Some(journey) = self
+            .connection
+            .db
+            .party_journey()
+            .iter()
+            .find(|journey| journey.party_id == party_id)
+        {
+            if let JourneyEndpoint::Settlement(origin) = journey.origin {
+                return Some(origin.id);
+            }
+            if let JourneyEndpoint::Settlement(destination) = journey.destination {
+                return Some(destination.id);
+            }
+        }
+        let party = self
+            .connection
+            .db
+            .party()
+            .iter()
+            .find(|party| party.id == party_id)?;
+        let current_site = party.current_case_site_id.as_ref()?.value.as_str();
+        let member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|membership| membership.party_id == party_id)
+            .map(|membership| membership.character_id)
+            .collect::<HashSet<_>>();
+        let mut origins = self
+            .connection
+            .db
+            .backend_case_site_pins()
+            .iter()
+            .filter(|pin| {
+                member_ids.contains(&pin.owner_character_id) && pin.case_site_id == current_site
+            })
+            .map(|pin| pin.origin_settlement_id)
+            .collect::<Vec<_>>();
+        origins.sort();
+        origins.dedup();
+        if origins.len() == 1 {
+            return origins.pop();
+        }
+        None
+    }
+
+    fn public_journey_is_evacuation(&self, party_id: &str) -> bool {
+        let Some(return_settlement) = self.public_expedition_return_settlement(party_id) else {
+            return false;
+        };
+        self.connection
+            .db
+            .party_journey()
+            .iter()
+            .find(|journey| journey.party_id == party_id)
+            .is_some_and(|journey| {
+                matches!(
+                    journey.destination,
+                    JourneyEndpoint::Settlement(destination)
+                        if destination.id == return_settlement
+                )
+            })
+    }
+
+    fn recover_or_evacuate_off_settlement(
+        &mut self,
+        party_id: &str,
+        cycle: u32,
+    ) -> Result<bool, String> {
+        let party = self.party_by_id(party_id)?;
+        if party.current_settlement_id.is_some() {
+            return Ok(false);
+        }
+        let mut before = self.expedition_member_observations(party_id)?;
+        if !before.iter().any(expedition_member_needs_recovery) {
+            return Ok(false);
+        }
+        let supplies_before = self.expedition_supplies(party_id);
+        let Some((actor_id, actor_agent, actor_role)) = self.expedition_recovery_actor(party_id)
+        else {
+            self.emit_expedition_diagnostics(
+                party_id,
+                "plan",
+                "hold_position",
+                "no_living_recovery_actor",
+                &before,
+                &before,
+                supplies_before,
+                supplies_before,
+            );
+            return Err("off-settlement party has no living recovery actor".into());
+        };
+        self.metrics.expedition_recovery_plans =
+            self.metrics.expedition_recovery_plans.saturating_add(1);
+        self.metrics.quests_suppressed_for_health =
+            self.metrics.quests_suppressed_for_health.saturating_add(
+                before
+                    .iter()
+                    .filter(|member| expedition_member_needs_recovery(member))
+                    .count() as u32,
+            );
+        self.emit_expedition_diagnostics(
+            party_id,
+            "plan",
+            "field_recovery_then_evacuation",
+            &format!("quest_suppressed_off_settlement_health_cycle_{cycle}_{actor_role}"),
+            &before,
+            &before,
+            supplies_before,
+            supplies_before,
+        );
+        self.event(
+            actor_agent,
+            CoreLoopEventKind::QuestSuppressed,
+            format!(
+                "cycle={cycle};reason=off_settlement_member_not_ready;plan=field_recovery_then_evacuation;actor={actor_id};actor_role={actor_role}"
+            ),
+        );
+
+        let can_attempt_field_recovery = before
+            .iter()
+            .all(|member| !member.alive || !member.critical)
+            && expedition_supplies_cover_one_rest_day(&before, supplies_before);
+        if can_attempt_field_recovery {
+            for rest_ordinal in 1..=MAX_EXPEDITION_RECOVERY_RESTS {
+                let rest_before = self.expedition_member_observations(party_id)?;
+                let rest_supplies_before = self.expedition_supplies(party_id);
+                let result = reducer_call!(self, "expedition_recovery_rest", |cb| self
+                    .connection
+                    .reducers
+                    .rest_at_camp_then(actor_id, EXPEDITION_RECOVERY_REST_MINUTES, cb));
+                self.call(result)?;
+                self.observe_deaths();
+                let rest_after = self.expedition_member_observations(party_id)?;
+                let rest_supplies_after = self.expedition_supplies(party_id);
+                self.metrics.expedition_recovery_rests =
+                    self.metrics.expedition_recovery_rests.saturating_add(1);
+                self.metrics.recovery_rests = self.metrics.recovery_rests.saturating_add(1);
+                self.emit_expedition_diagnostics(
+                    party_id,
+                    "field_rest",
+                    "rest_at_camp",
+                    &format!("bounded_recovery_rest_{rest_ordinal}"),
+                    &rest_before,
+                    &rest_after,
+                    rest_supplies_before,
+                    rest_supplies_after,
+                );
+                if expedition_party_can_resume(&rest_after) {
+                    self.metrics.expedition_resumes =
+                        self.metrics.expedition_resumes.saturating_add(1);
+                    self.emit_expedition_diagnostics(
+                        party_id,
+                        "resume",
+                        "resume_expedition",
+                        "quest_resumed_all_members_ready_and_asymptomatic",
+                        &rest_after,
+                        &rest_after,
+                        rest_supplies_after,
+                        rest_supplies_after,
+                    );
+                    return Ok(true);
+                }
+                before = rest_after;
+                if before.iter().any(|member| member.alive && member.critical)
+                    || !expedition_supplies_cover_one_rest_day(&before, rest_supplies_after)
+                {
+                    break;
+                }
+            }
+        }
+
+        let Some(return_settlement) = self.public_expedition_return_settlement(party_id) else {
+            let supplies_after = self.expedition_supplies(party_id);
+            self.emit_expedition_diagnostics(
+                party_id,
+                "evacuation",
+                "hold_position",
+                "no_public_return_route",
+                &before,
+                &before,
+                supplies_after,
+                supplies_after,
+            );
+            return Err("off-settlement recovery has no public evacuation route".into());
+        };
+        let evacuation_before = self.expedition_member_observations(party_id)?;
+        let evacuation_supplies_before = self.expedition_supplies(party_id);
+        let Some((evacuation_actor_id, evacuation_actor_agent, evacuation_actor_role)) =
+            self.expedition_recovery_actor(party_id)
+        else {
+            return Err("off-settlement party lost every living evacuation actor".into());
+        };
+        self.emit_expedition_diagnostics(
+            party_id,
+            "evacuation_plan",
+            "return_to_settlement",
+            "quest_suppressed_recovery_incomplete",
+            &evacuation_before,
+            &evacuation_before,
+            evacuation_supplies_before,
+            evacuation_supplies_before,
+        );
+        let result = reducer_call!(self, "expedition_health_evacuation", |cb| self
+            .connection
+            .reducers
+            .travel_to_settlement_then(evacuation_actor_id, return_settlement.clone(), cb));
+        self.call(result)?;
+        self.travel_camps(party_id)?;
+        self.observe_deaths();
+        let evacuation_after = self.expedition_member_observations(party_id)?;
+        let evacuation_supplies_after = self.expedition_supplies(party_id);
+        let evacuation_party = self.party_by_id(party_id)?;
+        let evacuation_complete = evacuation_party.current_settlement_id.as_deref()
+            == Some(return_settlement.as_str())
+            && evacuation_party.camp_destination.is_none()
+            && evacuation_after.iter().any(|member| member.alive);
+        if !evacuation_complete {
+            self.emit_expedition_diagnostics(
+                party_id,
+                "evacuation_stalled",
+                "return_to_settlement",
+                "public_state_does_not_prove_living_party_returned",
+                &evacuation_before,
+                &evacuation_after,
+                evacuation_supplies_before,
+                evacuation_supplies_after,
+            );
+            return Ok(true);
+        }
+        self.metrics.expedition_evacuations = self.metrics.expedition_evacuations.saturating_add(1);
+        self.event(
+            evacuation_actor_agent,
+            CoreLoopEventKind::ExpeditionRecovery,
+            format!(
+                "party={};phase=evacuation_authority;actor={evacuation_actor_id};actor_role={evacuation_actor_role};destination={}",
+                bounded_event_field(party_id),
+                bounded_event_field(&return_settlement),
+            ),
+        );
+        self.emit_expedition_diagnostics(
+            party_id,
+            "evacuation_complete",
+            "return_to_settlement",
+            "quest_suppressed_settlement_recovery_required",
+            &evacuation_before,
+            &evacuation_after,
+            evacuation_supplies_before,
+            evacuation_supplies_after,
+        );
+        Ok(true)
     }
 
     fn owned_open_generated_cases(&self, character_id: u64) -> Vec<(String, String)> {
@@ -4592,6 +5225,8 @@ impl LiveRunner {
             ),
         );
 
+        let outbound_before = self.expedition_member_observations(party_id)?;
+        let outbound_supplies_before = self.expedition_supplies(party_id);
         let result = reducer_call!(self, "travel_to_case_site", |cb| self
             .connection
             .reducers
@@ -4603,6 +5238,22 @@ impl LiveRunner {
                 cb,
             ));
         self.call(result)?;
+        let outbound_after = self.expedition_member_observations(party_id)?;
+        let outbound_supplies_after = self.expedition_supplies(party_id);
+        self.emit_expedition_diagnostics(
+            party_id,
+            "journey_leg",
+            "travel_to_case_site",
+            if outbound_after.iter().any(expedition_member_needs_recovery) {
+                "quest_suppressed_member_not_ready_after_outbound_leg"
+            } else {
+                "quest_leg_outbound_all_members_ready"
+            },
+            &outbound_before,
+            &outbound_after,
+            outbound_supplies_before,
+            outbound_supplies_after,
+        );
         self.event(
             leader_agent,
             CoreLoopEventKind::Travel,
@@ -5561,6 +6212,22 @@ fn run_core_loop_with_npc_policy_inner(
             let Some((leader, leader_agent)) = runner.current_leader(party_id) else {
                 continue;
             };
+            if runner.recover_or_evacuate_off_settlement(party_id, cycle)? {
+                active = true;
+                let result = reducer_call!(
+                    runner,
+                    "ensure_settlement_activity_after_evacuation",
+                    |cb| {
+                        runner
+                            .connection
+                            .reducers
+                            .ensure_settlement_activity_then(settlement.clone(), cb)
+                    }
+                );
+                runner.call(result)?;
+                runner.choose_pending_npc_strategies()?;
+                continue;
+            }
             let elapsed = runner
                 .connection
                 .db
@@ -5713,6 +6380,12 @@ fn run_core_loop_with_npc_policy_inner(
         if !active {
             break;
         }
+    }
+    // One final bounded rescue pass runs even when the scenario duration or
+    // cycle budget ended immediately after an off-settlement injury.
+    for party_id in &party_ids {
+        runner.observe_deaths();
+        runner.recover_or_evacuate_off_settlement(party_id, config.cycles)?;
     }
     // Bounded final settlement cleanup prevents a duration cutoff from
     // stranding medical care or completed smith orders.
@@ -6348,11 +7021,29 @@ mod tests {
         assert!(travel.contains(".party_journey_itinerary()"));
         assert!(travel.contains("row.party_id == party_id"));
         assert!(travel.contains("projected_camp_rest_minutes("));
-        assert!(travel.contains(".rest_at_camp_then(leader, rest_minutes"));
-        assert!(!travel.contains(".rest_at_camp_then(leader, 1_440"));
+        assert!(
+            travel.contains(
+                "let Some((travel_actor, _, _)) = self.expedition_recovery_actor(party_id)"
+            )
+        );
+        assert!(travel.contains(".rest_at_camp_then(travel_actor, rest_minutes"));
+        assert!(!travel.contains(".rest_at_camp_then(travel_actor, 1_440"));
         for phase in ["phase=pre_rest", "phase=post_rest", "phase=post_continue"] {
             assert!(travel.contains(phase));
         }
+
+        let recovery_actor = source
+            .split("fn expedition_recovery_actor")
+            .nth(1)
+            .and_then(|tail| tail.split("fn public_expedition_return_settlement").next())
+            .expect("public recovery actor selection");
+        assert!(recovery_actor.contains("expedition_member_observations(party_id)"));
+        assert!(recovery_actor.contains("member.condition_status == \"ready\""));
+        assert!(recovery_actor.contains("!member.symptomatic"));
+        assert!(recovery_actor.contains("!member.critical"));
+        assert!(recovery_actor.contains("ready.sort_by_key"));
+        assert!(recovery_actor.contains("ready.into_iter().next()"));
+        assert!(!recovery_actor.contains("infection_episode"));
 
         let provisioning = source
             .split("fn provision_case_site_journey")
@@ -6417,6 +7108,124 @@ mod tests {
         assert!(recovery.contains("symptomatic_before={symptomatic}"));
         assert!(recovery.contains("symptomatic_after={symptomatic_after}"));
         assert!(!recovery.contains("cause=public_symptomatic_illness"));
+    }
+
+    #[test]
+    fn off_settlement_recovery_is_bounded_public_and_precedes_quest_selection() {
+        let recovering = ExpeditionMemberObservation {
+            agent_id: 0,
+            character_id: 7,
+            alive: true,
+            condition_status: "incapacitated".into(),
+            hunger: 0.1,
+            thirst: 0.2,
+            food_days: 3.0,
+            water_days: 3.0,
+            symptomatic: false,
+            critical: false,
+            elapsed_minutes: 1_440,
+        };
+        assert!(expedition_member_needs_recovery(&recovering));
+        assert!(!expedition_member_needs_recovery(
+            &ExpeditionMemberObservation {
+                condition_status: "ready".into(),
+                ..recovering.clone()
+            }
+        ));
+        assert_eq!(MAX_EXPEDITION_RECOVERY_RESTS, 2);
+        assert!(!expedition_party_can_resume(&[recovering.clone()]));
+        assert!(expedition_party_can_resume(&[
+            ExpeditionMemberObservation {
+                condition_status: "ready".into(),
+                ..recovering.clone()
+            }
+        ]));
+        assert!(!expedition_party_can_resume(&[]));
+        let one_day = ExpeditionSuppliesObservation {
+            stored_food_kcal: adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY,
+            portable_water_ml: adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY,
+        };
+        assert!(expedition_supplies_cover_one_rest_day(
+            &[recovering.clone()],
+            one_day
+        ));
+        assert!(!expedition_supplies_cover_one_rest_day(
+            &[recovering.clone(), recovering.clone()],
+            one_day
+        ));
+        assert_eq!(
+            select_expedition_encounter_choice(
+                &["attack".into(), "run".into(), "detour".into()],
+                0,
+                true,
+            ),
+            Some("run".into())
+        );
+
+        let source = include_str!("live_core.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        let cycle = production
+            .split("for cycle in 0..config.cycles")
+            .nth(1)
+            .expect("core loop");
+        assert!(cycle.find("recover_or_evacuate_off_settlement") < cycle.find("QuestDecision"));
+        let recovery = production
+            .split("fn recover_or_evacuate_off_settlement")
+            .nth(1)
+            .and_then(|tail| tail.split("fn owned_open_generated_cases").next())
+            .expect("expedition recovery policy");
+        for public_input in [
+            "expedition_member_observations",
+            "expedition_supplies",
+            "public_expedition_return_settlement",
+            "party_journey()",
+            "backend_case_site_pins()",
+        ] {
+            assert!(production.contains(public_input));
+        }
+        assert!(recovery.contains("MAX_EXPEDITION_RECOVERY_RESTS"));
+        assert!(recovery.contains("expedition_supplies_cover_one_rest_day"));
+        assert!(recovery.contains("expedition_party_can_resume"));
+        assert!(recovery.contains("evacuation_stalled"));
+        assert!(production.contains("\"ready_companion\""));
+        assert!(recovery.contains("travel_to_settlement_then"));
+        assert!(!recovery.contains("infection_episode"));
+        assert!(!recovery.contains("party_journey_route"));
+        let actor = production
+            .split("fn expedition_recovery_actor")
+            .nth(1)
+            .and_then(|tail| tail.split("fn public_expedition_return_settlement").next())
+            .expect("recovery actor");
+        assert!(!actor.contains("current_leader("));
+        assert!(production.contains("final bounded rescue pass"));
+    }
+
+    #[test]
+    fn expedition_diagnostics_include_each_public_health_and_supply_boundary() {
+        let source = include_str!("live_core.rs");
+        let diagnostics = source
+            .split("fn emit_expedition_diagnostics")
+            .nth(1)
+            .and_then(|tail| tail.split("fn expedition_recovery_actor").next())
+            .expect("expedition diagnostics");
+        for field in [
+            "condition_before",
+            "condition_after",
+            "hunger_before",
+            "hunger_after",
+            "thirst_before",
+            "thirst_after",
+            "symptomatic_before",
+            "symptomatic_after",
+            "critical_before",
+            "critical_after",
+            "exposure=not_publicly_projected",
+            "elapsed_delta",
+            "stored_food_kcal_consumed",
+            "portable_water_ml_consumed",
+        ] {
+            assert!(diagnostics.contains(field), "missing {field}");
+        }
     }
 
     #[test]
@@ -6499,6 +7308,8 @@ mod tests {
             condition_status: "ready".into(),
             hunger: 0.125,
             thirst: 0.25,
+            food_days: 1.0,
+            water_days: 2.0,
             visible_food_kcal: 2_000.0,
             visible_water_ml: 4_000.0,
             elapsed_minutes: 1_440,
@@ -6508,6 +7319,8 @@ mod tests {
             condition_status: "recovering".into(),
             hunger: 0.5,
             thirst: 0.125,
+            food_days: 0.0,
+            water_days: 0.25,
             visible_food_kcal: 0.0,
             visible_water_ml: 500.0,
             elapsed_minutes: 2_880,
@@ -6572,6 +7385,8 @@ mod tests {
                 condition_status: "ready".into(),
                 hunger: 0.0,
                 thirst: 0.0,
+                food_days: 0.0,
+                water_days: 0.0,
                 visible_food_kcal: 0.0,
                 visible_water_ml: 0.0,
                 elapsed_minutes: 0,
@@ -6996,6 +7811,10 @@ mod tests {
             generated_discovery_actions_attempted: 8,
             generated_discovery_actions_fruitful: 3,
             generated_discovery_decisions_unproductive: 2,
+            expedition_recovery_plans: 2,
+            expedition_recovery_rests: 3,
+            expedition_evacuations: 1,
+            expedition_resumes: 1,
             generated_unique_party_cases_discovered: 3,
             generated_exact_site_ready: 2,
             generated_finance_blocked_cycles: 5,
@@ -7029,6 +7848,10 @@ mod tests {
             "generated_discovery_actions_attempted",
             "generated_discovery_actions_fruitful",
             "generated_discovery_decisions_unproductive",
+            "expedition_recovery_plans",
+            "expedition_recovery_rests",
+            "expedition_evacuations",
+            "expedition_resumes",
             "generated_unique_party_cases_discovered",
             "generated_exact_site_ready",
             "generated_finance_blocked_cycles",

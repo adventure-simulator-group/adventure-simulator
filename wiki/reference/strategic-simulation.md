@@ -145,6 +145,32 @@ the active forecast camp through `rest_at_camp`, logs bounded pre/post public
 camp state, and re-reads the journey, itinerary, party, health, and leader
 before `continue_camp_travel`. A missing, overlapping, or non-advancing
 projection fails closed instead of guessing a fixed rest duration.
+
+Off-settlement health is an explicit expedition state, not a reason to repeat
+quest suppression indefinitely. Before selecting another quest action, the
+runner reads only public party membership/location, strategic condition,
+illness signal, needs, concrete supplies, journey itinerary, and owner-visible
+case-site pins. It immediately records a recovery plan, takes at most two
+one-day field rests when pooled concrete stored food and portable water cover
+every living member's daily requirement and nobody is critical, and resumes
+only when there is a living actionable member and every living member is ready
+and asymptomatic. Otherwise a ready companion directs an ordinary journey back
+to the one public origin settlement. If the leader is unready, reducers
+narrowly permit that ready party member to direct off-settlement camp rest,
+return-route continuation, and protective (never attack/objective) encounter
+choices; this does not transfer leadership or grant contract, combat-objective,
+or ordinary quest authority. Evacuation counts as complete only when public
+state shows a living party at that settlement with no remaining camp
+destination; an incomplete leg is logged as stalled.
+
+Every recovery camp and evacuation leg records each member's public before and
+after condition, hunger, thirst, food/water days, symptom/critical flags, and
+elapsed time. It also records changes in concrete stored food and portable
+water. Private disease episodes and exposure are not subscribed; diagnostics
+state `exposure=not_publicly_projected` rather than inferring it. Stable reasons
+distinguish health suppression, bounded field recovery, safe resumption, and
+settlement evacuation, so an incapacitated member is never silently stranded.
+
 Successful final-agent rows carry the same public needs, visible food and water,
 settlement services, herbalist quote, and inn full-board cost used by failure
 diagnostics. Failure artifacts use schema version 4. In addition to the strict

@@ -1844,8 +1844,11 @@ pub fn rest_at_camp(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if party.leader_id != character_id {
-        return Err("Only the party leader can rest the party at camp".into());
+    if !crate::strategic::party_member_can_direct_field_rest(ctx, &party, character_id) {
+        return Err(
+            "Only the party leader, or a ready companion aiding an unready leader, can rest the party at camp"
+                .into(),
+        );
     }
     if party.current_settlement_id.is_none()
         && party.camp_destination.is_none()
