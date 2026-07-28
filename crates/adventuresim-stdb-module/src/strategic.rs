@@ -43,6 +43,7 @@ use crate::{
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{local_problem_receipt, local_problem_rumor_delivery},
+    npc_adventurer::npc_adventuring_party_authority,
     repair::{item_condition, settlement_smith},
     settlement_population::{
         settlement_npc, settlement_npc_presence, settlement_npc_seed_explanation,
@@ -16976,6 +16977,146 @@ fn custody_holder(
 
 /// Sole typed custody transition. Domain adapters provide the corresponding
 /// outcome fact only after the core custody state machine accepts the move.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CustodyPartyDispatch {
+    Unattributed,
+    OrdinaryPartyContinuity,
+    ResidentNpcAuthority,
+}
+
+fn custody_party_dispatch(
+    party_id: &str,
+    ordinary_party_exists: bool,
+    resident_npc_party_exists: bool,
+) -> Result<CustodyPartyDispatch, String> {
+    match (
+        party_id.is_empty(),
+        ordinary_party_exists,
+        resident_npc_party_exists,
+    ) {
+        (true, false, false) => Ok(CustodyPartyDispatch::Unattributed),
+        (true, _, _) => {
+            Err("Empty custody outcome party ID unexpectedly has party authority".into())
+        }
+        (false, true, false) => Ok(CustodyPartyDispatch::OrdinaryPartyContinuity),
+        (false, false, true) => Ok(CustodyPartyDispatch::ResidentNpcAuthority),
+        (false, false, false) => Err(format!(
+            "Custody outcome party ID is not an ordinary or resident NPC party: {party_id}"
+        )),
+        (false, true, true) => Err(format!(
+            "Custody outcome party ID is ambiguous across ordinary and resident NPC authority: {party_id}"
+        )),
+    }
+}
+
+fn apply_custody_party_continuity(
+    dispatch: CustodyPartyDispatch,
+    ordinary_party_continuity: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if dispatch == CustodyPartyDispatch::OrdinaryPartyContinuity {
+        ordinary_party_continuity()
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_custody_fact_retry_attribution(
+    expected_case_id: &str,
+    expected_party_id: &str,
+    receipt_attribution: Option<(&str, &str)>,
+) -> Result<(), String> {
+    let Some((receipt_case_id, receipt_party_id)) = receipt_attribution else {
+        return Err("Exact custody retry is missing paired outcome fact attribution".into());
+    };
+    if receipt_case_id != expected_case_id || receipt_party_id != expected_party_id {
+        return Err("Conflicting custody retry outcome fact attribution".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod custody_party_dispatch_tests {
+    use super::{
+        CustodyPartyDispatch, apply_custody_party_continuity, custody_party_dispatch,
+        validate_custody_fact_retry_attribution,
+    };
+    use std::cell::Cell;
+
+    #[test]
+    fn ordinary_party_dispatch_preserves_player_continuity() {
+        let dispatch = custody_party_dispatch("party:player", true, false).unwrap();
+        assert_eq!(dispatch, CustodyPartyDispatch::OrdinaryPartyContinuity);
+
+        let continuity_ran = Cell::new(false);
+        apply_custody_party_continuity(dispatch, || {
+            continuity_ran.set(true);
+            Ok(())
+        })
+        .unwrap();
+        assert!(continuity_ran.get());
+    }
+
+    #[test]
+    fn resident_npc_custody_dispatch_cannot_run_player_continuity() {
+        let dispatch = custody_party_dispatch("npc-party:resident-company", false, true).unwrap();
+        assert_eq!(dispatch, CustodyPartyDispatch::ResidentNpcAuthority);
+
+        apply_custody_party_continuity(dispatch, || -> Result<(), String> {
+            panic!("resident NPC Retrieve/Return path reached player continuity")
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn unknown_and_ambiguous_nonempty_party_ids_fail_closed() {
+        let unknown = custody_party_dispatch("party:unknown", false, false).unwrap_err();
+        assert!(unknown.contains("not an ordinary or resident NPC party"));
+        assert!(unknown.contains("party:unknown"));
+
+        let ambiguous = custody_party_dispatch("party:ambiguous", true, true).unwrap_err();
+        assert!(ambiguous.contains("ambiguous"));
+        assert!(ambiguous.contains("party:ambiguous"));
+    }
+
+    #[test]
+    fn empty_party_id_retains_unattributed_custody_seeding() {
+        assert_eq!(
+            custody_party_dispatch("", false, false).unwrap(),
+            CustodyPartyDispatch::Unattributed
+        );
+    }
+
+    #[test]
+    fn exact_fact_retry_requires_matching_durable_case_and_party_attribution() {
+        validate_custody_fact_retry_attribution(
+            "case:test",
+            "npc-party:retired",
+            Some(("case:test", "npc-party:retired")),
+        )
+        .unwrap();
+
+        let missing =
+            validate_custody_fact_retry_attribution("case:test", "npc-party:retired", None)
+                .unwrap_err();
+        assert!(missing.contains("missing paired outcome fact attribution"));
+
+        for attribution in [
+            ("case:other", "npc-party:retired"),
+            ("case:test", "npc-party:other"),
+        ] {
+            assert!(
+                validate_custody_fact_retry_attribution(
+                    "case:test",
+                    "npc-party:retired",
+                    Some(attribution),
+                )
+                .unwrap_err()
+                .contains("Conflicting custody retry outcome fact attribution")
+            );
+        }
+    }
+}
+
 fn transition_case_custody(
     ctx: &ReducerContext,
     source_id: &str,
@@ -17010,11 +17151,34 @@ fn transition_case_custody(
             && existing.holder_id == holder_id
             && existing.version == version
         {
+            if fact.is_some() {
+                let fact_source_id = format!("custody:{source_id}");
+                let paired_fact = ctx.db.case_outcome_fact().source_id().find(&fact_source_id);
+                validate_custody_fact_retry_attribution(
+                    case_id,
+                    party_id,
+                    paired_fact
+                        .as_ref()
+                        .map(|receipt| (receipt.case_id.as_str(), receipt.party_id.as_str())),
+                )?;
+            }
             Ok(false)
         } else {
             Err("Conflicting retry for custody source".into())
         };
     }
+    let party_key = party_id.to_string();
+    let party_dispatch = custody_party_dispatch(
+        party_id,
+        !party_id.is_empty() && ctx.db.party_authority().id().find(&party_key).is_some(),
+        !party_id.is_empty()
+            && ctx
+                .db
+                .npc_adventuring_party_authority()
+                .id()
+                .find(&party_key)
+                .is_some(),
+    )?;
     let mut records = BTreeMap::new();
     if let Some(current) = ctx
         .db
@@ -17066,10 +17230,10 @@ fn transition_case_custody(
             fact,
         )?;
     }
-    if !party_id.is_empty() {
+    apply_custody_party_continuity(party_dispatch, || {
         ensure_objective_continuity_guards(ctx, party_id, case_id)?;
-        reconcile_party_objective_continuity(ctx, party_id)?;
-    }
+        reconcile_party_objective_continuity(ctx, party_id)
+    })?;
     if matches!(
         holder_kind,
         CustodyHolderKind::Destroyed | CustodyHolderKind::Released
