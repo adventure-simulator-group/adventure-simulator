@@ -7,18 +7,19 @@ use adventuresim_core::social::{
     Inclination as CoreInclination, Mirth as CoreMirth, PersonalityAxis,
     Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES, SOCIAL_RESPONSE_MINUTES,
     SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt, SocialTopic,
-    Transparency as CoreTransparency, actor_allows_social_action, affinity_gain,
-    assess_testimony_claim, axis_for_topic, canonical_cooldown_id, canonical_pair,
+    Transparency as CoreTransparency, actor_allows_social_action, actor_allows_social_prayer,
+    affinity_gain, assess_testimony_claim, axis_for_topic, canonical_cooldown_id, canonical_pair,
     choose_automatic_social_action, command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis,
     discovery_training_split, flirt_charm_modifier, humor_charm_modifier,
-    incompatible_flirt_outcome, realized_affinity_delta, resolve_casual_chat,
-    resolve_claim_challenge, resolve_social_attempt, self_knowledge_insight_modifier,
-    settle_affinity, should_replace_belief, social_source_eligible, topic_for_source_kind,
+    incompatible_flirt_outcome, prayer_approach, prayer_resolution_profile,
+    realized_affinity_delta, resolve_casual_chat, resolve_claim_challenge, resolve_social_attempt,
+    resolve_social_attempt_with_profile, self_knowledge_insight_modifier, settle_affinity,
+    should_replace_belief, social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
-use crate::character::{character, character__view};
-use crate::condition::{character_morale_source__view, morale_event};
+use crate::character::{character, character__view, character_limbs, character_stats};
+use crate::condition::{character_condition, character_morale_source__view, morale_event};
 use crate::strategic::{
     dialogue_event__view, dialogue_session__view, strategic_gateway_authority__view,
 };
@@ -1978,6 +1979,7 @@ fn parse_action(value: &str) -> Result<SocialActionKind, String> {
         "reflect" => Ok(SocialActionKind::Reflect),
         "listen" => Ok(SocialActionKind::Listen),
         "commiserate" => Ok(SocialActionKind::Commiserate),
+        "pray" => Ok(SocialActionKind::Pray),
         "lighten_mood" => Ok(SocialActionKind::LightenMood),
         "command" => Ok(SocialActionKind::Rally),
         "deception" => Ok(SocialActionKind::Reframe),
@@ -1992,6 +1994,7 @@ fn social_action_skill(action: SocialActionKind, shares_concern: bool) -> Skill 
         SocialActionKind::Listen => Skill::Insight,
         SocialActionKind::Commiserate if shares_concern => Skill::Insight,
         SocialActionKind::Commiserate => Skill::Deception,
+        SocialActionKind::Pray => Skill::Religion,
         SocialActionKind::LightenMood => Skill::Charm,
         SocialActionKind::Rally => Skill::Command,
         SocialActionKind::Reframe => Skill::Deception,
@@ -2116,7 +2119,80 @@ fn automatic_personality_fit(
             _ => {}
         }
     }
+    if action == SocialActionKind::Pray {
+        match personality.conviction {
+            Conviction::Neutral => fit += 0.25,
+            Conviction::Irreverent => fit -= 1.0,
+            Conviction::Zealous => fit -= 2.0,
+        }
+    }
     fit
+}
+
+fn conviction_code(value: crate::personality::Conviction) -> i8 {
+    match value {
+        crate::personality::Conviction::Neutral => 0,
+        crate::personality::Conviction::Zealous => 1,
+        crate::personality::Conviction::Irreverent => 2,
+    }
+}
+
+fn target_religion(
+    ctx: &ReducerContext,
+    target_id: u64,
+) -> Result<adventuresim_world_schema::OfficialReligion, String> {
+    let religion_id = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(target_id)
+        .ok_or("Target religion is unavailable")?
+        .religion_id
+        .ok_or("Target professes no religion")?;
+    adventuresim_world_schema::OfficialReligion::from_id(&religion_id)
+        .ok_or_else(|| "Target religion is unknown".into())
+}
+
+fn target_religion_check(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    religion: adventuresim_world_schema::OfficialReligion,
+) -> Result<f32, String> {
+    let skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Actor skills not found")?;
+    let direct_hours = skills.religion_hours.direct(religion);
+    if !direct_hours.is_finite() || direct_hours <= 0.0 {
+        return Err("You have not directly studied the target's religion".into());
+    }
+    let attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character attributes not found")?;
+    let limbs = ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character limbs not found")?;
+    let stats = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character stats not found")?;
+    Ok(adventuresim_core::capability::religion_knowledge_check(
+        skills.religion_hours.effective(religion),
+        attributes.instinct,
+        attributes.intelligence,
+        stats.focus,
+        limbs.head_health,
+    ))
 }
 
 fn automatic_social_action(
@@ -2125,9 +2201,10 @@ fn automatic_social_action(
     target_id: u64,
     topic: SocialTopic,
 ) -> Result<Option<SocialActionKind>, String> {
-    const ACTIONS: [SocialActionKind; 6] = [
+    const ACTIONS: [SocialActionKind; 7] = [
         SocialActionKind::Listen,
         SocialActionKind::Commiserate,
+        SocialActionKind::Pray,
         SocialActionKind::LightenMood,
         SocialActionKind::Rally,
         SocialActionKind::Reframe,
@@ -2136,6 +2213,7 @@ fn automatic_social_action(
 
     let shares_concern = shares_concern(ctx, actor_id, topic);
     let personality = crate::personality::personality_or_neutral(ctx, actor_id);
+    let prayer_religion = target_religion(ctx, target_id).ok();
     let now = ctx
         .db
         .character_time()
@@ -2146,6 +2224,9 @@ fn automatic_social_action(
     let mut candidates = Vec::with_capacity(ACTIONS.len());
     for action in ACTIONS.into_iter().filter(|action| {
         action.available_for(topic)
+            && (*action != SocialActionKind::Pray
+                || (actor_allows_social_prayer(conviction_code(personality.conviction))
+                    && prayer_religion.is_some()))
             && actor_allows_social_action(
                 *action,
                 core_mirth(personality.mirth),
@@ -2163,11 +2244,21 @@ fn automatic_social_action(
         {
             continue;
         }
-        let mut unscaled_skill_check = crate::condition::mental_check(
-            ctx,
-            actor_id,
-            social_action_skill(action, shares_concern),
-        )?;
+        let mut unscaled_skill_check = if action == SocialActionKind::Pray {
+            let Some(religion) = prayer_religion else {
+                continue;
+            };
+            match target_religion_check(ctx, actor_id, religion) {
+                Ok(check) => check,
+                Err(_) => continue,
+            }
+        } else {
+            crate::condition::mental_check(
+                ctx,
+                actor_id,
+                social_action_skill(action, shares_concern),
+            )?
+        };
         if action == SocialActionKind::Rally {
             unscaled_skill_check += command_gravitas_modifier(
                 core_mirth(personality.mirth),
@@ -2381,6 +2472,7 @@ fn discovery_axes(
         SocialActionKind::Commiserate => {
             vec![PersonalityAxis::Conscience, PersonalityAxis::Sociability]
         }
+        SocialActionKind::Pray => vec![PersonalityAxis::Conviction],
         SocialActionKind::LightenMood => vec![PersonalityAxis::Mirth],
         SocialActionKind::Rally => vec![
             PersonalityAxis::Nerve,
@@ -2577,6 +2669,11 @@ fn perform_social_action_authoritative(
     ) {
         return Err("Your disposition does not permit that social approach".into());
     }
+    if action == SocialActionKind::Pray
+        && !actor_allows_social_prayer(conviction_code(actor_personality.conviction))
+    {
+        return Err("A Zealous character will not lead a companion's prayer".into());
+    }
     let source = ctx
         .db
         .character_morale_source()
@@ -2593,6 +2690,16 @@ fn perform_social_action_authoritative(
     if !action.available_for(topic) {
         return Err("That social approach does not fit this concern".into());
     }
+    let prayer = if action == SocialActionKind::Pray {
+        let religion = target_religion(ctx, target_id)?;
+        Some((
+            religion,
+            prayer_approach(religion, topic)
+                .ok_or("That social approach does not fit this concern")?,
+        ))
+    } else {
+        None
+    };
     let now = ctx
         .db
         .character_time()
@@ -2619,8 +2726,12 @@ fn perform_social_action_authoritative(
         current_affinity(ctx, target_id, actor_id)
     };
     let actor_shares_concern = shares_concern(ctx, actor_id, topic);
-    let skill = social_action_skill(action, actor_shares_concern);
-    let mut skill_check = crate::condition::mental_check(ctx, actor_id, skill)?;
+    let mut skill_check = if let Some((religion, _)) = prayer {
+        target_religion_check(ctx, actor_id, religion)?
+    } else {
+        let skill = social_action_skill(action, actor_shares_concern);
+        crate::condition::mental_check(ctx, actor_id, skill)?
+    };
     if action == SocialActionKind::Rally {
         skill_check += command_gravitas_modifier(
             core_mirth(actor_personality.mirth),
@@ -2691,21 +2802,27 @@ fn perform_social_action_authoritative(
     if let Some(modifier) = flirt_modifier {
         skill_check += modifier;
     }
+    let attempt = SocialAttempt {
+        action,
+        topic,
+        skill_check,
+        affinity,
+        familiarity_hours: familiarity,
+        diagnosis_correct,
+        sensitivity: sensitivity(ctx, target_id, topic),
+        roll: social_roll,
+    };
     let outcome = if flirt_modifier.is_none() {
         // Incompatibility is a hard gate: it cannot leak the resolver's
         // minimum success chance or any positive outcome.
         incompatible_flirt_outcome()
+    } else if let Some((_, approach)) = prayer {
+        resolve_social_attempt_with_profile(
+            attempt,
+            prayer_resolution_profile(approach, conviction_code(target_personality.conviction)),
+        )
     } else {
-        resolve_social_attempt(SocialAttempt {
-            action,
-            topic,
-            skill_check,
-            affinity,
-            familiarity_hours: familiarity,
-            diagnosis_correct,
-            sensitivity: sensitivity(ctx, target_id, topic),
-            roll: social_roll,
-        })
+        resolve_social_attempt(attempt)
     };
     if consume_time {
         let participants = if is_self {
@@ -3027,6 +3144,8 @@ pub fn cleanup_character_social(ctx: &ReducerContext, character_id: u64) {
 pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     const VIEWER: u64 = 9_999_999_999_999_977;
     const TARGET: u64 = 9_999_999_999_999_976;
+    const ZEALOUS_VIEWER: u64 = 9_999_999_999_999_975;
+    const ZEALOUS_TARGET: u64 = 9_999_999_999_999_974;
     if ctx.db.character().id().find(VIEWER).is_none() {
         crate::character::insert_new_character(ctx, "Social Demo".into(), VIEWER, false)?;
     }
@@ -3034,6 +3153,23 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         crate::character::insert_new_npc_character(ctx, "Greta the Guard".into(), TARGET, false)?;
     }
     crate::strategic::attach_seeded_party_member(ctx, VIEWER, TARGET, "Guard")?;
+    if ctx.db.character().id().find(ZEALOUS_VIEWER).is_none() {
+        crate::character::insert_new_character(
+            ctx,
+            "Zealous Prayer Demo".into(),
+            ZEALOUS_VIEWER,
+            false,
+        )?;
+    }
+    if ctx.db.character().id().find(ZEALOUS_TARGET).is_none() {
+        crate::character::insert_new_npc_character(
+            ctx,
+            "Margareta the Pilgrim".into(),
+            ZEALOUS_TARGET,
+            false,
+        )?;
+    }
+    crate::strategic::attach_seeded_party_member(ctx, ZEALOUS_VIEWER, ZEALOUS_TARGET, "Pilgrim")?;
     let now = ctx
         .db
         .character_time()
@@ -3044,6 +3180,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     viewer_personality.sex = crate::personality::Sex::Male;
     viewer_personality.presentation = crate::personality::Presentation::Man;
     viewer_personality.inclination = crate::personality::Inclination::Women;
+    viewer_personality.conviction = crate::personality::Conviction::Neutral;
     ctx.db
         .character_personality()
         .character_id()
@@ -3061,6 +3198,70 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         .character_personality()
         .character_id()
         .update(personality);
+    crate::condition::initialize_character_condition(ctx, TARGET)?;
+    if let Some(mut condition) = ctx.db.character_condition().character_id().find(TARGET) {
+        condition.religion_id = Some("lutheran".into());
+        ctx.db
+            .character_condition()
+            .character_id()
+            .update(condition);
+    }
+    if let Some(mut skills) = ctx.db.character_skills().character_id().find(VIEWER) {
+        // Direct Lutheran study opens the action; related Catholic study
+        // demonstrates that correlated knowledge then contributes.
+        skills.religion_hours.lutheran = 900.0;
+        skills.religion_hours.roman_catholic = 600.0;
+        ctx.db.character_skills().character_id().update(skills);
+    }
+    let mut zealous_personality = crate::personality::personality_or_neutral(ctx, ZEALOUS_VIEWER);
+    zealous_personality.conviction = crate::personality::Conviction::Zealous;
+    ctx.db
+        .character_personality()
+        .character_id()
+        .update(zealous_personality);
+    crate::condition::initialize_character_condition(ctx, ZEALOUS_TARGET)?;
+    if let Some(mut condition) = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(ZEALOUS_TARGET)
+    {
+        condition.religion_id = Some("lutheran".into());
+        ctx.db
+            .character_condition()
+            .character_id()
+            .update(condition);
+    }
+    if let Some(mut skills) = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(ZEALOUS_VIEWER)
+    {
+        skills.religion_hours.lutheran = 900.0;
+        ctx.db.character_skills().character_id().update(skills);
+    }
+    for row in ctx
+        .db
+        .morale_event()
+        .character_id()
+        .filter(ZEALOUS_TARGET)
+        .filter(|row| {
+            row.source_id
+                .as_deref()
+                .is_some_and(|id| id.starts_with("social-demo:"))
+        })
+        .collect::<Vec<_>>()
+    {
+        ctx.db.morale_event().id().delete(row.id);
+    }
+    crate::condition::record_morale_event(
+        ctx,
+        ZEALOUS_TARGET,
+        "defeat",
+        -8.0,
+        Some("social-demo:zealous-defeat".into()),
+    )?;
     for row in ctx
         .db
         .morale_event()
@@ -3163,6 +3364,7 @@ mod contract_tests {
             (SocialActionKind::Listen, SocialTopic::Faith, false),
             (SocialActionKind::Listen, SocialTopic::Filth, false),
             (SocialActionKind::Commiserate, SocialTopic::Defeat, false),
+            (SocialActionKind::Pray, SocialTopic::Faith, false),
             (SocialActionKind::LightenMood, SocialTopic::Defeat, false),
             (SocialActionKind::Rally, SocialTopic::Defeat, false),
             (SocialActionKind::Rally, SocialTopic::Faith, false),
@@ -3190,6 +3392,31 @@ mod contract_tests {
         ] {
             assert!(axes.contains(&axis), "{axis:?} is unreachable");
         }
+    }
+
+    #[test]
+    fn prayer_contract_is_typed_and_zealotry_is_an_actor_gate() {
+        assert_eq!(parse_action("pray"), Ok(SocialActionKind::Pray));
+        assert_eq!(
+            social_action_skill(SocialActionKind::Pray, false),
+            Skill::Religion
+        );
+        assert!(!actor_allows_social_prayer(conviction_code(
+            crate::personality::Conviction::Zealous
+        )));
+        assert!(actor_allows_social_prayer(conviction_code(
+            crate::personality::Conviction::Irreverent
+        )));
+        let source = include_str!("social.rs");
+        let check = source
+            .split("fn target_religion_check")
+            .nth(1)
+            .and_then(|tail| tail.split("fn automatic_social_action").next())
+            .expect("target-specific Religion check");
+        assert!(check.contains("religion_hours.direct(religion)"));
+        assert!(check.contains("religion_hours.effective(religion)"));
+        assert!(!check.contains("maximum_effective"));
+        assert!(!check.contains("aggregate_party_check"));
     }
 
     #[test]

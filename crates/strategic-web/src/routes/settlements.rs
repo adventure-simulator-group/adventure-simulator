@@ -4324,9 +4324,17 @@ async fn party_social(
         .collect::<Vec<_>>();
     shared_concerns.sort_by_key(|topic| format!("{topic:?}"));
     shared_concerns.dedup();
-    let religion_id = query_single::<CharacterCondition>(&state, "character_condition", target_id)
-        .await
-        .and_then(|value| value.religion_id);
+    let target_condition_result = state
+        .db
+        .query_one::<CharacterCondition>(&format!(
+            "SELECT * FROM character_condition WHERE character_id = {target_id}"
+        ))
+        .await;
+    let religion_id = target_condition_result
+        .as_ref()
+        .ok()
+        .and_then(|value| value.as_ref())
+        .and_then(|value| value.religion_id.clone());
     let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", target_id)
         .await
         .map_or(0.0, |value| value.value);
@@ -4425,6 +4433,57 @@ async fn party_social(
             None
         }
     };
+    let actor_skills_result = state
+        .db
+        .query_one::<CharacterSkills>(&format!(
+            "SELECT * FROM character_skills WHERE character_id = {}",
+            active.id
+        ))
+        .await;
+    let prayer_disabled_reason = if target_id == active.id {
+        None
+    } else if !actor_personality_available || actor_personality.is_none() {
+        Some("Prayer eligibility is unavailable right now.".to_owned())
+    } else if actor_personality.as_ref().is_some_and(|personality| {
+        personality.conviction == crate::spacetimedb::Conviction::Zealous
+    }) {
+        Some("Your Zealous conviction prevents you from leading a companion's prayer.".to_owned())
+    } else {
+        match &target_condition_result {
+            Err(error) => {
+                tracing::error!(%error, target_id, "target religion query failed closed");
+                Some("Their religion is unavailable right now.".to_owned())
+            }
+            Ok(None) => Some("Their religion is unavailable right now.".to_owned()),
+            Ok(Some(condition)) => match condition.religion_id.as_deref() {
+                None => Some("They profess no religion.".to_owned()),
+                Some(religion_id) => {
+                    match adventuresim_world_schema::OfficialReligion::from_id(religion_id) {
+                        None => Some("Their religion is unknown.".to_owned()),
+                        Some(religion) => match &actor_skills_result {
+                            Err(error) => {
+                                tracing::error!(%error, actor_id=active.id, "private Religion knowledge query failed closed");
+                                Some("Your Religion knowledge is unavailable right now.".to_owned())
+                            }
+                            Ok(None) => {
+                                Some("Your Religion knowledge is unavailable right now.".to_owned())
+                            }
+                            Ok(Some(skills))
+                                if !skills.religion_hours.direct(religion).is_finite()
+                                    || skills.religion_hours.direct(religion) <= 0.0 =>
+                            {
+                                Some(format!(
+                                    "You have not directly studied {}.",
+                                    religion.label()
+                                ))
+                            }
+                            Ok(Some(_)) => None,
+                        },
+                    }
+                }
+            },
+        }
+    };
     let social = SocialPresentation {
         affinity,
         familiarity_hours: adventuresim_core::social::effective_familiarity_hours(
@@ -4448,6 +4507,7 @@ async fn party_social(
             actor_personality.as_ref(),
             adventuresim_core::social::SocialActionKind::Flirt,
         ),
+        prayer_disabled_reason,
         feedback: social_feedback(building.social_feedback.as_deref()),
         unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
@@ -6817,6 +6877,22 @@ mod social_notification_query_tests {
             None,
             SocialActionKind::Flirt
         ));
+    }
+
+    #[test]
+    fn prayer_preview_uses_private_actor_study_and_fails_closed() {
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn party_social")
+            .nth(1)
+            .and_then(|tail| tail.split("struct SocialActionForm").next())
+            .expect("social dialog handler");
+        assert!(handler.contains("private actor personality query failed closed"));
+        assert!(handler.contains("private Religion knowledge query failed closed"));
+        assert!(handler.contains("skills.religion_hours.direct(religion) <= 0.0"));
+        assert!(!handler.contains("maximum_effective"));
+        assert!(handler.contains("Their religion is unknown."));
+        assert!(handler.contains("They profess no religion."));
     }
 }
 

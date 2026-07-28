@@ -6,6 +6,8 @@
 
 use std::collections::HashSet;
 
+use adventuresim_world_schema::OfficialReligion;
+
 pub const AFFINITY_MIN: f32 = -100.0;
 pub const AFFINITY_MAX: f32 = 100.0;
 pub const AFFINITY_HALF_LIFE_MINUTES: u64 = 30 * 24 * 60;
@@ -469,6 +471,7 @@ pub enum SocialActionKind {
     Reflect,
     Listen,
     Commiserate,
+    Pray,
     LightenMood,
     Rally,
     Reframe,
@@ -481,6 +484,7 @@ impl SocialActionKind {
             Self::Reflect => "reflect",
             Self::Listen => "listen",
             Self::Commiserate => "commiserate",
+            Self::Pray => "pray",
             Self::LightenMood => "lighten_mood",
             Self::Rally => "command",
             Self::Reframe => "deception",
@@ -494,6 +498,7 @@ impl SocialActionKind {
             Self::Listen => "Insight",
             Self::Commiserate if shares_concern => "Insight",
             Self::Commiserate => "Deception",
+            Self::Pray => "Religion",
             Self::LightenMood => "Charm",
             Self::Rally => "Command",
             Self::Reframe => "Deception",
@@ -504,6 +509,7 @@ impl SocialActionKind {
     pub const fn available_for(self, topic: SocialTopic) -> bool {
         match self {
             Self::Reflect | Self::Listen | Self::Commiserate => true,
+            Self::Pray => !matches!(topic, SocialTopic::Filth),
             Self::LightenMood => !matches!(topic, SocialTopic::Faith),
             Self::Rally => matches!(
                 topic,
@@ -542,6 +548,7 @@ impl SocialActionKind {
                 "Feign sympathy about the moral setback"
             }
             (Self::Commiserate, SocialTopic::Filth, false) => "Feign sympathy about being filthy",
+            (Self::Pray, _, _) => "Offer a prayer in their tradition",
             (Self::LightenMood, SocialTopic::Defeat, _) => "Joke about bouncing back from defeat",
             (Self::LightenMood, SocialTopic::Injury, _) => "Joke to distract them from the pain",
             (Self::LightenMood, SocialTopic::Fatigue, _) => "Joke to help keep them awake",
@@ -572,11 +579,109 @@ impl SocialActionKind {
             Self::Reflect => 0.05,
             Self::Listen => 0.05,
             Self::Commiserate => 0.2,
+            Self::Pray => 0.45,
             Self::LightenMood => 0.45,
             Self::Rally => 0.55,
             Self::Reframe => 0.65,
             Self::Flirt => 0.85,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PrayerApproach {
+    pub devotion: &'static str,
+    pub intention: &'static str,
+    pub effectiveness: f32,
+    pub risk: f32,
+}
+
+/// Closed, exhaustive social-prayer catalog. Topic stems carry the mechanical
+/// profile while each tradition supplies grounded, concise devotional copy.
+pub const fn prayer_approach(
+    religion: OfficialReligion,
+    topic: SocialTopic,
+) -> Option<PrayerApproach> {
+    let (base_effectiveness, risk) = match topic {
+        SocialTopic::Defeat => (1.0, 0.45),
+        SocialTopic::Injury => (1.0, 0.40),
+        SocialTopic::Fatigue => (0.80, 0.30),
+        SocialTopic::Hunger => (0.65, 0.30),
+        SocialTopic::Faith => (1.15, 0.55),
+        SocialTopic::Filth => return None,
+    };
+    let bonus = match (religion, topic) {
+        (OfficialReligion::Lutheran | OfficialReligion::Reformed, SocialTopic::Defeat)
+        | (
+            OfficialReligion::RomanCatholic
+            | OfficialReligion::EasternOrthodox
+            | OfficialReligion::Judaism,
+            SocialTopic::Injury,
+        )
+        | (OfficialReligion::Islamic, SocialTopic::Fatigue) => 0.10,
+        _ => 0.0,
+    };
+    let devotion = match religion {
+        OfficialReligion::RomanCatholic => "Pray a psalm and the Pater Noster",
+        OfficialReligion::Lutheran => "Pray a psalm and recall Christ's promise",
+        OfficialReligion::Reformed => "Pray from Scripture and trust in providence",
+        OfficialReligion::Anglican => "Offer a psalm, litany, and supplication",
+        OfficialReligion::EasternOrthodox => "Pray a psalm and the Jesus Prayer",
+        OfficialReligion::Islamic => "Make du'a",
+        OfficialReligion::Judaism => "Recite Tehillim and pray",
+    };
+    let intention = match topic {
+        SocialTopic::Defeat => "for courage after defeat",
+        SocialTopic::Injury => "for healing",
+        SocialTopic::Fatigue => "for patience and renewed strength",
+        SocialTopic::Hunger => "for daily provision",
+        SocialTopic::Faith => "for guidance and steadfast faith",
+        SocialTopic::Filth => return None,
+    };
+    Some(PrayerApproach {
+        devotion,
+        intention,
+        effectiveness: base_effectiveness + bonus,
+        risk,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SocialResolutionProfile {
+    pub risk: f32,
+    pub effectiveness: f32,
+    pub chance_modifier: f32,
+    pub failure_multiplier: f32,
+}
+
+impl SocialResolutionProfile {
+    pub const fn ordinary(action: SocialActionKind) -> Self {
+        Self {
+            risk: action.risk(),
+            effectiveness: 1.0,
+            chance_modifier: 0.0,
+            failure_multiplier: 1.0,
+        }
+    }
+}
+
+/// Conviction codes are canonical axis-local values: 1 Zealous, 2
+/// Irreverent, and 0 neutral. The bounded modifiers affect prayer without
+/// leaking the target's true personality into presentation.
+pub fn prayer_resolution_profile(
+    approach: PrayerApproach,
+    target_conviction: i8,
+) -> SocialResolutionProfile {
+    let (risk_delta, effectiveness, chance_modifier, failure_multiplier) = match target_conviction {
+        1 => (0.05, 1.10, 0.04, 1.15),
+        2 => (0.15, 0.85, -0.12, 1.10),
+        _ => (0.0, 1.0, 0.0, 1.0),
+    };
+    SocialResolutionProfile {
+        risk: (approach.risk + risk_delta).clamp(0.0, 0.95),
+        effectiveness: (approach.effectiveness * effectiveness).clamp(0.0, 1.5),
+        chance_modifier,
+        failure_multiplier,
     }
 }
 
@@ -593,6 +698,10 @@ pub const fn actor_allows_social_action(
         SocialActionKind::Flirt => !matches!(courtship, Courtship::Proper),
         _ => true,
     }
+}
+
+pub const fn actor_allows_social_prayer(conviction_code: i8) -> bool {
+    conviction_code != 1
 }
 
 /// Select the available automatic approach which best combines the actor's
@@ -778,7 +887,14 @@ pub fn effective_familiarity_hours(
 }
 
 pub fn resolve_social_attempt(attempt: SocialAttempt) -> SocialOutcome {
-    let risk = attempt.action.risk();
+    resolve_social_attempt_with_profile(attempt, SocialResolutionProfile::ordinary(attempt.action))
+}
+
+pub fn resolve_social_attempt_with_profile(
+    attempt: SocialAttempt,
+    profile: SocialResolutionProfile,
+) -> SocialOutcome {
+    let risk = profile.risk.clamp(0.0, 0.95);
     let relationship = (attempt.affinity / 100.0).clamp(-1.0, 1.0) * 0.18
         + (attempt.familiarity_hours / 100.0).min(1.0) * 0.12;
     let diagnosis = match attempt.diagnosis_correct {
@@ -789,15 +905,19 @@ pub fn resolve_social_attempt(attempt: SocialAttempt) -> SocialOutcome {
     let presumptuousness = risk
         * attempt.sensitivity.clamp(0.0, 1.0)
         * (1.0 - ((attempt.affinity + 100.0) / 200.0).clamp(0.0, 1.0));
-    let chance = (0.38 + attempt.skill_check.clamp(0.0, 5.0) * 0.08 + relationship + diagnosis
+    let chance = (0.38
+        + attempt.skill_check.clamp(0.0, 5.0) * 0.08
+        + relationship
+        + diagnosis
+        + profile.chance_modifier.clamp(-0.25, 0.25)
         - presumptuousness)
         .clamp(0.05, 0.95);
     let succeeded = attempt.roll.clamp(0.0, 1.0) < chance;
     let magnitude = 1.0 + 5.0 * risk;
     let morale_delta = if succeeded {
-        magnitude
+        magnitude * profile.effectiveness.clamp(0.0, 2.0)
     } else {
-        -(0.5 + 5.5 * risk)
+        -(0.5 + 5.5 * risk) * profile.failure_multiplier.clamp(0.5, 1.5)
     };
     let affinity_delta = if morale_delta > 0.0 {
         affinity_gain(attempt.affinity, morale_delta)
@@ -1627,9 +1747,116 @@ mod tests {
         assert!(!SocialActionKind::Flirt.available_for(SocialTopic::Hunger));
         assert!(!SocialActionKind::Rally.available_for(SocialTopic::Filth));
         assert!(!SocialActionKind::LightenMood.available_for(SocialTopic::Faith));
+        assert!(SocialActionKind::Pray.available_for(SocialTopic::Faith));
+        assert!(!SocialActionKind::Pray.available_for(SocialTopic::Filth));
         assert_eq!(
             SocialActionKind::Flirt.description(SocialTopic::Injury, false),
             "Tell them the scar makes them look striking"
+        );
+    }
+
+    #[test]
+    fn prayer_catalog_is_exhaustive_and_keeps_authored_relative_profiles() {
+        for religion in OfficialReligion::ALL {
+            for topic in [
+                SocialTopic::Defeat,
+                SocialTopic::Injury,
+                SocialTopic::Fatigue,
+                SocialTopic::Hunger,
+                SocialTopic::Faith,
+            ] {
+                let approach = prayer_approach(religion, topic).expect("catalog entry");
+                assert!(!approach.devotion.is_empty());
+                assert!(!approach.intention.is_empty());
+                assert!(approach.effectiveness > 0.0);
+                assert!((0.0..1.0).contains(&approach.risk));
+            }
+            assert_eq!(prayer_approach(religion, SocialTopic::Filth), None);
+        }
+        assert!(
+            prayer_approach(OfficialReligion::Lutheran, SocialTopic::Defeat)
+                .unwrap()
+                .effectiveness
+                > prayer_approach(OfficialReligion::Anglican, SocialTopic::Defeat)
+                    .unwrap()
+                    .effectiveness
+        );
+        assert!(
+            prayer_approach(OfficialReligion::Islamic, SocialTopic::Fatigue)
+                .unwrap()
+                .effectiveness
+                > prayer_approach(OfficialReligion::Anglican, SocialTopic::Fatigue)
+                    .unwrap()
+                    .effectiveness
+        );
+    }
+
+    #[test]
+    fn target_tradition_study_gates_correlated_religion_knowledge() {
+        let mut hours = adventuresim_world_schema::ReligionHours {
+            roman_catholic: 1_000.0,
+            ..Default::default()
+        };
+        assert_eq!(hours.effective(OfficialReligion::Lutheran), 0.0);
+        hours.lutheran = 1.0;
+        assert!(hours.effective(OfficialReligion::Lutheran) > 800.0);
+    }
+
+    #[test]
+    fn conviction_orders_prayer_success_and_backfire() {
+        let approach = prayer_approach(OfficialReligion::Anglican, SocialTopic::Injury).unwrap();
+        let neutral = prayer_resolution_profile(approach, 0);
+        let zealous = prayer_resolution_profile(approach, 1);
+        let irreverent = prayer_resolution_profile(approach, 2);
+        assert!(zealous.effectiveness > neutral.effectiveness);
+        assert!(irreverent.chance_modifier < neutral.chance_modifier);
+        assert!(zealous.failure_multiplier > neutral.failure_multiplier);
+        assert!(irreverent.risk > neutral.risk);
+
+        let attempt = SocialAttempt {
+            action: SocialActionKind::Pray,
+            topic: SocialTopic::Injury,
+            skill_check: 5.0,
+            affinity: 0.0,
+            familiarity_hours: 0.0,
+            diagnosis_correct: None,
+            sensitivity: 0.5,
+            roll: 0.0,
+        };
+        let zealous_success = resolve_social_attempt_with_profile(attempt, zealous);
+        let neutral_success = resolve_social_attempt_with_profile(attempt, neutral);
+        assert!(zealous_success.morale_delta > neutral_success.morale_delta);
+        let failed = SocialAttempt {
+            roll: 1.0,
+            ..attempt
+        };
+        assert!(
+            resolve_social_attempt_with_profile(failed, zealous).morale_delta
+                < resolve_social_attempt_with_profile(failed, neutral).morale_delta
+        );
+        assert!(!actor_allows_social_prayer(1));
+        assert!(actor_allows_social_prayer(0));
+        assert!(actor_allows_social_prayer(2));
+    }
+
+    #[test]
+    fn automatic_care_can_select_prayer_but_never_for_filth() {
+        assert_eq!(
+            choose_automatic_social_action(
+                SocialTopic::Injury,
+                [
+                    (SocialActionKind::Listen, 2.0, 0.0),
+                    (SocialActionKind::Pray, 4.0, 0.25),
+                ],
+            ),
+            Some(SocialActionKind::Pray)
+        );
+        assert_eq!(
+            choose_automatic_social_action(
+                SocialTopic::Filth,
+                [(SocialActionKind::Pray, 5.0, 2.0)],
+            ),
+            None
         );
     }
 

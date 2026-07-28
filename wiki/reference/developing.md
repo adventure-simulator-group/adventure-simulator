@@ -483,10 +483,15 @@ Select **Social Demo**, open **Greta the Guard**, and press the raised Social
 icon beside the Morale meter.
 The fixture includes defeat and injury penalties, established Familiarity,
 positive Affinity, exact multi-valued observer beliefs, presentation, and one
-deliberately incorrect perceived sensitivity. The Social rail shows Insight,
-Charm, Command, and Deception; Lighten Mood and Flirt are distinct Charm
+deliberately incorrect perceived sensitivity. Greta professes Lutheranism, and
+Social Demo has direct Lutheran study plus correlated Catholic knowledge, so
+the themed Prayer response is immediately usable. The Social rail shows
+Insight, Charm, Command, Deception, and target-specific Religion; Lighten Mood
+and Flirt are distinct Charm
 approaches, and repeated supported observations demonstrate the
 Transparency-controlled Insight/Deception training split. The bootstrap capability is
 compiled only for the isolated workflow; there is no standalone public fixture
 reducer. Schema changes are destructive in this pre-launch workflow, so rerun
-the isolated profile to recreate its database.
+the isolated profile to recreate its database. Select **Zealous Prayer Demo**
+and open **Margareta the Pilgrim** to inspect the same Lutheran action kept
+visible, greyed out, and annotated with its unavailable reason.
