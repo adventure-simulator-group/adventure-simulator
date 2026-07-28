@@ -347,6 +347,7 @@ def strategic_sim(
                     "--run-nonce", nonce, "--seed", seed, "--population", population,
                     "--cycles", cycles, "--duration-days", duration_days,
                     "--party-size", party_size, "--output", str(output_dir / "report.json"),
+                    "--failure-output", str(output_dir / "failure.json"),
                     "--npc-stories-output", str(output_dir / "npc-adventurer-stories.md"),
                     "--imported-world", "--expected-world-manifest-digest",
                     world_manifest_digest,
@@ -363,10 +364,18 @@ def strategic_sim(
                 "--run-nonce", nonce, "--seed", seed, "--population", population,
                 "--cycles", cycles, "--duration-days", duration_days,
                 "--party-size", party_size, "--output", str(output_dir / "report.json"),
+                "--failure-output", str(output_dir / "failure.json"),
                 "--npc-stories-output", str(output_dir / "npc-adventurer-stories.md"),
             ]
             result_code = run(command, env=environment)
             metadata["status"] = "completed" if result_code == 0 else "simulator_failed"
+        failure_path = output_dir / "failure.json"
+        if result_code != 0 and failure_path.is_file():
+            failure = json.loads(failure_path.read_text(encoding="utf-8"))
+            category = failure.get("category")
+            if isinstance(category, str) and category:
+                metadata["failure_artifact"] = failure_path.name
+                metadata["failure_category"] = category
     except Exception:
         metadata["status"] = f"{stage}_failed"
         raise
