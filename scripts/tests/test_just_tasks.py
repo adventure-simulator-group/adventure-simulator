@@ -12,7 +12,7 @@ import utils.generate_certificates as certificates
 
 
 class JustTaskTests(unittest.TestCase):
-    def test_load_world_preserves_default_database_and_accepts_isolated_database(self):
+    def test_load_world_recreates_selected_database_before_import(self):
         justfile = (Path(__file__).resolve().parents[2] / "justfile").read_text(encoding="utf-8")
         self.assertIn(
             "load-world server=spacetime_url database=spacetime_module:",
@@ -25,7 +25,55 @@ class JustTaskTests(unittest.TestCase):
         load_recipe = justfile.split("load-world server=", 1)[1].split(
             "# Compatibility name", 1
         )[0]
+        self.assertIn("recreate-world-database", load_recipe)
+        self.assertLess(
+            load_recipe.index("recreate-world-database"),
+            load_recipe.index("adventuresim-world-import"),
+        )
         self.assertIn("--database {{ database }}", load_recipe)
+
+    @mock.patch.object(just_tasks, "run", return_value=0)
+    @mock.patch.object(just_tasks, "executable", return_value="spacetime")
+    def test_recreate_world_database_is_noninteractive_and_destructive(
+        self, _executable, run
+    ):
+        self.assertEqual(
+            just_tasks.recreate_world_database(
+                "http://127.0.0.1:23100",
+                "adventuresim-stdb-module",
+                just_tasks.MODULE_DIR,
+            ),
+            0,
+        )
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "spacetime",
+                "publish",
+                "--delete-data=always",
+                "--yes",
+                "--server",
+                "http://127.0.0.1:23100",
+                "adventuresim-stdb-module",
+            ],
+        )
+        self.assertEqual(run.call_args.kwargs["cwd"], just_tasks.MODULE_DIR)
+
+    @mock.patch.object(just_tasks, "run")
+    def test_recreate_world_database_refuses_remote_or_unscoped_targets(self, run):
+        for server, database in [
+            ("https://example.com:443", "adventuresim-stdb-module"),
+            ("http://127.0.0.1:23100/path", "adventuresim-stdb-module"),
+            ("http://127.0.0.1:23100", "production"),
+            ("http://127.0.0.1:23100", "adventuresim_BAD"),
+        ]:
+            with self.subTest(server=server, database=database), self.assertRaises(
+                RuntimeError
+            ):
+                just_tasks.recreate_world_database(
+                    server, database, just_tasks.MODULE_DIR
+                )
+        run.assert_not_called()
 
     def test_web_environment_uses_absolute_cross_platform_paths(self):
         environment = just_tasks.web_environment()

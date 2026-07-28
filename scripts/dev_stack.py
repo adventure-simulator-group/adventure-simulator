@@ -140,13 +140,27 @@ def validate_loopback_server(server: str, expected_port: int | None = None) -> N
 
 
 def run_checked(command: list[str], cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
+def write_console(output: str) -> None:
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    safe_output = output.encode(encoding, errors="replace").decode(encoding)
+    sys.stdout.write(safe_output)
 
 
 def publish(server: str, database: str) -> int:
     command = ["spacetime", "publish", "--server", server, database]
     result = run_checked(command, MODULE_DIR)
-    sys.stdout.write(result.stdout)
+    write_console(result.stdout)
     if result.returncode:
         print("\nSpacetimeDB rejected the module before any client or spawner was launched.", file=sys.stderr)
         print(f"Server: {server}\nDatabase: {database}", file=sys.stderr)
@@ -163,7 +177,7 @@ def seed(server: str, database: str, bootstrap_token: str, include_damaged_demo:
         "bootstrap_development_world", bootstrap_token,
         "true" if include_damaged_demo else "false",
     ])
-    sys.stdout.write(result.stdout)
+    write_console(result.stdout)
     if result.returncode:
         print("development bootstrap failed; refusing to hide the reducer error.", file=sys.stderr)
     return result.returncode
@@ -209,7 +223,7 @@ def verify_bindings() -> int:
             "--module-path", str(MODULE_DIR), "--yes",
         ])
         if result.returncode:
-            sys.stdout.write(result.stdout)
+            write_console(result.stdout)
             return result.returncode
         generated.joinpath("lib.rs").write_bytes(CLIENT_DIR.joinpath("lib.rs").read_bytes())
         temp_root.joinpath("Cargo.toml").write_text(
@@ -339,7 +353,7 @@ def reset_publish(capability: ResetCapability) -> int:
         "--server", capability.server, capability.database,
     ]
     result = run_checked(command, MODULE_DIR)
-    sys.stdout.write(result.stdout)
+    write_console(result.stdout)
     if result.returncode:
         print("\nIsolated reset publication failed.", file=sys.stderr)
         print(f"Server: {capability.server}\nDatabase: {capability.database}", file=sys.stderr)
@@ -745,7 +759,7 @@ def run_profile(
                     "seed_standalone_tactical_mission", bootstrap_token,
                     str(character_id), mission_id, scene_key, str(enemy_count),
                 ])
-                sys.stdout.write(result.stdout)
+                write_console(result.stdout)
                 if result.returncode:
                     print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
                     return result.returncode

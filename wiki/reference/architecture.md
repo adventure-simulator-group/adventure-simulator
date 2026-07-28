@@ -168,8 +168,10 @@ schema 25 and inference rules 9.
 
 The playable region, spatial grid, source identities, inference versions, and
 compiled records contribute to artifact identity. Import is resumable only for
-the same artifact; loading a different completed artifact requires an
-explicitly reviewed reset of an isolated or otherwise disposable database.
+the same artifact. The local `just load-world` workflow therefore explicitly
+reset-publishes its selected loopback `adventuresim-*` database before loading
+the pinned artifact; all existing data in that database is disposable and
+discarded.
 
 Normal development consumes the separately pinned compiled runtime bundle:
 

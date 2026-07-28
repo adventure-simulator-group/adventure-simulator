@@ -53,8 +53,11 @@ just publish
 just web
 ```
 
-Canonical reset recipes intentionally refuse to delete data. Use an explicitly
-isolated profile for disposable schema work:
+General canonical reset recipes intentionally refuse to delete data. The
+world-specific `just load-world` command is the explicit local exception: it
+reset-publishes the selected loopback `adventuresim-*` database and discards
+all of its existing data before importing the pinned world. For other
+disposable schema work, use an explicitly isolated profile:
 
 ```bash
 just web-isolated-strategic module-dev 23100

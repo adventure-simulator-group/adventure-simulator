@@ -241,12 +241,15 @@ build-strategic-map: compile-world
 # Compatibility name for the former Python normalizer.
 normalise-viabundus: compile-world
 
-# Download the pinned compiled runtime when absent, then load it without rebuilding.
+# Destructively recreate the selected local database with the current module,
+# then download and load the pinned compiled world runtime.
 load-world server=spacetime_url database=spacetime_module: spacetime-version-check init-world-runtime
+    @{{ python_bin }} scripts/just_tasks.py recreate-world-database --server {{ server }} --database {{ database }} --module-dir {{ quote(strategic_dir) }}
     @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ database }}
 
 # Compatibility name for the former Viabundus-only loader.
 load-viabundus-world server=spacetime_url database=spacetime_module: spacetime-version-check init-world-runtime
+    @{{ python_bin }} scripts/just_tasks.py recreate-world-database --server {{ server }} --database {{ database }} --module-dir {{ quote(strategic_dir) }}
     @cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{ server }} --database {{ database }}
 
 # Build the tactical server and spawner
