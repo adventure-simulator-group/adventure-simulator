@@ -21,6 +21,7 @@ pub struct SocialPresentation {
     pub automatic_chat_enabled: bool,
     pub joke_blocked: bool,
     pub flirt_blocked: bool,
+    pub prayer_disabled_reason: Option<String>,
     pub feedback: Option<SocialFeedback>,
     pub unavailable: bool,
 }
@@ -58,6 +59,7 @@ fn social_actions(
     [
         ("awareness", Listen, "listen"),
         ("awareness", Commiserate, "commiserate"),
+        ("prayer", Pray, "pray"),
         ("juggler", LightenMood, "lighten_mood"),
         ("crown", Rally, "command"),
         ("conversation", Reframe, "deception"),
@@ -82,6 +84,7 @@ fn social_action_label(
         SocialActionKind::Listen => "Listen",
         SocialActionKind::Commiserate if shares_concern => "Commiserate",
         SocialActionKind::Commiserate => "Feign sympathy",
+        SocialActionKind::Pray => "Pray",
         SocialActionKind::LightenMood => "Joke",
         SocialActionKind::Rally => "Rally",
         SocialActionKind::Reframe => "Reframe",
@@ -308,13 +311,31 @@ pub fn party_social_dialog(
                                     @for (default_icon, action, value) in social_actions(is_self, topic, social.joke_blocked, social.flirt_blocked) {
                                       @let action_shares_concern = action != adventuresim_core::social::SocialActionKind::Commiserate || shares_concern;
                                       @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
-                                      @let description = action.description(topic, action_shares_concern);
+                                      @let prayer_approach = social.religion_id.as_deref()
+                                          .and_then(adventuresim_world_schema::OfficialReligion::from_id)
+                                          .and_then(|religion| adventuresim_core::social::prayer_approach(religion, topic));
+                                      @let description = if action == adventuresim_core::social::SocialActionKind::Pray {
+                                          prayer_approach.map_or_else(
+                                              || action.description(topic, action_shares_concern).to_owned(),
+                                              |approach| format!("{} {}", approach.devotion, approach.intention),
+                                          )
+                                      } else {
+                                          action.description(topic, action_shares_concern).to_owned()
+                                      };
                                       @let label = social_action_label(action, action_shares_concern);
-                                      @let tooltip = format!("{}\nTakes {} minutes.\n{} · {} risk", description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" });
+                                      @let disabled_reason = if action == adventuresim_core::social::SocialActionKind::Pray { social.prayer_disabled_reason.as_deref() } else { None };
+                                      @let risk = prayer_approach.map_or(action.risk(), |approach| approach.risk);
+                                      @let tooltip = if let Some(reason) = disabled_reason {
+                                          format!("{}\nUnavailable: {}", description, reason)
+                                      } else {
+                                          format!("{}\nTakes {} minutes.\n{} · {} risk", description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES, action.skill_name(action_shares_concern), if risk >= 0.6 { "high" } else if risk >= 0.3 { "moderate" } else { "low" })
+                                      };
                                     form method="post" action=(&social_href) {
                                         input type="hidden" name="source_id" value=(&source.id);
                                         button type="submit" name="action_kind" value=(value) class="social-action"
-                                            aria-label=(format!("{}. {}. Takes {} minutes.", label, description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES))
+                                            disabled[disabled_reason.is_some()]
+                                            aria-disabled=[disabled_reason.map(|_| "true")]
+                                            aria-label=(if let Some(reason) = disabled_reason { format!("{}. Unavailable: {}.", label, reason) } else { format!("{}. {}. Takes {} minutes.", label, description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES) })
                                             data-strategic-tooltip=(&tooltip) {
                                             span class="social-action-icon"
                                                 data-strategic-tooltip=(&tooltip) {
@@ -658,13 +679,70 @@ mod tests {
     }
 
     #[test]
+    fn prayer_is_themed_and_disabled_with_an_accessible_reason() {
+        let character = |id: u64, name: &str| Character {
+            id,
+            name: name.into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("lubeck".into()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
+        };
+        let location = LocationView {
+            kind: super::super::LocationKind::Settlement,
+            id: "lubeck".into(),
+            name: "Lubeck".into(),
+            religion_id: None,
+            category: None,
+            active_building: None,
+        };
+        let source = CharacterMoraleSource {
+            id: "defeat".into(),
+            character_id: 2,
+            kind: "defeat".into(),
+            label: "Recent defeat".into(),
+            magnitude: -2.0,
+        };
+        let social = SocialPresentation {
+            religion_id: Some("lutheran".into()),
+            prayer_disabled_reason: Some(
+                "Your Zealous conviction prevents you from leading a companion's prayer.".into(),
+            ),
+            ..Default::default()
+        };
+        let markup = party_social_dialog(
+            &location,
+            &character(2, "Greta"),
+            &character(1, "Ada"),
+            &[source],
+            &social,
+        )
+        .into_string();
+        assert!(markup.contains("value=\"pray\""));
+        assert!(markup.contains("Pray a psalm and recall Christ"));
+        assert!(markup.contains("value=\"pray\" class=\"social-action\" disabled"));
+        assert!(markup.contains("aria-disabled=\"true\""));
+        assert!(markup.contains("Unavailable: Your Zealous conviction"));
+        let css = include_str!("../../../static/css/strategic.css");
+        assert!(css.contains(".social-action:disabled"));
+        assert!(css.contains("filter: grayscale(0.8)"));
+    }
+
+    #[test]
     fn social_catalog_labels_are_generic_grounded_and_accessible() {
         use adventuresim_core::social::{SocialActionKind, SocialTopic};
         let defeat = SocialActionKind::Commiserate.description(SocialTopic::Defeat, true);
         assert_eq!(defeat, "Commiserate about the defeat");
         assert!(!defeat.to_ascii_lowercase().contains("goblin"));
         let actions = social_actions(false, SocialTopic::Defeat, false, false);
-        assert_eq!(actions.len(), 6);
+        assert_eq!(actions.len(), 7);
         assert!(
             actions
                 .iter()
@@ -684,14 +762,14 @@ mod tests {
         );
         assert_eq!(
             social_actions(false, SocialTopic::Hunger, false, false).len(),
-            3
+            4
         );
         assert_eq!(
             social_actions(false, SocialTopic::Faith, false, false).len(),
-            4
+            5
         );
         let reserved = social_actions(false, SocialTopic::Defeat, true, true);
-        assert_eq!(reserved.len(), 4);
+        assert_eq!(reserved.len(), 5);
         assert!(reserved.iter().all(|(_, action, _)| !matches!(
             action,
             SocialActionKind::LightenMood | SocialActionKind::Flirt

@@ -17,6 +17,21 @@ short label; hovering the icon explains the contextual approach, skill, and
 risk. Every manual response spends five strategic minutes. Automatic responses
 occur within already-consumed downtime and do not advance the clock again.
 
+Companion responses also include **Pray** for defeat, injury, fatigue, hunger,
+and faith concerns, but not filth. Prayer uses the companion's authoritative
+professed tradition and the actor's effective Religion knowledge for that
+exact tradition. At least some direct study of the tradition is required before
+correlated knowledge contributes; the actor need not profess it. Zealous actors
+will not lead another character's prayer, so the action remains visible but
+disabled. Target Conviction changes prayer fit: Zealous targets respond more
+strongly to a successful prayer but are more sensitive to a poor one, while
+Irreverent targets are harder and riskier to reach. The prayer catalog shares
+mechanical topic profiles while supplying Catholic, Lutheran, Reformed,
+Anglican, Orthodox, Islamic, and Jewish devotional language. Opt-in automatic
+social care considers Prayer alongside the other eligible approaches using the
+same target-specific check, personality fit, cooldown, and authoritative
+resolver.
+
 Living, co-located companions show an observer-specific Party Rail badge for
 each current actionable negative source row that this character has not yet
 successfully addressed. Separate sources count separately even when they share

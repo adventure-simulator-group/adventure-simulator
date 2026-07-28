@@ -3423,6 +3423,8 @@ button.party-portrait-action {
 .social-action { display: inline-flex; width: auto; min-height: 2rem; padding: 0.3rem 0.55rem; align-items: center; gap: 0.4rem; border: 1px solid var(--border-color); border-radius: 0.3rem; background: var(--panel-bg); color: var(--text); cursor: pointer; }
 .social-action:hover,
 .social-action:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.social-action:disabled,
+.social-action[aria-disabled="true"] { opacity: 0.46; filter: grayscale(0.8); cursor: not-allowed; border-color: var(--border-color); color: var(--text-muted); }
 .social-action-icon { display: inline-grid; flex: 0 0 auto; place-items: center; cursor: help; }
 .social-action .game-icon { width: 1.15rem; height: 1.15rem; }
 .social-action-label { white-space: nowrap; }
