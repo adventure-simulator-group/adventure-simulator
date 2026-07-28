@@ -59,6 +59,36 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
         );
     }
     assert!(
+        report.trace.iter().any(|event| {
+            event.kind == CoreLoopEventKind::Activity
+                && event.detail.contains("outcome=completed")
+                && event.detail.contains("effective=Labor")
+                && detail_number(&event.detail, "purse_delta=").is_some_and(|delta| delta > 0.0)
+        }),
+        "the authoritative activity policy should complete productive legal labor"
+    );
+    let inn_activities = report
+        .trace
+        .iter()
+        .filter(|event| {
+            event.kind == CoreLoopEventKind::Activity
+                && event.detail.contains("outcome=completed")
+                && event.detail.contains("venue=inn")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !inn_activities.is_empty(),
+        "the deterministic live fixture should exercise full-board Inn activity"
+    );
+    assert!(
+        inn_activities.iter().all(|event| {
+            let before = detail_number(&event.detail, "hunger_before=");
+            let after = detail_number(&event.detail, "hunger_after=");
+            matches!((before, after), (Some(before), Some(after)) if after <= before + 0.001)
+        }),
+        "full-board Inn activity must not worsen authoritative hunger"
+    );
+    assert!(
         report.profiles.iter().any(|profile| matches!(
             profile.equipment.style,
             EquipmentStyle::Light | EquipmentStyle::Heavy
@@ -165,6 +195,13 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
         reuse_error.contains("reused or populated") || reuse_error.contains("already claimed"),
         "unexpected reuse error: {reuse_error}"
     );
+}
+
+fn detail_number(detail: &str, key: &str) -> Option<f64> {
+    detail
+        .split(';')
+        .find_map(|field| field.strip_prefix(key))
+        .and_then(|value| value.parse().ok())
 }
 
 fn assert_ordered_subsequence(

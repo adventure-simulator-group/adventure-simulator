@@ -5,9 +5,9 @@
 //! normal strategic reducers.
 
 use crate::{
-    AgentProfile, ChoiceArguments, ChoiceKind, DecisionArguments, DiscoveryView,
-    EVAL_FORMAT_VERSION, EquipmentStyle, JournalView, LegalChoice, PartyView, PlayerFrame,
-    QuestPolicy, generate_profile,
+    ActivityPreference, AgentProfile, ChoiceArguments, ChoiceKind, DecisionArguments,
+    DiscoveryView, EVAL_FORMAT_VERSION, EquipmentStyle, JournalView, LegalChoice, PartyView,
+    PlayerFrame, QuestPolicy, generate_profile,
 };
 use adventuresim_core::simulation_security::{
     SIM_BOOTSTRAP_TOKEN_ENV as BOOTSTRAP_TOKEN_ENV,
@@ -389,7 +389,58 @@ struct ActivityObservation {
     condition_status: String,
     hunger: f32,
     thirst: f32,
+    visible_food_kcal: f32,
+    visible_water_ml: f32,
     elapsed_minutes: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettlementActivityVenue {
+    Inn,
+    Temple,
+}
+
+impl SettlementActivityVenue {
+    fn at_inn(self) -> bool {
+        matches!(self, Self::Inn)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Inn => "inn",
+            Self::Temple => "temple",
+        }
+    }
+}
+
+fn select_settlement_activity_venue(
+    inn_available: bool,
+    temple_available: bool,
+    temple_food_covers_day: bool,
+    purse: u64,
+    committed_reserve: u64,
+    inn_cost: Option<u64>,
+) -> Option<SettlementActivityVenue> {
+    if temple_available && temple_food_covers_day {
+        return Some(SettlementActivityVenue::Temple);
+    }
+    if inn_available && inn_cost.is_some_and(|cost| purse >= committed_reserve.saturating_add(cost))
+    {
+        return Some(SettlementActivityVenue::Inn);
+    }
+    temple_available.then_some(SettlementActivityVenue::Temple)
+}
+
+fn visible_activity_committed_reserve(
+    purse: u64,
+    profile_cash_reserve_target: u64,
+    observable_medical_reserve: Option<u64>,
+    inn_cost: Option<u64>,
+) -> u64 {
+    let medical = observable_medical_reserve.unwrap_or(0);
+    let spendable_after_medical_and_inn =
+        inn_cost.map_or(0, |cost| purse.saturating_sub(medical.saturating_add(cost)));
+    medical.saturating_add(profile_cash_reserve_target.min(spendable_after_medical_and_inn))
 }
 
 fn quest_fallback_reason(
@@ -440,11 +491,25 @@ fn signed_float_delta(after: f32, before: f32) -> String {
 
 fn format_activity_detail(
     preferred_activity: &str,
+    effective_activity: &str,
+    schedule: &ScheduleAllocation,
+    venue: SettlementActivityVenue,
+    fallback_reason: &str,
+    committed_reserve: u64,
     before: &ActivityObservation,
     after: &ActivityObservation,
 ) -> String {
     format!(
-        "outcome=completed;preferred={preferred_activity};purse_before={};purse_after={};purse_delta={};condition_before={};condition_after={};hunger_before={:.3};hunger_after={:.3};hunger_delta={};thirst_before={:.3};thirst_after={:.3};thirst_delta={};elapsed_before={};elapsed_after={};elapsed_delta={}",
+        "outcome=completed;preferred={preferred_activity};effective={effective_activity};fallback={fallback_reason};venue={};committed_reserve={committed_reserve};schedule=combat:{},carousing:{},apprenticeship:{},profession:{},labor:{},prayer:{},thievery:{},raiding:{};purse_before={};purse_after={};purse_delta={};condition_before={};condition_after={};hunger_before={:.3};hunger_after={:.3};hunger_delta={};thirst_before={:.3};thirst_after={:.3};thirst_delta={};food_kcal_before={:.0};food_kcal_after={:.0};food_kcal_delta={};water_ml_before={:.0};water_ml_after={:.0};water_ml_delta={};elapsed_before={};elapsed_after={};elapsed_delta={}",
+        venue.label(),
+        schedule.combat_training_minutes,
+        schedule.carousing_minutes,
+        schedule.apprenticeship_minutes,
+        schedule.profession_practice_minutes,
+        schedule.labor_minutes,
+        schedule.prayer_minutes,
+        schedule.thievery_minutes,
+        schedule.raiding_minutes,
         before.personal_gold_coin,
         after.personal_gold_coin,
         signed_delta(after.personal_gold_coin, before.personal_gold_coin),
@@ -456,6 +521,12 @@ fn format_activity_detail(
         before.thirst,
         after.thirst,
         signed_float_delta(after.thirst, before.thirst),
+        before.visible_food_kcal,
+        after.visible_food_kcal,
+        signed_float_delta(after.visible_food_kcal, before.visible_food_kcal),
+        before.visible_water_ml,
+        after.visible_water_ml,
+        signed_float_delta(after.visible_water_ml, before.visible_water_ml),
         before.elapsed_minutes,
         after.elapsed_minutes,
         signed_delta(after.elapsed_minutes, before.elapsed_minutes),
@@ -464,16 +535,31 @@ fn format_activity_detail(
 
 fn format_failed_activity_detail(
     preferred_activity: &str,
+    effective_activity: &str,
+    schedule: &ScheduleAllocation,
+    venue: SettlementActivityVenue,
+    fallback_reason: &str,
+    committed_reserve: u64,
     before: &ActivityObservation,
-    at_inn: bool,
     error_category: &str,
 ) -> String {
     format!(
-        "outcome=failed;stage=rest_at_settlement;error_category={error_category};preferred={preferred_activity};requested_minutes=1440;at_inn={at_inn};purse_before={};condition_before={};hunger_before={:.3};thirst_before={:.3};elapsed_before={}",
+        "outcome=failed;stage=rest_at_settlement;error_category={error_category};preferred={preferred_activity};effective={effective_activity};fallback={fallback_reason};venue={};committed_reserve={committed_reserve};schedule=combat:{},carousing:{},apprenticeship:{},profession:{},labor:{},prayer:{},thievery:{},raiding:{};requested_minutes=1440;purse_before={};condition_before={};hunger_before={:.3};thirst_before={:.3};food_kcal_before={:.0};water_ml_before={:.0};elapsed_before={}",
+        venue.label(),
+        schedule.combat_training_minutes,
+        schedule.carousing_minutes,
+        schedule.apprenticeship_minutes,
+        schedule.profession_practice_minutes,
+        schedule.labor_minutes,
+        schedule.prayer_minutes,
+        schedule.thievery_minutes,
+        schedule.raiding_minutes,
         before.personal_gold_coin,
         before.condition_status,
         before.hunger,
         before.thirst,
+        before.visible_food_kcal,
+        before.visible_water_ml,
         before.elapsed_minutes,
     )
 }
@@ -544,7 +630,12 @@ impl FailureRecorder {
 }
 
 fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
-    if error.contains("Not enough coin") || error.contains("afford") {
+    if error.contains("offers neither an Inn nor a Temple") {
+        (
+            "rest_service_unavailable",
+            "The settlement offers no player-visible rest service.",
+        )
+    } else if error.contains("Not enough coin") || error.contains("afford") {
         (
             "insufficient_visible_resources",
             "The NPC could not afford a player-visible action.",
@@ -679,20 +770,19 @@ fn choose_medical_action(
 fn affordable_medical_rest_venue(
     inn_available: bool,
     temple_available: bool,
-    temple_supplies_cover_day: bool,
+    temple_food_covers_day: bool,
     purse: u64,
     committed_cost: u64,
 ) -> Option<bool> {
-    if temple_available && temple_supplies_cover_day && purse >= committed_cost {
+    if temple_available && temple_food_covers_day && purse >= committed_cost {
         return Some(false);
     }
     let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440)?;
     (inn_available && purse >= committed_cost.saturating_add(inn_cost)).then_some(true)
 }
 
-fn temple_supplies_cover_one_day(visible_food_kcal: f32, visible_water_ml: f32) -> bool {
+fn temple_food_covers_one_day(visible_food_kcal: f32) -> bool {
     visible_food_kcal >= adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
-        && visible_water_ml >= adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY
 }
 
 fn observable_herbalist_stocks_medication(
@@ -817,13 +907,27 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
     }
 }
 
+fn reallocate_disabled_crime_to_labor(mut schedule: ScheduleAllocation) -> ScheduleAllocation {
+    let disabled_crime_minutes = schedule
+        .thievery_minutes
+        .checked_add(schedule.raiding_minutes)
+        .expect("valid daily schedule crime allocation");
+    schedule.labor_minutes = schedule
+        .labor_minutes
+        .checked_add(disabled_crime_minutes)
+        .expect("valid daily schedule labor allocation");
+    schedule.thievery_minutes = 0;
+    schedule.raiding_minutes = 0;
+    schedule
+}
+
 fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
     let s = profile.schedule;
     // The live reducer accepts quarter-hour allocations. Native profiles are
     // intentionally more granular, so use the conservative lower notch and
     // leave the remainder as leisure instead of failing after medical rest.
     let quarter_hour = |minutes: u16| minutes / 15 * 15;
-    ScheduleAllocation {
+    reallocate_disabled_crime_to_labor(ScheduleAllocation {
         combat_training_minutes: quarter_hour(s.combat_training_minutes),
         carousing_minutes: quarter_hour(s.carousing_minutes),
         // Simulation profiles may express future profession preferences that
@@ -837,10 +941,70 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
         prayer_minutes: quarter_hour(s.prayer),
         // Crime activities can open a tactical incident and move the party to
         // its case site. This authoritative evaluator deliberately leaves the
-        // tactical layer untouched, so do not schedule work that would strand
-        // the strategic loop waiting for a tactical session.
-        thievery_minutes: 0,
-        raiding_minutes: 0,
+        // tactical layer untouched. Preserve the authored time allocation by
+        // assigning those minutes to legal subsistence labor instead.
+        thievery_minutes: quarter_hour(s.thievery),
+        raiding_minutes: quarter_hour(s.raiding),
+    })
+}
+
+fn schedule_allocated_minutes(schedule: &ScheduleAllocation) -> u16 {
+    [
+        schedule.combat_training_minutes,
+        schedule.carousing_minutes,
+        schedule.apprenticeship_minutes,
+        schedule.profession_practice_minutes,
+        schedule.labor_minutes,
+        schedule.prayer_minutes,
+        schedule.thievery_minutes,
+        schedule.raiding_minutes,
+    ]
+    .into_iter()
+    .sum()
+}
+
+fn activity_schedule_plan(
+    profile: &AgentProfile,
+    temple_food_covers_day: bool,
+    purse: u64,
+    committed_reserve: u64,
+    inn_cost: Option<u64>,
+) -> (ScheduleAllocation, &'static str, &'static str) {
+    let mut schedule = live_schedule(profile);
+    let crime_fallback = matches!(
+        profile.preferred_activity,
+        ActivityPreference::Thievery | ActivityPreference::Raiding
+    );
+    let reserve_pressure =
+        inn_cost.is_some_and(|cost| purse <= committed_reserve.saturating_add(cost));
+    if schedule.labor_minutes == 0 && !temple_food_covers_day && reserve_pressure {
+        let prayer_minutes = schedule.prayer_minutes;
+        schedule.prayer_minutes = 0;
+        if prayer_minutes > 0 {
+            schedule.labor_minutes = prayer_minutes;
+        } else {
+            let discretionary_minutes =
+                1_440_u16.saturating_sub(schedule_allocated_minutes(&schedule));
+            schedule.labor_minutes = discretionary_minutes.min(480);
+        }
+        if schedule.labor_minutes > 0 {
+            return (schedule, "Labor", "subsistence_reserve_to_labor");
+        }
+    }
+    if crime_fallback {
+        (schedule, "Labor", "crime_disabled_to_labor")
+    } else {
+        (
+            schedule,
+            match profile.preferred_activity {
+                ActivityPreference::Labor => "Labor",
+                ActivityPreference::Prayer => "Prayer",
+                ActivityPreference::Thievery | ActivityPreference::Raiding => {
+                    unreachable!("crime preferences are handled above")
+                }
+            },
+            "none",
+        )
     }
 }
 
@@ -1164,6 +1328,55 @@ impl LiveRunner {
         })
     }
 
+    fn settlement_activity_venue(
+        &self,
+        character_id: u64,
+        committed_reserve: u64,
+    ) -> Result<SettlementActivityVenue, String> {
+        let settlement_id = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == character_id)
+            .and_then(|character| character.current_settlement_id)
+            .ok_or("simulation character is not at a settlement")?;
+        let settlement = self
+            .connection
+            .db
+            .settlement()
+            .iter()
+            .find(|settlement| settlement.id == settlement_id)
+            .ok_or("simulation settlement is unavailable")?;
+        let inn_available = settlement
+            .economy
+            .services
+            .contains(&SettlementService::Inn);
+        let temple_available = settlement
+            .economy
+            .services
+            .contains(&SettlementService::Temple);
+        if !inn_available && !temple_available {
+            return Err("simulation settlement offers neither an Inn nor a Temple".to_string());
+        }
+        let (visible_food_kcal, _) = self.visible_rest_supplies(character_id);
+        select_settlement_activity_venue(
+            inn_available,
+            temple_available,
+            temple_food_covers_one_day(visible_food_kcal),
+            self.personal_gold(character_id),
+            committed_reserve,
+            adventuresim_core::strategic_economy::inn_full_board_cost(1_440),
+        )
+        .ok_or_else(|| {
+            "simulation character cannot afford an Inn while preserving visible reserves"
+                .to_string()
+        })
+    }
+
+    /// Non-activity waits retain the ordinary public-service preference. Their
+    /// requested duration can be shorter than the one-day activity planner's
+    /// supply horizon.
     fn settlement_rest_at_inn(&self, character_id: u64) -> Result<bool, String> {
         let settlement_id = self
             .connection
@@ -1433,11 +1646,14 @@ impl LiveRunner {
             .find(|row| row.character_id == character_id)
             .ok_or("missing activity clock")?
             .minutes;
+        let (visible_food_kcal, visible_water_ml) = self.visible_rest_supplies(character_id);
         Ok(ActivityObservation {
             personal_gold_coin: self.personal_gold(character_id),
             condition_status: condition.status,
             hunger: condition.hunger,
             thirst: condition.thirst,
+            visible_food_kcal,
+            visible_water_ml,
             elapsed_minutes,
         })
     }
@@ -1574,7 +1790,7 @@ impl LiveRunner {
             .settlement()
             .iter()
             .find(|row| row.id == settlement_id)?;
-        let (food_kcal, water_ml) = self.visible_rest_supplies(character_id);
+        let (food_kcal, _) = self.visible_rest_supplies(character_id);
         let at_inn = affordable_medical_rest_venue(
             settlement
                 .economy
@@ -1584,7 +1800,7 @@ impl LiveRunner {
                 .economy
                 .services
                 .contains(&SettlementService::Temple),
-            temple_supplies_cover_one_day(food_kcal, water_ml),
+            temple_food_covers_one_day(food_kcal),
             u64::MAX,
             quote,
         )?;
@@ -1654,6 +1870,43 @@ impl LiveRunner {
             return Err("profile schedule was not authoritatively restored".into());
         }
         self.medically_paused_schedules.remove(&character_id);
+        Ok(())
+    }
+
+    fn install_activity_schedule(
+        &mut self,
+        character_id: u64,
+        schedule: &ScheduleAllocation,
+    ) -> Result<(), String> {
+        let already_installed = self
+            .connection
+            .db
+            .character_training_schedule()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .is_some_and(|row| row.downtime == *schedule);
+        if !already_installed {
+            let result = reducer_call!(self, "install_activity_schedule", |cb| self
+                .connection
+                .reducers
+                .update_training_schedule_then(
+                    character_id,
+                    schedule.clone(),
+                    medical_rest_schedule(),
+                    cb
+                ));
+            self.call(result)?;
+        }
+        let installed = self
+            .connection
+            .db
+            .character_training_schedule()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .is_some_and(|row| row.downtime == *schedule);
+        if !installed {
+            return Err("activity schedule was not authoritatively installed".into());
+        }
         Ok(())
     }
 
@@ -1733,12 +1986,11 @@ impl LiveRunner {
                         })
                 });
             let (visible_food_kcal, visible_water_ml) = self.visible_rest_supplies(character_id);
-            let temple_supplies_cover_day =
-                temple_supplies_cover_one_day(visible_food_kcal, visible_water_ml);
+            let temple_food_covers_day = temple_food_covers_one_day(visible_food_kcal);
             let natural_rest_venue = affordable_medical_rest_venue(
                 inn_available,
                 temple_available,
-                temple_supplies_cover_day,
+                temple_food_covers_day,
                 purse,
                 0,
             );
@@ -1746,7 +1998,7 @@ impl LiveRunner {
                 affordable_medical_rest_venue(
                     inn_available,
                     temple_available,
-                    temple_supplies_cover_day,
+                    temple_food_covers_day,
                     purse,
                     quote,
                 )
@@ -1786,7 +2038,7 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::MedicalDecision,
                 format!(
-                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_supplies_cover_day={temple_supplies_cover_day};care_affordable={};action={choice:?};reason={reason}",
+                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_food_covers_day={temple_food_covers_day};care_affordable={};action={choice:?};reason={reason}",
                     condition.status,
                     settlement.as_deref().unwrap_or("none"),
                     observable_quote.map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
@@ -1947,14 +2199,38 @@ impl LiveRunner {
             }
             self.maintain_equipment(agent)?;
             let character_id = self.character_ids[agent as usize];
-            let at_inn = self.settlement_rest_at_inn(character_id)?;
             let before = self.activity_observation(character_id)?;
-            let preferred_activity =
-                format!("{:?}", self.profiles[agent as usize].preferred_activity);
+            let profile = self.profiles[agent as usize].clone();
+            let settlement_id = self
+                .connection
+                .db
+                .character()
+                .iter()
+                .find(|row| row.id == character_id)
+                .and_then(|row| row.current_settlement_id)
+                .ok_or("simulation character is not at a settlement")?;
+            let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440);
+            let committed_reserve = visible_activity_committed_reserve(
+                before.personal_gold_coin,
+                u64::from(profile.cash_reserve_target),
+                self.observable_medical_reserve(character_id, &settlement_id),
+                inn_cost,
+            );
+            let temple_food_covers_day = temple_food_covers_one_day(before.visible_food_kcal);
+            let (schedule, effective_activity, fallback_reason) = activity_schedule_plan(
+                &profile,
+                temple_food_covers_day,
+                before.personal_gold_coin,
+                committed_reserve,
+                inn_cost,
+            );
+            self.install_activity_schedule(character_id, &schedule)?;
+            let venue = self.settlement_activity_venue(character_id, committed_reserve)?;
+            let preferred_activity = format!("{:?}", profile.preferred_activity);
             let result = reducer_call!(self, "settlement_activity_rest", |cb| self
                 .connection
                 .reducers
-                .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
+                .rest_at_settlement_hours_then(character_id, 1_440, venue.at_inn(), cb));
             if let Err(error) = result {
                 let error_category = safe_core_loop_failure(&error).0;
                 self.event(
@@ -1962,8 +2238,12 @@ impl LiveRunner {
                     CoreLoopEventKind::Activity,
                     format_failed_activity_detail(
                         &preferred_activity,
+                        effective_activity,
+                        &schedule,
+                        venue,
+                        fallback_reason,
+                        committed_reserve,
                         &before,
-                        at_inn,
                         error_category,
                     ),
                 );
@@ -1973,7 +2253,16 @@ impl LiveRunner {
             self.event(
                 agent,
                 CoreLoopEventKind::Activity,
-                format_activity_detail(&preferred_activity, &before, &after),
+                format_activity_detail(
+                    &preferred_activity,
+                    effective_activity,
+                    &schedule,
+                    venue,
+                    fallback_reason,
+                    committed_reserve,
+                    &before,
+                    &after,
+                ),
             );
             self.metrics.activity_days += 1;
             self.ensure_medically_safe(agent)?;
@@ -3635,19 +3924,123 @@ mod tests {
     }
 
     #[test]
-    fn live_schedule_is_authoritative_and_does_not_open_tactical_crime_incidents() {
+    fn live_schedule_reallocates_disabled_tactical_crime_to_legal_labor() {
         let mut profile = generate_profile(42, 0);
         profile.schedule.combat_training_minutes = 17;
         profile.schedule.apprenticeship_minutes = 60;
         profile.schedule.profession_practice_minutes = 60;
+        profile.schedule.labor = 30;
+        profile.schedule.prayer = 45;
         profile.schedule.thievery = 60;
         profile.schedule.raiding = 60;
         let schedule = live_schedule(&profile);
         assert_eq!(schedule.combat_training_minutes, 15);
         assert_eq!(schedule.apprenticeship_minutes, 0);
         assert_eq!(schedule.profession_practice_minutes, 0);
+        assert_eq!(schedule.labor_minutes, 150);
+        assert_eq!(schedule.prayer_minutes, 45);
         assert_eq!(schedule.thievery_minutes, 0);
         assert_eq!(schedule.raiding_minutes, 0);
+    }
+
+    #[test]
+    fn disabled_crime_reallocation_leaves_labor_and_prayer_unchanged_without_crime() {
+        let mut schedule = medical_rest_schedule();
+        schedule.labor_minutes = 480;
+        schedule.prayer_minutes = 60;
+        assert_eq!(
+            reallocate_disabled_crime_to_labor(schedule.clone()),
+            schedule
+        );
+    }
+
+    #[test]
+    fn settlement_activity_venue_prefers_fed_temple_then_reserve_aware_inn() {
+        assert_eq!(
+            select_settlement_activity_venue(true, true, true, 2, 0, Some(2)),
+            Some(SettlementActivityVenue::Temple)
+        );
+        assert_eq!(
+            select_settlement_activity_venue(true, true, false, 4, 2, Some(2)),
+            Some(SettlementActivityVenue::Inn)
+        );
+        assert_eq!(
+            select_settlement_activity_venue(false, true, false, 0, 0, Some(2)),
+            Some(SettlementActivityVenue::Temple)
+        );
+        assert_eq!(
+            select_settlement_activity_venue(true, true, false, 3, 2, Some(2)),
+            Some(SettlementActivityVenue::Temple)
+        );
+        assert_eq!(
+            select_settlement_activity_venue(true, false, false, 3, 2, Some(2)),
+            None
+        );
+    }
+
+    #[test]
+    fn temple_viability_depends_on_visible_food_not_carried_water() {
+        assert!(temple_food_covers_one_day(
+            adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
+        ));
+        assert!(!temple_food_covers_one_day(
+            adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY - 1.0
+        ));
+    }
+
+    #[test]
+    fn committed_reserve_keeps_visible_medical_cost_and_attainable_cash_target() {
+        assert_eq!(
+            visible_activity_committed_reserve(9, 200, Some(6), Some(2)),
+            7
+        );
+        assert_eq!(
+            visible_activity_committed_reserve(250, 200, Some(6), Some(2)),
+            206
+        );
+    }
+
+    #[test]
+    fn prayer_switches_to_installed_labor_plan_under_reserve_pressure() {
+        let mut profile = generate_profile(42, 0);
+        profile.preferred_activity = ActivityPreference::Prayer;
+        profile.schedule.labor = 0;
+        profile.schedule.thievery = 0;
+        profile.schedule.raiding = 0;
+        profile.schedule.prayer = 480;
+        let (schedule, effective, fallback) =
+            activity_schedule_plan(&profile, false, 2, 1, Some(2));
+        assert_eq!(schedule.labor_minutes, 480);
+        assert_eq!(schedule.prayer_minutes, 0);
+        assert_eq!(effective, "Labor");
+        assert_eq!(fallback, "subsistence_reserve_to_labor");
+
+        let (fed_schedule, fed_effective, fed_fallback) =
+            activity_schedule_plan(&profile, true, 2, 1, Some(2));
+        assert_eq!(fed_schedule.prayer_minutes, 480);
+        assert_eq!(fed_schedule.labor_minutes, 0);
+        assert_eq!(fed_effective, "Prayer");
+        assert_eq!(fed_fallback, "none");
+    }
+
+    #[test]
+    fn activity_schedule_is_installed_before_the_logged_rest_attempt() {
+        let source = include_str!("live_core.rs");
+        let start = source
+            .find("fn settlement_activity_day")
+            .expect("activity policy");
+        let block = &source[start
+            ..source[start..]
+                .find("/// NPCs use the same custody")
+                .map(|offset| start + offset)
+                .expect("activity policy end")];
+        let install = block
+            .find("install_activity_schedule")
+            .expect("authoritative schedule installation");
+        let rest = block
+            .find("rest_at_settlement_hours_then")
+            .expect("authoritative activity rest");
+        assert!(install < rest);
     }
 
     #[test]
@@ -3694,11 +4087,15 @@ mod tests {
 
     #[test]
     fn activity_detail_exposes_public_pre_post_values_and_signed_deltas() {
+        let mut schedule = medical_rest_schedule();
+        schedule.labor_minutes = 480;
         let before = ActivityObservation {
             personal_gold_coin: 4,
             condition_status: "ready".into(),
             hunger: 0.125,
             thirst: 0.25,
+            visible_food_kcal: 2_000.0,
+            visible_water_ml: 4_000.0,
             elapsed_minutes: 1_440,
         };
         let after = ActivityObservation {
@@ -3706,16 +4103,52 @@ mod tests {
             condition_status: "recovering".into(),
             hunger: 0.5,
             thirst: 0.125,
+            visible_food_kcal: 0.0,
+            visible_water_ml: 500.0,
             elapsed_minutes: 2_880,
         };
         assert_eq!(
-            format_activity_detail("Labor", &before, &after),
-            "outcome=completed;preferred=Labor;purse_before=4;purse_after=9;purse_delta=+5;condition_before=ready;condition_after=recovering;hunger_before=0.125;hunger_after=0.500;hunger_delta=+0.375;thirst_before=0.250;thirst_after=0.125;thirst_delta=-0.125;elapsed_before=1440;elapsed_after=2880;elapsed_delta=+1440"
+            format_activity_detail(
+                "Thievery",
+                "Labor",
+                &schedule,
+                SettlementActivityVenue::Temple,
+                "crime_disabled_to_labor",
+                2,
+                &before,
+                &after,
+            ),
+            "outcome=completed;preferred=Thievery;effective=Labor;fallback=crime_disabled_to_labor;venue=temple;committed_reserve=2;schedule=combat:0,carousing:0,apprenticeship:0,profession:0,labor:480,prayer:0,thievery:0,raiding:0;purse_before=4;purse_after=9;purse_delta=+5;condition_before=ready;condition_after=recovering;hunger_before=0.125;hunger_after=0.500;hunger_delta=+0.375;thirst_before=0.250;thirst_after=0.125;thirst_delta=-0.125;food_kcal_before=2000;food_kcal_after=0;food_kcal_delta=-2000.000;water_ml_before=4000;water_ml_after=500;water_ml_delta=-3500.000;elapsed_before=1440;elapsed_after=2880;elapsed_delta=+1440"
         );
         assert_eq!(
-            format_failed_activity_detail("Labor", &before, true, "insufficient_visible_resources"),
-            "outcome=failed;stage=rest_at_settlement;error_category=insufficient_visible_resources;preferred=Labor;requested_minutes=1440;at_inn=true;purse_before=4;condition_before=ready;hunger_before=0.125;thirst_before=0.250;elapsed_before=1440"
+            format_failed_activity_detail(
+                "Thievery",
+                "Labor",
+                &schedule,
+                SettlementActivityVenue::Temple,
+                "crime_disabled_to_labor",
+                2,
+                &before,
+                "insufficient_visible_resources",
+            ),
+            "outcome=failed;stage=rest_at_settlement;error_category=insufficient_visible_resources;preferred=Thievery;effective=Labor;fallback=crime_disabled_to_labor;venue=temple;committed_reserve=2;schedule=combat:0,carousing:0,apprenticeship:0,profession:0,labor:480,prayer:0,thievery:0,raiding:0;requested_minutes=1440;purse_before=4;condition_before=ready;hunger_before=0.125;thirst_before=0.250;food_kcal_before=2000;water_ml_before=4000;elapsed_before=1440"
         );
+    }
+
+    #[test]
+    fn effective_activity_distinguishes_authored_policy_from_safe_fallback() {
+        let mut labor = generate_profile(42, 0);
+        labor.preferred_activity = ActivityPreference::Labor;
+        labor.schedule.labor = 480;
+        labor.schedule.prayer = 0;
+        let (_, effective, fallback) = activity_schedule_plan(&labor, true, 0, 0, Some(2));
+        assert_eq!((effective, fallback), ("Labor", "none"));
+
+        labor.preferred_activity = ActivityPreference::Thievery;
+        labor.schedule.labor = 0;
+        labor.schedule.thievery = 480;
+        let (_, effective, fallback) = activity_schedule_plan(&labor, true, 0, 0, Some(2));
+        assert_eq!((effective, fallback), ("Labor", "crime_disabled_to_labor"));
     }
 
     #[test]
@@ -3724,18 +4157,28 @@ mod tests {
         let category = safe_core_loop_failure(raw).0;
         let detail = format_failed_activity_detail(
             "Prayer",
+            "Prayer",
+            &medical_rest_schedule(),
+            SettlementActivityVenue::Temple,
+            "none",
+            0,
             &ActivityObservation {
                 personal_gold_coin: 0,
                 condition_status: "ready".into(),
                 hunger: 0.0,
                 thirst: 0.0,
+                visible_food_kcal: 0.0,
+                visible_water_ml: 0.0,
                 elapsed_minutes: 0,
             },
-            false,
             category,
         );
         assert!(detail.contains("error_category=insufficient_visible_resources"));
         assert!(!detail.contains("secret internal reducer context"));
+        assert_eq!(
+            safe_core_loop_failure("simulation settlement offers neither an Inn nor a Temple").0,
+            "rest_service_unavailable"
+        );
     }
 
     #[test]
