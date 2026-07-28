@@ -97,6 +97,24 @@ weighted equipment utility (protection, mobility, price, and reach) for
 unarmored, light, heavy, and ranged styles. An upgrade counts only after the
 authoritative equipment row shows the purchased inventory item.
 
+Each autonomous party choice records an observer-safe `quest_decision` before
+the selected action. It includes the deterministic policy selector and quest
+propensity, current settlement, count of player-visible offered contracts,
+whether one was chosen, and either `policy_prefers_activity` or
+`no_offered_contract` when activity is the fallback. Repeated daily decisions
+are intentionally exempt from semantic-duplicate alarms. Activity events retain
+the preferred activity plus public pre/post purse, strategic condition, hunger,
+thirst, character minutes, and signed deltas, with `outcome=completed`. A
+rejected settlement-rest attempt instead emits one `outcome=failed` activity
+event before the run stops, containing its public pre-action state, requested
+venue, stable stage, and safe error category without raw reducer text.
+Successful final-agent rows carry the same public needs, visible food and water,
+settlement services, herbalist quote, and inn full-board cost used by failure
+diagnostics. Failure artifacts use schema version 2 for the expanded strict
+event vocabulary and activity-detail semantics. These fields make poverty,
+starvation, and unavailable-rest deadlocks diagnosable without exposing hidden
+case truth.
+
 Live simulated NPCs inspect persistent equipment condition before choosing quests or settlement
 activity. They submit repairable damaged equipment to the appropriate local smith, wait through the
 ordinary rest reducer until the longest ETA, and retrieve every completed order before continuing.

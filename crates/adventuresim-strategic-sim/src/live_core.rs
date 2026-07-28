@@ -271,6 +271,7 @@ pub enum CoreLoopEventKind {
     IllnessRecovered,
     QuestSuppressed,
     Death,
+    QuestDecision,
     Activity,
     Encounter,
 }
@@ -300,6 +301,16 @@ pub struct FinalAgentState {
     pub personal_gold_coin: u64,
     pub party_treasury: u64,
     pub party_stake: u64,
+    pub hunger: f32,
+    pub thirst: f32,
+    pub food_days: f32,
+    pub water_days: f32,
+    pub visible_food_kcal: f32,
+    pub visible_water_ml: f32,
+    pub settlement_id: Option<String>,
+    pub settlement_services: Vec<String>,
+    pub visible_herbalist_quote: Option<u64>,
+    pub visible_inn_full_board_cost: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -328,6 +339,7 @@ pub struct CoreLoopReport {
 }
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
+const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -371,6 +383,112 @@ struct FailureDraft {
     final_agents: Vec<CoreLoopFailureAgent>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct ActivityObservation {
+    personal_gold_coin: u64,
+    condition_status: String,
+    hunger: f32,
+    thirst: f32,
+    elapsed_minutes: u64,
+}
+
+fn quest_fallback_reason(
+    wants_quest: bool,
+    offered_contracts: usize,
+    quest_chosen: bool,
+) -> &'static str {
+    if quest_chosen {
+        "none"
+    } else if !wants_quest {
+        "policy_prefers_activity"
+    } else {
+        debug_assert_eq!(
+            offered_contracts, 0,
+            "a quest-seeking policy can decline only when no offered contract is visible"
+        );
+        "no_offered_contract"
+    }
+}
+
+fn format_quest_decision_detail(
+    cycle: u32,
+    wants_quest: bool,
+    selector: f64,
+    quest_propensity: f32,
+    settlement_id: Option<&str>,
+    offered_contracts: usize,
+    quest_chosen: bool,
+) -> String {
+    format!(
+        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};quest_chosen={quest_chosen};fallback={}",
+        settlement_id.unwrap_or("none"),
+        quest_fallback_reason(wants_quest, offered_contracts, quest_chosen),
+    )
+}
+
+fn signed_delta(after: u64, before: u64) -> String {
+    if after >= before {
+        format!("+{}", after - before)
+    } else {
+        format!("-{}", before - after)
+    }
+}
+
+fn signed_float_delta(after: f32, before: f32) -> String {
+    format!("{:+.3}", after - before)
+}
+
+fn format_activity_detail(
+    preferred_activity: &str,
+    before: &ActivityObservation,
+    after: &ActivityObservation,
+) -> String {
+    format!(
+        "outcome=completed;preferred={preferred_activity};purse_before={};purse_after={};purse_delta={};condition_before={};condition_after={};hunger_before={:.3};hunger_after={:.3};hunger_delta={};thirst_before={:.3};thirst_after={:.3};thirst_delta={};elapsed_before={};elapsed_after={};elapsed_delta={}",
+        before.personal_gold_coin,
+        after.personal_gold_coin,
+        signed_delta(after.personal_gold_coin, before.personal_gold_coin),
+        before.condition_status,
+        after.condition_status,
+        before.hunger,
+        after.hunger,
+        signed_float_delta(after.hunger, before.hunger),
+        before.thirst,
+        after.thirst,
+        signed_float_delta(after.thirst, before.thirst),
+        before.elapsed_minutes,
+        after.elapsed_minutes,
+        signed_delta(after.elapsed_minutes, before.elapsed_minutes),
+    )
+}
+
+fn format_failed_activity_detail(
+    preferred_activity: &str,
+    before: &ActivityObservation,
+    at_inn: bool,
+    error_category: &str,
+) -> String {
+    format!(
+        "outcome=failed;stage=rest_at_settlement;error_category={error_category};preferred={preferred_activity};requested_minutes=1440;at_inn={at_inn};purse_before={};condition_before={};hunger_before={:.3};thirst_before={:.3};elapsed_before={}",
+        before.personal_gold_coin,
+        before.condition_status,
+        before.hunger,
+        before.thirst,
+        before.elapsed_minutes,
+    )
+}
+
+fn event_is_repeatable(kind: &CoreLoopEventKind) -> bool {
+    matches!(
+        kind,
+        CoreLoopEventKind::Camp
+            | CoreLoopEventKind::Recover
+            | CoreLoopEventKind::Travel
+            | CoreLoopEventKind::AutoresolveDefeat
+            | CoreLoopEventKind::QuestDecision
+    )
+}
+
 #[derive(Clone)]
 struct FailureRecorder {
     output: Option<PathBuf>,
@@ -402,7 +520,7 @@ impl FailureRecorder {
             .map_err(|_| "failure diagnostic state was unavailable".to_string())?
             .clone();
         let artifact = CoreLoopFailureArtifact {
-            schema_version: 1,
+            schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
             category: category.into(),
             message: message.into(),
             metrics: draft.metrics,
@@ -940,13 +1058,7 @@ impl LiveRunner {
         self.sequence += 1;
         let detail = detail.into();
         let semantic = format!("{agent_id}:{kind:?}:{detail}");
-        let repeatable = matches!(
-            kind,
-            CoreLoopEventKind::Camp
-                | CoreLoopEventKind::Recover
-                | CoreLoopEventKind::Travel
-                | CoreLoopEventKind::AutoresolveDefeat
-        );
+        let repeatable = event_is_repeatable(&kind);
         if !repeatable && self.last_semantic_event.as_ref() == Some(&semantic) {
             self.metrics.duplicate_semantic_events += 1;
         }
@@ -1303,6 +1415,31 @@ impl LiveRunner {
             .filter(|row| row.character_id == character_id && is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum()
+    }
+
+    fn activity_observation(&self, character_id: u64) -> Result<ActivityObservation, String> {
+        let condition = self
+            .connection
+            .db
+            .character_strategic_condition()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .ok_or("missing activity condition")?;
+        let elapsed_minutes = self
+            .connection
+            .db
+            .character_time()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .ok_or("missing activity clock")?
+            .minutes;
+        Ok(ActivityObservation {
+            personal_gold_coin: self.personal_gold(character_id),
+            condition_status: condition.status,
+            hunger: condition.hunger,
+            thirst: condition.thirst,
+            elapsed_minutes,
+        })
     }
 
     /// Total concrete food energy and water volume visible to the character
@@ -1811,18 +1948,32 @@ impl LiveRunner {
             self.maintain_equipment(agent)?;
             let character_id = self.character_ids[agent as usize];
             let at_inn = self.settlement_rest_at_inn(character_id)?;
+            let before = self.activity_observation(character_id)?;
+            let preferred_activity =
+                format!("{:?}", self.profiles[agent as usize].preferred_activity);
             let result = reducer_call!(self, "settlement_activity_rest", |cb| self
                 .connection
                 .reducers
                 .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
-            self.call(result)?;
+            if let Err(error) = result {
+                let error_category = safe_core_loop_failure(&error).0;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::Activity,
+                    format_failed_activity_detail(
+                        &preferred_activity,
+                        &before,
+                        at_inn,
+                        error_category,
+                    ),
+                );
+                return self.call(Err(error));
+            }
+            let after = self.activity_observation(character_id)?;
             self.event(
                 agent,
                 CoreLoopEventKind::Activity,
-                format!(
-                    "preferred={:?}",
-                    self.profiles[agent as usize].preferred_activity
-                ),
+                format_activity_detail(&preferred_activity, &before, &after),
             );
             self.metrics.activity_days += 1;
             self.ensure_medically_safe(agent)?;
@@ -3023,6 +3174,7 @@ fn run_core_loop_with_npc_policy_inner(
             let _ = gateway_subscription_error_tx.send(Err(error.to_string()));
         })
         .add_query(|query| query.from.backend_case_site_pins())
+        .add_query(|query| query.from.backend_contracts())
         .add_query(|query| query.from.backend_npc_case_interventions())
         .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.backend_local_problem_trade_effects())
@@ -3195,12 +3347,37 @@ fn run_core_loop_with_npc_policy_inner(
                 ^ u64::from(leader_agent).wrapping_mul(0x9e37_79b9_7f4a_7c15)
                 ^ u64::from(cycle).wrapping_mul(0xbf58_476d_1ce4_e5b9);
             let selector = (mixed >> 11) as f64 / ((1_u64 << 53) as f64);
-            let wants_quest = selector < f64::from(profile.activity_vs_quest_propensity);
-            if wants_quest
-                && runner
-                    .choose_quest(&runner.party_for(leader)?, profile)
-                    .is_some()
-            {
+            let quest_propensity = profile.activity_vs_quest_propensity;
+            let wants_quest = selector < f64::from(quest_propensity);
+            let party = runner.party_for(leader)?;
+            let settlement_id = party.current_settlement_id.as_deref();
+            let offered_contracts = settlement_id.map_or(0, |settlement_id| {
+                runner
+                    .connection
+                    .db
+                    .backend_contracts()
+                    .iter()
+                    .filter(|contract| {
+                        contract.settlement_id == settlement_id
+                            && contract.status == ContractStatus::Offered
+                    })
+                    .count()
+            });
+            let quest_chosen = wants_quest && runner.choose_quest(&party, profile).is_some();
+            runner.event(
+                leader_agent,
+                CoreLoopEventKind::QuestDecision,
+                format_quest_decision_detail(
+                    cycle,
+                    wants_quest,
+                    selector,
+                    quest_propensity,
+                    settlement_id,
+                    offered_contracts,
+                    quest_chosen,
+                ),
+            );
+            if quest_chosen {
                 runner.cycle(party_id, cycle)?;
             } else {
                 runner.settlement_activity_day(leader_agent)?;
@@ -3359,6 +3536,9 @@ fn run_core_loop_with_npc_policy_inner(
                 .iter()
                 .find(|row| row.party_id == party_id && row.character_id == *character_id)
                 .map_or(0, |row| row.value);
+            let public = runner
+                .public_failure_agent(agent as u32, *character_id)
+                .ok_or("missing final public diagnostic state")?;
             Ok(FinalAgentState {
                 agent_id: agent as u32,
                 character_id: *character_id,
@@ -3380,6 +3560,16 @@ fn run_core_loop_with_npc_policy_inner(
                 personal_gold_coin,
                 party_treasury,
                 party_stake,
+                hunger: public.hunger,
+                thirst: public.thirst,
+                food_days: public.food_days,
+                water_days: public.water_days,
+                visible_food_kcal: public.visible_food_kcal,
+                visible_water_ml: public.visible_water_ml,
+                settlement_id: public.settlement_id,
+                settlement_services: public.settlement_services,
+                visible_herbalist_quote: public.visible_herbalist_quote,
+                visible_inn_full_board_cost: public.visible_inn_full_board_cost,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -3431,6 +3621,17 @@ mod tests {
             .expect("post-registration gateway subscription");
         let seed = source.find("\"seed_simulation_world\"").unwrap();
         assert!(claim < register && register < resubscribe && resubscribe < seed);
+        let gateway_surface = &source[resubscribe..seed];
+        let contracts = gateway_surface
+            .find(".backend_contracts()")
+            .expect("post-registration subscription must include offered contracts");
+        let subscribe = gateway_surface
+            .find(".subscribe()")
+            .expect("post-registration subscription must be applied");
+        assert!(
+            contracts < subscribe,
+            "offered contracts must be part of the applied gateway subscription"
+        );
     }
 
     #[test]
@@ -3467,6 +3668,102 @@ mod tests {
             active_block[advance..].contains("\"ensure_settlement_activity\""),
             "settlement activity must refresh after the simulation clock advances"
         );
+    }
+
+    #[test]
+    fn quest_decision_classifies_each_observer_safe_fallback() {
+        assert_eq!(
+            quest_fallback_reason(false, 3, false),
+            "policy_prefers_activity"
+        );
+        assert_eq!(quest_fallback_reason(true, 0, false), "no_offered_contract");
+        assert_eq!(quest_fallback_reason(true, 2, true), "none");
+    }
+
+    #[test]
+    fn quest_decision_detail_is_bounded_and_stably_formatted() {
+        assert_eq!(
+            format_quest_decision_detail(7, true, 0.25, 0.75, Some("lubeck"), 2, true),
+            "cycle=7;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=lubeck;offered_contracts=2;quest_chosen=true;fallback=none"
+        );
+        assert_eq!(
+            format_quest_decision_detail(8, true, 0.25, 0.75, None, 0, false),
+            "cycle=8;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=none;offered_contracts=0;quest_chosen=false;fallback=no_offered_contract"
+        );
+    }
+
+    #[test]
+    fn activity_detail_exposes_public_pre_post_values_and_signed_deltas() {
+        let before = ActivityObservation {
+            personal_gold_coin: 4,
+            condition_status: "ready".into(),
+            hunger: 0.125,
+            thirst: 0.25,
+            elapsed_minutes: 1_440,
+        };
+        let after = ActivityObservation {
+            personal_gold_coin: 9,
+            condition_status: "recovering".into(),
+            hunger: 0.5,
+            thirst: 0.125,
+            elapsed_minutes: 2_880,
+        };
+        assert_eq!(
+            format_activity_detail("Labor", &before, &after),
+            "outcome=completed;preferred=Labor;purse_before=4;purse_after=9;purse_delta=+5;condition_before=ready;condition_after=recovering;hunger_before=0.125;hunger_after=0.500;hunger_delta=+0.375;thirst_before=0.250;thirst_after=0.125;thirst_delta=-0.125;elapsed_before=1440;elapsed_after=2880;elapsed_delta=+1440"
+        );
+        assert_eq!(
+            format_failed_activity_detail("Labor", &before, true, "insufficient_visible_resources"),
+            "outcome=failed;stage=rest_at_settlement;error_category=insufficient_visible_resources;preferred=Labor;requested_minutes=1440;at_inn=true;purse_before=4;condition_before=ready;hunger_before=0.125;thirst_before=0.250;elapsed_before=1440"
+        );
+    }
+
+    #[test]
+    fn failed_activity_error_classification_never_echoes_raw_backend_text() {
+        let raw = "Not enough coin: secret internal reducer context";
+        let category = safe_core_loop_failure(raw).0;
+        let detail = format_failed_activity_detail(
+            "Prayer",
+            &ActivityObservation {
+                personal_gold_coin: 0,
+                condition_status: "ready".into(),
+                hunger: 0.0,
+                thirst: 0.0,
+                elapsed_minutes: 0,
+            },
+            false,
+            category,
+        );
+        assert!(detail.contains("error_category=insufficient_visible_resources"));
+        assert!(!detail.contains("secret internal reducer context"));
+    }
+
+    #[test]
+    fn failure_artifact_version_two_serializes_quest_decisions() {
+        let artifact = CoreLoopFailureArtifact {
+            schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
+            category: "core_loop_error".into(),
+            message: "The authoritative core loop stopped before completion.".into(),
+            metrics: CoreLoopMetrics::default(),
+            total_event_count: 1,
+            trace_truncated: false,
+            trace: vec![CoreLoopEvent {
+                sequence: 1,
+                agent_id: 0,
+                kind: CoreLoopEventKind::QuestDecision,
+                detail: "fallback=no_offered_contract".into(),
+            }],
+            final_agents: Vec::new(),
+        };
+        let value = serde_json::to_value(artifact).unwrap();
+        assert_eq!(value["schema_version"], serde_json::json!(2));
+        assert_eq!(value["trace"][0]["kind"], "quest_decision");
+    }
+
+    #[test]
+    fn repeated_daily_quest_decisions_are_not_semantic_duplicate_failures() {
+        assert!(event_is_repeatable(&CoreLoopEventKind::QuestDecision));
+        assert!(!event_is_repeatable(&CoreLoopEventKind::AcceptContract));
     }
 
     #[test]

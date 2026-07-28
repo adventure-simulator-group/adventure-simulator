@@ -39,6 +39,26 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
         "the run should exercise repeated autonomous decisions"
     );
     assert!(
+        report.trace.iter().any(|event| {
+            event.kind == CoreLoopEventKind::QuestDecision
+                && event.detail.contains("offered_contracts=")
+                && event.detail.contains("fallback=")
+        }),
+        "each autonomous choice should expose its observer-safe quest decision"
+    );
+    if report.metrics.activity_days > 0 {
+        assert!(
+            report.trace.iter().any(|event| {
+                event.kind == CoreLoopEventKind::Activity
+                    && event.detail.contains("outcome=completed")
+                    && event.detail.contains("purse_delta=")
+                    && event.detail.contains("condition_before=")
+                    && event.detail.contains("elapsed_delta=")
+            }),
+            "activity diagnostics should retain public pre/post consequences"
+        );
+    }
+    assert!(
         report.profiles.iter().any(|profile| matches!(
             profile.equipment.style,
             EquipmentStyle::Light | EquipmentStyle::Heavy
@@ -78,6 +98,17 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
             .iter()
             .all(|agent| agent.personal_gold_coin < 1_000_000),
         "gold-stack deduction must not underflow"
+    );
+    assert!(
+        report.final_agents.iter().all(|agent| {
+            agent.hunger.is_finite()
+                && agent.thirst.is_finite()
+                && agent.food_days.is_finite()
+                && agent.water_days.is_finite()
+                && agent.visible_food_kcal.is_finite()
+                && agent.visible_water_ml.is_finite()
+        }),
+        "successful reports must retain public need and supply diagnostics"
     );
     assert_eq!(report.metrics.reducer_failures, 0);
     assert_eq!(report.metrics.stuck_detections, 0);
