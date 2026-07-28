@@ -159,8 +159,37 @@ without exposing hidden case truth.
 In full-world runs, leaders without an offered direct contract discover local
 generated problems through the same ordinary player dialogue used by the web
 client. The runner uses only public settlement-NPC facts and current public
-presence, preferring a stably ordered NPC at the inn and using the settlement
-overview only when no inn NPC is present. It then follows only owner-scoped
+presence. Discovery is discriminated by the public settlement location and
+time, not by the source NPC. Each decision performs exactly one ordinary
+dialogue with the stably first public representative at the inn when one is
+present. The settlement overview is used only when no inn representative is
+present, matching the same public discovery rule enforced by the server. An
+unproductive action falls back to an ordinary settlement activity day before
+another discovery decision.
+
+The runner records a bounded public attempt and result for that action:
+visible candidate count, public candidate identity/name/location, dialogue and
+owner-session success, and owner-scoped open-case counts before and after. A
+new owner-visible open case is the postcondition for an observer-safe
+`rumor_delivered=true`; the evaluator does not read private delivery receipts
+or generation eligibility. Stable result reasons distinguish
+`rumor_delivered`, `no_public_rumor_available`, and `no_visible_contacts`.
+Reports separately count attempted and fruitful discovery actions plus
+unproductive discovery decisions, including decisions with no visible
+discovery location. The pre-action quest-decision event distinguishes policy
+intent from selection with `quest_intended` and `quest_selected`; the later
+discovery-result event alone reports the postcondition and whether the ordinary
+activity fallback follows.
+
+Generated local-problem authority uses the official world clock for its active
+window. Dialogue discovery therefore checks problem `starts_at`, `ends_at`, and
+resolution against official world time, while journal `learned_at` and
+`recorded_at` remain on the observing character's elapsed timeline. Travel,
+treatment, and bulk settlement activity can move that observer timeline
+independently and must not make a world problem appear prematurely active or
+expired.
+
+The runner then follows only owner-scoped
 case, journal, lead, dialogue-topic, action, action-outcome, and exact-site-pin
 projections. Referred witnesses are never inferred from generated truth:
 same-named public candidates are tried in stable order and only the candidate

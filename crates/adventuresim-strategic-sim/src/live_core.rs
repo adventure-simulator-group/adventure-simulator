@@ -235,6 +235,9 @@ pub struct CoreLoopMetrics {
     pub generated_investigation_wait_minutes: u64,
     pub generated_investigation_replans: u32,
     pub generated_witness_dialogues: u32,
+    pub generated_discovery_actions_attempted: u32,
+    pub generated_discovery_actions_fruitful: u32,
+    pub generated_discovery_decisions_unproductive: u32,
     pub generated_unique_party_cases_discovered: u32,
     pub generated_exact_site_ready: u32,
     pub generated_finance_blocked_cycles: u32,
@@ -308,6 +311,8 @@ pub enum CoreLoopEventKind {
     QuestSuppressed,
     Death,
     QuestDecision,
+    GeneratedDiscoveryAttempt,
+    GeneratedDiscoveryResult,
     GeneratedQuestDiscovered,
     GeneratedInvestigationAttempt,
     GeneratedInvestigationAction,
@@ -490,16 +495,6 @@ fn visible_activity_committed_reserve(
     medical.saturating_add(profile_cash_reserve_target.min(spendable_after_medical_and_inn))
 }
 
-fn quest_fallback_reason(wants_quest: bool, quest_path: &str) -> &'static str {
-    if quest_path != "activity" {
-        "none"
-    } else if !wants_quest {
-        "policy_prefers_activity"
-    } else {
-        "no_player_visible_quest_step"
-    }
-}
-
 fn format_quest_decision_detail(
     cycle: u32,
     wants_quest: bool,
@@ -510,12 +505,14 @@ fn format_quest_decision_detail(
     open_generated_cases: usize,
     projected_investigation_actions: usize,
     quest_path: &str,
+    quest_intended: bool,
+    quest_selected: bool,
+    selection_reason: &str,
 ) -> String {
     format!(
-        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};open_generated_cases={open_generated_cases};projected_investigation_actions={projected_investigation_actions};quest_path={quest_path};quest_chosen={};fallback={}",
+        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};open_generated_cases={open_generated_cases};projected_investigation_actions={projected_investigation_actions};quest_path={quest_path};quest_intended={quest_intended};quest_selected={quest_selected};selection_reason={}",
         settlement_id.unwrap_or("none"),
-        quest_path != "activity",
-        quest_fallback_reason(wants_quest, quest_path),
+        bounded_event_field(selection_reason),
     )
 }
 
@@ -526,6 +523,34 @@ struct PublicNpcCandidate {
     profession: String,
     conversation_id: String,
     location_id: String,
+}
+
+fn stable_discovery_action_candidate(
+    candidates: Vec<PublicNpcCandidate>,
+) -> Option<PublicNpcCandidate> {
+    let mut candidates = stable_public_npc_candidates(candidates, None, Some("inn"));
+    if candidates
+        .iter()
+        .any(|candidate| candidate.location_id == "inn")
+    {
+        candidates.retain(|candidate| candidate.location_id == "inn");
+    } else {
+        candidates.retain(|candidate| candidate.location_id == "overview");
+    }
+    candidates.into_iter().next()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeneratedDiscoveryOutcome {
+    Discovered,
+    NoVisibleContacts,
+    NoPublicRumor,
+}
+
+impl GeneratedDiscoveryOutcome {
+    fn case_discovered(self) -> bool {
+        self == Self::Discovered
+    }
 }
 
 fn npc_is_publicly_present(start_minute: u16, end_minute: u16, minute: u64) -> bool {
@@ -872,6 +897,7 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "wait_for_investigation_window_settlement",
         "wait_for_investigation_window_camp",
         "travel_to_generated_case_site",
+        "start_discovery_dialogue",
         "choose_dialogue_topic",
         "rest_at_camp",
         "continue_camp_travel",
@@ -888,6 +914,8 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
 fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
     if error.contains("Rest until the party reaches its next daylight walking window") {
         "journey_daylight_window_rest_required"
+    } else if error.contains("start_discovery_dialogue") {
+        "discovery_contact_failed"
     } else if error.contains("purchase_journey_provisions") {
         "journey_provision_purchase_failed"
     } else if error.contains("journey camp projection is incoherent")
@@ -921,6 +949,11 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
         (
             "journey_temporally_unavailable",
             "Camp travel was continued outside its public projected walking window.",
+        )
+    } else if error.contains("start_discovery_dialogue") {
+        (
+            "discovery_contact_failed",
+            "A public discovery contact could not be completed.",
         )
     } else if error.contains("purchase_journey_provisions") {
         (
@@ -3612,54 +3645,141 @@ impl LiveRunner {
         character_id: u64,
         agent: u32,
         cycle: u32,
-    ) -> Result<bool, String> {
+    ) -> Result<GeneratedDiscoveryOutcome, String> {
         let before = self
             .connection
             .db
             .backend_investigation_cases()
             .iter()
-            .filter(|row| row.owner_character_id == character_id)
+            .filter(|row| row.owner_character_id == character_id && row.status == "open")
             .map(|row| row.case_id)
             .collect::<HashSet<_>>();
-        let mut candidates = self.visible_npc_candidates(character_id, None, Some("inn"));
-        if candidates
-            .iter()
-            .any(|candidate| candidate.location_id == "inn")
-        {
-            candidates.retain(|candidate| candidate.location_id == "inn");
-        } else {
-            candidates.retain(|candidate| candidate.location_id == "overview");
-        }
-        let Some(candidate) = candidates.first() else {
-            return Ok(false);
+        let candidates = self.visible_npc_candidates(character_id, None, None);
+        let visible_candidate_count = candidates.len();
+        let Some(candidate) = stable_discovery_action_candidate(candidates) else {
+            self.metrics.generated_discovery_decisions_unproductive = self
+                .metrics
+                .generated_discovery_decisions_unproductive
+                .saturating_add(1);
+            self.event(
+                agent,
+                CoreLoopEventKind::GeneratedDiscoveryResult,
+                format!(
+                    "visible_candidate_count={visible_candidate_count};candidate_id=none;candidate_name=none;location=none;dialogue_success=false;session_success=false;open_cases_before={};open_cases_after={};new_open_cases=0;rumor_delivered=false;result=unproductive;reason=no_visible_contacts;fallback=no_visible_contacts;activity_fallback=true",
+                    before.len(),
+                    before.len(),
+                ),
+            );
+            return Ok(GeneratedDiscoveryOutcome::NoVisibleContacts);
         };
-        self.start_public_dialogue(character_id, cycle, candidate, "discover")?;
-        let mut discovered = self
-            .owned_open_generated_cases(character_id)
-            .into_iter()
-            .filter(|(case_id, _)| !before.contains(case_id))
-            .collect::<Vec<_>>();
-        discovered.sort();
-        let Some((case_id, title)) = discovered.into_iter().next() else {
-            return Ok(false);
-        };
-        self.generated_case_owners
-            .insert(case_id.clone(), character_id);
-        self.metrics.generated_quests_discovered += 1;
-        self.metrics.generated_unique_party_cases_discovered += 1;
-        self.metrics.quests_attempted += 1;
+
+        self.metrics.generated_discovery_actions_attempted = self
+            .metrics
+            .generated_discovery_actions_attempted
+            .saturating_add(1);
         self.event(
             agent,
-            CoreLoopEventKind::GeneratedQuestDiscovered,
+            CoreLoopEventKind::GeneratedDiscoveryAttempt,
             format!(
-                "case={};subject={};npc={};location={}",
-                bounded_event_field(&case_id),
-                bounded_event_field(&title),
+                "visible_candidate_count={visible_candidate_count};candidate_id={};candidate_name={};location={};open_cases_before={}",
+                bounded_event_field(&candidate.npc_id),
                 bounded_event_field(&candidate.name),
-                bounded_event_field(&candidate.location_id)
+                bounded_event_field(&candidate.location_id),
+                before.len(),
             ),
         );
-        Ok(true)
+        if let Err(error) = self.start_public_dialogue(character_id, cycle, &candidate, "discover")
+        {
+            let dialogue_succeeded =
+                error == "dialogue reducer completed without an owner-scoped session";
+            self.event(
+                agent,
+                CoreLoopEventKind::GeneratedDiscoveryResult,
+                format!(
+                    "visible_candidate_count={visible_candidate_count};candidate_id={};candidate_name={};location={};dialogue_success={dialogue_succeeded};session_success=false;open_cases_before={};open_cases_after={};new_open_cases=0;rumor_delivered=false;result=failed;reason={};fallback=none;activity_fallback=false",
+                    bounded_event_field(&candidate.npc_id),
+                    bounded_event_field(&candidate.name),
+                    bounded_event_field(&candidate.location_id),
+                    before.len(),
+                    before.len(),
+                    if dialogue_succeeded {
+                        "session_projection_missing"
+                    } else {
+                        "dialogue_failed"
+                    },
+                ),
+            );
+            return Err(if dialogue_succeeded {
+                "start_discovery_dialogue failed: owner-scoped dialogue session unavailable".into()
+            } else {
+                "start_discovery_dialogue failed: public discovery contact failed".into()
+            });
+        }
+
+        // The owner-scoped open-case projection is the public postcondition of
+        // receiving a generated rumor. It avoids inspecting private delivery
+        // receipts or generation eligibility.
+        let after = self.owned_open_generated_cases(character_id);
+        let mut discovered = after
+            .iter()
+            .filter(|(case_id, _)| !before.contains(case_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        discovered.sort();
+        let new_open_cases = discovered.len();
+        if let Some((case_id, subject)) = discovered.into_iter().next() {
+            self.metrics.generated_discovery_actions_fruitful = self
+                .metrics
+                .generated_discovery_actions_fruitful
+                .saturating_add(1);
+            self.event(
+                agent,
+                CoreLoopEventKind::GeneratedDiscoveryResult,
+                format!(
+                    "visible_candidate_count={visible_candidate_count};candidate_id={};candidate_name={};location={};dialogue_success=true;session_success=true;open_cases_before={};open_cases_after={};new_open_cases={new_open_cases};rumor_delivered=true;result=fruitful;reason=rumor_delivered;fallback=none;activity_fallback=false",
+                    bounded_event_field(&candidate.npc_id),
+                    bounded_event_field(&candidate.name),
+                    bounded_event_field(&candidate.location_id),
+                    before.len(),
+                    after.len(),
+                ),
+            );
+            self.generated_case_owners
+                .insert(case_id.clone(), character_id);
+            self.metrics.generated_quests_discovered += 1;
+            self.metrics.generated_unique_party_cases_discovered += 1;
+            self.metrics.quests_attempted += 1;
+            self.event(
+                agent,
+                CoreLoopEventKind::GeneratedQuestDiscovered,
+                format!(
+                    "case={};subject={};npc={};location={}",
+                    bounded_event_field(&case_id),
+                    bounded_event_field(&subject),
+                    bounded_event_field(&candidate.name),
+                    bounded_event_field(&candidate.location_id)
+                ),
+            );
+            return Ok(GeneratedDiscoveryOutcome::Discovered);
+        }
+
+        self.metrics.generated_discovery_decisions_unproductive = self
+            .metrics
+            .generated_discovery_decisions_unproductive
+            .saturating_add(1);
+        self.event(
+            agent,
+            CoreLoopEventKind::GeneratedDiscoveryResult,
+            format!(
+                "visible_candidate_count={visible_candidate_count};candidate_id={};candidate_name={};location={};dialogue_success=true;session_success=true;open_cases_before={};open_cases_after={};new_open_cases=0;rumor_delivered=false;result=unproductive;reason=no_public_rumor_available;fallback=no_public_rumor_available;activity_fallback=true",
+                bounded_event_field(&candidate.npc_id),
+                bounded_event_field(&candidate.name),
+                bounded_event_field(&candidate.location_id),
+                before.len(),
+                after.len(),
+            ),
+        );
+        Ok(GeneratedDiscoveryOutcome::NoPublicRumor)
     }
 
     fn try_generated_dialogue_topic(
@@ -5497,6 +5617,7 @@ fn run_core_loop_with_npc_policy_inner(
             } else {
                 "activity"
             };
+            let quest_selected = quest_path != "activity";
             runner.event(
                 leader_agent,
                 CoreLoopEventKind::QuestDecision,
@@ -5510,6 +5631,13 @@ fn run_core_loop_with_npc_policy_inner(
                     open_generated_cases.len(),
                     projected_investigation_actions,
                     quest_path,
+                    wants_quest,
+                    quest_selected,
+                    if quest_selected {
+                        "none"
+                    } else {
+                        "policy_prefers_activity"
+                    },
                 ),
             );
             match quest_path {
@@ -5533,7 +5661,8 @@ fn run_core_loop_with_npc_policy_inner(
                 }
                 "direct_contract" => runner.cycle(party_id, cycle)?,
                 "generated_discovery" => {
-                    if runner.discover_generated_case(leader, leader_agent, cycle)? {
+                    let discovery = runner.discover_generated_case(leader, leader_agent, cycle)?;
+                    if discovery.case_discovered() {
                         let Some((case_id, title)) =
                             runner.owned_open_generated_cases(leader).into_iter().next()
                         else {
@@ -5950,19 +6079,6 @@ mod tests {
     }
 
     #[test]
-    fn quest_decision_classifies_each_observer_safe_fallback() {
-        assert_eq!(
-            quest_fallback_reason(false, "activity"),
-            "policy_prefers_activity"
-        );
-        assert_eq!(
-            quest_fallback_reason(true, "activity"),
-            "no_player_visible_quest_step"
-        );
-        assert_eq!(quest_fallback_reason(true, "generated_open_case"), "none");
-    }
-
-    #[test]
     fn quest_decision_detail_is_bounded_and_stably_formatted() {
         assert_eq!(
             format_quest_decision_detail(
@@ -5975,12 +6091,47 @@ mod tests {
                 1,
                 3,
                 "generated_open_case",
+                true,
+                true,
+                "none",
             ),
-            "cycle=7;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=lubeck;offered_contracts=2;open_generated_cases=1;projected_investigation_actions=3;quest_path=generated_open_case;quest_chosen=true;fallback=none"
+            "cycle=7;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=lubeck;offered_contracts=2;open_generated_cases=1;projected_investigation_actions=3;quest_path=generated_open_case;quest_intended=true;quest_selected=true;selection_reason=none"
         );
         assert_eq!(
-            format_quest_decision_detail(8, true, 0.25, 0.75, None, 0, 0, 0, "activity",),
-            "cycle=8;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=none;offered_contracts=0;open_generated_cases=0;projected_investigation_actions=0;quest_path=activity;quest_chosen=false;fallback=no_player_visible_quest_step"
+            format_quest_decision_detail(
+                8,
+                false,
+                0.25,
+                0.75,
+                None,
+                0,
+                0,
+                0,
+                "activity",
+                false,
+                false,
+                "policy_prefers_activity",
+            ),
+            "cycle=8;wants_quest=false;selector=0.250000;quest_propensity=0.750000;settlement=none;offered_contracts=0;open_generated_cases=0;projected_investigation_actions=0;quest_path=activity;quest_intended=false;quest_selected=false;selection_reason=policy_prefers_activity"
+        );
+    }
+
+    #[test]
+    fn quest_selection_trace_precedes_discovery_reducers() {
+        let source = include_str!("live_core.rs");
+        let loop_body = source
+            .split("for cycle in 0..config.cycles")
+            .nth(1)
+            .expect("active core-loop body");
+        let selection = loop_body
+            .find("CoreLoopEventKind::QuestDecision")
+            .expect("pre-action quest selection");
+        let discovery = loop_body
+            .find("runner.discover_generated_case")
+            .expect("generated discovery reducer path");
+        assert!(
+            selection < discovery,
+            "quest selection must be recorded before discovery dialogue"
         );
     }
 
@@ -6032,6 +6183,68 @@ mod tests {
             2,
             "ambiguity must be resolved only by projected topic eligibility, not guessed identity"
         );
+    }
+
+    #[test]
+    fn generated_discovery_uses_one_stable_representative_at_the_valid_public_location() {
+        let candidate = |npc_id: &str, name: &str, location: &str| PublicNpcCandidate {
+            npc_id: npc_id.into(),
+            name: name.into(),
+            profession: "Resident".into(),
+            conversation_id: "local-resident".into(),
+            location_id: location.into(),
+        };
+        let inn = stable_discovery_action_candidate(vec![
+            candidate("npc-z", "Zelda", "inn"),
+            candidate("npc-a", "Agnes", "inn"),
+            candidate("npc-o", "Otto", "overview"),
+            candidate("npc-m", "Marta", "market"),
+        ])
+        .expect("inn representative");
+        assert_eq!(
+            (inn.location_id.as_str(), inn.npc_id.as_str()),
+            ("inn", "npc-a")
+        );
+
+        let overview = stable_discovery_action_candidate(vec![
+            candidate("npc-o", "Otto", "overview"),
+            candidate("npc-b", "Bertha", "overview"),
+            candidate("npc-m", "Marta", "market"),
+        ])
+        .expect("overview fallback representative");
+        assert_eq!(
+            (overview.location_id.as_str(), overview.npc_id.as_str()),
+            ("overview", "npc-b")
+        );
+
+        assert!(
+            stable_discovery_action_candidate(vec![candidate("npc-m", "Marta", "market")])
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn generated_discovery_outcomes_do_not_conflate_selection_with_success() {
+        assert!(GeneratedDiscoveryOutcome::Discovered.case_discovered());
+        assert!(!GeneratedDiscoveryOutcome::NoVisibleContacts.case_discovered());
+        assert!(!GeneratedDiscoveryOutcome::NoPublicRumor.case_discovered());
+    }
+
+    #[test]
+    fn discovery_logging_uses_only_the_owner_visible_case_postcondition() {
+        let source = include_str!("live_core.rs");
+        let discovery = source
+            .split("fn discover_generated_case")
+            .nth(1)
+            .and_then(|tail| tail.split("fn try_generated_dialogue_topic").next())
+            .expect("generated discovery policy");
+        assert_eq!(discovery.matches("start_public_dialogue(").count(), 1);
+        assert!(discovery.contains("owned_open_generated_cases(character_id)"));
+        assert!(discovery.contains("rumor_delivered=true"));
+        assert!(discovery.contains("reason=rumor_delivered"));
+        assert!(discovery.contains("reason=no_public_rumor_available"));
+        assert!(!discovery.contains("local_problem_rumor_delivery"));
+        assert!(!discovery.contains("quest_generation_authority"));
     }
 
     #[test]
@@ -6491,6 +6704,23 @@ mod tests {
     }
 
     #[test]
+    fn discovery_contact_failures_are_sanitized_without_reducer_text() {
+        let raw =
+            "start_discovery_dialogue failed: public discovery contact failed; hidden authority";
+        let (category, message) = safe_core_loop_failure(raw);
+        assert_eq!(category, "discovery_contact_failed");
+        assert_eq!(
+            safe_failure_operation(raw),
+            Some("start_discovery_dialogue")
+        );
+        assert_eq!(
+            safe_failure_reason_code(raw, category),
+            "discovery_contact_failed"
+        );
+        assert!(!message.contains("hidden authority"));
+    }
+
+    #[test]
     fn journey_camp_failures_are_allowlisted_without_raw_text() {
         let temporal = "continue_camp_travel failed: Rest until the party reaches its next daylight walking window; hidden route authority";
         let (category, message) = safe_core_loop_failure(temporal);
@@ -6763,6 +6993,9 @@ mod tests {
             generated_investigation_wait_minutes: 480,
             generated_investigation_replans: 2,
             generated_witness_dialogues: 4,
+            generated_discovery_actions_attempted: 8,
+            generated_discovery_actions_fruitful: 3,
+            generated_discovery_decisions_unproductive: 2,
             generated_unique_party_cases_discovered: 3,
             generated_exact_site_ready: 2,
             generated_finance_blocked_cycles: 5,
@@ -6793,6 +7026,9 @@ mod tests {
             "generated_investigation_wait_minutes",
             "generated_investigation_replans",
             "generated_witness_dialogues",
+            "generated_discovery_actions_attempted",
+            "generated_discovery_actions_fruitful",
+            "generated_discovery_decisions_unproductive",
             "generated_unique_party_cases_discovered",
             "generated_exact_site_ready",
             "generated_finance_blocked_cycles",

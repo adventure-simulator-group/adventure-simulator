@@ -927,7 +927,11 @@ pub fn surface_problem(
         .id()
         .find(&source_npc_id.to_owned())
         .filter(|npc| npc.home_settlement_id == settlement_id);
-    let minute = ctx
+    // Problem authority is anchored to the official world clock. A character's
+    // elapsed clock is an observer timeline and may be ahead of or behind it
+    // after travel, treatment, or bulk settlement activity.
+    let official_world_minute = official_minute(ctx);
+    let observer_minute = ctx
         .db
         .character_time()
         .character_id()
@@ -939,7 +943,7 @@ pub fn surface_problem(
             .local_problem_authority()
             .scope_key()
             .filter(&scope)
-            .filter(|problem| is_active(problem, minute)),
+            .filter(|problem| is_active(problem, official_world_minute)),
         lp::MAX_ACTIVE_PER_SCOPE,
         |problem| validated_problem_generation(ctx, problem, &settlement_id).is_some(),
         |problem| (problem.id.clone(), problem.opaque_case_ref.clone()),
@@ -982,7 +986,7 @@ pub fn surface_problem(
                     character_id,
                     problem_id: problem.id.clone(),
                     incident_id: incident.id.clone(),
-                    learned_at: minute,
+                    learned_at: observer_minute,
                 });
             ctx.db.investigation_lead().insert(InvestigationLead {
                 id: format!("lead:{incident_receipt_id}"),
@@ -1004,7 +1008,7 @@ pub fn surface_problem(
                 current_learned_location: String::new(),
                 contradiction_group: format!("incident:{}", incident.id),
                 corrected_by: String::new(),
-                recorded_at: minute,
+                recorded_at: observer_minute,
             });
             ctx.db
                 .local_problem_rumor_delivery()
@@ -1083,7 +1087,8 @@ pub fn surface_problem(
             .settlement_id()
             .filter(&settlement_id)
             .any(|p| {
-                p.location_id == "inn" && crate::settlement_population::npc_is_present(&p, minute)
+                p.location_id == "inn"
+                    && crate::settlement_population::npc_is_present(&p, observer_minute)
             });
     if lp::discovery_action(location_id, inn_available, false) != lp::DiscoveryAction::NewRumor {
         return Ok(());
@@ -1157,7 +1162,7 @@ pub fn surface_problem(
             contact_npc_id: contact.id,
             expected_location_id: presence.location_id,
             safe_summary: symptom.public_summary,
-            learned_at: minute,
+            learned_at: observer_minute,
         });
         ctx.db
             .local_problem_rumor_delivery()
@@ -1246,6 +1251,23 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn discovery_uses_world_time_for_problem_windows_and_observer_time_for_records() {
+        let source = include_str!("local_problem.rs");
+        let surface = source
+            .split("pub fn surface_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("fn referral_fragments_json").next())
+            .expect("problem discovery implementation");
+        assert!(surface.contains("let official_world_minute = official_minute(ctx);"));
+        assert!(surface.contains("let observer_minute = ctx"));
+        assert!(surface.contains("is_active(problem, official_world_minute)"));
+        assert!(!surface.contains("is_active(problem, observer_minute)"));
+        assert!(surface.contains("npc_is_present(&p, observer_minute)"));
+        assert!(surface.contains("learned_at: observer_minute"));
+        assert!(surface.contains("recorded_at: observer_minute"));
     }
 
     #[test]
