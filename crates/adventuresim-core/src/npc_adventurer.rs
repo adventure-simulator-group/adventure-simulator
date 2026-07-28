@@ -125,6 +125,18 @@ pub fn select_party<'a>(
         })
 }
 
+pub fn update_party_availability(
+    parties: &mut [NpcPartySnapshot],
+    party_id: &str,
+    available_at: u64,
+) -> bool {
+    let Some(party) = parties.iter_mut().find(|party| party.party_id == party_id) else {
+        return false;
+    };
+    party.available_at = available_at;
+    true
+}
+
 pub fn scripted_strategy(
     case: &NpcCaseSnapshot,
     party: &NpcPartySnapshot,
@@ -705,6 +717,45 @@ mod tests {
         assert_eq!(
             decide(&value, &strong, strategy, 1, 10_000),
             decide(&value, &strong, strategy, 1, 10_000)
+        );
+    }
+
+    #[test]
+    fn same_minute_cases_respect_working_party_availability() {
+        let now = 10_000;
+        let mut first_case = case();
+        first_case.case_id = "case:first".into();
+        let mut second_case = case();
+        second_case.case_id = "case:second".into();
+        let mut third_case = case();
+        third_case.case_id = "case:third".into();
+        let mut parties = vec![party("company-a", 80), party("company-b", 70)];
+
+        assert!(case_is_eligible(&first_case, now));
+        let first = select_party(&first_case, now, &parties).unwrap().clone();
+        assert_eq!(first.party_id, "company-a");
+        assert!(update_party_availability(
+            &mut parties,
+            &first.party_id,
+            now + 60
+        ));
+
+        assert!(case_is_eligible(&second_case, now));
+        let second = select_party(&second_case, now, &parties).unwrap().clone();
+        assert_eq!(second.party_id, "company-b");
+        assert!(update_party_availability(
+            &mut parties,
+            &second.party_id,
+            now + 90
+        ));
+
+        assert!(case_is_eligible(&third_case, now));
+        assert!(select_party(&third_case, now, &parties).is_none());
+        assert_eq!(
+            select_party(&third_case, now + 60, &parties)
+                .unwrap()
+                .party_id,
+            "company-a"
         );
     }
 

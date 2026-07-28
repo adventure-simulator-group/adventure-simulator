@@ -22,6 +22,7 @@ use adventuresim_core::{
         NpcInterventionStrategy, NpcInvestigationApproach, NpcPartySnapshot, case_is_eligible,
         decide_after_supported_approach, resolve_investigation_approach, scripted_strategy,
         select_investigation_approach_after, select_party, supported_investigation_approaches,
+        update_party_availability,
     },
     quest_generation::GeneratedCase,
     settlement_population::stable_hash,
@@ -298,7 +299,7 @@ pub(crate) fn ensure_npc_case_interventions(
     now: u64,
 ) -> Result<(), String> {
     ensure_npc_adventuring_party(ctx, settlement_id)?;
-    let parties = ctx
+    let mut parties = ctx
         .db
         .npc_adventuring_party_authority()
         .settlement_id()
@@ -359,7 +360,7 @@ pub(crate) fn ensure_npc_case_interventions(
         if !case_is_eligible(&snapshot, now) {
             continue;
         }
-        let Some(party) = select_party(&snapshot, now, &parties) else {
+        let Some(party) = select_party(&snapshot, now, &parties).cloned() else {
             continue;
         };
         let attempt = last_attempt
@@ -372,7 +373,7 @@ pub(crate) fn ensure_npc_case_interventions(
             .find(&case.id)
             .map(|row| parse_strategy(&row.strategy))
             .transpose()?
-            .unwrap_or_else(|| scripted_strategy(&snapshot, party));
+            .unwrap_or_else(|| scripted_strategy(&snapshot, &party));
         let approaches = supported_investigation_approaches(&validated.manifest);
         let previous_route = last_attempt.as_ref().and_then(|row| {
             approaches
@@ -383,7 +384,7 @@ pub(crate) fn ensure_npc_case_interventions(
         let approach =
             select_investigation_approach_after(&approaches, strategy, attempt, previous_route);
         let approach_resolution = approach
-            .map(|plan| resolve_investigation_approach(&snapshot, party, plan, attempt, now));
+            .map(|plan| resolve_investigation_approach(&snapshot, &party, plan, attempt, now));
         let next_approach = select_investigation_approach_after(
             &approaches,
             strategy,
@@ -392,7 +393,7 @@ pub(crate) fn ensure_npc_case_interventions(
         );
         let decision = decide_after_supported_approach(
             &snapshot,
-            party,
+            &party,
             strategy,
             attempt,
             now,
@@ -499,6 +500,7 @@ pub(crate) fn ensure_npc_case_interventions(
             row.available_at = decision.next_available_at;
             ctx.db.npc_adventuring_party_authority().id().update(row);
         }
+        update_working_party_availability(&mut parties, &party, decision.next_available_at)?;
         record_news_for_informed_characters(
             ctx,
             &problem.id,
@@ -509,6 +511,21 @@ pub(crate) fn ensure_npc_case_interventions(
         )?;
     }
     Ok(())
+}
+
+fn update_working_party_availability(
+    parties: &mut [NpcPartySnapshot],
+    selected_party: &NpcPartySnapshot,
+    available_at: u64,
+) -> Result<(), String> {
+    if update_party_availability(parties, &selected_party.party_id, available_at) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Selected NPC adventuring party `{}` was absent from the working roster",
+            selected_party.party_id
+        ))
+    }
 }
 
 fn parse_strategy(value: &str) -> Result<NpcInterventionStrategy, String> {
@@ -961,6 +978,57 @@ mod tests {
         assert!(!activity.contains("quest_generation_authority()\n        .iter()"));
         assert!(activity.contains("validate_quest_generation_authority"));
         assert!(activity.contains("validated.context.settlement_id != settlement_id"));
+    }
+
+    #[test]
+    fn authority_loop_reserves_selected_party_until_decision_availability() {
+        let selected = NpcPartySnapshot {
+            party_id: "company-a".into(),
+            name: "Company A".into(),
+            settlement_id: "town".into(),
+            capability: 80,
+            available_at: 0,
+        };
+        let mut parties = vec![selected.clone()];
+        update_working_party_availability(&mut parties, &selected, 12_345).unwrap();
+        assert_eq!(parties[0].available_at, 12_345);
+        assert!(update_working_party_availability(&mut [], &selected, 12_345).is_err());
+
+        let source = include_str!("npc_adventurer.rs").replace('\r', "");
+        let activity = source
+            .split("pub(crate) fn ensure_npc_case_interventions")
+            .nth(1)
+            .and_then(|tail| tail.split("fn update_working_party_availability").next())
+            .expect("NPC intervention authority loop");
+        let persisted = activity
+            .find("row.available_at = decision.next_available_at;")
+            .expect("persisted party availability");
+        let working = activity
+            .find("update_working_party_availability(")
+            .expect("working party availability");
+        let next_stage = activity
+            .find("record_news_for_informed_characters(")
+            .expect("next intervention stage");
+        let working_call = &activity[working..next_stage];
+
+        assert!(
+            activity.contains("let Some(party) = select_party(&snapshot, now, &parties).cloned()")
+        );
+        assert_eq!(
+            activity
+                .matches("update_working_party_availability(")
+                .count(),
+            1
+        );
+        assert!(working_call.contains("&mut parties"));
+        assert!(working_call.contains("&party"));
+        assert_eq!(
+            working_call.matches("decision.next_available_at").count(),
+            1
+        );
+        assert!(working_call.contains(")?;"));
+        assert!(persisted < working);
+        assert!(working < next_stage);
     }
 
     #[test]
