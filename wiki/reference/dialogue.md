@@ -182,6 +182,20 @@ encounter so contextual and prior-interaction facts are reevaluated; old
 sessions remain history rather than an indefinitely reusable active view.
 Free-form `local_chat_message` remains an independent stream.
 
+Organization business uses the dedicated compiled
+`organization-representative` conversation. Join, dues/reactivation,
+promotion, and presentation are closed effects with no authored or
+client-submitted organization ID. Strategic authority derives the institution
+only from the organization-bound representative NPC, verifies that the NPC
+occupies that institution's exact authored chapter location, then applies the
+existing membership authority. Membership state, promotion availability,
+dues, and current presentation are server-built dialogue facts. Before asking
+for confirmation, the representative names the organization and states the
+joining fee and admission requirements, the dues amount, interval, and current
+standing, or the current rank and next-rank requirements as applicable.
+Committed prompt answers are retry-safe when a response is lost; a new answer
+or an action receipt from a different prompt cannot mutate a closed prompt.
+
 The web conversation surface exposes topics only as highlighted phrases in
 NPC dialogue. Clicking one asks about that subject; there is no separate list
 of generic or undiscovered topics. While a prompt is open, the shared composer

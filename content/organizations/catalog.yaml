@@ -10,9 +10,30 @@
                               "old_rank_id":  "master"
                           },
         "chapters":  [
-                         "viabundus-0",
-                         "viabundus-2337",
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-merchant-guild",
+                             "building_name":  "Merchants Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild factor",
+                             "representative_profession":  "merchant"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-merchant-guild",
+                             "building_name":  "Merchants Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild factor",
+                             "representative_profession":  "merchant"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-merchant-guild",
+                             "building_name":  "Merchants Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild factor",
+                             "representative_profession":  "merchant"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -97,9 +118,30 @@
                               "old_rank_id":  "master"
                           },
         "chapters":  [
-                         "viabundus-0",
-                         "viabundus-2337",
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-weaponsmith-guild",
+                             "building_name":  "Weaponsmiths Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "weaponsmith"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-weaponsmith-guild",
+                             "building_name":  "Weaponsmiths Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "weaponsmith"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-weaponsmith-guild",
+                             "building_name":  "Weaponsmiths Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "weaponsmith"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -180,9 +222,30 @@
                               "old_rank_id":  "master"
                           },
         "chapters":  [
-                         "viabundus-0",
-                         "viabundus-2337",
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-armourers-guild",
+                             "building_name":  "Armourers Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "armourer"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-armourers-guild",
+                             "building_name":  "Armourers Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "armourer"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-armourers-guild",
+                             "building_name":  "Armourers Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "armourer"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -263,9 +326,30 @@
                               "old_rank_id":  "master"
                           },
         "chapters":  [
-                         "viabundus-0",
-                         "viabundus-2337",
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-tailors-guild",
+                             "building_name":  "Tailors Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "tailor"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-tailors-guild",
+                             "building_name":  "Tailors Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "tailor"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-tailors-guild",
+                             "building_name":  "Tailors Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "tailor"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -346,9 +430,30 @@
                               "old_rank_id":  "physician"
                           },
         "chapters":  [
-                         "viabundus-0",
-                         "viabundus-2337",
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-herbalists-college",
+                             "building_name":  "College of Herbalists",
+                             "building_kind":  "college",
+                             "representative_title":  "college registrar",
+                             "representative_profession":  "herbalist"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-herbalists-college",
+                             "building_name":  "College of Herbalists",
+                             "building_kind":  "college",
+                             "representative_title":  "college registrar",
+                             "representative_profession":  "herbalist"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-herbalists-college",
+                             "building_name":  "College of Herbalists",
+                             "building_kind":  "college",
+                             "representative_title":  "college registrar",
+                             "representative_profession":  "herbalist"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -449,9 +554,30 @@
                               "old_rank_id":  "master"
                           },
         "chapters":  [
-                         "viabundus-0",
-                         "viabundus-2337",
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-cooks-guild",
+                             "building_name":  "Cooks Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "cook"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-cooks-guild",
+                             "building_name":  "Cooks Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "cook"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-cooks-guild",
+                             "building_name":  "Cooks Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "cook"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -532,7 +658,14 @@
                               "old_rank_id":  "doctor"
                           },
         "chapters":  [
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-roman-catholic-learned-chapter",
+                             "building_name":  "Confraternity House",
+                             "building_kind":  "confraternity",
+                             "representative_title":  "confraternity reader",
+                             "representative_profession":  "learned religious practitioner"
+                         }
                      ],
         "recognition":  {
                             "kind":  "universal"
@@ -757,7 +890,7 @@
     {
         "id":  "lutheran_learned_visitation",
         "name":  "Lutheran Visitation of Readers",
-        "description":  "A learned Lutheran visitation represented at Goslar and GÃ¶ttingen.",
+        "description":  "A learned Lutheran visitation represented at Goslar and GÃƒÂ¶ttingen.",
         "service_id":  "religion",
         "starting_role":  {
                               "profession":  "learned_religious_practitioner",
@@ -765,8 +898,22 @@
                               "old_rank_id":  "visitor"
                           },
         "chapters":  [
-                         "viabundus-2337",
-                         "viabundus-0"
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-lutheran-learned-visitation",
+                             "building_name":  "Visitation House",
+                             "building_kind":  "confraternity",
+                             "representative_title":  "visitation reader",
+                             "representative_profession":  "learned religious practitioner"
+                         },
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-lutheran-learned-visitation",
+                             "building_name":  "Visitation House",
+                             "building_kind":  "confraternity",
+                             "representative_title":  "visitation reader",
+                             "representative_profession":  "learned religious practitioner"
+                         }
                      ],
         "recognition":  {
                             "kind":  "universal"
@@ -795,7 +942,9 @@
                           "id":  "reader",
                           "name":  "Reader",
                           "description":  "A newly licensed reader of doctrine.",
-                          "requirements":  [],
+                          "requirements":  [
+
+                                           ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  240
                       },
@@ -803,7 +952,9 @@
                           "id":  "visitor",
                           "name":  "Visitor",
                           "description":  "A master entrusted to examine doctrine and teachers.",
-                          "requirements":  [],
+                          "requirements":  [
+
+                                           ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  120
                       }
@@ -973,7 +1124,14 @@
                               "old_rank_id":  "inquisitor"
                           },
         "chapters":  [
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-brotherhood-saint-peter-martyr",
+                             "building_name":  "House of Saint Peter Martyr",
+                             "building_kind":  "confraternity",
+                             "representative_title":  "brotherhood prior",
+                             "representative_profession":  "witch hunter"
+                         }
                      ],
         "recognition":  {
                             "kind":  "universal"
@@ -1027,7 +1185,9 @@
                           "id":  "inquisitor",
                           "name":  "Inquisitor",
                           "description":  "A master examiner trusted to direct investigations.",
-                          "requirements":  [],
+                          "requirements":  [
+
+                                           ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  60
                       }
@@ -1067,7 +1227,14 @@
                               "old_rank_id":  "visitor"
                           },
         "chapters":  [
-                         "viabundus-2337"
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-brotherhood-watchful-lamp",
+                             "building_name":  "House of the Watchful Lamp",
+                             "building_kind":  "confraternity",
+                             "representative_title":  "brotherhood prior",
+                             "representative_profession":  "witch hunter"
+                         }
                      ],
         "recognition":  {
                             "kind":  "universal"
@@ -1096,7 +1263,9 @@
                           "id":  "examiner",
                           "name":  "Examiner",
                           "description":  "A licensed investigator of supernatural reports.",
-                          "requirements":  [],
+                          "requirements":  [
+
+                                           ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  240
                       },
@@ -1104,7 +1273,9 @@
                           "id":  "visitor",
                           "name":  "Visitor",
                           "description":  "A master examiner who directs territorial visitations.",
-                          "requirements":  [],
+                          "requirements":  [
+
+                                           ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  120
                       }
@@ -1312,7 +1483,14 @@
                               "old_rank_id":  "commander"
                           },
         "chapters":  [
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-order-saint-george",
+                             "building_name":  "Saint George Commandery",
+                             "building_kind":  "commandery",
+                             "representative_title":  "order commander",
+                             "representative_profession":  "knight"
+                         }
                      ],
         "recognition":  {
                             "kind":  "universal"
@@ -1355,7 +1533,9 @@
                           "id":  "commander",
                           "name":  "Commander",
                           "description":  "A veteran knight entrusted with command.",
-                          "requirements":  [],
+                          "requirements":  [
+
+                                           ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  60
                       }
@@ -1394,7 +1574,14 @@
                               "old_rank_id":  "commander"
                           },
         "chapters":  [
-                         "viabundus-2337"
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-brandenburg-bailiwick-saint-john",
+                             "building_name":  "Saint John Commandery",
+                             "building_kind":  "commandery",
+                             "representative_title":  "order commander",
+                             "representative_profession":  "knight"
+                         }
                      ],
         "recognition":  {
                             "kind":  "universal"
@@ -1423,7 +1610,9 @@
                           "id":  "knight",
                           "name":  "Knight Brother",
                           "description":  "A newly proven brother of the bailiwick.",
-                          "requirements":  [],
+                          "requirements":  [
+
+                                           ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  240
                       },
@@ -1431,7 +1620,9 @@
                           "id":  "commander",
                           "name":  "Commander",
                           "description":  "A veteran knight entrusted with a commandery.",
-                          "requirements":  [],
+                          "requirements":  [
+
+                                           ],
                           "practice_allowed":  true,
                           "practice_reward_interval_minutes":  120
                       }
@@ -1639,7 +1830,14 @@
                           },
         "historical_fantasy_note":  "An invented body using period-appropriate territorial forest-office language.",
         "chapters":  [
-                         "viabundus-2337"
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-wardens-harz",
+                             "building_name":  "Harz Warden Lodge",
+                             "building_kind":  "lodge",
+                             "representative_title":  "chief warden",
+                             "representative_profession":  "forester"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -1682,7 +1880,7 @@
                       {
                           "id":  "master",
                           "name":  "Master",
-                          "description":  "A master warden entrusted with the prince's high game.",
+                          "description":  "A master warden entrusted with the prince\u0027s high game.",
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
@@ -1734,7 +1932,14 @@
                           },
         "historical_fantasy_note":  "An invented body using period-appropriate forest-office language.",
         "chapters":  [
-                         "viabundus-0"
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-keepers-solling",
+                             "building_name":  "Solling Keeper Lodge",
+                             "building_kind":  "lodge",
+                             "representative_title":  "chief keeper",
+                             "representative_profession":  "forester"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -1762,7 +1967,7 @@
                       {
                           "id":  "master",
                           "name":  "Master",
-                          "description":  "A master keeper entrusted with the prince's high game.",
+                          "description":  "A master keeper entrusted with the prince\u0027s high game.",
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
@@ -1814,7 +2019,14 @@
                           },
         "historical_fantasy_note":  "An invented body using period-appropriate forest-office language.",
         "chapters":  [
-                         "viabundus-1826"
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-company-green-staff-thuringia",
+                             "building_name":  "Green Staff Lodge",
+                             "building_kind":  "lodge",
+                             "representative_title":  "company warden",
+                             "representative_profession":  "forester"
+                         }
                      ],
         "recognition":  {
                             "kind":  "settlements",
@@ -1842,7 +2054,7 @@
                       {
                           "id":  "master",
                           "name":  "Master",
-                          "description":  "A master forester entrusted with the prince's high game.",
+                          "description":  "A master forester entrusted with the prince\u0027s high game.",
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",

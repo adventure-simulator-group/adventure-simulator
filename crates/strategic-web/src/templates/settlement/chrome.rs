@@ -24,6 +24,7 @@ fn public_square_place_link(settlement: &Settlement, current: bool) -> Markup {
     let tabs = player_visible_npc_tabs(
         &settlement.economy,
         settlement_has_keep(&settlement.category),
+        &settlement.id,
     );
     let tab = visible_npc_tab(&tabs, "overview")
         .expect("every settlement exposes its overview as a navigable NPC tab");
@@ -137,6 +138,8 @@ pub fn settlement_npc_location_page(
     location_id: &str,
     logged_in_as: Option<&str>,
 ) -> Markup {
+    let chapter =
+        adventuresim_core::organization::organization_chapter_at(&settlement.id, location_id);
     let (title, description) = match location_id {
         "residences" => (
             "Residential quarter",
@@ -146,10 +149,17 @@ pub fn settlement_npc_location_page(
             "The keep",
             "The seat of local authority, occupied by retainers, servants, and petitioners.",
         ),
-        _ => (
+        _ if chapter.is_none() => (
             "Public square",
             "A public gathering place for residents and travelers.",
         ),
+        _ => {
+            let (organization, chapter) = chapter.expect("guarded chapter");
+            (
+                chapter.building_name.as_str(),
+                organization.description.as_str(),
+            )
+        }
     };
     let content = html! {
         aside class="left-sidebar" {
@@ -166,6 +176,14 @@ pub fn settlement_npc_location_page(
                             class=(if location_id == "keep" { "active" } else { "" })
                             aria-current=(if location_id == "keep" { "page" } else { "false" }) {
                             "Keep"
+                        }
+                    }
+                    @for organization in adventuresim_core::organization::organizations_for_chapter(&settlement.id) {
+                        @let chapter = organization.chapter(&settlement.id).expect("local chapter");
+                        a href=(format!("/settlements/{}/places/{}", settlement.id, chapter.location_id))
+                            class=(if location_id == chapter.location_id { "active" } else { "" })
+                            aria-current=(if location_id == chapter.location_id { "page" } else { "false" }) {
+                            (&chapter.building_name)
                         }
                     }
                 }
@@ -696,7 +714,7 @@ mod tests {
         use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
 
         let settlement = settlement();
-        let tabs = player_visible_npc_tabs(&settlement.economy, true);
+        let tabs = player_visible_npc_tabs(&settlement.economy, true, &settlement.id);
         let public_square = visible_npc_tab(&tabs, "overview").unwrap();
         assert_eq!(public_square.label, "Public square");
 

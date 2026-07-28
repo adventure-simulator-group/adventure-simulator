@@ -96,6 +96,7 @@ pub const fn action_service_at_inn(service: SettlementActionService) -> bool {
 pub fn player_visible_npc_tabs(
     profile: &SettlementEconomyProfile,
     has_keep: bool,
+    settlement_id: &str,
 ) -> Vec<SettlementNpcTab> {
     let mut tabs = vec![
         SettlementNpcTab {
@@ -154,6 +155,15 @@ pub fn player_visible_npc_tabs(
             tabs.push(SettlementNpcTab { location_id, label });
         }
     }
+    for organization in crate::organization::organizations_for_chapter(settlement_id) {
+        let chapter = organization
+            .chapter(settlement_id)
+            .expect("chapter iterator guarantees a local chapter");
+        tabs.push(SettlementNpcTab {
+            location_id: chapter.location_id.as_str(),
+            label: chapter.building_name.as_str(),
+        });
+    }
     tabs
 }
 
@@ -167,9 +177,14 @@ pub fn visible_npc_tab<'a>(
 pub fn npc_location_is_navigable(
     profile: &SettlementEconomyProfile,
     has_keep: bool,
+    settlement_id: &str,
     location_id: &str,
 ) -> bool {
-    visible_npc_tab(&player_visible_npc_tabs(profile, has_keep), location_id).is_some()
+    visible_npc_tab(
+        &player_visible_npc_tabs(profile, has_keep, settlement_id),
+        location_id,
+    )
+    .is_some()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -393,12 +408,39 @@ mod tests {
     #[test]
     fn npc_navigation_rejects_hidden_services_and_impossible_keeps() {
         let p = profile(vec![Service::Inn], vec![Stock::GeneralGoods]);
-        assert!(npc_location_is_navigable(&p, false, "inn"));
-        assert!(npc_location_is_navigable(&p, false, "residences"));
-        assert!(!npc_location_is_navigable(&p, false, "church"));
-        assert!(!npc_location_is_navigable(&p, false, "armoury"));
-        assert!(!npc_location_is_navigable(&p, false, "keep"));
-        assert!(npc_location_is_navigable(&p, true, "keep"));
+        assert!(npc_location_is_navigable(&p, false, "viabundus-0", "inn"));
+        assert!(npc_location_is_navigable(
+            &p,
+            false,
+            "viabundus-0",
+            "residences"
+        ));
+        assert!(!npc_location_is_navigable(
+            &p,
+            false,
+            "viabundus-0",
+            "church"
+        ));
+        assert!(!npc_location_is_navigable(
+            &p,
+            false,
+            "viabundus-0",
+            "armoury"
+        ));
+        assert!(!npc_location_is_navigable(&p, false, "viabundus-0", "keep"));
+        assert!(npc_location_is_navigable(&p, true, "viabundus-0", "keep"));
+        assert!(npc_location_is_navigable(
+            &p,
+            false,
+            "viabundus-0",
+            "organization-merchant-guild"
+        ));
+        assert!(!npc_location_is_navigable(
+            &p,
+            false,
+            "viabundus-0",
+            "organization-brotherhood-saint-peter-martyr"
+        ));
     }
 
     #[test]

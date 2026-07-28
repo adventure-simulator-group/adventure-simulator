@@ -839,6 +839,10 @@ html[data-developer-mode] .location-stat-list > div[data-developer-only] { displ
   .nav-tab[data-service-id="religion"] {
   --service-building-image: url("/static/styles/timber-framed/building/village/religion.png?v=facade-2");
 }
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="organization"] {
+  --service-building-image: url("/static/styles/timber-framed/building/village/residences.png");
+}
 
 /* Higher tiers are complete sets; village remains the explicit fallback above. */
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/town/map.png?v=watchtower-2"); }
@@ -852,6 +856,7 @@ html[data-developer-mode] .location-stat-list > div[data-developer-only] { displ
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="herbalist"] { --service-building-image: url("/static/styles/timber-framed/building/town/herbalist.png"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="inn"] { --service-building-image: url("/static/styles/timber-framed/building/town/inn.png"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="religion"] { --service-building-image: url("/static/styles/timber-framed/building/town/religion.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="organization"] { --service-building-image: url("/static/styles/timber-framed/building/town/residences.png"); }
 
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/city/map.png?v=watchtower-2"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="public-square"] { --service-building-image: url("/static/styles/timber-framed/building/city/public-square.png"); }
@@ -864,6 +869,7 @@ html[data-developer-mode] .location-stat-list > div[data-developer-only] { displ
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="herbalist"] { --service-building-image: url("/static/styles/timber-framed/building/city/herbalist.png"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="inn"] { --service-building-image: url("/static/styles/timber-framed/building/city/inn.png"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="religion"] { --service-building-image: url("/static/styles/timber-framed/building/city/religion.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="organization"] { --service-building-image: url("/static/styles/timber-framed/building/city/residences.png"); }
 
 .service-notification-badge {
   position: absolute;
@@ -958,6 +964,7 @@ html[data-developer-mode] .location-stat-list > div[data-developer-only] { displ
 .service-tab-icon-medical-pack { --service-tab-icon: url("/static/icons/settlement-services/herbalist.png"); }
 .service-tab-icon-inn { --service-tab-icon: url("/static/icons/settlement-services/inn.png"); }
 .service-tab-icon-church { --service-tab-icon: url("/static/icons/game/church.svg"); }
+.service-tab-icon-organization { --service-tab-icon: url("/static/icons/game/templar-shield.svg"); }
 
 .service-tab-icon-map { --service-tab-icon: url("/static/icons/settlement-services/travel.png"); }
 .service-tab-icon-enemy { --service-tab-icon: url("/static/icons/game/death-skull.svg"); }

@@ -224,3 +224,11 @@ where specialists are absent. The server enforces service availability for
 trade, herbalist care, and repairs. The overview exposes prosperity,
 specializations, and every religion represented by the canonical legal status,
 not merely the faith selected for the single church/priest presentation.
+
+Authored organization chapters add distinct Place Facades alongside ordinary
+settlement services. Each opens a real organization building with one
+deterministic persistent representative. Visitors may enter and speak to the
+representative; nonmembers may ask to join, while members conduct dues,
+reactivation, promotion, and presentation business through the compiled
+dialogue. A service-linked guild keeps its ordinary merchant or craft service
+and dialogue in addition to its separate chapter building.

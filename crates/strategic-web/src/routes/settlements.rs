@@ -21,7 +21,7 @@ use futures_util::{
     future::join_all,
     stream::{self, StreamExt},
 };
-use maud::{Markup, html};
+use maud::Markup;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashSet;
@@ -243,15 +243,11 @@ pub fn routes() -> Router<AppState> {
             get(party_personal),
         )
         .route(
-            "/locations/settlement/{id}/party/{character_id}/organizations",
-            get(character_organizations),
+            "/locations/settlement/{id}/party/{character_id}/organization-presentation/{organization_id}",
+            post(update_organization_presentation),
         )
         .route(
-            "/locations/settlement/{id}/party/{character_id}/organizations/{organization_id}/{action}",
-            post(update_character_organization),
-        )
-        .route(
-            "/locations/settlement/{id}/party/{character_id}/organizations-none",
+            "/locations/settlement/{id}/party/{character_id}/organization-presentation-none",
             post(clear_presented_organization),
         )
         .route(
@@ -809,7 +805,11 @@ async fn settlement_npc_place(
     Path((id, place)): Path<(String, String)>,
     session: Session,
 ) -> Html<String> {
-    if !matches!(place.as_str(), "overview" | "residences" | "keep") {
+    let organization_chapter =
+        adventuresim_core::organization::organization_chapter_at(&id, &place);
+    if !matches!(place.as_str(), "overview" | "residences" | "keep")
+        && organization_chapter.is_none()
+    {
         return Html("<h1>Settlement place not found</h1>".into());
     }
     let settlement = state
@@ -2090,6 +2090,10 @@ async fn begin_service_apprenticeship(
     Path((id, service_id)): Path<(String, String)>,
     session: Session,
 ) -> Json<ApprenticeshipResult> {
+    // This is deliberately narrower than organization business dialogue:
+    // a local trainer's service resolves one catalog-linked apprenticeship.
+    // The route cannot select arbitrary organizations or pay dues, promote,
+    // or change presentation.
     let Some(organization) = adventuresim_core::organization::organizations_for_chapter(&id)
         .find(|organization| organization.service_id.as_deref() == Some(service_id.as_str()))
     else {
@@ -2133,202 +2137,24 @@ async fn begin_service_apprenticeship(
     }
 }
 
-fn organization_requirement_label(
-    requirement: &adventuresim_core::organization::Requirement,
-) -> String {
-    use adventuresim_core::organization::Requirement;
-    match requirement {
-        Requirement::SkillRating {
-            skill,
-            minimum,
-            leaf,
-        } => format!(
-            "{}{} {:.1}",
-            skill.replace('_', " "),
-            leaf.as_ref()
-                .map_or(String::new(), |leaf| format!(" ({leaf})")),
-            minimum
-        ),
-        Requirement::ProfessedReligion { religion } => {
-            format!("Professes {}", religion.replace('_', " "))
-        }
-    }
-}
-
-async fn character_organizations(
+async fn update_organization_presentation(
     State(state): State<AppState>,
-    Path((id, character_id)): Path<(String, u64)>,
+    Path((id, character_id, organization_id)): Path<(String, u64, String)>,
     session: Session,
 ) -> Response {
     if session.character_id_u64() != Some(character_id) {
         return (StatusCode::FORBIDDEN, "Select this character first").into_response();
     }
-    let Some(character) = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .ok()
-        .flatten()
-    else {
-        return (StatusCode::NOT_FOUND, "Character not found").into_response();
-    };
-    if character.current_settlement_id.as_deref() != Some(id.as_str()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Organizations can only be managed at the current settlement",
-        )
-            .into_response();
-    }
-    let memberships: Vec<crate::spacetimedb::OrganizationMembership> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM organization_membership WHERE character_id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let presentation = state
-        .db
-        .query_one::<crate::spacetimedb::OrganizationPresentation>(&format!(
-            "SELECT * FROM organization_presentation WHERE character_id = {character_id}"
-        ))
-        .await
-        .ok()
-        .flatten();
-    let minute = state
-        .db
-        .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
-        ))
-        .await
-        .ok()
-        .flatten()
-        .map_or(0, |row| row.minutes);
-    let base = format!("/locations/settlement/{id}/party/{character_id}");
-    let markup = html! {
-        (maud::DOCTYPE)
-        html lang="en" {
-            head {
-                meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
-                title { "Organizations — " (character.name) }
-                link rel="stylesheet" href="/static/style.css";
-            }
-            body {
-                main class="center-content settlement-main" data-live-region="organizations" {
-                    nav { a href=(base) { "← Back to character" } }
-                    h1 { "Organizations" }
-                    p { "Memberships are independent. Exactly one recognized, dues-current organization may be presented, or none." }
-                    section aria-labelledby="membership-heading" {
-                        h2 id="membership-heading" { "Memberships" }
-                        @if memberships.is_empty() {
-                            p { "No memberships." }
-                        }
-                        @for membership in &memberships {
-                            @let definition = adventuresim_core::organization::organization(&membership.organization_id);
-                            @let rank = definition.and_then(|definition| definition.rank(&membership.rank_id));
-                            article class="card organization-membership" {
-                                h3 { (definition.map_or(membership.organization_id.as_str(), |entry| entry.name.as_str())) }
-                                p { strong { (rank.map_or(membership.rank_id.as_str(), |rank| rank.name.as_str())) } }
-                                @if let Some(rank) = rank { p { (rank.description) } }
-                                p {
-                                    "Status: " (membership.status)
-                                    @if membership.dues_paid_through_minute != u64::MAX {
-                                        " · paid through minute " (membership.dues_paid_through_minute)
-                                        @if minute > membership.dues_paid_through_minute { " (payment required)" }
-                                    } @else { " · no dues" }
-                                }
-                                @if let Some(definition) = definition {
-                                    p { "Privileges: "
-                                        @if definition.privileges.is_empty() { "none" }
-                                        @for privilege in &definition.privileges { code { (format!("{privilege:?}")) } " " }
-                                    }
-                                    p { "Recognition: " (match &definition.recognition {
-                                        adventuresim_core::organization::Recognition::Universal => "universal".into(),
-                                        adventuresim_core::organization::Recognition::Settlements { settlement_ids } => settlement_ids.join(", "),
-                                    }) }
-                                    @if let Some(next) = definition.next_rank(&membership.rank_id) {
-                                        p { "Next rank: " strong { (next.name) } " — " (next.description) }
-                                        form method="post" action=(format!("{base}/organizations/{}/promote", definition.id)) {
-                                            button type="submit" { "Request promotion" }
-                                        }
-                                    }
-                                    @if definition.dues.is_some() {
-                                        form method="post" action=(format!("{base}/organizations/{}/pay", definition.id)) {
-                                            button type="submit" { "Pay one dues interval" }
-                                        }
-                                    }
-                                    @if definition.recognition.includes(&id) && membership.status == "active" && minute <= membership.dues_paid_through_minute {
-                                        form method="post" action=(format!("{base}/organizations/{}/present", definition.id)) {
-                                            button type="submit" aria-pressed=(presentation.as_ref().is_some_and(|row| row.organization_id == definition.id)) {
-                                                "Present as " (definition.name)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        form method="post" action=(format!("{base}/organizations-none")) {
-                            button type="submit" aria-pressed=(presentation.is_none()) { "Present as none" }
-                        }
-                    }
-                    section aria-labelledby="available-heading" {
-                        h2 id="available-heading" { "Available here" }
-                        @for definition in adventuresim_core::organization::organizations_for_chapter(&id) {
-                            @if !memberships.iter().any(|row| row.organization_id == definition.id) {
-                                article class="card organization-available" {
-                                    h3 { (definition.name) }
-                                    p { (definition.description) }
-                                    @if let Some(note) = &definition.historical_fantasy_note {
-                                        p class="text-muted" { (note) }
-                                    }
-                                    p { "Joining fee: " (definition.admission.joining_fee) " coin(s)" }
-                                    @if !definition.admission.requirements.is_empty() {
-                                        ul {
-                                            @for requirement in &definition.admission.requirements {
-                                                li { (organization_requirement_label(requirement)) }
-                                            }
-                                        }
-                                    }
-                                    form method="post" action=(format!("{base}/organizations/{}/join", definition.id)) {
-                                        button type="submit" { "Join" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-    Html(markup.into_string()).into_response()
-}
-
-async fn update_character_organization(
-    State(state): State<AppState>,
-    Path((id, character_id, organization_id, action)): Path<(String, u64, String, String)>,
-    Query(query): Query<OrganizationActionQuery>,
-    session: Session,
-) -> Response {
-    if session.character_id_u64() != Some(character_id) {
-        return (StatusCode::FORBIDDEN, "Select this character first").into_response();
-    }
-    let reducer = match action.as_str() {
-        "join" => "join_organization",
-        "promote" => "promote_organization_membership",
-        "pay" => "pay_organization_dues",
-        "present" => "present_organization",
-        _ => return (StatusCode::NOT_FOUND, "Unknown organization action").into_response(),
-    };
     match state
         .db
-        .call(reducer, &[json!(character_id), json!(organization_id)])
+        .call(
+            "present_organization",
+            &[json!(character_id), json!(organization_id)],
+        )
         .await
     {
-        Ok(()) => {
-            Redirect::to(&organization_action_redirect(&id, character_id, &query)).into_response()
-        }
+        Ok(()) => Redirect::to(&format!("/locations/settlement/{id}/party/{character_id}"))
+            .into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
@@ -2336,7 +2162,6 @@ async fn update_character_organization(
 async fn clear_presented_organization(
     State(state): State<AppState>,
     Path((id, character_id)): Path<(String, u64)>,
-    Query(query): Query<OrganizationActionQuery>,
     session: Session,
 ) -> Response {
     if session.character_id_u64() != Some(character_id) {
@@ -2347,28 +2172,9 @@ async fn clear_presented_organization(
         .call("clear_organization_presentation", &[json!(character_id)])
         .await
     {
-        Ok(()) => {
-            Redirect::to(&organization_action_redirect(&id, character_id, &query)).into_response()
-        }
+        Ok(()) => Redirect::to(&format!("/locations/settlement/{id}/party/{character_id}"))
+            .into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
-    }
-}
-
-#[derive(Default, Deserialize)]
-struct OrganizationActionQuery {
-    return_to: Option<String>,
-}
-
-fn organization_action_redirect(
-    settlement_id: &str,
-    character_id: u64,
-    query: &OrganizationActionQuery,
-) -> String {
-    let base = format!("/locations/settlement/{settlement_id}/party/{character_id}");
-    if query.return_to.as_deref() == Some("character") {
-        base
-    } else {
-        format!("{base}/organizations")
     }
 }
 
@@ -5669,7 +5475,7 @@ mod service_availability_tests {
             &profile,
             SettlementActionService::Inn
         ));
-        let tabs = player_visible_npc_tabs(&profile, false);
+        let tabs = player_visible_npc_tabs(&profile, false, "fixture-no-orgs");
         assert!(visible_npc_tab(&tabs, "church").is_none());
         assert!(visible_npc_tab(&tabs, "inn").is_none());
         assert!(visible_npc_tab(&tabs, "armoury").is_none());
@@ -5684,6 +5490,51 @@ mod service_availability_tests {
             &profile,
             SettlementActionService::Inn
         ));
+    }
+
+    #[test]
+    fn organization_management_page_and_business_routes_are_removed() {
+        let source = include_str!("settlements.rs");
+        let routes = source
+            .split("pub fn routes()")
+            .nth(1)
+            .and_then(|tail| tail.split("#[derive").next())
+            .expect("settlement router");
+        let production = source
+            .split("mod service_availability_tests")
+            .next()
+            .expect("production settlement routes");
+        assert!(!routes.contains("character_organizations"));
+        assert!(!production.contains("fn character_organizations"));
+        assert!(!routes.contains("/organizations/{organization_id}/{action}"));
+        assert!(!production.contains("\"join\" => \"join_organization\""));
+        assert!(!production.contains("\"pay\" => \"pay_organization_dues\""));
+        assert!(!production.contains("\"promote\" => \"promote_organization_membership\""));
+        assert!(routes.contains("organization-presentation/{organization_id}"));
+        assert!(production.contains("organization_chapter_at(&id, &place)"));
+    }
+
+    #[test]
+    fn service_apprenticeship_is_a_narrow_trainer_mediated_join_exception() {
+        let source = include_str!("settlements.rs");
+        let handler = source
+            .split("async fn begin_service_apprenticeship")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("async fn update_organization_presentation")
+                    .next()
+            })
+            .expect("service apprenticeship handler");
+        assert!(handler.contains("organizations_for_chapter(&id)"));
+        assert!(handler.contains("organization.service_id"));
+        assert!(handler.contains("\"join_organization\""));
+        for forbidden in [
+            "pay_organization_dues",
+            "promote_organization_membership",
+            "present_organization",
+        ] {
+            assert!(!handler.contains(forbidden));
+        }
     }
 }
 

@@ -39,6 +39,10 @@ fn validate_fragment(fragment: &BuildFragment, relative: &str) {
                     | "proof"
                     | "testimony"
                     | "contract_terms"
+                    | "organization_name"
+                    | "organization_admission_terms"
+                    | "organization_dues_terms"
+                    | "organization_rank_standing"
             ),
             "unknown runtime slot {slot} in {relative}"
         );

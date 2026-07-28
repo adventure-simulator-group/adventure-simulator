@@ -215,13 +215,19 @@ fn edit_source(source: adventuresim_dialogue::SourceRef) -> Option<EditSource> {
 fn npc_location_is_navigable(
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
     category: &SettlementCategory,
+    settlement_id: &str,
     location_id: &str,
 ) -> bool {
     let has_keep = matches!(
         category,
         SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
     );
-    adventuresim_core::settlement_economy::npc_location_is_navigable(profile, has_keep, location_id)
+    adventuresim_core::settlement_economy::npc_location_is_navigable(
+        profile,
+        has_keep,
+        settlement_id,
+        location_id,
+    )
 }
 
 fn npc_presence_contains(start_minute: u16, end_minute: u16, minute: u64) -> bool {
@@ -234,6 +240,20 @@ fn npc_presence_contains(start_minute: u16, end_minute: u16, minute: u64) -> boo
         start <= minute && minute < end
     } else {
         minute >= start || minute < end
+    }
+}
+
+fn npc_matches_location_binding(
+    npc: &SettlementNpcRow,
+    settlement_id: &str,
+    location_id: &str,
+) -> bool {
+    match adventuresim_core::organization::organization_chapter_at(settlement_id, location_id) {
+        Some((organization, _)) => {
+            npc.organization_id == organization.id
+                && npc.conversation_id == "organization-representative"
+        }
+        None => npc.organization_id.is_empty(),
     }
 }
 
@@ -269,22 +289,49 @@ mod npc_navigation_tests {
         assert!(npc_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "inn"
         ));
         assert!(!npc_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "church"
         ));
         assert!(!npc_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "armoury"
         ));
         assert!(!npc_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "keep"
+        ));
+    }
+
+    #[test]
+    fn chapter_navigation_accepts_only_the_authored_settlement_location_pair() {
+        let profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        assert!(npc_location_is_navigable(
+            &profile,
+            &SettlementCategory::City,
+            "viabundus-0",
+            "organization-merchant-guild"
+        ));
+        assert!(!npc_location_is_navigable(
+            &profile,
+            &SettlementCategory::City,
+            "viabundus-0",
+            "organization-brotherhood-saint-peter-martyr"
+        ));
+        assert!(!npc_location_is_navigable(
+            &profile,
+            &SettlementCategory::City,
+            "viabundus-0",
+            "organization-not-authored"
         ));
     }
 
@@ -358,7 +405,12 @@ async fn location_npcs(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    if !npc_location_is_navigable(&settlement.economy, &settlement.category, &location_id) {
+    if !npc_location_is_navigable(
+        &settlement.economy,
+        &settlement.category,
+        &settlement_id,
+        &location_id,
+    ) {
         return Err(StatusCode::NOT_FOUND);
     }
     let npcs = state
@@ -388,7 +440,10 @@ async fn location_npcs(
         .map_or(720, |time| time.minutes)
         % 1_440;
     let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && npc_presence_contains(presence.start_minute, presence.end_minute, minute)).filter_map(|presence| {
-        let npc = npcs.iter().find(|npc| npc.id == presence.npc_id)?;
+        let npc = npcs.iter().find(|npc| {
+            npc.id == presence.npc_id
+                && npc_matches_location_binding(npc, &settlement_id, &location_id)
+        })?;
         let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
         Some(NpcView { id: npc.id.clone(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} person with {} presentation, a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.presentation.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default })
     }).collect::<Vec<_>>();
@@ -423,7 +478,12 @@ async fn social_npc_in_scope(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    if !npc_location_is_navigable(&settlement.economy, &settlement.category, location_id) {
+    if !npc_location_is_navigable(
+        &settlement.economy,
+        &settlement.category,
+        settlement_id,
+        location_id,
+    ) {
         return Err(StatusCode::NOT_FOUND);
     }
     state
@@ -434,7 +494,10 @@ async fn social_npc_in_scope(
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
-        .filter(|npc| npc.home_settlement_id == settlement_id)
+        .filter(|npc| {
+            npc.home_settlement_id == settlement_id
+                && npc_matches_location_binding(npc, settlement_id, location_id)
+        })
         .ok_or(StatusCode::NOT_FOUND)
 }
 
@@ -776,6 +839,9 @@ async fn start(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::BAD_REQUEST)?;
+    if !npc_matches_location_binding(&npc, &npc.home_settlement_id, &request.location_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
     let settlement = state
         .db
         .query_one::<Settlement>(&format!(
@@ -788,6 +854,7 @@ async fn start(
     if !npc_location_is_navigable(
         &settlement.economy,
         &settlement.category,
+        &npc.home_settlement_id,
         &request.location_id,
     ) {
         return Err(StatusCode::NOT_FOUND);

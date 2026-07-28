@@ -206,6 +206,7 @@ pub fn validate_documents(
 ) -> Result<(), String> {
     let mut ids = BTreeSet::new();
     let mut starting_professions = BTreeSet::new();
+    let mut chapter_location_pairs = BTreeSet::new();
     for (document, source) in documents.iter().zip(sources) {
         let org = object(document, source, "organization")?;
         keys(
@@ -268,7 +269,58 @@ pub fn validate_documents(
             }
             starting_professions.insert(profession.to_owned());
         }
-        unique_strings(array(org, source, "chapters")?, source, "chapters")?;
+        let chapters = array(org, source, "chapters")?;
+        let mut chapter_settlements = BTreeSet::new();
+        for (index, chapter) in chapters.iter().enumerate() {
+            let at = format!("chapters[{index}]");
+            let chapter = object(chapter, source, &at)?;
+            keys(
+                chapter,
+                &[
+                    "settlement_id",
+                    "location_id",
+                    "building_name",
+                    "building_kind",
+                    "representative_title",
+                    "representative_profession",
+                ],
+                source,
+                &at,
+            )?;
+            let settlement_id = text(chapter, source, "settlement_id")?;
+            let location_id = text(chapter, source, "location_id")?;
+            if !location_id.starts_with("organization-")
+                || location_id.len() > 96
+                || !location_id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'-' | b'_')
+                })
+            {
+                return Err(format!(
+                    "{source}: {at}.location_id must be a bounded organization-* location ID"
+                ));
+            }
+            if !chapter_settlements.insert(settlement_id) {
+                return Err(format!(
+                    "{source}: chapters contains duplicate settlement {settlement_id:?}"
+                ));
+            }
+            if !chapter_location_pairs.insert((settlement_id.to_owned(), location_id.to_owned())) {
+                return Err(format!(
+                    "{source}: chapter location {location_id:?} is already authored at {settlement_id:?}"
+                ));
+            }
+            text(chapter, source, "building_name")?;
+            if !matches!(
+                text(chapter, source, "building_kind")?,
+                "guildhall" | "workshop" | "college" | "confraternity" | "commandery" | "lodge"
+            ) {
+                return Err(format!("{source}: {at}.building_kind is invalid"));
+            }
+            text(chapter, source, "representative_title")?;
+            text(chapter, source, "representative_profession")?;
+        }
         let recognition = object(
             org.get("recognition")
                 .ok_or_else(|| format!("{source}: recognition is required"))?,
@@ -408,9 +460,12 @@ pub fn validate_documents(
                 ));
             }
             if recognition.get("kind").and_then(Value::as_str) == Some("settlements") {
-                let chapters = array(org, source, "chapters")?;
                 let recognized = array(recognition, source, "settlement_ids")?;
-                if !chapters.iter().any(|chapter| recognized.contains(chapter)) {
+                if !chapters.iter().any(|chapter| {
+                    chapter
+                        .get("settlement_id")
+                        .is_some_and(|settlement_id| recognized.contains(settlement_id))
+                }) {
                     return Err(format!(
                         "{source}: starting_role organization has no chapter in a recognized settlement"
                     ));
@@ -586,7 +641,14 @@ mod tests {
             "id": "test_body",
             "name": "Test Body",
             "description": "A validator fixture.",
-            "chapters": ["viabundus-0"],
+            "chapters": [{
+                "settlement_id": "viabundus-0",
+                "location_id": "organization-test-body",
+                "building_name": "Test Hall",
+                "building_kind": "guildhall",
+                "representative_title": "Test Warden",
+                "representative_profession": "administrator"
+            }],
             "recognition": {"kind": "settlements", "settlement_ids": ["viabundus-0"]},
             "admission": {"joining_fee": 0, "requirements": []},
             "ranks": [{
@@ -640,11 +702,11 @@ mod tests {
     #[test]
     fn rejects_non_string_and_duplicate_settlement_ids() {
         let mut non_string = valid_organization();
-        non_string["chapters"] = json!(["viabundus-0", 7]);
+        non_string["chapters"][0]["settlement_id"] = json!(7);
         assert!(
             validate(non_string, json!([]))
                 .unwrap_err()
-                .contains("must be a non-empty string")
+                .contains("settlement_id must be a non-empty string")
         );
 
         let mut duplicate = valid_organization();
@@ -653,6 +715,26 @@ mod tests {
             validate(duplicate, json!([]))
                 .unwrap_err()
                 .contains("duplicate")
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_or_foreign_chapter_locations() {
+        let mut duplicate = valid_organization();
+        let chapter = duplicate["chapters"][0].clone();
+        duplicate["chapters"].as_array_mut().unwrap().push(chapter);
+        assert!(
+            validate(duplicate, json!([]))
+                .unwrap_err()
+                .contains("duplicate settlement")
+        );
+
+        let mut foreign = valid_organization();
+        foreign["chapters"][0]["location_id"] = json!("inn");
+        assert!(
+            validate(foreign, json!([]))
+                .unwrap_err()
+                .contains("bounded organization-*")
         );
     }
 
@@ -781,5 +863,11 @@ mod tests {
                 .unwrap_err()
                 .contains("conflicts with admission religion")
         );
+    }
+
+    #[test]
+    fn build_and_runtime_share_organization_catalog_validation() {
+        let build = include_str!("../build.rs");
+        assert!(build.contains("#[path = \"src/organization_catalog_validation.rs\"]"));
     }
 }
