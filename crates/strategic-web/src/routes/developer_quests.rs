@@ -100,6 +100,7 @@ async fn active_context(
                 | crate::spacetimedb::SettlementCategory::City
                 | crate::spacetimedb::SettlementCategory::Capital
         ),
+        &settlement_id,
     );
     let presences = presences.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     let mut candidates = npcs

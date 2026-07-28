@@ -628,7 +628,7 @@ fn religion_identity_button(
 fn organization_identity_picker(
     character: &Character,
     settlement_id: &str,
-    location_path: &str,
+    _location_path: &str,
     memberships: &[OrganizationMembership],
     presentation: Option<&OrganizationPresentation>,
     minute: u64,
@@ -673,7 +673,7 @@ fn organization_identity_picker(
                 span class="organization-picker-arrow" aria-hidden="true" {}
             }
             div class="organization-picker-menu" role="menu" {
-                form method="post" action=(format!("{base}/organizations-none?return_to=character")) {
+                form method="post" action=(format!("{base}/organization-presentation-none")) {
                     button type="submit" class=(if selected.is_none() { "organization-picker-option is-selected" } else { "organization-picker-option" })
                         role="menuitem" {
                         (empty_organization_crest())
@@ -682,16 +682,13 @@ fn organization_identity_picker(
                 }
                 @for (_, definition, rank) in choices {
                     @let is_selected = selected.is_some_and(|(_, selected_definition, _)| selected_definition.id == definition.id);
-                    form method="post" action=(format!("{base}/organizations/{}/present?return_to=character", definition.id)) {
+                    form method="post" action=(format!("{base}/organization-presentation/{}", definition.id)) {
                         button type="submit" class=(if is_selected { "organization-picker-option is-selected" } else { "organization-picker-option" })
                             role="menuitem" {
                             (organization_crest(definition))
                             (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
                         }
                     }
-                }
-                a class="organization-picker-manage" href=(format!("{location_path}/party/{}/organizations", character.id)) {
-                    "Manage memberships"
                 }
             }
         }

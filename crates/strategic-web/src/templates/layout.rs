@@ -333,6 +333,25 @@ fn settlement_top_bar(
                     }
                     }
                 }
+                @for organization in adventuresim_core::organization::organizations_for_chapter(settlement_id) {
+                    @let chapter = organization.chapter(settlement_id).expect("local chapter");
+                    @let kind = format!("{:?}", chapter.building_kind).to_ascii_lowercase();
+                    @let tint = building_tint(settlement_id, &chapter.location_id, material);
+                    a href=(format!("/settlements/{}/places/{}", settlement_id, chapter.location_id))
+                        class=(if active_service == chapter.location_id { "nav-tab active" } else { "nav-tab" })
+                        style=(format!("--building-tint:{tint}"))
+                        data-service-id="organization"
+                        data-organization-building-kind=(kind)
+                        data-building-material=(material)
+                        data-service-label=(&chapter.building_name)
+                        aria-label=(&chapter.building_name)
+                        data-strategic-tooltip=(&chapter.building_name)
+                        aria-current=(if active_service == chapter.location_id { "page" } else { "false" }) {
+                        span class="service-tab-building" aria-hidden="true" {}
+                        span class="service-tab-icon service-tab-icon-organization" aria-hidden="true" {}
+                        span class="service-tab-label" aria-hidden="true" { (&chapter.building_name) }
+                    }
+                }
             }
 
             div class="top-bar-right" {
@@ -405,7 +424,11 @@ fn service_tab_available(
         "religion" => "church",
         _ => return false,
     };
-    visible_npc_tab(&player_visible_npc_tabs(profile, false), location_id).is_some()
+    visible_npc_tab(
+        &player_visible_npc_tabs(profile, false, "fixture-no-orgs"),
+        location_id,
+    )
+    .is_some()
 }
 
 fn quest_location_top_bar(

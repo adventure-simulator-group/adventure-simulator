@@ -29,7 +29,7 @@ pub struct OrganizationDefinition {
     #[serde(default)]
     pub starting_role: Option<OrganizationStartingRole>,
     #[serde(default)]
-    pub chapters: Vec<String>,
+    pub chapters: Vec<OrganizationChapter>,
     pub recognition: Recognition,
     #[serde(default)]
     pub admission: Admission,
@@ -39,6 +39,29 @@ pub struct OrganizationDefinition {
     pub activity: OrganizationActivity,
     #[serde(default)]
     pub privileges: Vec<Privilege>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationChapter {
+    pub settlement_id: String,
+    /// Stable, settlement-scoped navigation and NPC-presence identifier.
+    pub location_id: String,
+    pub building_name: String,
+    pub building_kind: ChapterBuildingKind,
+    pub representative_title: String,
+    pub representative_profession: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChapterBuildingKind {
+    Guildhall,
+    Workshop,
+    College,
+    Confraternity,
+    Commandery,
+    Lodge,
 }
 
 /// Explicit character-creation metadata. This is deliberately authored rather
@@ -227,7 +250,23 @@ impl Recognition {
 
 impl OrganizationDefinition {
     pub fn has_chapter(&self, settlement_id: &str) -> bool {
-        self.chapters.iter().any(|id| id == settlement_id)
+        self.chapter(settlement_id).is_some()
+    }
+
+    pub fn chapter(&self, settlement_id: &str) -> Option<&OrganizationChapter> {
+        self.chapters
+            .iter()
+            .find(|chapter| chapter.settlement_id == settlement_id)
+    }
+
+    pub fn chapter_at_location(
+        &self,
+        settlement_id: &str,
+        location_id: &str,
+    ) -> Option<&OrganizationChapter> {
+        self.chapters.iter().find(|chapter| {
+            chapter.settlement_id == settlement_id && chapter.location_id == location_id
+        })
     }
 
     pub fn has_privilege(&self, privilege: Privilege) -> bool {
@@ -274,6 +313,20 @@ pub fn organizations_for_chapter(
         .organizations
         .iter()
         .filter(move |organization| organization.has_chapter(settlement_id))
+}
+
+pub fn organization_chapter_at(
+    settlement_id: &str,
+    location_id: &str,
+) -> Option<(
+    &'static OrganizationDefinition,
+    &'static OrganizationChapter,
+)> {
+    catalog().organizations.iter().find_map(|organization| {
+        organization
+            .chapter_at_location(settlement_id, location_id)
+            .map(|chapter| (organization, chapter))
+    })
 }
 
 pub fn settlement_policy(settlement_id: &str) -> Option<&'static SettlementPolicy> {
@@ -336,5 +389,19 @@ mod tests {
             "learned_religious_practitioner"
         );
         assert_eq!(StartingProfession::WitchHunter.id(), "witch_hunter");
+    }
+
+    #[test]
+    fn chapter_locations_are_stable_distinct_and_reverse_resolvable() {
+        let mut seen = std::collections::BTreeSet::new();
+        for organization in &catalog().organizations {
+            for chapter in &organization.chapters {
+                assert!(seen.insert((chapter.settlement_id.clone(), chapter.location_id.clone())));
+                let (found, found_chapter) =
+                    organization_chapter_at(&chapter.settlement_id, &chapter.location_id).unwrap();
+                assert_eq!(found.id, organization.id);
+                assert_eq!(found_chapter, chapter);
+            }
+        }
     }
 }

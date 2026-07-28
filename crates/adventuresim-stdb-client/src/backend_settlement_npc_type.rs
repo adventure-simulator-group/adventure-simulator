@@ -26,6 +26,7 @@ pub struct BackendSettlementNpc {
     pub household: String,
     pub local_role: String,
     pub service_id: String,
+    pub organization_id: String,
     pub conversation_id: String,
 }
 
@@ -53,6 +54,7 @@ pub struct BackendSettlementNpcCols {
     pub household: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
     pub local_role: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
     pub service_id: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
+    pub organization_id: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
     pub conversation_id: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
 }
 
@@ -76,6 +78,7 @@ impl __sdk::__query_builder::HasCols for BackendSettlementNpc {
             household: __sdk::__query_builder::Col::new(table_name, "household"),
             local_role: __sdk::__query_builder::Col::new(table_name, "local_role"),
             service_id: __sdk::__query_builder::Col::new(table_name, "service_id"),
+            organization_id: __sdk::__query_builder::Col::new(table_name, "organization_id"),
             conversation_id: __sdk::__query_builder::Col::new(table_name, "conversation_id"),
         }
     }

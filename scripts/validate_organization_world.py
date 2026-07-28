@@ -36,7 +36,11 @@ def main() -> int:
         documents = parsed if isinstance(parsed, list) else [parsed]
         for definition in documents:
             organization_id = definition.get("id", "<missing>")
-            references = list(definition.get("chapters", []))
+            references = [
+                chapter.get("settlement_id")
+                for chapter in definition.get("chapters", [])
+                if isinstance(chapter, dict)
+            ]
             recognition = definition.get("recognition", {})
             if recognition.get("kind") == "settlements":
                 references.extend(recognition.get("settlement_ids", []))

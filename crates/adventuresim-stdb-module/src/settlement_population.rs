@@ -53,6 +53,8 @@ pub struct SettlementNpc {
     pub household: String,
     pub local_role: String,
     pub service_id: String,
+    /// Explicit institution authority. Empty for NPCs not representing an organization.
+    pub organization_id: String,
     pub conversation_id: String,
 }
 
@@ -79,6 +81,7 @@ pub struct BackendSettlementNpc {
     pub household: String,
     pub local_role: String,
     pub service_id: String,
+    pub organization_id: String,
     pub conversation_id: String,
 }
 
@@ -100,6 +103,7 @@ fn project_backend_settlement_npc(npc: SettlementNpc) -> BackendSettlementNpc {
         household: npc.household,
         local_role: npc.local_role,
         service_id: npc.service_id,
+        organization_id: npc.organization_id,
         conversation_id: npc.conversation_id,
     }
 }
@@ -209,6 +213,7 @@ fn location_context(location: &str) -> Result<LocationContext, String> {
         "church" => LocationContext::Church,
         "residences" => LocationContext::Residences,
         "keep" => LocationContext::Keep,
+        location if location.starts_with("organization-") => LocationContext::Organization,
         _ => return Err(format!("Unknown population location {location}")),
     })
 }
@@ -342,6 +347,7 @@ fn insert_npc(
         household,
         local_role: local_role.into(),
         service_id: service.into(),
+        organization_id: String::new(),
         conversation_id: if service.is_empty() {
             "local-resident".into()
         } else if service == "herbalist" {
@@ -474,6 +480,34 @@ pub fn ensure_settlement_population(
             false,
         )?;
     }
+    for organization in adventuresim_core::organization::organizations_for_chapter(settlement_id) {
+        let chapter = organization
+            .chapter(settlement_id)
+            .expect("chapter iterator guarantees a local chapter");
+        insert_npc(
+            ctx,
+            settlement_id,
+            &chapter.location_id,
+            "organization",
+            &chapter.representative_profession,
+            &chapter.representative_title,
+            0,
+            true,
+        )?;
+        let npc_id = format!("npc:{settlement_id}:{}:0", chapter.location_id);
+        let mut representative = ctx
+            .db
+            .settlement_npc()
+            .id()
+            .find(&npc_id)
+            .ok_or("Organization representative was not seeded")?;
+        representative.service_id.clear();
+        representative.organization_id = organization.id.clone();
+        representative.conversation_id = "organization-representative".into();
+        representative.clothing =
+            "well-kept clothing bearing the institution's public insignia".into();
+        ctx.db.settlement_npc().id().update(representative);
+    }
     Ok(())
 }
 pub fn npc_is_present(presence: &SettlementNpcPresence, minute: u64) -> bool {
@@ -525,6 +559,7 @@ mod tests {
             household: "market household".into(),
             local_role: "market steward".into(),
             service_id: "merchants".into(),
+            organization_id: String::new(),
             conversation_id: "service-professions".into(),
         }
     }
@@ -613,6 +648,7 @@ mod tests {
         assert_eq!(row.household, "market household");
         assert_eq!(row.local_role, "market steward");
         assert_eq!(row.service_id, "merchants");
+        assert!(row.organization_id.is_empty());
         assert_eq!(row.conversation_id, "service-professions");
     }
 
@@ -641,6 +677,7 @@ mod tests {
             "household",
             "local_role",
             "service_id",
+            "organization_id",
             "conversation_id",
         ] {
             assert!(
@@ -660,5 +697,21 @@ mod tests {
         assert!(view.contains(".filter(npc_is_dialogue_capable)"));
         assert!(view.contains(".map(project_backend_settlement_npc)"));
         assert!(!view.contains("-> Vec<SettlementNpc>"));
+    }
+
+    #[test]
+    fn every_authored_chapter_seeds_one_bound_persistent_representative() {
+        let source = include_str!("settlement_population.rs");
+        let ensure = source
+            .split("pub fn ensure_settlement_population")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn npc_is_present").next())
+            .expect("population seeding body");
+        assert!(ensure.contains("organizations_for_chapter(settlement_id)"));
+        assert!(ensure.contains("chapter.location_id"));
+        assert!(ensure.contains("representative.organization_id = organization.id.clone()"));
+        assert!(ensure.contains("\"organization-representative\""));
+        assert!(ensure.contains("ordinal"));
+        assert!(source.contains("id = format!(\"npc:{settlement_id}:{location}:{ordinal}\")"));
     }
 }

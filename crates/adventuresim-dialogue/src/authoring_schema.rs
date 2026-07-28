@@ -124,6 +124,10 @@ pub enum AuthoringEffect {
     AcceptContract { contract: String },
     ReportContract { contract: String },
     BeginApprenticeship { profession: String },
+    JoinOrganization,
+    PayOrganizationDues,
+    RequestOrganizationPromotion,
+    PresentOrganization,
     SetFlag { flag: String, value: bool },
     ReceiveReferredTestimony,
     InvestigationAction { action: String },
@@ -152,36 +156,99 @@ pub enum Condition {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FactKey {
-    ParticipantProfession { role: String },
-    ParticipantOrganization { role: String },
-    ParticipantReligion { role: String },
-    ParticipantAgeBand { role: String },
-    ParticipantSex { role: String },
-    ParticipantLocalRole { role: String },
-    ParticipantStatus { role: String },
-    ParticipantLanguageCompatibility { left: String, right: String },
-    ParticipantFamiliarity { left: String, right: String },
-    ParticipantClothingCategory { role: String },
-    ParticipantHasVisibleClothing { role: String },
-    ParticipantPriorInteraction { left: String, right: String },
-    ParticipantCount { role: String },
-    ParticipantPresent { role: String },
-    ParticipantRumorCase { role: String },
-    ParticipantReferralContact { role: String },
+    ParticipantProfession {
+        role: String,
+    },
+    ParticipantOrganization {
+        role: String,
+    },
+    ParticipantReligion {
+        role: String,
+    },
+    ParticipantAgeBand {
+        role: String,
+    },
+    ParticipantSex {
+        role: String,
+    },
+    ParticipantLocalRole {
+        role: String,
+    },
+    ParticipantStatus {
+        role: String,
+    },
+    ParticipantLanguageCompatibility {
+        left: String,
+        right: String,
+    },
+    ParticipantFamiliarity {
+        left: String,
+        right: String,
+    },
+    ParticipantClothingCategory {
+        role: String,
+    },
+    ParticipantHasVisibleClothing {
+        role: String,
+    },
+    ParticipantPriorInteraction {
+        left: String,
+        right: String,
+    },
+    ParticipantCount {
+        role: String,
+    },
+    ParticipantPresent {
+        role: String,
+    },
+    ParticipantRumorCase {
+        role: String,
+    },
+    ParticipantReferralContact {
+        role: String,
+    },
+    OrganizationMembership {
+        player: String,
+        representative: String,
+    },
+    OrganizationPromotionAvailable {
+        player: String,
+        representative: String,
+    },
+    OrganizationPresentation {
+        player: String,
+        representative: String,
+    },
+    OrganizationDuesRequired {
+        representative: String,
+    },
     KnownClaim,
     KnownLead,
-    PriorQuestioning { role: String },
+    PriorQuestioning {
+        role: String,
+    },
     Confidence,
-    LanguageCheck { left: String, right: String },
+    LanguageCheck {
+        left: String,
+        right: String,
+    },
     SocialCheck,
-    PartyLeader { role: String },
-    Service { role: String },
+    PartyLeader {
+        role: String,
+    },
+    Service {
+        role: String,
+    },
     Location,
     LocationRole,
     LocalCircumstance,
     TimePeriod,
-    ContractState { contract: String },
-    Flag { flag: String },
+    ContractState {
+        contract: String,
+    },
+    Flag {
+        flag: String,
+    },
 }
 
 impl FactKey {
@@ -207,6 +274,21 @@ impl FactKey {
             | Self::ParticipantFamiliarity { left, right }
             | Self::ParticipantPriorInteraction { left, right }
             | Self::LanguageCheck { left, right } => [Some(left.as_str()), Some(right.as_str())],
+            Self::OrganizationMembership {
+                player,
+                representative,
+            }
+            | Self::OrganizationPromotionAvailable {
+                player,
+                representative,
+            }
+            | Self::OrganizationPresentation {
+                player,
+                representative,
+            } => [Some(player.as_str()), Some(representative.as_str())],
+            Self::OrganizationDuesRequired { representative } => {
+                [Some(representative.as_str()), None]
+            }
             _ => [None, None],
         };
         roles.into_iter().flatten()

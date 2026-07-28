@@ -74,6 +74,7 @@ pub(crate) struct BackendSettlementNpcRow {
     /// service-provider routes currently deserialize their own minimal DTO.
     #[allow(dead_code)]
     pub service_id: String,
+    pub organization_id: String,
     pub conversation_id: String,
 }
 

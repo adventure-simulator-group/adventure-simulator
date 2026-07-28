@@ -131,6 +131,10 @@ pub enum RuntimeSlot {
     Proof,
     Testimony,
     ContractTerms,
+    OrganizationName,
+    OrganizationAdmissionTerms,
+    OrganizationDuesTerms,
+    OrganizationRankStanding,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -314,6 +318,10 @@ pub enum Effect {
     AcceptContract { contract: String },
     ReportContract { contract: String },
     BeginApprenticeship { profession: String },
+    JoinOrganization,
+    PayOrganizationDues,
+    RequestOrganizationPromotion,
+    PresentOrganization,
     SetFlag { flag: String, value: bool },
     ReceiveReferredTestimony,
     InvestigationAction { action: InvestigationAction },
@@ -1037,6 +1045,7 @@ mod tests {
             ("religion-service", "cleric"),
             ("local-resident", "local"),
             ("recruitment", "employer"),
+            ("organization-representative", "representative"),
         ] {
             let conversation = find_conversation(conversation_id).unwrap();
             let topic = conversation
@@ -1069,6 +1078,191 @@ mod tests {
                 .all(|topic| topic.id != "introduction" && topic.id != "local-problem")
         );
     }
+
+    #[test]
+    fn organization_dialogue_effects_never_carry_client_selected_ids() {
+        let conversation = find_conversation("organization-representative").unwrap();
+        let effects = conversation
+            .topics
+            .iter()
+            .flat_map(|topic| &topic.responses)
+            .flat_map(|response| {
+                response.effects.iter().chain(
+                    response
+                        .prompt
+                        .iter()
+                        .flat_map(|prompt| &prompt.choices)
+                        .flat_map(|choice| &choice.effects),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(effects.contains(&&Effect::JoinOrganization));
+        assert!(effects.contains(&&Effect::PayOrganizationDues));
+        assert!(effects.contains(&&Effect::RequestOrganizationPromotion));
+        assert!(effects.contains(&&Effect::PresentOrganization));
+        let encoded = serde_json::to_string(&effects).unwrap();
+        assert!(!encoded.contains("organization_id"));
+    }
+
+    #[test]
+    fn organization_dialogue_discloses_authoritative_terms_before_confirmation() {
+        let conversation = find_conversation("organization-representative").unwrap();
+        for (topic_id, required_slots, effect) in [
+            (
+                "join",
+                vec!["organization_name", "organization_admission_terms"],
+                Effect::JoinOrganization,
+            ),
+            (
+                "dues",
+                vec!["organization_dues_terms"],
+                Effect::PayOrganizationDues,
+            ),
+            (
+                "promotion",
+                vec!["organization_rank_standing"],
+                Effect::RequestOrganizationPromotion,
+            ),
+        ] {
+            let response = &conversation
+                .topics
+                .iter()
+                .find(|topic| topic.id == topic_id)
+                .expect("organization business topic")
+                .responses[0];
+            let spoken_before_prompt = serde_json::to_string(&response.turns).unwrap();
+            for slot in required_slots {
+                assert!(
+                    spoken_before_prompt.contains(slot),
+                    "{topic_id} must disclose {slot} before confirmation"
+                );
+            }
+            let prompt = response.prompt.as_ref().expect("business confirmation");
+            assert!(
+                prompt
+                    .choices
+                    .iter()
+                    .flat_map(|choice| &choice.effects)
+                    .any(|candidate| candidate == &effect),
+                "{topic_id} mutation must occur only after confirmation"
+            );
+        }
+    }
+
+    #[test]
+    fn organization_business_topics_are_reachable_only_when_authorized() {
+        fn anchored_topics(response: &Response) -> Vec<String> {
+            response
+                .turns
+                .iter()
+                .flat_map(|turn| &turn.fragments)
+                .filter_map(|fragment| match fragment {
+                    Fragment::Topic { topic, .. } => Some(topic.clone()),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        fn reachable_topics(conversation: &Conversation, facts: &FactContext) -> BTreeSet<String> {
+            let start = select_start_response(conversation, facts).expect("eligible greeting");
+            let mut pending = anchored_topics(start);
+            let mut reachable = BTreeSet::new();
+            while let Some(topic_id) = pending.pop() {
+                if !reachable.insert(topic_id.clone()) {
+                    continue;
+                }
+                let topic = conversation
+                    .topics
+                    .iter()
+                    .find(|topic| topic.id == topic_id)
+                    .expect("anchored topic exists");
+                assert!(
+                    topic.initially_known && facts.matches(&topic.conditions),
+                    "greeting flow exposed unauthorized topic {topic_id}"
+                );
+                let response = select_response(topic, facts).expect("reachable topic response");
+                pending.extend(anchored_topics(response));
+            }
+            reachable
+        }
+
+        let conversation = find_conversation("organization-representative").unwrap();
+        let states = [
+            ("none", false, false, false, vec!["join"]),
+            ("none", true, false, false, vec!["join"]),
+            ("suspended", false, false, false, vec![]),
+            ("suspended", true, false, false, vec!["dues"]),
+            ("current", false, false, false, vec!["present"]),
+            ("current", false, false, true, vec![]),
+            ("current", false, true, false, vec!["promotion", "present"]),
+            ("current", false, true, true, vec!["promotion"]),
+            ("current", true, false, false, vec!["dues", "present"]),
+            ("current", true, false, true, vec!["dues"]),
+            (
+                "current",
+                true,
+                true,
+                false,
+                vec!["dues", "promotion", "present"],
+            ),
+            ("current", true, true, true, vec!["dues", "promotion"]),
+        ];
+        for (membership, dues, promotion, presentation, expected) in states {
+            let mut facts = FactContext::default();
+            facts.facts.insert(
+                FactKey::OrganizationMembership {
+                    player: "player".into(),
+                    representative: "representative".into(),
+                },
+                FactValue::Text(membership.into()),
+            );
+            facts.facts.insert(
+                FactKey::OrganizationDuesRequired {
+                    representative: "representative".into(),
+                },
+                FactValue::Bool(dues),
+            );
+            facts.facts.insert(
+                FactKey::OrganizationPromotionAvailable {
+                    player: "player".into(),
+                    representative: "representative".into(),
+                },
+                FactValue::Bool(promotion),
+            );
+            facts.facts.insert(
+                FactKey::OrganizationPresentation {
+                    player: "player".into(),
+                    representative: "representative".into(),
+                },
+                FactValue::Bool(presentation),
+            );
+            let reachable = reachable_topics(conversation, &facts);
+            let actionable = ["join", "dues", "promotion", "present"]
+                .into_iter()
+                .filter(|topic| reachable.contains(*topic))
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                actionable,
+                expected.into_iter().collect(),
+                "wrong reachable business for membership={membership}, dues={dues}, promotion={promotion}, presentation={presentation}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_and_runtime_share_authoring_schema_and_runtime_slot_allowlist() {
+        let build = include_str!("../build.rs");
+        assert!(build.contains("#[path = \"src/authoring_schema.rs\"]"));
+        for slot in [
+            "organization_name",
+            "organization_admission_terms",
+            "organization_dues_terms",
+            "organization_rank_standing",
+        ] {
+            assert!(build.contains(&format!("| \"{slot}\"")));
+        }
+    }
+
     #[test]
     fn multi_party_and_prompt_are_first_class() {
         let c = find_conversation("shop-with-assistant").unwrap();

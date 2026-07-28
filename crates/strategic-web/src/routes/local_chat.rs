@@ -102,13 +102,19 @@ fn npc_authority_matches(
 fn npc_history_location_is_navigable(
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
     category: &SettlementCategory,
+    settlement_id: &str,
     location_id: &str,
 ) -> bool {
     let has_keep = matches!(
         category,
         SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
     );
-    adventuresim_core::settlement_economy::npc_location_is_navigable(profile, has_keep, location_id)
+    adventuresim_core::settlement_economy::npc_location_is_navigable(
+        profile,
+        has_keep,
+        settlement_id,
+        location_id,
+    )
 }
 
 enum ConversationSelector {
@@ -150,6 +156,7 @@ async fn actor_and_selector(
             if !npc_history_location_is_navigable(
                 &settlement_authority.economy,
                 &settlement_authority.category,
+                settlement,
                 location_id,
             ) {
                 return Err("NPC is not local".into());
@@ -384,26 +391,31 @@ mod tests {
         assert!(npc_history_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "inn"
         ));
         assert!(npc_history_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "residences"
         ));
         assert!(!npc_history_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "church"
         ));
         assert!(!npc_history_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "armoury"
         ));
         assert!(!npc_history_location_is_navigable(
             &profile,
             &SettlementCategory::Hamlet,
+            "fixture-no-orgs",
             "keep"
         ));
         profile
@@ -412,11 +424,13 @@ mod tests {
         assert!(npc_history_location_is_navigable(
             &profile,
             &SettlementCategory::Town,
+            "fixture-no-orgs",
             "church"
         ));
         assert!(npc_history_location_is_navigable(
             &profile,
             &SettlementCategory::Town,
+            "fixture-no-orgs",
             "keep"
         ));
     }

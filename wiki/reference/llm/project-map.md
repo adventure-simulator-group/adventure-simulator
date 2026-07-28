@@ -33,6 +33,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `book.toml` — Tooling or build configuration.
 - `content/dialogue/examples.yaml` — Repository support file.
+- `content/dialogue/organizations.yaml` — Repository support file.
 - `content/dialogue/services.yaml` — Repository support file.
 - `content/items/catalog.yaml` — Repository support file.
 - `content/organizations/catalog.yaml` — Repository support file.

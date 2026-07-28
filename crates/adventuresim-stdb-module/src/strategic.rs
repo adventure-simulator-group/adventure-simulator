@@ -45,6 +45,7 @@ use crate::{
     item::{InventoryItem, inventory_item, item},
     local_problem::{local_problem_receipt, local_problem_rumor_delivery},
     npc_adventurer::npc_adventuring_party_authority,
+    organization::organization_presentation,
     repair::{item_condition, settlement_smith},
     settlement_population::{
         settlement_npc, settlement_npc_presence, settlement_npc_seed_explanation,
@@ -5916,6 +5917,7 @@ fn require_navigable_npc_location(
     if adventuresim_core::settlement_economy::npc_location_is_navigable(
         &settlement.economy,
         has_keep,
+        settlement_id,
         location_id,
     ) {
         Ok(())
@@ -6686,6 +6688,74 @@ fn dialogue_fact_context(
             }
         }
     }
+    if let Some(player) = participants
+        .iter()
+        .find(|participant| participant.character_id == Some(character_id))
+    {
+        for representative in participants
+            .iter()
+            .filter(|participant| participant.character_id.is_none())
+        {
+            let Some(npc) = ctx.db.settlement_npc().id().find(&representative.actor_id) else {
+                continue;
+            };
+            let Ok(organization_id) = dialogue_organization_id(session, &npc) else {
+                continue;
+            };
+            let definition = adventuresim_core::organization::organization(&organization_id)
+                .expect("bound organization was resolved");
+            let membership = crate::organization::membership(ctx, character_id, &organization_id);
+            let minute = ctx
+                .db
+                .character_time()
+                .character_id()
+                .find(character_id)
+                .map_or(0, |time| time.minutes);
+            let membership_state = membership.as_ref().map_or("none", |row| {
+                if crate::organization::membership_is_current(row, minute) {
+                    "current"
+                } else {
+                    "suspended"
+                }
+            });
+            result.facts.insert(
+                FactKey::OrganizationMembership {
+                    player: player.role.clone(),
+                    representative: representative.role.clone(),
+                },
+                FactValue::Text(membership_state.into()),
+            );
+            result.facts.insert(
+                FactKey::OrganizationPromotionAvailable {
+                    player: player.role.clone(),
+                    representative: representative.role.clone(),
+                },
+                FactValue::Bool(membership.as_ref().is_some_and(|row| {
+                    crate::organization::membership_is_current(row, minute)
+                        && definition.next_rank(&row.rank_id).is_some()
+                })),
+            );
+            result.facts.insert(
+                FactKey::OrganizationPresentation {
+                    player: player.role.clone(),
+                    representative: representative.role.clone(),
+                },
+                FactValue::Bool(
+                    ctx.db
+                        .organization_presentation()
+                        .character_id()
+                        .find(character_id)
+                        .is_some_and(|row| row.organization_id == organization_id),
+                ),
+            );
+            result.facts.insert(
+                FactKey::OrganizationDuesRequired {
+                    representative: representative.role.clone(),
+                },
+                FactValue::Bool(definition.dues.is_some()),
+            );
+        }
+    }
     if let Some(npc) = participants.iter().find(|p| p.character_id.is_none()) {
         let delivery_receipt = ctx
             .db
@@ -6906,6 +6976,138 @@ mod participant_language_compatibility_tests {
     }
 }
 
+fn organization_requirement_label(
+    requirement: &adventuresim_core::organization::Requirement,
+) -> String {
+    use adventuresim_core::organization::Requirement;
+    match requirement {
+        Requirement::SkillRating {
+            skill,
+            minimum,
+            leaf,
+        } => format!(
+            "{}{} rating {:.1}",
+            skill.replace('_', " "),
+            leaf.as_ref().map_or(String::new(), |leaf| format!(
+                " ({})",
+                leaf.replace('_', " ")
+            )),
+            minimum
+        ),
+        Requirement::ProfessedReligion { religion } => {
+            format!("profession of {}", religion.replace('_', " "))
+        }
+    }
+}
+
+fn organization_requirements_summary<'a>(
+    requirements: impl Iterator<Item = &'a adventuresim_core::organization::Requirement>,
+) -> String {
+    let requirements = requirements
+        .map(organization_requirement_label)
+        .collect::<BTreeSet<_>>();
+    if requirements.is_empty() {
+        "no additional requirements".into()
+    } else {
+        requirements.into_iter().collect::<Vec<_>>().join(", ")
+    }
+}
+
+fn bind_organization_business_terms(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    character_id: u64,
+    npc: &crate::settlement_population::SettlementNpc,
+    bindings: &mut adventuresim_dialogue::RuntimeBindings,
+) -> Result<(), String> {
+    use adventuresim_dialogue::RuntimeSlot as S;
+    let organization_id = dialogue_organization_id(session, npc)?;
+    let definition = adventuresim_core::organization::organization(&organization_id)
+        .ok_or("Organization representative has an unknown organization")?;
+    bindings.bind(S::OrganizationName, definition.name.clone());
+
+    let admission_requirements = organization_requirements_summary(
+        definition
+            .admission
+            .requirements
+            .iter()
+            .chain(definition.ranks[0].requirements.iter()),
+    );
+    let fee = if definition.admission.joining_fee == 0 {
+        "There is no joining fee".to_owned()
+    } else {
+        format!(
+            "The joining fee is {} coin{}",
+            definition.admission.joining_fee,
+            if definition.admission.joining_fee == 1 {
+                ""
+            } else {
+                "s"
+            }
+        )
+    };
+    bindings.bind(
+        S::OrganizationAdmissionTerms,
+        format!("{fee}; admission requires {admission_requirements}."),
+    );
+
+    let membership = crate::organization::membership(ctx, character_id, &organization_id);
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    let standing = membership.as_ref().map_or("not enrolled", |membership| {
+        if crate::organization::membership_is_current(membership, minute) {
+            "current"
+        } else {
+            "suspended"
+        }
+    });
+    if let Some(dues) = &definition.dues {
+        bindings.bind(
+            S::OrganizationDuesTerms,
+            format!(
+                "Your standing is {standing}. Dues are {} coin{} every {} day{}.",
+                dues.amount,
+                if dues.amount == 1 { "" } else { "s" },
+                dues.interval_days,
+                if dues.interval_days == 1 { "" } else { "s" },
+            ),
+        );
+    } else {
+        bindings.bind(
+            S::OrganizationDuesTerms,
+            format!("Your standing is {standing}. This organization charges no dues."),
+        );
+    }
+
+    let rank_standing = membership
+        .as_ref()
+        .and_then(|membership| {
+            let current = definition.rank(&membership.rank_id)?;
+            Some(
+                if let Some(next) = definition.next_rank(&membership.rank_id) {
+                    format!(
+                        "Your current rank is {}. The next rank is {}; it requires {}.",
+                        current.name,
+                        next.name,
+                        organization_requirements_summary(next.requirements.iter()),
+                    )
+                } else {
+                    format!(
+                        "Your current rank is {}, the organization's highest rank.",
+                        current.name
+                    )
+                },
+            )
+        })
+        .unwrap_or_else(|| "You do not hold a rank in this organization.".into());
+    bindings.bind(S::OrganizationRankStanding, rank_standing);
+    Ok(())
+}
+
 fn dialogue_runtime_bindings(
     ctx: &ReducerContext,
     session: &DialogueSession,
@@ -6937,6 +7139,9 @@ fn dialogue_runtime_bindings(
     );
     bindings.bind(S::Settlement, session.settlement_id.clone());
     bindings.bind(S::Location, session.location_id.clone());
+    if !npc.organization_id.is_empty() {
+        bind_organization_business_terms(ctx, session, character_id, &npc, &mut bindings)?;
+    }
     let minute = ctx
         .db
         .character_time()
@@ -8270,6 +8475,24 @@ pub fn choose_dialogue_topic(
     Ok(())
 }
 
+fn dialogue_answer_is_committed_retry(
+    receipt: Option<&DialogueAction>,
+    prompt_state: &str,
+    prompt_row_id: &str,
+) -> Result<bool, String> {
+    if let Some(receipt) = receipt {
+        return if receipt.action_kind == format!("answer:{prompt_row_id}") {
+            Ok(true)
+        } else {
+            Err("Dialogue action ID conflicts with another action".into())
+        };
+    }
+    if prompt_state != "open" {
+        return Err("Dialogue prompt is closed".into());
+    }
+    Ok(false)
+}
+
 #[reducer]
 pub fn answer_dialogue_prompt(
     ctx: &ReducerContext,
@@ -8290,19 +8513,7 @@ pub fn answer_dialogue_prompt(
         .find(&prompt_row_id)
         .ok_or("Dialogue prompt not found")?;
     let action_row_id = format!("{}:{action_id}", prompt.session_id);
-    if prompt.state != "open" {
-        return Err("Dialogue prompt is closed".into());
-    }
     let mut session = require_session_member(ctx, &prompt.session_id, character_id)?;
-    if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
-        return Ok(());
-    }
-    if session.catalog_revision != catalog_revision {
-        return Err("Dialogue session revision is stale".into());
-    }
-    if session.revision != expected_revision {
-        return Err("Dialogue answer used a stale session revision".into());
-    }
     let participant = ctx
         .db
         .dialogue_participant()
@@ -8312,6 +8523,16 @@ pub fn answer_dialogue_prompt(
         .ok_or("Character is not a dialogue participant")?;
     if participant.role != prompt.respondent_role {
         return Err("Character is not an eligible respondent for this prompt".into());
+    }
+    let receipt = ctx.db.dialogue_action().id().find(&action_row_id);
+    if dialogue_answer_is_committed_retry(receipt.as_ref(), &prompt.state, &prompt_row_id)? {
+        return Ok(());
+    }
+    if session.catalog_revision != catalog_revision {
+        return Err("Dialogue session revision is stale".into());
+    }
+    if session.revision != expected_revision {
+        return Err("Dialogue answer used a stale session revision".into());
     }
     let chosen: Vec<String> =
         serde_json::from_str(&choice_ids_json).map_err(|_| "Invalid dialogue choices")?;
@@ -8334,7 +8555,7 @@ pub fn answer_dialogue_prompt(
     }
     ctx.db.dialogue_answer().insert(DialogueAnswer {
         id,
-        prompt_row_id,
+        prompt_row_id: prompt_row_id.clone(),
         character_id,
         choice_ids_json: serde_json::to_string(&chosen).unwrap(),
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
@@ -8494,7 +8715,7 @@ pub fn answer_dialogue_prompt(
         id: action_row_id,
         session_id: session.id.clone(),
         action_id,
-        action_kind: "answer".into(),
+        action_kind: format!("answer:{prompt_row_id}"),
         resulting_revision: session.revision,
     });
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
@@ -8552,6 +8773,22 @@ fn apply_dialogue_effect(
                     .map(|organization| organization.id.clone())
                     .ok_or("No organization chapter offers that professional activity here")?;
             crate::organization::join_organization(ctx, character_id, organization_id)
+        }
+        adventuresim_dialogue::Effect::JoinOrganization => {
+            let organization_id = dialogue_organization_id(session, &live_npc)?;
+            crate::organization::join_organization(ctx, character_id, organization_id)
+        }
+        adventuresim_dialogue::Effect::PayOrganizationDues => {
+            let organization_id = dialogue_organization_id(session, &live_npc)?;
+            crate::organization::pay_organization_dues(ctx, character_id, organization_id)
+        }
+        adventuresim_dialogue::Effect::RequestOrganizationPromotion => {
+            let organization_id = dialogue_organization_id(session, &live_npc)?;
+            crate::organization::promote_organization_membership(ctx, character_id, organization_id)
+        }
+        adventuresim_dialogue::Effect::PresentOrganization => {
+            let organization_id = dialogue_organization_id(session, &live_npc)?;
+            crate::organization::present_organization(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
             let event_sequence = testimony_event_sequence
@@ -8654,6 +8891,25 @@ fn apply_dialogue_effect(
         }
         adventuresim_dialogue::Effect::SetFlag { .. } => Err("Unknown dialogue flag".into()),
     }
+}
+
+/// Resolve organization business only from the trusted persistent NPC and its
+/// exact authored chapter. Dialogue content and clients never supply this ID.
+fn dialogue_organization_id(
+    session: &DialogueSession,
+    npc: &crate::settlement_population::SettlementNpc,
+) -> Result<String, String> {
+    let organization = adventuresim_core::organization::organization(&npc.organization_id)
+        .ok_or("Dialogue NPC is not bound to an organization")?;
+    if organization
+        .chapter_at_location(&session.settlement_id, &session.location_id)
+        .is_none()
+        || npc.home_settlement_id != session.settlement_id
+        || npc.conversation_id != "organization-representative"
+    {
+        return Err("Dialogue NPC is not the representative of this chapter".into());
+    }
+    Ok(organization.id.clone())
 }
 
 fn dialogue_service_id(ctx: &ReducerContext, session: &DialogueSession) -> Result<String, String> {
@@ -19909,7 +20165,7 @@ fn generated_witness_candidates(
         settlement.category,
         SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
     );
-    let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep);
+    let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep, settlement_id);
     let mut candidates = ctx
         .db
         .settlement_npc()
@@ -19979,7 +20235,7 @@ fn developer_witness_candidates(
         settlement.category,
         SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
     );
-    let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep);
+    let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep, settlement_id);
     let mut candidates = ctx
         .db
         .settlement_npc()
@@ -20466,6 +20722,7 @@ mod developer_quest_source_tests {
                 household: "market household".into(),
                 local_role: "resident".into(),
                 service_id: String::new(),
+                organization_id: String::new(),
                 conversation_id: "local-resident".into(),
             };
             let age_band = format!("{:?}", npc.age_band);
@@ -20576,5 +20833,90 @@ mod developer_quest_source_tests {
             .and_then(|tail| tail.split("pub fn choose_dialogue_topic").next())
             .expect("dialogue topic refresh");
         assert!(refresh.contains("dialogue_public_case_id"));
+    }
+
+    #[test]
+    fn organization_effects_resolve_only_from_the_bound_live_representative() {
+        let source = include_str!("strategic.rs");
+        let resolver = source
+            .split("fn dialogue_organization_id")
+            .nth(1)
+            .and_then(|tail| tail.split("fn dialogue_service_id").next())
+            .expect("organization dialogue authority");
+        assert!(resolver.contains("npc.organization_id"));
+        assert!(resolver.contains("chapter_at_location"));
+        assert!(resolver.contains("session.settlement_id"));
+        assert!(resolver.contains("session.location_id"));
+        assert!(resolver.contains("\"organization-representative\""));
+
+        let effects = source
+            .split("adventuresim_dialogue::Effect::JoinOrganization =>")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("adventuresim_dialogue::Effect::ReceiveReferredTestimony")
+                    .next()
+            })
+            .expect("organization dialogue effects");
+        assert!(effects.contains("dialogue_organization_id(session, &live_npc)"));
+        assert!(!effects.contains("organization_id: String"));
+    }
+
+    #[test]
+    fn committed_join_and_dues_answers_are_retry_safe_after_prompt_closes() {
+        for (action_id, prompt_row_id) in [
+            ("join-lost-response", "session:prompt:join"),
+            ("dues-lost-response", "session:prompt:dues"),
+        ] {
+            let receipt = DialogueAction {
+                id: format!("session:{action_id}"),
+                session_id: "session".into(),
+                action_id: action_id.into(),
+                action_kind: format!("answer:{prompt_row_id}"),
+                resulting_revision: 3,
+            };
+            assert!(
+                dialogue_answer_is_committed_retry(Some(&receipt), "resolved", prompt_row_id)
+                    .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn new_or_conflicting_action_against_closed_prompt_fails() {
+        assert!(dialogue_answer_is_committed_retry(None, "resolved", "prompt").is_err());
+        let conflicting = DialogueAction {
+            id: "session:collision".into(),
+            session_id: "session".into(),
+            action_id: "collision".into(),
+            action_kind: "topic".into(),
+            resulting_revision: 2,
+        };
+        assert!(
+            dialogue_answer_is_committed_retry(Some(&conflicting), "resolved", "prompt").is_err()
+        );
+        let other_prompt = DialogueAction {
+            action_kind: "answer:other-prompt".into(),
+            ..conflicting
+        };
+        assert!(
+            dialogue_answer_is_committed_retry(Some(&other_prompt), "resolved", "prompt").is_err()
+        );
+    }
+
+    #[test]
+    fn prompt_retry_receipt_is_checked_only_after_session_and_role_scope() {
+        let source = include_str!("strategic.rs");
+        let answer = source
+            .split("pub fn answer_dialogue_prompt")
+            .nth(1)
+            .and_then(|tail| tail.split("fn apply_dialogue_effect").next())
+            .expect("answer dialogue reducer");
+        let session_scope = answer.find("require_session_member").unwrap();
+        let participant_scope = answer
+            .find("Character is not an eligible respondent")
+            .unwrap();
+        let retry = answer.find("dialogue_answer_is_committed_retry").unwrap();
+        assert!(session_scope < retry);
+        assert!(participant_scope < retry);
     }
 }

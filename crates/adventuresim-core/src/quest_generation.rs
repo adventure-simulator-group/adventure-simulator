@@ -4634,7 +4634,8 @@ mod tests {
         Vec<WitnessCandidate>,
     ) {
         let profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
-        let tabs = crate::settlement_economy::player_visible_npc_tabs(&profile, false);
+        let tabs =
+            crate::settlement_economy::player_visible_npc_tabs(&profile, false, "fixture-no-orgs");
         let mut candidates = test_witnesses();
         for (candidate, location) in candidates.iter_mut().zip(["residences", "overview", "inn"]) {
             candidate.expected_location = location.into();

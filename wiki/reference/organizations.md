@@ -14,6 +14,13 @@ and privileges such as bearing arms, wearing armor, or licensed foraging.
 Organization-level privileges are inherited at every rank; rank-level
 privileges are additive.
 
+Chapters are explicit authored records, not settlement-ID flags. Every record
+names its settlement, a bounded stable `organization-*` location ID, building
+name and kind, and the title and profession of its representative. Each
+chapter therefore becomes a distinct navigable building even when several
+organizations share a settlement or an organization is also linked to an
+ordinary settlement service.
+
 An organization may also declare explicit `starting_role` metadata: one of the
 ten authored start profession families plus distinct adult and old rank IDs.
 Presence of this block makes an organization eligible for deterministic
@@ -51,7 +58,9 @@ These are historically informed fictional institutions rather than claims that
 each exact organization existed in every listed settlement.
 
 The character sheet exposes the presented organization as a compact profession
-picker. Its large label combines the member's rank with the service profession
+picker; it is only a self-presentation control. Joining, dues, reactivation,
+and promotion are conducted by speaking to the representative in the
+organization's chapter building. Its large label combines the member's rank with the service profession
 where one exists (for example, `Apprentice Weaponsmith`), while the smaller
 label names the organization. Crests are stable heraldic marks derived from the
 organization ID and service using the locally vendored Game Icons charges, so
@@ -61,8 +70,13 @@ presentation-only persistence fields.
 ## Persistence and authority
 
 SpacetimeDB owns membership, rank, dues, presentation, payment, promotion, and
-equipment-law enforcement. Reducers verify control of the character and local
-chapter presence. Joining is idempotent; the joining fee is charged once.
+equipment-law enforcement. Startup seeds exactly one deterministic persistent
+representative per authored chapter. The NPC carries an explicit organization
+binding, has an all-day authoritative presence at the exact chapter location,
+and uses the compiled `organization-representative` conversation. Dialogue
+effects carry no organization ID: authority resolves it from that live NPC and
+revalidates the actor, session settlement, and exact chapter location before
+reusing membership reducers. Joining is idempotent; the joining fee is charged once.
 Crossing a paid-through boundary suspends membership and clears its
 presentation. Paying at a chapter reactivates it without retroactive arrears.
 
@@ -85,7 +99,8 @@ pre-launch schema does not yet add a composite unique index.
 
 Build validation rejects unknown fields and invalid or duplicate IDs,
 requirements, ranks, weights, organization- and rank-level privileges,
-religions, skill leaves, and
+religions, skill leaves, malformed chapter locations, duplicate chapter
+settlements, and
 settlement policies. A canonical check against a compiled Viabundus world is
 also required:
 

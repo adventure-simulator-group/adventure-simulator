@@ -51,6 +51,7 @@ pub enum LocationContext {
     Church,
     Residences,
     Keep,
+    Organization,
     AdultVenue,
 }
 
