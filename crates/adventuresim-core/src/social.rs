@@ -707,28 +707,69 @@ pub const fn actor_allows_social_prayer(conviction_code: i8) -> bool {
 /// Select the available automatic approach which best combines the actor's
 /// effective skill with their personality fit. Risk only breaks exact ties,
 /// so automation does not collapse to the universally low-risk action.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AutomaticSocialCandidate {
+    pub action: SocialActionKind,
+    pub skill_check: f32,
+    pub personality_fit: f32,
+    /// Resolved risk for this actor, target, and topic.
+    pub risk: f32,
+}
+
+impl AutomaticSocialCandidate {
+    pub const fn ordinary(
+        action: SocialActionKind,
+        skill_check: f32,
+        personality_fit: f32,
+    ) -> Self {
+        Self {
+            action,
+            skill_check,
+            personality_fit,
+            risk: action.risk(),
+        }
+    }
+
+    pub const fn with_resolved_risk(
+        action: SocialActionKind,
+        skill_check: f32,
+        personality_fit: f32,
+        risk: f32,
+    ) -> Self {
+        Self {
+            action,
+            skill_check,
+            personality_fit,
+            risk,
+        }
+    }
+}
+
 pub fn choose_automatic_social_action(
     topic: SocialTopic,
-    candidates: impl IntoIterator<Item = (SocialActionKind, f32, f32)>,
+    candidates: impl IntoIterator<Item = AutomaticSocialCandidate>,
 ) -> Option<SocialActionKind> {
     candidates
         .into_iter()
-        .filter(|(action, skill_check, personality_fit)| {
-            *action != SocialActionKind::Reflect
-                && action.available_for(topic)
-                && skill_check.is_finite()
-                && personality_fit.is_finite()
+        .filter(|candidate| {
+            candidate.action != SocialActionKind::Reflect
+                && candidate.action.available_for(topic)
+                && candidate.skill_check.is_finite()
+                && candidate.personality_fit.is_finite()
+                && candidate.risk.is_finite()
         })
         .max_by(|left, right| {
-            let left_score = left.1.clamp(0.0, 5.0) + left.2.clamp(-2.0, 2.0);
-            let right_score = right.1.clamp(0.0, 5.0) + right.2.clamp(-2.0, 2.0);
+            let left_score =
+                left.skill_check.clamp(0.0, 5.0) + left.personality_fit.clamp(-2.0, 2.0);
+            let right_score =
+                right.skill_check.clamp(0.0, 5.0) + right.personality_fit.clamp(-2.0, 2.0);
             left_score
                 .total_cmp(&right_score)
-                .then_with(|| left.2.total_cmp(&right.2))
-                .then_with(|| left.1.total_cmp(&right.1))
-                .then_with(|| right.0.risk().total_cmp(&left.0.risk()))
+                .then_with(|| left.personality_fit.total_cmp(&right.personality_fit))
+                .then_with(|| left.skill_check.total_cmp(&right.skill_check))
+                .then_with(|| right.risk.total_cmp(&left.risk))
         })
-        .map(|(action, _, _)| action)
+        .map(|candidate| candidate.action)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1676,10 +1717,10 @@ mod tests {
         let action = choose_automatic_social_action(
             SocialTopic::Defeat,
             [
-                (SocialActionKind::Listen, 3.0, 0.0),
-                (SocialActionKind::LightenMood, 3.5, 1.0),
-                (SocialActionKind::Rally, 4.0, 0.0),
-                (SocialActionKind::Flirt, 1.0, 0.0),
+                AutomaticSocialCandidate::ordinary(SocialActionKind::Listen, 3.0, 0.0),
+                AutomaticSocialCandidate::ordinary(SocialActionKind::LightenMood, 3.5, 1.0),
+                AutomaticSocialCandidate::ordinary(SocialActionKind::Rally, 4.0, 0.0),
+                AutomaticSocialCandidate::ordinary(SocialActionKind::Flirt, 1.0, 0.0),
             ],
         );
         assert_eq!(action, Some(SocialActionKind::LightenMood));
@@ -1687,8 +1728,8 @@ mod tests {
         let skilled = choose_automatic_social_action(
             SocialTopic::Defeat,
             [
-                (SocialActionKind::Listen, 1.0, 1.0),
-                (SocialActionKind::Rally, 4.5, 0.0),
+                AutomaticSocialCandidate::ordinary(SocialActionKind::Listen, 1.0, 1.0),
+                AutomaticSocialCandidate::ordinary(SocialActionKind::Rally, 4.5, 0.0),
             ],
         );
         assert_eq!(skilled, Some(SocialActionKind::Rally));
@@ -1700,8 +1741,8 @@ mod tests {
             choose_automatic_social_action(
                 SocialTopic::Hunger,
                 [
-                    (SocialActionKind::Flirt, 5.0, 2.0),
-                    (SocialActionKind::Listen, 1.0, 0.0),
+                    AutomaticSocialCandidate::ordinary(SocialActionKind::Flirt, 5.0, 2.0),
+                    AutomaticSocialCandidate::ordinary(SocialActionKind::Listen, 1.0, 0.0),
                 ],
             ),
             Some(SocialActionKind::Listen)
@@ -1714,11 +1755,41 @@ mod tests {
             choose_automatic_social_action(
                 SocialTopic::Defeat,
                 [
-                    (SocialActionKind::Rally, 3.0, 0.0),
-                    (SocialActionKind::Listen, 3.0, 0.0),
+                    AutomaticSocialCandidate::ordinary(SocialActionKind::Rally, 3.0, 0.0),
+                    AutomaticSocialCandidate::ordinary(SocialActionKind::Listen, 3.0, 0.0),
                 ],
             ),
             Some(SocialActionKind::Listen)
+        );
+        assert_eq!(
+            choose_automatic_social_action(
+                SocialTopic::Fatigue,
+                [
+                    AutomaticSocialCandidate::with_resolved_risk(
+                        SocialActionKind::Pray,
+                        3.0,
+                        0.0,
+                        0.30,
+                    ),
+                    AutomaticSocialCandidate::ordinary(SocialActionKind::LightenMood, 3.0, 0.0,),
+                ],
+            ),
+            Some(SocialActionKind::Pray)
+        );
+        assert_eq!(
+            choose_automatic_social_action(
+                SocialTopic::Faith,
+                [
+                    AutomaticSocialCandidate::with_resolved_risk(
+                        SocialActionKind::Pray,
+                        3.0,
+                        0.0,
+                        0.60,
+                    ),
+                    AutomaticSocialCandidate::ordinary(SocialActionKind::Rally, 3.0, 0.0),
+                ],
+            ),
+            Some(SocialActionKind::Rally)
         );
     }
 
@@ -1845,8 +1916,13 @@ mod tests {
             choose_automatic_social_action(
                 SocialTopic::Injury,
                 [
-                    (SocialActionKind::Listen, 2.0, 0.0),
-                    (SocialActionKind::Pray, 4.0, 0.25),
+                    AutomaticSocialCandidate::ordinary(SocialActionKind::Listen, 2.0, 0.0),
+                    AutomaticSocialCandidate::with_resolved_risk(
+                        SocialActionKind::Pray,
+                        4.0,
+                        0.25,
+                        0.4,
+                    ),
                 ],
             ),
             Some(SocialActionKind::Pray)
@@ -1854,7 +1930,12 @@ mod tests {
         assert_eq!(
             choose_automatic_social_action(
                 SocialTopic::Filth,
-                [(SocialActionKind::Pray, 5.0, 2.0)],
+                [AutomaticSocialCandidate::with_resolved_risk(
+                    SocialActionKind::Pray,
+                    5.0,
+                    2.0,
+                    0.3,
+                )],
             ),
             None
         );

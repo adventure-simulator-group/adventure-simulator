@@ -2,19 +2,20 @@
 
 use adventuresim_core::skill::Skill;
 use adventuresim_core::social::{
-    AFFINITY_MAX, AFFINITY_MIN, CasualChatDisposition, CasualChatInput, ClaimAssessmentDirection,
-    ClaimChallengeApproach, ClaimChallengeInput, Courtship as CoreCourtship,
-    Inclination as CoreInclination, Mirth as CoreMirth, PersonalityAxis,
-    Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES, SOCIAL_RESPONSE_MINUTES,
-    SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt, SocialTopic,
-    Transparency as CoreTransparency, actor_allows_social_action, actor_allows_social_prayer,
-    affinity_gain, assess_testimony_claim, axis_for_topic, canonical_cooldown_id, canonical_pair,
-    choose_automatic_social_action, command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis,
-    discovery_training_split, flirt_charm_modifier, humor_charm_modifier,
-    incompatible_flirt_outcome, prayer_approach, prayer_resolution_profile,
-    realized_affinity_delta, resolve_casual_chat, resolve_claim_challenge, resolve_social_attempt,
-    resolve_social_attempt_with_profile, self_knowledge_insight_modifier, settle_affinity,
-    should_replace_belief, social_source_eligible, topic_for_source_kind,
+    AFFINITY_MAX, AFFINITY_MIN, AutomaticSocialCandidate, CasualChatDisposition, CasualChatInput,
+    ClaimAssessmentDirection, ClaimChallengeApproach, ClaimChallengeInput,
+    Courtship as CoreCourtship, Inclination as CoreInclination, Mirth as CoreMirth,
+    PersonalityAxis, Presentation as CorePresentation, SOCIAL_COOLDOWN_MINUTES,
+    SOCIAL_RESPONSE_MINUTES, SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt,
+    SocialTopic, Transparency as CoreTransparency, actor_allows_social_action,
+    actor_allows_social_prayer, affinity_gain, assess_testimony_claim, axis_for_topic,
+    canonical_cooldown_id, canonical_pair, choose_automatic_social_action,
+    command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
+    flirt_charm_modifier, humor_charm_modifier, incompatible_flirt_outcome, prayer_approach,
+    prayer_resolution_profile, realized_affinity_delta, resolve_casual_chat,
+    resolve_claim_challenge, resolve_social_attempt, resolve_social_attempt_with_profile,
+    self_knowledge_insight_modifier, settle_affinity, should_replace_belief,
+    social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -2213,6 +2214,7 @@ fn automatic_social_action(
 
     let shares_concern = shares_concern(ctx, actor_id, topic);
     let personality = crate::personality::personality_or_neutral(ctx, actor_id);
+    let target_personality = crate::personality::personality_or_neutral(ctx, target_id);
     let prayer_religion = target_religion(ctx, target_id).ok();
     let now = ctx
         .db
@@ -2267,11 +2269,22 @@ fn automatic_social_action(
         }
         let skill_check =
             adventuresim_world_schema::language_scaled_effect(unscaled_skill_check, language);
-        candidates.push((
-            action,
-            skill_check,
-            automatic_personality_fit(&personality, action, topic),
-        ));
+        let personality_fit = automatic_personality_fit(&personality, action, topic);
+        let candidate = if action == SocialActionKind::Pray {
+            let religion = prayer_religion.expect("Prayer candidates require a target religion");
+            let approach =
+                prayer_approach(religion, topic).expect("Prayer candidates require a valid topic");
+            AutomaticSocialCandidate::with_resolved_risk(
+                action,
+                skill_check,
+                personality_fit,
+                prayer_resolution_profile(approach, conviction_code(target_personality.conviction))
+                    .risk,
+            )
+        } else {
+            AutomaticSocialCandidate::ordinary(action, skill_check, personality_fit)
+        };
+        candidates.push(candidate);
     }
     Ok(choose_automatic_social_action(topic, candidates))
 }

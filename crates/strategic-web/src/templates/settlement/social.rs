@@ -334,7 +334,7 @@ pub fn party_social_dialog(
                                         input type="hidden" name="source_id" value=(&source.id);
                                         button type="submit" name="action_kind" value=(value) class="social-action"
                                             disabled[disabled_reason.is_some()]
-                                            aria-disabled=[disabled_reason.is_some()]
+                                            aria-disabled=[disabled_reason.map(|_| "true")]
                                             aria-label=(if let Some(reason) = disabled_reason { format!("{}. Unavailable: {}.", label, reason) } else { format!("{}. {}. Takes {} minutes.", label, description, adventuresim_core::social::SOCIAL_RESPONSE_MINUTES) })
                                             data-strategic-tooltip=(&tooltip) {
                                             span class="social-action-icon"
