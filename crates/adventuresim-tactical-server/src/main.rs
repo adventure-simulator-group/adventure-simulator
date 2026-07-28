@@ -60,6 +60,11 @@ struct Args {
     #[arg(long)]
     required_enemy_kills: u32,
 
+    /// Observer-safe combat scale copied from the trusted mission request.
+    /// The strategic reducer independently derives the authoritative value.
+    #[arg(long)]
+    enemy_combat_scale_bps: u32,
+
     /// SpacetimeDB URI (e.g., http://localhost:3000)
     #[arg(long, default_value = "http://localhost:3000")]
     spacetimedb_url: String,
@@ -172,6 +177,10 @@ fn setup_server(mut commands: Commands, args: Res<Args>) {
         args.mission_id
     );
     info!("Scene: {}, Address: {}", args.scene_key, args.addr);
+    info!(
+        "Enemy objective: count={}, scale={} bps",
+        args.required_enemy_kills, args.enemy_combat_scale_bps
+    );
 
     commands.spawn(AdventureSimulatorServer { addr: args.addr });
 

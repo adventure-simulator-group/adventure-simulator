@@ -120,27 +120,7 @@ enum Command {
         /// Public-safe diagnostic JSON created only if the core loop fails.
         #[arg(long)]
         failure_output: Option<PathBuf>,
-        /// Markdown anthology persisted from authoritative server intervention rows.
-        #[arg(long, default_value = "npc-adventurer-stories.md")]
-        npc_stories_output: PathBuf,
-        /// The server-scripted policy is deterministic and requires no model.
-        #[arg(long, value_enum, default_value_t = NpcStrategyPolicyArg::ServerScripted)]
-        npc_strategy_policy: NpcStrategyPolicyArg,
-        #[arg(long)]
-        npc_endpoint: Option<String>,
-        #[arg(long, default_value = "gpt-4.1-nano")]
-        npc_model: String,
-        #[arg(long, default_value = "OPENAI_API_KEY")]
-        npc_api_key_env: String,
-        #[arg(long, default_value_t = false)]
-        npc_allow_network: bool,
     },
-}
-
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum NpcStrategyPolicyArg {
-    ServerScripted,
-    Openai,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -287,64 +267,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         expected_world_manifest_digest,
         output,
         failure_output,
-        npc_stories_output,
-        npc_strategy_policy,
-        npc_endpoint,
-        npc_model,
-        npc_api_key_env,
-        npc_allow_network,
     } = command
     {
         if let Some(json_output) = &output {
-            let mut paths = vec![json_output.as_path(), npc_stories_output.as_path()];
+            let mut paths = vec![json_output.as_path()];
             if let Some(failure_output) = &failure_output {
                 paths.push(failure_output.as_path());
             }
             validate_distinct_output_paths(&paths)?;
-            if json_output.exists()
-                || npc_stories_output.exists()
-                || failure_output.as_ref().is_some_and(|path| path.exists())
-            {
+            if json_output.exists() || failure_output.as_ref().is_some_and(|path| path.exists()) {
                 return Err("core-loop outputs already exist; use new output paths".into());
             }
-        } else if npc_stories_output.exists()
-            || failure_output.as_ref().is_some_and(|path| path.exists())
-        {
-            return Err("NPC stories output already exists; use a new output path".into());
+        } else if failure_output.as_ref().is_some_and(|path| path.exists()) {
+            return Err("failure output already exists; use a new output path".into());
         }
-        let policy: Option<Box<dyn QuestPolicy>> = match npc_strategy_policy {
-            NpcStrategyPolicyArg::ServerScripted => None,
-            NpcStrategyPolicyArg::Openai => {
-                Some(Box::new(OpenAiCompatiblePolicy::new(ProviderConfig {
-                    endpoint: npc_endpoint.unwrap_or_else(|| ProviderConfig::default().endpoint),
-                    model: npc_model,
-                    api_key_env: npc_api_key_env,
-                    allow_network: npc_allow_network,
-                    ..ProviderConfig::default()
-                })?))
-            }
-        };
-        let report = run_core_loop_with_npc_policy(
-            CoreLoopConfig {
-                host,
-                database,
-                seed,
-                population,
-                cycles,
-                duration_days,
-                party_size,
-                run_nonce,
-                use_imported_world: imported_world,
-                expected_world_manifest_digest,
-                failure_output,
-            },
-            policy,
-        )?;
-        write_output(
-            &npc_stories_output,
-            report.npc_intervention_stories_markdown.as_bytes(),
-            false,
-        )?;
+        let report = run_core_loop(CoreLoopConfig {
+            host,
+            database,
+            seed,
+            population,
+            cycles,
+            duration_days,
+            party_size,
+            run_nonce,
+            use_imported_world: imported_world,
+            expected_world_manifest_digest,
+            failure_output,
+        })?;
         let json = serde_json::to_vec_pretty(&report)?;
         if let Some(path) = output {
             write_output(&path, &json, false)?;
@@ -366,7 +315,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             report.metrics.camp_stops,
             report.metrics.equipment_upgrades,
         );
-        eprintln!("NPC intervention stories: {}", npc_stories_output.display());
         return Ok(());
     }
     let report = match command {
@@ -548,14 +496,6 @@ mod tests {
             .join("..")
             .join("simulation-output.json");
         assert!(validate_distinct_output_paths(&[&canonical, &alias]).is_err());
-    }
-
-    #[test]
-    fn core_report_and_npc_stories_must_differ() {
-        let report = PathBuf::from("core-loop-report.json");
-        let stories = PathBuf::from("npc-adventurer-stories.md");
-        assert!(validate_distinct_output_paths(&[&report, &stories]).is_ok());
-        assert!(validate_distinct_output_paths(&[&stories, &stories]).is_err());
     }
 
     #[cfg(unix)]

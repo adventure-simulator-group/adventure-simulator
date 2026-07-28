@@ -3,20 +3,23 @@ use crate::{
     character::{character, character__view},
     investigation::{
         EvidencePresentationKind, InvestigationEventAuthority, InvestigationEvidenceAuthority,
-        InvestigationLead, investigation_event_authority, investigation_evidence_authority,
-        investigation_lead,
+        InvestigationLead, case_site_authority, investigation_event_authority,
+        investigation_evidence_authority, investigation_lead,
     },
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
-        ValidatedQuestGenerationAuthority, quest_generation_authority, settlement,
-        strategic_gateway_authority__view, validate_quest_generation_authority,
+        ValidatedQuestGenerationAuthority, hostile_group_authority, quest_generation_authority,
+        settlement, strategic_gateway_authority__view, travel_edge,
+        validate_quest_generation_authority,
     },
     time::{character_time, character_time__view, world_clock},
 };
 use adventuresim_core::local_problem as lp;
+use adventuresim_core::threat_escalation::bounded_public_threat_candidates as bounded_public_candidates;
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
-use std::collections::BTreeSet;
+use std::cmp::Reverse;
+use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 #[table(accessor = local_problem_authority)]
@@ -41,6 +44,9 @@ pub struct LocalProblemAuthority {
     pub mitigation_bps: u16,
     /// Includes the original offence represented by the generated case.
     pub incident_count: u16,
+    pub recurring_hostile: bool,
+    pub notoriety_bps: u16,
+    pub public_since_minute: Option<u64>,
     pub resolved_at: Option<u64>,
     pub opaque_case_ref: String,
 }
@@ -150,6 +156,24 @@ pub struct LocalProblemIncidentReceipt {
     pub character_id: u64,
     pub problem_id: String,
     pub incident_id: String,
+    pub learned_at: u64,
+}
+
+/// Observer-scoped canonical disclosure for a publicly notorious hostile case.
+/// It deliberately contains no evidence, testimony, trace, or preparation data.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[table(accessor = public_threat_disclosure)]
+pub struct PublicThreatDisclosure {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub public_case_id: String,
+    pub threat_type: String,
+    pub exact_site_id: String,
+    pub approximate_count: String,
+    pub source_kind: String,
+    pub source_npc_id: String,
     pub learned_at: u64,
 }
 
@@ -327,7 +351,17 @@ pub(crate) fn materialize_generated_problem(
     };
     let scope_key = scope_key(&scope);
     let starts_at = official_minute(ctx);
-    let ends_at = starts_at.saturating_add(30 * 1_440);
+    let recurring_hostile = case.family
+        == adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation
+        && matches!(
+            case.cause,
+            adventuresim_core::quest_generation::CanonicalCause::Hostile(_)
+        );
+    let ends_at = if recurring_hostile {
+        u64::MAX
+    } else {
+        starts_at.saturating_add(30 * 1_440)
+    };
     let mechanism = match consequence.symptom {
         lp::Symptom::MissingCaravans => "supply_disruption",
         lp::Symptom::NightScreams => "nighttime_insecurity",
@@ -358,6 +392,9 @@ pub(crate) fn materialize_generated_problem(
             ends_at,
             mitigation_bps: 0,
             incident_count: 1,
+            recurring_hostile,
+            notoriety_bps: 0,
+            public_since_minute: None,
             resolved_at: None,
             opaque_case_ref: case.canonical_case_id.clone(),
         });
@@ -423,12 +460,20 @@ pub(crate) fn ensure_generated_incidents(
         let Some(validated) = validated_problem_generation(ctx, &problem, settlement_id) else {
             continue;
         };
-        let due = lp::due_incident_count_configured(
+        let configured_maximum = if problem.recurring_hostile {
+            u16::MAX
+        } else {
+            validated.manifest.maximum_incidents
+        };
+        let total_due = lp::due_incident_count_configured(
             problem.starts_at,
             minute,
             validated.manifest.incident_interval_minutes,
-            validated.manifest.maximum_incidents,
+            configured_maximum,
         );
+        // Bound one transaction's catch-up work. Repeated settlement refreshes
+        // deterministically continue from the persisted ordinal.
+        let due = total_due.min(problem.incident_count.saturating_add(16));
         if due <= problem.incident_count {
             continue;
         }
@@ -538,6 +583,65 @@ pub(crate) fn ensure_generated_incidents(
             ctx.db.generated_problem_incident().insert(incident);
         }
         problem.incident_count = due;
+        if problem.recurring_hostile {
+            let adventuresim_core::quest_generation::CanonicalCause::Hostile(threat) =
+                validated.manifest.cause
+            else {
+                return Err("Recurring-hostile authority has a non-hostile manifest".into());
+            };
+            let profile = adventuresim_core::bestiary::profile(threat);
+            let next_notoriety = adventuresim_core::threat_escalation::notoriety_for_incident(
+                profile.investigation.investigability,
+                due,
+            );
+            problem.notoriety_bps = problem.notoriety_bps.max(next_notoriety);
+            if problem.public_since_minute.is_none()
+                && adventuresim_core::threat_escalation::is_public(problem.notoriety_bps)
+            {
+                problem.public_since_minute =
+                    adventuresim_core::threat_escalation::scheduled_public_since_minute(
+                        problem.starts_at,
+                        validated.manifest.incident_interval_minutes,
+                        profile.investigation.investigability,
+                    );
+                if problem.public_since_minute.is_none() {
+                    return Err("Public notoriety crossed without a crossing ordinal".into());
+                }
+            }
+            let Some((group_id, _, _, _)) = validated.manifest.hostile_groups.first() else {
+                return Err("Recurring hostile case has no hostile group".into());
+            };
+            let mut group = ctx
+                .db
+                .hostile_group_authority()
+                .id()
+                .find(group_id)
+                .ok_or("Recurring hostile group authority is missing")?;
+            if group.disposition == crate::strategic::HostileGroupDisposition::Active
+                && due > group.escalation_incident_ordinal
+            {
+                let escalated = adventuresim_core::threat_escalation::combat_for_incident(
+                    group.base_enemy_count,
+                    group.base_difficulty,
+                    due,
+                    profile.combat.escalation,
+                );
+                group.enemy_count = escalated.enemy_count;
+                group.difficulty = escalated.difficulty;
+                group.escalation_incident_ordinal = due;
+                group.escalation_progress_bps = escalated.progress_bps;
+                group.combat_scale_bps = escalated.combat_scale_bps;
+                group.normalized_combat_power = escalated.normalized_combat_power;
+                group.drop_quantity = if profile.combat.escalation.mode
+                    == adventuresim_core::threat_escalation::EscalationMode::Mob
+                {
+                    escalated.enemy_count
+                } else {
+                    group.base_enemy_count
+                };
+                ctx.db.hostile_group_authority().id().update(group);
+            }
+        }
         ctx.db.local_problem_authority().id().update(problem);
     }
     Ok(())
@@ -592,6 +696,9 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
             ends_at: problem.ends_at,
             mitigation_bps: 0,
             incident_count: 1,
+            recurring_hostile: false,
+            notoriety_bps: 0,
+            public_since_minute: None,
             resolved_at: None,
             opaque_case_ref: format!("case:opaque:{}", problem.id.0),
         });
@@ -662,6 +769,9 @@ pub fn ensure_route_problem(
             ends_at: problem.ends_at,
             mitigation_bps: 0,
             incident_count: 1,
+            recurring_hostile: false,
+            notoriety_bps: 0,
+            public_since_minute: None,
             resolved_at: None,
             opaque_case_ref: format!("case:opaque:{}", problem.id.0),
         });
@@ -680,7 +790,7 @@ pub fn ensure_route_problem(
 
 fn is_active(row: &LocalProblemAuthority, minute: u64) -> bool {
     minute >= row.starts_at
-        && minute < row.ends_at
+        && (row.recurring_hostile || minute < row.ends_at)
         && row.resolved_at.is_none_or(|at| minute < at)
         && row.mitigation_bps < 10_000
 }
@@ -906,6 +1016,363 @@ fn stable_eligible_candidates<T, K: Ord>(
     eligible_candidates
 }
 
+const MAX_HEARING_GRAPH_NODES: usize = 4_096;
+const MAX_HEARING_GRAPH_EDGES: usize = 16_384;
+const MAX_HEARING_DISTANCE_M: u64 = 18 * 25_000;
+
+#[derive(Default)]
+struct BoundedHearingGraph {
+    distances: HashMap<u64, u64>,
+    adjacent_settlements: HashSet<u64>,
+    visited_nodes: usize,
+    inspected_edges: usize,
+}
+
+fn bounded_hearing_graph(ctx: &ReducerContext, listener_node: u64) -> BoundedHearingGraph {
+    let settlements = ctx
+        .db
+        .settlement()
+        .iter()
+        .filter_map(|settlement| settlement.source_node_id)
+        .collect::<HashSet<_>>();
+    let mut graph = BoundedHearingGraph {
+        distances: HashMap::from([(listener_node, 0)]),
+        ..Default::default()
+    };
+    // `crossed_settlement` lets this one bounded shortest-path traversal also
+    // identify the first settlement reached along each road branch.
+    let mut state_distances = HashMap::from([((listener_node, false), 0_u64)]);
+    let mut pending = BinaryHeap::from([Reverse((0_u64, listener_node, false))]);
+    while let Some(Reverse((distance, node, crossed_settlement))) = pending.pop() {
+        if distance > MAX_HEARING_DISTANCE_M
+            || graph.visited_nodes >= MAX_HEARING_GRAPH_NODES
+            || graph.inspected_edges >= MAX_HEARING_GRAPH_EDGES
+        {
+            continue;
+        }
+        if state_distances
+            .get(&(node, crossed_settlement))
+            .is_some_and(|known| *known != distance)
+        {
+            continue;
+        }
+        graph.visited_nodes += 1;
+        let reached_settlement = node != listener_node && settlements.contains(&node);
+        if reached_settlement && !crossed_settlement {
+            graph.adjacent_settlements.insert(node);
+        }
+        let next_crossed = crossed_settlement || reached_settlement;
+        let mut neighbors = ctx
+            .db
+            .travel_edge()
+            .from_node_id()
+            .filter(&node)
+            .map(|edge| (edge.to_node_id, edge.length_m))
+            .collect::<Vec<_>>();
+        neighbors.extend(
+            ctx.db
+                .travel_edge()
+                .to_node_id()
+                .filter(&node)
+                .map(|edge| (edge.from_node_id, edge.length_m)),
+        );
+        neighbors.sort_unstable();
+        neighbors.dedup();
+        for (next, length) in neighbors {
+            graph.inspected_edges += 1;
+            if graph.inspected_edges > MAX_HEARING_GRAPH_EDGES {
+                break;
+            }
+            let next_distance = distance.saturating_add(u64::from(length));
+            if next_distance > MAX_HEARING_DISTANCE_M {
+                continue;
+            }
+            graph
+                .distances
+                .entry(next)
+                .and_modify(|known| *known = (*known).min(next_distance))
+                .or_insert(next_distance);
+            let state = (next, next_crossed);
+            if state_distances
+                .get(&state)
+                .is_none_or(|known| next_distance < *known)
+            {
+                state_distances.insert(state, next_distance);
+                pending.push(Reverse((next_distance, next, next_crossed)));
+            }
+        }
+    }
+    graph
+}
+
+fn source_may_disclose_public_threat(
+    ctx: &ReducerContext,
+    character_id: u64,
+    source_npc: &crate::settlement_population::SettlementNpc,
+    listener_settlement_id: &str,
+    location_id: &str,
+    minute: u64,
+) -> Option<&'static str> {
+    let organization_id = crate::strategic::exact_organization_representative(
+        source_npc,
+        listener_settlement_id,
+        location_id,
+    );
+    let organization = organization_id
+        .as_deref()
+        .and_then(adventuresim_core::organization::organization);
+    let current_member = organization.and_then(|organization| {
+        crate::organization::membership(ctx, character_id, &organization.id)
+            .filter(|membership| crate::organization::membership_is_current(membership, minute))
+    });
+    adventuresim_core::threat_escalation::public_referral_source(
+        source_npc.home_settlement_id == listener_settlement_id,
+        source_npc.service_id == "inn" && location_id == "inn",
+        organization.is_some_and(|organization| organization.public_threat_referrals),
+        current_member.is_some(),
+    )
+}
+
+fn public_threat_in_hearing_range(
+    graph: &BoundedHearingGraph,
+    listener_settlement_id: &str,
+    afflicted_settlement_id: &str,
+    afflicted_node: Option<u64>,
+    listener_population: u32,
+    notoriety_bps: u16,
+    normalized_combat_power: u32,
+) -> bool {
+    let afflicted_node = afflicted_node;
+    adventuresim_core::threat_escalation::hearing_allows(
+        listener_settlement_id == afflicted_settlement_id,
+        afflicted_node.is_some_and(|node| graph.adjacent_settlements.contains(&node)),
+        afflicted_node.and_then(|node| graph.distances.get(&node).copied()),
+        listener_population,
+        normalized_combat_power,
+        notoriety_bps,
+    )
+}
+
+fn surface_public_threat(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session_id: &str,
+    source_npc: &crate::settlement_population::SettlementNpc,
+    listener_settlement_id: &str,
+    location_id: &str,
+    observer_minute: u64,
+    official_world_minute: u64,
+) -> Result<bool, String> {
+    let Some(source_kind) = source_may_disclose_public_threat(
+        ctx,
+        character_id,
+        source_npc,
+        listener_settlement_id,
+        location_id,
+        observer_minute,
+    ) else {
+        return Ok(false);
+    };
+    let listener = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&listener_settlement_id.to_string())
+        .ok_or("Listener settlement is missing")?;
+    let graph = listener
+        .source_node_id
+        .map(|node| bounded_hearing_graph(ctx, node))
+        .unwrap_or_default();
+    // The one listener-centric graph is independent of case count. Use it to
+    // discard remote scopes cheaply before the deterministic candidate cap, so
+    // old remote cases cannot starve a nearby referral.
+    let public_problems = ctx
+        .db
+        .local_problem_authority()
+        .iter()
+        .filter(|problem| {
+            problem.recurring_hostile
+                && problem.public_since_minute.is_some()
+                && is_active(problem, official_world_minute)
+        })
+        .filter_map(|problem| {
+            let lp::Scope::Settlement {
+                settlement_id: afflicted,
+            } = serde_json::from_str(&problem.scope_json).ok()?
+            else {
+                return None;
+            };
+            let settlement = ctx.db.settlement().id().find(&afflicted)?;
+            let plausibly_local = afflicted == listener_settlement_id
+                || settlement.source_node_id.is_some_and(|node| {
+                    graph.adjacent_settlements.contains(&node)
+                        || graph.distances.contains_key(&node)
+                });
+            plausibly_local.then_some((
+                problem.public_since_minute.unwrap_or(u64::MAX),
+                afflicted.clone(),
+                problem.id.clone(),
+                (problem, afflicted, settlement.source_node_id),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let public_problems = bounded_public_candidates(public_problems);
+    let mut candidates = public_problems
+        .into_iter()
+        .filter_map(|(problem, afflicted, afflicted_node)| {
+            let validated = validated_problem_generation(ctx, &problem, &afflicted)?;
+            let (group_id, site_id, threat, _) = validated.manifest.hostile_groups.first()?;
+            let group_id = group_id.clone();
+            let site_id = site_id.clone();
+            let threat = *threat;
+            let group = ctx.db.hostile_group_authority().id().find(&group_id)?;
+            public_threat_in_hearing_range(
+                &graph,
+                listener_settlement_id,
+                &afflicted,
+                afflicted_node,
+                listener.population_estimate,
+                problem.notoriety_bps,
+                group.normalized_combat_power,
+            )
+            .then_some((validated, site_id, threat, group))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(validated, _, _, _)| {
+        let already_known = ctx
+            .db
+            .public_threat_disclosure()
+            .id()
+            .find(&format!(
+                "public-threat:{character_id}:{}",
+                validated.manifest.public_case_id
+            ))
+            .is_some();
+        let problem = ctx
+            .db
+            .local_problem_authority()
+            .id()
+            .find(&validated.manifest.problem_id);
+        (
+            already_known,
+            problem
+                .and_then(|problem| problem.public_since_minute)
+                .unwrap_or(u64::MAX),
+            validated.manifest.public_case_id.clone(),
+        )
+    });
+    candidates.truncate(lp::MAX_ACTIVE_PER_SCOPE);
+    let Some((validated, site_id, threat, group)) = candidates.into_iter().next() else {
+        return Ok(false);
+    };
+    let site = validated
+        .manifest
+        .sites
+        .iter()
+        .find(|candidate| candidate.id == site_id && candidate.is_true_location)
+        .ok_or("Public hostile case has no canonical true site")?;
+    let case_site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&site.id.0)
+        .ok_or("Public hostile case site authority is missing")?;
+    let threat_name = adventuresim_core::bestiary::profile(threat).display_name;
+    let count_band =
+        adventuresim_core::threat_escalation::approximate_count_band(group.enemy_count);
+    let disclosure_id = format!(
+        "public-threat:{character_id}:{}",
+        validated.manifest.public_case_id
+    );
+    let disclosure = PublicThreatDisclosure {
+        id: disclosure_id.clone(),
+        character_id,
+        public_case_id: validated.manifest.public_case_id.clone(),
+        threat_type: threat.as_str().into(),
+        exact_site_id: site.id.0.clone(),
+        approximate_count: count_band.into(),
+        source_kind: source_kind.into(),
+        source_npc_id: source_npc.id.clone(),
+        learned_at: observer_minute,
+    };
+    if ctx
+        .db
+        .public_threat_disclosure()
+        .id()
+        .find(&disclosure_id)
+        .as_ref()
+        != Some(&disclosure)
+    {
+        if ctx
+            .db
+            .public_threat_disclosure()
+            .id()
+            .find(&disclosure_id)
+            .is_some()
+        {
+            ctx.db
+                .public_threat_disclosure()
+                .id()
+                .update(disclosure.clone());
+        } else {
+            ctx.db.public_threat_disclosure().insert(disclosure);
+        }
+    }
+    for mut lead in ctx
+        .db
+        .investigation_lead()
+        .owner_character_id()
+        .filter(&character_id)
+        .filter(|lead| {
+            lead.case_id == validated.manifest.public_case_id
+                && lead.exact_location_id != site.id.0
+                && lead.corrected_by.is_empty()
+        })
+        .collect::<Vec<_>>()
+    {
+        lead.corrected_by = disclosure_id.clone();
+        ctx.db.investigation_lead().id().update(lead);
+    }
+    crate::investigation::disclose_exact_case_site(
+        ctx,
+        character_id,
+        &validated.manifest.public_case_id,
+        &case_site,
+        source_kind,
+    )?;
+    crate::investigation::upsert_public_threat_journal_notice(
+        ctx,
+        character_id,
+        &validated.manifest.public_case_id,
+        &adventuresim_core::threat_escalation::public_threat_summary(
+            threat_name,
+            &site.safe_label,
+            count_band,
+        ),
+        source_kind,
+        observer_minute,
+    )?;
+    ctx.db
+        .local_problem_rumor_delivery()
+        .insert(LocalProblemRumorDelivery {
+            id: format!("{session_id}:rumor"),
+            character_id,
+            settlement_id: listener_settlement_id.into(),
+            session_id: session_id.into(),
+            receipt_id: disclosure_id,
+            fragments_json: serde_json::to_string(&vec![
+                adventuresim_dialogue::Fragment::Text {
+                    value: format!(
+                        "{threat_name} are publicly known to be at {}. Reports put their number at {count_band}.",
+                        site.safe_label
+                    ),
+                },
+            ])
+            .map_err(|_| "Could not encode public threat referral")?,
+        });
+    Ok(true)
+}
+
 /// Surface at most one unknown active problem. Inns are preferred by callers;
 /// overview dialogue is the fallback. The return is safe authored text only.
 pub fn surface_problem(
@@ -940,6 +1407,20 @@ pub fn surface_problem(
         .character_id()
         .find(character_id)
         .map_or(0, |t| t.minutes);
+    if let Some(source_npc) = source_npc.as_ref()
+        && surface_public_threat(
+            ctx,
+            character_id,
+            session_id,
+            source_npc,
+            &settlement_id,
+            location_id,
+            observer_minute,
+            official_world_minute,
+        )?
+    {
+        return Ok(());
+    }
     let scope = format!("settlement:{settlement_id}");
     let active_problems = stable_eligible_candidates(
         ctx.db
@@ -1223,7 +1704,177 @@ fn referral_fragments_json(presentation: lp::ReferralPresentation) -> Result<Str
 
 #[cfg(test)]
 mod tests {
-    use crate::local_problem::{referral_fragments_json, stable_eligible_candidates};
+    use crate::local_problem::{
+        BoundedHearingGraph, MAX_HEARING_DISTANCE_M, MAX_HEARING_GRAPH_EDGES,
+        MAX_HEARING_GRAPH_NODES, public_threat_in_hearing_range, referral_fragments_json,
+        stable_eligible_candidates,
+    };
+    use adventuresim_core::threat_escalation::{
+        MAX_PUBLIC_THREAT_CANDIDATES, bounded_public_threat_candidates as bounded_public_candidates,
+    };
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn referral_access_is_closed_and_presentation_independent() {
+        assert_eq!(
+            adventuresim_core::threat_escalation::public_referral_source(true, true, false, false),
+            Some("innkeeper")
+        );
+        for current in [false, true] {
+            assert_eq!(
+                adventuresim_core::threat_escalation::public_referral_source(
+                    false, false, true, current
+                ),
+                None,
+                "wrong settlement is always rejected"
+            );
+        }
+        assert_eq!(
+            adventuresim_core::threat_escalation::public_referral_source(true, false, true, false),
+            None,
+            "nonmember and suspended member are rejected"
+        );
+        assert_eq!(
+            adventuresim_core::threat_escalation::public_referral_source(true, false, true, true),
+            Some("organization")
+        );
+        assert_eq!(
+            adventuresim_core::threat_escalation::public_referral_source(true, false, false, true),
+            None,
+            "wrong speaker or chapter location is rejected"
+        );
+    }
+
+    #[test]
+    fn hearing_boundaries_and_candidate_budget_are_deterministic() {
+        let graph = BoundedHearingGraph {
+            distances: HashMap::from([(2, 25_000), (3, 25_001)]),
+            adjacent_settlements: HashSet::from([4]),
+            visited_nodes: MAX_HEARING_GRAPH_NODES,
+            inspected_edges: MAX_HEARING_GRAPH_EDGES,
+        };
+        assert!(public_threat_in_hearing_range(
+            &graph, "home", "home", None, 0, 6_500, 10_000
+        ));
+        assert!(public_threat_in_hearing_range(
+            &graph,
+            "home",
+            "adjacent",
+            Some(4),
+            0,
+            6_500,
+            10_000
+        ));
+        assert!(public_threat_in_hearing_range(
+            &graph,
+            "home",
+            "edge",
+            Some(2),
+            0,
+            6_500,
+            10_000
+        ));
+        assert!(!public_threat_in_hearing_range(
+            &graph,
+            "home",
+            "beyond",
+            Some(3),
+            0,
+            6_500,
+            10_000
+        ));
+        assert!(!public_threat_in_hearing_range(
+            &graph,
+            "home",
+            "disconnected",
+            Some(5),
+            u32::MAX,
+            10_000,
+            300_000
+        ));
+        assert_eq!(MAX_HEARING_DISTANCE_M, 450_000);
+
+        let inputs = (0..100)
+            .rev()
+            .map(|index| {
+                (
+                    index,
+                    format!("settlement-{index:03}"),
+                    format!("problem-{index:03}"),
+                    index,
+                )
+            })
+            .collect();
+        let selected = bounded_public_candidates(inputs);
+        assert_eq!(selected.len(), MAX_PUBLIC_THREAT_CANDIDATES);
+        assert_eq!(
+            selected,
+            (0..MAX_PUBLIC_THREAT_CANDIDATES as u64).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn durable_public_summary_contains_only_the_disclosed_triplet() {
+        let summary = adventuresim_core::threat_escalation::public_threat_summary(
+            "Orcs",
+            "Old Quarry",
+            "a few (2–4)",
+        );
+        assert_eq!(summary, "Orcs at Old Quarry; reported number: a few (2–4).");
+        for secret in [
+            "evidence",
+            "testimony",
+            "preparation",
+            "manifest",
+            "canonical",
+        ] {
+            assert!(!summary.to_ascii_lowercase().contains(secret));
+        }
+    }
+
+    #[test]
+    fn public_referrals_share_canonical_disclosure_and_closed_authorization() {
+        let source = include_str!("local_problem.rs");
+        let authorization = source
+            .split("fn source_may_disclose_public_threat")
+            .nth(1)
+            .and_then(|tail| tail.split("fn public_threat_in_hearing_range").next())
+            .expect("public referral authorization");
+        assert!(authorization.contains("source_npc.service_id == \"inn\""));
+        assert!(authorization.contains("public_threat_referrals"));
+        assert!(authorization.contains("membership_is_current"));
+        assert!(!authorization.contains("organization_presentation"));
+        let disclosure = source
+            .split("fn surface_public_threat")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .expect("shared public disclosure");
+        for canonical in [
+            "threat_type",
+            "exact_site_id",
+            "approximate_count",
+            "disclose_exact_case_site",
+        ] {
+            assert!(disclosure.contains(canonical), "{canonical}");
+        }
+        for secret in ["preparation_advice", "witness_account", "factor_trace"] {
+            assert!(!disclosure.contains(secret), "{secret}");
+        }
+    }
+
+    #[test]
+    fn recurring_hostiles_are_unbounded_but_transaction_catchup_is_bounded() {
+        let source = include_str!("local_problem.rs");
+        let incidents = source
+            .split("pub(crate) fn ensure_generated_incidents")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn ensure_settlement_problems").next())
+            .expect("incident materializer");
+        assert!(incidents.contains("u16::MAX"));
+        assert!(incidents.contains("saturating_add(16)"));
+        assert!(incidents.contains("notoriety_for_incident"));
+        assert!(incidents.contains("combat_for_incident"));
+    }
 
     #[test]
     fn self_referral_serializes_an_inline_testimony_topic() {

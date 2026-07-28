@@ -22,6 +22,9 @@ pub struct LocalProblemAuthority {
     pub ends_at: u64,
     pub mitigation_bps: u16,
     pub incident_count: u16,
+    pub recurring_hostile: bool,
+    pub notoriety_bps: u16,
+    pub public_since_minute: Option<u64>,
     pub resolved_at: Option<u64>,
     pub opaque_case_ref: String,
 }
@@ -49,6 +52,9 @@ pub struct LocalProblemAuthorityCols {
     pub ends_at: __sdk::__query_builder::Col<LocalProblemAuthority, u64>,
     pub mitigation_bps: __sdk::__query_builder::Col<LocalProblemAuthority, u16>,
     pub incident_count: __sdk::__query_builder::Col<LocalProblemAuthority, u16>,
+    pub recurring_hostile: __sdk::__query_builder::Col<LocalProblemAuthority, bool>,
+    pub notoriety_bps: __sdk::__query_builder::Col<LocalProblemAuthority, u16>,
+    pub public_since_minute: __sdk::__query_builder::Col<LocalProblemAuthority, Option<u64>>,
     pub resolved_at: __sdk::__query_builder::Col<LocalProblemAuthority, Option<u64>>,
     pub opaque_case_ref: __sdk::__query_builder::Col<LocalProblemAuthority, String>,
 }
@@ -81,6 +87,12 @@ impl __sdk::__query_builder::HasCols for LocalProblemAuthority {
             ends_at: __sdk::__query_builder::Col::new(table_name, "ends_at"),
             mitigation_bps: __sdk::__query_builder::Col::new(table_name, "mitigation_bps"),
             incident_count: __sdk::__query_builder::Col::new(table_name, "incident_count"),
+            recurring_hostile: __sdk::__query_builder::Col::new(table_name, "recurring_hostile"),
+            notoriety_bps: __sdk::__query_builder::Col::new(table_name, "notoriety_bps"),
+            public_since_minute: __sdk::__query_builder::Col::new(
+                table_name,
+                "public_since_minute",
+            ),
             resolved_at: __sdk::__query_builder::Col::new(table_name, "resolved_at"),
             opaque_case_ref: __sdk::__query_builder::Col::new(table_name, "opaque_case_ref"),
         }

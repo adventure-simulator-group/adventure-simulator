@@ -126,6 +126,7 @@ fn main() {
             let mission_id = request.mission_id.clone();
             let scene_key = request.scene_key.clone();
             let required_enemy_kills = request.required_enemy_kills.to_string();
+            let enemy_combat_scale_bps = request.enemy_combat_scale_bps.to_string();
             let spawned = spawned_clone.clone();
             let bin = bin.clone();
             let stdb_url = stdb_url.clone();
@@ -149,6 +150,8 @@ fn main() {
                                 &scene_key,
                                 "--required-enemy-kills",
                                 &required_enemy_kills,
+                                "--enemy-combat-scale-bps",
+                                &enemy_combat_scale_bps,
                                 "--addr",
                                 &SocketAddr::new(host, port).to_string(),
                                 "--spacetimedb-url",

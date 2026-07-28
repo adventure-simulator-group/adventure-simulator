@@ -53,6 +53,9 @@ const COMBAT_KEYS: &[&str] = &[
     "temperament",
     "encounter_scale_basis_points",
     "loot_item_id",
+    "escalation_mode",
+    "escalation_growth_rate_bps",
+    "baseline_combat_power",
 ];
 const INVESTIGATION_KEYS: &[&str] = &[
     "habitats",
@@ -67,7 +70,7 @@ const INVESTIGATION_KEYS: &[&str] = &[
     "mistaken_for",
     "distinguishing_clues",
     "preparation_advice",
-    "evidence_visibility",
+    "investigability",
     "identification_challenge",
     "location_challenge",
     "countermeasure_hypotheses",
@@ -695,10 +698,29 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                         nonempty_string(investigation, "preparation_advice", &at)?;
                         unsigned(
                             investigation,
-                            "evidence_visibility",
+                            "investigability",
                             0,
                             100,
                             &format!("{at}.investigation"),
+                        )?;
+                        enum_value(
+                            string(combat, "escalation_mode", &at)?,
+                            &["mob", "single"],
+                            &format!("{at}.combat.escalation_mode"),
+                        )?;
+                        unsigned(
+                            combat,
+                            "escalation_growth_rate_bps",
+                            1,
+                            10_000,
+                            &format!("{at}.combat"),
+                        )?;
+                        unsigned(
+                            combat,
+                            "baseline_combat_power",
+                            u64::from(crate::threat_escalation_limits::MIN_BASELINE_ENEMY_POWER),
+                            u64::from(crate::threat_escalation_limits::MAX_ORC_EQUIVALENT_POWER),
+                            &format!("{at}.combat"),
                         )?;
                         boolean(
                             investigation,

@@ -123,6 +123,10 @@ pub struct MonsterCombat {
     pub temperament: String,
     pub encounter_scale_basis_points: u16,
     pub loot_item_id: Option<String>,
+    pub escalation_mode: crate::threat_escalation::EscalationMode,
+    pub escalation_growth_rate_bps: u16,
+    /// Comparable power of one unscaled enemy; 10,000 equals one baseline orc.
+    pub baseline_combat_power: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -140,7 +144,9 @@ pub struct MonsterInvestigation {
     pub mistaken_for: Vec<String>,
     pub distinguishing_clues: Vec<String>,
     pub preparation_advice: String,
-    pub evidence_visibility: u8,
+    /// Higher values make evidence easier to interpret and increase the
+    /// asymptotic cap on public notoriety.
+    pub investigability: u8,
     pub identification_challenge: bool,
     pub location_challenge: bool,
     pub countermeasure_hypotheses: Vec<String>,

@@ -101,12 +101,16 @@ until it is ready.
 ## Continuing problems
 
 Unresolved problems may worsen over time. New incidents can add witnesses,
-victims, evidence, and settlement consequences without rewriting earlier
-events. Residents or NPC adventuring companies may eventually investigate or
-resolve an old problem themselves.
+victims, evidence, settlement consequences, public notoriety, and stronger
+hostile groups without rewriting earlier events. NPC adventuring companies
+still recruit, but they no longer investigate or resolve quests automatically.
+Conspicuous hostile cases eventually become public and can be referred through
+nearby innkeepers or eligible organization representatives. The referral
+creates a durable journal case and exact destination pin containing only the
+threat type, safe site label, and approximate count.
 
-This keeps cases part of a shared world rather than a private queue that waits
-forever for one player.
+This keeps cases part of a shared world: ignored threats become a growing
+combat problem and their public rumor radius expands.
 
 ## Rewards
 

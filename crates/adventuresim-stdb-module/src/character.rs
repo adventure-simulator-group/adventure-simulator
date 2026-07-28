@@ -353,16 +353,11 @@ impl CharacterEquip {
 pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Result<(), String> {
     use petname::Generator;
 
-    if ctx.sender() != server
-        || ctx
-            .db
-            .tactical_server_authority()
-            .identity()
-            .find(server)
-            .is_none()
-    {
+    let tactical_server = ctx.db.tactical_server_authority().identity().find(server);
+    if ctx.sender() != server || tactical_server.is_none() {
         return Err("Only a registered tactical server can create its temporary characters".into());
     }
+    let tactical_server = tactical_server.expect("checked tactical server");
 
     let name = petname::Petnames::default()
         .generate(&mut ctx.rng(), 1, " ")
@@ -373,7 +368,100 @@ pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Res
     id |= 0b1000_1000_1000_1000;
 
     insert_new_character(ctx, name, id, true)?;
+    scale_temporary_enemy(
+        ctx,
+        id,
+        tactical_server.enemy_difficulty,
+        tactical_server.enemy_combat_scale_bps,
+    )?;
     enter_mission(ctx, id, server)
+}
+
+fn scale_temporary_enemy(
+    ctx: &ReducerContext,
+    character_id: u64,
+    base_difficulty: i32,
+    combat_scale_bps: u32,
+) -> Result<(), String> {
+    let authored = 1.0 + (base_difficulty.clamp(1, 20) - 1) as f32 * 0.1;
+    let physical = authored
+        * adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps);
+    let training = authored
+        * adventuresim_core::threat_escalation::combat_training_multiplier(combat_scale_bps);
+    let mut attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .ok_or("Temporary enemy attributes are missing")?;
+    for value in [
+        &mut attributes.endurance,
+        &mut attributes.immunity,
+        &mut attributes.gut,
+        &mut attributes.instinct,
+        &mut attributes.eyesight,
+        &mut attributes.hearing,
+        &mut attributes.left_arm_strength,
+        &mut attributes.right_arm_strength,
+        &mut attributes.left_leg_strength,
+        &mut attributes.right_leg_strength,
+        &mut attributes.left_arm_agility,
+        &mut attributes.right_arm_agility,
+        &mut attributes.left_leg_agility,
+        &mut attributes.right_leg_agility,
+    ] {
+        *value *= physical;
+    }
+    ctx.db
+        .character_attributes()
+        .character_id()
+        .update(attributes);
+
+    let mut limbs = ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Temporary enemy limbs are missing")?;
+    for health in [
+        &mut limbs.left_arm_health,
+        &mut limbs.right_arm_health,
+        &mut limbs.left_leg_health,
+        &mut limbs.right_leg_health,
+        &mut limbs.head_health,
+        &mut limbs.chest_health,
+        &mut limbs.stomach_health,
+    ] {
+        *health *= physical;
+    }
+    ctx.db.character_limbs().character_id().update(limbs);
+
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Temporary enemy skills are missing")?;
+    for hours in [
+        &mut skills.polearm_hours,
+        &mut skills.axe_hours,
+        &mut skills.bludgeon_hours,
+        &mut skills.sword_hours,
+        &mut skills.knife_hours,
+        &mut skills.dodge_hours,
+        &mut skills.block_hours,
+        &mut skills.bow_hours,
+        &mut skills.crossbow_hours,
+        &mut skills.firearm_hours,
+        &mut skills.throw_hours,
+        &mut skills.will_hours,
+        &mut skills.stealth_hours,
+        &mut skills.balance_hours,
+    ] {
+        *hours *= training;
+    }
+    ctx.db.character_skills().character_id().update(skills);
+    Ok(())
 }
 
 /// Transactionally delete a temporary tactical character and every durable

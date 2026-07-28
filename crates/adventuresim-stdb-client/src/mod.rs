@@ -71,10 +71,6 @@ pub mod backend_local_problem_rumor_type;
 pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
 pub mod backend_local_problem_trade_effects_table;
-pub mod backend_npc_case_intervention_type;
-pub mod backend_npc_case_interventions_table;
-pub mod backend_npc_intervention_candidate_type;
-pub mod backend_npc_intervention_candidates_table;
 pub mod backend_physical_evidence_inspection_type;
 pub mod backend_physical_evidence_inspections_table;
 pub mod backend_physical_evidence_table;
@@ -398,8 +394,6 @@ pub mod native_range_evidence_type;
 pub mod nerve_type;
 pub mod npc_adventuring_party_authority_type;
 pub mod npc_age_band_type;
-pub mod npc_case_intervention_type;
-pub mod npc_intervention_strategy_override_type;
 pub mod npc_presentation_type;
 pub mod npc_sex_type;
 pub mod objective_continuity_guard_type;
@@ -468,6 +462,7 @@ pub mod profile_fact_provenance_type;
 pub mod projectile_kind_type;
 pub mod promote_organization_membership_reducer;
 pub mod prosperity_tier_type;
+pub mod public_threat_disclosure_type;
 pub mod purchase_from_herbalist_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
@@ -547,7 +542,6 @@ pub mod set_character_religion_reducer;
 pub mod set_inventory_quantity_target_reducer;
 pub mod set_party_camp_fatigue_percent_reducer;
 pub mod set_party_travel_itinerary_reducer;
-pub mod set_simulation_npc_intervention_strategy_reducer;
 pub mod settlement_alias_batch_row_type;
 pub mod settlement_alias_table;
 pub mod settlement_alias_type;
@@ -737,10 +731,6 @@ pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
 pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
 pub use backend_local_problem_trade_effects_table::*;
-pub use backend_npc_case_intervention_type::BackendNpcCaseIntervention;
-pub use backend_npc_case_interventions_table::*;
-pub use backend_npc_intervention_candidate_type::BackendNpcInterventionCandidate;
-pub use backend_npc_intervention_candidates_table::*;
 pub use backend_physical_evidence_inspection_type::BackendPhysicalEvidenceInspection;
 pub use backend_physical_evidence_inspections_table::*;
 pub use backend_physical_evidence_table::*;
@@ -1064,8 +1054,6 @@ pub use native_range_evidence_type::NativeRangeEvidence;
 pub use nerve_type::Nerve;
 pub use npc_adventuring_party_authority_type::NpcAdventuringPartyAuthority;
 pub use npc_age_band_type::NpcAgeBand;
-pub use npc_case_intervention_type::NpcCaseIntervention;
-pub use npc_intervention_strategy_override_type::NpcInterventionStrategyOverride;
 pub use npc_presentation_type::NpcPresentation;
 pub use npc_sex_type::NpcSex;
 pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
@@ -1134,6 +1122,7 @@ pub use profile_fact_provenance_type::ProfileFactProvenance;
 pub use projectile_kind_type::ProjectileKind;
 pub use promote_organization_membership_reducer::promote_organization_membership;
 pub use prosperity_tier_type::ProsperityTier;
+pub use public_threat_disclosure_type::PublicThreatDisclosure;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
@@ -1213,7 +1202,6 @@ pub use set_character_religion_reducer::set_character_religion;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
 pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
 pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
-pub use set_simulation_npc_intervention_strategy_reducer::set_simulation_npc_intervention_strategy;
 pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
 pub use settlement_alias_table::*;
 pub use settlement_alias_type::SettlementAlias;
@@ -1826,11 +1814,6 @@ pub enum Reducer {
         automatic_camp_duration: bool,
         fixed_camp_minutes: u16,
     },
-    SetSimulationNpcInterventionStrategy {
-        run_nonce: String,
-        case_id: String,
-        strategy: String,
-    },
     ShareInvestigationBelief {
         sender_id: u64,
         recipient_id: u64,
@@ -2097,9 +2080,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
-            Reducer::SetSimulationNpcInterventionStrategy { .. } => {
-                "set_simulation_npc_intervention_strategy"
-            }
             Reducer::ShareInvestigationBelief { .. } => "share_investigation_belief",
             Reducer::ShareInvestigationLead { .. } => "share_investigation_lead",
             Reducer::SimulateContractIssuerInteraction { .. } => {
@@ -2997,15 +2977,6 @@ Reducer::BeginWorldDataImport{
                 automatic_camp_duration: automatic_camp_duration.clone(),
                 fixed_camp_minutes: fixed_camp_minutes.clone(),
 }),
-            Reducer::SetSimulationNpcInterventionStrategy{
-                run_nonce,
-                case_id,
-                strategy,
-}             => __sats::bsatn::to_vec(&set_simulation_npc_intervention_strategy_reducer::SetSimulationNpcInterventionStrategyArgs {
-                run_nonce: run_nonce.clone(),
-                case_id: case_id.clone(),
-                strategy: strategy.clone(),
-}),
             Reducer::ShareInvestigationBelief{
                 sender_id,
                 recipient_id,
@@ -3316,8 +3287,6 @@ pub struct DbUpdate {
     backend_local_chat_messages: __sdk::TableUpdate<BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
-    backend_npc_case_interventions: __sdk::TableUpdate<BackendNpcCaseIntervention>,
-    backend_npc_intervention_candidates: __sdk::TableUpdate<BackendNpcInterventionCandidate>,
     backend_physical_evidence: __sdk::TableUpdate<BackendPhysicalEvidence>,
     backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
     backend_physiology_administrations: __sdk::TableUpdate<BackendPhysiologyAdministration>,
@@ -3503,18 +3472,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_local_problem_trade_effects" => {
                     db_update.backend_local_problem_trade_effects.append(
                         backend_local_problem_trade_effects_table::parse_table_update(
-                            table_update,
-                        )?,
-                    )
-                }
-                "backend_npc_case_interventions" => {
-                    db_update.backend_npc_case_interventions.append(
-                        backend_npc_case_interventions_table::parse_table_update(table_update)?,
-                    )
-                }
-                "backend_npc_intervention_candidates" => {
-                    db_update.backend_npc_intervention_candidates.append(
-                        backend_npc_intervention_candidates_table::parse_table_update(
                             table_update,
                         )?,
                     )
@@ -4178,16 +4135,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects",
                 &self.backend_local_problem_trade_effects,
             );
-        diff.backend_npc_case_interventions = cache
-            .apply_diff_to_table::<BackendNpcCaseIntervention>(
-                "backend_npc_case_interventions",
-                &self.backend_npc_case_interventions,
-            );
-        diff.backend_npc_intervention_candidates = cache
-            .apply_diff_to_table::<BackendNpcInterventionCandidate>(
-                "backend_npc_intervention_candidates",
-                &self.backend_npc_intervention_candidates,
-            );
         diff.backend_physical_evidence = cache.apply_diff_to_table::<BackendPhysicalEvidence>(
             "backend_physical_evidence",
             &self.backend_physical_evidence,
@@ -4333,12 +4280,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_npc_case_interventions" => db_update
-                    .backend_npc_case_interventions
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_npc_intervention_candidates" => db_update
-                    .backend_npc_intervention_candidates
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
@@ -4668,12 +4609,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_npc_case_interventions" => db_update
-                    .backend_npc_case_interventions
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_npc_intervention_candidates" => db_update
-                    .backend_npc_intervention_candidates
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4953,9 +4888,6 @@ pub struct AppliedDiff<'r> {
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
-    backend_npc_case_interventions: __sdk::TableAppliedDiff<'r, BackendNpcCaseIntervention>,
-    backend_npc_intervention_candidates:
-        __sdk::TableAppliedDiff<'r, BackendNpcInterventionCandidate>,
     backend_physical_evidence: __sdk::TableAppliedDiff<'r, BackendPhysicalEvidence>,
     backend_physical_evidence_inspections:
         __sdk::TableAppliedDiff<'r, BackendPhysicalEvidenceInspection>,
@@ -5183,16 +5115,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendLocalProblemTradeEffect>(
             "backend_local_problem_trade_effects",
             &self.backend_local_problem_trade_effects,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendNpcCaseIntervention>(
-            "backend_npc_case_interventions",
-            &self.backend_npc_case_interventions,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendNpcInterventionCandidate>(
-            "backend_npc_intervention_candidates",
-            &self.backend_npc_intervention_candidates,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendPhysicalEvidence>(
@@ -6232,8 +6154,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_local_chat_messages_table::register_table(client_cache);
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
-        backend_npc_case_interventions_table::register_table(client_cache);
-        backend_npc_intervention_candidates_table::register_table(client_cache);
         backend_physical_evidence_table::register_table(client_cache);
         backend_physical_evidence_inspections_table::register_table(client_cache);
         backend_physiology_administrations_table::register_table(client_cache);
@@ -6341,8 +6261,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_local_chat_messages",
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
-        "backend_npc_case_interventions",
-        "backend_npc_intervention_candidates",
         "backend_physical_evidence",
         "backend_physical_evidence_inspections",
         "backend_physiology_administrations",

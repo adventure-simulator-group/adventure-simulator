@@ -30,7 +30,6 @@ pub mod leadership;
 pub mod local_problem;
 pub mod mission;
 pub mod morale;
-pub mod npc_adventurer;
 pub mod organization;
 #[cfg(test)]
 mod organization_catalog_validation;
@@ -52,6 +51,8 @@ pub mod strategic_time;
 #[doc(hidden)]
 pub mod stub;
 pub mod surgery;
+pub mod threat_escalation;
+mod threat_escalation_limits;
 
 pub mod prelude {
     pub use crate::activity::*;
@@ -70,7 +71,6 @@ pub mod prelude {
     pub use crate::investigation_action::*;
     pub use crate::mission::*;
     pub use crate::morale::*;
-    pub use crate::npc_adventurer::*;
     pub use crate::organization::*;
     pub use crate::provisioning::*;
     pub use crate::skill::*;

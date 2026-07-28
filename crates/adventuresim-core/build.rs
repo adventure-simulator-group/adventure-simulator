@@ -15,6 +15,8 @@ mod item_references;
 mod organization_catalog_validation;
 #[path = "src/quest_catalog_validation.rs"]
 mod quest_catalog_validation;
+#[path = "src/threat_escalation_limits.rs"]
+mod threat_escalation_limits;
 
 fn main() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..");

@@ -289,35 +289,76 @@ demographic truth.
 
 The initial manifest remains immutable, but an unresolved generated problem
 may acquire append-only follow-up incidents as authoritative world time
-advances. At the template's authored interval, settlement activity materializes the next due
-incident with a stable `(case, ordinal)` identity, occurrence time, persistent
-NPC witness and victim binding, circumstance, existing case site, canonical
-event, and new physical-evidence authority. Delayed refreshes deterministically
-catch up every missed incident. Fresh evidence is selected through the same
-cause-and-site likelihood table and hard zeros as initial evidence rather than
-an incident-only inverse lookup. The template's authored maximum incident
-count is the current safety ceiling (five in both initial templates). Before
-that ceiling can leave a neglected case
-permanently stalled, an available resident NPC adventuring company may
-intervene after the case has aged eight official days and accumulated
-incidents. The first owner-visible rumor intake grants the existing two-day
-player-activity grace once; later receipts for the same case do not extend it.
-A successfully completed investigation action or physical presence at a case site may
-refresh that grace while the case is younger than fourteen official days. The
-fourteen-day absolute case-age ceiling always resumes background intervention,
-so repeated conversations or lingering at a site cannot keep an escalating
-problem open forever. All of these bounds use the authoritative world clock,
-not a character's observer timeline. Private receipt and investigation-outcome
-authority stores a separate official activity timestamp for this purpose;
-owner-facing `learned_at` and `recorded_at` values remain on the character's
-observer chronology. A successful outcome refreshes grace only when its private
-outcome row names the exact successful attempt that produced it.
+advances. At the template's authored interval, settlement activity materializes
+the next due incident with a stable `(case, ordinal)` identity, occurrence time,
+persistent NPC witness and victim binding, circumstance, existing case site,
+canonical event, and new physical-evidence authority. Delayed refreshes
+deterministically catch up every missed incident, with at most sixteen incidents
+materialized by one reducer transaction. Fresh evidence is selected through the
+same cause-and-site likelihood table and hard zeros as initial evidence.
+
+The authored incident ceiling and thirty-day lifetime still govern non-hostile
+families. A hostile `RecurringDepredation` instead remains active and continues
+scheduled incidents until resolved. NPC adventuring companies and recruitment
+offers remain, but companies no longer investigate, mitigate, or resolve
+neglected cases automatically.
+
+Every bestiary threat authors an escalation mode, growth rate, normalized
+`baseline_combat_power`, and `investigability`. `10000` power is one unscaled
+baseline orc. Higher investigability makes route actions,
+physical inspection, and Bestiary interpretation easier. Mob escalation adds
+bodies; single-entity escalation increases difficulty without multiplying
+bodies or drops. Both derive progress from the incident ordinal using the
+integer asymptotic recurrence. Count and per-enemy combat scale are monotonic;
+normalized group power is
+`ceil(count * baseline_combat_power * combat_scale_bps / 10000)` and is capped
+globally at `300000`, thirty baseline-orc equivalents. This makes a strong solo
+and a weak mob comparable instead of granting every species its own thirtyfold
+ceiling. Valid authored baselines are `1000..=300000`; therefore per-enemy
+combat scale is independently bounded at `3000000` basis points, the scale a
+single minimum-baseline threat needs to reach the global power ceiling.
+Tactical physical attributes and limb health consume
+`sqrt(combat_scale_bps / 10000)` once, while damage-relevant training consumes
+`combat_scale_bps / 10000` once; autoresolve uses the same physical multiplier
+and has no low rating plateau. Mob loot remains per body; solo growth retains
+baseline drop quantity. A hostile group persists its immutable base count,
+difficulty, and per-enemy normalized power. A mission snapshots group version,
+count, base difficulty, combat scale, normalized power, and loot when it binds,
+so later incidents affect future missions without rewriting a pending or active
+one.
 
 Incident authority is private. A character who already knows the problem can
 receive a dry local report when rumor circulation next reaches them; an
 uninformed character receives no incident history, witness identity, evidence,
 or location. Follow-up evidence remains undiscovered merely because its hidden
 authority exists.
+
+Each follow-up also advances private public notoriety toward the threat's
+`investigability * 100` cap:
+`next = current + ceil((cap - current) * 3500 / 10000)`. At 6500 the case
+becomes publicly known. A cap below 6500 can never cross, so elusive threats
+remain investigation cases while conspicuous threats such as orcs and
+skeletons eventually become combat-only problems. Catch-up records the
+scheduled occurrence minute of the first crossing incident, never the later
+refresh minute.
+
+Once public, an authorized conversation grants only canonical threat type,
+exact true site, and the current approximate count band (`one`, `a few`,
+`several`, `a warband`, or `a horde`). It grants no evidence, testimony,
+manifest, traces, or preparation advice and supersedes incorrect location
+leads. The first referral also upserts one observer-safe journal entry and an
+exact pin under the public case alias; repeat inquiries refresh its count band
+without duplicating the case or journal row. Innkeepers at the afflicted and
+adjacent settlements always qualify. Beyond adjacency, one listener-centric
+shortest-road traversal is bounded to 4096 visited states, 16384 inspected
+edges, and the maximum 18-by-25-km hearing distance. Cheap local graph scope
+filtering happens before a deterministic 32-case manifest-validation cap, so
+remote old cases cannot starve nearby cases. Missing or disconnected map nodes
+fail locally and safely. Dues-current members may also ask the exact persistent
+representative of an authored chapter whose organization explicitly enables
+public threat referrals; membership uses the observer's authoritative
+character clock and presentation is irrelevant. Both sources share the same
+observer-scoped disclosure function.
 
 Generated physical evidence has its own observer-facing presentation rather
 than speaking through an NPC. At an exact, occupied case site, each visible
@@ -338,22 +379,9 @@ Each accumulated incident increases the unresolved problem's trade,
 encounter, and disease consequences by 25 percent of their initial values,
 before the existing global safety caps and mitigation are applied. At the
 currently authored five-incident ceiling, consequences are twice their initial
-severity. Resolving or fully mitigating the linked problem still suppresses all
-of those effects.
-
-NPC interventions are deterministic strategic outcomes; they do not create
-tactical tick state. A company chooses a route supported by the case's generated
-testimony and investigation-action graph, records the quoted lead, prepares for
-that route, and resolves its decisive action with the ordinary investigation
-mechanics. A route can fail for a concrete reason, such as an unreadable trail
-or an empty ambush; the next attempt rotates to another supported route when one
-exists. After a successful investigation route, a company applies the generated
-objective through the same hostile, custody, outcome-fact, case, and
-local-problem authority used by player results. Partial success mitigates the
-settlement penalty, while failure or deferral schedules a bounded retry.
-Intervention IDs, attempt numbers, party availability, and retry times make
-repeated settlement refreshes idempotent. Characters who already know the
-problem receive only a dry result notice in their journal.
+severity for non-hostile problems. Recurring hostile consequences continue to
+use the existing global safety caps. Resolving or fully mitigating the linked
+problem still suppresses all of those effects.
 
 The private authority also stores a domain-separated SHA-256 commitment to the
 exact serialized generation context, including observer-ID entropy. Every
