@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -251,6 +252,44 @@ def run_spawner(spacetime_url: str, database: str, base_port: str) -> int:
 def refuse(message: str) -> int:
     print(message, file=sys.stderr)
     return 2
+
+
+def validate_destructive_world_target(server: str, database: str) -> None:
+    parsed = urlparse(server)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+        or parsed.port is None
+        or parsed.username
+        or parsed.password
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError(
+            "destructive world loading requires a bare loopback server URL with an explicit port"
+        )
+    if (
+        not database.startswith("adventuresim-")
+        or len(database) > 128
+        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in database)
+    ):
+        raise RuntimeError(
+            "destructive world loading requires a lowercase adventuresim-* database name"
+        )
+
+
+def recreate_world_database(server: str, database: str, module_dir: Path) -> int:
+    validate_destructive_world_target(server, database)
+    print(
+        f"Recreating disposable local database {database!r} on {server}; "
+        "all existing data will be discarded.",
+        flush=True,
+    )
+    return run([
+        executable("spacetime"), "publish", "--delete-data=always", "--yes",
+        "--server", server, database,
+    ], cwd=module_dir)
 
 
 def verified_world_identity(world_input: Path) -> tuple[str, str]:
@@ -508,6 +547,10 @@ def parser() -> argparse.ArgumentParser:
     spawner.add_argument("--spacetime-url", default=SPACETIME_URL)
     spawner.add_argument("--database", default=SPACETIME_DATABASE)
     spawner.add_argument("--base-port", default="6000")
+    recreate = commands.add_parser("recreate-world-database")
+    recreate.add_argument("--server", required=True)
+    recreate.add_argument("--database", required=True)
+    recreate.add_argument("--module-dir", default=str(MODULE_DIR))
     refusal = commands.add_parser("refuse")
     refusal.add_argument("message")
     simulation = commands.add_parser("strategic-sim-core-loop")
@@ -547,6 +590,10 @@ def main(argv: list[str] | None = None) -> int:
             return generate_bindings(Path(args.module_dir))
         if args.command == "spawner":
             return run_spawner(args.spacetime_url, args.database, args.base_port)
+        if args.command == "recreate-world-database":
+            return recreate_world_database(
+                args.server, args.database, Path(args.module_dir)
+            )
         if args.command == "refuse":
             return refuse(args.message)
         if args.command == "strategic-sim-core-loop":

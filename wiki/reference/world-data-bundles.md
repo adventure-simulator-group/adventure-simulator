@@ -176,13 +176,15 @@ repeated in the generated notice.
 runtime file already matches, initialization performs no network request. On a
 fresh checkout it downloads the single archive from
 `s3://adventuresim-world-data/releases/world-runtime/`, verifies the checked-in
-archive and member hashes, installs the files under `target/`, and loads the
-compiled world without invoking the source compiler. A conflicting local build
-is never overwritten implicitly; `just replace-world-runtime` retains replaced
-files below `target/world-runtime-backups/`. A previously pinned runtime that is
-still byte-for-byte intact is recognized as downloaded output and upgraded
-automatically, with the prior files retained by the same backup mechanism.
-The optional second argument selects the published database while retaining
+archive and member hashes, and installs the files under `target/` without
+invoking the source compiler. It then reset-publishes the current module and
+loads the compiled world, discarding all existing rows in the selected
+loopback `adventuresim-*` database. A conflicting local build is never
+overwritten implicitly; `just replace-world-runtime` retains replaced files
+below `target/world-runtime-backups/`. A previously pinned runtime that is still
+byte-for-byte intact is recognized as downloaded output and upgraded
+automatically, with the prior files retained by the same backup mechanism. The
+optional second argument selects the database to recreate while retaining
 `spacetime_module` as the default, for example
 `just load-world http://127.0.0.1:24610 adventuresim-dev-example` for an
 isolated strategic profile. The `load-viabundus-world` compatibility alias

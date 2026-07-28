@@ -254,8 +254,8 @@ just build-base-terrain # Build documented-road-only inference terrain
 just compile-world      # Build base terrain, then compile the 1544 world
 just build-strategic-map # Build base, world, and final map/terrain artifacts
 just normalise-viabundus # Compatibility alias for compile-world
-just load-world         # Load it into a published local SpacetimeDB module
-just load-world http://127.0.0.1:24610 adventuresim-dev-example # Load an isolated profile database
+just load-world         # Recreate the canonical local database and load it
+just load-world http://127.0.0.1:24610 adventuresim-dev-example # Recreate and load an isolated profile database
 ```
 
 `just test` runs the strategic browser tests and the native Rust test suites,
@@ -274,11 +274,14 @@ and WASM builds run `just verify-db-client`, which generates and formats into a
 temporary directory and compares the result without changing the checkout.
 
 Schema changes are clean pre-launch changes. Regenerate client bindings and
-recreate an explicitly isolated profile rather than adding a migration or
+recreate the development database rather than adding a migration or
 compatibility path. Routine `just dev`, `just web`, and `just publish` preserve
-data. `web-reset` and `publish-reset` refuse to run; never pass destructive
-publish flags manually against a public or player-bearing database without
-explicit approval and a verified recovery copy.
+data. `just load-world` is the explicit destructive exception: it accepts only
+a bare loopback server and a lowercase `adventuresim-*` database, reset-publishes
+the current module, and discards all existing data before importing the pinned
+world. `web-reset` and `publish-reset` remain unavailable; never pass
+destructive publish flags manually against a public or player-bearing database
+without explicit approval and a verified recovery copy.
 
 `web-isolated` owns its loopback server and database, reset-publishes, reseeds
 the normal world and visual test fixtures, and discards only that profile's
@@ -316,11 +319,14 @@ just init-world-runtime
 just load-world
 ```
 
-`just load-world` installs the runtime bundle when absent and loads
-`target/world-1544.json` into the selected loopback server and database. Pass
-an isolated profile's server and database explicitly when its contents may be
-discarded. A completed import accepts no different artifact; use a fresh
-isolated profile or a separately reviewed operator reset for another build.
+`just load-world` installs the runtime bundle when absent, destructively
+reset-publishes the current module into the selected loopback
+`adventuresim-*` database, and then loads `target/world-1544.json`. This
+deliberately discards characters and every other existing row so the database
+schema and compiled world always match the checkout. Stop any web process using
+the database before loading, then restart it afterward. Pass an isolated
+profile's server and generated database name explicitly when targeting that
+profile.
 
 ### Rebuilding world artifacts
 

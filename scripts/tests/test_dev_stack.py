@@ -155,6 +155,29 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(dev_stack.publish("http://localhost:3000", "canonical"), 0)
         self.assertNotIn("--delete-data=always", run_checked.call_args.args[0])
 
+    @mock.patch.object(dev_stack.subprocess, "run")
+    def test_checked_commands_decode_output_as_utf8(self, run):
+        run.return_value = mock.Mock(returncode=0, stdout="")
+
+        dev_stack.run_checked(["spacetime", "publish"])
+
+        self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(run.call_args.kwargs["errors"], "replace")
+        self.assertTrue(run.call_args.kwargs["text"])
+        self.assertEqual(run.call_args.kwargs["stderr"], dev_stack.subprocess.STDOUT)
+
+    def test_console_output_replaces_characters_unsupported_by_windows_encoding(self):
+        class LegacyConsole(io.StringIO):
+            @property
+            def encoding(self):
+                return "cp1252"
+
+        console = LegacyConsole()
+        with mock.patch.object(dev_stack.sys, "stdout", console):
+            dev_stack.write_console("published \u0101")
+
+        self.assertEqual(console.getvalue(), "published ?")
+
     @mock.patch.object(dev_stack, "run_checked")
     def test_internal_reset_is_noninteractive_and_identity_bound(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
