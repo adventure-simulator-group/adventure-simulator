@@ -2792,6 +2792,34 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             referred_witness_ids: vec![],
         });
     }
+    let (
+        secondary_truthful_text,
+        secondary_spoken_text,
+        secondary_challenge_text,
+        secondary_corrects_proposition_id,
+    ) = if reliability == Reliability::Truthful {
+        let route = format!(
+            "tracks continue toward {}, consistent with the earlier account",
+            label(site)
+        );
+        (
+            format!("The {route}."),
+            format!("Those {route}."),
+            route,
+            None,
+        )
+    } else {
+        let route = format!(
+            "tracks turn away before reaching {} and continue elsewhere",
+            label(secondary_site_kind)
+        );
+        (
+            "The earlier location does not fit the tracks; they lead elsewhere.".into(),
+            format!("Those {route}."),
+            route,
+            Some(description_prop.clone()),
+        )
+    };
     let witnesses = vec![
         WitnessBinding {
             id: witness1.clone(),
@@ -2819,18 +2847,11 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 proposition_id: description_prop.clone(),
                 reliability: Reliability::Truthful,
                 delivery: TestimonyDelivery::Volunteered,
-                truthful_text: "The earlier location does not fit the tracks; they lead elsewhere."
-                    .into(),
-                spoken_text: format!(
-                    "Those tracks turn away from {} and continue beyond it.",
-                    label(secondary_site_kind)
-                ),
-                challenge_text: format!(
-                    "tracks turn away from {} and continue beyond it",
-                    label(secondary_site_kind)
-                ),
+                truthful_text: secondary_truthful_text,
+                spoken_text: secondary_spoken_text,
+                challenge_text: secondary_challenge_text,
                 challenge_responses: TestimonyChallengeResponses {
-                    charm: Some("Help me understand where the tracks turned.".into()),
+                    charm: Some("Help me understand how the tracks establish that course.".into()),
                     command: Some("Point out their exact course.".into()),
                     bluff: Some(
                         "I followed part of that trail already; complete the route.".into(),
@@ -2838,7 +2859,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 },
                 destination_stage: "route_segment".into(),
                 site_id: Some(finale_site.clone()),
-                corrects_proposition_id: Some(description_prop.clone()),
+                corrects_proposition_id: secondary_corrects_proposition_id,
                 referred_witness_ids: vec![],
             }],
         },
@@ -4505,6 +4526,25 @@ mod tests {
         }
     }
 
+    fn case_with_primary_location_accuracy(
+        family: TemplateFamily,
+        truthful: bool,
+    ) -> GeneratedCase {
+        (0..4_096)
+            .find_map(|seed| {
+                let generated = generate(&context(seed, family)).ok()?;
+                let is_truthful = generated.witnesses[0].testimony[0].reliability
+                    == Reliability::Truthful;
+                (is_truthful == truthful).then_some(generated)
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "bounded generation sweep did not find a {} primary location account for {family:?}",
+                    if truthful { "truthful" } else { "unreliable" }
+                )
+            })
+    }
+
     #[test]
     fn witness_described_places_are_neutral_and_attributed() {
         for family in [
@@ -5624,15 +5664,65 @@ mod tests {
         }
     }
     #[test]
-    fn correction_reuses_the_proposition_it_corrects() {
-        let generated = generate(&context(19, TemplateFamily::DisappearanceOrLoss)).unwrap();
-        let initial = &generated.witnesses[0].testimony[0];
-        let correction = &generated.witnesses[1].testimony[0];
-        assert_eq!(initial.proposition_id, correction.proposition_id);
-        assert_eq!(
-            correction.corrects_proposition_id.as_deref(),
-            Some(initial.proposition_id.as_str())
-        );
+    fn secondary_location_testimony_corresponds_to_the_primary_presented_site() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            for truthful in [true, false] {
+                let generated = case_with_primary_location_accuracy(family, truthful);
+                validate(&generated).unwrap();
+
+                let primary = &generated.witnesses[0].testimony[0];
+                let secondary = &generated.witnesses[1].testimony[0];
+                let primary_site = generated
+                    .sites
+                    .iter()
+                    .find(|site| Some(&site.id) == primary.site_id.as_ref())
+                    .expect("primary presented site is bound in the manifest");
+                let finale_site = generated
+                    .sites
+                    .iter()
+                    .find(|site| site.role == SiteRole::Finale)
+                    .expect("generated case has a finale site");
+
+                assert_eq!(secondary.proposition_id, primary.proposition_id);
+                assert_eq!(secondary.site_id.as_ref(), Some(&finale_site.id));
+                assert!(
+                    primary.spoken_text.contains(label(primary_site.kind)),
+                    "primary wording does not name its presented site kind"
+                );
+
+                if truthful {
+                    assert_eq!(primary_site.id, finale_site.id);
+                    assert_eq!(secondary.corrects_proposition_id, None);
+                    assert!(
+                        secondary.spoken_text.contains(label(primary_site.kind))
+                            && secondary.spoken_text.contains("continue toward")
+                            && secondary
+                                .spoken_text
+                                .contains("consistent with the earlier account")
+                            && !secondary.spoken_text.contains("turn away"),
+                        "truthful branch did not continue toward the primary's true site: {:?}",
+                        secondary.spoken_text
+                    );
+                } else {
+                    assert_eq!(primary_site.role, SiteRole::Decoy);
+                    assert_ne!(primary_site.id, finale_site.id);
+                    assert_eq!(
+                        secondary.corrects_proposition_id.as_deref(),
+                        Some(primary.proposition_id.as_str())
+                    );
+                    assert!(
+                        secondary.spoken_text.contains(label(primary_site.kind))
+                            && secondary.spoken_text.contains("turn away before reaching")
+                            && secondary.spoken_text.contains("continue elsewhere"),
+                        "mistaken branch did not correct away from the primary's presented decoy: {:?}",
+                        secondary.spoken_text
+                    );
+                }
+            }
+        }
     }
     #[test]
     fn marginal_sweep_is_bounded_and_has_both_templates() {
