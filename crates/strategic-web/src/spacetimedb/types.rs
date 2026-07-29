@@ -1064,19 +1064,67 @@ pub struct CharacterNeeds {
     pub carried_water_ml: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct CharacterEquip {
-    #[serde(rename = "character_id")]
+#[derive(Debug, Clone)]
+pub struct CharacterEquipmentGraph {
     pub _character_id: u64,
-    pub left_hand_item_id: Option<u64>,
-    pub right_hand_item_id: Option<u64>,
-    pub left_arm_armor_id: Option<u64>,
-    pub right_arm_armor_id: Option<u64>,
-    pub left_leg_armor_id: Option<u64>,
-    pub right_leg_armor_id: Option<u64>,
-    pub head_armor_id: Option<u64>,
-    pub chest_armor_id: Option<u64>,
-    pub stomach_armor_id: Option<u64>,
+    pub worn_item_ids: Vec<u64>,
+    pub equipment_nodes: Vec<CharacterEquippedItem>,
+    pub equipment_occupancies: Vec<EquipmentOccupancy>,
+    pub attachment_targets: Vec<EquipmentAttachmentTarget>,
+}
+
+impl CharacterEquipmentGraph {
+    pub fn contains(&self, inventory_item_id: u64) -> bool {
+        self.worn_item_ids.contains(&inventory_item_id)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CharacterEquippedItem {
+    pub inventory_item_id: u64,
+    pub character_id: u64,
+    pub placement_id: String,
+    #[serde(default)]
+    pub item_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EquipmentAttachmentTarget {
+    pub parent_inventory_item_id: u64,
+    pub parent_item_name: String,
+    pub attachment_point_id: String,
+    pub channel: EquipmentChannel,
+    pub accepts_tags: Vec<String>,
+    pub free_capacity: u16,
+    pub order: u16,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EquipmentAttachmentTargetSelection {
+    pub requirement_index: u16,
+    pub parent_inventory_item_id: u64,
+    pub attachment_point_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EquipmentOccupancy {
+    pub id: String,
+    pub character_id: u64,
+    pub inventory_item_id: u64,
+    pub anchor_kind: EquipmentAnchorKind,
+    pub location: Option<EquipmentLocation>,
+    pub parent_inventory_item_id: Option<u64>,
+    pub attachment_point_id: Option<String>,
+    pub channel: EquipmentChannel,
+    pub order: u16,
+    pub requirement_index: u16,
+    pub capacity_index: u16,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+pub enum EquipmentAnchorKind {
+    CharacterLocation,
+    ItemAttachment,
 }
 
 #[allow(dead_code)]
@@ -1087,6 +1135,12 @@ pub struct ItemDefinition {
     #[serde(default)]
     pub slot: ItemSlot,
     pub kind: ItemKind,
+    #[serde(default)]
+    pub equipment_placements: Vec<EquipmentPlacement>,
+    #[serde(default)]
+    pub attachment_tags: Vec<String>,
+    #[serde(default)]
+    pub attachment_points: Vec<EquipmentAttachmentPoint>,
     #[serde(default)]
     pub repairable: bool,
     #[serde(default)]
@@ -1157,6 +1211,104 @@ pub struct ItemDefinition {
     pub handling_sensitivity: f32,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct EquipmentPlacement {
+    pub id: String,
+    pub occupancy: Vec<EquipmentOccupancyRequirement>,
+    pub parents: Vec<EquipmentParentRequirement>,
+    pub protection: Vec<EquipmentBodyPart>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EquipmentChannel {
+    Held,
+    BaseClothing,
+    Padding,
+    FlexibleArmor,
+    RigidArmor,
+    Outerwear,
+    Accessory,
+    Mount,
+    Containment,
+}
+
+impl EquipmentChannel {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Held => "Held",
+            Self::BaseClothing => "Base clothing",
+            Self::Padding => "Padding",
+            Self::FlexibleArmor => "Flexible armor",
+            Self::RigidArmor => "Rigid armor",
+            Self::Outerwear => "Outerwear",
+            Self::Accessory => "Accessory",
+            Self::Mount => "Mount",
+            Self::Containment => "Contents",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct EquipmentOccupancyRequirement {
+    pub location: EquipmentLocation,
+    pub channel: EquipmentChannel,
+    pub order: u16,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct EquipmentParentRequirement {
+    pub channel: EquipmentChannel,
+    pub order: u16,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EquipmentAttachmentPoint {
+    pub id: String,
+    pub channel: EquipmentChannel,
+    pub capacity: u16,
+    pub order: u16,
+    pub accepts_tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+pub enum EquipmentBodyPart {
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Chest,
+    Stomach,
+    Head,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EquipmentLocation {
+    Head,
+    Face,
+    Neck,
+    Chest,
+    Stomach,
+    Back,
+    LeftShoulder,
+    RightShoulder,
+    LeftArm,
+    RightArm,
+    LeftHand,
+    RightHand,
+    LeftLeg,
+    RightLeg,
+    LeftFoot,
+    RightFoot,
+    LeftBelt,
+    RightBelt,
+    FrontBelt,
+    BackBelt,
+    LeftPocket,
+    RightPocket,
+    BackLeftPocket,
+    BackRightPocket,
+}
+
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct WeaponSkillDistribution {
     pub polearm: f32,
@@ -1194,6 +1346,9 @@ impl Default for ItemDefinition {
             weight: 0.0,
             slot: ItemSlot::None,
             kind: ItemKind::Simple,
+            equipment_placements: Vec::new(),
+            attachment_tags: Vec::new(),
+            attachment_points: Vec::new(),
             repairable: false,
             accuracy: 0.0,
             reach: 0.0,
@@ -1284,6 +1439,8 @@ pub struct RepairOrder {
     pub submitted_at_minutes: u64,
     pub ready_at_minutes: u64,
     pub target_condition: f32,
+    pub equipped_placement_id: Option<String>,
+    pub attachment_targets: Vec<EquipmentAttachmentTargetSelection>,
     pub quoted_cost: u32,
 }
 

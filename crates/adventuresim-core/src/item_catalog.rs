@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn embedded_catalog_is_sorted_unique_complete_and_revisioned() {
-        assert_eq!(catalog().len(), 154);
+        assert_eq!(catalog().len(), 159);
         assert!(revision().len() == 64 && revision().bytes().all(|b| b.is_ascii_hexdigit()));
         assert!(
             catalog()
@@ -121,7 +121,7 @@ mod tests {
             + "\n";
         assert_eq!(
             format!("{:x}", Sha256::digest(stable_ids.as_bytes())),
-            "67ddadf56fd2695d8bb39c8559cd412238e79184558b20afc270fb0a3070f7b0",
+            "703512479b3350cb43aa737e71b7f9a030bd6a45006803c44ed4ad338a588a9f",
             "stable-ID golden changed; review persistence and reseed impact"
         );
 
@@ -141,7 +141,7 @@ mod tests {
             counts[index] += 1;
             counts
         });
-        assert_eq!(counts, [33, 6, 20, 14, 1, 1, 5, 24, 29, 21]);
+        assert_eq!(counts, [38, 6, 20, 14, 1, 1, 5, 24, 29, 21]);
     }
 
     #[test]
@@ -171,6 +171,200 @@ mod tests {
             }
         }
         assert!(weapon_skills("not_an_item").is_none());
+    }
+
+    #[test]
+    fn armor_and_clothing_definitions_have_explicit_equipment_projections() {
+        for item in catalog()
+            .iter()
+            .filter(|item| matches!(item.kind, ItemKind::Armor { .. } | ItemKind::Clothing))
+        {
+            let equipment = item
+                .equipment
+                .as_ref()
+                .unwrap_or_else(|| panic!("{} lacks equipment projection", item.id));
+            assert!(!equipment.placements.is_empty(), "{}", item.id);
+            assert!(
+                equipment
+                    .placements
+                    .iter()
+                    .all(|placement| !placement.occupancy.is_empty()),
+                "{}",
+                item.id
+            );
+        }
+        let tunic = definition("linen_tunic")
+            .unwrap()
+            .equipment
+            .as_ref()
+            .unwrap();
+        assert_eq!(tunic.placements[0].occupancy.len(), 4);
+        assert_eq!(tunic.placements[0].protection.len(), 4);
+    }
+
+    #[test]
+    fn compiled_catalog_represents_attachment_graph_examples_without_kind_inference() {
+        use crate::item_catalog_schema::EquipmentChannel;
+
+        let belt = definition("leather_belt")
+            .unwrap()
+            .equipment
+            .as_ref()
+            .unwrap();
+        assert!(
+            belt.attachment_points
+                .iter()
+                .any(|point| point.id == "left")
+        );
+        let sheath = definition("sword_sheath")
+            .unwrap()
+            .equipment
+            .as_ref()
+            .unwrap();
+        assert!(sheath.attachment_tags.contains(&"sheath".to_owned()));
+        assert!(
+            sheath
+                .attachment_points
+                .iter()
+                .any(|point| point.accepts_tags.contains(&"weapon".to_owned()))
+        );
+        let knife = definition("utility_knife")
+            .unwrap()
+            .equipment
+            .as_ref()
+            .unwrap();
+        assert!(knife.attachment_tags.contains(&"weapon".to_owned()));
+        let attached_knife = knife
+            .placements
+            .iter()
+            .find(|placement| placement.id == "attached")
+            .expect("attached knife placement");
+        assert_eq!(
+            attached_knife.parents[0].channel,
+            EquipmentChannel::Containment
+        );
+        let sheath_mount = sheath
+            .placements
+            .iter()
+            .flat_map(|placement| placement.parents.iter())
+            .find(|parent| parent.channel == EquipmentChannel::Mount)
+            .expect("sheath mounts to belt");
+        assert_eq!(sheath_mount.channel, EquipmentChannel::Mount);
+        assert_eq!(
+            sheath.placements[0].parents.len(),
+            2,
+            "the sheath fixture exercises multi-point attachment"
+        );
+        let sheath_blade = sheath
+            .attachment_points
+            .iter()
+            .find(|point| point.id == "blade")
+            .expect("sheath contains weapon");
+        assert_eq!(sheath_blade.channel, EquipmentChannel::Containment);
+        assert!(sheath_blade.accepts_tags.contains(&"weapon".to_owned()));
+
+        let bag = definition("leather_satchel")
+            .unwrap()
+            .equipment
+            .as_ref()
+            .unwrap();
+        assert!(bag.placements.iter().any(|placement| {
+            placement
+                .parents
+                .iter()
+                .any(|parent| parent.channel == EquipmentChannel::Mount)
+        }));
+        let contents = bag
+            .attachment_points
+            .iter()
+            .find(|point| point.id == "contents")
+            .expect("bag contents");
+        assert_eq!(contents.channel, EquipmentChannel::Containment);
+        assert!(contents.capacity > 1);
+        assert!(contents.accepts_tags.is_empty());
+        assert!(bag.placements.iter().any(|placement| {
+            placement.parents.is_empty()
+                && placement.occupancy.iter().any(|requirement| {
+                    matches!(
+                        requirement.location,
+                        crate::item_catalog_schema::EquipmentLocation::LeftShoulder
+                            | crate::item_catalog_schema::EquipmentLocation::RightShoulder
+                    )
+                })
+        }));
+
+        let sword = definition("arming_sword")
+            .unwrap()
+            .equipment
+            .as_ref()
+            .unwrap();
+        assert!(sword.placements.iter().any(|placement| {
+            placement
+                .parents
+                .iter()
+                .any(|parent| parent.channel == EquipmentChannel::Containment)
+        }));
+
+        let authored_point_order = belt
+            .attachment_points
+            .iter()
+            .map(|point| point.order)
+            .collect::<Vec<_>>();
+        assert!(
+            authored_point_order
+                .windows(2)
+                .all(|pair| pair[0] <= pair[1]),
+            "repeated selection traverses attachment points in authored order"
+        );
+        for fixture in ["boot_sheath", "forearm_holster"] {
+            let definition = definition(fixture).unwrap().equipment.as_ref().unwrap();
+            assert!(
+                definition
+                    .placements
+                    .iter()
+                    .all(|placement| placement.protection.is_empty())
+            );
+        }
+    }
+
+    #[test]
+    fn every_held_catalog_item_has_explicit_authored_hand_placements() {
+        for definition in catalog() {
+            let slot = match &definition.kind {
+                ItemKind::Weapon { slot, .. } | ItemKind::Shield { slot, .. } => *slot,
+                _ => continue,
+            };
+            let equipment = definition
+                .equipment
+                .as_ref()
+                .unwrap_or_else(|| panic!("{} lacks equipment topology", definition.id));
+            let has_held = |location| {
+                equipment.placements.iter().any(|placement| {
+                    placement.parents.is_empty()
+                        && placement.occupancy.iter().any(|requirement| {
+                            requirement.location == location
+                                && requirement.channel == EquipmentChannel::Held
+                        })
+                })
+            };
+            match slot {
+                Slot::AnyHolding => {
+                    assert!(
+                        has_held(EquipmentLocation::LeftHand)
+                            && has_held(EquipmentLocation::RightHand),
+                        "{} needs explicit left and right hand placements",
+                        definition.id
+                    );
+                }
+                Slot::LeftHolding => {
+                    assert!(has_held(EquipmentLocation::LeftHand), "{}", definition.id);
+                }
+                Slot::RightHolding => {
+                    assert!(has_held(EquipmentLocation::RightHand), "{}", definition.id);
+                }
+                _ => {}
+            }
+        }
     }
 
     #[test]

@@ -51,6 +51,105 @@ pub(super) async fn set_inventory_target(
 pub(super) struct EquipmentForm {
     inventory_item_id: u64,
     equipped: bool,
+    placement_index: Option<u16>,
+    attachment_targets: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(super) struct EquipmentAttachmentTargetForm {
+    requirement_index: u16,
+    parent_inventory_item_id: u64,
+    attachment_point_id: String,
+}
+
+pub(super) async fn character_equipment_graph(
+    state: &AppState,
+    character_id: u64,
+) -> Vec<CharacterEquipmentGraph> {
+    let worn_sql =
+        format!("SELECT * FROM character_equipped_item WHERE character_id = {character_id}");
+    let occupancy_sql =
+        format!("SELECT * FROM equipment_occupancy WHERE character_id = {character_id}");
+    let inventory_sql = format!("SELECT * FROM inventory_item WHERE character_id = {character_id}");
+    let (worn, occupancies, inventory, definitions) = tokio::join!(
+        state.db.query::<CharacterEquippedItem>(&worn_sql),
+        state.db.query::<EquipmentOccupancy>(&occupancy_sql),
+        state.db.query::<InventoryItem>(&inventory_sql),
+        state.db.query::<ItemDefinition>("SELECT * FROM item"),
+    );
+    let mut worn = worn.unwrap_or_default();
+    let worn_ids = worn
+        .iter()
+        .map(|row| row.inventory_item_id)
+        .collect::<Vec<_>>();
+    let occupancies = occupancies.unwrap_or_default();
+    let inventory = inventory.unwrap_or_default();
+    let definitions = definitions.unwrap_or_default();
+    for node in &mut worn {
+        node.item_name = inventory
+            .iter()
+            .find(|item| item.id == node.inventory_item_id)
+            .map_or_else(
+                || format!("#{}", node.inventory_item_id),
+                |item| item.item_id.clone(),
+            );
+    }
+    let used_capacity = occupancies
+        .iter()
+        .filter(|row| row.anchor_kind == EquipmentAnchorKind::ItemAttachment)
+        .fold(HashMap::<(u64, String), u16>::new(), |mut counts, row| {
+            if let (Some(parent_id), Some(point_id)) = (
+                row.parent_inventory_item_id,
+                row.attachment_point_id.as_ref(),
+            ) {
+                *counts.entry((parent_id, point_id.clone())).or_default() += 1;
+            }
+            counts
+        });
+    let mut attachment_targets = Vec::new();
+    for node in &worn {
+        let Some(carried) = inventory
+            .iter()
+            .find(|item| item.id == node.inventory_item_id)
+        else {
+            continue;
+        };
+        let Some(definition) = definitions
+            .iter()
+            .find(|definition| definition.id == carried.item_id)
+        else {
+            continue;
+        };
+        for point in &definition.attachment_points {
+            let used = used_capacity
+                .get(&(node.inventory_item_id, point.id.clone()))
+                .copied()
+                .unwrap_or(0);
+            attachment_targets.push(EquipmentAttachmentTarget {
+                parent_inventory_item_id: node.inventory_item_id,
+                parent_item_name: carried.item_id.clone(),
+                attachment_point_id: point.id.clone(),
+                channel: point.channel,
+                accepts_tags: point.accepts_tags.clone(),
+                free_capacity: point.capacity.saturating_sub(used),
+                order: point.order,
+            });
+        }
+    }
+    attachment_targets.sort_by_key(|target| {
+        (
+            target.parent_inventory_item_id,
+            target.order,
+            target.attachment_point_id.clone(),
+        )
+    });
+    vec![CharacterEquipmentGraph {
+        _character_id: character_id,
+        worn_item_ids: worn_ids,
+        equipment_nodes: worn,
+        equipment_occupancies: occupancies,
+        attachment_targets,
+    }]
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -167,6 +266,68 @@ pub(super) async fn set_equipment(
                 inventory_item_id = form.inventory_item_id,
                 "preparation administration rejected"
             );
+            return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+        }
+        return (StatusCode::NO_CONTENT, "").into_response();
+    }
+    if form.equipped && !definition.equipment_placements.is_empty() {
+        let Some(placement_index) = form
+            .placement_index
+            .or_else(|| (definition.equipment_placements.len() == 1).then_some(0))
+        else {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Choose a complete placement for this item",
+            )
+                .into_response();
+        };
+        let Some(placement) = definition
+            .equipment_placements
+            .get(usize::from(placement_index))
+        else {
+            return (StatusCode::BAD_REQUEST, "Invalid equipment placement").into_response();
+        };
+        let targets = match form.attachment_targets.as_deref() {
+            Some(value) => match serde_json::from_str::<Vec<EquipmentAttachmentTargetForm>>(value) {
+                Ok(targets) => targets,
+                Err(_) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        "Invalid attachment target selection",
+                    )
+                        .into_response();
+                }
+            },
+            None => Vec::new(),
+        };
+        let result = if !placement.parents.is_empty() {
+            state
+                .db
+                .call(
+                    "attach_item_at_placement",
+                    &[
+                        json!(character_id),
+                        json!(form.inventory_item_id),
+                        json!(placement_index),
+                        json!(targets),
+                    ],
+                )
+                .await
+        } else {
+            state
+                .db
+                .call(
+                    "equip_item_at_placement",
+                    &[
+                        json!(character_id),
+                        json!(form.inventory_item_id),
+                        json!(placement_index),
+                    ],
+                )
+                .await
+        };
+        if let Err(error) = result {
+            tracing::warn!(%error, character_id, "failed to equip item");
             return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
         }
         return (StatusCode::NO_CONTENT, "").into_response();

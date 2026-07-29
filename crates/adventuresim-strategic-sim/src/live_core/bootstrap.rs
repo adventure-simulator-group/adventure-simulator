@@ -31,27 +31,36 @@ pub(super) fn equipment_utility(profile: &AgentProfile, item: &Item) -> Option<f
     )
 }
 
-pub(super) fn equipped_at(equip: &CharacterEquip, slot: ItemSlot, inventory_id: u64) -> bool {
+pub(super) fn root_requirement_matches_slot(
+    requirement: &EquipmentOccupancyRequirement,
+    slot: ItemSlot,
+) -> bool {
     match slot {
-        ItemSlot::LeftHolding => equip.left_hand_item_id == Some(inventory_id),
-        ItemSlot::RightHolding | ItemSlot::AnyHolding => {
-            equip.left_hand_item_id == Some(inventory_id)
-                || equip.right_hand_item_id == Some(inventory_id)
+        ItemSlot::LeftHolding => {
+            requirement.location == EquipmentLocation::LeftHand
+                && requirement.channel == EquipmentChannel::Held
         }
-        ItemSlot::LeftArm => equip.left_arm_armor_id == Some(inventory_id),
-        ItemSlot::RightArm | ItemSlot::AnyArm => {
-            equip.left_arm_armor_id == Some(inventory_id)
-                || equip.right_arm_armor_id == Some(inventory_id)
+        ItemSlot::RightHolding => {
+            requirement.location == EquipmentLocation::RightHand
+                && requirement.channel == EquipmentChannel::Held
         }
-        ItemSlot::LeftLeg => equip.left_leg_armor_id == Some(inventory_id),
-        ItemSlot::RightLeg | ItemSlot::AnyLeg => {
-            equip.left_leg_armor_id == Some(inventory_id)
-                || equip.right_leg_armor_id == Some(inventory_id)
-        }
-        ItemSlot::Head => equip.head_armor_id == Some(inventory_id),
-        ItemSlot::Chest => equip.chest_armor_id == Some(inventory_id),
-        ItemSlot::Stomach => equip.stomach_armor_id == Some(inventory_id),
-        ItemSlot::None => false,
+        ItemSlot::AnyHolding => requirement.channel == EquipmentChannel::Held,
+        ItemSlot::LeftArm => requirement.location == EquipmentLocation::LeftArm,
+        ItemSlot::RightArm => requirement.location == EquipmentLocation::RightArm,
+        ItemSlot::AnyArm => matches!(
+            requirement.location,
+            EquipmentLocation::LeftArm | EquipmentLocation::RightArm
+        ),
+        ItemSlot::LeftLeg => requirement.location == EquipmentLocation::LeftLeg,
+        ItemSlot::RightLeg => requirement.location == EquipmentLocation::RightLeg,
+        ItemSlot::AnyLeg => matches!(
+            requirement.location,
+            EquipmentLocation::LeftLeg | EquipmentLocation::RightLeg
+        ),
+        ItemSlot::Head => requirement.location == EquipmentLocation::Head,
+        ItemSlot::Chest => requirement.location == EquipmentLocation::Chest,
+        ItemSlot::Stomach => requirement.location == EquipmentLocation::Stomach,
+        ItemSlot::None => true,
     }
 }
 
@@ -115,7 +124,8 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.character())
         .add_query(|query| query.from.character_capability())
         .add_query(|query| query.from.character_death())
-        .add_query(|query| query.from.character_equip())
+        .add_query(|query| query.from.character_equipped_item())
+        .add_query(|query| query.from.equipment_occupancy())
         .add_query(|query| query.from.character_illness_status())
         .add_query(|query| query.from.character_needs())
         .add_query(|query| query.from.character_strategic_condition())
@@ -671,31 +681,21 @@ fn run_core_loop_inner(
                 .iter()
                 .find(|row| row.id == *character_id)
                 .ok_or("missing final character")?;
-            let equip = runner
+            let equipped_ids = runner
                 .connection
                 .db
-                .character_equip()
+                .character_equipped_item()
                 .iter()
-                .find(|row| row.character_id == *character_id)
-                .ok_or("missing final equipment")?;
-            let equipped_ids = [
-                equip.left_hand_item_id,
-                equip.right_hand_item_id,
-                equip.left_arm_armor_id,
-                equip.right_arm_armor_id,
-                equip.left_leg_armor_id,
-                equip.right_leg_armor_id,
-                equip.head_armor_id,
-                equip.chest_armor_id,
-                equip.stomach_armor_id,
-            ];
+                .filter(|row| row.character_id == *character_id)
+                .map(|row| row.inventory_item_id)
+                .collect::<HashSet<_>>();
             let mut equipment_item_ids: Vec<String> = runner
                 .connection
                 .db
                 .inventory_item()
                 .iter()
                 .filter(|row| row.character_id == *character_id)
-                .filter(|row| equipped_ids.contains(&Some(row.id)))
+                .filter(|row| equipped_ids.contains(&row.id))
                 .map(|row| row.item_id)
                 .collect();
             equipment_item_ids.sort();
@@ -731,7 +731,6 @@ fn run_core_loop_inner(
                 .sum();
             let worst_equipment_condition = equipped_ids
                 .into_iter()
-                .flatten()
                 .filter_map(|id| {
                     runner
                         .connection

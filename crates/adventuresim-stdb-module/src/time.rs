@@ -18,8 +18,8 @@ use crate::investigation::{case_site_authority as _, character_case_site_occupan
 use crate::organization::organization_membership as _;
 use crate::strategic::{party_authority, party_member as _, strategic_incident as _};
 use crate::{
-    CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
-    character_limbs, character_skills, character_stats, settlement,
+    CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_limbs,
+    character_skills, character_stats, settlement,
 };
 use adventuresim_world_schema::{OfficialReligion, OralLanguage};
 use std::collections::BTreeMap;
@@ -760,13 +760,7 @@ fn activity_training_profile(
     ctx: &ReducerContext,
     character_id: u64,
 ) -> Result<adventuresim_core::strategic_schedule::ActivityTrainingProfile, String> {
-    let equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(character_id)
-        .ok_or_else(|| "Character equipment not found".to_string())?;
-    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+    let equipment = StrategicEquipment::load(ctx, character_id);
     Ok(
         adventuresim_core::strategic_schedule::ActivityTrainingProfile {
             combat: equipment.combat_training_profile(),
@@ -1476,13 +1470,7 @@ fn apply_activity_outcomes_inner(
         .character_id()
         .find(character_id)
         .ok_or("Character stats not found")?;
-    let equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character equipment not found")?;
-    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+    let equipment = StrategicEquipment::load(ctx, character_id);
     let strength = attributes.limb_attr_by_weight_by_parts(
         LimbAttribute::Strength,
         &limbs,

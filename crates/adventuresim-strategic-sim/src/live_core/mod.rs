@@ -57,5 +57,5 @@ mod bootstrap {
 }
 
 pub use bootstrap::run_core_loop;
-use bootstrap::{equipment_utility, equipped_at, leader_is_actionable};
+use bootstrap::{equipment_utility, leader_is_actionable, root_requirement_matches_slot};
 include!("tests.rs");

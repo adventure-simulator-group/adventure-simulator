@@ -28,13 +28,7 @@ pub fn transfer_party_item(
     if source_item.character_id != from_character_id || source_item.quantity < quantity {
         return Err("Source character does not have that quantity".into());
     }
-    if ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(from_character_id)
-        .is_some_and(|equip| equip.is_equiped(inventory_item_id).is_some())
-    {
+    if crate::character::inventory_item_is_equipped(ctx, from_character_id, inventory_item_id) {
         return Err("Unequip an item before transferring it".into());
     }
 
@@ -1185,13 +1179,7 @@ pub fn deposit_party_inventory_item(
     if quantity == 0 || inventory.character_id != character_id || inventory.quantity < quantity {
         return Err("Invalid party inventory deposit".into());
     }
-    if ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(character_id)
-        .is_some_and(|equip| equip.is_equiped(inventory_item_id).is_some())
-    {
+    if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
         return Err("Unequip an item before depositing it".into());
     }
     let medication = item_is_medication(ctx, &inventory.item_id);
@@ -1622,7 +1610,6 @@ pub fn discard_inventory_items(
     if ctx.db.character().id().find(character_id).is_none() {
         return Err("Character not found".into());
     }
-    let equip = ctx.db.character_equip().character_id().find(character_id);
     let mut seen = HashSet::new();
     let mut staged = Vec::with_capacity(inventory_item_ids.len());
     for (&inventory_item_id, &quantity) in inventory_item_ids.iter().zip(&quantities) {
@@ -1638,10 +1625,7 @@ pub fn discard_inventory_items(
         if item.character_id != character_id || item.quantity < quantity {
             return Err("Character does not have the staged quantity".into());
         }
-        if equip
-            .as_ref()
-            .is_some_and(|equip| equip.is_equiped(inventory_item_id).is_some())
-        {
+        if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
             return Err("Unequip an item before discarding it".into());
         }
         staged.push((item, quantity));
@@ -1707,13 +1691,7 @@ pub fn finalize_party_offer(
         {
             return Err("Invalid party trade offer".into());
         }
-        if ctx
-            .db
-            .character_equip()
-            .character_id()
-            .find(from_id)
-            .is_some_and(|equip| equip.is_equiped(item.id).is_some())
-        {
+        if crate::character::inventory_item_is_equipped(ctx, from_id, item.id) {
             return Err("Unequip an item before offering it".into());
         }
     }
@@ -2025,12 +2003,7 @@ fn finalize_storefront_trade_impl(
             return Err("Invalid merchant sale".into());
         }
         if !party_scope
-            && ctx
-                .db
-                .character_equip()
-                .character_id()
-                .find(character_id)
-                .is_some_and(|equip| equip.is_equiped(*inventory_id).is_some())
+            && crate::character::inventory_item_is_equipped(ctx, character_id, *inventory_id)
         {
             return Err("Unequip an item before selling it".into());
         }
@@ -2155,7 +2128,6 @@ fn finalize_storefront_trade_impl(
             }
         }
     }
-    let equip = ctx.db.character_equip().character_id().find(character_id);
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
         if party_scope {
             add_to_party_inventory_checked(ctx, party_id.as_ref().unwrap(), item_id, *quantity)?;
@@ -2166,7 +2138,10 @@ fn finalize_storefront_trade_impl(
         let durable = ctx.db.item().id().find(item_id).is_some_and(|definition| {
             matches!(
                 definition.kind,
-                crate::ItemKind::Weapon | crate::ItemKind::Armor | crate::ItemKind::Shield
+                crate::ItemKind::Weapon
+                    | crate::ItemKind::Armor
+                    | crate::ItemKind::Shield
+                    | crate::ItemKind::Clothing
             )
         });
         let food = ctx
@@ -2184,9 +2159,7 @@ fn finalize_storefront_trade_impl(
                 .character_and_item_id()
                 .filter((character_id, item_id))
                 .find(|stack| {
-                    !equip
-                        .as_ref()
-                        .is_some_and(|equip| equip.is_equiped(stack.id).is_some())
+                    !crate::character::inventory_item_is_equipped(ctx, character_id, stack.id)
                 })
         {
             if let Some(merged) = stack.quantity.checked_add(*quantity) {

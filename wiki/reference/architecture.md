@@ -35,6 +35,18 @@ SpacetimeDB stores durable world and character facts such as:
   finalized loot;
 - compiled world identity, source manifests, and strategic route facts.
 
+Equipped inventory is persisted as a normalized acyclic graph. Root nodes
+occupy ordered body anchor/channel cells; child nodes occupy capacity cells on
+item-authored attachment points. The equipped header records its stable
+placement ID, while occupancy rows record every selected body anchor and every
+parent edge. One placement may therefore span several body locations, require
+several parent attachment points, or combine both. These normalized rows are
+also the sole authority for held items; there is no separate left/right-hand
+equipment record. Mutations preflight every conflict, compatibility, capacity,
+and cycle check before changing rows, and never leave orphaned children.
+Combat protection is a separate explicit placement-to-body projection rather
+than an inference from physical anchors.
+
 Tactical servers keep positions, movement, enemies, attacks, per-tick damage,
 temporary health, physics state, and scene entities in memory. Those values are
 not mirrored into SpacetimeDB. A tactical session may report an authenticated

@@ -6,10 +6,10 @@ use spacetimedb::{
 use crate::repair::{ItemCondition, item_condition__view};
 use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
-    ItemSlot,
     character::character,
-    character__view, character_attributes__view, character_equip__view, character_limbs__view,
-    character_skills__view, character_stats__view, inventory_item__view,
+    character__view, character_attributes__view, character_equipped_item__view,
+    character_limbs__view, character_skills__view, character_stats__view,
+    equipment_occupancy__view, inventory_item__view,
     investigation::case_site_authority,
     item__view, party_authority,
     strategic::{
@@ -202,8 +202,23 @@ pub struct ConnectedPlayerItem {
     pub inventory_item_id: u64,
     pub quantity: u32,
     pub item: Item,
-    pub equipped: Option<ItemSlot>,
+    pub selected_placement_id: Option<String>,
+    pub occupancies: Vec<ConnectedEquipmentOccupancy>,
+    pub protected_body_parts: Vec<crate::item::EquipmentBodyPart>,
     pub condition: Option<ItemCondition>,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct ConnectedEquipmentOccupancy {
+    pub id: String,
+    pub anchor_kind: crate::character::EquipmentAnchorKind,
+    pub location: Option<crate::item::EquipmentLocation>,
+    pub parent_inventory_item_id: Option<u64>,
+    pub attachment_point_id: Option<String>,
+    pub channel: crate::item::EquipmentChannel,
+    pub order: u16,
+    pub requirement_index: u16,
+    pub capacity_index: u16,
 }
 
 /// View of [`ConnectedPlayer`] for this [`TacticalServer`].
@@ -244,8 +259,6 @@ fn connected_player_items(
     ctx: &ViewContext,
     character_id: u64,
 ) -> impl Iterator<Item = ConnectedPlayerItem> + use<'_> {
-    let equip = ctx.db.character_equip().character_id().find(character_id);
-
     ctx.db
         .inventory_item()
         .character_id()
@@ -280,14 +293,44 @@ fn connected_player_items(
                     item.handling_sensitivity,
                 );
             }
-            let equipped = equip.as_ref().and_then(|e| e.is_equiped(inventory_item.id));
-
+            let worn = ctx
+                .db
+                .character_equipped_item()
+                .inventory_item_id()
+                .find(inventory_item.id);
+            let placement = worn.as_ref().and_then(|worn| {
+                item.equipment_placements
+                    .iter()
+                    .find(|placement| placement.id == worn.placement_id)
+            });
+            let occupancies = ctx
+                .db
+                .equipment_occupancy()
+                .inventory_item_id()
+                .filter(inventory_item.id)
+                .map(|row| ConnectedEquipmentOccupancy {
+                    id: row.id,
+                    anchor_kind: row.anchor_kind,
+                    location: row.location,
+                    parent_inventory_item_id: row.parent_inventory_item_id,
+                    attachment_point_id: row.attachment_point_id,
+                    channel: row.channel,
+                    order: row.order,
+                    requirement_index: row.requirement_index,
+                    capacity_index: row.capacity_index,
+                })
+                .collect();
+            let protected_body_parts = placement
+                .map(|placement| placement.protection.clone())
+                .unwrap_or_default();
             Some(ConnectedPlayerItem {
                 inventory_item_id: inventory_item.id,
                 quantity: inventory_item.quantity,
                 item,
-                equipped,
+                selected_placement_id: worn.map(|row| row.placement_id),
                 condition,
+                occupancies,
+                protected_body_parts,
             })
         })
 }

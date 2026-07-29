@@ -1,6 +1,13 @@
 # Slots
 A **slot** is a physical location on your character's body which an item can be stored in, or attached to, for quick access via hotkey.
 
+The persisted equipment model separates this fine-grained topology from the
+seven combat/health body parts. Equipment locations include head, face, neck,
+chest, stomach, back, paired shoulders, arms, hands, legs, and feet. The typed
+vocabulary also reserves the four belt and four pocket access points below.
+Combat continues to target only left/right arm, left/right leg, head, chest,
+and stomach; worn protection is projected back onto those stable regions.
+
 For example, the right hip can be a slot:
 * If you have a belt on, you can place a sheath on your left hip with <kbd>Q</kbd>.
 * If you have a sheath on your left hip, you can put a sword in it.
@@ -35,6 +42,26 @@ The controller doesn't have quite enough buttons to give every slot its own butt
 In the map proposed above, we rely on button combinations for directly adjacent slots, which we imagine as lying on a navigable grid navigated by the D-pad.
 ## Layers
 Pressing a slot button once selects the outer layer of that slot. Pressing it again -- without releasing the grab button -- selects one layer deeper. For example, press <kbd>Q</kbd> once to draw your sword from your sheath, twice to remove the sheath itself, and three times to remove your belt.
+
+Equipment uses explicit occupancy channels ordered from inside to outside:
+held, base clothing, padding/under-armor, flexible armor, rigid armor,
+outerwear, accessory, mount, and containment. Channel plus authored order
+forms an occupancy cell, so a cloak can coexist with armor and a sheath can
+coexist with clothing. Held, base-clothing, padding, flexible-armor,
+rigid-armor, and outerwear channels are singleton at each location; authored
+order only distinguishes repeatable accessory, mount, and containment cells.
+The same item may atomically occupy several locations, and sided garments
+author explicit left and right alternatives.
+
+The persisted equipment graph is rooted at the character body. Equipped items
+may provide ordered, capacity-limited attachment points, so a belt may parent a
+sheath or bag, a sheath may parent a weapon, and a bag may parent contents. A
+single placement may require several points (the catalog sword sheath uses two
+belt mounts), producing a DAG rather than a single-parent tree.
+Reparenting validates the complete destination before mutation. Player-facing
+removal and reparenting reject items with children, preventing orphaned graph
+rows. Repeated slot input walks body channels outside-to-inside and then child
+attachment points in authored order.
 ## Multi-slot items
 Many items, generally clothing and armor, occupy multiple slots. A belt occupies all four belt slot buttons. It can be equipped and removed using any of these buttons.
 ## Slot restrictions

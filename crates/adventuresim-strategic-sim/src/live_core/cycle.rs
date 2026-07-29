@@ -512,27 +512,14 @@ impl LiveRunner {
     pub(super) fn try_upgrade(&mut self, agent: u32, settlement: &str) -> Result<(), String> {
         let character_id = self.character_ids[agent as usize];
         let profile = self.profiles[agent as usize].clone();
-        let equipped = self
+        let equipped_ids = self
             .connection
             .db
-            .character_equip()
+            .character_equipped_item()
             .iter()
-            .find(|row| row.character_id == character_id)
-            .ok_or("missing equipment state")?;
-        let equipped_ids = [
-            equipped.left_hand_item_id,
-            equipped.right_hand_item_id,
-            equipped.left_arm_armor_id,
-            equipped.right_arm_armor_id,
-            equipped.left_leg_armor_id,
-            equipped.right_leg_armor_id,
-            equipped.head_armor_id,
-            equipped.chest_armor_id,
-            equipped.stomach_armor_id,
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<HashSet<_>>();
+            .filter(|row| row.character_id == character_id)
+            .map(|row| row.inventory_item_id)
+            .collect::<HashSet<_>>();
         let inventories: Vec<_> = self
             .connection
             .db
@@ -679,22 +666,104 @@ impl LiveRunner {
             .max_by_key(|row| row.id)
             .ok_or("purchase succeeded but inventory was not coherent")?;
         let destination = if candidate.melee || candidate.ranged {
-            ItemSlot::AnyHolding
+            let held = self
+                .connection
+                .db
+                .equipment_occupancy()
+                .iter()
+                .filter(|row| {
+                    row.character_id == character_id && row.channel == EquipmentChannel::Held
+                })
+                .collect::<Vec<_>>();
+            if !held
+                .iter()
+                .any(|row| row.location == Some(EquipmentLocation::LeftHand))
+            {
+                ItemSlot::LeftHolding
+            } else if !held
+                .iter()
+                .any(|row| row.location == Some(EquipmentLocation::RightHand))
+            {
+                ItemSlot::RightHolding
+            } else {
+                if let Some(displaced) = held
+                    .iter()
+                    .find(|row| row.location == Some(EquipmentLocation::RightHand))
+                    .map(|row| row.inventory_item_id)
+                {
+                    let result = reducer_call!(self, "unequip_upgrade_conflict", |cb| self
+                        .connection
+                        .reducers
+                        .equip_item_then(character_id, displaced, ItemSlot::None, cb));
+                    self.call(result)?;
+                }
+                ItemSlot::RightHolding
+            }
         } else {
             candidate.slot
         };
-        let result = reducer_call!(self, "equip_item", |cb| self
-            .connection
-            .reducers
-            .equip_item_then(character_id, inventory.id, destination, cb));
+        let wearable = !candidate.equipment_placements.is_empty();
+        let placement_index = if wearable {
+            let (placement_index, placement) = candidate
+                .equipment_placements
+                .iter()
+                .enumerate()
+                .find(|(_, placement)| {
+                    placement.parents.is_empty()
+                        && placement.occupancy.iter().any(|requirement| {
+                            root_requirement_matches_slot(requirement, destination)
+                        })
+                })
+                .ok_or("wearable upgrade lacks a compatible authored root placement")?;
+            let conflicts = self
+                .connection
+                .db
+                .equipment_occupancy()
+                .iter()
+                .filter(|row| {
+                    row.character_id == character_id
+                        && placement.occupancy.iter().any(|requirement| {
+                            row.location == Some(requirement.location)
+                                && row.channel == requirement.channel
+                                && row.order == requirement.order
+                        })
+                })
+                .map(|row| row.inventory_item_id)
+                .collect::<HashSet<_>>();
+            for displaced in conflicts {
+                let result = reducer_call!(self, "unequip_wearable_upgrade_conflict", |cb| self
+                    .connection
+                    .reducers
+                    .equip_item_then(character_id, displaced, ItemSlot::None, cb));
+                self.call(result)?;
+            }
+            Some(placement_index as u16)
+        } else {
+            None
+        };
+        let result = if wearable {
+            reducer_call!(self, "equip_item_at_placement", |cb| self
+                .connection
+                .reducers
+                .equip_item_at_placement_then(
+                    character_id,
+                    inventory.id,
+                    placement_index.expect("wearable placement index"),
+                    cb
+                ))
+        } else {
+            reducer_call!(self, "equip_item", |cb| self
+                .connection
+                .reducers
+                .equip_item_then(character_id, inventory.id, destination, cb))
+        };
         self.call(result)?;
         let verified = self
             .connection
             .db
-            .character_equip()
+            .character_equipped_item()
             .iter()
-            .find(|row| row.character_id == character_id)
-            .is_some_and(|row| equipped_at(&row, destination, inventory.id));
+            .any(|row| row.character_id == character_id && row.inventory_item_id == inventory.id);
         if !verified {
             return Err("equip reducer completed without the requested equipped state".into());
         }

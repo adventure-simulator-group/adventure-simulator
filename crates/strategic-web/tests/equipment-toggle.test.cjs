@@ -4,7 +4,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { readRustModuleSource } = require('./rust-module-source.cjs');
 
-const { exactEquipmentError } = require('../static/equipment-toggle.js');
+const {
+  attachmentTargetsForPlacement,
+  exactEquipmentError,
+  parsePlacementOptions,
+  parsePlacements,
+} = require('../static/equipment-toggle.js');
 
 test('equipment errors preserve the exact reducer response', async () => {
   const response = {
@@ -16,6 +21,80 @@ test('equipment errors preserve the exact reducer response', async () => {
     await exactEquipmentError(response),
     'Goslar restricts arms; present a recognized organization',
   );
+});
+
+test('authored placement alternatives remain atomic and ordered', () => {
+  assert.deepEqual(
+    parsePlacements('LeftArm|RightArm|Chest, Stomach'),
+    ['LeftArm', 'RightArm', 'Chest, Stomach'],
+  );
+  assert.deepEqual(parsePlacements(''), []);
+});
+
+test('attachment placements preserve parent target identity', () => {
+  assert.deepEqual(
+    parsePlacementOptions(JSON.stringify([{
+      placementIndex: 2,
+      label: 'contained',
+      requirements: [{
+        requirementIndex: 0,
+        channel: 'Contents',
+        targets: [
+          { parentInventoryItemId: 41, attachmentPointId: 'blade', label: 'Sword sheath / blade' },
+          { parentInventoryItemId: 9, attachmentPointId: 'contents', label: 'Leather satchel / contents' },
+        ],
+      }],
+    }])),
+    [
+      {
+        placementIndex: 2,
+        label: 'contained',
+        requirements: [{
+          requirementIndex: 0,
+          channel: 'Contents',
+          targets: [
+            { parentInventoryItemId: 41, attachmentPointId: 'blade', label: 'Sword sheath / blade' },
+            { parentInventoryItemId: 9, attachmentPointId: 'contents', label: 'Leather satchel / contents' },
+          ],
+        }],
+      },
+    ],
+  );
+  assert.deepEqual(parsePlacementOptions('{bad json'), []);
+});
+
+test('multi-point placements submit one selected target per requirement', () => {
+  const placement = {
+    placementIndex: 4,
+    requirements: [
+      {
+        requirementIndex: 0,
+        targets: [
+          { parentInventoryItemId: 11, attachmentPointId: 'left' },
+          { parentInventoryItemId: 12, attachmentPointId: 'right' },
+        ],
+      },
+      {
+        requirementIndex: 1,
+        targets: [
+          { parentInventoryItemId: 21, attachmentPointId: 'upper' },
+          { parentInventoryItemId: 22, attachmentPointId: 'lower' },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(attachmentTargetsForPlacement(placement, { 0: 1, 1: 0 }), [
+    {
+      requirement_index: 0,
+      parent_inventory_item_id: 12,
+      attachment_point_id: 'right',
+    },
+    {
+      requirement_index: 1,
+      parent_inventory_item_id: 21,
+      attachment_point_id: 'upper',
+    },
+  ]);
 });
 
 test('equipment errors have an HTTP fallback when the reducer body is empty', async () => {

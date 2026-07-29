@@ -1,8 +1,303 @@
+use crate::item_catalog_schema::{EquipmentBodyPart, EquipmentChannel, EquipmentLocation};
 use crate::skill::Skill;
 use crate::{
     body::{BodyPart, BodyParts, BodySide, LimbWeights, PlayerBody},
     prelude::{LimbAttribute, PlayerAttributes},
 };
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Combat projection of one wearable layer over one fine-grained location.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WearableProtection {
+    pub inventory_item_id: u64,
+    pub body_part: BodyPart,
+    pub channel: EquipmentChannel,
+    pub order: u16,
+    pub coverage: f32,
+    pub resistance: f32,
+    pub padding: f32,
+    pub flexibility: f32,
+    pub range_of_motion: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LayeredArmor {
+    pub coverage: f32,
+    pub resistance: f32,
+    pub padding: f32,
+    pub flexibility: f32,
+    pub range_of_motion: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InputAddressMapping {
+    pub input: &'static str,
+    /// One input may address several physical anchors (for example a belt
+    /// spans four authored locations).
+    pub locations: &'static [EquipmentLocation],
+    /// Repeated selection traverses these channels outside-to-inside, then
+    /// follows a selected item's child attachment points in authored order.
+    pub channel_order: &'static [EquipmentChannel],
+}
+
+const OUTSIDE_TO_INSIDE: &[EquipmentChannel] = &[
+    EquipmentChannel::Mount,
+    EquipmentChannel::Accessory,
+    EquipmentChannel::Outerwear,
+    EquipmentChannel::RigidArmor,
+    EquipmentChannel::FlexibleArmor,
+    EquipmentChannel::Padding,
+    EquipmentChannel::BaseClothing,
+    EquipmentChannel::Containment,
+];
+
+pub const INPUT_ADDRESS_MAPPINGS: &[InputAddressMapping] = &[
+    InputAddressMapping {
+        input: "q",
+        locations: &[EquipmentLocation::LeftBelt],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "e",
+        locations: &[EquipmentLocation::RightBelt],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "f",
+        locations: &[EquipmentLocation::FrontBelt],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "x",
+        locations: &[EquipmentLocation::BackBelt],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "tab",
+        locations: &[EquipmentLocation::LeftShoulder],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "r",
+        locations: &[EquipmentLocation::RightShoulder],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "2",
+        locations: &[EquipmentLocation::LeftPocket],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "3",
+        locations: &[EquipmentLocation::RightPocket],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "1",
+        locations: &[EquipmentLocation::BackLeftPocket],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "4",
+        locations: &[EquipmentLocation::BackRightPocket],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "t",
+        locations: &[
+            EquipmentLocation::Head,
+            EquipmentLocation::Face,
+            EquipmentLocation::Neck,
+        ],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "z",
+        locations: &[EquipmentLocation::LeftFoot],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "c",
+        locations: &[EquipmentLocation::RightFoot],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "`",
+        locations: &[EquipmentLocation::LeftArm, EquipmentLocation::LeftHand],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "5",
+        locations: &[EquipmentLocation::RightArm, EquipmentLocation::RightHand],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+];
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EquipmentGraph {
+    pub nodes: BTreeMap<u64, EquipmentGraphPlacement>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EquipmentGraphPlacement {
+    pub body: Vec<(EquipmentLocation, EquipmentChannel, u16)>,
+    pub parents: Vec<EquipmentGraphEdge>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EquipmentGraphEdge {
+    pub parent_inventory_item_id: u64,
+    pub attachment_point_id: String,
+    pub capacity_index: u16,
+}
+
+impl EquipmentGraph {
+    pub fn equip(
+        &mut self,
+        inventory_item_id: u64,
+        mut placement: EquipmentGraphPlacement,
+    ) -> Result<(), &'static str> {
+        if self.has_children(inventory_item_id) {
+            return Err("item has equipped children");
+        }
+        for (_, channel, order) in &mut placement.body {
+            if channel.singleton_per_location() {
+                *order = 0;
+            }
+        }
+        let body_keys = placement.body.iter().copied().collect::<BTreeSet<_>>();
+        if body_keys.len() != placement.body.len() {
+            return Err("duplicate body occupancy");
+        }
+        let edge_keys = placement.parents.iter().cloned().collect::<BTreeSet<_>>();
+        if edge_keys.len() != placement.parents.len() {
+            return Err("duplicate attachment capacity");
+        }
+        for (other_id, other) in &self.nodes {
+            if *other_id == inventory_item_id {
+                continue;
+            }
+            if other.body.iter().any(|cell| body_keys.contains(cell)) {
+                return Err("body occupancy conflict");
+            }
+            if other.parents.iter().any(|edge| edge_keys.contains(edge)) {
+                return Err("attachment capacity conflict");
+            }
+        }
+        if placement
+            .parents
+            .iter()
+            .any(|edge| !self.nodes.contains_key(&edge.parent_inventory_item_id))
+        {
+            return Err("parent is not equipped");
+        }
+        if self.would_cycle(
+            inventory_item_id,
+            placement
+                .parents
+                .iter()
+                .map(|edge| edge.parent_inventory_item_id),
+        ) {
+            return Err("attachment cycle");
+        }
+        self.nodes.insert(inventory_item_id, placement);
+        Ok(())
+    }
+
+    pub fn unequip(&mut self, inventory_item_id: u64) -> Result<(), &'static str> {
+        if self.has_children(inventory_item_id) {
+            return Err("item has equipped children");
+        }
+        self.nodes.remove(&inventory_item_id);
+        Ok(())
+    }
+
+    pub fn has_children(&self, inventory_item_id: u64) -> bool {
+        self.nodes.values().any(|placement| {
+            placement
+                .parents
+                .iter()
+                .any(|edge| edge.parent_inventory_item_id == inventory_item_id)
+        })
+    }
+
+    fn would_cycle(&self, inventory_item_id: u64, parents: impl IntoIterator<Item = u64>) -> bool {
+        let mut ancestors = parents.into_iter().collect::<Vec<_>>();
+        let mut visited = BTreeSet::new();
+        while let Some(ancestor) = ancestors.pop() {
+            if ancestor == inventory_item_id {
+                return true;
+            }
+            if visited.insert(ancestor)
+                && let Some(placement) = self.nodes.get(&ancestor)
+            {
+                ancestors.extend(
+                    placement
+                        .parents
+                        .iter()
+                        .map(|edge| edge.parent_inventory_item_id),
+                );
+            }
+        }
+        false
+    }
+}
+
+pub const fn equipment_body_part(part: EquipmentBodyPart) -> BodyPart {
+    match part {
+        EquipmentBodyPart::LeftArm => BodyPart::LeftArm,
+        EquipmentBodyPart::RightArm => BodyPart::RightArm,
+        EquipmentBodyPart::LeftLeg => BodyPart::LeftLeg,
+        EquipmentBodyPart::RightLeg => BodyPart::RightLeg,
+        EquipmentBodyPart::Chest => BodyPart::Chest,
+        EquipmentBodyPart::Stomach => BodyPart::Stomach,
+        EquipmentBodyPart::Head => BodyPart::Head,
+    }
+}
+
+/// Folds all applicable layers without expanding the combat body-part ABI.
+pub fn aggregate_layered_armor(
+    part: BodyPart,
+    pieces: impl IntoIterator<Item = WearableProtection>,
+) -> LayeredArmor {
+    let mut result = LayeredArmor {
+        coverage: 0.0,
+        resistance: 0.0,
+        padding: 0.0,
+        flexibility: 0.0,
+        range_of_motion: 1.0,
+    };
+    let mut weighted_flexibility = 0.0;
+    for piece in pieces.into_iter().filter(|piece| piece.body_part == part) {
+        let coverage = piece.coverage.clamp(0.0, 1.0);
+        result.coverage = 1.0 - (1.0 - result.coverage) * (1.0 - coverage);
+        let resistance = piece.resistance.max(0.0);
+        result.resistance += resistance;
+        result.padding += piece.padding.max(0.0);
+        weighted_flexibility += piece.flexibility.clamp(0.0, 1.0) * resistance;
+        result.range_of_motion = result
+            .range_of_motion
+            .min(piece.range_of_motion.clamp(0.0, 1.0));
+    }
+    result.flexibility = if result.resistance > f32::EPSILON {
+        weighted_flexibility / result.resistance
+    } else {
+        0.0
+    };
+    result
+}
+
+/// Selects exactly one layer to receive contact wear. Higher layer order is
+/// outermost; inventory ID is the deterministic tie-breaker for corrupt data.
+pub fn outermost_wearable(
+    part: BodyPart,
+    pieces: impl IntoIterator<Item = WearableProtection>,
+) -> Option<WearableProtection> {
+    pieces
+        .into_iter()
+        .filter(|piece| piece.body_part == part)
+        .max_by_key(|piece| (piece.channel.order(), piece.order, piece.inventory_item_id))
+}
 
 /// SpacetimeDB-friendly weights for the nine weapon leaf skills. A weapon may
 /// combine melee and ranged families; callers normalize the positive entries.
@@ -363,5 +658,256 @@ mod tests {
         assert_eq!(combined.burden_kg, f32::MAX);
         assert_eq!(combined.capacity_kg, 200.0);
         assert_eq!(combined.penalty_fraction(), 1.0);
+    }
+
+    #[test]
+    fn layered_armor_combines_stats_without_expanding_body_parts() {
+        use crate::item_catalog::EquipmentChannel as C;
+        let pieces = [
+            WearableProtection {
+                inventory_item_id: 1,
+                body_part: BodyPart::Chest,
+                channel: C::Padding,
+                order: 0,
+                coverage: 0.5,
+                resistance: 20.0,
+                padding: 30.0,
+                flexibility: 0.8,
+                range_of_motion: 0.9,
+            },
+            WearableProtection {
+                inventory_item_id: 2,
+                body_part: BodyPart::Chest,
+                channel: C::RigidArmor,
+                order: 0,
+                coverage: 0.8,
+                resistance: 100.0,
+                padding: 10.0,
+                flexibility: 0.2,
+                range_of_motion: 0.7,
+            },
+        ];
+        let armor = aggregate_layered_armor(BodyPart::Chest, pieces);
+        assert!((armor.coverage - 0.9).abs() < 0.0001);
+        assert_eq!(armor.resistance, 120.0);
+        assert_eq!(armor.padding, 40.0);
+        assert!((armor.flexibility - 0.3).abs() < 0.0001);
+        assert_eq!(armor.range_of_motion, 0.7);
+        assert_eq!(
+            outermost_wearable(BodyPart::Chest, pieces)
+                .expect("outer layer")
+                .inventory_item_id,
+            2
+        );
+    }
+
+    #[test]
+    fn zero_resistance_layers_have_defined_flexibility() {
+        use crate::item_catalog::EquipmentChannel as C;
+        let armor = aggregate_layered_armor(
+            BodyPart::LeftArm,
+            [WearableProtection {
+                inventory_item_id: 1,
+                body_part: BodyPart::LeftArm,
+                channel: C::BaseClothing,
+                order: 0,
+                coverage: 1.0,
+                resistance: 0.0,
+                padding: 2.0,
+                flexibility: 1.0,
+                range_of_motion: 1.0,
+            }],
+        );
+        assert_eq!(armor.flexibility, 0.0);
+    }
+
+    #[test]
+    fn input_addresses_are_explicit_many_to_many_and_outside_in() {
+        let head = INPUT_ADDRESS_MAPPINGS
+            .iter()
+            .find(|mapping| mapping.input == "t")
+            .expect("head input");
+        assert_eq!(
+            head.locations,
+            &[
+                EquipmentLocation::Head,
+                EquipmentLocation::Face,
+                EquipmentLocation::Neck,
+            ]
+        );
+        let left_arm = INPUT_ADDRESS_MAPPINGS
+            .iter()
+            .find(|mapping| mapping.input == "`")
+            .expect("left arm input");
+        assert_eq!(
+            left_arm.locations,
+            &[EquipmentLocation::LeftArm, EquipmentLocation::LeftHand]
+        );
+        assert_eq!(
+            &head.channel_order[..4],
+            &[
+                EquipmentChannel::Mount,
+                EquipmentChannel::Accessory,
+                EquipmentChannel::Outerwear,
+                EquipmentChannel::RigidArmor,
+            ]
+        );
+    }
+
+    #[test]
+    fn graph_supports_belt_sheath_sword_and_body_bag_contents() {
+        let edge = |parent, point: &str, capacity_index| EquipmentGraphEdge {
+            parent_inventory_item_id: parent,
+            attachment_point_id: point.into(),
+            capacity_index,
+        };
+        let mut graph = EquipmentGraph::default();
+        graph
+            .equip(
+                1,
+                EquipmentGraphPlacement {
+                    body: vec![(EquipmentLocation::LeftBelt, EquipmentChannel::Accessory, 0)],
+                    parents: vec![],
+                },
+            )
+            .unwrap();
+        graph
+            .equip(
+                2,
+                EquipmentGraphPlacement {
+                    body: vec![],
+                    parents: vec![edge(1, "left", 0), edge(1, "right", 0)],
+                },
+            )
+            .unwrap();
+        graph
+            .equip(
+                3,
+                EquipmentGraphPlacement {
+                    body: vec![],
+                    parents: vec![edge(2, "blade", 0)],
+                },
+            )
+            .unwrap();
+        graph
+            .equip(
+                4,
+                EquipmentGraphPlacement {
+                    body: vec![(
+                        EquipmentLocation::LeftShoulder,
+                        EquipmentChannel::Accessory,
+                        0,
+                    )],
+                    parents: vec![],
+                },
+            )
+            .unwrap();
+        graph
+            .equip(
+                5,
+                EquipmentGraphPlacement {
+                    body: vec![],
+                    parents: vec![edge(4, "contents", 0)],
+                },
+            )
+            .unwrap();
+        assert_eq!(graph.nodes.len(), 5);
+        assert!(graph.unequip(1).is_err());
+        graph.unequip(3).unwrap();
+        graph.unequip(2).unwrap();
+        graph.unequip(1).unwrap();
+    }
+
+    #[test]
+    fn graph_multi_point_move_is_atomic_and_cycle_safe() {
+        let edge = |parent, point: &str, capacity_index| EquipmentGraphEdge {
+            parent_inventory_item_id: parent,
+            attachment_point_id: point.into(),
+            capacity_index,
+        };
+        let mut graph = EquipmentGraph::default();
+        for id in [10, 11] {
+            graph
+                .equip(
+                    id,
+                    EquipmentGraphPlacement {
+                        body: vec![(
+                            if id == 10 {
+                                EquipmentLocation::LeftShoulder
+                            } else {
+                                EquipmentLocation::RightShoulder
+                            },
+                            EquipmentChannel::Mount,
+                            0,
+                        )],
+                        parents: vec![],
+                    },
+                )
+                .unwrap();
+        }
+        graph
+            .equip(
+                20,
+                EquipmentGraphPlacement {
+                    body: vec![],
+                    parents: vec![edge(10, "strap", 0), edge(11, "strap", 0)],
+                },
+            )
+            .unwrap();
+        let before = graph.clone();
+        assert_eq!(
+            graph.equip(
+                21,
+                EquipmentGraphPlacement {
+                    body: vec![],
+                    parents: vec![edge(10, "strap", 0), edge(11, "strap", 1)],
+                },
+            ),
+            Err("attachment capacity conflict")
+        );
+        assert_eq!(graph, before, "failed preflight never partially mutates");
+        assert_eq!(
+            graph.equip(
+                10,
+                EquipmentGraphPlacement {
+                    body: vec![],
+                    parents: vec![edge(20, "loop", 0)],
+                },
+            ),
+            Err("item has equipped children")
+        );
+    }
+
+    #[test]
+    fn singleton_wearable_orders_conflict_but_accessory_coexists() {
+        let mut graph = EquipmentGraph::default();
+        graph
+            .equip(
+                1,
+                EquipmentGraphPlacement {
+                    body: vec![(EquipmentLocation::Chest, EquipmentChannel::RigidArmor, 0)],
+                    parents: vec![],
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            graph.equip(
+                2,
+                EquipmentGraphPlacement {
+                    body: vec![(EquipmentLocation::Chest, EquipmentChannel::RigidArmor, 1,)],
+                    parents: vec![],
+                },
+            ),
+            Err("body occupancy conflict")
+        );
+        graph
+            .equip(
+                3,
+                EquipmentGraphPlacement {
+                    body: vec![(EquipmentLocation::Chest, EquipmentChannel::Accessory, 0)],
+                    parents: vec![],
+                },
+            )
+            .unwrap();
     }
 }

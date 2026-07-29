@@ -4,7 +4,6 @@ use adventuresim_core::starting_character::{
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 use std::hash::{DefaultHasher, Hash, Hasher};
-use strum::VariantArray;
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item,
@@ -307,47 +306,309 @@ pub struct CharacterLimbs {
     pub stomach_health: f32,
 }
 
-/// [`Character`] equipment
+/// One normalized equipped inventory instance. The occupancy rows are the
+/// authoritative body anchors and selected item-attachment edges.
 #[derive(Clone, Debug)]
-#[table(accessor = character_equip, public)]
-pub struct CharacterEquip {
+#[table(
+    accessor = character_equipped_item, public,
+    index(accessor = character_id, btree(columns = [character_id]))
+)]
+pub struct CharacterEquippedItem {
     #[primary_key]
+    pub inventory_item_id: u64,
     pub character_id: u64,
-    // weapon or shield
-    pub left_hand_item_id: Option<u64>,
-    pub right_hand_item_id: Option<u64>,
-    // armor
-    pub left_arm_armor_id: Option<u64>,
-    pub right_arm_armor_id: Option<u64>,
-    pub left_leg_armor_id: Option<u64>,
-    pub right_leg_armor_id: Option<u64>,
-    pub head_armor_id: Option<u64>,
-    pub chest_armor_id: Option<u64>,
-    pub stomach_armor_id: Option<u64>,
+    pub placement_id: String,
 }
 
-impl CharacterEquip {
-    pub fn is_equiped(&self, inventory_item_id: u64) -> Option<ItemSlot> {
-        ItemSlot::VARIANTS
-            .iter()
-            .find(|slot| self.get(**slot) == Some(inventory_item_id))
-            .copied()
-    }
+#[derive(spacetimedb::SpacetimeType, Clone, Debug, PartialEq, Eq)]
+pub struct EquipmentAttachmentTargetSelection {
+    pub requirement_index: u16,
+    pub parent_inventory_item_id: u64,
+    pub attachment_point_id: String,
+}
 
-    pub fn get(&self, slot: ItemSlot) -> Option<u64> {
-        match slot {
-            ItemSlot::LeftHolding => self.left_hand_item_id,
-            ItemSlot::RightHolding => self.right_hand_item_id,
-            ItemSlot::LeftArm => self.left_arm_armor_id,
-            ItemSlot::RightArm => self.right_arm_armor_id,
-            ItemSlot::LeftLeg => self.left_leg_armor_id,
-            ItemSlot::RightLeg => self.right_leg_armor_id,
-            ItemSlot::Head => self.head_armor_id,
-            ItemSlot::Chest => self.chest_armor_id,
-            ItemSlot::Stomach => self.stomach_armor_id,
-            _ => None,
+#[derive(spacetimedb::SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EquipmentAnchorKind {
+    CharacterLocation,
+    ItemAttachment,
+}
+
+#[derive(Clone, Debug)]
+#[table(
+    accessor = equipment_occupancy, public,
+    index(accessor = character_id, btree(columns = [character_id])),
+    index(accessor = inventory_item_id, btree(columns = [inventory_item_id]))
+)]
+pub struct EquipmentOccupancy {
+    /// Stable composite key for either a character anchor/channel/order cell
+    /// or one capacity cell on an item-provided attachment point.
+    #[primary_key]
+    pub id: String,
+    pub character_id: u64,
+    pub inventory_item_id: u64,
+    pub anchor_kind: EquipmentAnchorKind,
+    pub location: Option<crate::item::EquipmentLocation>,
+    pub parent_inventory_item_id: Option<u64>,
+    pub attachment_point_id: Option<String>,
+    pub channel: crate::item::EquipmentChannel,
+    pub order: u16,
+    pub requirement_index: u16,
+    pub capacity_index: u16,
+}
+
+fn character_occupancy_id(
+    character_id: u64,
+    channel: crate::item::EquipmentChannel,
+    order: u16,
+    location: crate::item::EquipmentLocation,
+) -> String {
+    let order = if channel.singleton_per_location() {
+        0
+    } else {
+        order
+    };
+    format!(
+        "character:{character_id}:{location:?}:{}:{order}",
+        channel.order()
+    )
+}
+
+fn attachment_occupancy_id(
+    parent_inventory_item_id: u64,
+    attachment_point_id: &str,
+    capacity_index: u16,
+) -> String {
+    format!("item:{parent_inventory_item_id}:{attachment_point_id}:{capacity_index}")
+}
+
+fn attachment_would_create_cycle(
+    inventory_item_id: u64,
+    parent_inventory_item_ids: impl IntoIterator<Item = u64>,
+    mut parents_of: impl FnMut(u64) -> Vec<u64>,
+) -> bool {
+    let mut stack = parent_inventory_item_ids
+        .into_iter()
+        .map(|id| (id, false))
+        .collect::<Vec<_>>();
+    let mut active = std::collections::HashSet::new();
+    let mut finished = std::collections::HashSet::new();
+    while let Some((ancestor_id, exiting)) = stack.pop() {
+        if ancestor_id == inventory_item_id {
+            return true;
         }
+        if exiting {
+            active.remove(&ancestor_id);
+            finished.insert(ancestor_id);
+            continue;
+        }
+        if finished.contains(&ancestor_id) {
+            continue;
+        }
+        if !active.insert(ancestor_id) {
+            return true;
+        }
+        stack.push((ancestor_id, true));
+        stack.extend(
+            parents_of(ancestor_id)
+                .into_iter()
+                .map(|parent_id| (parent_id, false)),
+        );
     }
+    false
+}
+
+fn conflicting_root_requirements(
+    requirements: &[crate::item::EquipmentOccupancyRequirement],
+    inventory_item_id: u64,
+    mut occupant_at: impl FnMut(crate::item::EquipmentOccupancyRequirement) -> Option<u64>,
+) -> Vec<crate::item::EquipmentOccupancyRequirement> {
+    requirements
+        .iter()
+        .copied()
+        .filter(|requirement| {
+            occupant_at(*requirement).is_some_and(|occupant| occupant != inventory_item_id)
+        })
+        .collect()
+}
+
+fn first_free_attachment_capacity(
+    capacity: u16,
+    inventory_item_id: u64,
+    mut occupant_at: impl FnMut(u16) -> Option<u64>,
+) -> Option<u16> {
+    (0..capacity)
+        .find(|index| occupant_at(*index).is_none_or(|occupant| occupant == inventory_item_id))
+}
+
+fn attachment_point_matches_requirement(
+    point: &crate::item::EquipmentAttachmentPoint,
+    requirement: crate::item::EquipmentParentRequirement,
+) -> bool {
+    point.channel == requirement.channel && point.order == requirement.order
+}
+
+pub(crate) fn wearable_is_equipped(ctx: &ReducerContext, inventory_item_id: u64) -> bool {
+    ctx.db
+        .character_equipped_item()
+        .inventory_item_id()
+        .find(inventory_item_id)
+        .is_some()
+}
+
+pub(crate) fn inventory_item_is_equipped(
+    ctx: &ReducerContext,
+    _character_id: u64,
+    inventory_item_id: u64,
+) -> bool {
+    wearable_is_equipped(ctx, inventory_item_id)
+}
+
+pub(crate) fn equipped_wearable_ids(ctx: &ReducerContext, character_id: u64) -> Vec<u64> {
+    ctx.db
+        .character_equipped_item()
+        .character_id()
+        .filter(character_id)
+        .map(|row| row.inventory_item_id)
+        .collect()
+}
+
+pub(crate) fn outermost_wearable_for_body_part(
+    ctx: &ReducerContext,
+    character_id: u64,
+    part: adventuresim_core::body::BodyPart,
+) -> Option<u64> {
+    ctx.db
+        .character_equipped_item()
+        .character_id()
+        .filter(character_id)
+        .filter_map(|equipped| {
+            let inventory = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(equipped.inventory_item_id)?;
+            let definition = ctx.db.item().id().find(&inventory.item_id)?;
+            let placement = definition
+                .equipment_placements
+                .iter()
+                .find(|placement| placement.id == equipped.placement_id)?;
+            if !placement
+                .protection
+                .iter()
+                .any(|target| runtime_body_part(*target) == part)
+            {
+                return None;
+            }
+            let outer = ctx
+                .db
+                .equipment_occupancy()
+                .inventory_item_id()
+                .filter(equipped.inventory_item_id)
+                .max_by_key(|row| (row.channel.order(), row.order, row.capacity_index));
+            let (channel_order, order) =
+                outer.map_or((0, 0), |row| (row.channel.order(), row.order));
+            Some((channel_order, order, equipped.inventory_item_id))
+        })
+        .max()
+        .map(|(_, _, inventory_item_id)| inventory_item_id)
+}
+
+pub(crate) fn unequip_wearable(ctx: &ReducerContext, inventory_item_id: u64) {
+    let children: Vec<_> = ctx
+        .db
+        .equipment_occupancy()
+        .iter()
+        .filter(|row| row.parent_inventory_item_id == Some(inventory_item_id))
+        .map(|row| row.inventory_item_id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    for child in children {
+        unequip_wearable(ctx, child);
+    }
+    let occupancies: Vec<_> = ctx
+        .db
+        .equipment_occupancy()
+        .inventory_item_id()
+        .filter(inventory_item_id)
+        .collect();
+    for occupancy in occupancies {
+        ctx.db.equipment_occupancy().id().delete(occupancy.id);
+    }
+    ctx.db
+        .character_equipped_item()
+        .inventory_item_id()
+        .delete(inventory_item_id);
+}
+
+fn runtime_body_part(part: crate::item::EquipmentBodyPart) -> adventuresim_core::body::BodyPart {
+    use crate::item::EquipmentBodyPart as E;
+    use adventuresim_core::body::BodyPart as B;
+    match part {
+        E::LeftArm => B::LeftArm,
+        E::RightArm => B::RightArm,
+        E::LeftLeg => B::LeftLeg,
+        E::RightLeg => B::RightLeg,
+        E::Chest => B::Chest,
+        E::Stomach => B::Stomach,
+        E::Head => B::Head,
+    }
+}
+
+pub(crate) fn require_no_equipped_children(
+    ctx: &ReducerContext,
+    inventory_item_id: u64,
+) -> Result<(), String> {
+    if ctx
+        .db
+        .equipment_occupancy()
+        .iter()
+        .any(|row| row.parent_inventory_item_id == Some(inventory_item_id))
+    {
+        Err("Detach or remove attached/contained items first".into())
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn restore_equipment_placement(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+    placement_id: &str,
+    targets: Vec<EquipmentAttachmentTargetSelection>,
+) -> Result<(), String> {
+    let inventory = ctx
+        .db
+        .inventory_item()
+        .id()
+        .find(inventory_item_id)
+        .ok_or("Inventory item not found while restoring equipment")?;
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(&inventory.item_id)
+        .ok_or("Item definition not found while restoring equipment")?;
+    let placement_index = definition
+        .equipment_placements
+        .iter()
+        .position(|placement| placement.id == placement_id)
+        .and_then(|index| u16::try_from(index).ok())
+        .ok_or("Saved equipment placement is no longer authored")?;
+    equip_equipment_internal(
+        ctx,
+        character_id,
+        inventory_item_id,
+        placement_index,
+        targets,
+        true,
+    )
+}
+
+fn refresh_equipment_dependents(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 
 /// Create a new random temporary character for the server.
@@ -681,7 +942,15 @@ fn delete_character_data(
     crate::reputation::delete_character_reputation(ctx, character.id);
     crate::strategic::delete_activity_incident_entropy(ctx, character.id);
     ctx.db.character_limbs().character_id().delete(character.id);
-    ctx.db.character_equip().character_id().delete(character.id);
+    for row in ctx
+        .db
+        .character_equipped_item()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        unequip_wearable(ctx, row.inventory_item_id);
+    }
     ctx.db
         .character_attributes()
         .character_id()
@@ -975,27 +1244,26 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         None,
     )?;
 
-    let equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(DAMAGED_CHARACTER_ID)
-        .ok_or_else(|| "Damaged demo character is missing equipment data".to_string())?;
-
     // Exercise field, settlement, and beyond-smith repair states across both
     // specialist screens. Equipped pieces make the durability column useful,
     // while the two spares also exercise the combined sell/repair row actions.
-    for (inventory_item_id, bins) in [
-        (equip.left_hand_item_id, [0.20, 0.0, 0.0, 0.0, 0.0]),
-        (equip.right_hand_item_id, [0.08, 0.17, 0.0, 0.0, 0.0]),
-        (equip.left_arm_armor_id, [0.18, 0.0, 0.0, 0.0, 0.0]),
-        (equip.right_arm_armor_id, [0.0, 0.10, 0.10, 0.0, 0.0]),
-        (equip.left_leg_armor_id, [0.10, 0.0, 0.08, 0.0, 0.0]),
-        (equip.right_leg_armor_id, [0.0, 0.0, 0.0, 0.12, 0.08]),
-        (equip.head_armor_id, [0.0, 0.0, 0.15, 0.05, 0.0]),
-        (equip.chest_armor_id, [0.05, 0.10, 0.08, 0.07, 0.0]),
-        (equip.stomach_armor_id, [0.0, 0.14, 0.0, 0.0, 0.0]),
-    ] {
+    let mut damaged_equipment = Vec::new();
+    let armor_damage = [
+        [0.18, 0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.10, 0.10, 0.0, 0.0],
+        [0.10, 0.0, 0.08, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.12, 0.08],
+        [0.0, 0.0, 0.15, 0.05, 0.0],
+        [0.05, 0.10, 0.08, 0.07, 0.0],
+        [0.0, 0.14, 0.0, 0.0, 0.0],
+    ];
+    damaged_equipment.extend(
+        equipped_wearable_ids(ctx, DAMAGED_CHARACTER_ID)
+            .into_iter()
+            .enumerate()
+            .map(|(index, id)| (Some(id), armor_damage[index % armor_damage.len()])),
+    );
+    for (inventory_item_id, bins) in damaged_equipment {
         if let Some(inventory_item_id) = inventory_item_id {
             set_demo_item_damage(ctx, inventory_item_id, bins)?;
         }
@@ -1470,18 +1738,6 @@ fn insert_character_with_origin(
         chest_health: 1.0,
         stomach_health: 1.0,
     });
-    let _character_equip = ctx.db.character_equip().insert(CharacterEquip {
-        character_id: id,
-        left_hand_item_id: None,
-        right_hand_item_id: None,
-        left_arm_armor_id: None,
-        right_arm_armor_id: None,
-        left_leg_armor_id: None,
-        right_leg_armor_id: None,
-        head_armor_id: None,
-        chest_armor_id: None,
-        stomach_armor_id: None,
-    });
     let generated_attributes = starting.map(|spec| &spec.attributes);
     let _character_attrs = ctx.db.character_attributes().insert(CharacterAttributes {
         character_id: id,
@@ -1723,81 +1979,370 @@ fn equip_item_internal(
         .id()
         .find(&inventory.item_id)
         .ok_or_else(|| format!("Can't equip unknown item {}", inventory.item_id))?;
-    if destination != ItemSlot::None && !item_slot_accepts(definition.slot, destination) {
-        return Err(format!(
-            "Can't equip {} in {:?}; its equipment slot is {:?}",
-            inventory.item_id, destination, definition.slot
-        ));
+    if destination == ItemSlot::None {
+        require_no_equipped_children(ctx, inventory_item_id)?;
+        unequip_wearable(ctx, inventory_item_id);
+        refresh_equipment_dependents(ctx, character_id)?;
+        return Ok(());
     }
-    if enforce_law && destination != ItemSlot::None {
-        crate::equipment_law::require_item_legal(ctx, character_id, inventory_item_id)?;
-    }
-
-    let mut equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(character_id)
-        .ok_or_else(|| "Can't find character".to_string())?;
-
-    // One inventory instance may occupy at most one slot. Clear any previous
-    // occurrence before selecting the new destination.
-    crate::repair::unequip(&mut equip, inventory_item_id);
-
-    match destination {
-        ItemSlot::AnyHolding if equip.left_hand_item_id.is_none() => {
-            equip.left_hand_item_id = Some(inventory_item_id)
-        }
-        ItemSlot::AnyHolding if equip.right_hand_item_id.is_none() => {
-            equip.right_hand_item_id = Some(inventory_item_id)
-        }
-        ItemSlot::RightHolding | ItemSlot::AnyHolding => {
-            equip.right_hand_item_id = Some(inventory_item_id)
-        }
-        ItemSlot::LeftHolding => equip.left_hand_item_id = Some(inventory_item_id),
-        ItemSlot::AnyArm if equip.left_arm_armor_id.is_none() => {
-            equip.left_arm_armor_id = Some(inventory_item_id)
-        }
-        ItemSlot::AnyArm if equip.right_arm_armor_id.is_none() => {
-            equip.right_arm_armor_id = Some(inventory_item_id)
-        }
-        ItemSlot::RightArm | ItemSlot::AnyArm => equip.right_arm_armor_id = Some(inventory_item_id),
-        ItemSlot::LeftArm => equip.left_arm_armor_id = Some(inventory_item_id),
-        ItemSlot::AnyLeg if equip.left_leg_armor_id.is_none() => {
-            equip.left_leg_armor_id = Some(inventory_item_id)
-        }
-        ItemSlot::AnyLeg if equip.right_leg_armor_id.is_none() => {
-            equip.right_leg_armor_id = Some(inventory_item_id)
-        }
-        ItemSlot::RightLeg | ItemSlot::AnyLeg => equip.right_leg_armor_id = Some(inventory_item_id),
-        ItemSlot::LeftLeg => equip.left_leg_armor_id = Some(inventory_item_id),
-        ItemSlot::Head => equip.head_armor_id = Some(inventory_item_id),
-        ItemSlot::Chest => equip.chest_armor_id = Some(inventory_item_id),
-        ItemSlot::Stomach => equip.stomach_armor_id = Some(inventory_item_id),
-        ItemSlot::None => {}
-    }
-
-    ctx.db.character_equip().character_id().update(equip);
-    crate::capability::refresh_character_capability(ctx, character_id)?;
-    Ok(())
+    let placement_index = equipment_placement_for_legacy_destination(
+        ctx,
+        character_id,
+        inventory_item_id,
+        &definition,
+        destination,
+    )
+    .ok_or_else(|| {
+        format!(
+            "Can't equip {} at {destination:?}; choose one of its authored placements",
+            inventory.item_id
+        )
+    })?;
+    equip_equipment_internal(
+        ctx,
+        character_id,
+        inventory_item_id,
+        placement_index,
+        Vec::new(),
+        enforce_law,
+    )
 }
 
-fn item_slot_accepts(catalog_slot: ItemSlot, destination: ItemSlot) -> bool {
-    match catalog_slot {
-        ItemSlot::AnyHolding => matches!(
-            destination,
-            ItemSlot::AnyHolding | ItemSlot::LeftHolding | ItemSlot::RightHolding
-        ),
-        ItemSlot::AnyArm => matches!(
-            destination,
-            ItemSlot::AnyArm | ItemSlot::LeftArm | ItemSlot::RightArm
-        ),
-        ItemSlot::AnyLeg => matches!(
-            destination,
-            ItemSlot::AnyLeg | ItemSlot::LeftLeg | ItemSlot::RightLeg
-        ),
-        slot => slot == destination,
+fn equipment_placement_for_legacy_destination(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+    item: &crate::Item,
+    destination: ItemSlot,
+) -> Option<u16> {
+    use crate::item::EquipmentChannel as C;
+    use crate::item::EquipmentLocation as L;
+    let accepts = |requirement: &crate::item::EquipmentOccupancyRequirement| match destination {
+        ItemSlot::LeftArm => requirement.location == L::LeftArm,
+        ItemSlot::RightArm => requirement.location == L::RightArm,
+        ItemSlot::AnyArm => matches!(requirement.location, L::LeftArm | L::RightArm),
+        ItemSlot::LeftLeg => requirement.location == L::LeftLeg,
+        ItemSlot::RightLeg => requirement.location == L::RightLeg,
+        ItemSlot::AnyLeg => matches!(requirement.location, L::LeftLeg | L::RightLeg),
+        ItemSlot::Head => requirement.location == L::Head,
+        ItemSlot::Chest => requirement.location == L::Chest,
+        ItemSlot::Stomach => requirement.location == L::Stomach,
+        ItemSlot::LeftHolding => {
+            requirement.location == L::LeftHand && requirement.channel == C::Held
+        }
+        ItemSlot::RightHolding => {
+            requirement.location == L::RightHand && requirement.channel == C::Held
+        }
+        ItemSlot::AnyHolding => requirement.channel == C::Held,
+        _ => false,
+    };
+    item.equipment_placements
+        .iter()
+        .position(|placement| {
+            placement.parents.is_empty()
+                && !placement.occupancy.is_empty()
+                && placement.occupancy.iter().any(accepts)
+                && conflicting_root_requirements(
+                    &placement.occupancy,
+                    inventory_item_id,
+                    |requirement| {
+                        ctx.db
+                            .equipment_occupancy()
+                            .id()
+                            .find(character_occupancy_id(
+                                character_id,
+                                requirement.channel,
+                                requirement.order,
+                                requirement.location,
+                            ))
+                            .map(|row| row.inventory_item_id)
+                    },
+                )
+                .is_empty()
+        })
+        .and_then(|index| u16::try_from(index).ok())
+}
+
+#[reducer]
+pub fn equip_item_at_placement(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+    placement_index: u16,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    equip_equipment_internal(
+        ctx,
+        character_id,
+        inventory_item_id,
+        placement_index,
+        Vec::new(),
+        true,
+    )
+}
+
+#[reducer]
+pub fn attach_item_at_placement(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+    placement_index: u16,
+    targets: Vec<EquipmentAttachmentTargetSelection>,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    equip_equipment_internal(
+        ctx,
+        character_id,
+        inventory_item_id,
+        placement_index,
+        targets,
+        true,
+    )
+}
+
+fn equip_equipment_internal(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_item_id: u64,
+    placement_index: u16,
+    targets: Vec<EquipmentAttachmentTargetSelection>,
+    enforce_law: bool,
+) -> Result<(), String> {
+    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
+    require_living_character(ctx, character_id)?;
+    let inventory = ctx
+        .db
+        .inventory_item()
+        .character_and_id()
+        .filter((character_id, inventory_item_id))
+        .next()
+        .ok_or_else(|| {
+            format!(
+                "Can't equip item: InventoryItem@{inventory_item_id} doesn't exist for Character@{character_id}"
+            )
+        })?;
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(&inventory.item_id)
+        .ok_or_else(|| format!("Can't equip unknown item {}", inventory.item_id))?;
+    let placement = definition
+        .equipment_placements
+        .get(usize::from(placement_index))
+        .ok_or_else(|| {
+            format!(
+                "Invalid placement {placement_index} for {}; expected 0..{}",
+                inventory.item_id,
+                definition.equipment_placements.len()
+            )
+        })?;
+    if enforce_law {
+        crate::equipment_law::require_item_legal(ctx, character_id, inventory_item_id)?;
     }
+    let root_occupancies = placement
+        .occupancy
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, requirement)| {
+            u16::try_from(index)
+                .map(|requirement_index| (requirement_index, requirement))
+                .map_err(|_| "Too many physical occupancy requirements")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let existing = ctx
+        .db
+        .character_equipped_item()
+        .inventory_item_id()
+        .find(inventory_item_id);
+    if existing.is_some() {
+        require_no_equipped_children(ctx, inventory_item_id)?;
+    }
+
+    // Validate the entire graph move before mutating either normalized table.
+    let conflicts =
+        conflicting_root_requirements(&placement.occupancy, inventory_item_id, |requirement| {
+            ctx.db
+                .equipment_occupancy()
+                .id()
+                .find(character_occupancy_id(
+                    character_id,
+                    requirement.channel,
+                    requirement.order,
+                    requirement.location,
+                ))
+                .map(|row| row.inventory_item_id)
+        });
+    if !conflicts.is_empty() {
+        let details = conflicts
+            .iter()
+            .map(|requirement| {
+                format!(
+                    "{:?} ({:?}, order {})",
+                    requirement.location, requirement.channel, requirement.order
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Can't equip {}: occupied at {details}",
+            inventory.item_id
+        ));
+    }
+    if targets.len() != placement.parents.len() {
+        return Err(format!(
+            "Placement {} requires {} attachment target(s), received {}",
+            placement.id,
+            placement.parents.len(),
+            targets.len()
+        ));
+    }
+    let mut selected_requirements = std::collections::BTreeSet::new();
+    let mut reserved_capacity = std::collections::BTreeSet::new();
+    let mut parent_occupancies = Vec::new();
+    for target in &targets {
+        let requirement_index = usize::from(target.requirement_index);
+        let requirement = placement.parents.get(requirement_index).ok_or_else(|| {
+            format!(
+                "Invalid parent requirement {} for placement {}",
+                target.requirement_index, placement.id
+            )
+        })?;
+        if !selected_requirements.insert(target.requirement_index) {
+            return Err(format!(
+                "Parent requirement {} was selected more than once",
+                target.requirement_index
+            ));
+        }
+        let parent_id = target.parent_inventory_item_id;
+        let point_id = target.attachment_point_id.as_str();
+        if parent_id == inventory_item_id {
+            return Err("An item cannot be attached to itself".into());
+        }
+        ctx.db
+            .character_equipped_item()
+            .inventory_item_id()
+            .find(parent_id)
+            .filter(|row| row.character_id == character_id)
+            .ok_or("Parent item is not equipped by this character")?;
+        let parent_inventory = ctx
+            .db
+            .inventory_item()
+            .id()
+            .find(parent_id)
+            .ok_or("Parent inventory item is missing")?;
+        let parent_definition = ctx
+            .db
+            .item()
+            .id()
+            .find(&parent_inventory.item_id)
+            .ok_or("Parent item definition is missing")?;
+        let point = parent_definition
+            .attachment_points
+            .iter()
+            .find(|point| point.id == point_id)
+            .ok_or_else(|| format!("Parent has no attachment point {point_id}"))?;
+        if !attachment_point_matches_requirement(point, *requirement) {
+            return Err(format!(
+                "Attachment point {point_id} uses {:?} order {}, but placement requires {:?} order {}",
+                point.channel, point.order, requirement.channel, requirement.order
+            ));
+        }
+        if !point.accepts_tags.is_empty()
+            && !definition
+                .attachment_tags
+                .iter()
+                .any(|tag| point.accepts_tags.contains(tag))
+        {
+            return Err(format!(
+                "{} is incompatible with attachment point {point_id}",
+                inventory.item_id
+            ));
+        }
+        let capacity_index =
+            first_free_attachment_capacity(point.capacity, inventory_item_id, |index| {
+                if reserved_capacity.contains(&(parent_id, point_id.to_owned(), index)) {
+                    return Some(u64::MAX);
+                }
+                ctx.db
+                    .equipment_occupancy()
+                    .id()
+                    .find(attachment_occupancy_id(parent_id, point_id, index))
+                    .map(|row| row.inventory_item_id)
+            })
+            .ok_or_else(|| format!("Attachment point {point_id} is full"))?;
+        reserved_capacity.insert((parent_id, point_id.to_owned(), capacity_index));
+        parent_occupancies.push((
+            parent_id,
+            point_id.to_owned(),
+            capacity_index,
+            target.requirement_index,
+            *requirement,
+        ));
+    }
+    if attachment_would_create_cycle(
+        inventory_item_id,
+        targets.iter().map(|target| target.parent_inventory_item_id),
+        |ancestor_id| {
+            ctx.db
+                .equipment_occupancy()
+                .inventory_item_id()
+                .filter(ancestor_id)
+                .filter_map(|row| row.parent_inventory_item_id)
+                .collect()
+        },
+    ) {
+        return Err("Attachment would create an equipment cycle".into());
+    }
+
+    unequip_wearable(ctx, inventory_item_id);
+    ctx.db
+        .character_equipped_item()
+        .insert(CharacterEquippedItem {
+            inventory_item_id,
+            character_id,
+            placement_id: placement.id.clone(),
+        });
+    for (requirement_index, requirement) in root_occupancies {
+        ctx.db.equipment_occupancy().insert(EquipmentOccupancy {
+            id: character_occupancy_id(
+                character_id,
+                requirement.channel,
+                requirement.order,
+                requirement.location,
+            ),
+            character_id,
+            inventory_item_id,
+            anchor_kind: EquipmentAnchorKind::CharacterLocation,
+            location: Some(requirement.location),
+            parent_inventory_item_id: None,
+            attachment_point_id: None,
+            channel: requirement.channel,
+            order: requirement.order,
+            requirement_index,
+            capacity_index: 0,
+        });
+    }
+    for (parent_id, point_id, capacity_index, requirement_index, requirement) in parent_occupancies
+    {
+        ctx.db.equipment_occupancy().insert(EquipmentOccupancy {
+            id: attachment_occupancy_id(parent_id, &point_id, capacity_index),
+            character_id,
+            inventory_item_id,
+            anchor_kind: EquipmentAnchorKind::ItemAttachment,
+            location: None,
+            parent_inventory_item_id: Some(parent_id),
+            attachment_point_id: Some(point_id),
+            channel: requirement.channel,
+            order: requirement.order,
+            requirement_index,
+            capacity_index,
+        });
+    }
+    refresh_equipment_dependents(ctx, character_id)?;
+    Ok(())
 }
 
 pub fn add_and_equip_item(
@@ -1817,7 +2362,14 @@ pub fn add_and_equip_item(
 
 #[cfg(test)]
 mod starting_character_boundary_tests {
-    use super::initial_membership_minutes;
+    use super::{
+        attachment_point_matches_requirement, attachment_would_create_cycle,
+        conflicting_root_requirements, first_free_attachment_capacity, initial_membership_minutes,
+    };
+    use crate::item::{
+        EquipmentAttachmentPoint, EquipmentChannel, EquipmentLocation,
+        EquipmentOccupancyRequirement, EquipmentParentRequirement,
+    };
 
     #[test]
     fn membership_period_is_anchored_to_current_character_time() {
@@ -1842,5 +2394,148 @@ mod starting_character_boundary_tests {
             .next()
             .unwrap();
         assert!(reducer.contains("require_strategic_gateway(ctx)?"));
+    }
+
+    #[test]
+    fn equipment_graph_rejects_self_descendant_and_corrupt_ancestor_cycles() {
+        assert!(attachment_would_create_cycle(7, [7], |_| vec![]));
+        assert!(attachment_would_create_cycle(7, [9], |id| match id {
+            9 => vec![8],
+            8 => vec![7],
+            _ => vec![],
+        }));
+        assert!(attachment_would_create_cycle(7, [9], |id| match id {
+            9 => vec![8],
+            8 => vec![9],
+            _ => vec![],
+        }));
+        assert!(!attachment_would_create_cycle(7, [9], |id| {
+            (id == 9).then_some(8).into_iter().collect()
+        }));
+        assert!(!attachment_would_create_cycle(7, [9, 10], |id| match id {
+            9 | 10 => vec![8],
+            _ => vec![],
+        }));
+    }
+
+    #[test]
+    fn equipment_mutation_preflights_before_deleting_the_old_graph_rows() {
+        let source = include_str!("character.rs");
+        let reducer = source
+            .split("fn equip_equipment_internal")
+            .nth(1)
+            .unwrap()
+            .split("pub fn add_and_equip_item")
+            .next()
+            .unwrap();
+        let conflict_check = reducer.find("if !conflicts.is_empty()").unwrap();
+        let parent_check = reducer
+            .find("if targets.len() != placement.parents.len()")
+            .unwrap();
+        let orphan_guard = reducer.find("require_no_equipped_children").unwrap();
+        let mutation = reducer
+            .find("unequip_wearable(ctx, inventory_item_id)")
+            .unwrap();
+        assert!(conflict_check < mutation);
+        assert!(parent_check < mutation);
+        assert!(orphan_guard < mutation);
+
+        let orphan_helper = source
+            .split("fn require_no_equipped_children")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn restore_equipment_placement")
+            .next()
+            .unwrap();
+        assert!(orphan_helper.contains("row.parent_inventory_item_id == Some(inventory_item_id)"));
+        assert!(orphan_helper.contains("Detach or remove attached/contained items first"));
+    }
+
+    #[test]
+    fn multi_location_conflicts_are_collected_without_displacing_any_item() {
+        let left = EquipmentOccupancyRequirement {
+            location: EquipmentLocation::LeftArm,
+            channel: EquipmentChannel::Padding,
+            order: 0,
+        };
+        let right = EquipmentOccupancyRequirement {
+            location: EquipmentLocation::RightArm,
+            channel: EquipmentChannel::Padding,
+            order: 0,
+        };
+        let conflicts = conflicting_root_requirements(&[left, right], 10, |requirement| {
+            match requirement.location {
+                EquipmentLocation::LeftArm => Some(20),
+                EquipmentLocation::RightArm => Some(30),
+                _ => None,
+            }
+        });
+        assert_eq!(conflicts, vec![left, right]);
+        assert!(conflicting_root_requirements(&[left], 20, |_| Some(20)).is_empty());
+    }
+
+    #[test]
+    fn attachment_capacity_is_stable_full_and_reparent_idempotent() {
+        assert_eq!(
+            first_free_attachment_capacity(3, 99, |index| match index {
+                0 => Some(10),
+                1 => None,
+                _ => Some(11),
+            }),
+            Some(1)
+        );
+        assert_eq!(first_free_attachment_capacity(2, 99, |_| Some(10)), None);
+        assert_eq!(
+            first_free_attachment_capacity(2, 99, |index| { (index == 0).then_some(99) }),
+            Some(0),
+            "an item's existing capacity cell remains a valid atomic reparent target"
+        );
+    }
+
+    #[test]
+    fn parent_requirements_match_both_channel_and_authored_order() {
+        let point = EquipmentAttachmentPoint {
+            id: "right".into(),
+            channel: EquipmentChannel::Mount,
+            capacity: 1,
+            order: 1,
+            accepts_tags: Vec::new(),
+        };
+        assert!(attachment_point_matches_requirement(
+            &point,
+            EquipmentParentRequirement {
+                channel: EquipmentChannel::Mount,
+                order: 1,
+            }
+        ));
+        assert!(!attachment_point_matches_requirement(
+            &point,
+            EquipmentParentRequirement {
+                channel: EquipmentChannel::Mount,
+                order: 0,
+            }
+        ));
+    }
+
+    #[test]
+    fn normalized_equipment_mutations_refresh_capability_and_condition() {
+        let source = include_str!("character.rs");
+        let helper = source
+            .split("fn refresh_equipment_dependents")
+            .nth(1)
+            .unwrap()
+            .split("#[reducer]")
+            .next()
+            .unwrap();
+        assert!(helper.contains("refresh_character_capability"));
+        assert!(helper.contains("refresh_character_strategic_condition"));
+        let reducer = source
+            .split("fn equip_equipment_internal")
+            .nth(1)
+            .unwrap()
+            .split("pub fn add_and_equip_item")
+            .next()
+            .unwrap();
+        assert!(reducer.contains("refresh_equipment_dependents(ctx, character_id)"));
     }
 }

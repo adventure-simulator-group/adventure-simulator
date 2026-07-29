@@ -671,12 +671,7 @@ fn commit_encounter_surrender(
                 .delete(loss.inventory_id);
             ctx.db.party_inventory_item().id().delete(loss.inventory_id);
         } else {
-            if let Some(mut equip) = ctx.db.character_equip().character_id().find(loss.owner_id)
-                && crate::repair::is_equipped(&equip, loss.inventory_id)
-            {
-                crate::repair::unequip(&mut equip, loss.inventory_id);
-                ctx.db.character_equip().character_id().update(equip);
-            }
+            crate::character::unequip_wearable(ctx, loss.inventory_id);
             ctx.db
                 .item_condition()
                 .inventory_item_id()
@@ -687,6 +682,7 @@ fn commit_encounter_surrender(
     reconcile_party_pool_ledger(ctx, party_id)?;
     for member_id in living_party_member_ids(ctx, party_id) {
         crate::capability::refresh_character_capability(ctx, member_id)?;
+        crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
     }
     Ok(())
 }
@@ -827,24 +823,12 @@ fn commit_autoresolve_outcome(
         if let Some(id) = exchange.defender_contact_item_id {
             crate::repair::apply_impact(ctx, id, exchange.contact_stress);
         }
-        if exchange.armor_contact
-            && exchange.contact_stress > 0.0
-            && let Some(equip) = ctx
-                .db
-                .character_equip()
-                .character_id()
-                .find(exchange.defender_id)
-        {
-            let armor_id = match exchange.body_part {
-                BodyPart::LeftArm => equip.left_arm_armor_id,
-                BodyPart::RightArm => equip.right_arm_armor_id,
-                BodyPart::LeftLeg => equip.left_leg_armor_id,
-                BodyPart::RightLeg => equip.right_leg_armor_id,
-                BodyPart::Chest => equip.chest_armor_id,
-                BodyPart::Stomach => equip.stomach_armor_id,
-                BodyPart::Head => equip.head_armor_id,
-            };
-            if let Some(id) = armor_id {
+        if exchange.armor_contact && exchange.contact_stress > 0.0 {
+            if let Some(id) = crate::character::outermost_wearable_for_body_part(
+                ctx,
+                exchange.defender_id,
+                exchange.body_part,
+            ) {
                 crate::repair::apply_impact(ctx, id, exchange.contact_stress);
             }
         }

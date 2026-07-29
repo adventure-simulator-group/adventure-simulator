@@ -69,9 +69,53 @@ names. Kinds are `simple`, `currency`, `ingredient`, `medication`, `clothing`,
 
 Kind payloads contain only compatible fields. Weapons require a slot, explicit
 damage types, mode flags, and an explicit finite, non-negative skill
-distribution summing to one. Armor and shields require their relevant
-slot/stat payload. Repairable kinds require a `durability` capability with
+distribution summing to one. Shields require their relevant slot/stat
+payload. Armor and clothing require an `equipment` object, and any other kind
+may author one. It contains stable-ID placement alternatives. A root placement
+has one or more typed occupancy requirements (`location`, `channel`, and
+`order`). A placement may also have a `parents` array of channel/order
+requirements. At equip time, every parent requirement selects a concrete
+equipped item and attachment point, allowing multi-point attachments and
+placements that combine body anchors with parent edges. Armor retains its
+combat stats in the kind payload, while clothing may author shared projection
+stats in `equipment.protection`. For that shared projection, `coverage` is
+required; omitted `padding` and `resistance` default to zero, while omitted
+`flexibility` and `range_of_motion` default to one.
+
+Protection targets are an explicit many-to-many list on each placement using
+the stable seven-part body vocabulary. Never infer protection from physical
+equipment locations: a helmet may occupy head, face, and neck while protecting
+only `head`, and a boot sheath protects nothing. Items may expose ordered,
+capacity-limited `attachment_points` with optional accepted child tags.
+Repairable kinds require a `durability` capability with
 quality 1--5 and explicit physical/handling inputs.
+
+For example, a sided sleeve authors two alternatives:
+
+```json
+"equipment": {
+  "placements": [
+    {
+      "id": "left",
+      "occupancy": [
+        {"location": "left_arm", "channel": "padding", "order": 0}
+      ],
+      "protection": ["left_arm"]
+    },
+    {
+      "id": "right",
+      "occupancy": [
+        {"location": "right_arm", "channel": "padding", "order": 0}
+      ],
+      "protection": ["right_arm"]
+    }
+  ]
+}
+```
+
+A tunic instead authors one atomic placement with four occupancy requirements
+and four explicit protection targets. Do not use `any_arm` or `any_leg` to
+choose a placement.
 
 Capabilities compose independently of kind. Garlic remains an `ingredient`
 while carrying `capabilities.food`; alcohol remains a simple serving while

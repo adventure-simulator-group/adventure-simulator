@@ -45,6 +45,7 @@ pub struct ArmorItem {
     pub resistance: f32,
     pub padding: f32,
     pub flexibility: f32,
+    pub covered_parts: [bool; 7],
 }
 
 #[derive(Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -81,6 +82,25 @@ pub struct ShieldItem {
 pub struct ItemProperties {
     pub id: String,
     pub weight: f32,
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+pub struct EquipmentTopology {
+    pub placement_id: Option<String>,
+    pub occupancies: Vec<EquipmentTopologyOccupancy>,
+}
+
+#[derive(Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct EquipmentTopologyOccupancy {
+    pub occupancy_id: String,
+    pub anchor_kind: String,
+    pub location: Option<String>,
+    pub parent_inventory_item_id: Option<u64>,
+    pub attachment_point_id: Option<String>,
+    pub channel: String,
+    pub order: u16,
+    pub requirement_index: u16,
+    pub capacity_index: u16,
 }
 
 #[derive(
@@ -192,18 +212,39 @@ impl InventoryView<'_, '_, '_> {
             .and_then(|weapon| self.q_item.get(weapon).ok())
     }
 
-    fn equipped_armor_for(&self, slot: EquipSlot) -> Option<ItemQueryItem<'_, '_>> {
-        self.iter().find(|item| {
-            matches!(
-                item,
-                &ItemQueryItem {
-                    slot: Some(&other_slot),
-                    armor: Some(..),
-                    ..
-                } if other_slot == slot
-            )
-        })
+    fn layered_armor_for(&self, part: BodyPart) -> adventuresim_core::equipment::LayeredArmor {
+        fold_armor_layers(
+            body_part_index(part),
+            self.iter().filter_map(|item| item.armor),
+        )
     }
+}
+
+fn fold_armor_layers<'a>(
+    index: usize,
+    armor: impl IntoIterator<Item = &'a ArmorItem>,
+) -> adventuresim_core::equipment::LayeredArmor {
+    let mut result = adventuresim_core::equipment::LayeredArmor {
+        range_of_motion: 1.0,
+        ..Default::default()
+    };
+    let mut weighted_flexibility = 0.0;
+    for armor in armor.into_iter().filter(|armor| armor.covered_parts[index]) {
+        result.coverage = 1.0 - (1.0 - result.coverage) * (1.0 - armor.coverage.clamp(0.0, 1.0));
+        let resistance = armor.resistance.max(0.0);
+        result.resistance += resistance;
+        result.padding += armor.padding.max(0.0);
+        weighted_flexibility += armor.flexibility.clamp(0.0, 1.0) * resistance;
+        result.range_of_motion = result
+            .range_of_motion
+            .min(armor.range_of_motion.clamp(0.0, 1.0));
+    }
+    result.flexibility = if result.resistance > f32::EPSILON {
+        weighted_flexibility / result.resistance
+    } else {
+        0.0
+    };
+    result
 }
 
 impl PlayerEquipment for InventoryView<'_, '_, '_> {
@@ -264,10 +305,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn armor_range_of_motion(&self, part: BodyPart) -> f32 {
-        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
-            .and_then(|item| item.armor)
-            .map(|armor| armor.range_of_motion)
-            .unwrap_or_default()
+        self.layered_armor_for(part).range_of_motion
     }
 
     fn inventory_weight(&self) -> f32 {
@@ -295,31 +333,31 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
     }
 
     fn armor_resistance(&self, part: BodyPart) -> f32 {
-        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
-            .and_then(|item| item.armor)
-            .map(|armor| armor.resistance)
-            .unwrap_or_default()
+        self.layered_armor_for(part).resistance
     }
 
     fn armor_padding(&self, part: BodyPart) -> f32 {
-        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
-            .and_then(|item| item.armor)
-            .map(|armor| armor.padding)
-            .unwrap_or_default()
+        self.layered_armor_for(part).padding
     }
 
     fn armor_flexibility(&self, part: BodyPart) -> f32 {
-        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
-            .and_then(|item| item.armor)
-            .map(|armor| armor.flexibility)
-            .unwrap_or_default()
+        self.layered_armor_for(part).flexibility
     }
 
     fn armor_coverage(&self, part: BodyPart) -> f32 {
-        self.equipped_armor_for(EquipSlot::from_armor_body_part(part))
-            .and_then(|item| item.armor)
-            .map(|armor| armor.coverage)
-            .unwrap_or_default()
+        self.layered_armor_for(part).coverage
+    }
+}
+
+fn body_part_index(part: BodyPart) -> usize {
+    match part {
+        BodyPart::LeftArm => 0,
+        BodyPart::RightArm => 1,
+        BodyPart::LeftLeg => 2,
+        BodyPart::RightLeg => 3,
+        BodyPart::Chest => 4,
+        BodyPart::Stomach => 5,
+        BodyPart::Head => 6,
     }
 }
 
@@ -364,5 +402,100 @@ fn on_equip_slot_removed(mut world: DeferredWorld, ctx: HookContext) {
     }
     if items.holding_shield == Some(ctx.entity) {
         items.holding_shield = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tactical_handoff_folds_multiple_layers_once_per_inventory_item() {
+        let inner = ArmorItem {
+            range_of_motion: 0.9,
+            coverage: 0.5,
+            slot: ArmorSlot::Chest,
+            resistance: 20.0,
+            padding: 30.0,
+            flexibility: 0.8,
+            covered_parts: [false, false, false, false, true, false, false],
+        };
+        let outer = ArmorItem {
+            range_of_motion: 0.7,
+            coverage: 0.8,
+            slot: ArmorSlot::Chest,
+            resistance: 100.0,
+            padding: 10.0,
+            flexibility: 0.2,
+            covered_parts: [false, false, false, false, true, false, false],
+        };
+        let armor = fold_armor_layers(4, [&inner, &outer]);
+        assert_eq!(armor.resistance, 120.0);
+        assert_eq!(armor.padding, 40.0);
+        assert!((armor.coverage - 0.9).abs() < 0.0001);
+        assert_eq!(armor.range_of_motion, 0.7);
+        assert!((armor.flexibility - 0.3).abs() < 0.0001);
+    }
+
+    #[test]
+    fn attached_protection_and_multi_location_projection_do_not_require_legacy_slots() {
+        let attached = ArmorItem {
+            range_of_motion: 1.0,
+            coverage: 0.4,
+            slot: ArmorSlot::Arms(None),
+            resistance: 12.0,
+            padding: 3.0,
+            flexibility: 0.75,
+            covered_parts: [true, true, false, false, false, false, false],
+        };
+        assert_eq!(fold_armor_layers(0, [&attached]).resistance, 12.0);
+        assert_eq!(fold_armor_layers(1, [&attached]).resistance, 12.0);
+        assert_eq!(fold_armor_layers(4, [&attached]).resistance, 0.0);
+    }
+
+    #[test]
+    fn topology_retains_stable_placement_and_attachment_edge_identity() {
+        let topology = EquipmentTopology {
+            placement_id: Some("double_strap".into()),
+            occupancies: vec![
+                EquipmentTopologyOccupancy {
+                    occupancy_id: "character:1:Chest:60:0".into(),
+                    anchor_kind: "CharacterLocation".into(),
+                    location: Some("Chest".into()),
+                    parent_inventory_item_id: None,
+                    attachment_point_id: None,
+                    channel: "Accessory".into(),
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                },
+                EquipmentTopologyOccupancy {
+                    occupancy_id: "item:41:left:0".into(),
+                    anchor_kind: "ItemAttachment".into(),
+                    location: None,
+                    parent_inventory_item_id: Some(41),
+                    attachment_point_id: Some("left".into()),
+                    channel: "Mount".into(),
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                },
+                EquipmentTopologyOccupancy {
+                    occupancy_id: "item:42:right:0".into(),
+                    anchor_kind: "ItemAttachment".into(),
+                    location: None,
+                    parent_inventory_item_id: Some(42),
+                    attachment_point_id: Some("right".into()),
+                    channel: "Mount".into(),
+                    order: 1,
+                    requirement_index: 1,
+                    capacity_index: 0,
+                },
+            ],
+        };
+        assert_eq!(topology.placement_id.as_deref(), Some("double_strap"));
+        assert_eq!(topology.occupancies.len(), 3);
+        assert_eq!(topology.occupancies[1].parent_inventory_item_id, Some(41));
+        assert_eq!(topology.occupancies[2].requirement_index, 1);
     }
 }

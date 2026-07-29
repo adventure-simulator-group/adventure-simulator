@@ -10,8 +10,7 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 use crate::{
     capability::StrategicEquipment,
     character::{
-        character, character_attributes, character_equip, character_limbs, character_skills,
-        character_stats,
+        character, character_attributes, character_limbs, character_skills, character_stats,
     },
     investigation::{character_case_site_id, exact_case_site_for_observer},
     strategic::{
@@ -320,13 +319,7 @@ fn acting_checks(
         .character_id()
         .find(character_id)
         .ok_or("Character stats not found")?;
-    let equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character equipment not found")?;
-    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+    let equipment = StrategicEquipment::load(ctx, character_id);
     let check = |skill| {
         skills.skill_check_by_parts(
             skill,

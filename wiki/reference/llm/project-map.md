@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1445)
+## Files (1469)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -35,6 +35,8 @@ development, or other wiki document before changing a subsystem.
 - `content/dialogue/examples.yaml` — Repository support file.
 - `content/dialogue/organizations.yaml` — Repository support file.
 - `content/dialogue/services.yaml` — Repository support file.
+- `content/items/catalog.yaml` — Repository support file.
+- `content/items/catalog.yaml` — Repository support file.
 - `content/items/catalog.yaml` — Repository support file.
 - `content/organizations/catalog.yaml` — Repository support file.
 - `content/organizations/social-estates.yaml` — Repository support file.
@@ -77,7 +79,11 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/investigation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/investigation_action.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_catalog.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/item_catalog.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/item_catalog.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_catalog_schema.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/item_catalog_validation.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/item_catalog_validation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_catalog_validation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_references.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
@@ -141,6 +147,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/approach_dialogue_witness_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/approve_party_action_request_planned_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/approve_party_action_request_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/attach_item_at_placement_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/authority_arrest_charge_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/authorize_tactical_server_claim_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/automatic_social_chat_type.rs` — Generated SpacetimeDB data type.
@@ -253,8 +260,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_condition_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_death_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_death_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/character_equip_table.rs` — Generated SpacetimeDB table interface.
-- `crates/adventuresim-stdb-client/src/character_equip_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_equipped_item_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_equipped_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_estate_basis_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_familiarity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_filth_table.rs` — Generated SpacetimeDB table interface.
@@ -291,6 +298,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/clear_organization_presentation_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/committed_cut_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/configure_simulation_character_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/connected_equipment_occupancy_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/connected_player_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/connected_player_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/connected_players_table.rs` — Generated SpacetimeDB table interface.
@@ -358,7 +366,19 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/end_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/ensure_settlement_activity_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/enter_mission_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/equip_item_at_placement_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/equip_item_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/equipment_anchor_kind_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_attachment_point_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_attachment_target_selection_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_body_part_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_channel_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_location_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_occupancy_requirement_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_occupancy_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/equipment_occupancy_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_parent_requirement_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/equipment_placement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/evidence_presentation_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fallback_historical_vegetation_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fallback_historical_vegetation_method_type.rs` — Generated SpacetimeDB data type.
@@ -513,6 +533,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/mission_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mission_outcome_candidate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mixed_lithology_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_type.rs` — Generated SpacetimeDB data type.
@@ -1048,6 +1070,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/settlement/mod.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/rest.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/social.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/trade.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/trade.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/trade.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/travel.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.

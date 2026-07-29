@@ -53,12 +53,33 @@ therefore chooses between lower burden and greater protection.
 
 ## Representation and gameplay inference
 
-The current item schema has one armor item per existing body slot, with no
-layering field. A `mail_shirt`, for example, is a chest-slot alternative to a
-brigandine rather than a simultaneous underlayer. This is an explicit temporary
-representation constraint, not a claim that period armor was worn in one
-layer. Adding layering, ammunition-specific projectile behavior, or rust
-belongs to later corrosion work.
+Equipment authors one or more stable-ID placements. Root placements claim
+physical body locations in an explicit occupancy channel and order; attached
+placements require compatible points on already equipped parents. A placement
+can require several parent points and can mix those edges with body occupancy.
+A `mail_shirt` therefore occupies its authored torso locations at the flexible
+armor channel while a brigandine can cover the same locations at the rigid
+armor channel. A multi-location equip or reparent either claims every
+destination or changes nothing; conflicts are reported before mutation.
+Sided pieces provide explicit left and right placement alternatives.
+
+The normalized equipment graph supports body → belt → sheath → weapon,
+body → belt → bag → contents, and body → forearm/boot sheath → weapon.
+The catalog sword sheath uses two belt mount requirements, exercising
+multi-point attachment against the belt's ordered mount points.
+Attachment points have an authored channel, traversal order, capacity, and
+optional accepted child tags. Removing or moving an item with children is
+rejected in player-facing reducers, so no operation can orphan descendants.
+
+The equipment topology is finer than the stable seven-part combat and health
+model. Each placement explicitly lists the stable body parts it protects;
+physical location never implies protection. A boot knife or holster therefore
+adds no foot or leg armor. Layered protection folds each authored mapping into
+its combat body part: padding and
+resistance sum, coverage is `1 - product(1 - coverage)`, range of motion uses
+the minimum, and flexibility is resistance-weighted (defined as zero when
+total resistance is zero). Contact wear applies only to the deterministic
+outermost applicable item.
 
 Weapons carry an explicit distribution across Polearm, Axe, Bludgeon, Sword,
 Knife, Bow, Crossbow, Firearm, and Throw. Hybrid weapons split equally among
@@ -79,11 +100,10 @@ masterwork item without restoring it completely. Damage can never occupy a tier 
 quality: only quality-5 equipment can acquire violet tier-5 damage.
 
 Clothing condition and Tailor repair are authoritative for damaged clothing
-instances, including seeded and imported damage. Ordinary clothing wear is not
-yet generated because clothing has no equipped/worn slot in the current item
-model; carried inventory is deliberately not worn down as if it were being
-worn. Routine wear should begin when clothing becomes equippable and can
-participate in the same contact and use paths as other equipment.
+instances, including seeded and imported damage. Clothing uses the same
+equipment protection projection as armor, so padding, resistance, coverage, flexibility,
+and range of motion are available to combat and future survival systems.
+Carried inventory is deliberately not worn down as if it were being worn.
 
 Quality uses the same 1--5 scale and is shown by the item name using the corresponding condition
 color, adjusted toward the fixed light interface text color for readability. Quality 3 is ordinary
@@ -97,9 +117,15 @@ price, or any other item property.
 The local catalog assigns several starter and demo items across all five qualities so the Wounded
 Demo fixture exercises each color and repair ceiling.
 
-Equippable personal-inventory rows expose a checkbox backed by the item's catalog slot. Checking
-it equips that exact inventory instance, displacing any item already occupying the selected slot;
-unchecking it unequips the instance. Non-equipment rows keep a disabled checkbox.
+Equippable personal-inventory rows expose a checkbox. The chooser lists every
+valid authored placement with occupancy channels, protected body parts, and
+compatible free attachment points. Each parent requirement gets its own target
+selection. Equipped inventory also provides a location-grouped, outside-in
+layer summary, lists multi-location spans once, and names every parent
+attachment edge. Equipping never silently displaces another item; conflicts,
+descendant targets, and full/incompatible attachment points are excluded or
+reported exactly. Non-equipment rows keep a disabled checkbox.
+
 Medication reuses the same familiar checkbox gesture without occupying an
 equipment slot. Checking it administers and consumes the quantity-one
 preparation as a standard course; it cannot be unchecked after administration.
@@ -122,6 +148,10 @@ retain damage beyond the smith's skill, and never expire. A job's stable quote i
 skill contribute. The quote is charged atomically from personal gold when the repaired item is
 retrieved. Bulk collection is deterministic: orders are considered by submission time and ID, and
 the affordable prefix is retrieved without skipping an earlier unaffordable job.
+Submitting an equipped item snapshots its stable placement and every parent
+edge. Retrieval restores that exact graph atomically; if a saved parent or
+capacity is unavailable, retrieval fails without consuming payment or
+releasing the escrowed item.
 
 Impact damage uses each item's explicit yield, fracture, wear, and failure-share values. Ductile
 armor yields and dents readily but resists catastrophic fracture; stiff weapons resist ordinary

@@ -4,8 +4,9 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::connected_equipment_occupancy_type::ConnectedEquipmentOccupancy;
+use super::equipment_body_part_type::EquipmentBodyPart;
 use super::item_condition_type::ItemCondition;
-use super::item_slot_type::ItemSlot;
 use super::item_type::Item;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -14,7 +15,9 @@ pub struct ConnectedPlayerItem {
     pub inventory_item_id: u64,
     pub quantity: u32,
     pub item: Item,
-    pub equipped: Option<ItemSlot>,
+    pub selected_placement_id: Option<String>,
+    pub occupancies: Vec<ConnectedEquipmentOccupancy>,
+    pub protected_body_parts: Vec<EquipmentBodyPart>,
     pub condition: Option<ItemCondition>,
 }
 

@@ -2,14 +2,15 @@ use adventuresim_core::autoresolve::CombatProjectileKind;
 use adventuresim_core::prelude::*;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
+use crate::character::{character_equipped_item as _, equipment_occupancy as _};
 use crate::condition::{character_condition as _, character_needs as _};
 use crate::food::food_lot as _;
 use crate::item::item as _;
 use crate::repair::item_condition as _;
 use crate::{
-    CharacterAttributes, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterStats,
-    InventoryItem, Item, ItemKind, character_attributes, character_equip, character_limbs,
-    character_skills, character_stats, inventory_item,
+    CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, InventoryItem, Item,
+    ItemKind, character_attributes, character_limbs, character_skills, character_stats,
+    inventory_item,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,12 +87,6 @@ pub fn evaluate_character(
         .character_id()
         .find(character_id)
         .ok_or("Character skills not found")?;
-    let equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character equipment not found")?;
     let body = ctx
         .db
         .character_limbs()
@@ -104,7 +99,7 @@ pub fn evaluate_character(
         .character_id()
         .find(character_id)
         .ok_or("Character stats not found")?;
-    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+    let equipment = StrategicEquipment::load(ctx, character_id);
     Ok(evaluate_capabilities(
         &attributes,
         &body,
@@ -270,12 +265,12 @@ pub(crate) struct StrategicEquipment {
     ammunition: u32,
     shield: Option<Item>,
     shield_inventory_id: Option<u64>,
-    armor: [Option<Item>; 7],
+    armor: [adventuresim_core::equipment::LayeredArmor; 7],
     inventory_weight: f32,
 }
 
 impl StrategicEquipment {
-    pub(crate) fn load(ctx: &ReducerContext, character_id: u64, equip: &CharacterEquip) -> Self {
+    pub(crate) fn load(ctx: &ReducerContext, character_id: u64) -> Self {
         let definition = |inventory_id: Option<u64>| {
             let id = inventory_id?;
             let inventory = ctx.db.inventory_item().id().find(id)?;
@@ -292,9 +287,24 @@ impl StrategicEquipment {
             }
             Some(item)
         };
+        let normalized_hand = |location| {
+            ctx.db
+                .equipment_occupancy()
+                .character_id()
+                .filter(character_id)
+                .find(|row| {
+                    row.location == Some(location)
+                        && row.channel == crate::item::EquipmentChannel::Held
+                })
+                .map(|row| row.inventory_item_id)
+        };
+        let hand_inventory_ids = [
+            normalized_hand(crate::item::EquipmentLocation::LeftHand),
+            normalized_hand(crate::item::EquipmentLocation::RightHand),
+        ];
         let hands = [
-            definition(equip.left_hand_item_id),
-            definition(equip.right_hand_item_id),
+            definition(hand_inventory_ids[0]),
+            definition(hand_inventory_ids[1]),
         ];
         let weapon_index = hands.iter().position(|item| {
             item.as_ref()
@@ -319,7 +329,7 @@ impl StrategicEquipment {
                 item.as_ref()
                     .is_some_and(|item| item.kind == ItemKind::Shield)
             })
-            .and_then(|index| [equip.left_hand_item_id, equip.right_hand_item_id][index]);
+            .and_then(|index| hand_inventory_ids[index]);
         let melee_weapon = hands
             .iter()
             .flatten()
@@ -338,7 +348,7 @@ impl StrategicEquipment {
                 item.as_ref()
                     .is_some_and(|item| item.kind == ItemKind::Weapon && item.melee)
             })
-            .and_then(|index| [equip.left_hand_item_id, equip.right_hand_item_id][index]);
+            .and_then(|index| hand_inventory_ids[index]);
         let ranged_weapon = hands
             .iter()
             .flatten()
@@ -357,7 +367,7 @@ impl StrategicEquipment {
                 item.as_ref()
                     .is_some_and(|item| item.kind == ItemKind::Weapon && item.ranged)
             })
-            .and_then(|index| [equip.left_hand_item_id, equip.right_hand_item_id][index]);
+            .and_then(|index| hand_inventory_ids[index]);
         let ammunition = ctx
             .db
             .inventory_item()
@@ -366,15 +376,55 @@ impl StrategicEquipment {
             .filter(|inventory| inventory.item_id == "arrow")
             .map(|inventory| inventory.quantity)
             .sum();
-        let armor = [
-            definition(equip.left_arm_armor_id),
-            definition(equip.right_arm_armor_id),
-            definition(equip.left_leg_armor_id),
-            definition(equip.right_leg_armor_id),
-            definition(equip.chest_armor_id),
-            definition(equip.stomach_armor_id),
-            definition(equip.head_armor_id),
-        ];
+        let mut armor = [adventuresim_core::equipment::LayeredArmor::default(); 7];
+        for part in BodyPart::FULL_BODY.iter() {
+            let pieces = ctx
+                .db
+                .character_equipped_item()
+                .character_id()
+                .filter(character_id)
+                .filter_map(|equipped| {
+                    let inventory = ctx
+                        .db
+                        .inventory_item()
+                        .id()
+                        .find(equipped.inventory_item_id)?;
+                    let item = definition(Some(inventory.id))?;
+                    let placement = item
+                        .equipment_placements
+                        .iter()
+                        .find(|placement| placement.id == equipped.placement_id)?;
+                    if !placement
+                        .protection
+                        .iter()
+                        .any(|target| runtime_body_part(*target) == part)
+                    {
+                        return None;
+                    }
+                    let (channel, order) = ctx
+                        .db
+                        .equipment_occupancy()
+                        .inventory_item_id()
+                        .filter(inventory.id)
+                        .max_by_key(|row| (row.channel.order(), row.order))
+                        .map_or((crate::item::EquipmentChannel::Containment, 0), |row| {
+                            (row.channel, row.order)
+                        });
+                    Some(adventuresim_core::equipment::WearableProtection {
+                        inventory_item_id: inventory.id,
+                        body_part: part,
+                        channel: core_equipment_channel(channel),
+                        order,
+                        coverage: item.coverage,
+                        resistance: item.resistance,
+                        padding: item.padding,
+                        flexibility: item.flexibility,
+                        range_of_motion: item.range_of_motion,
+                    })
+                });
+            armor[body_part_index(part)] =
+                adventuresim_core::equipment::aggregate_layered_armor(part, pieces);
+        }
         let dry_inventory_weight: f32 = ctx
             .db
             .inventory_item()
@@ -438,17 +488,8 @@ impl StrategicEquipment {
         )
     }
 
-    fn armor_for(&self, part: BodyPart) -> Option<&Item> {
-        let index = match part {
-            BodyPart::LeftArm => 0,
-            BodyPart::RightArm => 1,
-            BodyPart::LeftLeg => 2,
-            BodyPart::RightLeg => 3,
-            BodyPart::Chest => 4,
-            BodyPart::Stomach => 5,
-            BodyPart::Head => 6,
-        };
-        self.armor[index].as_ref()
+    fn armor_for(&self, part: BodyPart) -> adventuresim_core::equipment::LayeredArmor {
+        self.armor[body_part_index(part)]
     }
 
     pub(crate) fn combat_equipment(&self) -> CombatEquipment {
@@ -458,15 +499,14 @@ impl StrategicEquipment {
             ..CombatArmor::default()
         }; 7];
         for part in BodyPart::FULL_BODY.iter() {
-            if let Some(item) = self.armor_for(part) {
-                armor[body_part_index(part)] = CombatArmor {
-                    resistance: item.resistance,
-                    padding: item.padding,
-                    flexibility: item.flexibility,
-                    range_of_motion: item.range_of_motion,
-                    coverage: item.coverage,
-                };
-            }
+            let item = self.armor_for(part);
+            armor[body_part_index(part)] = CombatArmor {
+                resistance: item.resistance,
+                padding: item.padding,
+                flexibility: item.flexibility,
+                range_of_motion: item.range_of_motion,
+                coverage: item.coverage,
+            };
         }
         CombatEquipment {
             weapon: self.weapon.as_ref().map(combat_weapon),
@@ -498,6 +538,37 @@ fn hand_side(index: usize) -> BodySide {
         BodySide::Left
     } else {
         BodySide::Right
+    }
+}
+
+fn core_equipment_channel(
+    channel: crate::item::EquipmentChannel,
+) -> adventuresim_core::item_catalog::EquipmentChannel {
+    use crate::item::EquipmentChannel as E;
+    use adventuresim_core::item_catalog::EquipmentChannel as C;
+    match channel {
+        E::Held => C::Held,
+        E::BaseClothing => C::BaseClothing,
+        E::Padding => C::Padding,
+        E::FlexibleArmor => C::FlexibleArmor,
+        E::RigidArmor => C::RigidArmor,
+        E::Outerwear => C::Outerwear,
+        E::Accessory => C::Accessory,
+        E::Mount => C::Mount,
+        E::Containment => C::Containment,
+    }
+}
+
+fn runtime_body_part(part: crate::item::EquipmentBodyPart) -> BodyPart {
+    use crate::item::EquipmentBodyPart as E;
+    match part {
+        E::LeftArm => BodyPart::LeftArm,
+        E::RightArm => BodyPart::RightArm,
+        E::LeftLeg => BodyPart::LeftLeg,
+        E::RightLeg => BodyPart::RightLeg,
+        E::Chest => BodyPart::Chest,
+        E::Stomach => BodyPart::Stomach,
+        E::Head => BodyPart::Head,
     }
 }
 
@@ -577,20 +648,19 @@ impl PlayerEquipment for StrategicEquipment {
         self.shield.as_ref().map_or(0.0, |item| item.block)
     }
     fn armor_resistance(&self, part: BodyPart) -> f32 {
-        self.armor_for(part).map_or(0.0, |item| item.resistance)
+        self.armor_for(part).resistance
     }
     fn armor_padding(&self, part: BodyPart) -> f32 {
-        self.armor_for(part).map_or(0.0, |item| item.padding)
+        self.armor_for(part).padding
     }
     fn armor_flexibility(&self, part: BodyPart) -> f32 {
-        self.armor_for(part).map_or(1.0, |item| item.flexibility)
+        self.armor_for(part).flexibility
     }
     fn armor_range_of_motion(&self, part: BodyPart) -> f32 {
-        self.armor_for(part)
-            .map_or(1.0, |item| item.range_of_motion)
+        self.armor_for(part).range_of_motion
     }
     fn armor_coverage(&self, part: BodyPart) -> f32 {
-        self.armor_for(part).map_or(0.0, |item| item.coverage)
+        self.armor_for(part).coverage
     }
     fn inventory_weight(&self) -> f32 {
         self.inventory_weight
@@ -617,12 +687,6 @@ pub(crate) fn load_combatant(
         .character_id()
         .find(character_id)
         .ok_or("Character skills not found")?;
-    let equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character equipment not found")?;
     let limbs = ctx
         .db
         .character_limbs()
@@ -641,7 +705,7 @@ pub(crate) fn load_combatant(
         .character_id()
         .find(character_id)
         .ok_or("Character condition not found")?;
-    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+    let equipment = StrategicEquipment::load(ctx, character_id);
     let combat_equipment = equipment.combat_equipment();
     let initial_ammunition = combat_equipment.ammunition;
 

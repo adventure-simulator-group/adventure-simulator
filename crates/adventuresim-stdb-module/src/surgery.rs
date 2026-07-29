@@ -16,8 +16,8 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::character::character;
 use crate::{
-    CharacterLimbs, character_attributes, character_condition, character_equip, character_limbs,
-    character_skills, character_stats, character_time, infection_episode, inventory_item,
+    CharacterLimbs, character_attributes, character_condition, character_limbs, character_skills,
+    character_stats, character_time, infection_episode, inventory_item,
 };
 
 pub const BRUISE_HEALING_PER_DAY: f32 = 0.035;
@@ -702,12 +702,6 @@ fn procedure_check(
         .character_id()
         .find(actor_id)
         .ok_or("Character skills not found")?;
-    let equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(actor_id)
-        .ok_or("Character equipment not found")?;
     let body = ctx
         .db
         .character_limbs()
@@ -720,7 +714,7 @@ fn procedure_check(
         .character_id()
         .find(actor_id)
         .ok_or("Character stats not found")?;
-    let equipment = crate::capability::StrategicEquipment::load(ctx, actor_id, &equip);
+    let equipment = crate::capability::StrategicEquipment::load(ctx, actor_id);
     let check = |skill| {
         skills.skill_check_by_parts(
             skill,

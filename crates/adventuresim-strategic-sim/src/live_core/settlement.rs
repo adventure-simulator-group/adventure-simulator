@@ -912,27 +912,6 @@ impl LiveRunner {
         if !repair_service_available {
             return Ok(());
         }
-        let equipped = self
-            .connection
-            .db
-            .character_equip()
-            .iter()
-            .find(|row| row.character_id == character_id)
-            .ok_or("missing maintenance equipment state")?;
-        let equipped_slots: HashMap<u64, ItemSlot> = [
-            (equipped.left_hand_item_id, ItemSlot::LeftHolding),
-            (equipped.right_hand_item_id, ItemSlot::RightHolding),
-            (equipped.left_arm_armor_id, ItemSlot::LeftArm),
-            (equipped.right_arm_armor_id, ItemSlot::RightArm),
-            (equipped.left_leg_armor_id, ItemSlot::LeftLeg),
-            (equipped.right_leg_armor_id, ItemSlot::RightLeg),
-            (equipped.head_armor_id, ItemSlot::Head),
-            (equipped.chest_armor_id, ItemSlot::Chest),
-            (equipped.stomach_armor_id, ItemSlot::Stomach),
-        ]
-        .into_iter()
-        .filter_map(|(id, slot)| id.map(|id| (id, slot)))
-        .collect();
         let now = self
             .connection
             .db
@@ -1176,19 +1155,27 @@ impl LiveRunner {
                     order.item_id, order.id, order.quoted_cost
                 ),
             );
-            if let Some(slot) = equipped_slots.get(&order.inventory_item_id).copied() {
-                let result = reducer_call!(self, "reequip_repaired_item", |cb| self
-                    .connection
-                    .reducers
-                    .equip_item_then(character_id, order.inventory_item_id, slot, cb));
-                self.call(result)?;
+            if let Some(placement_id) = order.equipped_placement_id.as_deref() {
                 let verified = self
                     .connection
                     .db
-                    .character_equip()
+                    .character_equipped_item()
                     .iter()
-                    .find(|row| row.character_id == character_id)
-                    .is_some_and(|row| equipped_at(&row, slot, order.inventory_item_id));
+                    .any(|row| {
+                        row.character_id == character_id
+                            && row.inventory_item_id == order.inventory_item_id
+                            && row.placement_id == placement_id
+                    })
+                    && order.attachment_targets.iter().all(|target| {
+                        self.connection.db.equipment_occupancy().iter().any(|row| {
+                            row.inventory_item_id == order.inventory_item_id
+                                && row.requirement_index == target.requirement_index
+                                && row.parent_inventory_item_id
+                                    == Some(target.parent_inventory_item_id)
+                                && row.attachment_point_id
+                                    == Some(target.attachment_point_id.clone())
+                        })
+                    });
                 if !verified {
                     return Err("repaired equipped item was not authoritatively re-equipped".into());
                 }

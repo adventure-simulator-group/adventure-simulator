@@ -12,7 +12,7 @@ use crate::strategic::{
 };
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
-    character_equip, character_limbs, character_skills, character_stats, character_time,
+    character_limbs, character_skills, character_stats, character_time,
     character_training_schedule, inventory_item,
 };
 
@@ -473,13 +473,7 @@ pub(crate) fn mental_check(
         .character_id()
         .find(character_id)
         .ok_or("Character skills not found")?;
-    let equip = ctx
-        .db
-        .character_equip()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character equipment not found")?;
-    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
+    let equipment = StrategicEquipment::load(ctx, character_id);
     Ok(skills.skill_check_by_parts(
         skill,
         &attributes,

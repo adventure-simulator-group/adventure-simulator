@@ -28,6 +28,23 @@ const MISSION_TIMEOUT_SECS: f32 = 300.0;
 /// Level map size.
 const TERRAIN_SIZE: usize = 100;
 
+fn tactical_covered_parts(parts: &[EquipmentBodyPart]) -> [bool; 7] {
+    let mut covered = [false; 7];
+    for part in parts {
+        let index = match part {
+            EquipmentBodyPart::LeftArm => 0,
+            EquipmentBodyPart::RightArm => 1,
+            EquipmentBodyPart::LeftLeg => 2,
+            EquipmentBodyPart::RightLeg => 3,
+            EquipmentBodyPart::Chest => 4,
+            EquipmentBodyPart::Stomach => 5,
+            EquipmentBodyPart::Head => 6,
+        };
+        covered[index] = true;
+    }
+    covered
+}
+
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "adventuresim-tactical-server")]
 #[command(about = "Tactical mission server for Adventure Simulator")]
@@ -365,11 +382,28 @@ fn spawn_connected_player(
                 id: item.item.id.clone(),
             },
         ));
+        item_cmd.insert(EquipmentTopology {
+            placement_id: item.selected_placement_id.clone(),
+            occupancies: item
+                .occupancies
+                .iter()
+                .map(|occupancy| EquipmentTopologyOccupancy {
+                    occupancy_id: occupancy.id.clone(),
+                    anchor_kind: format!("{:?}", occupancy.anchor_kind),
+                    location: occupancy.location.map(|location| format!("{location:?}")),
+                    parent_inventory_item_id: occupancy.parent_inventory_item_id,
+                    attachment_point_id: occupancy.attachment_point_id.clone(),
+                    channel: format!("{:?}", occupancy.channel),
+                    order: occupancy.order,
+                    requirement_index: occupancy.requirement_index,
+                    capacity_index: occupancy.capacity_index,
+                })
+                .collect(),
+        });
 
         match item.item.kind {
             ItemKind::Simple
             | ItemKind::Container
-            | ItemKind::Clothing
             | ItemKind::Currency
             | ItemKind::Ingredient
             | ItemKind::Medication
@@ -394,79 +428,44 @@ fn spawn_connected_player(
                     precise: item.item.precise,
                 });
             }
-            ItemKind::Armor => {
-                if let Some(slot) = match item.item.slot {
-                    ItemSlot::LeftArm => Some(ArmorSlot::Arms(Some(ArmorSide::Left))),
-                    ItemSlot::RightArm => Some(ArmorSlot::Arms(Some(ArmorSide::Right))),
-                    ItemSlot::AnyArm => Some(ArmorSlot::Arms(None)),
-                    ItemSlot::LeftLeg => Some(ArmorSlot::Legs(Some(ArmorSide::Left))),
-                    ItemSlot::RightLeg => Some(ArmorSlot::Legs(Some(ArmorSide::Right))),
-                    ItemSlot::AnyLeg => Some(ArmorSlot::Legs(None)),
-                    ItemSlot::Head => Some(ArmorSlot::Head),
-                    ItemSlot::Chest => Some(ArmorSlot::Chest),
-                    ItemSlot::Stomach => Some(ArmorSlot::Stomach),
-                    slot => {
-                        warn!(
-                            "Got armor item '{}' with an invalid slot {slot:?} for Player#{}",
-                            item.item.id, player.character.id
-                        );
-                        None
-                    }
-                } {
-                    item_cmd.insert(ArmorItem {
-                        range_of_motion: item.item.range_of_motion,
-                        coverage: item.item.coverage,
-                        slot,
-                        resistance: item.item.resistance,
-                        padding: item.item.padding,
-                        flexibility: item.item.flexibility,
-                    });
-                }
-            }
+            ItemKind::Armor | ItemKind::Clothing => {}
             ItemKind::Shield => {
                 item_cmd.insert(ShieldItem {
                     block: item.item.block,
                 });
             }
         }
+        if let Some(part) = item.protected_body_parts.first() {
+            let slot = match part {
+                EquipmentBodyPart::LeftArm => ArmorSlot::Arms(Some(ArmorSide::Left)),
+                EquipmentBodyPart::RightArm => ArmorSlot::Arms(Some(ArmorSide::Right)),
+                EquipmentBodyPart::LeftLeg => ArmorSlot::Legs(Some(ArmorSide::Left)),
+                EquipmentBodyPart::RightLeg => ArmorSlot::Legs(Some(ArmorSide::Right)),
+                EquipmentBodyPart::Head => ArmorSlot::Head,
+                EquipmentBodyPart::Chest => ArmorSlot::Chest,
+                EquipmentBodyPart::Stomach => ArmorSlot::Stomach,
+            };
+            item_cmd.insert(ArmorItem {
+                range_of_motion: item.item.range_of_motion,
+                coverage: item.item.coverage,
+                slot,
+                resistance: item.item.resistance,
+                padding: item.item.padding,
+                flexibility: item.item.flexibility,
+                covered_parts: tactical_covered_parts(&item.protected_body_parts),
+            });
+        }
 
-        match item.equipped {
-            Some(ItemSlot::LeftHolding) => {
-                item_cmd.insert(EquipSlot::HoldingLeft);
-            }
-            Some(ItemSlot::RightHolding) => {
-                item_cmd.insert(EquipSlot::HoldingRight);
-            }
-            Some(ItemSlot::LeftArm) => {
-                item_cmd.insert(EquipSlot::ArmorLeftArm);
-            }
-            Some(ItemSlot::RightArm) => {
-                item_cmd.insert(EquipSlot::ArmorRightArm);
-            }
-            Some(ItemSlot::LeftLeg) => {
-                item_cmd.insert(EquipSlot::ArmorLeftLeg);
-            }
-            Some(ItemSlot::RightLeg) => {
-                item_cmd.insert(EquipSlot::ArmorRightLeg);
-            }
-            Some(ItemSlot::Chest) => {
-                item_cmd.insert(EquipSlot::ArmorChest);
-            }
-            Some(ItemSlot::Stomach) => {
-                item_cmd.insert(EquipSlot::ArmorStomach);
-            }
-            Some(ItemSlot::Head) => {
-                item_cmd.insert(EquipSlot::ArmorHead);
-            }
-            slot @ Some(
-                ItemSlot::None | ItemSlot::AnyHolding | ItemSlot::AnyArm | ItemSlot::AnyLeg,
-            ) => {
-                warn!(
-                    "Got equipped item '{}' with an invalid equip slot {slot:?} for Player#{}",
-                    item.item.id, player.character.id
-                );
-            }
-            _ => {}
+        if item.occupancies.iter().any(|occupancy| {
+            occupancy.channel == EquipmentChannel::Held
+                && occupancy.location == Some(EquipmentLocation::LeftHand)
+        }) {
+            item_cmd.insert(EquipSlot::HoldingLeft);
+        } else if item.occupancies.iter().any(|occupancy| {
+            occupancy.channel == EquipmentChannel::Held
+                && occupancy.location == Some(EquipmentLocation::RightHand)
+        }) {
+            item_cmd.insert(EquipSlot::HoldingRight);
         }
     }
 

@@ -1,6 +1,5 @@
 use crate::{
-    character::character_equip, inventory_amount::inventory_item_amount, repair::item_condition,
-    strategic::settlement,
+    inventory_amount::inventory_item_amount, repair::item_condition, strategic::settlement,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 use strum::{EnumCount, VariantArray};
@@ -128,6 +127,116 @@ pub enum ItemSlot {
     AnyLeg,
 }
 
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EquipmentChannel {
+    Held,
+    BaseClothing,
+    Padding,
+    FlexibleArmor,
+    RigidArmor,
+    Outerwear,
+    Accessory,
+    Mount,
+    Containment,
+}
+
+impl EquipmentChannel {
+    pub const fn order(self) -> u8 {
+        match self {
+            Self::Held => 0,
+            Self::BaseClothing => 10,
+            Self::Padding => 20,
+            Self::FlexibleArmor => 30,
+            Self::RigidArmor => 40,
+            Self::Outerwear => 50,
+            Self::Accessory => 60,
+            Self::Mount => 70,
+            Self::Containment => 80,
+        }
+    }
+
+    pub const fn singleton_per_location(self) -> bool {
+        matches!(
+            self,
+            Self::Held
+                | Self::BaseClothing
+                | Self::Padding
+                | Self::FlexibleArmor
+                | Self::RigidArmor
+                | Self::Outerwear
+        )
+    }
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EquipmentLocation {
+    Head,
+    Face,
+    Neck,
+    Chest,
+    Stomach,
+    Back,
+    LeftShoulder,
+    RightShoulder,
+    LeftArm,
+    RightArm,
+    LeftHand,
+    RightHand,
+    LeftLeg,
+    RightLeg,
+    LeftFoot,
+    RightFoot,
+    LeftBelt,
+    RightBelt,
+    FrontBelt,
+    BackBelt,
+    LeftPocket,
+    RightPocket,
+    BackLeftPocket,
+    BackRightPocket,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EquipmentBodyPart {
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Chest,
+    Stomach,
+    Head,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EquipmentOccupancyRequirement {
+    pub location: EquipmentLocation,
+    pub channel: EquipmentChannel,
+    pub order: u16,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EquipmentParentRequirement {
+    pub channel: EquipmentChannel,
+    pub order: u16,
+}
+
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub struct EquipmentPlacement {
+    pub id: String,
+    pub occupancy: Vec<EquipmentOccupancyRequirement>,
+    pub parents: Vec<EquipmentParentRequirement>,
+    pub protection: Vec<EquipmentBodyPart>,
+}
+
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub struct EquipmentAttachmentPoint {
+    pub id: String,
+    pub channel: EquipmentChannel,
+    pub capacity: u16,
+    pub order: u16,
+    pub accepts_tags: Vec<String>,
+}
+
 /// Item stats
 #[derive(Clone, Debug, Default)]
 #[table(accessor = item, public)]
@@ -137,6 +246,9 @@ pub struct Item {
     pub weight: f32,
     pub slot: ItemSlot,
     pub kind: ItemKind,
+    pub equipment_placements: Vec<EquipmentPlacement>,
+    pub attachment_tags: Vec<String>,
+    pub attachment_points: Vec<EquipmentAttachmentPoint>,
     /// Whether this definition has authored durability and receives condition rows.
     pub repairable: bool,
     pub accuracy: f32,
@@ -186,7 +298,10 @@ pub struct Item {
 /// Projects a typed authored definition into the intentionally flattened
 /// SpacetimeDB ABI used by strategic persistence and existing clients.
 fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefinition) -> Item {
-    use adventuresim_core::item_catalog::{DamageType, ItemKind as K, Slot};
+    use adventuresim_core::item_catalog::{
+        DamageType, EquipmentBodyPart as B, EquipmentChannel as C, EquipmentLocation as L,
+        ItemKind as K, Slot,
+    };
     let mut item = Item {
         id: definition.id.clone(),
         weight: definition.weight_kg,
@@ -208,6 +323,103 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         Slot::AnyArm => ItemSlot::AnyArm,
         Slot::AnyLeg => ItemSlot::AnyLeg,
     };
+    let location = |location| match location {
+        L::Head => EquipmentLocation::Head,
+        L::Face => EquipmentLocation::Face,
+        L::Neck => EquipmentLocation::Neck,
+        L::Chest => EquipmentLocation::Chest,
+        L::Stomach => EquipmentLocation::Stomach,
+        L::Back => EquipmentLocation::Back,
+        L::LeftShoulder => EquipmentLocation::LeftShoulder,
+        L::RightShoulder => EquipmentLocation::RightShoulder,
+        L::LeftArm => EquipmentLocation::LeftArm,
+        L::RightArm => EquipmentLocation::RightArm,
+        L::LeftHand => EquipmentLocation::LeftHand,
+        L::RightHand => EquipmentLocation::RightHand,
+        L::LeftLeg => EquipmentLocation::LeftLeg,
+        L::RightLeg => EquipmentLocation::RightLeg,
+        L::LeftFoot => EquipmentLocation::LeftFoot,
+        L::RightFoot => EquipmentLocation::RightFoot,
+        L::LeftBelt => EquipmentLocation::LeftBelt,
+        L::RightBelt => EquipmentLocation::RightBelt,
+        L::FrontBelt => EquipmentLocation::FrontBelt,
+        L::BackBelt => EquipmentLocation::BackBelt,
+        L::LeftPocket => EquipmentLocation::LeftPocket,
+        L::RightPocket => EquipmentLocation::RightPocket,
+        L::BackLeftPocket => EquipmentLocation::BackLeftPocket,
+        L::BackRightPocket => EquipmentLocation::BackRightPocket,
+    };
+    let channel = |channel| match channel {
+        C::Held => EquipmentChannel::Held,
+        C::BaseClothing => EquipmentChannel::BaseClothing,
+        C::Padding => EquipmentChannel::Padding,
+        C::FlexibleArmor => EquipmentChannel::FlexibleArmor,
+        C::RigidArmor => EquipmentChannel::RigidArmor,
+        C::Outerwear => EquipmentChannel::Outerwear,
+        C::Accessory => EquipmentChannel::Accessory,
+        C::Mount => EquipmentChannel::Mount,
+        C::Containment => EquipmentChannel::Containment,
+    };
+    let body_part = |part| match part {
+        B::LeftArm => EquipmentBodyPart::LeftArm,
+        B::RightArm => EquipmentBodyPart::RightArm,
+        B::LeftLeg => EquipmentBodyPart::LeftLeg,
+        B::RightLeg => EquipmentBodyPart::RightLeg,
+        B::Chest => EquipmentBodyPart::Chest,
+        B::Stomach => EquipmentBodyPart::Stomach,
+        B::Head => EquipmentBodyPart::Head,
+    };
+    if let Some(equipment) = &definition.equipment {
+        item.attachment_tags = equipment.attachment_tags.clone();
+        item.equipment_placements = equipment
+            .placements
+            .iter()
+            .map(|placement| EquipmentPlacement {
+                id: placement.id.clone(),
+                occupancy: placement
+                    .occupancy
+                    .iter()
+                    .map(|requirement| EquipmentOccupancyRequirement {
+                        location: location(requirement.location),
+                        channel: channel(requirement.channel),
+                        order: requirement.order,
+                    })
+                    .collect(),
+                parents: placement
+                    .parents
+                    .iter()
+                    .map(|parent| EquipmentParentRequirement {
+                        channel: channel(parent.channel),
+                        order: parent.order,
+                    })
+                    .collect(),
+                protection: placement
+                    .protection
+                    .iter()
+                    .copied()
+                    .map(body_part)
+                    .collect(),
+            })
+            .collect();
+        item.attachment_points = equipment
+            .attachment_points
+            .iter()
+            .map(|point| EquipmentAttachmentPoint {
+                id: point.id.clone(),
+                channel: channel(point.channel),
+                capacity: point.capacity,
+                order: point.order,
+                accepts_tags: point.accepts_tags.clone(),
+            })
+            .collect();
+        if let Some(protection) = equipment.protection {
+            item.coverage = protection.coverage;
+            item.resistance = protection.resistance;
+            item.padding = protection.padding;
+            item.flexibility = protection.flexibility;
+            item.range_of_motion = protection.range_of_motion;
+        }
+    }
     match &definition.kind {
         K::Simple => item.kind = ItemKind::Simple,
         K::Container {
@@ -219,7 +431,9 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         K::Currency => item.kind = ItemKind::Currency,
         K::Ingredient => item.kind = ItemKind::Ingredient,
         K::Medication => item.kind = ItemKind::Medication,
-        K::Clothing => item.kind = ItemKind::Clothing,
+        K::Clothing => {
+            item.kind = ItemKind::Clothing;
+        }
         K::Food => item.kind = ItemKind::Food,
         K::Shield {
             slot: authored_slot,
@@ -560,16 +774,13 @@ pub fn change_inventory_item(
             if instances.len() < remove as usize {
                 return Err("not enough durable instances to remove".into());
             }
-            let mut equip = ctx.db.character_equip().character_id().find(character_id);
             let removal_ids = adventuresim_core::durability::durable_removal_ids(
                 instances
                     .iter()
                     .map(|item| {
                         (
                             item.id,
-                            equip
-                                .as_ref()
-                                .is_some_and(|equip| crate::repair::is_equipped(equip, item.id)),
+                            crate::character::wearable_is_equipped(ctx, item.id),
                         )
                     })
                     .collect(),
@@ -577,21 +788,16 @@ pub fn change_inventory_item(
             );
             let mut equipment_changed = false;
             for id in removal_ids {
-                if let Some(equip) = equip.as_mut()
-                    && crate::repair::is_equipped(equip, id)
-                {
-                    crate::repair::unequip(equip, id);
+                if crate::character::wearable_is_equipped(ctx, id) {
+                    crate::character::unequip_wearable(ctx, id);
                     equipment_changed = true;
                 }
                 ctx.db.inventory_item().id().delete(id);
                 ctx.db.item_condition().inventory_item_id().delete(id);
             }
             if equipment_changed {
-                ctx.db
-                    .character_equip()
-                    .character_id()
-                    .update(equip.expect("equipment exists when it changed"));
                 crate::capability::refresh_character_capability(ctx, character_id)?;
+                crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
             }
         }
         return Ok(());
