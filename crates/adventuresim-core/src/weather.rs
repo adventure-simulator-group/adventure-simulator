@@ -81,7 +81,8 @@ pub fn weather_at(
     );
     let mut moisture = 0u32;
     let mut snow = 0u32;
-    for age in (0..HISTORY_INTERVALS).rev() {
+    let available_history = HISTORY_INTERVALS.min(interval.saturating_add(1));
+    for age in (0..available_history).rev() {
         let sample = interval_weather(
             world_seed,
             interval.saturating_sub(age),
@@ -220,11 +221,11 @@ pub fn snow_training_exposure(
     snow_cover_bps: u16,
     road_discount_bps: u16,
 ) -> (u32, u32) {
-    let snow_share = u64::from(snow_cover_bps.min(10_000))
+    let discounted = u64::from(travel_minutes)
         * u64::from(10_000u16.saturating_sub(road_discount_bps.min(10_000)))
         / 10_000;
-    let snow_minutes = u64::from(travel_minutes) * snow_share / 10_000;
-    (travel_minutes, snow_minutes as u32)
+    let snow_minutes = discounted * u64::from(snow_cover_bps.min(10_000)) / 10_000;
+    ((discounted - snow_minutes) as u32, snow_minutes as u32)
 }
 
 #[cfg(test)]
@@ -237,6 +238,20 @@ mod tests {
         assert_eq!(a, weather_at(42, 123_456, 53_551_000, 9_993_000, 10));
         assert_eq!(a, weather_at(42, 123_457, 53_599_999, 9_999_999, 10));
         assert_eq!(a.rules_version, WEATHER_RULES_VERSION);
+    }
+
+    #[test]
+    fn epoch_start_samples_interval_zero_once() {
+        let snapshot = weather_at(42, 0, 53_000_000, 10_000_000, 0);
+        let sample = interval_weather(42, 0, snapshot.cell_latitude, snapshot.cell_longitude, 0);
+        let (moisture, snow) = advance_ground(
+            0,
+            0,
+            sample,
+            temperature_deci_c(0, snapshot.cell_latitude, 0),
+        );
+        assert_eq!(snapshot.ground_moisture_bps, moisture.min(10_000) as u16);
+        assert_eq!(snapshot.snow_cover_bps, snow.min(10_000) as u16);
     }
 
     #[test]
@@ -302,11 +317,11 @@ mod tests {
         assert_eq!(snow_overlay_check(3_000, 5_000, 0), 3_000);
         assert!(snow_overlay_check(3_000, 5_000, 8_000) > 3_000);
         let (underlying, snow) = snow_training_exposure(600, 8_000, 2_500);
-        assert_eq!(underlying, 600);
+        assert_eq!(underlying, 90);
         assert_eq!(snow, 360);
-        let chunks: u32 = (0..6)
-            .map(|_| snow_training_exposure(100, 8_000, 2_500).1)
-            .sum();
-        assert_eq!(snow, chunks);
+        let chunks = (0..6)
+            .map(|_| snow_training_exposure(100, 8_000, 2_500))
+            .fold((0, 0), |sum, value| (sum.0 + value.0, sum.1 + value.1));
+        assert_eq!((underlying, snow), chunks);
     }
 }

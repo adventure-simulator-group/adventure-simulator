@@ -12,6 +12,8 @@ hydrology is never projected onto arbitrary cells. Departure route payloads
 attest the weather rules version, aligned interval, condition, intensity,
 antecedent moisture, and snow cover. Validation rejects unbounded or
 inconsistent snapshots, and the gateway cache distinguishes them.
+Route search, duration, persisted span weights, and `check_millirank` all use
+the same departure overlay; weather is not a post-processing adjustment.
 
 Rain only increases effective Wetlands when the imported normalized weight is
 at least 100/1000. Displaced weights are deterministically renormalized to keep

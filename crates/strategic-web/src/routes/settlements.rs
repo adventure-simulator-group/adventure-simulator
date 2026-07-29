@@ -1066,6 +1066,7 @@ async fn settlement_map(
                 crate::routes::party_terrain_profile(&state, character)
                     .await
                     .unwrap_or_default()
+                    .0
             } else {
                 adventuresim_terrain::TerrainSkillProfile::default()
             };

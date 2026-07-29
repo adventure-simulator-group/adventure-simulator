@@ -11,8 +11,10 @@ renormalize the displaced underlying weights. A separate bounded saturation
 value slows travel through mud and waterlogging, including terrain already at
 100% Wetlands.
 
-Snow cover is a separate overlay, never a sixth biome weight. It supplements
-the ordinary terrain check and trains Snow in addition to the underlying biome.
+Snow cover is a separate overlay, never a sixth biome weight. It blends Snow
+expertise with the ordinary terrain check. Cover splits the road-discounted
+training budget between Snow and the underlying biome rather than duplicating
+exposure.
 
 The terrain profile currently affects strategic routing and can select possible scene context. Tactical resolution of hazardous terrain is intended but not yet implemented; [#212](https://github.com/adventure-simulator-group/adventure-simulator/issues/212) tracks the handoff and committed-result contract.
 The world map is a grid where each square has a height and an enum for the terrain type. Each of these affect both the speed of travel and the difficulty of climb/swim check to avoid injury. We should not try and create our own, we should be able to find both height and biome data from some open GIS dataset. At minimum, it should be easy to find modern data for these, but there may also be a historical dataset that we can use.

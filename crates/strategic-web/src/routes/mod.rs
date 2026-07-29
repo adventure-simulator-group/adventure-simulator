@@ -316,7 +316,7 @@ pub(crate) async fn execute_or_request_party_action(
 pub(crate) async fn party_terrain_profile(
     state: &AppState,
     actor: &Character,
-) -> Result<adventuresim_terrain::TerrainSkillProfile, String> {
+) -> Result<(adventuresim_terrain::TerrainSkillProfile, u16), String> {
     let member_ids = if let Some(party_id) = actor.party_id.as_deref() {
         state
             .db
@@ -332,7 +332,14 @@ pub(crate) async fn party_terrain_profile(
     } else {
         vec![actor.id]
     };
-    let mut checks = [Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    let mut checks = [
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    ];
     for id in member_ids {
         let Some(character) = state
             .db
@@ -390,6 +397,7 @@ pub(crate) async fn party_terrain_profile(
             adventuresim_core::skill::Skill::TerrainHills,
             adventuresim_core::skill::Skill::TerrainWetlands,
             adventuresim_core::skill::Skill::TerrainUrban,
+            adventuresim_core::skill::Skill::TerrainSnow,
         ]
         .into_iter()
         .enumerate()
@@ -413,18 +421,65 @@ pub(crate) async fn party_terrain_profile(
             * 1_000.0)
             .round() as u16
     };
-    Ok(adventuresim_terrain::TerrainSkillProfile {
-        plains: aggregate(&checks[0]),
-        forest: aggregate(&checks[1]),
-        hills: aggregate(&checks[2]),
-        wetlands: aggregate(&checks[3]),
-        urban: aggregate(&checks[4]),
-    })
+    Ok((
+        adventuresim_terrain::TerrainSkillProfile {
+            plains: aggregate(&checks[0]),
+            forest: aggregate(&checks[1]),
+            hills: aggregate(&checks[2]),
+            wetlands: aggregate(&checks[3]),
+            urban: aggregate(&checks[4]),
+        },
+        aggregate(&checks[5]),
+    ))
 }
 
 fn terrain_mental_check(training_rank: f32, intelligence: f32, head_health: f32) -> f32 {
     let head_health = head_health.clamp(0.0, 1.0);
     training_rank.min(intelligence.clamp(0.0, 5.0)) * head_health
+}
+
+async fn authoritative_party_departure_minute(
+    state: &AppState,
+    actor: &Character,
+) -> Result<u64, String> {
+    let member_ids = if let Some(party_id) = actor.party_id.as_deref() {
+        state
+            .db
+            .query::<PartyMember>(&format!(
+                "SELECT * FROM party_member WHERE party_id = {}",
+                sql_string_literal(party_id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|member| member.character_id)
+            .collect::<Vec<_>>()
+    } else {
+        vec![actor.id]
+    };
+    let mut departure = 0;
+    for id in member_ids {
+        let living = state
+            .db
+            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+            .await
+            .map_err(|error| error.to_string())?
+            .is_some_and(|character| character.alive);
+        if !living {
+            continue;
+        }
+        if let Some(time) = state
+            .db
+            .query_one::<CharacterTime>(&format!(
+                "SELECT * FROM character_time WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            departure = departure.max(time.minutes);
+        }
+    }
+    Ok(departure)
 }
 
 async fn planned_travel_call(
@@ -441,7 +496,7 @@ async fn planned_travel_call(
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Character not found")?;
-    let terrain_profile = party_terrain_profile(state, &character).await?;
+    let (terrain_profile, snow_check_millirank) = party_terrain_profile(state, &character).await?;
     let (reducer, destination) = match action {
         PartyAction::TravelToSettlement { settlement_id } => {
             let destination = state
@@ -527,14 +582,7 @@ async fn planned_travel_call(
     } else {
         return Ok(None);
     };
-    let departure_minute = state
-        .db
-        .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {actor_id}"
-        ))
-        .await
-        .map_err(|error| error.to_string())?
-        .map_or(0, |time| time.minutes);
+    let departure_minute = authoritative_party_departure_minute(state, &character).await?;
     let elevation_m = terrain
         .forage_environment(origin.0, origin.1)
         .map(|(cell, _, _)| cell.elevation_m)
@@ -547,7 +595,13 @@ async fn planned_travel_call(
         elevation_m,
     );
     let plan = match terrain
-        .plan_with_profile_and_weather(origin, destination, terrain_profile, Some(weather))
+        .plan_with_profile_and_weather(
+            origin,
+            destination,
+            terrain_profile,
+            Some(weather),
+            snow_check_millirank,
+        )
         .await
     {
         Ok(plan) => plan,
@@ -558,7 +612,13 @@ async fn planned_travel_call(
     };
     let return_plan = if matches!(action, PartyAction::TravelToCaseSite { .. }) {
         match terrain
-            .plan_with_profile_and_weather(destination, origin, terrain_profile, Some(weather))
+            .plan_with_profile_and_weather(
+                destination,
+                origin,
+                terrain_profile,
+                Some(weather),
+                snow_check_millirank,
+            )
             .await
         {
             Ok(plan) => Some(plan),

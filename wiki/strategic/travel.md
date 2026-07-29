@@ -14,8 +14,10 @@ produce ground moisture and snow cover; there are no per-tile weather rows.
 Routing snapshots the weather rules version, interval, precipitation,
 intensity, moisture, and snow cover at departure. The snapshot participates in
 route cache identity and is persisted with route authority. Rain may increase
-effective Wetlands and mud duration, while snow cover supplements terrain
-training. An active journey is never rerouted as later intervals pass.
+effective Wetlands before path search and add mud duration. Snow cover blends
+the party's Snow expertise into route checks and cost before path search, then
+splits (without duplicating) the road-discounted training budget. An active
+journey is never rerouted as later intervals pass.
 
 ## Route planning
 

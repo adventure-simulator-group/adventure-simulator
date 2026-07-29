@@ -1002,9 +1002,9 @@ fn journey_weather_status(route: &PartyJourneyRoute) -> Markup {
     };
     html! {
         p class="journey-weather-status text-muted small-copy"
-            aria-label=(format!("Current weather: {weather}; ground condition: {ground}")) {
+            aria-label=(format!("Departure conditions: {weather}; ground condition: {ground}")) {
             span class="travel-resource-icon" { (decorative_game_icon(icon)) }
-            strong { (weather) }
+            strong { "Departure: " (weather) }
             " · " (ground)
         }
     }
@@ -1072,8 +1072,8 @@ mod tests {
             return_route: None,
         };
         let rendered = journey_weather_status(&route).into_string();
-        assert!(rendered.contains("Current weather: Rain; ground condition: waterlogged"));
-        assert!(rendered.contains("<strong>Rain</strong>"));
+        assert!(rendered.contains("Departure conditions: Rain; ground condition: waterlogged"));
+        assert!(rendered.contains("<strong>Departure: Rain</strong>"));
         assert!(rendered.contains("water-drop.svg"));
     }
     use crate::spacetimedb::*;

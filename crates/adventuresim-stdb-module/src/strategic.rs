@@ -14004,6 +14004,18 @@ fn validate_journey_route_payload(
     Ok(())
 }
 
+fn validate_route_departure_weather_interval(
+    route: &JourneyRoutePlan,
+    departure_minute: u64,
+) -> Result<(), String> {
+    let expected = departure_minute / adventuresim_core::weather::WEATHER_INTERVAL_MINUTES
+        * adventuresim_core::weather::WEATHER_INTERVAL_MINUTES;
+    if route.weather_interval_start != expected {
+        return Err("Terrain route weather snapshot is stale after clock synchronization".into());
+    }
+    Ok(())
+}
+
 fn validate_return_journey_route(
     ctx: &ReducerContext,
     route: &JourneyRoutePlan,
@@ -14924,12 +14936,14 @@ fn terrain_training_exposure(
             continue;
         }
         let hours = overlap as f32 / 60.0 * f32::from(span.training_multiplier_permille) / 1_000.0;
-        exposure[0] += hours * f32::from(span.terrain.plains) / 1_000.0;
-        exposure[1] += hours * f32::from(span.terrain.forest) / 1_000.0;
-        exposure[2] += hours * f32::from(span.terrain.hills) / 1_000.0;
-        exposure[3] += hours * f32::from(span.terrain.wetlands) / 1_000.0;
-        exposure[4] += hours * f32::from(span.terrain.urban) / 1_000.0;
-        exposure[5] += hours * f32::from(snow_cover_bps.min(10_000)) / 10_000.0;
+        let snow_share = f32::from(snow_cover_bps.min(10_000)) / 10_000.0;
+        let underlying_hours = hours * (1.0 - snow_share);
+        exposure[0] += underlying_hours * f32::from(span.terrain.plains) / 1_000.0;
+        exposure[1] += underlying_hours * f32::from(span.terrain.forest) / 1_000.0;
+        exposure[2] += underlying_hours * f32::from(span.terrain.hills) / 1_000.0;
+        exposure[3] += underlying_hours * f32::from(span.terrain.wetlands) / 1_000.0;
+        exposure[4] += underlying_hours * f32::from(span.terrain.urban) / 1_000.0;
+        exposure[5] += hours * snow_share;
     }
     exposure
 }
@@ -16799,6 +16813,16 @@ mod departure_invariant_tests {
     }
 
     #[test]
+    fn departure_weather_interval_closes_clock_sync_boundary() {
+        let mut route = route_fixture();
+        route.weather_interval_start = 0;
+        assert!(validate_route_departure_weather_interval(&route, 359).is_ok());
+        assert!(validate_route_departure_weather_interval(&route, 360).is_err());
+        route.weather_interval_start = 360;
+        assert!(validate_route_departure_weather_interval(&route, 360).is_ok());
+    }
+
+    #[test]
     fn max_rank_seventy_five_hundred_metres_per_hour_route_is_accepted() {
         let mut route = route_fixture();
         route.minutes = route.distance_m.saturating_mul(60).div_ceil(7_500);
@@ -16863,6 +16887,10 @@ mod departure_invariant_tests {
             assert!((chunked[index] + resumed[index] - whole[index]).abs() < 0.0001);
         }
         assert!(whole[5] > 0.0, "snow supplements underlying exposure");
+        assert!(
+            (whole.into_iter().sum::<f32>() - 8.25 / 60.0).abs() < 0.0001,
+            "snow splits rather than duplicates the road-discounted budget"
+        );
     }
 
     #[test]
@@ -17102,6 +17130,7 @@ fn travel_to_case_site_impl(
         f64::from(lead.latitude_e7) / 10_000_000.0,
     );
     if let Some(route) = route.as_ref() {
+        validate_route_departure_weather_interval(route, departure_minute)?;
         validate_journey_route(ctx, route, origin_coordinates, destination)?;
         validate_return_journey_route(ctx, route, destination, origin_coordinates)?;
     }
@@ -17371,6 +17400,9 @@ fn travel_to_settlement_impl(
         vec![character_id]
     };
     let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
+    if let Some(route) = route.as_ref() {
+        validate_route_departure_weather_interval(route, departure_minute)?;
+    }
     if let Some(current_party) = party.as_ref() {
         let expected_leader_id = current_party.leader_id;
         party = Some(revalidate_party_after_departure_sync(
