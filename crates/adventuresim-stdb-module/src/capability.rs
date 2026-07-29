@@ -247,6 +247,7 @@ impl PlayerSkills for CharacterSkills {
             Skill::TerrainHills => self.terrain_hills_hours,
             Skill::TerrainWetlands => self.terrain_wetlands_hours,
             Skill::TerrainUrban => self.terrain_urban_hours,
+            Skill::TerrainSnow => self.terrain_snow_hours,
             Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
         }

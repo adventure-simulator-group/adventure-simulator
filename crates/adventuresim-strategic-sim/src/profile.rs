@@ -356,6 +356,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         terrain_hills: initial(&mut rng),
         terrain_wetlands: initial(&mut rng),
         terrain_urban: initial(&mut rng),
+        terrain_snow: initial(&mut rng),
         tailoring: initial(&mut rng),
         smithing: initial(&mut rng),
     };

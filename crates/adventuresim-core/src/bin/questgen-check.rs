@@ -16,6 +16,7 @@ fn context(seed: u64, ordinal: u16) -> GenerationContext {
         },
         ordinal,
         now_minute: 10_000,
+        incident_weather: adventuresim_core::weather::Precipitation::Clear,
         requested_family: None,
         witness_candidates: test_witnesses(),
     }

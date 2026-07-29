@@ -609,6 +609,7 @@ fn apply_training(
         terrain_hills: skills.terrain_hills_hours,
         terrain_wetlands: skills.terrain_wetlands_hours,
         terrain_urban: skills.terrain_urban_hours,
+        terrain_snow: skills.terrain_snow_hours,
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
@@ -715,6 +716,7 @@ fn apply_training(
     skills.terrain_hills_hours = hours.terrain_hills;
     skills.terrain_wetlands_hours = hours.terrain_wetlands;
     skills.terrain_urban_hours = hours.terrain_urban;
+    skills.terrain_snow_hours = hours.terrain_snow;
     skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
     excess
@@ -787,6 +789,7 @@ fn apply_organization_training(
                 "terrain_urban" => {
                     award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award)
                 }
+                "terrain_snow" => award_direct(Skill::TerrainSnow, &mut hours.terrain_snow, award),
                 "tailoring" => award_direct(Skill::Tailoring, &mut hours.tailoring, award),
                 "smithing" => award_direct(Skill::Smithing, &mut hours.smithing, award),
                 _ => {}
@@ -812,6 +815,7 @@ fn apply_organization_training(
                     award_direct(Skill::TerrainWetlands, &mut hours.terrain_wetlands, award)
                 }
                 "urban" => award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award),
+                "snow" => award_direct(Skill::TerrainSnow, &mut hours.terrain_snow, award),
                 _ => {}
             },
             TrainingTarget::EquippedWeaponSkills => {

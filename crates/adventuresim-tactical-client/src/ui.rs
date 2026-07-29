@@ -380,7 +380,8 @@ fn update_skills_ui(
             | Skill::TerrainForest
             | Skill::TerrainHills
             | Skill::TerrainWetlands
-            | Skill::TerrainUrban => "0.00".into(),
+            | Skill::TerrainUrban
+            | Skill::TerrainSnow => "0.00".into(),
             Skill::Tailoring => format!("{:.2}", skills.tailoring_hours),
             Skill::Smithing => format!("{:.2}", skills.smithing_hours),
         };

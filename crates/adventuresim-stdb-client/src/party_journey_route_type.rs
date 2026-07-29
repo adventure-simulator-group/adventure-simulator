@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::journey_precipitation_type::JourneyPrecipitation;
 use super::journey_route_leg_type::JourneyRouteLeg;
 use super::journey_route_point_type::JourneyRoutePoint;
 use super::journey_terrain_span_type::JourneyTerrainSpan;
@@ -14,6 +15,12 @@ pub struct PartyJourneyRoute {
     pub party_id: String,
     pub gateway_bucket: u8,
     pub package_digest: String,
+    pub weather_rules_version: u16,
+    pub weather_interval_start: u64,
+    pub precipitation: JourneyPrecipitation,
+    pub intensity_bps: u16,
+    pub ground_moisture_bps: u16,
+    pub snow_cover_bps: u16,
     pub distance_m: u64,
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
@@ -32,6 +39,12 @@ pub struct PartyJourneyRouteCols {
     pub party_id: __sdk::__query_builder::Col<PartyJourneyRoute, String>,
     pub gateway_bucket: __sdk::__query_builder::Col<PartyJourneyRoute, u8>,
     pub package_digest: __sdk::__query_builder::Col<PartyJourneyRoute, String>,
+    pub weather_rules_version: __sdk::__query_builder::Col<PartyJourneyRoute, u16>,
+    pub weather_interval_start: __sdk::__query_builder::Col<PartyJourneyRoute, u64>,
+    pub precipitation: __sdk::__query_builder::Col<PartyJourneyRoute, JourneyPrecipitation>,
+    pub intensity_bps: __sdk::__query_builder::Col<PartyJourneyRoute, u16>,
+    pub ground_moisture_bps: __sdk::__query_builder::Col<PartyJourneyRoute, u16>,
+    pub snow_cover_bps: __sdk::__query_builder::Col<PartyJourneyRoute, u16>,
     pub distance_m: __sdk::__query_builder::Col<PartyJourneyRoute, u64>,
     pub minutes: __sdk::__query_builder::Col<PartyJourneyRoute, u64>,
     pub points: __sdk::__query_builder::Col<PartyJourneyRoute, Vec<JourneyRoutePoint>>,
@@ -46,6 +59,21 @@ impl __sdk::__query_builder::HasCols for PartyJourneyRoute {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             package_digest: __sdk::__query_builder::Col::new(table_name, "package_digest"),
+            weather_rules_version: __sdk::__query_builder::Col::new(
+                table_name,
+                "weather_rules_version",
+            ),
+            weather_interval_start: __sdk::__query_builder::Col::new(
+                table_name,
+                "weather_interval_start",
+            ),
+            precipitation: __sdk::__query_builder::Col::new(table_name, "precipitation"),
+            intensity_bps: __sdk::__query_builder::Col::new(table_name, "intensity_bps"),
+            ground_moisture_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "ground_moisture_bps",
+            ),
+            snow_cover_bps: __sdk::__query_builder::Col::new(table_name, "snow_cover_bps"),
             distance_m: __sdk::__query_builder::Col::new(table_name, "distance_m"),
             minutes: __sdk::__query_builder::Col::new(table_name, "minutes"),
             points: __sdk::__query_builder::Col::new(table_name, "points"),

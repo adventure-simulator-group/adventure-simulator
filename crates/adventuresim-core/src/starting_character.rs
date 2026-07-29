@@ -111,6 +111,7 @@ pub struct StartingSkills {
     pub terrain_hills: f32,
     pub terrain_wetlands: f32,
     pub terrain_urban: f32,
+    pub terrain_snow: f32,
     pub tailoring: f32,
     pub smithing: f32,
 }
@@ -427,6 +428,7 @@ pub fn generate(
         terrain_hills: 0.0,
         terrain_wetlands: 0.0,
         terrain_urban: 0.0,
+        terrain_snow: 0.0,
         tailoring: 300.0,
         smithing: 300.0,
     };
@@ -618,6 +620,7 @@ fn set_fixed_skill(
         "terrain_hills" => skills.terrain_hills = hours,
         "terrain_wetlands" => skills.terrain_wetlands = hours,
         "terrain_urban" => skills.terrain_urban = hours,
+        "terrain_snow" => skills.terrain_snow = hours,
         "tailoring" => skills.tailoring = hours,
         "smithing" => skills.smithing = hours,
         "polearm" => skills.polearm = hours,
@@ -664,6 +667,7 @@ fn fixed_skill_hours(skills: &StartingSkills, skill: &str) -> Option<(Skill, f32
         "terrain_hills" => (Skill::TerrainHills, skills.terrain_hills),
         "terrain_wetlands" => (Skill::TerrainWetlands, skills.terrain_wetlands),
         "terrain_urban" => (Skill::TerrainUrban, skills.terrain_urban),
+        "terrain_snow" => (Skill::TerrainSnow, skills.terrain_snow),
         "tailoring" => (Skill::Tailoring, skills.tailoring),
         "smithing" => (Skill::Smithing, skills.smithing),
         _ => return None,
@@ -763,6 +767,7 @@ fn apply_training_target(
             "hills" => skills.terrain_hills = hours,
             "wetlands" => skills.terrain_wetlands = hours,
             "urban" => skills.terrain_urban = hours,
+            "snow" => skills.terrain_snow = hours,
             _ => return Err("unknown terrain in starting package"),
         },
         TrainingTarget::EquippedWeaponSkills => {

@@ -53,6 +53,7 @@ pub mod stub;
 pub mod surgery;
 pub mod threat_escalation;
 mod threat_escalation_limits;
+pub mod weather;
 
 pub mod prelude {
     pub use crate::activity::*;
@@ -78,4 +79,5 @@ pub mod prelude {
     pub use crate::strategic_economy::*;
     pub use crate::strategic_schedule::*;
     pub use crate::strategic_time::*;
+    pub use crate::weather::*;
 }

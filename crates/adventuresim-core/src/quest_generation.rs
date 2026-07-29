@@ -277,6 +277,8 @@ pub struct GenerationContext {
     pub scope: Scope,
     pub ordinal: u16,
     pub now_minute: u64,
+    /// Private incident-time precipitation snapshot committed with generation.
+    pub incident_weather: crate::weather::Precipitation,
     pub requested_family: Option<TemplateFamily>,
     pub witness_candidates: Vec<WitnessCandidate>,
 }
@@ -1058,7 +1060,18 @@ pub fn generated_testimony_pipeline(
         },
         disclosed_text: Some(draft.spoken_text.clone()),
         transmitted_text: draft.spoken_text.clone(),
-        perception: PerceptionCondition::Clear,
+        perception: match context.incident_weather {
+            crate::weather::Precipitation::Clear => {
+                if matches!(witness.circumstance, Circumstance::NightWindow) {
+                    PerceptionCondition::Darkness
+                } else {
+                    PerceptionCondition::Clear
+                }
+            }
+            crate::weather::Precipitation::Rain | crate::weather::Precipitation::Snow => {
+                PerceptionCondition::PoorPerception
+            }
+        },
         memory: if draft.reliability == Reliability::Mistaken {
             MemoryCondition::Confused
         } else {
@@ -4245,6 +4258,7 @@ pub fn audit(seeds: u64) -> BTreeMap<TemplateFamily, u64> {
             },
             ordinal: 0,
             now_minute: 1_000,
+            incident_weather: crate::weather::Precipitation::Clear,
             requested_family: None,
             witness_candidates: test_witnesses(),
         };
@@ -4682,6 +4696,7 @@ mod tests {
             },
             ordinal: 0,
             now_minute: 50_000,
+            incident_weather: crate::weather::Precipitation::Clear,
             requested_family: Some(family),
             witness_candidates: test_witnesses(),
         }
@@ -4848,6 +4863,26 @@ mod tests {
             }
             assert!(claim_count >= generated.witnesses.len());
         }
+    }
+
+    #[test]
+    fn incident_weather_changes_perception_without_changing_reliability_stages() {
+        use crate::investigation::PerceptionCondition;
+        let clear_context = context(7, TemplateFamily::RecurringDepredation);
+        let generated = generate(&clear_context).unwrap();
+        let witness = &generated.witnesses[0];
+        let (_, clear) =
+            generated_testimony_pipeline(&clear_context, 1, &generated, witness, 0, 50_000)
+                .unwrap();
+        let mut rainy_context = clear_context.clone();
+        rainy_context.incident_weather = crate::weather::Precipitation::Rain;
+        let (_, rainy) =
+            generated_testimony_pipeline(&rainy_context, 1, &generated, witness, 0, 50_000)
+                .unwrap();
+        assert_eq!(rainy.perception, PerceptionCondition::PoorPerception);
+        assert_eq!(rainy.memory, clear.memory);
+        assert_eq!(rainy.disclosure, clear.disclosure);
+        assert_eq!(rainy.transmitted_text, clear.transmitted_text);
     }
 
     #[test]

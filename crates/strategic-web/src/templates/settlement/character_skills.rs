@@ -82,6 +82,7 @@ fn terrain_family_rank(skills: &CharacterSkills, aptitude: f32) -> f32 {
         Skill::TerrainHills,
         Skill::TerrainWetlands,
         Skill::TerrainUrban,
+        Skill::TerrainSnow,
     ]
     .into_iter()
     .map(|skill| {
@@ -92,7 +93,7 @@ fn terrain_family_rank(skills: &CharacterSkills, aptitude: f32) -> f32 {
     })
     .map(finite_rank)
     .sum::<f32>()
-        / 5.0
+        / 6.0
 }
 
 fn strongest_oral_language(skills: &CharacterSkills) -> OralLanguage {
@@ -449,6 +450,7 @@ pub(super) fn character_summary_icons(
         ("Hills", Skill::TerrainHills),
         ("Wetlands", Skill::TerrainWetlands),
         ("Urban", Skill::TerrainUrban),
+        ("Snow", Skill::TerrainSnow),
     ]
     .into_iter()
     .map(|(label, skill)| {
@@ -735,6 +737,7 @@ fn training_target_skill(
             "terrain_hills" => Some(Skill::TerrainHills),
             "terrain_wetlands" => Some(Skill::TerrainWetlands),
             "terrain_urban" => Some(Skill::TerrainUrban),
+            "terrain_snow" => Some(Skill::TerrainSnow),
             "tailoring" => Some(Skill::Tailoring),
             "smithing" => Some(Skill::Smithing),
             _ => None,
@@ -747,6 +750,7 @@ fn training_target_skill(
             "hills" => Some(Skill::TerrainHills),
             "wetlands" => Some(Skill::TerrainWetlands),
             "urban" => Some(Skill::TerrainUrban),
+            "snow" => Some(Skill::TerrainSnow),
             _ => None,
         },
         TrainingTarget::EquippedWeaponSkills => Some(Skill::Polearm),
@@ -1066,13 +1070,19 @@ fn terrain_skill_rows(
             Skill::TerrainUrban,
             skills.terrain_urban_hours,
         ),
+        (
+            "Snow",
+            "terrain",
+            Skill::TerrainSnow,
+            skills.terrain_snow_hours,
+        ),
     ];
     let rank = terrain_family_rank(skills, aptitude);
     let average_hours = entries
         .iter()
         .map(|entry| finite_hours(entry.3))
         .sum::<f32>()
-        / 5.0;
+        / 6.0;
     let average_effective_hours = entries
         .iter()
         .map(|entry| CharacterSkillHours(skills).effective_skill_hours(entry.2))
@@ -1789,6 +1799,7 @@ impl PlayerSkills for CharacterSkillHours<'_> {
             Skill::TerrainHills => skills.terrain_hills_hours,
             Skill::TerrainWetlands => skills.terrain_wetlands_hours,
             Skill::TerrainUrban => skills.terrain_urban_hours,
+            Skill::TerrainSnow => skills.terrain_snow_hours,
             Skill::Anatomy => skills.anatomy_hours,
             Skill::Tailoring => skills.tailoring_hours,
             Skill::Smithing => skills.smithing_hours,
@@ -2555,6 +2566,7 @@ mod tests {
             terrain_hills_hours: 0.0,
             terrain_wetlands_hours: 0.0,
             terrain_urban_hours: 0.0,
+            terrain_snow_hours: 0.0,
             anatomy_hours: 0.0,
             tailoring_hours: 0.0,
             smithing_hours: 0.0,

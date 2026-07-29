@@ -5,6 +5,19 @@ every imported travel edge. The record is a static strategic fact used for
 travel planning and encounter selection. It never persists tactical positions,
 damage, HP, enemies, or simulation ticks.
 
+Weather is a calculation-only overlay over this immutable package. Version 1
+uses coarse quarter-degree cells and six-hour absolute-time intervals. Route
+cells use their own imported elevation and wetland facts; settlement soil or
+hydrology is never projected onto arbitrary cells. Departure route payloads
+attest the weather rules version, aligned interval, condition, intensity,
+antecedent moisture, and snow cover. Validation rejects unbounded or
+inconsistent snapshots, and the gateway cache distinguishes them.
+
+Rain only increases effective Wetlands when the imported normalized weight is
+at least 100/1000. Displaced weights are deterministically renormalized to keep
+the five-member total at 1000. Independent saturation severity allows a
+1000/1000 wetland to become slower without corrupting the mixture.
+
 ## Geometry and elevation
 
 Viabundus supplies topology and endpoint coordinates rather than complete road

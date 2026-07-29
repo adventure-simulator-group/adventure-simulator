@@ -1897,6 +1897,7 @@ mod tests {
             },
             ordinal: 0,
             now_minute: 100,
+            incident_weather: crate::weather::Precipitation::Clear,
             requested_family: Some(TemplateFamily::RecurringDepredation),
             witness_candidates: test_witnesses(),
         }

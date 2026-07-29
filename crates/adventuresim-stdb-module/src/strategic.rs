@@ -1610,6 +1610,7 @@ mod healing_tests {
                 },
                 ordinal: 0,
                 now_minute: 10_000,
+                incident_weather: adventuresim_core::weather::Precipitation::Clear,
                 requested_family: Some(family),
                 witness_candidates: adventuresim_core::quest_generation::test_witnesses(),
             },
@@ -1728,6 +1729,7 @@ mod healing_tests {
             },
             ordinal: 0,
             now_minute: 10_000,
+            incident_weather: adventuresim_core::weather::Precipitation::Clear,
             requested_family: Some(TemplateFamily::DisappearanceOrLoss),
             witness_candidates: adventuresim_core::quest_generation::test_witnesses(),
         };
@@ -4480,11 +4482,24 @@ pub struct JourneyRouteLeg {
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]
 pub struct JourneyRoutePlan {
     pub package_digest: String,
+    pub weather_rules_version: u16,
+    pub weather_interval_start: u64,
+    pub precipitation: JourneyPrecipitation,
+    pub intensity_bps: u16,
+    pub ground_moisture_bps: u16,
+    pub snow_cover_bps: u16,
     pub distance_m: u64,
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
     pub spans: Vec<JourneyTerrainSpan>,
     pub return_route: Option<JourneyRouteLeg>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum JourneyPrecipitation {
+    Clear,
+    Rain,
+    Snow,
 }
 
 #[derive(Clone, Debug)]
@@ -4495,6 +4510,12 @@ pub struct PartyJourneyRoute {
     #[index(btree)]
     pub gateway_bucket: u8,
     pub package_digest: String,
+    pub weather_rules_version: u16,
+    pub weather_interval_start: u64,
+    pub precipitation: JourneyPrecipitation,
+    pub intensity_bps: u16,
+    pub ground_moisture_bps: u16,
+    pub snow_cover_bps: u16,
     pub distance_m: u64,
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
@@ -13894,6 +13915,15 @@ fn validate_journey_route_payload(
     if !valid_route_digest(&route.package_digest) {
         return Err("Terrain route has an invalid package digest".into());
     }
+    if route.weather_rules_version != adventuresim_core::weather::WEATHER_RULES_VERSION
+        || route.weather_interval_start % adventuresim_core::weather::WEATHER_INTERVAL_MINUTES != 0
+        || route.intensity_bps > 10_000
+        || route.ground_moisture_bps > 10_000
+        || route.snow_cover_bps > 10_000
+        || (route.precipitation == JourneyPrecipitation::Clear && route.intensity_bps != 0)
+    {
+        return Err("Terrain route has an invalid weather departure snapshot".into());
+    }
     if !(2..=MAX_POINTS).contains(&route.points.len())
         || route.spans.is_empty()
         || route.spans.len() > MAX_SPANS
@@ -13988,6 +14018,12 @@ fn validate_return_journey_route(
         ctx,
         &JourneyRoutePlan {
             package_digest: route.package_digest.clone(),
+            weather_rules_version: route.weather_rules_version,
+            weather_interval_start: route.weather_interval_start,
+            precipitation: route.precipitation,
+            intensity_bps: route.intensity_bps,
+            ground_moisture_bps: route.ground_moisture_bps,
+            snow_cover_bps: route.snow_cover_bps,
             distance_m: leg.distance_m,
             minutes: leg.minutes,
             points: leg.points.clone(),
@@ -14669,6 +14705,12 @@ fn start_party_journey(
                 party_id: party.id.clone(),
                 gateway_bucket: 0,
                 package_digest: route.package_digest.clone(),
+                weather_rules_version: route.weather_rules_version,
+                weather_interval_start: route.weather_interval_start,
+                precipitation: route.precipitation,
+                intensity_bps: route.intensity_bps,
+                ground_moisture_bps: route.ground_moisture_bps,
+                snow_cover_bps: route.snow_cover_bps,
                 distance_m: route.distance_m,
                 minutes: route.minutes,
                 points: route.points.clone(),
@@ -14755,7 +14797,7 @@ fn train_party_terrain_movement(
     };
     let start = journey.completed_minutes;
     let end = start.saturating_add(movement_minutes).min(route.minutes);
-    let exposure = terrain_training_exposure(&route.spans, start, end);
+    let exposure = terrain_training_exposure(&route.spans, start, end, route.snow_cover_bps);
     for member_id in living_party_member_ids(ctx, party_id) {
         if let Some(mut skills) = ctx.db.character_skills().character_id().find(member_id) {
             let attributes = ctx
@@ -14790,6 +14832,11 @@ fn train_party_terrain_movement(
                     &mut skills.terrain_urban_hours,
                     Skill::TerrainUrban,
                     exposure[4],
+                ),
+                (
+                    &mut skills.terrain_snow_hours,
+                    Skill::TerrainSnow,
+                    exposure[5],
                 ),
             ] {
                 excess += adventuresim_core::skill::apply_direct_training(
@@ -14862,8 +14909,13 @@ fn train_party_oral_communication(
     excess_by_character
 }
 
-fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 5] {
-    let mut exposure = [0.0_f32; 5];
+fn terrain_training_exposure(
+    spans: &[JourneyTerrainSpan],
+    start: u64,
+    end: u64,
+    snow_cover_bps: u16,
+) -> [f32; 6] {
+    let mut exposure = [0.0_f32; 6];
     for span in spans {
         let overlap = end
             .min(span.start_minute.saturating_add(span.duration_minutes))
@@ -14877,6 +14929,7 @@ fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64)
         exposure[2] += hours * f32::from(span.terrain.hills) / 1_000.0;
         exposure[3] += hours * f32::from(span.terrain.wetlands) / 1_000.0;
         exposure[4] += hours * f32::from(span.terrain.urban) / 1_000.0;
+        exposure[5] += hours * f32::from(snow_cover_bps.min(10_000)) / 10_000.0;
     }
     exposure
 }
@@ -16411,6 +16464,12 @@ fn redirect_camped_party_to_settlement(
                 party_id: party.id.clone(),
                 gateway_bucket: 0,
                 package_digest: route.package_digest,
+                weather_rules_version: route.weather_rules_version,
+                weather_interval_start: route.weather_interval_start,
+                precipitation: route.precipitation,
+                intensity_bps: route.intensity_bps,
+                ground_moisture_bps: route.ground_moisture_bps,
+                snow_cover_bps: route.snow_cover_bps,
                 distance_m: route.distance_m,
                 minutes: route.minutes,
                 points: route.points,
@@ -16621,6 +16680,12 @@ mod departure_invariant_tests {
         let destination = (10.01, 53.0);
         JourneyRoutePlan {
             package_digest: "a".repeat(64),
+            weather_rules_version: adventuresim_core::weather::WEATHER_RULES_VERSION,
+            weather_interval_start: 0,
+            precipitation: JourneyPrecipitation::Clear,
+            intensity_bps: 0,
+            ground_moisture_bps: 0,
+            snow_cover_bps: 0,
             distance_m: straight_line_distance_m(
                 origin.0,
                 origin.1,
@@ -16694,6 +16759,15 @@ mod departure_invariant_tests {
         bad.spans[0].terrain.plains = 999;
         assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
 
+        let mut bad = route.clone();
+        bad.weather_rules_version += 1;
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+
+        let mut bad = route.clone();
+        bad.precipitation = JourneyPrecipitation::Clear;
+        bad.intensity_bps = 1;
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+
         for index in 0..2 {
             let mut bad = route.clone();
             bad.spans[index].terrain.plains -= 1;
@@ -16741,12 +16815,12 @@ mod departure_invariant_tests {
     #[test]
     fn terrain_training_uses_exact_overlap_and_conserves_mixed_exposure() {
         let spans = route_fixture().spans;
-        let exposure = terrain_training_exposure(&spans, 3, 9);
+        let exposure = terrain_training_exposure(&spans, 3, 9, 0);
         // Two road minutes at 25%, then four open minutes at full exposure.
         assert!((exposure[0] - 4.5 / 60.0).abs() < 0.0001);
-        assert_eq!(exposure[1..], [0.0, 0.0, 0.0, 0.0]);
-        let none = terrain_training_exposure(&spans, 12, 30);
-        assert_eq!(none, [0.0; 5]);
+        assert_eq!(exposure[1..], [0.0, 0.0, 0.0, 0.0, 0.0]);
+        let none = terrain_training_exposure(&spans, 12, 30, 0);
+        assert_eq!(none, [0.0; 6]);
     }
 
     #[test]
@@ -16761,8 +16835,8 @@ mod departure_invariant_tests {
             wetlands: 1_000,
             urban: 0,
         };
-        let exposure = terrain_training_exposure(&[span], 0, 60);
-        assert_eq!(exposure, [0.0, 0.0, 0.0, 0.1, 0.0]);
+        let exposure = terrain_training_exposure(&[span], 0, 60, 0);
+        assert_eq!(exposure, [0.0, 0.0, 0.0, 0.1, 0.0, 0.0]);
     }
 
     #[test]
@@ -16782,12 +16856,13 @@ mod departure_invariant_tests {
             "the earliest death boundary limits the whole party"
         );
         let retry = common_movement_prefix(12 - first, [8]);
-        let chunked = terrain_training_exposure(&spans, 0, first);
-        let resumed = terrain_training_exposure(&spans, first, first + retry);
-        let whole = terrain_training_exposure(&spans, 0, 12);
-        for index in 0..4 {
+        let chunked = terrain_training_exposure(&spans, 0, first, 8_000);
+        let resumed = terrain_training_exposure(&spans, first, first + retry, 8_000);
+        let whole = terrain_training_exposure(&spans, 0, 12, 8_000);
+        for index in 0..6 {
             assert!((chunked[index] + resumed[index] - whole[index]).abs() < 0.0001);
         }
+        assert!(whole[5] > 0.0, "snow supplements underlying exposure");
     }
 
     #[test]
@@ -16885,6 +16960,12 @@ mod departure_invariant_tests {
             party_id: "party".into(),
             gateway_bucket: 0,
             package_digest: route.package_digest,
+            weather_rules_version: route.weather_rules_version,
+            weather_interval_start: route.weather_interval_start,
+            precipitation: route.precipitation,
+            intensity_bps: route.intensity_bps,
+            ground_moisture_bps: route.ground_moisture_bps,
+            snow_cover_bps: route.snow_cover_bps,
             distance_m: route.distance_m,
             minutes: route.minutes,
             points: route.points,
@@ -20518,6 +20599,15 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     let seed = ctx.random::<u64>();
     let observer_entropy_hi = ctx.random::<u64>();
     let observer_entropy_lo = ctx.random::<u64>();
+    let now_minute = crate::time::refresh_clock(ctx)?;
+    let incident_weather = adventuresim_core::weather::weather_at(
+        0x4144_5645_4e54_5552,
+        now_minute.saturating_sub(180),
+        (settlement.coord_y * 1_000_000.0).round() as i32,
+        (settlement.coord_x * 1_000_000.0).round() as i32,
+        0,
+    )
+    .precipitation;
     let context = qg::GenerationContext {
         seed,
         observer_entropy_hi,
@@ -20528,7 +20618,8 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
             settlement_id: settlement_id.into(),
         },
         ordinal,
-        now_minute: crate::time::refresh_clock(ctx)?,
+        now_minute,
+        incident_weather,
         requested_family: (ordinal < 2).then_some(if ordinal == 0 {
             qg::TemplateFamily::RecurringDepredation
         } else {
@@ -20776,6 +20867,15 @@ pub fn spawn_developer_quest(
             let validated = validate_quest_generation_authority(&row)?;
             Ok::<_, String>(count + u16::from(validated.context.settlement_id == settlement_id))
         })?;
+    let now_minute = crate::time::refresh_clock(ctx)?;
+    let incident_weather = adventuresim_core::weather::weather_at(
+        0x4144_5645_4e54_5552,
+        now_minute.saturating_sub(180),
+        (settlement.coord_y * 1_000_000.0).round() as i32,
+        (settlement.coord_x * 1_000_000.0).round() as i32,
+        0,
+    )
+    .precipitation;
     let base = qg::GenerationContext {
         seed: ctx.random(),
         observer_entropy_hi: ctx.random(),
@@ -20786,7 +20886,8 @@ pub fn spawn_developer_quest(
             settlement_id: settlement_id.clone(),
         },
         ordinal,
-        now_minute: crate::time::refresh_clock(ctx)?,
+        now_minute,
+        incident_weather,
         requested_family: Some(definition.family),
         witness_candidates: developer_witness_candidates(ctx, &settlement_id),
     };

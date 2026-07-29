@@ -105,6 +105,9 @@ pub struct TerrainWeights {
 
 impl TerrainWeights {
     pub const TOTAL: u16 = 1_000;
+    /// Dry ground below ten percent imported wetlands absorbs rainfall without
+    /// becoming mechanically wetland.
+    pub const WETLAND_SUSCEPTIBILITY_THRESHOLD: u16 = 100;
     pub fn from_cover(
         canopy_percent: u8,
         hilly_fraction_percent: u8,
@@ -140,6 +143,59 @@ impl TerrainWeights {
             + u32::from(self.urban) * u32::from(profile.urban))
             / u32::from(Self::TOTAL)) as u16
     }
+
+    /// Derive temporary route weights and independent mud severity from an
+    /// authoritative departure-time ground-moisture snapshot.
+    ///
+    /// The imported five-member mixture is never changed in storage. Wetland
+    /// gain displaces the four underlying weights proportionally and the
+    /// final remainder is assigned deterministically, preserving normalization.
+    pub fn with_ground_moisture(self, moisture_bps: u16) -> WeatheredTerrain {
+        debug_assert!(self.is_normalized());
+        let moisture = u32::from(moisture_bps.min(10_000));
+        let susceptibility = if self.wetlands >= Self::WETLAND_SUSCEPTIBILITY_THRESHOLD {
+            u32::from(Self::TOTAL - self.wetlands)
+        } else {
+            0
+        };
+        let bonus = (susceptibility * moisture / 20_000) as u16;
+        let target_wetlands = self.wetlands.saturating_add(bonus).min(Self::TOTAL);
+        let old_underlying = Self::TOTAL - self.wetlands;
+        let new_underlying = Self::TOTAL - target_wetlands;
+        let scale = |weight: u16| -> u16 {
+            if old_underlying == 0 {
+                0
+            } else {
+                (u32::from(weight) * u32::from(new_underlying) / u32::from(old_underlying)) as u16
+            }
+        };
+        let forest = scale(self.forest);
+        let hills = scale(self.hills);
+        let urban = scale(self.urban);
+        let plains = new_underlying - forest - hills - urban;
+        let weights = Self {
+            plains,
+            forest,
+            hills,
+            wetlands: target_wetlands,
+            urban,
+        };
+        // Independent severity lets already-100% wetlands continue to worsen.
+        let saturation_bps =
+            (moisture * (5_000 + u32::from(self.wetlands) * 5) / 10_000).min(10_000) as u16;
+        WeatheredTerrain {
+            weights,
+            saturation_bps,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WeatheredTerrain {
+    pub weights: TerrainWeights,
+    /// Mud/waterlogging speed severity, independent of normalized biome mix.
+    pub saturation_bps: u16,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -1500,6 +1556,21 @@ mod tests {
                 urban: 0,
             }
         );
+    }
+
+    #[test]
+    fn rainfall_respects_threshold_normalization_and_max_wetland_severity() {
+        let dry = TerrainWeights::from_cover(20, 20, 9).with_ground_moisture(10_000);
+        assert_eq!(dry.weights.wetlands, 90);
+        assert!(dry.weights.is_normalized());
+
+        let susceptible = TerrainWeights::from_cover(20, 20, 10).with_ground_moisture(10_000);
+        assert!(susceptible.weights.wetlands > 100);
+        assert!(susceptible.weights.is_normalized());
+
+        let saturated = TerrainWeights::from_cover(0, 0, 100).with_ground_moisture(10_000);
+        assert_eq!(saturated.weights.wetlands, 1_000);
+        assert_eq!(saturated.saturation_bps, 10_000);
     }
 
     #[test]
