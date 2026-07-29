@@ -143,7 +143,7 @@ fn risk_projection(base: &str, skill: f32) -> (&'static str, RiskAwareness) {
         ("sage", RiskAwareness::Exact) => {
             "Safety warning: hydration hazard rises from +0.02 to +0.06 by potency"
         }
-        _ => ("Safety warning: preparation risk is uncertain", awareness),
+        _ => "Safety warning: preparation risk is uncertain",
     };
     (risk, awareness)
 }
@@ -208,7 +208,7 @@ pub fn preview(
     } else {
         0.0
     };
-    let input_units = if skill < 1.0 { 2 } else { 1 };
+    let input_units = 1;
     let base_minutes = match method {
         PreparationMethod::DryGrind => 120,
         PreparationMethod::InfuseDecoct => 180,
@@ -303,14 +303,15 @@ mod tests {
     }
 
     #[test]
-    fn grade_and_skill_improve_tier_while_skill_reduces_cost_and_time() {
+    fn grade_and_skill_improve_tier_while_skill_reduces_time() {
         let poor = preview("willow_bark_poor", PreparationMethod::InfuseDecoct, 0.0).unwrap();
         let ordinary = preview("willow_bark", PreparationMethod::InfuseDecoct, 1.0).unwrap();
         let fine = preview("willow_bark_fine", PreparationMethod::InfuseDecoct, 3.0).unwrap();
         assert!(poor.potency_tier < ordinary.potency_tier);
         assert!(ordinary.potency_tier < fine.potency_tier);
         assert!(poor.duration_minutes > fine.duration_minutes);
-        assert!(poor.input_units > fine.input_units);
+        assert_eq!(poor.input_units, 1);
+        assert_eq!(fine.input_units, 1);
     }
 
     #[test]

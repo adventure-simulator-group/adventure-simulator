@@ -30,9 +30,9 @@ poor and fine variants use shared suffixes and tags. This preserves stack,
 trade, and transfer behavior without a lot or provenance table.
 
 Outcome is a pure function of ingredient identity, public grade, method, and
-Herbalism capability. Low capability takes longer and may require two units;
-grade and capability determine one of three concrete potency identities. There
-is no random craft failure and the UI never auto-selects a method.
+Herbalism capability. Every recipe consumes one whole herb; low capability
+takes longer, produces lower potency, and provides coarser hazard clarity.
+There is no random craft failure and the UI never auto-selects a method.
 
 Risk awareness is also deterministic. Novices receive a coarse but explicit
 safety warning, intermediate herbalists see the affected physiological
