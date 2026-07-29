@@ -1124,11 +1124,22 @@ fn equipment_checkbox(
         definition.slot != ItemSlot::None
             || definition.kind == crate::spacetimedb::ItemKind::Medication
     });
+    let medication = definition
+        .is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Medication);
     let item_name = item_display_name(&inventory.item_id);
-    let label = if equipped {
+    let label = if medication {
+        format!("Administer {item_name}")
+    } else if equipped {
         format!("Unequip {item_name}")
     } else {
         format!("Equip {item_name}")
+    };
+    let title = if medication {
+        "Administer one standard course of this preparation"
+    } else if equippable {
+        "Equip or unequip this item"
+    } else {
+        "This item cannot be equipped"
     };
     html! {
         input type="checkbox"
@@ -1138,7 +1149,7 @@ fn equipment_checkbox(
             data-inventory-item-id=(inventory.id)
             aria-describedby=(format!("equipment-status-{}", inventory.id))
             aria-label=(label)
-            title=(if equippable { "Equip or unequip this item" } else { "This item cannot be equipped" });
+            title=(title);
         span id=(format!("equipment-status-{}", inventory.id))
             class="equipment-toggle-status"
             data-equipment-status
@@ -2165,6 +2176,29 @@ mod tests {
         definition.slot = ItemSlot::None;
         let disabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
         assert!(disabled.contains(" disabled"));
+    }
+
+    #[test]
+    fn medication_checkbox_describes_administration_instead_of_equipping() {
+        let inventory = InventoryItem {
+            id: 7,
+            character_id: 9,
+            item_id: "oral_rehydration_draught".into(),
+            qty: 1,
+        };
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: inventory.item_id.clone(),
+            slot: ItemSlot::None,
+            kind: crate::spacetimedb::ItemKind::Medication,
+            ..Default::default()
+        };
+        let rendered = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        assert!(!rendered.contains(" disabled"));
+        assert!(rendered.contains("aria-label=\"Administer Oral rehydration draught\""));
+        assert!(rendered.contains(
+            "title=\"Administer one standard course of this preparation\""
+        ));
+        assert!(!rendered.contains("Equip Oral rehydration draught"));
     }
 
     #[test]

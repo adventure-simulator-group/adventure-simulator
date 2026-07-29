@@ -394,6 +394,17 @@ pub fn intervention_profile(id: &str, version: u16) -> Option<&'static Intervent
         .find(|profile| profile.preparation_id == id && profile.version == version)
 }
 
+/// Resolve the latest authored profile for a concrete preparation.
+///
+/// Trusted callers use this when starting a new course. Durable
+/// administrations continue to pin their exact version for replay.
+pub fn current_intervention_profile(id: &str) -> Option<&'static InterventionProfile> {
+    INTERVENTION_PROFILES
+        .iter()
+        .filter(|profile| profile.preparation_id == id)
+        .max_by_key(|profile| profile.version)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Administration {
     pub id: u64,

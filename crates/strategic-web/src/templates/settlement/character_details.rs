@@ -282,8 +282,6 @@ pub fn party_personal_page(
         (physiology_controls(
             medical,
             &format!("{location_path}/party/{}", active_character.id),
-            inventory,
-            item_definitions,
         ))
         @if let Some(demand) = religious_demand {
             (religious_demand_rail(demand, &location_path, active_character.id))

@@ -32,6 +32,13 @@ Interventions use generic, versioned profiles with meter deltas over time.
 Administration records the patient, concrete preparation and profile version,
 route, amount, optional body region, start and stop minutes, and private
 sensitivity/adverse variation. No effect lookup accepts a disease key.
+The personal inventory presents medication with the familiar checkbox gesture.
+Checking it administers and consumes that concrete quantity-one item as one
+standard 1,000-milliunit, whole-body course. The trusted server selects the
+current profile version and the preparation's intrinsic route; the browser does
+not choose medical parameters. The compact current-medication status retains a
+Stop action and disappears when a course is stopped or reaches its authored
+duration. Durable start and stop markers remain in the physician notebook.
 
 All authoritative personal-time paths evaluate disease and intervention effects
 together. The earliest integer-minute terminal crossing wins, with a stable
