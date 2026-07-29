@@ -590,11 +590,15 @@ async fn rest_at_quest_location_with_redirect(
         Ok(minutes) => minutes,
         Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
+    let shelter = match super::settlements::field_shelter_argument(&form) {
+        Ok(shelter) => shelter,
+        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
+    };
     match state
         .db
         .call(
             "rest_at_camp",
-            &[json!(character_id), json!(requested_minutes)],
+            &[json!(character_id), json!(requested_minutes), shelter],
         )
         .await
     {
@@ -1282,6 +1286,9 @@ mod quest_route_tests {
             fatigue,
             hunger,
             thirst,
+            thermal: 0.0,
+            wetness_bps: 0,
+            thermal_strain: 0,
             food_days: 0.0,
             water_days: 0.0,
             water_capacity_ml: 0,

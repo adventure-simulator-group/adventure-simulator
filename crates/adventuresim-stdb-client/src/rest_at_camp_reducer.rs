@@ -4,11 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::field_shelter_type::FieldShelter;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct RestAtCampArgs {
     pub character_id: u64,
     pub requested_minutes: u64,
+    pub shelter: FieldShelter,
 }
 
 impl From<RestAtCampArgs> for super::Reducer {
@@ -16,6 +19,7 @@ impl From<RestAtCampArgs> for super::Reducer {
         Self::RestAtCamp {
             character_id: args.character_id,
             requested_minutes: args.requested_minutes,
+            shelter: args.shelter,
         }
     }
 }
@@ -35,8 +39,13 @@ pub trait rest_at_camp {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`rest_at_camp:rest_at_camp_then`] to run a callback after the reducer completes.
-    fn rest_at_camp(&self, character_id: u64, requested_minutes: u64) -> __sdk::Result<()> {
-        self.rest_at_camp_then(character_id, requested_minutes, |_, _| {})
+    fn rest_at_camp(
+        &self,
+        character_id: u64,
+        requested_minutes: u64,
+        shelter: FieldShelter,
+    ) -> __sdk::Result<()> {
+        self.rest_at_camp_then(character_id, requested_minutes, shelter, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `rest_at_camp` to run as soon as possible,
@@ -49,6 +58,7 @@ pub trait rest_at_camp {
         &self,
         character_id: u64,
         requested_minutes: u64,
+        shelter: FieldShelter,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -63,6 +73,7 @@ impl rest_at_camp for super::RemoteReducers {
         &self,
         character_id: u64,
         requested_minutes: u64,
+        shelter: FieldShelter,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -74,6 +85,7 @@ impl rest_at_camp for super::RemoteReducers {
             RestAtCampArgs {
                 character_id,
                 requested_minutes,
+                shelter,
             },
             callback,
         )

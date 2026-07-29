@@ -1,11 +1,12 @@
 #[cfg(test)]
 mod rest_form_tests {
     use adventuresim_core::strategic_time::{is_walking_time, minutes_until_next_walking_start};
+    use serde_json::json;
 
     use super::{
         RestForm, SETTLEMENTS_SOURCE, calculate_rest_supply_availability,
-        calculate_soap_rest_preview, camp_continue_block_reason, rest_spending_breakdown,
-        safe_rest_error, settlement_rest_minutes, travel_rest_minutes,
+        calculate_soap_rest_preview, camp_continue_block_reason, field_shelter_argument,
+        rest_spending_breakdown, safe_rest_error, settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
         Character, CharacterFilth, CharacterPersonality, Conscience, Conviction, Drive,
@@ -19,7 +20,24 @@ mod rest_form_tests {
             duration: duration.into(),
             unit: unit.into(),
             requested_minutes,
+            shelter: "bivouac".into(),
         }
+    }
+
+    #[test]
+    fn field_shelter_is_a_typed_unit_variant() {
+        let mut request = form("08:00", "hours", None);
+        assert_eq!(
+            field_shelter_argument(&request).unwrap(),
+            json!({"bivouac": {}})
+        );
+        request.shelter = "tent".into();
+        assert_eq!(
+            field_shelter_argument(&request).unwrap(),
+            json!({"tent": {}})
+        );
+        request.shelter = "inn".into();
+        assert!(field_shelter_argument(&request).is_err());
     }
 
     fn member(id: u64) -> Character {

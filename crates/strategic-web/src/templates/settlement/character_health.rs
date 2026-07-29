@@ -322,6 +322,12 @@ pub(super) fn strategic_condition_rail(
         ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
         ("Hunger", "meal", "hunger", condition.hunger),
         ("Thirst", "water-drop", "thirst", condition.thirst),
+        (
+            "Temperature",
+            "thermometer-cold",
+            "thermal",
+            condition.thermal,
+        ),
     ];
     let incapacitation_sources = [
         ("Pain", "broken-heart", "pain", condition.pain),
@@ -333,6 +339,12 @@ pub(super) fn strategic_condition_rail(
         ),
         ("Fear", "terror", "fear", condition.fear),
         ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
+        (
+            "Temperature",
+            "thermometer-cold",
+            "thermal",
+            condition.thermal,
+        ),
     ];
     html! {
         (sidebar_section("Status", html! {
@@ -412,8 +424,53 @@ pub(super) fn strategic_condition_rail(
                 (need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", condition.food_days, condition.hunger))
                 (need_balance_meter("Water", "water-drop", "Thirst", "Hydrated", "thirst", condition.water_days, condition.thirst))
             }
-            (filth_status_bar(filth))
+            (temperature_strain_meter(condition.thermal_strain))
+            (filth_status_bar(filth, condition.wetness_bps))
         }))
+    }
+}
+
+fn temperature_strain_meter(strain: i32) -> Markup {
+    let percent = (strain.clamp(
+        -adventuresim_core::survival::MAX_THERMAL_STRAIN,
+        adventuresim_core::survival::MAX_THERMAL_STRAIN,
+    ) as f32
+        / adventuresim_core::survival::MAX_THERMAL_STRAIN as f32
+        * 100.0)
+        .round() as i32;
+    let label = if percent < 0 {
+        format!("Cold strain {}%", percent.unsigned_abs())
+    } else if percent > 0 {
+        format!("Heat strain {percent}%")
+    } else {
+        "Temperature comfortable".into()
+    };
+    let cold_width = if percent < 0 {
+        percent.unsigned_abs()
+    } else {
+        0
+    };
+    let hot_width = percent.max(0);
+    html! {
+        div class="temperature-strain" tabindex="0" title=(&label) {
+            strong class="metric-label" { (decorative_game_icon("thermometer-cold")) span { "Temperature" } }
+            div class="temperature-strain-track" role="meter" aria-label=(&label)
+                aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(percent)
+                style=(format!(
+                    "--thermal-cold: {:.1}%; --thermal-hot: {:.1}%",
+                    cold_width as f32 / 2.0,
+                    hot_width as f32 / 2.0,
+                )) {
+                span class="temperature-strain-cold" aria-hidden="true" {}
+                span class="temperature-strain-hot" aria-hidden="true" {}
+                i aria-hidden="true" {}
+            }
+            div class="temperature-strain-labels" aria-hidden="true" {
+                span { "Cold" }
+                span { "Comfort" }
+                span { "Hot" }
+            }
+        }
     }
 }
 
@@ -1327,11 +1384,14 @@ fn regional_health_bar(
     let cut = injury
         .map_or(0.0, |row| row.cut_damage)
         .min(physical_damage);
+    let frostbite = injury
+        .map_or(0.0, |row| row.frostbite_damage)
+        .min((physical_damage - cut).max(0.0));
     let total_blunt = injury
-        .map_or(physical_damage - cut, |row| {
+        .map_or(physical_damage - cut - frostbite, |row| {
             row.bruise_damage.max(row.fracture_damage)
         })
-        .min((physical_damage - cut).max(0.0));
+        .min((physical_damage - cut - frostbite).max(0.0));
     let fracture = injury
         .map_or(0.0, |row| row.fracture_damage)
         .min(total_blunt);
@@ -1388,9 +1448,10 @@ fn regional_health_bar(
     };
     let reading = if humour.is_some() {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% frostbite, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
             okay * 100.0,
             cut * 100.0,
+            frostbite * 100.0,
             blunt * 100.0,
             fracture * 100.0,
             values.sanguine.abs() * scale * 100.0,
@@ -1400,9 +1461,10 @@ fn regional_health_bar(
         )
     } else {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% other impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% frostbite, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% other impairment",
             okay * 100.0,
             cut * 100.0,
+            frostbite * 100.0,
             blunt * 100.0,
             fracture * 100.0,
             other * 100.0,
@@ -1414,6 +1476,7 @@ fn regional_health_bar(
             aria-valuemin="0" aria-valuemax="100" aria-valuenow=(okay * 100.0) {
             span class="attribute-health-current" title="Sound" style=(format!("width:{:.1}%", okay * 100.0)) {}
             span class=(if bandaged { "attribute-health-cut bandaged-cut" } else { "attribute-health-cut" }) title=(if bandaged { "Bandaged cut damage" } else { "Cut damage" }) style=(format!("width:{:.1}%", cut * 100.0)) {}
+            span class="attribute-health-frostbite" title="Frostbite damage" style=(format!("width:{:.1}%", frostbite * 100.0)) {}
             span class="attribute-health-blunt" title="Blunt damage" style=(format!("width:{:.1}%", blunt * 100.0)) {}
             span class=(if splinted { "attribute-health-fracture splinted-fracture" } else { "attribute-health-fracture" })
                 title=(if splinted { "Splinted fracture" } else { "Fracture" })
@@ -1501,7 +1564,7 @@ mod tests {
             serialized.get("origin").and_then(|value| value.as_str()),
             Some("Foreign")
         );
-        let markup = filth_status_bar(&[deposit]).into_string();
+        let markup = filth_status_bar(&[deposit], 0).into_string();
         assert!(markup.contains("2 foreign"));
         assert!(!markup.contains("source_character_id"));
         assert!(!markup.contains("filth-legend"));
@@ -1511,7 +1574,7 @@ mod tests {
     }
 
     #[test]
-    fn status_rail_places_filth_after_water() {
+    fn status_rail_layers_filth_inside_independently_accessible_wetness() {
         let condition = CharacterStrategicCondition {
             character_id: 7,
             morale: 0.0,
@@ -1524,6 +1587,9 @@ mod tests {
             fatigue: 0.0,
             hunger: 0.0,
             thirst: 0.0,
+            thermal: 0.0,
+            wetness_bps: 6_500,
+            thermal_strain: -4_000,
             food_days: 1.0,
             water_days: 1.0,
             water_capacity_ml: 2_000,
@@ -1538,8 +1604,14 @@ mod tests {
         assert!(markup.contains("/static/icons/game/conversation.svg"));
         assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
         let water = markup.find("Water").expect("water meter");
+        let wetness = markup.find("Wetness").expect("wetness meter");
         let filth = markup.find("Filth").expect("filth meter");
         assert!(water < filth);
+        assert!(wetness < filth);
+        assert!(markup.contains("class=\"coating-status\" role=\"group\""));
+        assert!(markup.contains("aria-label=\"Wetness 65 out of 100\""));
+        assert!(markup.contains("aria-label=\"Filth 0 out of 100\""));
+        assert!(markup.contains("aria-label=\"Cold strain 40%\""));
     }
 
     #[test]
@@ -1556,6 +1628,9 @@ mod tests {
             fatigue: 0.0,
             hunger: 0.0,
             thirst: 0.0,
+            thermal: 0.0,
+            wetness_bps: 0,
+            thermal_strain: 0,
             food_days: 1.0,
             water_days: 1.0,
             water_capacity_ml: 2_000,
@@ -1970,6 +2045,7 @@ mod tests {
             limb: LimbRegion::Chest,
             cut_damage: 0.2,
             bruise_damage: 0.2,
+            frostbite_damage: 0.0,
             fracture_damage: 0.2,
             bandaged: true,
             stitched: false,

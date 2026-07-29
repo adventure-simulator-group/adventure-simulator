@@ -588,7 +588,7 @@ async fn planned_travel_call(
         .map(|(cell, _, _)| cell.elevation_m)
         .unwrap_or(0);
     let weather = adventuresim_core::weather::weather_at(
-        0x4144_5645_4e54_5552,
+        adventuresim_core::weather::WORLD_WEATHER_SEED,
         departure_minute,
         (origin.0 * 1_000_000.0).round() as i32,
         (origin.1 * 1_000_000.0).round() as i32,
@@ -712,6 +712,8 @@ fn terrain_route_json(
         "package_digest": digest,
         "weather_rules_version": weather.rules_version,
         "weather_interval_start": weather.interval_start_minute,
+        "temperature_deci_c": weather.temperature_deci_c,
+        "wind_speed_bps": weather.wind_speed_bps,
         "precipitation": match weather.precipitation { adventuresim_core::weather::Precipitation::Clear => "Clear", adventuresim_core::weather::Precipitation::Rain => "Rain", adventuresim_core::weather::Precipitation::Snow => "Snow" },
         "intensity_bps": weather.intensity_bps,
         "ground_moisture_bps": weather.ground_moisture_bps,
@@ -751,12 +753,23 @@ mod terrain_route_payload_tests {
             &"a".repeat(64),
             &plan,
             None,
-            adventuresim_core::weather::weather_at(1, 0, 53_000_000, 10_000_000, 0),
+            adventuresim_core::weather::weather_at(
+                adventuresim_core::weather::WORLD_WEATHER_SEED,
+                0,
+                53_000_000,
+                10_000_000,
+                0,
+            ),
         );
         let span: JourneyTerrainSpan = serde_json::from_value(payload["spans"][0].clone()).unwrap();
         assert!(matches!(span.kind, JourneyTerrainKind::Wetland));
         assert_eq!(span.terrain.wetlands, 1_000);
-        assert_eq!(payload["weather_rules_version"], 1);
+        assert_eq!(
+            payload["weather_rules_version"],
+            adventuresim_core::weather::WEATHER_RULES_VERSION
+        );
+        assert!(payload["temperature_deci_c"].as_i64().is_some());
+        assert!(payload["wind_speed_bps"].as_u64().is_some());
         assert!(payload["weather_interval_start"].as_u64().is_some());
         assert!(payload["ground_moisture_bps"].as_u64().unwrap() <= 10_000);
         assert!(payload["snow_cover_bps"].as_u64().unwrap() <= 10_000);

@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn embedded_catalog_is_sorted_unique_complete_and_revisioned() {
-        assert_eq!(catalog().len(), 159);
+        assert_eq!(catalog().len(), 160);
         assert!(revision().len() == 64 && revision().bytes().all(|b| b.is_ascii_hexdigit()));
         assert!(
             catalog()
@@ -121,7 +121,7 @@ mod tests {
             + "\n";
         assert_eq!(
             format!("{:x}", Sha256::digest(stable_ids.as_bytes())),
-            "703512479b3350cb43aa737e71b7f9a030bd6a45006803c44ed4ad338a588a9f",
+            "d79be02b1f9d26be60b9beae9783a646c8d8c21706267777b66170d70937d4ca",
             "stable-ID golden changed; review persistence and reseed impact"
         );
 
@@ -141,7 +141,17 @@ mod tests {
             counts[index] += 1;
             counts
         });
-        assert_eq!(counts, [38, 6, 20, 14, 1, 1, 5, 24, 29, 21]);
+        assert_eq!(counts, [39, 6, 20, 14, 1, 1, 5, 24, 29, 21]);
+    }
+
+    #[test]
+    fn field_tent_is_weighted_valuable_general_goods_shelter() {
+        let tent = definition(crate::item_references::FIELD_TENT_ID).expect("field tent");
+        assert!(tent.weight_kg > 0.0);
+        assert!(tent.base_value > 0);
+        assert!(tent.tags.iter().any(|tag| tag == "general_goods"));
+        assert!(tent.tags.iter().any(|tag| tag == "field_shelter"));
+        assert!(matches!(tent.kind, super::ItemKind::Simple));
     }
 
     #[test]

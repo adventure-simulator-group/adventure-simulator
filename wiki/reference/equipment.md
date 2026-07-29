@@ -105,6 +105,17 @@ equipment protection projection as armor, so padding, resistance, coverage, flex
 and range of motion are available to combat and future survival systems.
 Carried inventory is deliberately not worn down as if it were being worn.
 
+## Weather exposure
+
+Strategic survival reuses authored equipment values instead of adding another
+set of item statistics. Covered padding supplies insulation. For rain and wind,
+the deterministic outermost layer contributes its covered fraction on each
+body region. Resistance scales that fraction up to the named
+leather-equivalent value and is capped there, so resistance beyond leather
+adds no further weatherproofing. Padding also traps moisture
+and slows evaporation in warm conditions. These are strategic projections of
+the normalized equipment graph, not new equipment slots or tactical tick state.
+
 Quality uses the same 1--5 scale and is shown by the item name using the corresponding condition
 color, adjusted toward the fixed light interface text color for readability. Quality 3 is ordinary
 munition-grade work, quality 4 is the sort of commission a knight might order, and quality 5 is

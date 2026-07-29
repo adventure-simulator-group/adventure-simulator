@@ -115,7 +115,7 @@ fn actor_action_weather(
         })
         .unwrap_or((0, 0));
     let weather = adventuresim_core::weather::weather_at(
-        0x4144_5645_4e54_5552,
+        adventuresim_core::weather::WORLD_WEATHER_SEED,
         started_at,
         coordinates.0,
         coordinates.1,

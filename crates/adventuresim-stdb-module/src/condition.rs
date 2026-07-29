@@ -8,8 +8,10 @@ use crate::filth::character_filth;
 use crate::investigation::case_site_authority;
 use crate::item::item;
 use crate::strategic::{
-    hostile_group_authority, party_authority, party_inventory_item, settlement,
+    PartyJourneyRoute, hostile_group_authority, party_authority, party_inventory_item,
+    party_journey_authority, party_journey_route_authority, settlement,
 };
+use crate::surgery::LimbRegion;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_limbs, character_skills, character_stats, character_time,
@@ -61,6 +63,20 @@ pub struct CharacterNeeds {
     pub carried_water_ml: f32,
 }
 
+/// Durable strategic coating and temperature state. Wetness is intentionally
+/// separate from filth: water changes exposure but carries no dirt/blood
+/// provenance and washing never consumes it.
+#[derive(Clone, Debug, PartialEq)]
+#[table(accessor = character_exposure, public)]
+pub struct CharacterExposure {
+    #[primary_key]
+    pub character_id: u64,
+    pub wetness_bps: u16,
+    /// Signed: negative is cold, positive is hot.
+    pub thermal_strain: i32,
+    pub frostbite_progress_minutes: u32,
+}
+
 /// A recent success or setback which decays linearly over strategic time.
 #[derive(Clone, Debug)]
 #[table(accessor = morale_event, public)]
@@ -97,6 +113,9 @@ pub struct CharacterStrategicCondition {
     pub fatigue: f32,
     pub hunger: f32,
     pub thirst: f32,
+    pub thermal: f32,
+    pub wetness_bps: u16,
+    pub thermal_strain: i32,
     /// Positive physiological food reserve, expressed in travel days.
     pub food_days: f32,
     /// Positive physiological hydration reserve, expressed in travel days.
@@ -173,6 +192,197 @@ pub fn initialize_character_condition(
             carried_water_ml: 0.0,
         });
     }
+    if ctx
+        .db
+        .character_exposure()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        ctx.db.character_exposure().insert(CharacterExposure {
+            character_id,
+            wetness_bps: 0,
+            thermal_strain: 0,
+            frostbite_progress_minutes: 0,
+        });
+    }
+    Ok(())
+}
+
+enum ExposureLocation {
+    Fixed(i32, i32, i16),
+    Route {
+        route: PartyJourneyRoute,
+        completed_minutes: u64,
+    },
+}
+
+impl ExposureLocation {
+    fn position(&self, movement_offset: u64) -> (i32, i32, i16) {
+        match self {
+            Self::Fixed(latitude, longitude, elevation) => (*latitude, *longitude, *elevation),
+            Self::Route {
+                route,
+                completed_minutes,
+            } => crate::strategic::route_position_at_minute(
+                route,
+                completed_minutes.saturating_add(movement_offset),
+            )
+            .map(|(longitude, latitude)| {
+                (
+                    (latitude * 1_000_000.0).round() as i32,
+                    (longitude * 1_000_000.0).round() as i32,
+                    0,
+                )
+            })
+            .unwrap_or((53_000_000, 10_000_000, 0)),
+        }
+    }
+}
+
+/// Load the durable location/route authority once. The potentially long
+/// minute stepping below is then pure and performs no database queries.
+fn exposure_location(ctx: &ReducerContext, character_id: u64) -> ExposureLocation {
+    let Some(character) = ctx.db.character().id().find(character_id) else {
+        return ExposureLocation::Fixed(53_000_000, 10_000_000, 0);
+    };
+    if let Some(settlement_id) = character.current_settlement_id
+        && let Some(place) = ctx.db.settlement().id().find(settlement_id)
+    {
+        return ExposureLocation::Fixed(
+            (place.coord_y * 1_000_000.0).round() as i32,
+            (place.coord_x * 1_000_000.0).round() as i32,
+            place.elevation.get(),
+        );
+    }
+    if let Some(party_id) = character.party_id {
+        if let Some(party) = ctx.db.party_authority().id().find(&party_id) {
+            if let Some(site_id) = party.current_case_site_id
+                && let Some(site) = ctx.db.case_site_authority().id_key().find(site_id.value)
+            {
+                return ExposureLocation::Fixed(site.latitude_e7 / 10, site.longitude_e7 / 10, 0);
+            }
+        }
+        if let (Some(journey), Some(route)) = (
+            ctx.db.party_journey_authority().party_id().find(&party_id),
+            ctx.db
+                .party_journey_route_authority()
+                .party_id()
+                .find(&party_id),
+        ) {
+            return ExposureLocation::Route {
+                route,
+                completed_minutes: journey.completed_minutes,
+            };
+        }
+    }
+    ExposureLocation::Fixed(53_000_000, 10_000_000, 0)
+}
+
+/// The one strategic exposure seam. Call only after the authoritative clock
+/// has committed its actually elapsed (possibly terminal-clipped) interval.
+pub fn apply_weather_exposure(
+    ctx: &ReducerContext,
+    character_id: u64,
+    starting_minute: u64,
+    elapsed_minutes: u64,
+    moving: bool,
+    shelter: adventuresim_core::survival::FieldShelter,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    if elapsed_minutes == 0 {
+        return Ok(());
+    }
+    let row = ctx
+        .db
+        .character_exposure()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character exposure not found")?;
+    let clothing = StrategicEquipment::load(ctx, character_id).survival_clothing();
+    let location = exposure_location(ctx, character_id);
+    let weather = (0..elapsed_minutes).map(|offset| {
+        let (latitude, longitude, elevation) =
+            location.position(moving.then_some(offset).unwrap_or(0));
+        adventuresim_core::weather::weather_at(
+            adventuresim_core::weather::WORLD_WEATHER_SEED,
+            starting_minute.saturating_add(offset),
+            latitude,
+            longitude,
+            elevation,
+        )
+    });
+    let outcome = adventuresim_core::survival::advance_exposure(
+        adventuresim_core::survival::SurvivalState {
+            wetness_bps: row.wetness_bps,
+            thermal_strain: row.thermal_strain,
+            frostbite_progress_minutes: row.frostbite_progress_minutes,
+        },
+        weather,
+        clothing,
+        shelter,
+    );
+    ctx.db
+        .character_exposure()
+        .character_id()
+        .update(CharacterExposure {
+            character_id,
+            wetness_bps: outcome.state.wetness_bps,
+            thermal_strain: outcome.state.thermal_strain,
+            frostbite_progress_minutes: outcome.state.frostbite_progress_minutes,
+        });
+    // Replay each threshold at its canonical absolute minute. Frostbite is
+    // durable non-bleeding tissue damage and is deliberately not healed by
+    // ordinary injury settlement, so replay commutes with the already-clipped
+    // interval while preserving identical limb projections across partitions.
+    for event_offset in outcome.frostbite_event_offsets {
+        let event_minute = starting_minute.saturating_add(event_offset);
+        let peripheral = adventuresim_core::survival::frostbite_peripheral_index(
+            clothing.peripheral_protection_bps,
+            event_minute,
+        );
+        let limb = [
+            LimbRegion::LeftArm,
+            LimbRegion::RightArm,
+            LimbRegion::LeftLeg,
+            LimbRegion::RightLeg,
+        ][peripheral];
+        crate::surgery::commit_frostbite_injury(
+            ctx,
+            character_id,
+            limb,
+            adventuresim_core::survival::FROSTBITE_DAMAGE_PER_THRESHOLD,
+        )?;
+    }
+    refresh_character_strategic_condition_projection(ctx, character_id).map(|_| ())
+}
+
+/// Reusable authoritative water-entry impulse for future ford/immersion
+/// locations. Route terrain currently has no ford coordinates, so no caller
+/// guesses immersion from wetlands.
+pub fn apply_immersion_impulse(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let row = ctx
+        .db
+        .character_exposure()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character exposure not found")?;
+    let next =
+        adventuresim_core::survival::apply_immersion(adventuresim_core::survival::SurvivalState {
+            wetness_bps: row.wetness_bps,
+            thermal_strain: row.thermal_strain,
+            frostbite_progress_minutes: row.frostbite_progress_minutes,
+        });
+    ctx.db
+        .character_exposure()
+        .character_id()
+        .update(CharacterExposure {
+            character_id,
+            wetness_bps: next.wetness_bps,
+            thermal_strain: next.thermal_strain,
+            frostbite_progress_minutes: next.frostbite_progress_minutes,
+        });
     Ok(())
 }
 
@@ -1105,6 +1315,13 @@ fn evaluate_strategic_condition(
     }
     let hunger = hunger_incapacitation(needs.food_balance_kcal, TRAVEL_CALORIES_PER_DAY);
     let thirst = thirst_incapacitation(needs.water_balance_ml, TRAVEL_WATER_ML_PER_DAY);
+    let exposure = ctx
+        .db
+        .character_exposure()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character exposure not found")?;
+    let thermal = adventuresim_core::survival::thermal_incapacitation(exposure.thermal_strain);
     let incapacitation = StrategicIncapacitation {
         pain,
         blood_loss,
@@ -1112,6 +1329,7 @@ fn evaluate_strategic_condition(
         fatigue: fatigue_incapacitation(fatigue_ratio),
         hunger,
         thirst,
+        thermal,
     };
     let status = match incapacitation.status() {
         IncapacitationStatus::Ready => "ready",
@@ -1131,6 +1349,9 @@ fn evaluate_strategic_condition(
             fatigue: incapacitation.fatigue,
             hunger: incapacitation.hunger,
             thirst: incapacitation.thirst,
+            thermal: incapacitation.thermal,
+            wetness_bps: exposure.wetness_bps,
+            thermal_strain: exposure.thermal_strain,
             food_days: food_reserve_days(&needs),
             water_days: water_reserve_days(&needs),
             water_capacity_ml: water_capacity,
@@ -1691,9 +1912,10 @@ pub fn apply_travel_condition(
 pub fn apply_rest_condition(
     ctx: &ReducerContext,
     character_id: u64,
-    _elapsed_minutes: u64,
+    elapsed_minutes: u64,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
+    let _ = elapsed_minutes;
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 

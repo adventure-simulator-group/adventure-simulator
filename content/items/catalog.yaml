@@ -3809,6 +3809,15 @@
         ]
       },
       "kind": "simple"
+    },
+    {
+      "id": "field_tent",
+      "display_name": "Field tent",
+      "weight_kg": 8.0,
+      "base_value": 32,
+      "tags": ["general_goods", "field_shelter"],
+      "presentation": {"icon": "camping-tent"},
+      "kind": "simple"
     }
   ]
 }

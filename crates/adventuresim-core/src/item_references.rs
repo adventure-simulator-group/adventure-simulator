@@ -30,15 +30,17 @@ pub const STANDARD_TRAVEL_RATION_ID: &str = "travel_ration";
 pub const STANDARD_WATERSKIN_ID: &str = "waterskin";
 pub const ARROW_ID: &str = "arrow";
 pub const SOFT_SOAP_ID: &str = "soft_soap";
+pub const FIELD_TENT_ID: &str = "field_tent";
 pub const SURGERY_KIT_ID: &str = "surgery_kit";
 pub const TAVERN_DRINK_ITEM_ID: &str = "table_wine";
 
-pub const REQUIRED_GAMEPLAY_ITEM_IDS: [&str; 15] = [
+pub const REQUIRED_GAMEPLAY_ITEM_IDS: [&str; 16] = [
     "arrow",
     "bandage",
     "cooked_meal",
     "cooking_pan",
     "cooking_pot",
+    "field_tent",
     "portable_oven",
     "small_beer",
     "table_wine",

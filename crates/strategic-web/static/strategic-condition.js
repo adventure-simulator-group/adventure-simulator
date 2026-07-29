@@ -20,6 +20,7 @@
       ["fatigue", condition.fatigue, color("fatigue", "#202020")],
       ["hunger", condition.hunger, color("hunger", "#b57a35")],
       ["thirst", condition.thirst, color("thirst", "#3f9fa8")],
+      ["temperature", condition.thermal, color("thermal", "#7d8ee8")],
     ];
     let cursor = 0;
     const stops = [];

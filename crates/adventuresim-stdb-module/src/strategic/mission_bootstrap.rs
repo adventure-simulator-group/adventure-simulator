@@ -1307,7 +1307,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     let observer_entropy_lo = ctx.random::<u64>();
     let now_minute = crate::time::refresh_clock(ctx)?;
     let incident_weather = adventuresim_core::weather::weather_at(
-        0x4144_5645_4e54_5552,
+        adventuresim_core::weather::WORLD_WEATHER_SEED,
         now_minute.saturating_sub(180),
         (settlement.coord_y * 1_000_000.0).round() as i32,
         (settlement.coord_x * 1_000_000.0).round() as i32,
@@ -1575,7 +1575,7 @@ pub fn spawn_developer_quest(
         })?;
     let now_minute = crate::time::refresh_clock(ctx)?;
     let incident_weather = adventuresim_core::weather::weather_at(
-        0x4144_5645_4e54_5552,
+        adventuresim_core::weather::WORLD_WEATHER_SEED,
         now_minute.saturating_sub(180),
         (settlement.coord_y * 1_000_000.0).round() as i32,
         (settlement.coord_x * 1_000_000.0).round() as i32,

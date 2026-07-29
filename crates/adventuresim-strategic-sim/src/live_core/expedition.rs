@@ -431,7 +431,12 @@ impl LiveRunner {
         let result = reducer_call!(self, operation, |cb| self
             .connection
             .reducers
-            .rest_at_camp_then(character_id, EXPEDITION_RECOVERY_REST_MINUTES, cb));
+            .rest_at_camp_then(
+                character_id,
+                EXPEDITION_RECOVERY_REST_MINUTES,
+                FieldShelter::Bivouac,
+                cb,
+            ));
         self.call(result)
     }
 

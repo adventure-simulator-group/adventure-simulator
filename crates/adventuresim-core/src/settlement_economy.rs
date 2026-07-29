@@ -402,6 +402,17 @@ mod tests {
     }
 
     #[test]
+    fn general_market_can_sell_the_weighted_field_tent() {
+        let market = profile(vec![Service::Market], vec![Stock::GeneralGoods]);
+        assert!(storefront_stocks(
+            &market,
+            Storefront::General,
+            crate::item_references::FIELD_TENT_ID,
+            CatalogKind::Simple,
+        ));
+    }
+
+    #[test]
     fn inns_stock_dual_role_cooking_ingredients_without_reclassifying_them() {
         let inn = profile(vec![Service::Inn], vec![Stock::Herbs]);
         for id in ["garlic", "sage", "honey", "vinegar"] {

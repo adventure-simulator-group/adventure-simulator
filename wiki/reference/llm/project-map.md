@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1461)
+## Files (1466)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -117,6 +117,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/stub.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/surgery.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/survival.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/threat_escalation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/threat_escalation_limits.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/weather.rs` — Rust source module for this component.
@@ -258,6 +259,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_equipped_item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_equipped_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_estate_basis_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_exposure_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_exposure_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_familiarity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_filth_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_filth_type.rs` — Generated SpacetimeDB data type.
@@ -381,6 +384,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/fallback_industry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/ferry_route_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/ferry_waterway_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/field_shelter_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/filth_disease_snapshot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/filth_origin_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/filth_provenance_type.rs` — Generated SpacetimeDB data type.

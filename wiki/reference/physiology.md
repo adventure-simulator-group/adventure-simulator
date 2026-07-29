@@ -193,3 +193,17 @@ authoritative explanations so presentation does not blur in-world belief with
 system truth.
 Humour information remains textual as well as colored, keyboard focusable, and
 available through pinned mouse/touch tooltips.
+
+## Strategic exposure
+
+Wetness and thermal strain are ordinary visible survival state, not private
+disease meters. Wetness is independent from filth even though the status rail
+draws the thinner filth bar inset over the thicker water bar. Thermal strain is
+signed around a comfortable center: cold is negative and heat is positive.
+The initial cold/hot warning bands do not reduce readiness; incapacitation
+begins progressively only on entering the very cold/hot bands and reaches its
+cap at the extreme. Sustained severe cold accumulates deterministic frostbite
+damage on one least-protected arm or leg per threshold, with canonical event
+times breaking equal-protection ties independently of elapsed-time chunking.
+Damage is committed through the normal injury table. Tents stop rain and
+buffet wind but supply no warmth of their own.
