@@ -1,8 +1,7 @@
 //! Authoritative settlement-scoped fame and infamy.
 //!
-//! Only immutable action events spread. Aggregate rows and imported receipts
-//! are terminal projections, which prevents cyclic roads from amplifying
-//! reputation.
+//! Only immutable action events spread. Aggregate rows are terminal
+//! projections, which prevents cyclic roads from amplifying reputation.
 
 use adventuresim_core::reputation::{
     ReputationEdge, ReputationSettlement, apply_delta, contributions,
@@ -43,22 +42,6 @@ pub struct ReputationEvent {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = reputation_contribution)]
-pub struct ReputationContributionReceipt {
-    /// `{event_id}:{settlement_id}`; makes each projection idempotent.
-    #[primary_key]
-    pub id: String,
-    #[index(btree)]
-    pub event_id: String,
-    #[index(btree)]
-    pub character_id: u64,
-    pub settlement_id: String,
-    pub fame: i32,
-    pub infamy: i32,
-    pub distance_m: u64,
-}
-
-#[derive(Clone, Debug)]
 #[table(accessor = discovered_offense)]
 pub struct DiscoveredOffense {
     #[primary_key]
@@ -73,6 +56,21 @@ pub struct DiscoveredOffense {
     pub execution_eligible: bool,
     pub occurred_at_minute: u64,
     pub settled: bool,
+}
+
+/// Immutable charge snapshot for one arrest. A later offense requires a later
+/// arrest and cannot be silently folded into an existing fine.
+#[derive(Clone, Debug)]
+#[table(accessor = authority_arrest_charge)]
+pub struct AuthorityArrestCharge {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub incident_id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub settlement_id: String,
+    pub offense_id: String,
 }
 
 #[derive(Clone, Debug)]
@@ -90,7 +88,8 @@ pub struct CaseReputationParticipant {
 
 pub fn award_case_resolution(
     ctx: &ReducerContext,
-    case_id: &str,
+    canonical_case_id: &str,
+    public_case_id: &str,
     party_id: &str,
     settlement_id: &str,
     fame: i32,
@@ -100,7 +99,7 @@ pub fn award_case_resolution(
         .db
         .backend_case_battle_authority()
         .iter()
-        .filter(|battle| battle.public_case_id == case_id && battle.party_id == party_id)
+        .filter(|battle| battle.public_case_id == public_case_id && battle.party_id == party_id)
         .flat_map(|battle| {
             ctx.db
                 .battle_participant()
@@ -116,7 +115,7 @@ pub fn award_case_resolution(
         character_ids = crate::strategic::living_party_member_ids(ctx, party_id);
     }
     for character_id in character_ids {
-        let snapshot_id = format!("{case_id}:{character_id}");
+        let snapshot_id = format!("{canonical_case_id}:{character_id}");
         if ctx
             .db
             .case_reputation_participant()
@@ -128,7 +127,7 @@ pub fn award_case_resolution(
                 .case_reputation_participant()
                 .insert(CaseReputationParticipant {
                     id: snapshot_id,
-                    case_id: case_id.to_owned(),
+                    case_id: canonical_case_id.to_owned(),
                     character_id,
                     party_id: party_id.to_owned(),
                     captured_at_minute: minute,
@@ -136,11 +135,11 @@ pub fn award_case_resolution(
         }
         record_event(
             ctx,
-            format!("case-resolution:{case_id}:{character_id}"),
+            format!("case-resolution:{canonical_case_id}:{character_id}"),
             character_id,
             settlement_id,
             "case_resolution",
-            case_id,
+            canonical_case_id,
             fame,
             0,
             minute,
@@ -172,12 +171,88 @@ pub fn record_discovered_offense(
     }
 }
 
+pub fn unsettled_local_offenses(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+) -> Vec<DiscoveredOffense> {
+    let mut offenses = ctx
+        .db
+        .discovered_offense()
+        .character_id()
+        .filter(character_id)
+        .filter(|offense| offense.settlement_id == settlement_id && !offense.settled)
+        .collect::<Vec<_>>();
+    offenses.sort_by(|left, right| {
+        (left.occurred_at_minute, &left.id).cmp(&(right.occurred_at_minute, &right.id))
+    });
+    offenses
+}
+
+pub fn snapshot_arrest_charges(
+    ctx: &ReducerContext,
+    incident_id: &str,
+    character_id: u64,
+    settlement_id: &str,
+) -> usize {
+    let offenses = unsettled_local_offenses(ctx, character_id, settlement_id);
+    for offense in &offenses {
+        let id = format!("{incident_id}:{}", offense.id);
+        if ctx.db.authority_arrest_charge().id().find(&id).is_none() {
+            ctx.db
+                .authority_arrest_charge()
+                .insert(AuthorityArrestCharge {
+                    id,
+                    incident_id: incident_id.to_owned(),
+                    character_id,
+                    settlement_id: settlement_id.to_owned(),
+                    offense_id: offense.id.clone(),
+                });
+        }
+    }
+    offenses.len()
+}
+
+pub fn unsettled_arrest_charges(
+    ctx: &ReducerContext,
+    incident_id: &str,
+    character_id: u64,
+    settlement_id: &str,
+) -> Vec<DiscoveredOffense> {
+    let mut offenses = ctx
+        .db
+        .authority_arrest_charge()
+        .incident_id()
+        .filter(incident_id)
+        .filter(|charge| {
+            charge.character_id == character_id && charge.settlement_id == settlement_id
+        })
+        .filter_map(|charge| ctx.db.discovered_offense().id().find(&charge.offense_id))
+        .filter(|offense| {
+            offense.character_id == character_id
+                && offense.settlement_id == settlement_id
+                && !offense.settled
+        })
+        .collect::<Vec<_>>();
+    offenses.sort_by(|left, right| left.id.cmp(&right.id));
+    offenses
+}
+
+pub fn settle_offenses(ctx: &ReducerContext, offenses: Vec<DiscoveredOffense>) {
+    for mut offense in offenses {
+        offense.settled = true;
+        ctx.db.discovered_offense().id().update(offense);
+    }
+}
+
 pub fn aggregate_id(character_id: u64, settlement_id: &str) -> String {
     format!("{character_id}:{settlement_id}")
 }
 
 /// Record and immediately project one immutable action event. Repeating an
 /// event ID is a successful no-op so reducer retries cannot double-award it.
+/// SpacetimeDB reducers commit the event and every aggregate mutation in one
+/// transaction, so per-destination idempotency rows are unnecessary.
 pub fn record_event(
     ctx: &ReducerContext,
     event_id: String,
@@ -243,16 +318,6 @@ pub fn record_event(
         occurred_at_minute,
     });
     for contribution in projected {
-        let receipt_id = format!("{event_id}:{}", contribution.settlement_id);
-        if ctx
-            .db
-            .reputation_contribution()
-            .id()
-            .find(&receipt_id)
-            .is_some()
-        {
-            continue;
-        }
         let aggregate_id = aggregate_id(character_id, &contribution.settlement_id);
         let existing = ctx
             .db
@@ -276,17 +341,6 @@ pub fn record_event(
         } else {
             ctx.db.character_settlement_reputation().insert(aggregate);
         }
-        ctx.db
-            .reputation_contribution()
-            .insert(ReputationContributionReceipt {
-                id: receipt_id,
-                event_id: event_id.clone(),
-                character_id,
-                settlement_id: contribution.settlement_id,
-                fame: contribution.fame,
-                infamy: contribution.infamy,
-                distance_m: contribution.distance_m,
-            });
     }
     Ok(true)
 }
@@ -304,6 +358,15 @@ pub fn local_reputation(
 }
 
 pub fn delete_character_reputation(ctx: &ReducerContext, character_id: u64) {
+    for charge in ctx
+        .db
+        .authority_arrest_charge()
+        .character_id()
+        .filter(character_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.authority_arrest_charge().id().delete(&charge.id);
+    }
     for participant in ctx
         .db
         .case_reputation_participant()
@@ -325,15 +388,6 @@ pub fn delete_character_reputation(ctx: &ReducerContext, character_id: u64) {
     {
         ctx.db.discovered_offense().id().delete(&offense.id);
     }
-    for receipt in ctx
-        .db
-        .reputation_contribution()
-        .character_id()
-        .filter(character_id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.reputation_contribution().id().delete(&receipt.id);
-    }
     for event in ctx
         .db
         .reputation_event()
@@ -354,5 +408,32 @@ pub fn delete_character_reputation(ctx: &ReducerContext, character_id: u64) {
             .character_settlement_reputation()
             .id()
             .delete(&aggregate.id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn case_battles_use_public_identity_but_events_keep_canonical_identity() {
+        let source = include_str!("reputation.rs");
+        let award = source
+            .split("pub fn award_case_resolution")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn record_discovered_offense").next())
+            .expect("case reputation award");
+        assert!(award.contains("battle.public_case_id == public_case_id"));
+        assert!(award.contains("case-resolution:{canonical_case_id}:{character_id}"));
+        assert!(award.contains("case_id: canonical_case_id.to_owned()"));
+    }
+
+    #[test]
+    fn event_is_the_only_projection_idempotency_marker() {
+        let source = include_str!("reputation.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!source.contains("ReputationContributionReceipt"));
+        assert!(!source.contains("reputation_contribution()"));
+        assert!(source.contains("reputation_event().id().find(&event_id)"));
     }
 }

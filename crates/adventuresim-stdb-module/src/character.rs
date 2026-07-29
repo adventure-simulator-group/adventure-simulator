@@ -676,6 +676,7 @@ fn delete_character_data(
         .character_id()
         .delete(character.id);
     crate::reputation::delete_character_reputation(ctx, character.id);
+    crate::strategic::delete_activity_incident_entropy(ctx, character.id);
     ctx.db.character_limbs().character_id().delete(character.id);
     ctx.db.character_equip().character_id().delete(character.id);
     ctx.db

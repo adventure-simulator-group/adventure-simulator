@@ -83,7 +83,7 @@ pub fn local_delta(raw: i32, population_level: i32, population_estimate: u32) ->
     )
 }
 
-/// Compute origin and terminal spill receipts for one action event. The
+/// Compute origin and terminal spill contributions for one action event. The
 /// normalized spill budget cannot grow when more destinations are reachable.
 pub fn contributions(
     origin_id: &str,
@@ -124,21 +124,24 @@ pub fn contributions(
     let mut distances = BTreeMap::from([(origin_node, 0_u64)]);
     let mut queue = BinaryHeap::from([Reverse((0_u64, origin_node))]);
     while let Some(Reverse((distance, node))) = queue.pop() {
-        if distances.len() >= MAX_SPILL_GRAPH_NODES {
-            break;
-        }
         if distance > reach || distances.get(&node).copied() != Some(distance) {
             continue;
         }
         for &(next, length) in adjacency.get(&node).into_iter().flatten() {
             let candidate = distance.saturating_add(u64::from(length));
-            if candidate <= reach
-                && distances
-                    .get(&next)
-                    .is_none_or(|existing| candidate < *existing)
-            {
-                distances.insert(next, candidate);
-                queue.push(Reverse((candidate, next)));
+            if candidate > reach {
+                continue;
+            }
+            match distances.get(&next).copied() {
+                Some(existing) if candidate < existing => {
+                    distances.insert(next, candidate);
+                    queue.push(Reverse((candidate, next)));
+                }
+                None if distances.len() < MAX_SPILL_GRAPH_NODES => {
+                    distances.insert(next, candidate);
+                    queue.push(Reverse((candidate, next)));
+                }
+                _ => {}
             }
         }
     }
@@ -181,6 +184,27 @@ pub fn npc_reaction_modifier(fame: i32, infamy: i32, familiarity_bps: u16) -> i1
     let net = i64::from(fame) - i64::from(infamy);
     let unfamiliarity = 10_000_i64.saturating_sub(i64::from(familiarity_bps.min(10_000)));
     (net.saturating_mul(unfamiliarity) / i64::from(REPUTATION_SCALE) / 10_000).clamp(-20, 20) as i16
+}
+
+/// Fine only snapshotted, still-unsettled offenses. Empty charge sets cannot
+/// produce a punitive payment.
+pub fn authority_fine(severities: &[u8]) -> Option<u64> {
+    (!severities.is_empty()).then(|| {
+        severities
+            .iter()
+            .map(|severity| u64::from((*severity).clamp(1, 5)) * 5)
+            .sum::<u64>()
+            .min(100)
+    })
+}
+
+pub fn authority_fine_for_charges(charges: &[(u8, bool)]) -> Option<u64> {
+    authority_fine(
+        &charges
+            .iter()
+            .filter_map(|(severity, settled)| (!settled).then_some(*severity))
+            .collect::<Vec<_>>(),
+    )
 }
 
 #[cfg(test)]
@@ -247,5 +271,49 @@ mod tests {
         assert_eq!(apply_delta(1, -100), 0);
         assert_eq!(npc_reaction_modifier(100_000, 0, 0), 20);
         assert_eq!(npc_reaction_modifier(100_000, 0, 10_000), 0);
+    }
+
+    #[test]
+    fn high_degree_graph_refuses_unseen_nodes_at_the_hard_bound() {
+        let mut edges = Vec::new();
+        for node in 2..=(MAX_SPILL_GRAPH_NODES as u64 + 500) {
+            edges.push(ReputationEdge {
+                from: 1,
+                to: node,
+                length_m: 1_000,
+            });
+        }
+        let mut settlements = vec![settlement("origin", 1, 50_000)];
+        for node in 2..=30 {
+            settlements.push(settlement(&format!("near-{node}"), node, 1_000));
+        }
+        settlements.push(settlement(
+            "beyond-bound",
+            MAX_SPILL_GRAPH_NODES as u64 + 400,
+            1_000,
+        ));
+        let values = contributions("origin", 10_000, 0, &settlements, &edges);
+        assert!(values.len() <= 1 + MAX_SPILL_DESTINATIONS);
+        assert!(
+            !values
+                .iter()
+                .any(|value| value.settlement_id == "beyond-bound")
+        );
+        let local = values[0].fame;
+        let spill: i32 = values.iter().skip(1).map(|value| value.fame).sum();
+        assert!(spill <= (i64::from(local) * SPILL_BUDGET_BPS / 10_000) as i32);
+    }
+
+    #[test]
+    fn settled_charges_cannot_be_fined_twice_but_new_charges_can() {
+        let mut charges = vec![(1, false), (3, false)];
+        assert_eq!(authority_fine_for_charges(&charges), Some(20));
+        for (_, settled) in &mut charges {
+            *settled = true;
+        }
+        assert_eq!(authority_fine_for_charges(&charges), None);
+        charges.push((2, false));
+        assert_eq!(authority_fine_for_charges(&charges), Some(10));
+        assert_eq!(authority_fine(&[5; 30]), Some(100));
     }
 }
