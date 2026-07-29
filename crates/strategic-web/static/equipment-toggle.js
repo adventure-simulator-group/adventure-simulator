@@ -37,6 +37,7 @@
         return rank === null ? [] : [{
           placementIndex: placement.placementIndex,
           attachmentTargets: [],
+          occupant: placement.inputOccupants?.[input] || null,
           rank,
         }];
       }
@@ -45,6 +46,7 @@
       const selectedTargets = [];
       const selectedRanks = [];
       const selectedCapacity = new Map();
+      const selectedOccupants = [];
       for (const requirement of requirements) {
         const target = [...(requirement.targets || [])]
           .filter((candidate) => inputRank(candidate, input) !== null)
@@ -55,12 +57,23 @@
           )
           .find((candidate) => {
             const capacityKey = `${candidate.parentInventoryItemId}:${candidate.attachmentPointId}`;
-            return (selectedCapacity.get(capacityKey) || 0) < Number(candidate.freeCapacity || 1);
+            const freeCapacity = candidate.freeCapacity == null
+              ? 1
+              : Number(candidate.freeCapacity);
+            const capacity = freeCapacity
+              + (candidate.occupants || []).length;
+            return (selectedCapacity.get(capacityKey) || 0) < capacity;
           });
         if (!target) return [];
         const capacityKey = `${target.parentInventoryItemId}:${target.attachmentPointId}`;
-        selectedCapacity.set(capacityKey, (selectedCapacity.get(capacityKey) || 0) + 1);
+        const usedCapacity = selectedCapacity.get(capacityKey) || 0;
+        selectedCapacity.set(capacityKey, usedCapacity + 1);
         selectedRanks.push(inputRank(target, input));
+        const freeCapacity = target.freeCapacity == null ? 1 : Number(target.freeCapacity);
+        const occupiedIndex = usedCapacity - freeCapacity;
+        if (occupiedIndex >= 0 && target.occupants?.[occupiedIndex]) {
+          selectedOccupants.push(target.occupants[occupiedIndex]);
+        }
         selectedTargets.push({
           requirement_index: requirement.requirementIndex,
           parent_inventory_item_id: target.parentInventoryItemId,
@@ -70,6 +83,7 @@
       return [{
         placementIndex: placement.placementIndex,
         attachmentTargets: selectedTargets,
+        occupant: selectedOccupants[0] || placement.inputOccupants?.[input] || null,
         rank: Math.max(bodyRank ?? -1, ...selectedRanks),
       }];
     });
@@ -77,10 +91,12 @@
       right.rank - left.rank || left.placementIndex - right.placementIndex
     );
     if (!candidates[0]) return null;
-    return {
+    const selection = {
       placementIndex: candidates[0].placementIndex,
       attachmentTargets: candidates[0].attachmentTargets,
     };
+    if (candidates[0].occupant) selection.occupant = candidates[0].occupant;
+    return selection;
   };
   const normalizedEquipmentInput = (event) => {
     if (event.key === 'Tab') return 'tab';
@@ -97,13 +113,20 @@
 
     const dialog = document.createElement('dialog');
     dialog.className = 'equipment-placement-modal equipment-slot-modal';
-    dialog.setAttribute('aria-labelledby', `equipment-placement-title-${control.dataset.inventoryItemId}`);
-    const title = document.createElement('h2');
-    title.id = `equipment-placement-title-${control.dataset.inventoryItemId}`;
-    title.textContent = control.getAttribute('aria-label') || 'Assign equipment slot';
-    const help = document.createElement('p');
-    help.className = 'small-copy';
-    help.textContent = 'Press a highlighted key or click it. Unavailable slots are dimmed.';
+    dialog.setAttribute(
+      'aria-label',
+      control.getAttribute('aria-label') || 'Choose equipment slot',
+    );
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'equipment-slot-close';
+    close.setAttribute('aria-label', 'Close equipment slot picker');
+    close.title = 'Close';
+    close.textContent = '×';
+    close.addEventListener('click', () => {
+      dialog.returnValue = '';
+      dialog.close();
+    });
     const keyboard = document.createElement('div');
     keyboard.className = 'equipment-slot-keyboard';
     keyboard.setAttribute('role', 'group');
@@ -123,40 +146,59 @@
       );
       const key = document.createElement('kbd');
       key.textContent = choice.label;
+      const icon = document.createElement('span');
+      icon.className = 'equipment-slot-choice-icon';
+      if (choice.selection?.occupant) {
+        icon.style.setProperty(
+          '--equipment-slot-icon',
+          `url('${choice.selection.occupant.icon}')`,
+        );
+        icon.setAttribute('role', 'img');
+        icon.setAttribute('aria-label', choice.selection.occupant.itemName);
+        icon.title = choice.selection.occupant.itemName;
+      } else {
+        icon.setAttribute('aria-hidden', 'true');
+      }
       const locations = document.createElement('span');
+      locations.className = 'equipment-slot-choice-label';
       locations.textContent = (choice.locations || []).join(' / ');
-      button.append(key, locations);
+      button.append(key, icon, locations);
       button.addEventListener('click', () => {
         dialog.returnValue = choice.input;
         dialog.close();
       });
       keyboard.append(button);
     });
-    const cancel = document.createElement('button');
-    cancel.type = 'button';
-    cancel.className = 'equipment-slot-cancel';
-    cancel.textContent = 'Cancel';
-    cancel.addEventListener('click', () => {
-      dialog.returnValue = '';
-      dialog.close();
-    });
-    dialog.append(title, help, keyboard, cancel);
+    dialog.append(close, keyboard);
     document.body.append(dialog);
 
+    let invalidFeedbackTimer = null;
     const onKeydown = (event) => {
       if (event.key === 'Escape') return;
       const input = normalizedEquipmentInput(event);
-      const choice = choices.find((candidate) =>
-        candidate.input === input && candidate.selection !== null
-      );
+      const choice = choices.find((candidate) => candidate.input === input);
       if (!choice) return;
       event.preventDefault();
+      if (choice.selection === null) {
+        const unavailable = keyboard.querySelector(
+          `[data-equipment-input="${choice.input}"]`,
+        );
+        unavailable?.classList.remove('is-invalid-input');
+        void unavailable?.offsetWidth;
+        unavailable?.classList.add('is-invalid-input');
+        clearTimeout(invalidFeedbackTimer);
+        invalidFeedbackTimer = setTimeout(() => {
+          unavailable?.classList.remove('is-invalid-input');
+        }, 420);
+        return;
+      }
       dialog.returnValue = choice.input;
       dialog.close();
     };
     dialog.addEventListener('keydown', onKeydown);
     dialog.addEventListener('close', () => {
       dialog.removeEventListener('keydown', onKeydown);
+      clearTimeout(invalidFeedbackTimer);
       const choice = choices.find((candidate) => candidate.input === dialog.returnValue);
       dialog.remove();
       control.focus();
@@ -173,6 +215,7 @@
         ...(selection === null ? {} : { placement_index: String(selection.placementIndex) }),
         ...(selection ? {
           attachment_targets: JSON.stringify(selection.attachmentTargets),
+          replace_occupied: 'true',
         } : {}),
       }),
       originPage: control.closest('#strategic-page'),
@@ -203,6 +246,7 @@
       parsePlacements,
       parsePlacementOptions,
       selectionForInput,
+      chooseSlot,
     };
   }
   if (typeof document === 'undefined') return;

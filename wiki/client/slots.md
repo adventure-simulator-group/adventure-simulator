@@ -84,9 +84,12 @@ The screen normally gives no indicator for what is in your slots or your hands. 
 The strategic inventory uses a compact version of this map. An equipped row
 shows every applicable QWERTY key; lighter key text is nearer the surface and
 darker text is farther underneath. Clicking an equipped row removes it
-directly. Clicking an unequipped row opens the QWERTY map, where invalid keys
-are dimmed. A valid key can be clicked or pressed, and selects the outermost
-compatible placement or attachment target reachable through that slot.
+directly. Clicking an unequipped row opens the QWERTY map. Invalid keys are
+dimmed and flash red when pressed. Eligible occupied slots show their current
+item icon and swap that occupant out when selected; eligible empty slots keep
+the icon area as empty negative space. A valid key can be clicked or pressed,
+and selects the outermost compatible placement or attachment target reachable
+through that slot.
 ## Bags
 Your entire inventory won't necessarily fit into the slot system, which is fine. The slot system is intended not to replace "standard inventory management" altogether but to make a *significant subset* of your inventory more manageable, that being the subset of items that you need readily accessible. If you don't need a given item readily accessible, you can put it in a bag.
 

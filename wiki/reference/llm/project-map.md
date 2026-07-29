@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1463)
+## Files (1462)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -629,6 +629,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/rename_saved_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/repair_order_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/repair_order_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/replace_item_at_placement_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/report_contract_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/reputation_event_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/request_general_party_join_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -1064,8 +1065,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/settlement/mod.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/rest.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/social.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/settlement/trade.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/settlement/trade.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/trade.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/settlement/travel.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.

@@ -507,6 +507,7 @@ pub mod remove_party_member_reducer;
 pub mod rename_saved_recruitment_role_reducer;
 pub mod repair_order_table;
 pub mod repair_order_type;
+pub mod replace_item_at_placement_reducer;
 pub mod report_contract_reducer;
 pub mod reputation_event_type;
 pub mod request_general_party_join_reducer;
@@ -1193,6 +1194,7 @@ pub use remove_party_member_reducer::remove_party_member;
 pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
 pub use repair_order_table::*;
 pub use repair_order_type::RepairOrder;
+pub use replace_item_at_placement_reducer::replace_item_at_placement;
 pub use report_contract_reducer::report_contract;
 pub use reputation_event_type::ReputationEvent;
 pub use request_general_party_join_reducer::request_general_party_join;
@@ -1761,6 +1763,12 @@ pub enum Reducer {
         role_id: u64,
         name: String,
     },
+    ReplaceItemAtPlacement {
+        character_id: u64,
+        inventory_item_id: u64,
+        placement_index: u16,
+        targets: Vec<EquipmentAttachmentTargetSelection>,
+    },
     ReportContract {
         character_id: u64,
         contract_id: String,
@@ -2130,6 +2138,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RemovePartyMember { .. } => "remove_party_member",
             Reducer::RenameSavedRecruitmentRole { .. } => "rename_saved_recruitment_role",
+            Reducer::ReplaceItemAtPlacement { .. } => "replace_item_at_placement",
             Reducer::ReportContract { .. } => "report_contract",
             Reducer::RequestGeneralPartyJoin { .. } => "request_general_party_join",
             Reducer::RequestPartyAction { .. } => "request_party_action",
@@ -2864,6 +2873,17 @@ Reducer::BeginWorldDataImport{
                 owner_id: owner_id.clone(),
                 role_id: role_id.clone(),
                 name: name.clone(),
+}),
+            Reducer::ReplaceItemAtPlacement{
+                character_id,
+                inventory_item_id,
+                placement_index,
+                targets,
+}             => __sats::bsatn::to_vec(&replace_item_at_placement_reducer::ReplaceItemAtPlacementArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+                placement_index: placement_index.clone(),
+                targets: targets.clone(),
 }),
             Reducer::ReportContract{
                 character_id,

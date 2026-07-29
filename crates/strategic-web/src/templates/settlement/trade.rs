@@ -26,8 +26,8 @@ use crate::spacetimedb::{
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
-    empty_state, game_icon, item_display_name, item_source_edit_url, item_type_header,
-    item_type_icon, settlement_layout_with_session, sidebar_section,
+    empty_state, game_icon, item_display_name, item_icon_name, item_source_edit_url,
+    item_type_header, item_type_icon, settlement_layout_with_session, sidebar_section,
 };
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -1523,6 +1523,23 @@ fn equipment_input_map_json() -> String {
     serde_json::to_string(&inputs).unwrap_or_else(|_| "[]".to_owned())
 }
 
+fn equipment_occupant_json(
+    equip: &CharacterEquipmentGraph,
+    inventory_item_id: u64,
+) -> serde_json::Value {
+    let item_id = equip
+        .equipment_nodes
+        .iter()
+        .find(|node| node.inventory_item_id == inventory_item_id)
+        .map(|node| node.item_name.as_str())
+        .unwrap_or("unknown_item");
+    serde_json::json!({
+        "inventoryItemId": inventory_item_id,
+        "itemName": item_display_name(item_id),
+        "icon": format!("/static/icons/game/{}.svg", item_icon_name(item_id))
+    })
+}
+
 fn equipped_input_badges(
     equip: Option<&CharacterEquipmentGraph>,
     inventory_item_id: u64,
@@ -1678,23 +1695,31 @@ fn equipment_control(
                                                 inventory.id,
                                                 target.parent_inventory_item_id,
                                             )
-                                            && (target.free_capacity > 0
-                                                || equip.equipment_occupancies.iter().any(|row| {
-                                                    row.inventory_item_id == inventory.id
-                                                        && row.parent_inventory_item_id
-                                                            == Some(target.parent_inventory_item_id)
-                                                        && row.attachment_point_id.as_deref()
-                                                            == Some(
-                                                                target.attachment_point_id.as_str(),
-                                                            )
-                                                }))
                                     })
                                 })
                                 .map(|target| {
+                                    let mut occupants = equip
+                                        .into_iter()
+                                        .flat_map(|equip| equip.equipment_occupancies.iter())
+                                        .filter(|row| {
+                                            row.inventory_item_id != inventory.id
+                                                && row.parent_inventory_item_id
+                                                    == Some(target.parent_inventory_item_id)
+                                                && row.attachment_point_id.as_deref()
+                                                    == Some(target.attachment_point_id.as_str())
+                                        })
+                                        .collect::<Vec<_>>();
+                                    occupants.sort_by_key(|row| row.capacity_index);
                                     serde_json::json!({
                                         "parentInventoryItemId": target.parent_inventory_item_id,
                                         "attachmentPointId": target.attachment_point_id,
                                         "freeCapacity": target.free_capacity,
+                                        "occupants": occupants
+                                            .into_iter()
+                                            .filter_map(|row| equip.map(|equip| {
+                                                equipment_occupant_json(equip, row.inventory_item_id)
+                                            }))
+                                            .collect::<Vec<_>>(),
                                         "inputRanks": equip
                                             .map(|equip| equipment_input_ranks_for_item(
                                                 equip,
@@ -1717,21 +1742,9 @@ fn equipment_control(
                             })
                         })
                         .collect::<Vec<_>>();
-                    let root_available = placement.occupancy.iter().all(|requirement| {
-                        !equip
-                            .into_iter()
-                            .flat_map(|equip| equip.equipment_occupancies.iter())
-                            .any(|occupied| {
-                                occupied.inventory_item_id != inventory.id
-                                    && occupied.location == Some(requirement.location)
-                                    && occupied.channel == requirement.channel
-                                    && occupied.order == requirement.order
-                            })
-                    });
                     let input_ranks = serde_json::Value::Object(
                         INPUT_ADDRESS_MAPPINGS
                             .iter()
-                            .filter(|_| root_available)
                             .filter_map(|binding| {
                                 placement
                                     .occupancy
@@ -1748,6 +1761,51 @@ fn equipment_control(
                             })
                             .collect(),
                     );
+                    let input_occupants = serde_json::Value::Object(
+                        INPUT_ADDRESS_MAPPINGS
+                            .iter()
+                            .filter_map(|binding| {
+                                let occupant = placement
+                                    .occupancy
+                                    .iter()
+                                    .filter(|requirement| {
+                                        equipment_binding_contains(binding, requirement.location)
+                                    })
+                                    .filter_map(|requirement| {
+                                        equip
+                                            .into_iter()
+                                            .flat_map(|equip| {
+                                                equip.equipment_occupancies.iter().map(move |row| {
+                                                    (equip, row)
+                                                })
+                                            })
+                                            .find(|(_, occupied)| {
+                                                occupied.inventory_item_id != inventory.id
+                                                    && occupied.location
+                                                        == Some(requirement.location)
+                                                    && occupied.channel == requirement.channel
+                                                    && occupied.order == requirement.order
+                                            })
+                                    })
+                                    .max_by_key(|(_, occupied)| {
+                                        (
+                                            equipment_channel_rank(occupied.channel),
+                                            occupied.order,
+                                            occupied.inventory_item_id,
+                                        )
+                                    });
+                                occupant.map(|(equip, occupied)| {
+                                    (
+                                        binding.input.to_owned(),
+                                        equipment_occupant_json(
+                                            equip,
+                                            occupied.inventory_item_id,
+                                        ),
+                                    )
+                                })
+                            })
+                            .collect(),
+                    );
                     serde_json::json!({
                         "placementIndex": placement_index,
                         "label": placement_labels
@@ -1756,6 +1814,7 @@ fn equipment_control(
                             .unwrap_or(&placement.id),
                         "hasBody": !placement.occupancy.is_empty(),
                         "inputRanks": input_ranks,
+                        "inputOccupants": input_occupants,
                         "requirements": requirements
                     })
                 })

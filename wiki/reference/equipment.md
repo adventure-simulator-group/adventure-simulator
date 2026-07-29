@@ -120,14 +120,18 @@ Demo fixture exercises each color and repair ceiling.
 Equippable personal-inventory rows expose a compact slot-key control. Equipped
 items show every applicable QWERTY key, with lighter text toward the surface
 and darker text underneath. Clicking an equipped control unequips it directly.
-Clicking an unequipped control opens the keyboard-shaped slot map; invalid
-locations are dimmed, while clicking or pressing a valid key chooses the
-outermost compatible authored placement or attachment target. Equipped
+Clicking an unequipped control opens a self-explanatory keyboard-shaped slot
+map with a compact X close control. Invalid locations are dimmed and flash red
+when their key is pressed. Eligible occupied locations show the current item's
+icon; selecting one atomically unequips that occupant and equips the new item.
+Eligible empty locations retain the same icon-sized negative space. Clicking
+or pressing a valid key chooses the outermost compatible authored placement or
+attachment target. Equipped
 controls name their occupied locations and protection coverage to assistive
 technology and in their tooltip. An attached item's row names its parent and
-attachment point directly. Equipping never silently displaces another item;
-conflicts, descendant targets, and full/incompatible attachment points are
-excluded or reported exactly.
+attachment point directly. Swaps validate the complete destination and every
+displaced item before changing the graph; descendant targets and incompatible
+attachment points remain excluded or are reported exactly.
 Non-equipment rows keep a disabled slot control.
 
 Medication reuses the same familiar checkbox gesture without occupying an

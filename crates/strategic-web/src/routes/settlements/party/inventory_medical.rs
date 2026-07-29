@@ -53,6 +53,8 @@ pub(super) struct EquipmentForm {
     equipped: bool,
     placement_index: Option<u16>,
     attachment_targets: Option<String>,
+    #[serde(default)]
+    replace_occupied: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -300,7 +302,20 @@ pub(super) async fn set_equipment(
             },
             None => Vec::new(),
         };
-        let result = if !placement.parents.is_empty() {
+        let result = if form.replace_occupied {
+            state
+                .db
+                .call(
+                    "replace_item_at_placement",
+                    &[
+                        json!(character_id),
+                        json!(form.inventory_item_id),
+                        json!(placement_index),
+                        json!(targets),
+                    ],
+                )
+                .await
+        } else if !placement.parents.is_empty() {
             state
                 .db
                 .call(

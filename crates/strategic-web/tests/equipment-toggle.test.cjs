@@ -2,10 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseHTML } = require('linkedom');
 const { readRustModuleSource } = require('./rust-module-source.cjs');
 
 const {
   attachmentTargetsForPlacement,
+  chooseSlot,
   exactEquipmentError,
   normalizedEquipmentInput,
   parseInputMap,
@@ -168,6 +170,54 @@ test('root placements expose every applicable key and preserve authored alternat
   assert.equal(selectionForInput(placements, 'b'), null);
 });
 
+test('occupied eligible root slots remain selectable and expose their item icon', () => {
+  const occupant = {
+    inventoryItemId: 19,
+    itemName: 'Padded skirt',
+    icon: '/static/icons/game/skirt.svg',
+  };
+  assert.deepEqual(selectionForInput([{
+    placementIndex: 3,
+    inputRanks: { y: 20000 },
+    inputOccupants: { y: occupant },
+    requirements: [],
+  }], 'y'), {
+    placementIndex: 3,
+    attachmentTargets: [],
+    occupant,
+  });
+});
+
+test('a full compatible attachment point remains selectable as a swap', () => {
+  const occupant = {
+    inventoryItemId: 24,
+    itemName: 'Arming sword',
+    icon: '/static/icons/game/broadsword.svg',
+  };
+  assert.deepEqual(selectionForInput([{
+    placementIndex: 1,
+    inputRanks: {},
+    requirements: [{
+      requirementIndex: 0,
+      targets: [{
+        parentInventoryItemId: 12,
+        attachmentPointId: 'sheath',
+        freeCapacity: 0,
+        occupants: [occupant],
+        inputRanks: { q: 160000 },
+      }],
+    }],
+  }], 'q'), {
+    placementIndex: 1,
+    attachmentTargets: [{
+      requirement_index: 0,
+      parent_inventory_item_id: 12,
+      attachment_point_id: 'sheath',
+    }],
+    occupant,
+  });
+});
+
 test('mixed body and attachment placements require the same valid key', () => {
   const placement = {
     placementIndex: 4,
@@ -197,6 +247,55 @@ test('keyboard input is normalized only while the slot chooser handles it', () =
   );
 });
 
+test('slot chooser uses an icon cell, an X close control, and red invalid-key feedback', async () => {
+  const { window, document } = parseHTML('<html><body><button id="equip"></button></body></html>');
+  global.window = window;
+  global.document = document;
+  window.HTMLElement.prototype.showModal = function showModal() {
+    this.setAttribute('open', '');
+  };
+  window.HTMLElement.prototype.close = function close() {
+    this.removeAttribute('open');
+    this.dispatchEvent(new window.Event('close'));
+  };
+  const control = document.querySelector('#equip');
+  control.dataset.inventoryItemId = '7';
+  control.dataset.equipmentInputMap = JSON.stringify([
+    { input: 'q', label: 'Q', row: 0, column: 0, locations: ['Left belt'] },
+    { input: 'y', label: 'Y', row: 1, column: 1, locations: ['Stomach'] },
+  ]);
+  control.dataset.equipmentPlacementOptions = JSON.stringify([{
+    placementIndex: 0,
+    inputRanks: { y: 20000 },
+    inputOccupants: {},
+    requirements: [],
+  }]);
+
+  const result = chooseSlot(control);
+  const dialog = document.querySelector('.equipment-slot-modal');
+  assert.equal(dialog.querySelector('h2'), null);
+  assert.equal(dialog.querySelector('p'), null);
+  assert.equal(dialog.querySelector('.equipment-slot-cancel'), null);
+  assert.equal(
+    dialog.querySelector('.equipment-slot-close').getAttribute('aria-label'),
+    'Close equipment slot picker',
+  );
+  assert.ok(dialog.querySelector('[data-equipment-input="y"] .equipment-slot-choice-icon'));
+
+  const invalidKey = new window.Event('keydown', { bubbles: true, cancelable: true });
+  invalidKey.key = 'q';
+  dialog.dispatchEvent(invalidKey);
+  assert.equal(
+    dialog.querySelector('[data-equipment-input="q"]').classList.contains('is-invalid-input'),
+    true,
+  );
+
+  dialog.querySelector('.equipment-slot-close').click();
+  assert.equal(await result, null);
+  delete global.document;
+  delete global.window;
+});
+
 test('equipment errors have an HTTP fallback when the reducer body is empty', async () => {
   const response = {
     status: 503,
@@ -219,6 +318,10 @@ test('medication checkbox submits no browser-selected medical parameters', () =>
 });
 
 test('parameterized preparation form and browser route are absent', () => {
+  const client = fs.readFileSync(
+    path.join(__dirname, '..', 'static', 'equipment-toggle.js'),
+    'utf8',
+  );
   const health = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'templates', 'settlement', 'character_health.rs'),
     'utf8',
@@ -236,5 +339,7 @@ test('parameterized preparation form and browser route are absent', () => {
   assert.equal(routes.includes(removedRoute), false);
   assert.match(routes, /standard_medication_administration/);
   assert.match(routes, /"equip_item"/);
+  assert.match(routes, /"replace_item_at_placement"/);
+  assert.match(client, /replace_occupied: 'true'/);
   assert.match(routes, /definition\.slot/);
 });

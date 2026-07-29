@@ -5963,7 +5963,33 @@ body.chat-resizing {
 }
 
 .equipment-slot-modal {
+  position: fixed;
   inline-size: min(38rem, calc(100vw - 2rem));
+  padding-block-start: 2.4rem;
+}
+
+.equipment-slot-close {
+  position: absolute;
+  inset-block-start: 0.45rem;
+  inset-inline-end: 0.55rem;
+  display: grid;
+  inline-size: 1.8rem;
+  block-size: 1.8rem;
+  place-items: center;
+  padding: 0;
+  color: #dfcfb1;
+  font: 700 1.45rem/1 sans-serif;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.2rem;
+  cursor: pointer;
+}
+
+.equipment-slot-close:hover,
+.equipment-slot-close:focus-visible {
+  color: #fff4d8;
+  background: #4a3e2d;
+  border-color: #f0cf91;
 }
 
 .equipment-slot-keyboard {
@@ -5971,7 +5997,7 @@ body.chat-resizing {
   grid-template-columns: repeat(7, minmax(3.1rem, 1fr));
   grid-template-rows: repeat(4, minmax(3.2rem, auto));
   gap: 0.35rem;
-  margin-block: 0.8rem;
+  margin: 0;
 }
 
 .equipment-slot-choice {
@@ -5994,10 +6020,25 @@ body.chat-resizing {
   font-size: 0.95rem;
 }
 
-.equipment-slot-choice span {
+.equipment-slot-choice-label {
   overflow-wrap: anywhere;
   font-size: 0.58rem;
   line-height: 1.05;
+}
+
+.equipment-slot-choice-icon {
+  display: block;
+  inline-size: 1.3rem;
+  block-size: 1.3rem;
+  color: #fff4d8;
+  background: currentcolor;
+  opacity: 0;
+  -webkit-mask: var(--equipment-slot-icon) center / contain no-repeat;
+  mask: var(--equipment-slot-icon) center / contain no-repeat;
+}
+
+.equipment-slot-choice-icon[role="img"] {
+  opacity: 1;
 }
 
 .equipment-slot-choice:hover:not(:disabled),
@@ -6018,8 +6059,18 @@ body.chat-resizing {
   color: #756d61;
 }
 
-.equipment-slot-cancel {
-  justify-self: end;
+.equipment-slot-choice.is-invalid-input,
+.equipment-slot-choice.is-invalid-input kbd {
+  color: #ffaaa2;
+  background-color: #4b1715;
+  border-color: #f04f46;
+  opacity: 1;
+  animation: equipment-slot-invalid 420ms ease-out;
+}
+
+@keyframes equipment-slot-invalid {
+  0%, 100% { box-shadow: none; }
+  35% { box-shadow: 0 0 0 3px rgb(240 79 70 / 35%); }
 }
 
 @media (max-width: 620px) {
@@ -6027,7 +6078,7 @@ body.chat-resizing {
     grid-template-columns: repeat(7, minmax(2.25rem, 1fr));
     gap: 0.2rem;
   }
-  .equipment-slot-choice span { display: none; }
+  .equipment-slot-choice-label { display: none; }
 }
 
 .equipment-graph-summary {
