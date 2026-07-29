@@ -262,6 +262,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(dev_stack.identity_matches(wrong_exe))
         self.assertFalse(dev_stack.identity_matches(wrong_start))
 
+    def test_spacetime_launcher_exec_transition_is_allowed(self):
+        self.assertTrue(dev_stack.executable_identity_matches(
+            "/usr/bin/spacetime",
+            "/usr/bin/spacetimedb-standalone",
+        ))
+        self.assertTrue(dev_stack.executable_identity_matches(
+            r"C:\tools\spacetimedb-cli.exe",
+            r"C:\tools\spacetime-standalone.exe",
+        ))
+        self.assertFalse(dev_stack.executable_identity_matches(
+            "/usr/bin/python",
+            "/usr/bin/spacetimedb-standalone",
+        ))
+
     def test_stop_refuses_identity_mismatch(self):
         with tempfile.TemporaryDirectory() as temp:
             metadata = Path(temp, "process.json")
