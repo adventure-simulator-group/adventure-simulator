@@ -123,10 +123,11 @@ and darker text underneath. Clicking an equipped control unequips it directly.
 Clicking an unequipped control opens the keyboard-shaped slot map; invalid
 locations are dimmed, while clicking or pressing a valid key chooses the
 outermost compatible authored placement or attachment target. Equipped
-inventory also provides a location-grouped, outside-in layer summary, lists
-multi-location spans once, and names every parent attachment edge. Equipping
-never silently displaces another item; conflicts, descendant targets, and
-full/incompatible attachment points are excluded or reported exactly.
+controls name their occupied locations and protection coverage to assistive
+technology and in their tooltip. An attached item's row names its parent and
+attachment point directly. Equipping never silently displaces another item;
+conflicts, descendant targets, and full/incompatible attachment points are
+excluded or reported exactly.
 Non-equipment rows keep a disabled slot control.
 
 Medication reuses the same familiar checkbox gesture without occupying an

@@ -165,23 +165,23 @@ pub const INPUT_ADDRESS_MAPPINGS: &[InputAddressMapping] = &[
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
-        input: "w",
-        keyboard_row: 1,
-        keyboard_column: 2,
+        input: "g",
+        keyboard_row: 2,
+        keyboard_column: 5,
         locations: &[EquipmentLocation::Chest],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
-        input: "s",
-        keyboard_row: 2,
-        keyboard_column: 2,
+        input: "y",
+        keyboard_row: 1,
+        keyboard_column: 6,
         locations: &[EquipmentLocation::Stomach],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
-        input: "d",
+        input: "h",
         keyboard_row: 2,
-        keyboard_column: 3,
+        keyboard_column: 6,
         locations: &[EquipmentLocation::Back],
         channel_order: OUTSIDE_TO_INSIDE,
     },
@@ -821,9 +821,9 @@ mod tests {
             ]
         );
         for (input, location) in [
-            ("w", EquipmentLocation::Chest),
-            ("s", EquipmentLocation::Stomach),
-            ("d", EquipmentLocation::Back),
+            ("g", EquipmentLocation::Chest),
+            ("y", EquipmentLocation::Stomach),
+            ("h", EquipmentLocation::Back),
             ("v", EquipmentLocation::LeftLeg),
             ("b", EquipmentLocation::RightLeg),
         ] {
@@ -835,6 +835,14 @@ mod tests {
                 "{location:?} must have a QWERTY equipment input"
             );
         }
+        assert!(
+            ["w", "a", "s", "d"].iter().all(|input| {
+                INPUT_ADDRESS_MAPPINGS
+                    .iter()
+                    .all(|mapping| mapping.input != *input)
+            }),
+            "tactical movement inputs must remain free"
+        );
         let keyboard_cells = INPUT_ADDRESS_MAPPINGS
             .iter()
             .map(|mapping| (mapping.keyboard_row, mapping.keyboard_column))

@@ -20,8 +20,8 @@ use super::{
 };
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCondition, CharacterEquipmentGraph, CharacterLimbs,
-    CharacterSkills, CharacterStats, EquipmentChannel, EquipmentLocation, EquipmentOccupancy,
-    FoodLot, InventoryItem, InventoryItemAmount,
+    CharacterSkills, CharacterStats, EquipmentBodyPart, EquipmentChannel, EquipmentLocation,
+    EquipmentOccupancy, FoodLot, InventoryItem, InventoryItemAmount,
     InventoryQuantityTarget, ItemDefinition, ItemSlot, PartyInventoryItem, Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
@@ -802,7 +802,6 @@ fn party_trade_inventory_rail(
     html! {
         (sidebar_section(&title, html! {
             (encumbrance_inventory_rail(html! {
-                (equipment_location_overview(equip, inventory, items))
                 @if inventory.is_empty() {
                     p class="text-muted small-copy" { "No items carried." }
                 } @else {
@@ -839,136 +838,6 @@ fn party_trade_inventory_rail(
     }
 }
 
-fn equipment_location_overview(
-    equip: Option<&CharacterEquipmentGraph>,
-    inventory: &[InventoryItem],
-    definitions: &[crate::spacetimedb::ItemDefinition],
-) -> Markup {
-    let Some(equip) = equip else {
-        return html! {};
-    };
-    let item_name = |inventory_item_id: u64| {
-        inventory
-            .iter()
-            .find(|item| item.id == inventory_item_id)
-            .map(|item| item_display_name(&item.item_id))
-            .unwrap_or_else(|| format!("#{inventory_item_id}"))
-    };
-    let mut locations = equip
-        .equipment_occupancies
-        .iter()
-        .filter_map(|row| row.location.map(|location| (location, row)))
-        .collect::<Vec<_>>();
-    locations
-        .sort_by_key(|(location, row)| (format!("{location:?}"), equipment_layer_sort_key(row)));
-    let location_groups = locations.into_iter().fold(
-        std::collections::BTreeMap::<_, Vec<_>>::new(),
-        |mut groups, (location, row)| {
-            groups.entry(location).or_default().push(row);
-            groups
-        },
-    );
-    let mut spans = equip
-        .equipment_nodes
-        .iter()
-        .filter_map(|node| {
-            let occupied = equip
-                .equipment_occupancies
-                .iter()
-                .filter(|row| {
-                    row.inventory_item_id == node.inventory_item_id && row.location.is_some()
-                })
-                .filter_map(|row| row.location)
-                .collect::<Vec<_>>();
-            (occupied.len() > 1).then(|| {
-                format!(
-                    "{} spans {}",
-                    item_name(node.inventory_item_id),
-                    occupied
-                        .iter()
-                        .map(|location| format!("{location:?}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    spans.sort();
-    let edges = equip
-        .equipment_occupancies
-        .iter()
-        .filter_map(|row| {
-            Some(format!(
-                "{} / {} → {}",
-                item_name(row.parent_inventory_item_id?),
-                row.attachment_point_id.as_deref()?,
-                item_name(row.inventory_item_id)
-            ))
-        })
-        .collect::<Vec<_>>();
-    html! {
-        section class="equipment-location-overview" aria-labelledby="equipment-location-title" {
-            h3 id="equipment-location-title" { "Equipped by location" }
-            @if location_groups.is_empty() {
-                p class="small-copy text-muted" { "No body locations occupied." }
-            } @else {
-                dl {
-                    @for (location, group) in &location_groups {
-                        dt { (format!("{location:?}")) }
-                        dd {
-                            @for row in group {
-                                @let node = equip.equipment_nodes.iter()
-                                    .find(|node| node.inventory_item_id == row.inventory_item_id);
-                                @let placement = node.map(|node| node.placement_id.as_str()).unwrap_or("?");
-                                @let definition = inventory.iter()
-                                    .find(|item| item.id == row.inventory_item_id)
-                                    .and_then(|item| definitions.iter().find(|definition| definition.id == item.item_id));
-                                @let protection = definition
-                                    .and_then(|definition| {
-                                        node.and_then(|node| definition.equipment_placements.iter()
-                                            .find(|candidate| candidate.id == node.placement_id))
-                                            .filter(|placement| !placement.protection.is_empty())
-                                            .map(|placement| format!(
-                                                "protects {} ({:.0}% coverage)",
-                                                placement.protection.iter()
-                                                    .map(|part| format!("{part:?}"))
-                                                    .collect::<Vec<_>>()
-                                                    .join(", "),
-                                                definition.coverage * 100.0
-                                            ))
-                                    })
-                                    .unwrap_or_else(|| "no protection".to_owned());
-                                span data-equipment-stack-item=(row.inventory_item_id) {
-                                    (item_name(row.inventory_item_id))
-                                    " — " (row.channel.label()) " / " (row.order)
-                                    " — " (placement) " — " (protection)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            @if !spans.is_empty() {
-                ul class="equipment-span-list" {
-                    @for span in spans { li { (span) } }
-                }
-            }
-            @if !edges.is_empty() {
-                h4 { "Attachments and contents" }
-                ul class="equipment-attachment-tree" {
-                    @for edge in edges { li { (edge) } }
-                }
-            }
-        }
-    }
-}
-
-fn equipment_layer_sort_key(
-    row: &EquipmentOccupancy,
-) -> std::cmp::Reverse<(EquipmentChannel, u16, u64)> {
-    std::cmp::Reverse((row.channel, row.order, row.inventory_item_id))
-}
-
 fn discard_inventory_rail(
     character: &Character,
     inventory: &[InventoryItem],
@@ -981,7 +850,6 @@ fn discard_inventory_rail(
     html! {
         (sidebar_section(&title, html! {
             (encumbrance_inventory_rail(html! {
-                (equipment_location_overview(equip, inventory, items))
                 @if inventory.is_empty() {
                     p class="text-muted small-copy" { "No items carried." }
                 } @else {
@@ -1501,6 +1369,47 @@ fn equipment_location_display(location: CoreEquipmentLocation) -> &'static str {
     }
 }
 
+fn equipped_location_display(location: EquipmentLocation) -> &'static str {
+    match location {
+        EquipmentLocation::Head => "Head",
+        EquipmentLocation::Face => "Face",
+        EquipmentLocation::Neck => "Neck",
+        EquipmentLocation::Chest => "Chest",
+        EquipmentLocation::Stomach => "Stomach",
+        EquipmentLocation::Back => "Back",
+        EquipmentLocation::LeftShoulder => "Left shoulder",
+        EquipmentLocation::RightShoulder => "Right shoulder",
+        EquipmentLocation::LeftArm => "Left arm",
+        EquipmentLocation::RightArm => "Right arm",
+        EquipmentLocation::LeftHand => "Left hand",
+        EquipmentLocation::RightHand => "Right hand",
+        EquipmentLocation::LeftLeg => "Left leg",
+        EquipmentLocation::RightLeg => "Right leg",
+        EquipmentLocation::LeftFoot => "Left foot",
+        EquipmentLocation::RightFoot => "Right foot",
+        EquipmentLocation::LeftBelt => "Left belt",
+        EquipmentLocation::RightBelt => "Right belt",
+        EquipmentLocation::FrontBelt => "Front belt",
+        EquipmentLocation::BackBelt => "Back belt",
+        EquipmentLocation::LeftPocket => "Left pocket",
+        EquipmentLocation::RightPocket => "Right pocket",
+        EquipmentLocation::BackLeftPocket => "Back-left pocket",
+        EquipmentLocation::BackRightPocket => "Back-right pocket",
+    }
+}
+
+fn equipment_body_part_display(part: EquipmentBodyPart) -> &'static str {
+    match part {
+        EquipmentBodyPart::LeftArm => "Left Arm",
+        EquipmentBodyPart::RightArm => "Right Arm",
+        EquipmentBodyPart::LeftLeg => "Left Leg",
+        EquipmentBodyPart::RightLeg => "Right Leg",
+        EquipmentBodyPart::Chest => "Chest",
+        EquipmentBodyPart::Stomach => "Stomach",
+        EquipmentBodyPart::Head => "Head",
+    }
+}
+
 fn equipment_channel_rank(channel: EquipmentChannel) -> u64 {
     match channel {
         EquipmentChannel::Held => 0,
@@ -1691,7 +1600,8 @@ fn equipment_control(
                     let protection = placement
                         .protection
                         .iter()
-                        .map(|part| format!("{part:?}"))
+                        .copied()
+                        .map(equipment_body_part_display)
                         .collect::<Vec<_>>()
                         .join(", ");
                     let conflicts = equip
@@ -1713,7 +1623,12 @@ fn equipment_control(
                         placement.id,
                         anchor_or_parent,
                         (!protection.is_empty())
-                            .then(|| format!("; protects {protection}"))
+                            .then(|| {
+                                format!(
+                                    "; protects {protection} ({:.0}% coverage)",
+                                    definition.coverage * 100.0
+                                )
+                            })
                             .unwrap_or_default(),
                         (!conflicts.is_empty())
                             .then(|| format!("; conflict with {}", conflicts.join(", ")))
@@ -1851,44 +1766,76 @@ fn equipment_control(
         serde_json::to_string(&placement_options).unwrap_or_else(|_| "[]".to_owned());
     let input_map_json = equipment_input_map_json();
     let input_badges = equipped_input_badges(equip, inventory.id);
-    let graph_summary = equip
-        .and_then(|equip| {
-            equip
-                .equipment_nodes
-                .iter()
-                .find(|node| node.inventory_item_id == inventory.id)
-        })
-        .map(|node| {
-            let parents = equip
-                .into_iter()
-                .flat_map(|equip| {
-                    equip
-                        .equipment_occupancies
-                        .iter()
-                        .filter(|row| row.inventory_item_id == inventory.id)
-                        .filter_map(move |row| {
-                            let parent_id = row.parent_inventory_item_id?;
-                            let parent_name = equip
-                                .equipment_nodes
-                                .iter()
-                                .find(|parent| parent.inventory_item_id == parent_id)
-                                .map(|parent| item_display_name(&parent.item_name))
-                                .unwrap_or_else(|| format!("#{parent_id}"));
-                            Some(format!(
-                                "{parent_name} / {}",
-                                row.attachment_point_id.as_deref()?
-                            ))
-                        })
-                })
-                .collect::<Vec<_>>();
-            if parents.is_empty() {
-                format!("body → {}", node.placement_id)
-            } else {
-                format!("{} → {}", parents.join(" + "), node.placement_id)
+    let equipped_node = equip.and_then(|equip| {
+        equip
+            .equipment_nodes
+            .iter()
+            .find(|node| node.inventory_item_id == inventory.id)
+    });
+    let attachment_summary = equip.and_then(|equip| {
+        let parents = equip
+            .equipment_occupancies
+            .iter()
+            .filter(|row| row.inventory_item_id == inventory.id)
+            .filter_map(|row| {
+                let parent_id = row.parent_inventory_item_id?;
+                let parent_name = equip
+                    .equipment_nodes
+                    .iter()
+                    .find(|parent| parent.inventory_item_id == parent_id)
+                    .map(|parent| item_display_name(&parent.item_name))
+                    .unwrap_or_else(|| format!("#{parent_id}"));
+                Some(format!(
+                    "{parent_name} / {}",
+                    row.attachment_point_id.as_deref()?
+                ))
+            })
+            .collect::<Vec<_>>();
+        (!parents.is_empty()).then(|| format!("Attached: {}", parents.join(" + ")))
+    });
+    let mut equipped_context = Vec::new();
+    if let Some(equip) = equip.filter(|_| equipped) {
+        let mut locations = Vec::new();
+        for (location, _, _, _) in equipment_item_roots(equip, inventory.id) {
+            let location = equipped_location_display(location);
+            if !locations.contains(&location) {
+                locations.push(location);
             }
-        });
+        }
+        if !locations.is_empty() {
+            equipped_context.push(format!("Slots: {}", locations.join(", ")));
+        }
+    }
+    if let Some(protection) = definition
+        .zip(equipped_node)
+        .and_then(|(definition, node)| {
+            definition
+                .equipment_placements
+                .iter()
+                .find(|placement| placement.id == node.placement_id)
+                .filter(|placement| !placement.protection.is_empty())
+                .map(|placement| {
+                    format!(
+                        "Protects {} ({:.0}% coverage)",
+                        placement
+                            .protection
+                            .iter()
+                            .copied()
+                            .map(equipment_body_part_display)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        definition.coverage * 100.0
+                    )
+                })
+        })
+    {
+        equipped_context.push(protection);
+    }
+    if let Some(attachment) = &attachment_summary {
+        equipped_context.push(attachment.clone());
+    }
     let item_name = item_display_name(&inventory.item_id);
-    let label = if medication && medication_is_self {
+    let base_label = if medication && medication_is_self {
         format!("Administer {item_name}")
     } else if medication {
         format!("Only {item_name}'s owner can administer it")
@@ -1897,7 +1844,7 @@ fn equipment_control(
     } else {
         format!("Equip {item_name}")
     };
-    let title = if medication && medication_is_self {
+    let base_title = if medication && medication_is_self {
         "Administer one standard course of this preparation"
     } else if medication {
         "Select this character to administer their preparation"
@@ -1907,6 +1854,16 @@ fn equipment_control(
         "Click to choose an available keyboard slot"
     } else {
         "This item cannot be equipped"
+    };
+    let label = if equipped_context.is_empty() {
+        base_label
+    } else {
+        format!("{base_label}. {}", equipped_context.join(". "))
+    };
+    let title = if equipped_context.is_empty() {
+        base_title.to_owned()
+    } else {
+        format!("{base_title}. {}", equipped_context.join(". "))
     };
     html! {
         @if medication {
@@ -1960,8 +1917,8 @@ fn equipment_control(
             role="status"
             aria-live="polite"
             hidden {}
-        @if let Some(graph_summary) = graph_summary {
-            span class="sr-only" { (graph_summary) }
+        @if let Some(attachment_summary) = attachment_summary {
+            span class="equipment-graph-summary" { (attachment_summary) }
         }
     }
 }
@@ -3047,11 +3004,12 @@ mod tests {
                 },
             ],
             parents: Vec::new(),
-            protection: Vec::new(),
+            protection: vec![EquipmentBodyPart::Chest],
         };
         let definition = crate::spacetimedb::ItemDefinition {
             id: outer.item_id.clone(),
             kind: crate::spacetimedb::ItemKind::Clothing,
+            coverage: 0.8,
             equipment_placements: vec![placement("worn", EquipmentChannel::Outerwear)],
             ..Default::default()
         };
@@ -3107,9 +3065,13 @@ mod tests {
 
         let outer_control =
             equipment_control(&outer, Some(&definition), true, true, Some(&graph)).into_string();
-        assert!(outer_control.contains(">W</kbd>"));
-        assert!(outer_control.contains(">S</kbd>"));
+        assert!(outer_control.contains(">G</kbd>"));
+        assert!(outer_control.contains(">Y</kbd>"));
         assert!(outer_control.contains("--equipment-layer-lightness: 88%"));
+        assert!(outer_control.contains(
+            "aria-label=\"Unequip Cloak. Slots: Chest, Stomach. Protects Chest (80% coverage)\""
+        ));
+        assert!(outer_control.contains("protects Chest (80% coverage)"));
 
         let inner_definition = crate::spacetimedb::ItemDefinition {
             id: inner.item_id.clone(),
@@ -3120,8 +3082,92 @@ mod tests {
         let inner_control =
             equipment_control(&inner, Some(&inner_definition), true, true, Some(&graph))
                 .into_string();
-        assert!(inner_control.contains(">W</kbd>"));
+        assert!(inner_control.contains(">G</kbd>"));
         assert!(inner_control.contains("--equipment-layer-lightness: 79%"));
+    }
+
+    #[test]
+    fn attached_item_names_its_parent_on_the_inventory_row() {
+        let parent = InventoryItem {
+            id: 7,
+            character_id: 9,
+            item_id: "belt".into(),
+            qty: 1,
+        };
+        let child = InventoryItem {
+            id: 8,
+            character_id: 9,
+            item_id: "pouch".into(),
+            qty: 1,
+        };
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: child.item_id.clone(),
+            kind: crate::spacetimedb::ItemKind::Container,
+            equipment_placements: vec![EquipmentPlacement {
+                id: "hung".into(),
+                occupancy: Vec::new(),
+                parents: Vec::new(),
+                protection: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let graph = CharacterEquipmentGraph {
+            _character_id: 9,
+            worn_item_ids: vec![parent.id, child.id],
+            equipment_nodes: vec![
+                CharacterEquippedItem {
+                    inventory_item_id: parent.id,
+                    character_id: 9,
+                    placement_id: "worn".into(),
+                    item_name: parent.item_id.clone(),
+                },
+                CharacterEquippedItem {
+                    inventory_item_id: child.id,
+                    character_id: 9,
+                    placement_id: "hung".into(),
+                    item_name: child.item_id.clone(),
+                },
+            ],
+            equipment_occupancies: vec![
+                EquipmentOccupancy {
+                    id: "belt:front".into(),
+                    character_id: 9,
+                    inventory_item_id: parent.id,
+                    anchor_kind: EquipmentAnchorKind::CharacterLocation,
+                    location: Some(EquipmentLocation::FrontBelt),
+                    parent_inventory_item_id: None,
+                    attachment_point_id: None,
+                    channel: EquipmentChannel::Mount,
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                },
+                EquipmentOccupancy {
+                    id: "pouch:belt".into(),
+                    character_id: 9,
+                    inventory_item_id: child.id,
+                    anchor_kind: EquipmentAnchorKind::ItemAttachment,
+                    location: None,
+                    parent_inventory_item_id: Some(parent.id),
+                    attachment_point_id: Some("front-loop".into()),
+                    channel: EquipmentChannel::Containment,
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                },
+            ],
+            attachment_targets: Vec::new(),
+        };
+
+        let rendered =
+            equipment_control(&child, Some(&definition), true, true, Some(&graph)).into_string();
+        assert!(rendered.contains(">F</kbd>"));
+        assert!(rendered.contains(
+            "aria-label=\"Unequip Pouch. Slots: Front belt. Attached: Belt / front-loop\""
+        ));
+        assert!(rendered.contains(
+            "<span class=\"equipment-graph-summary\">Attached: Belt / front-loop</span>"
+        ));
     }
 
     #[test]
@@ -3332,34 +3378,6 @@ mod tests {
         assert!(!weapons.contains("Target "));
         assert!(armor.contains("cuirass"));
         assert!(!armor.contains("sword"));
-    }
-
-    #[test]
-    fn equipment_location_layers_sort_outside_in() {
-        let occupancy = |id, channel| EquipmentOccupancy {
-            id: format!("{id}"),
-            character_id: 1,
-            inventory_item_id: id,
-            anchor_kind: EquipmentAnchorKind::CharacterLocation,
-            location: Some(EquipmentLocation::Chest),
-            parent_inventory_item_id: None,
-            attachment_point_id: None,
-            channel,
-            order: 0,
-            requirement_index: 0,
-            capacity_index: 0,
-        };
-        let mut rows = [
-            occupancy(1, EquipmentChannel::BaseClothing),
-            occupancy(2, EquipmentChannel::Outerwear),
-            occupancy(3, EquipmentChannel::RigidArmor),
-        ];
-        rows.sort_by_key(equipment_layer_sort_key);
-        assert_eq!(
-            rows.map(|row| row.inventory_item_id),
-            [2, 3, 1],
-            "the location summary is ordered outside-in"
-        );
     }
 
     #[test]

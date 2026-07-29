@@ -24,9 +24,9 @@ Ideally, the location of each slot button should correspond roughly to the slot'
 | <kbd>X</kbd> | A | Back belt.
 | <kbd>Tab</kbd> | Select | Left shoulder.
 | <kbd>R</kbd> | Start | Right shoulder.
-| <kbd>W</kbd> | | Chest.
-| <kbd>S</kbd> | | Stomach.
-| <kbd>D</kbd> | | Back.
+| <kbd>G</kbd> | | Chest.
+| <kbd>Y</kbd> | | Stomach.
+| <kbd>H</kbd> | | Back.
 | <kbd>2</kbd> | ⇐ | Left pocket.
 | <kbd>3</kbd> | ⇒ | Right pocket.
 | <kbd>1</kbd> | ⇓⇐ | Back-left pocket.
@@ -41,6 +41,10 @@ Ideally, the location of each slot button should correspond roughly to the slot'
 | <kbd>B</kbd> | | Right leg.
 | <kbd>Z</kbd> | ⇓⇓⇐ | Left foot.
 | <kbd>C</kbd> | ⇓⇓⇒ | Right foot.
+
+The body-slot map deliberately leaves <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+unbound so tactical movement remains available while donning, doffing, or
+accessing equipment.
 
 The controller doesn't have quite enough buttons to give every slot its own button. To get around this, we can assign certain slots to *combinations* of buttons; because slot inputs require the grab button be held to initiate them, and we don't execute any action until the grab button is released, no ambiguity is possible. (For instance, while holding the grab button, the face slot can be ⇑ and glasses can be ⇑⇑; only when we release the grab button does it actually perform the action.) This is also helpful for controllers that only support four D-pad directions; the diagonals can just be pressing two directions in either order. (That is, "down-left" can be "down and then left.")
 
