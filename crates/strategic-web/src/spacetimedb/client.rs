@@ -226,18 +226,17 @@ pub struct SpacetimeClient {
 
 impl SpacetimeClient {
     /// Create a new SpacetimeDB client
-    pub fn new(base_url: impl Into<String>, database: impl Into<String>) -> Self {
-        Self {
+    pub fn new(base_url: impl Into<String>, database: impl Into<String>) -> Result<Self> {
+        Ok(Self {
             http: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .connect_timeout(Duration::from_secs(3))
-                .build()
-                .expect("failed to build SpacetimeDB HTTP client"),
+                .build()?,
             base_url: base_url.into(),
             database: database.into(),
             token: None,
             metrics: Arc::new(QueryMetrics::default()),
-        }
+        })
     }
 
     /// Set the auth token
@@ -391,8 +390,8 @@ mod tests {
     }
 
     #[test]
-    fn query_metrics_are_resettable_and_clone_safe() {
-        let client = SpacetimeClient::new("http://localhost:3000", "test");
+    fn query_metrics_are_monotonic_and_clone_safe() {
+        let client = SpacetimeClient::new("http://localhost:3000", "test").unwrap();
         client.metrics.requests.store(3, Ordering::Relaxed);
         client.metrics.elapsed_micros.store(125, Ordering::Relaxed);
         assert_eq!(

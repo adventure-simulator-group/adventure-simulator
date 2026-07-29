@@ -33,14 +33,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::Config;
 use live::LiveState;
 use routes::{AppState, build_router};
-use spacetimedb::SpacetimeClient;
-
-fn sats_option_string(value: Option<&str>) -> serde_json::Value {
-    match value {
-        Some(value) => serde_json::json!({ "some": value }),
-        None => serde_json::json!({ "none": [] }),
-    }
-}
+use spacetimedb::{SpacetimeClient, sats_option};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -64,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // Create SpacetimeDB client
-    let db = SpacetimeClient::new(&config.spacetimedb_host, &config.spacetimedb_database)
+    let db = SpacetimeClient::new(&config.spacetimedb_host, &config.spacetimedb_database)?
         .with_token(config.spacetimedb_token.clone());
     let measurement_baseline = db.query_metrics();
     let measurement_delta = measurement_baseline.delta(measurement_baseline);
@@ -122,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
     db.call(
         "register_strategic_gateway",
         &[
-            sats_option_string(terrain.as_ref().map(|planner| planner.digest())),
+            sats_option(terrain.as_ref().map(|planner| planner.digest())),
             serde_json::json!(if terrain.is_some() { 3_u32 } else { 0_u32 }),
         ],
     )
@@ -814,14 +807,14 @@ impl Drop for HttpRequestLog {
 
 #[cfg(test)]
 mod tests {
-    use super::sats_option_string;
+    use crate::spacetimedb::sats_option;
 
     #[test]
     fn gateway_registration_uses_spacetimedb_option_sum_json() {
         assert_eq!(
-            sats_option_string(Some("digest")),
+            sats_option(Some("digest")),
             serde_json::json!({ "some": "digest" })
         );
-        assert_eq!(sats_option_string(None), serde_json::json!({ "none": [] }));
+        assert_eq!(sats_option::<&str>(None), serde_json::json!({ "none": [] }));
     }
 }
