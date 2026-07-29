@@ -763,6 +763,12 @@ fn organization_colors(id: &str) -> (&'static str, &'static str) {
 }
 
 fn organization_charge(definition: &OrganizationDefinition) -> &'static str {
+    match definition.id.as_str() {
+        "order_saint_george" => return "mounted-knight",
+        "lodge_hart_king" => return "wood-axe",
+        "hunt_pale_lantern" => return "eye-target",
+        _ => {}
+    }
     match definition.service_id.as_deref() {
         Some("merchants") => "coins",
         Some("weapons") => "anvil",
@@ -1095,6 +1101,21 @@ mod tests {
             assert!(first.contains("organization-crest"));
             assert!(first.contains("/static/icons/game/"));
             assert!(first.contains(&format!("{} heraldry", definition.name)));
+        }
+    }
+
+    #[test]
+    fn consolidated_adventurer_organizations_have_specific_charges() {
+        for (id, charge) in [
+            ("order_saint_george", "mounted-knight"),
+            ("lodge_hart_king", "wood-axe"),
+            ("hunt_pale_lantern", "eye-target"),
+        ] {
+            let definition = organization(id).unwrap();
+            assert_eq!(organization_charge(definition), charge);
+            let crest = organization_crest(definition).into_string();
+            assert!(crest.contains(&format!("/static/icons/game/{charge}.svg")));
+            assert!(!crest.contains("/static/icons/game/shield.svg"));
         }
     }
 

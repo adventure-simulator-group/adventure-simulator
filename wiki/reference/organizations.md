@@ -47,15 +47,18 @@ still require persisted presentation plus a matching active, dues-current
 membership and its current rank, but do not require the current settlement to
 recognize the organization. A valid persisted presentation therefore survives
 travel and entry into an unrecognizing settlement. This does not weaken the
-locally recognized equipment privilege rules. The three forester organizations
-grant Low Game, Fish, and Plants throughout their ranks; each has a terrain-4.0
-Master rank that adds High Game.
+locally recognized equipment privilege rules. The Lodge of the Hart King
+grants Low Game, Fish, and Plants throughout its ranks; its Forest-4.0 Master
+rank adds High Game.
 
-The first catalog includes migrated trade and religious bodies, denomination-
-specific witch-hunter and knightly organizations, three regional forester
-organizations, and a deliberately eccentric Catholic cooks test organization.
-These are historically informed fictional institutions rather than claims that
-each exact organization existed in every listed settlement.
+The first catalog includes migrated trade and religious bodies plus three
+universal, denomination-neutral adventurer organizations: The Hunt of the Pale
+Lantern for witch hunters, The Order of St. George for knights, and The Lodge
+of the Hart King for foresters. Their chapters combine the playable footprints
+of the former denominational and regional variants. The catalog also retains a
+deliberately eccentric Catholic cooks test organization. These are historically
+informed fictional institutions rather than claims that each exact organization
+existed in every listed settlement.
 
 The character sheet exposes the presented organization as a compact profession
 picker; it is only a self-presentation control. Joining, dues, reactivation,
@@ -90,8 +93,10 @@ innkeeper.
 
 Organization training and activity require a current membership and local
 chapter. Their skill mix is read from the catalog, including fixed skills,
-denomination-specific Religion, Bestiary and Terrain leaves, and equipped
-weapon skills.
+Bestiary and Terrain leaves, equipped weapon skills, and Religion only where
+an organization explicitly teaches a particular tradition. The Hunt of the
+Pale Lantern instead divides its training evenly between Spirit Bestiary and
+equipped weapon skills.
 
 ### MVP privacy and uniqueness limitation
 

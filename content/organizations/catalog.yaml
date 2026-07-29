@@ -1127,999 +1127,299 @@
         "public_threat_referrals":  false
     },
     {
-        "id":  "brotherhood_saint_peter_martyr",
-        "name":  "Brotherhood of Saint Peter Martyr",
-        "description":  "A commissioned Roman Catholic confraternity investigating supernatural threats.",
-        "historical_fantasy_note":  "A historical-fantasy institution inspired by confraternities and judicial commissions, not a claim of a standing historical witch-hunter guild.",
-        "starting_role":  {
-                              "profession":  "witch_hunter",
-                              "adult_rank_id":  "examiner",
-                              "old_rank_id":  "inquisitor"
-                          },
-        "chapters":  [
-                         {
-                             "settlement_id":  "viabundus-1826",
-                             "location_id":  "organization-brotherhood-saint-peter-martyr",
-                             "building_name":  "House of Saint Peter Martyr",
-                             "building_kind":  "confraternity",
-                             "representative_title":  "brotherhood prior",
-                             "representative_profession":  "witch hunter"
-                         }
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "dues":  {
-                     "amount":  2,
-                     "interval_days":  30
-                 },
-        "admission":  {
-                          "joining_fee":  3,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "roman_catholic"
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "religion",
-                                                   "leaf":  "roman_catholic",
-                                                   "minimum":  1.0
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "familiar",
-                          "name":  "Familiar",
-                          "description":  "A sworn assistant.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "examiner",
-                          "name":  "Examiner",
-                          "description":  "An investigator trusted to examine cases.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "bestiary",
-                                                   "leaf":  "spirit",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      },
-                      {
-                          "id":  "inquisitor",
-                          "name":  "Inquisitor",
-                          "description":  "A master examiner trusted to direct investigations.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  60
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "religion",
-                                              "religion":  "roman_catholic",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "spirit",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.4
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  true
+        "id": "hunt_pale_lantern",
+        "name": "The Hunt of the Pale Lantern",
+        "description": "A secular fellowship investigating supernatural threats and protecting the public from them.",
+        "historical_fantasy_note": "An invented historical-fantasy institution modeled on commissioned investigators and territorial visitations.",
+        "starting_role": {
+            "profession": "witch_hunter",
+            "adult_rank_id": "hunter",
+            "old_rank_id": "huntmaster"
+        },
+        "chapters": [
+            {
+                "settlement_id": "viabundus-1826",
+                "location_id": "organization-hunt-pale-lantern",
+                "building_name": "House of the Pale Lantern",
+                "building_kind": "confraternity",
+                "representative_title": "huntmaster",
+                "representative_profession": "witch hunter"
+            },
+            {
+                "settlement_id": "viabundus-2337",
+                "location_id": "organization-hunt-pale-lantern",
+                "building_name": "House of the Pale Lantern",
+                "building_kind": "confraternity",
+                "representative_title": "huntmaster",
+                "representative_profession": "witch hunter"
+            }
+        ],
+        "recognition": {
+            "kind": "universal"
+        },
+        "dues": {
+            "amount": 2,
+            "interval_days": 30
+        },
+        "admission": {
+            "joining_fee": 3,
+            "requirements": []
+        },
+        "ranks": [
+            {
+                "id": "watcher",
+                "name": "Watcher",
+                "description": "A sworn assistant learning to recognize and record unnatural threats.",
+                "requirements": [],
+                "practice_allowed": false,
+                "practice_reward_interval_minutes": 0
+            },
+            {
+                "id": "hunter",
+                "name": "Hunter",
+                "description": "An investigator trusted to pursue supernatural threats.",
+                "requirements": [
+                    {
+                        "kind": "skill_rating",
+                        "skill": "bestiary",
+                        "leaf": "spirit",
+                        "minimum": 2.0
+                    }
+                ],
+                "practice_allowed": true,
+                "practice_reward_interval_minutes": 120
+            },
+            {
+                "id": "huntmaster",
+                "name": "Huntmaster",
+                "description": "A veteran hunter trusted to direct investigations and field parties.",
+                "requirements": [],
+                "practice_allowed": true,
+                "practice_reward_interval_minutes": 60
+            }
+        ],
+        "activity": {
+            "training": [
+                {
+                    "kind": "bestiary",
+                    "category": "spirit",
+                    "weight": 0.5
+                },
+                {
+                    "kind": "equipped_weapon_skills",
+                    "weight": 0.5
+                }
+            ],
+            "reward": "gold"
+        },
+        "privileges": [
+            "bear_arms",
+            "wear_armor"
+        ],
+        "public_threat_referrals": true
     },
     {
-        "id":  "brotherhood_watchful_lamp",
-        "name":  "Brotherhood of the Watchful Lamp",
-        "description":  "A commissioned Lutheran fellowship investigating supernatural threats.",
-        "historical_fantasy_note":  "A historical-fantasy institution modeled as a territorial visitation.",
-        "starting_role":  {
-                              "profession":  "witch_hunter",
-                              "adult_rank_id":  "examiner",
-                              "old_rank_id":  "visitor"
-                          },
-        "chapters":  [
-                         {
-                             "settlement_id":  "viabundus-2337",
-                             "location_id":  "organization-brotherhood-watchful-lamp",
-                             "building_name":  "House of the Watchful Lamp",
-                             "building_kind":  "confraternity",
-                             "representative_title":  "brotherhood prior",
-                             "representative_profession":  "witch hunter"
-                         }
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  3,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "lutheran"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "watcher",
-                          "name":  "Watcher",
-                          "description":  "A sworn assistant.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "examiner",
-                          "name":  "Examiner",
-                          "description":  "A licensed investigator of supernatural reports.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  240
-                      },
-                      {
-                          "id":  "visitor",
-                          "name":  "Visitor",
-                          "description":  "A master examiner who directs territorial visitations.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "religion",
-                                              "religion":  "lutheran",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "spirit",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.4
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  true
+        "id": "order_saint_george",
+        "name": "The Order of St. George",
+        "description": "A military fellowship dedicated to defending travelers and settlements from extraordinary threats.",
+        "historical_fantasy_note": "An invented historical-fantasy order named for the widely honored warrior saint.",
+        "starting_role": {
+            "profession": "knight",
+            "adult_rank_id": "knight",
+            "old_rank_id": "commander"
+        },
+        "chapters": [
+            {
+                "settlement_id": "viabundus-1826",
+                "location_id": "organization-order-saint-george",
+                "building_name": "St. George Commandery",
+                "building_kind": "commandery",
+                "representative_title": "order commander",
+                "representative_profession": "knight"
+            },
+            {
+                "settlement_id": "viabundus-2337",
+                "location_id": "organization-order-saint-george",
+                "building_name": "St. George Commandery",
+                "building_kind": "commandery",
+                "representative_title": "order commander",
+                "representative_profession": "knight"
+            }
+        ],
+        "recognition": {
+            "kind": "universal"
+        },
+        "admission": {
+            "joining_fee": 5,
+            "requirements": []
+        },
+        "ranks": [
+            {
+                "id": "sergeant",
+                "name": "Sergeant",
+                "description": "A serving brother-at-arms.",
+                "requirements": [],
+                "practice_allowed": false,
+                "practice_reward_interval_minutes": 0
+            },
+            {
+                "id": "knight",
+                "name": "Knight Brother",
+                "description": "A proven mounted brother.",
+                "requirements": [
+                    {
+                        "kind": "skill_rating",
+                        "skill": "sword",
+                        "minimum": 3.0
+                    }
+                ],
+                "practice_allowed": true,
+                "practice_reward_interval_minutes": 120
+            },
+            {
+                "id": "commander",
+                "name": "Commander",
+                "description": "A veteran knight entrusted with command.",
+                "requirements": [],
+                "practice_allowed": true,
+                "practice_reward_interval_minutes": 60
+            }
+        ],
+        "activity": {
+            "training": [
+                {
+                    "kind": "equipped_weapon_skills",
+                    "weight": 0.7
+                },
+                {
+                    "kind": "fixed_skill",
+                    "skill": "dodge",
+                    "weight": 0.15
+                },
+                {
+                    "kind": "fixed_skill",
+                    "skill": "block",
+                    "weight": 0.15
+                }
+            ],
+            "reward": "gold"
+        },
+        "privileges": [
+            "bear_arms",
+            "wear_armor"
+        ],
+        "public_threat_referrals": true
     },
     {
-        "id":  "commission_false_wonders",
-        "name":  "Commission for False Wonders and Malefic Arts",
-        "description":  "A commissioned Reformed body investigating supernatural threats.",
-        "historical_fantasy_note":  "A historical-fantasy institution modeled as a magistrates\u0027 commission.",
-        "chapters":  [
-
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  3,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "reformed"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "assistant",
-                          "name":  "Commission Assistant",
-                          "description":  "A sworn assistant.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "religion",
-                                              "religion":  "reformed",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "spirit",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.4
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  false
-    },
-    {
-        "id":  "fellowship_kings_watch",
-        "name":  "Fellowship of the King\u0027s Watch",
-        "description":  "A royal Anglican fellowship investigating supernatural threats.",
-        "historical_fantasy_note":  "A historical-fantasy royal commission.",
-        "chapters":  [
-
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  3,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "anglican"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "watchman",
-                          "name":  "Watchman",
-                          "description":  "A sworn assistant.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "religion",
-                                              "religion":  "anglican",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "spirit",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.4
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  false
-    },
-    {
-        "id":  "brotherhood_archangel_michael",
-        "name":  "Brotherhood of the Holy Archangel Michael",
-        "description":  "An Orthodox brotherhood investigating supernatural threats.",
-        "historical_fantasy_note":  "A historical-fantasy episcopal brotherhood.",
-        "chapters":  [
-
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  3,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "eastern_orthodox"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "companion",
-                          "name":  "Companion",
-                          "description":  "A sworn assistant.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "religion",
-                                              "religion":  "eastern_orthodox",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "spirit",
-                                              "weight":  0.3
-                                          },
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.4
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  false
-    },
-    {
-        "id":  "order_saint_george",
-        "name":  "Order of Saint George",
-        "description":  "A Roman Catholic military-religious fellowship.",
-        "historical_fantasy_note":  "An invented historical-fantasy order.",
-        "starting_role":  {
-                              "profession":  "knight",
-                              "adult_rank_id":  "knight",
-                              "old_rank_id":  "commander"
-                          },
-        "chapters":  [
-                         {
-                             "settlement_id":  "viabundus-1826",
-                             "location_id":  "organization-order-saint-george",
-                             "building_name":  "Saint George Commandery",
-                             "building_kind":  "commandery",
-                             "representative_title":  "order commander",
-                             "representative_profession":  "knight"
-                         }
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  5,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "roman_catholic"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "sergeant",
-                          "name":  "Sergeant",
-                          "description":  "A serving brother-at-arms.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "knight",
-                          "name":  "Knight Brother",
-                          "description":  "A proven mounted brother.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "sword",
-                                                   "minimum":  3.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      },
-                      {
-                          "id":  "commander",
-                          "name":  "Commander",
-                          "description":  "A veteran knight entrusted with command.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  60
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.7
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "dodge",
-                                              "weight":  0.15
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "block",
-                                              "weight":  0.15
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  true
-    },
-    {
-        "id":  "brandenburg_bailiwick_saint_john",
-        "name":  "Brandenburg Bailiwick of Saint John",
-        "description":  "The Lutheran Brandenburg bailiwick of the Order of Saint John.",
-        "starting_role":  {
-                              "profession":  "knight",
-                              "adult_rank_id":  "knight",
-                              "old_rank_id":  "commander"
-                          },
-        "chapters":  [
-                         {
-                             "settlement_id":  "viabundus-2337",
-                             "location_id":  "organization-brandenburg-bailiwick-saint-john",
-                             "building_name":  "Saint John Commandery",
-                             "building_kind":  "commandery",
-                             "representative_title":  "order commander",
-                             "representative_profession":  "knight"
-                         }
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  5,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "lutheran"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "sergeant",
-                          "name":  "Sergeant",
-                          "description":  "A serving brother-at-arms.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "knight",
-                          "name":  "Knight Brother",
-                          "description":  "A newly proven brother of the bailiwick.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  240
-                      },
-                      {
-                          "id":  "commander",
-                          "name":  "Commander",
-                          "description":  "A veteran knight entrusted with a commandery.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.7
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "dodge",
-                                              "weight":  0.15
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "block",
-                                              "weight":  0.15
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  true
-    },
-    {
-        "id":  "covenanted_company_shield",
-        "name":  "Covenanted Company of the Shield",
-        "description":  "A Reformed sworn defensive company.",
-        "historical_fantasy_note":  "An invented historical-fantasy company.",
-        "chapters":  [
-
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  5,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "reformed"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "companion",
-                          "name":  "Covenanted Companion",
-                          "description":  "A sworn defender.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.7
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "dodge",
-                                              "weight":  0.15
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "block",
-                                              "weight":  0.15
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  false
-    },
-    {
-        "id":  "royal_fellowship_saint_george",
-        "name":  "Royal Fellowship of Saint George",
-        "description":  "An Anglican royal military fellowship.",
-        "historical_fantasy_note":  "An invented historical-fantasy fellowship.",
-        "chapters":  [
-
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  5,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "anglican"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "man_at_arms",
-                          "name":  "Man-at-Arms",
-                          "description":  "A sworn royal defender.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.7
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "dodge",
-                                              "weight":  0.15
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "block",
-                                              "weight":  0.15
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  false
-    },
-    {
-        "id":  "military_brotherhood_saint_george",
-        "name":  "Military Brotherhood of Saint George",
-        "description":  "An Eastern Orthodox military brotherhood.",
-        "historical_fantasy_note":  "An invented historical-fantasy brotherhood.",
-        "chapters":  [
-
-                     ],
-        "recognition":  {
-                            "kind":  "universal"
-                        },
-        "admission":  {
-                          "joining_fee":  5,
-                          "requirements":  [
-                                               {
-                                                   "kind":  "professed_religion",
-                                                   "religion":  "eastern_orthodox"
-                                               }
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "brother_at_arms",
-                          "name":  "Brother-at-Arms",
-                          "description":  "A sworn defender.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.7
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "dodge",
-                                              "weight":  0.15
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "block",
-                                              "weight":  0.15
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "wear_armor"
-                       ],
-        "public_threat_referrals":  false
-    },
-    {
-        "id":  "wardens_harz",
-        "name":  "Wardens of the Harz",
-        "description":  "Sworn wardens of forest roads, game, and dangerous beasts.",
-        "starting_role":  {
-                              "profession":  "forester",
-                              "adult_rank_id":  "warden",
-                              "old_rank_id":  "master"
-                          },
-        "historical_fantasy_note":  "An invented body using period-appropriate territorial forest-office language.",
-        "chapters":  [
-                         {
-                             "settlement_id":  "viabundus-2337",
-                             "location_id":  "organization-wardens-harz",
-                             "building_name":  "Harz Warden Lodge",
-                             "building_kind":  "lodge",
-                             "representative_title":  "chief warden",
-                             "representative_profession":  "forester"
-                         }
-                     ],
-        "recognition":  {
-                            "kind":  "settlements",
-                            "settlement_ids":  [
-                                                   "viabundus-2337",
-                                                   "viabundus-0"
-                                               ]
-                        },
-        "admission":  {
-                          "joining_fee":  2,
-                          "requirements":  [
-
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "under_warden",
-                          "name":  "Under-Warden",
-                          "description":  "A probationary forest servant.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "warden",
-                          "name":  "Warden",
-                          "description":  "A sworn forest officer.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "terrain_forest",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      },
-                      {
-                          "id":  "master",
-                          "name":  "Master",
-                          "description":  "A master warden entrusted with the prince\u0027s high game.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "terrain_forest",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120,
-                          "privileges":  [
-                                             "forage_high_game"
-                                         ]
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "terrain",
-                                              "terrain":  "forest",
-                                              "weight":  0.35
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "beast",
-                                              "weight":  0.35
-                                          },
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.3
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "forage_low_game",
-                           "forage_fish",
-                           "forage_plants"
-                       ],
-        "public_threat_referrals":  true
-    },
-    {
-        "id":  "keepers_solling",
-        "name":  "Keepers of the Solling",
-        "description":  "Territorial keepers of woods, roads, and game.",
-        "starting_role":  {
-                              "profession":  "forester",
-                              "adult_rank_id":  "keeper",
-                              "old_rank_id":  "master"
-                          },
-        "historical_fantasy_note":  "An invented body using period-appropriate forest-office language.",
-        "chapters":  [
-                         {
-                             "settlement_id":  "viabundus-0",
-                             "location_id":  "organization-keepers-solling",
-                             "building_name":  "Solling Keeper Lodge",
-                             "building_kind":  "lodge",
-                             "representative_title":  "chief keeper",
-                             "representative_profession":  "forester"
-                         }
-                     ],
-        "recognition":  {
-                            "kind":  "settlements",
-                            "settlement_ids":  [
-                                                   "viabundus-0"
-                                               ]
-                        },
-        "admission":  {
-                          "joining_fee":  2,
-                          "requirements":  [
-
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "keeper",
-                          "name":  "Keeper",
-                          "description":  "A sworn forest servant.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "master",
-                          "name":  "Master",
-                          "description":  "A master keeper entrusted with the prince\u0027s high game.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "terrain_forest",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120,
-                          "privileges":  [
-                                             "forage_high_game"
-                                         ]
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "terrain",
-                                              "terrain":  "forest",
-                                              "weight":  0.35
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "beast",
-                                              "weight":  0.35
-                                          },
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.3
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "forage_low_game",
-                           "forage_fish",
-                           "forage_plants"
-                       ],
-        "public_threat_referrals":  true
-    },
-    {
-        "id":  "company_green_staff_thuringia",
-        "name":  "Company of the Green Staff of Thuringia",
-        "description":  "A company of sworn foresters and march wardens.",
-        "starting_role":  {
-                              "profession":  "forester",
-                              "adult_rank_id":  "green_staff",
-                              "old_rank_id":  "master"
-                          },
-        "historical_fantasy_note":  "An invented body using period-appropriate forest-office language.",
-        "chapters":  [
-                         {
-                             "settlement_id":  "viabundus-1826",
-                             "location_id":  "organization-company-green-staff-thuringia",
-                             "building_name":  "Green Staff Lodge",
-                             "building_kind":  "lodge",
-                             "representative_title":  "company warden",
-                             "representative_profession":  "forester"
-                         }
-                     ],
-        "recognition":  {
-                            "kind":  "settlements",
-                            "settlement_ids":  [
-                                                   "viabundus-1826"
-                                               ]
-                        },
-        "admission":  {
-                          "joining_fee":  2,
-                          "requirements":  [
-
-                                           ]
-                      },
-        "ranks":  [
-                      {
-                          "id":  "green_staff",
-                          "name":  "Green Staff",
-                          "description":  "A sworn forest servant.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "master",
-                          "name":  "Master",
-                          "description":  "A master forester entrusted with the prince\u0027s high game.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "terrain_hills",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120,
-                          "privileges":  [
-                                             "forage_high_game"
-                                         ]
-                      }
-                  ],
-        "activity":  {
-                         "training":  [
-                                          {
-                                              "kind":  "terrain",
-                                              "terrain":  "hills",
-                                              "weight":  0.35
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "beast",
-                                              "weight":  0.35
-                                          },
-                                          {
-                                              "kind":  "equipped_weapon_skills",
-                                              "weight":  0.3
-                                          }
-                                      ],
-                         "reward":  "gold"
-                     },
-        "privileges":  [
-                           "bear_arms",
-                           "forage_low_game",
-                           "forage_fish",
-                           "forage_plants"
-                       ],
-        "public_threat_referrals":  true
+        "id": "lodge_hart_king",
+        "name": "The Lodge of the Hart King",
+        "description": "Sworn wardens of forests, roads, game, and dangerous beasts.",
+        "historical_fantasy_note": "An invented body using period-appropriate territorial forest-office language.",
+        "starting_role": {
+            "profession": "forester",
+            "adult_rank_id": "warden",
+            "old_rank_id": "master"
+        },
+        "chapters": [
+            {
+                "settlement_id": "viabundus-2337",
+                "location_id": "organization-lodge-hart-king",
+                "building_name": "Hart King Lodge",
+                "building_kind": "lodge",
+                "representative_title": "master warden",
+                "representative_profession": "forester"
+            },
+            {
+                "settlement_id": "viabundus-0",
+                "location_id": "organization-lodge-hart-king",
+                "building_name": "Hart King Lodge",
+                "building_kind": "lodge",
+                "representative_title": "master warden",
+                "representative_profession": "forester"
+            },
+            {
+                "settlement_id": "viabundus-1826",
+                "location_id": "organization-lodge-hart-king",
+                "building_name": "Hart King Lodge",
+                "building_kind": "lodge",
+                "representative_title": "master warden",
+                "representative_profession": "forester"
+            }
+        ],
+        "recognition": {
+            "kind": "universal"
+        },
+        "admission": {
+            "joining_fee": 2,
+            "requirements": []
+        },
+        "ranks": [
+            {
+                "id": "under_warden",
+                "name": "Under-Warden",
+                "description": "A probationary forest servant.",
+                "requirements": [],
+                "practice_allowed": false,
+                "practice_reward_interval_minutes": 0
+            },
+            {
+                "id": "warden",
+                "name": "Warden",
+                "description": "A sworn forest officer.",
+                "requirements": [
+                    {
+                        "kind": "skill_rating",
+                        "skill": "terrain_forest",
+                        "minimum": 2.0
+                    }
+                ],
+                "practice_allowed": true,
+                "practice_reward_interval_minutes": 120
+            },
+            {
+                "id": "master",
+                "name": "Master",
+                "description": "A master warden entrusted with the highest game.",
+                "requirements": [
+                    {
+                        "kind": "skill_rating",
+                        "skill": "terrain_forest",
+                        "minimum": 4.0
+                    }
+                ],
+                "practice_allowed": true,
+                "practice_reward_interval_minutes": 120,
+                "privileges": [
+                    "forage_high_game"
+                ]
+            }
+        ],
+        "activity": {
+            "training": [
+                {
+                    "kind": "terrain",
+                    "terrain": "forest",
+                    "weight": 0.35
+                },
+                {
+                    "kind": "bestiary",
+                    "category": "beast",
+                    "weight": 0.35
+                },
+                {
+                    "kind": "equipped_weapon_skills",
+                    "weight": 0.3
+                }
+            ],
+            "reward": "gold"
+        },
+        "privileges": [
+            "bear_arms",
+            "forage_low_game",
+            "forage_fish",
+            "forage_plants"
+        ],
+        "public_threat_referrals": true
     },
     {
         "id":  "test_catholic_polearm_cooks",

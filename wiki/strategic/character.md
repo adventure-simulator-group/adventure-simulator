@@ -66,7 +66,10 @@ journeyman-equivalent; old candidates are age 40 and master-equivalent. Adult
 and old rosters each offer one candidate for merchant, weaponsmith, armourer,
 tailor, herbalist, cook, learned religious practitioner, witch hunter, knight,
 and forester. The specific eligible organization is deterministic but random
-from the player's perspective.
+from the player's perspective when a family has multiple options. Witch
+hunters join The Hunt of the Pale Lantern, knights join The Order of St.
+George, and foresters join The Lodge of the Hart King; these three
+organizations have no profession-of-faith requirement.
 
 Professional candidates preview and receive their complete plausible package:
 organization and mapped rank, current dues and presentation, required

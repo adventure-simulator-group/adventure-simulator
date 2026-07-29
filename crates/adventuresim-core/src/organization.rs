@@ -382,19 +382,85 @@ mod tests {
 
     #[test]
     fn ranger_common_licenses_are_inherited_and_high_game_is_master_only() {
-        for id in [
-            "wardens_harz",
-            "keepers_solling",
-            "company_green_staff_thuringia",
+        let definition = organization("lodge_hart_king").unwrap();
+        let first = &definition.ranks[0];
+        assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForageLowGame));
+        assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForageFish));
+        assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForagePlants));
+        assert!(!definition.has_privilege_at_rank(&first.id, Privilege::ForageHighGame));
+        assert!(definition.has_privilege_at_rank("master", Privilege::ForageHighGame));
+    }
+
+    #[test]
+    fn adventurer_professions_each_have_one_neutral_starting_organization() {
+        for (profession, id, name, chapter_count) in [
+            (
+                StartingProfession::WitchHunter,
+                "hunt_pale_lantern",
+                "The Hunt of the Pale Lantern",
+                2,
+            ),
+            (
+                StartingProfession::Knight,
+                "order_saint_george",
+                "The Order of St. George",
+                2,
+            ),
+            (
+                StartingProfession::Forester,
+                "lodge_hart_king",
+                "The Lodge of the Hart King",
+                3,
+            ),
         ] {
-            let definition = organization(id).unwrap();
-            let first = &definition.ranks[0];
-            assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForageLowGame));
-            assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForageFish));
-            assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForagePlants));
-            assert!(!definition.has_privilege_at_rank(&first.id, Privilege::ForageHighGame));
-            assert!(definition.has_privilege_at_rank("master", Privilege::ForageHighGame));
+            let eligible = catalog()
+                .organizations
+                .iter()
+                .filter(|definition| {
+                    definition
+                        .starting_role
+                        .as_ref()
+                        .is_some_and(|role| role.profession == profession)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(eligible.len(), 1, "{profession:?}");
+            let definition = eligible[0];
+            assert_eq!(definition.id, id);
+            assert_eq!(definition.name, name);
+            assert_eq!(definition.chapters.len(), chapter_count);
+            assert!(definition.admission.requirements.iter().all(|requirement| {
+                !matches!(requirement, Requirement::ProfessedReligion { .. })
+            }));
+            assert!(definition.ranks.iter().all(|rank| {
+                rank.requirements.iter().all(|requirement| {
+                    !matches!(requirement, Requirement::ProfessedReligion { .. })
+                })
+            }));
+            assert!(definition.public_threat_referrals);
         }
+
+        let hunt = organization("hunt_pale_lantern").unwrap();
+        assert!(
+            hunt.activity
+                .training
+                .iter()
+                .all(|entry| { !matches!(&entry.target, TrainingTarget::Religion { .. }) })
+        );
+        assert_eq!(
+            hunt.activity.training,
+            vec![
+                TrainingEntry {
+                    weight: 0.5,
+                    target: TrainingTarget::Bestiary {
+                        category: "spirit".into(),
+                    },
+                },
+                TrainingEntry {
+                    weight: 0.5,
+                    target: TrainingTarget::EquippedWeaponSkills,
+                },
+            ]
+        );
     }
 
     #[test]

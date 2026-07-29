@@ -1377,6 +1377,44 @@ mod tests {
         }
         let adult = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Adult).unwrap();
         let old = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Old).unwrap();
+        for (profession, id, name, adult_rank, old_rank) in [
+            (
+                StartingProfession::WitchHunter,
+                "hunt_pale_lantern",
+                "The Hunt of the Pale Lantern",
+                "hunter",
+                "huntmaster",
+            ),
+            (
+                StartingProfession::Knight,
+                "order_saint_george",
+                "The Order of St. George",
+                "knight",
+                "commander",
+            ),
+            (
+                StartingProfession::Forester,
+                "lodge_hart_king",
+                "The Lodge of the Hart King",
+                "warden",
+                "master",
+            ),
+        ] {
+            let slot = StartingProfession::ALL
+                .iter()
+                .position(|candidate| *candidate == profession)
+                .unwrap();
+            let adult_organization = adult[slot].organization.as_ref().unwrap();
+            let old_organization = old[slot].organization.as_ref().unwrap();
+            assert_eq!(adult_organization.organization_id, id);
+            assert_eq!(adult_organization.organization_name, name);
+            assert_eq!(adult_organization.rank_id, adult_rank);
+            assert_eq!(old_organization.organization_id, id);
+            assert_eq!(old_organization.organization_name, name);
+            assert_eq!(old_organization.rank_id, old_rank);
+            assert!(adult[slot].religion_id.is_none());
+            assert!(old[slot].religion_id.is_none());
+        }
         assert!(adult.iter().zip(&old).all(|(adult, old)| {
             adult.id != old.id
                 && adult.organization.as_ref().unwrap().rank_id

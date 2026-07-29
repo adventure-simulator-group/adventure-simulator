@@ -325,7 +325,7 @@ mod npc_navigation_tests {
             &profile,
             &SettlementCategory::City,
             "viabundus-0",
-            "organization-brotherhood-saint-peter-martyr"
+            "organization-hunt-pale-lantern"
         ));
         assert!(!npc_location_is_navigable(
             &profile,

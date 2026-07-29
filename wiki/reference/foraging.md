@@ -63,8 +63,8 @@ hours, and routes rejected above-cap training into mastery enjoyment.
 Foraging is illegal at a settlement or in a cultivated square. High Game, Low
 Game, Fish, and Plants also require a license granted by the character's
 currently presented, active, dues-current profession; Harmful Beasts requires
-none. Ranger and forester organizations grant the common licenses at every
-rank, while High Game is reserved to Master rank. Licenses are global for now
+none. The Lodge of the Hart King grants the common licenses at every rank,
+while High Game is reserved to Master rank. Licenses are global for now
 and deliberately ignore local recognition and political boundaries.
 
 Unlicensed sources remain selectable as poaching. A completed illegal search

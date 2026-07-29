@@ -439,7 +439,7 @@ mod tests {
             &p,
             false,
             "viabundus-0",
-            "organization-brotherhood-saint-peter-martyr"
+            "organization-hunt-pale-lantern"
         ));
     }
 
