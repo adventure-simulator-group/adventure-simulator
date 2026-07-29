@@ -2200,9 +2200,7 @@ mod tests {
         let rendered = equipment_checkbox(&inventory, Some(&definition), false, true).into_string();
         assert!(!rendered.contains(" disabled"));
         assert!(rendered.contains("aria-label=\"Administer Oral rehydration draught\""));
-        assert!(rendered.contains(
-            "title=\"Administer one standard course of this preparation\""
-        ));
+        assert!(rendered.contains("title=\"Administer one standard course of this preparation\""));
         assert!(!rendered.contains("Equip Oral rehydration draught"));
     }
 
@@ -2220,14 +2218,16 @@ mod tests {
             kind: crate::spacetimedb::ItemKind::Medication,
             ..Default::default()
         };
-        let rendered = equipment_checkbox(&inventory, Some(&definition), false, false).into_string();
+        let rendered =
+            equipment_checkbox(&inventory, Some(&definition), false, false).into_string();
         assert!(rendered.contains(" disabled"));
-        assert!(rendered.contains(
-            "aria-label=\"Only Oral rehydration draught&#x27;s owner can administer it\""
-        ));
-        assert!(rendered.contains(
-            "title=\"Select this character to administer their preparation\""
-        ));
+        assert!(
+            rendered
+                .contains("aria-label=\"Only Oral rehydration draught's owner can administer it\"")
+        );
+        assert!(
+            rendered.contains("title=\"Select this character to administer their preparation\"")
+        );
         assert!(!rendered.contains("aria-label=\"Administer Oral rehydration draught\""));
     }
 

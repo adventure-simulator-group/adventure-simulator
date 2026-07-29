@@ -1126,10 +1126,7 @@ pub(super) fn physiology_dialog(
     }
 }
 
-pub(super) fn physiology_controls(
-    medical: &MedicalPresentation,
-    action_base: &str,
-) -> Markup {
+pub(super) fn physiology_controls(medical: &MedicalPresentation, action_base: &str) -> Markup {
     html! {
         @if !medical.active_administrations.is_empty() {
         (sidebar_section("Current medication", html! {

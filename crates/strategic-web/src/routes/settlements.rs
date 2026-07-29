@@ -4063,7 +4063,10 @@ pub(crate) async fn medical_presentation(
     {
         Ok(Some(time)) => time.minutes,
         Ok(None) => {
-            tracing::error!(target_id, "patient time missing; medical presentation unavailable");
+            tracing::error!(
+                target_id,
+                "patient time missing; medical presentation unavailable"
+            );
             return crate::medical::MedicalPresentation {
                 unavailable: true,
                 ..Default::default()

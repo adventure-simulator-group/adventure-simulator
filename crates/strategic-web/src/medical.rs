@@ -178,9 +178,7 @@ pub fn sanitize(
                 .is_some_and(|profile| {
                     current_minute >= row.administered_at
                         && current_minute
-                            < row
-                                .administered_at
-                                .saturating_add(profile.duration_minutes)
+                            < row.administered_at.saturating_add(profile.duration_minutes)
                 })
         })
         .cloned()
