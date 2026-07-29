@@ -11194,6 +11194,16 @@ pub fn transfer_party_item(
         return Ok(());
     }
 
+    if item_is_medication(ctx, &source_item.item_id) {
+        if quantity != 1 || source_item.quantity != 1 {
+            return Err("Medication must be transferred as an individual course".into());
+        }
+        let mut transferred = source_item;
+        transferred.character_id = to_character_id;
+        ctx.db.inventory_item().id().update(transferred);
+        return Ok(());
+    }
+
     let durable = item_is_durable(ctx, &source_item.item_id);
     if durable {
         if quantity != 1 || source_item.quantity != 1 {
@@ -11350,6 +11360,14 @@ fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
         .is_some_and(|definition| definition.repairable)
 }
 
+fn item_is_medication(ctx: &ReducerContext, item_id: &str) -> bool {
+    ctx.db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .is_some_and(|definition| definition.kind == crate::ItemKind::Medication)
+}
+
 #[cfg(test)]
 mod durable_custody_tests {
     #[test]
@@ -11398,6 +11416,57 @@ mod durable_custody_tests {
     }
 }
 
+#[cfg(test)]
+mod medication_custody_tests {
+    #[test]
+    fn medication_stays_in_quantity_one_rows_across_custody_paths() {
+        let source = include_str!("strategic.rs");
+        let direct_transfer = source
+            .split("pub fn transfer_party_item")
+            .nth(1)
+            .unwrap()
+            .split("fn objective_item_value")
+            .next()
+            .unwrap();
+        assert!(direct_transfer.contains("item_is_medication"));
+        assert!(direct_transfer.contains("source_item.quantity != 1"));
+        assert!(direct_transfer.contains("transferred.character_id = to_character_id"));
+
+        let party_add = source
+            .rsplit("fn add_to_party_inventory_checked")
+            .next()
+            .unwrap()
+            .split("fn credit_party_stake")
+            .next()
+            .unwrap();
+        assert!(party_add.contains("kind == Some(crate::ItemKind::Medication)"));
+        assert!(party_add.contains("for _ in 0..quantity"));
+        assert!(party_add.contains("quantity: 1"));
+
+        let withdrawal = source
+            .rsplit("pub fn withdraw_party_inventory_item")
+            .next()
+            .unwrap()
+            .split("pub fn liquidate_party_inventory")
+            .next()
+            .unwrap();
+        assert!(withdrawal.contains("item_is_medication"));
+        assert!(withdrawal.contains("Medication must be withdrawn as an individual course"));
+        assert!(withdrawal.contains("crate::add_inventory_item"));
+
+        let deposit = source
+            .rsplit("pub fn deposit_party_inventory_item")
+            .next()
+            .unwrap()
+            .split("pub(crate) fn consume_personal_gold")
+            .next()
+            .unwrap();
+        assert!(deposit.contains("item_is_medication"));
+        assert!(deposit.contains("Medication must be deposited as an individual course"));
+        assert!(deposit.contains("add_to_party_inventory"));
+    }
+}
+
 pub(crate) fn add_to_party_inventory(
     ctx: &ReducerContext,
     party_id: &str,
@@ -11424,6 +11493,17 @@ fn add_to_party_inventory_checked(
         .map(|row| row.kind);
     let food_definition = crate::item::inventory_food_definition(kind, item_id)?;
     let measured = crate::inventory_amount::is_measured_item(ctx, item_id);
+    if kind == Some(crate::ItemKind::Medication) {
+        for _ in 0..quantity {
+            ctx.db.party_inventory_item().insert(PartyInventoryItem {
+                id: 0,
+                party_id: party_id.into(),
+                item_id: item_id.into(),
+                quantity: 1,
+            });
+        }
+        return Ok(());
+    }
     if measured {
         let minute = ctx
             .db
@@ -12257,6 +12337,10 @@ pub fn deposit_party_inventory_item(
     {
         return Err("Unequip an item before depositing it".into());
     }
+    let medication = item_is_medication(ctx, &inventory.item_id);
+    if medication && (quantity != 1 || inventory.quantity != 1) {
+        return Err("Medication must be deposited as an individual course".into());
+    }
     let value = personal_inventory_value(ctx, &inventory, quantity)?;
     let durable = item_is_durable(ctx, &inventory.item_id);
     if durable && (quantity != 1 || inventory.quantity != 1) {
@@ -12514,6 +12598,10 @@ pub fn withdraw_party_inventory_item(
         ctx.db.party_stake().id().update(stake.clone());
     }
     let durable = item_is_durable(ctx, &inventory.item_id);
+    let medication = item_is_medication(ctx, &inventory.item_id);
+    if medication && (quantity != 1 || inventory.quantity != 1) {
+        return Err("Medication must be withdrawn as an individual course".into());
+    }
     if durable && (quantity != 1 || inventory.quantity != 1) {
         return Err("Equipment instances must be withdrawn individually".into());
     }

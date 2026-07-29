@@ -217,7 +217,7 @@ pub fn party_inventory_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (party_trade_inventory_rail(selected, selected_inventory, items, food_lots, active_character.id, "right", selected_equip, active_targets, selected_encumbrance))
+            (party_trade_inventory_rail(selected, selected_inventory, items, food_lots, active_character.id, "right", selected_equip, active_targets, selected_encumbrance, false))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
@@ -231,7 +231,7 @@ pub fn party_inventory_page(
             }
         }
         aside class="right-sidebar" {
-            (party_trade_inventory_rail(active_character, active_inventory, items, food_lots, selected.id, "left", active_equip, selected_targets, active_encumbrance))
+            (party_trade_inventory_rail(active_character, active_inventory, items, food_lots, selected.id, "left", active_equip, selected_targets, active_encumbrance, true))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
@@ -638,6 +638,7 @@ fn party_trade_inventory_rail(
     equip: Option<&CharacterEquip>,
     recipient_targets: &[InventoryQuantityTarget],
     encumbrance: EncumbranceSummary,
+    medication_is_self: bool,
 ) -> Markup {
     let title = format!("{}'s inventory", character.name);
     html! {
@@ -667,7 +668,7 @@ fn party_trade_inventory_rail(
                                         }
                                     }
                                     td class="inventory-count" { (item.qty) }
-                                    td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
+                                    td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped, medication_is_self)) }
                                     td class="inventory-weight" { (item_weight(definition)) }
                                     td class="inventory-gold" { (item_value(definition)) }
                                 }
@@ -721,7 +722,7 @@ fn discard_inventory_rail(
                                     }
                                 }
                                 td class="inventory-count" { (item.qty) }
-                                td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) }
+                                td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped, true)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
                             }
@@ -863,7 +864,7 @@ pub fn live_merchant_shop_page(
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                         td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
-                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
+                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped, true)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
@@ -1023,7 +1024,7 @@ pub fn party_pool_page(
                                     }
                                 }
                                 td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
-                                td class="inventory-equipped" { (equipment_checkbox(item, definition, equipped)) }
+                                td class="inventory-equipped" { (equipment_checkbox(item, definition, equipped, true)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
                             }
@@ -1119,23 +1120,27 @@ fn equipment_checkbox(
     inventory: &InventoryItem,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
     equipped: bool,
+    medication_is_self: bool,
 ) -> Markup {
-    let equippable = definition.is_some_and(|definition| {
-        definition.slot != ItemSlot::None
-            || definition.kind == crate::spacetimedb::ItemKind::Medication
-    });
     let medication = definition
         .is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Medication);
+    let equippable = definition.is_some_and(|definition| {
+        definition.slot != ItemSlot::None || (medication && medication_is_self)
+    });
     let item_name = item_display_name(&inventory.item_id);
-    let label = if medication {
+    let label = if medication && medication_is_self {
         format!("Administer {item_name}")
+    } else if medication {
+        format!("Only {item_name}'s owner can administer it")
     } else if equipped {
         format!("Unequip {item_name}")
     } else {
         format!("Equip {item_name}")
     };
-    let title = if medication {
+    let title = if medication && medication_is_self {
         "Administer one standard course of this preparation"
+    } else if medication {
+        "Select this character to administer their preparation"
     } else if equippable {
         "Equip or unequip this item"
     } else {
@@ -2170,11 +2175,11 @@ mod tests {
             handling_sensitivity: 0.0,
             ..Default::default()
         };
-        let enabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        let enabled = equipment_checkbox(&inventory, Some(&definition), false, true).into_string();
         assert!(enabled.contains("data-equipment-toggle"));
         assert!(!enabled.contains(" disabled"));
         definition.slot = ItemSlot::None;
-        let disabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        let disabled = equipment_checkbox(&inventory, Some(&definition), false, true).into_string();
         assert!(disabled.contains(" disabled"));
     }
 
@@ -2192,13 +2197,38 @@ mod tests {
             kind: crate::spacetimedb::ItemKind::Medication,
             ..Default::default()
         };
-        let rendered = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        let rendered = equipment_checkbox(&inventory, Some(&definition), false, true).into_string();
         assert!(!rendered.contains(" disabled"));
         assert!(rendered.contains("aria-label=\"Administer Oral rehydration draught\""));
         assert!(rendered.contains(
             "title=\"Administer one standard course of this preparation\""
         ));
         assert!(!rendered.contains("Equip Oral rehydration draught"));
+    }
+
+    #[test]
+    fn companion_medication_checkbox_is_disabled_with_honest_copy() {
+        let inventory = InventoryItem {
+            id: 7,
+            character_id: 10,
+            item_id: "oral_rehydration_draught".into(),
+            qty: 1,
+        };
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: inventory.item_id.clone(),
+            slot: ItemSlot::None,
+            kind: crate::spacetimedb::ItemKind::Medication,
+            ..Default::default()
+        };
+        let rendered = equipment_checkbox(&inventory, Some(&definition), false, false).into_string();
+        assert!(rendered.contains(" disabled"));
+        assert!(rendered.contains(
+            "aria-label=\"Only Oral rehydration draught&#x27;s owner can administer it\""
+        ));
+        assert!(rendered.contains(
+            "title=\"Select this character to administer their preparation\""
+        ));
+        assert!(!rendered.contains("aria-label=\"Administer Oral rehydration draught\""));
     }
 
     #[test]

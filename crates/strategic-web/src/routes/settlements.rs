@@ -3573,6 +3573,53 @@ struct EquipmentForm {
     equipped: bool,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct StandardMedicationAdministration {
+    actor_id: u64,
+    patient_id: u64,
+    inventory_item_id: u64,
+    profile_version: u16,
+    route: String,
+    amount_milliunits: u32,
+    region: Option<String>,
+}
+
+impl StandardMedicationAdministration {
+    fn reducer_args(&self) -> [serde_json::Value; 7] {
+        [
+            json!(self.actor_id),
+            json!(self.patient_id),
+            json!(self.inventory_item_id),
+            json!(self.profile_version),
+            json!(&self.route),
+            json!(self.amount_milliunits),
+            json!(&self.region),
+        ]
+    }
+}
+
+fn standard_medication_administration(
+    session_character_id: u64,
+    inventory_item_id: u64,
+    preparation_id: &str,
+    checked: bool,
+) -> Result<StandardMedicationAdministration, &'static str> {
+    if !checked {
+        return Err("A preparation cannot be unchecked after it has been administered.");
+    }
+    let profile = adventuresim_core::physiology::current_intervention_profile(preparation_id)
+        .ok_or("This medication has no current preparation profile.")?;
+    Ok(StandardMedicationAdministration {
+        actor_id: session_character_id,
+        patient_id: session_character_id,
+        inventory_item_id,
+        profile_version: profile.version,
+        route: format!("{:?}", profile.route).to_ascii_lowercase(),
+        amount_milliunits: 1_000,
+        region: None,
+    })
+}
+
 async fn set_equipment(
     State(state): State<AppState>,
     session: Session,
@@ -3620,36 +3667,18 @@ async fn set_equipment(
         return (StatusCode::NOT_FOUND, "Item definition is missing").into_response();
     };
     if definition.kind == crate::spacetimedb::ItemKind::Medication {
-        if !form.equipped {
-            return (
-                StatusCode::BAD_REQUEST,
-                "A preparation cannot be unchecked after it has been administered.",
-            )
-                .into_response();
-        }
-        let Some(profile) =
-            adventuresim_core::physiology::current_intervention_profile(&inventory.item_id)
-        else {
-            return (
-                StatusCode::BAD_REQUEST,
-                "This medication has no current preparation profile.",
-            )
-                .into_response();
+        let administration = match standard_medication_administration(
+            character_id,
+            form.inventory_item_id,
+            &inventory.item_id,
+            form.equipped,
+        ) {
+            Ok(administration) => administration,
+            Err(error) => return (StatusCode::BAD_REQUEST, error).into_response(),
         };
         if let Err(error) = state
             .db
-            .call(
-                "administer_preparation",
-                &[
-                    json!(character_id),
-                    json!(character_id),
-                    json!(form.inventory_item_id),
-                    json!(profile.version),
-                    json!(format!("{:?}", profile.route).to_ascii_lowercase()),
-                    json!(1_000u32),
-                    json!(Option::<String>::None),
-                ],
-            )
+            .call("administer_preparation", &administration.reducer_args())
             .await
         {
             tracing::warn!(
@@ -4025,9 +4054,29 @@ pub(crate) async fn medical_presentation(
     } else {
         Vec::new()
     };
-    let current_minute = query_single::<CharacterTime>(state, "character_time", target_id)
+    let current_minute = match state
+        .db
+        .query_one::<CharacterTime>(&format!(
+            "SELECT * FROM character_time WHERE character_id = {target_id}"
+        ))
         .await
-        .map_or(0, |time| time.minutes);
+    {
+        Ok(Some(time)) => time.minutes,
+        Ok(None) => {
+            tracing::error!(target_id, "patient time missing; medical presentation unavailable");
+            return crate::medical::MedicalPresentation {
+                unavailable: true,
+                ..Default::default()
+            };
+        }
+        Err(error) => {
+            tracing::error!(%error, target_id, "patient time query failed; medical presentation unavailable");
+            return crate::medical::MedicalPresentation {
+                unavailable: true,
+                ..Default::default()
+            };
+        }
+    };
     crate::medical::sanitize(&rows, &administrations, current_minute)
 }
 
@@ -4041,13 +4090,51 @@ fn administration_history_visible(
 
 #[cfg(test)]
 mod physiology_privacy_tests {
-    use super::administration_history_visible;
+    use super::{administration_history_visible, standard_medication_administration};
+    use serde_json::json;
 
     #[test]
     fn administration_history_requires_self_or_an_authorized_observation() {
         assert!(administration_history_visible(7, 7, false));
         assert!(administration_history_visible(7, 8, true));
         assert!(!administration_history_visible(7, 8, false));
+    }
+
+    #[test]
+    fn standard_medication_mapping_is_self_only_versioned_and_parameter_free() {
+        let action =
+            standard_medication_administration(7, 42, "oral_rehydration_draught", true).unwrap();
+        assert_eq!(action.actor_id, 7);
+        assert_eq!(action.patient_id, 7);
+        assert_eq!(action.inventory_item_id, 42);
+        assert_eq!(action.profile_version, 1);
+        assert_eq!(action.route, "oral");
+        assert_eq!(action.amount_milliunits, 1_000);
+        assert_eq!(action.region, None);
+        assert_eq!(
+            action.reducer_args(),
+            [
+                json!(7),
+                json!(7),
+                json!(42),
+                json!(1),
+                json!("oral"),
+                json!(1_000),
+                json!(null),
+            ]
+        );
+    }
+
+    #[test]
+    fn standard_medication_mapping_rejects_uncheck_and_unknown_profile() {
+        assert_eq!(
+            standard_medication_administration(7, 42, "oral_rehydration_draught", false),
+            Err("A preparation cannot be unchecked after it has been administered.")
+        );
+        assert_eq!(
+            standard_medication_administration(7, 42, "unknown_medication", true),
+            Err("This medication has no current preparation profile.")
+        );
     }
 }
 

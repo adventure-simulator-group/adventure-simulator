@@ -47,11 +47,15 @@ test('parameterized preparation form and browser route are absent', () => {
     path.join(__dirname, '..', 'src', 'routes', 'settlements.rs'),
     'utf8',
   );
-  assert.doesNotMatch(health, /Administer preparation|No prepared interventions/);
-  assert.doesNotMatch(health, /name="(?:route|amount_milliunits|region)"/);
-  assert.doesNotMatch(routes, /physiology\/administer/);
-  assert.match(routes, /json!\(1_000u32\)/);
-  assert.match(routes, /json!\(Option::<String>::None\)/);
+  const healthProduction = health.split('#[cfg(test)]')[0];
+  const removedHeading = ['Administer', ' preparation'].join('');
+  const removedEmptyState = ['No prepared', ' interventions'].join('');
+  assert.equal(healthProduction.includes(removedHeading), false);
+  assert.equal(healthProduction.includes(removedEmptyState), false);
+  assert.doesNotMatch(healthProduction, /name="(?:route|amount_milliunits|region)"/);
+  const removedRoute = ['physiology', '/administer'].join('');
+  assert.equal(routes.includes(removedRoute), false);
+  assert.match(routes, /standard_medication_administration/);
   assert.match(routes, /"equip_item"/);
   assert.match(routes, /definition\.slot/);
 });
