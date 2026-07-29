@@ -1,5 +1,12 @@
 # Attributes
 
+The Terrain family includes **Snow**, a mental, intuitive,
+Intelligence-governed skill with a 30,000-hour curve. Snow has symmetric 0.20
+ordinary correlation with Plains, Forest, Hills, Wetlands, and Urban. It is an
+overlay skill: snow-covered forest still uses and trains Forest while Snow
+blends into the check. Cover conservatively splits the existing
+road-discounted exposure between Snow and the underlying biome.
+
 The strategic interface represents attributes, skills, schedule activities,
 condition metrics, Fervor, Morale, Age, Virtue, and Religion with recolourable
 CSS masks. Most use locally vendored monochrome Game Icons; arm and leg Strength

@@ -99,6 +99,9 @@ pub enum Skill {
     /// Mental. Intuitive. Movement through built-up ground. (30000h)
     #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
     TerrainUrban,
+    /// Mental. Intuitive. Movement over snow-covered ground. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainSnow,
     /// Mental. Trained. Knowledge of bodies and wounds. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Anatomy,
@@ -443,17 +446,21 @@ mod tests {
     }
 
     #[test]
-    fn wetlands_is_a_fifth_symmetric_terrain_leaf() {
+    fn snow_is_a_symmetric_terrain_overlay_leaf() {
         let terrains = [
             Skill::TerrainPlains,
             Skill::TerrainForest,
             Skill::TerrainHills,
             Skill::TerrainWetlands,
             Skill::TerrainUrban,
+            Skill::TerrainSnow,
         ];
         assert_eq!(Skill::TerrainWetlands.label(), "Wetlands");
         assert_eq!(Skill::TerrainWetlands.max_hours(), 30_000.0);
         assert!(Skill::TerrainWetlands.is_intuitive() && Skill::TerrainWetlands.is_mental());
+        assert_eq!(Skill::TerrainSnow.label(), "Snow");
+        assert_eq!(Skill::TerrainSnow.max_hours(), 30_000.0);
+        assert!(Skill::TerrainSnow.is_intuitive() && Skill::TerrainSnow.is_mental());
         for source in terrains {
             for target in terrains {
                 if source == target {
@@ -497,6 +504,7 @@ impl Skill {
             Self::TerrainHills => "Hills",
             Self::TerrainWetlands => "Wetlands",
             Self::TerrainUrban => "Urban",
+            Self::TerrainSnow => "Snow",
             Self::Anatomy => "Anatomy",
             Self::Tailoring => "Tailoring",
             Self::Smithing => "Smithing",
@@ -567,7 +575,8 @@ impl Skill {
             | Self::TerrainForest
             | Self::TerrainHills
             | Self::TerrainWetlands
-            | Self::TerrainUrban => GoverningAptitude::Intelligence,
+            | Self::TerrainUrban
+            | Self::TerrainSnow => GoverningAptitude::Intelligence,
             Self::Dodge | Self::Balance => GoverningAptitude::Agility(LimbWeights::both_legs()),
             Self::Stealth => GoverningAptitude::Agility(LimbWeights::all_equal()),
             Self::Polearm
@@ -649,30 +658,42 @@ impl Skill {
                 (Self::TerrainHills, 0.20),
                 (Self::TerrainWetlands, 0.20),
                 (Self::TerrainUrban, 0.20),
+                (Self::TerrainSnow, 0.20),
             ],
             Self::TerrainForest => &[
                 (Self::TerrainPlains, 0.20),
                 (Self::TerrainHills, 0.20),
                 (Self::TerrainWetlands, 0.20),
                 (Self::TerrainUrban, 0.20),
+                (Self::TerrainSnow, 0.20),
             ],
             Self::TerrainHills => &[
                 (Self::TerrainPlains, 0.20),
                 (Self::TerrainForest, 0.20),
                 (Self::TerrainWetlands, 0.20),
                 (Self::TerrainUrban, 0.20),
+                (Self::TerrainSnow, 0.20),
             ],
             Self::TerrainWetlands => &[
                 (Self::TerrainPlains, 0.20),
                 (Self::TerrainForest, 0.20),
                 (Self::TerrainHills, 0.20),
                 (Self::TerrainUrban, 0.20),
+                (Self::TerrainSnow, 0.20),
             ],
             Self::TerrainUrban => &[
                 (Self::TerrainPlains, 0.20),
                 (Self::TerrainForest, 0.20),
                 (Self::TerrainHills, 0.20),
                 (Self::TerrainWetlands, 0.20),
+                (Self::TerrainSnow, 0.20),
+            ],
+            Self::TerrainSnow => &[
+                (Self::TerrainPlains, 0.20),
+                (Self::TerrainForest, 0.20),
+                (Self::TerrainHills, 0.20),
+                (Self::TerrainWetlands, 0.20),
+                (Self::TerrainUrban, 0.20),
             ],
             _ => &[],
         }

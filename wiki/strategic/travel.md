@@ -4,6 +4,21 @@ Travel is a strategic activity. The party plans a route, chooses a daily
 schedule, prepares supplies, and advances time until it reaches the destination,
 stops at camp, or is interrupted.
 
+## Departure weather
+
+Strategic weather is evaluated from absolute minute, coarse geographic cell,
+and elevation using a versioned deterministic authority. Conditions are clear,
+rain, or snow with bounded intensity. Recent intervals deterministically
+produce ground moisture and snow cover; there are no per-tile weather rows.
+
+Routing snapshots the weather rules version, interval, precipitation,
+intensity, moisture, and snow cover at departure. The snapshot participates in
+route cache identity and is persisted with route authority. Rain may increase
+effective Wetlands before path search and add mud duration. Snow cover blends
+the party's Snow expertise into route checks and cost before path search, then
+splits (without duplicating) the road-discounted training budget. An active
+journey is never rerouted as later intervals pass.
+
 ## Route planning
 
 The settlement map shows historical roads, ferries, settlements, known exact

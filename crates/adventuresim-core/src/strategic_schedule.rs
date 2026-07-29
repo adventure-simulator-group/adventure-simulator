@@ -10,7 +10,7 @@ use crate::{
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 30;
+pub const SKILL_COUNT: usize = 31;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -55,6 +55,7 @@ pub struct SkillHours {
     pub terrain_hills: f32,
     pub terrain_wetlands: f32,
     pub terrain_urban: f32,
+    pub terrain_snow: f32,
     pub tailoring: f32,
     pub smithing: f32,
 }
@@ -90,6 +91,7 @@ impl SkillHours {
             self.terrain_hills,
             self.terrain_wetlands,
             self.terrain_urban,
+            self.terrain_snow,
             self.tailoring,
             self.smithing,
         ]

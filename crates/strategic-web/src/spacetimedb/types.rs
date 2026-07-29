@@ -784,10 +784,23 @@ pub struct JourneyRouteLeg {
     pub spans: Vec<JourneyTerrainSpan>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JourneyPrecipitation {
+    Clear,
+    Rain,
+    Snow,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyJourneyRoute {
     pub party_id: String,
     pub package_digest: String,
+    pub weather_rules_version: u16,
+    pub weather_interval_start: u64,
+    pub precipitation: JourneyPrecipitation,
+    pub intensity_bps: u16,
+    pub ground_moisture_bps: u16,
+    pub snow_cover_bps: u16,
     pub distance_m: u64,
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
@@ -1383,6 +1396,7 @@ pub struct CharacterSkills {
     pub terrain_hills_hours: f32,
     pub terrain_wetlands_hours: f32,
     pub terrain_urban_hours: f32,
+    pub terrain_snow_hours: f32,
     pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
@@ -2021,6 +2035,7 @@ mod tests {
             },
             ordinal,
             now_minute: 50_000,
+            incident_weather: adventuresim_core::weather::Precipitation::Clear,
             requested_family: Some(TemplateFamily::RecurringDepredation),
             witness_candidates: test_witnesses(),
         };

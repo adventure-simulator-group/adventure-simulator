@@ -1870,7 +1870,7 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
                 skill_contributions:
                     "terrain, awareness, stealth, local familiarity, and bounded party assistance"
                         .into(),
-                weather_available: false,
+                weather_available: true,
                 required_case_site_id,
                 available: availability.unavailable_reason.is_none(),
                 can_travel_to_required_site: availability.can_travel_to_required_site,
@@ -4310,6 +4310,49 @@ fn actor_action_terrain(ctx: &ReducerContext, actor: &crate::Character) -> actio
         .unwrap_or(action::Terrain::Road)
 }
 
+fn actor_action_weather(
+    ctx: &ReducerContext,
+    actor: &crate::Character,
+    started_at: u64,
+) -> action::WeatherAuthority {
+    let coordinates = actor
+        .current_settlement_id
+        .as_ref()
+        .and_then(|id| ctx.db.settlement().id().find(id))
+        .map(|settlement| {
+            (
+                (settlement.coord_y * 1_000_000.0).round() as i32,
+                (settlement.coord_x * 1_000_000.0).round() as i32,
+            )
+        })
+        .or_else(|| {
+            character_case_site_id(ctx, actor.id)
+                .and_then(|id| ctx.db.case_site_authority().id_key().find(&id))
+                .map(|site| (site.latitude_e7 / 10, site.longitude_e7 / 10))
+        })
+        .unwrap_or((0, 0));
+    let weather = adventuresim_core::weather::weather_at(
+        0x4144_5645_4e54_5552,
+        started_at,
+        coordinates.0,
+        coordinates.1,
+        0,
+    );
+    match weather.precipitation {
+        adventuresim_core::weather::Precipitation::Clear => action::WeatherAuthority::Clear {
+            snow_cover_bps: weather.snow_cover_bps,
+        },
+        adventuresim_core::weather::Precipitation::Rain => action::WeatherAuthority::Rain {
+            intensity_bps: weather.intensity_bps,
+            snow_cover_bps: weather.snow_cover_bps,
+        },
+        adventuresim_core::weather::Precipitation::Snow => action::WeatherAuthority::Snow {
+            intensity_bps: weather.intensity_bps,
+            snow_cover_bps: weather.snow_cover_bps,
+        },
+    }
+}
+
 fn persist_action_result_lead(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
@@ -5358,7 +5401,7 @@ pub(crate) fn perform_investigation_action_authorized(
         evidence_age_minutes: started_at.saturating_sub(capability.evidence_age_origin_minute),
         current_uncertainty_bps: capability.uncertainty_bps,
         skills: route_skills,
-        weather: action::WeatherAuthority::Unavailable,
+        weather: actor_action_weather(ctx, &actor, started_at),
     };
     let bounded_progress = capability_uses_bounded_progress(&capability.provenance_kind, kind)
         .then(|| {
@@ -8464,6 +8507,7 @@ mod tests {
             },
             ordinal: 0,
             now_minute: 50_000,
+            incident_weather: adventuresim_core::weather::Precipitation::Clear,
             requested_family: Some(TemplateFamily::RecurringDepredation),
             witness_candidates: test_witnesses(),
         };
@@ -8548,6 +8592,7 @@ mod tests {
             },
             ordinal: 0,
             now_minute: 50_000,
+            incident_weather: adventuresim_core::weather::Precipitation::Clear,
             requested_family: Some(TemplateFamily::RecurringDepredation),
             witness_candidates: test_witnesses(),
         })
@@ -8706,6 +8751,7 @@ mod tests {
                 },
                 ordinal: 0,
                 now_minute: 50_000,
+                incident_weather: adventuresim_core::weather::Precipitation::Clear,
                 requested_family: Some(family),
                 witness_candidates: test_witnesses(),
             };
@@ -8783,6 +8829,7 @@ mod tests {
                 },
                 ordinal: 0,
                 now_minute: 50_000,
+                incident_weather: adventuresim_core::weather::Precipitation::Clear,
                 requested_family: Some(family),
                 witness_candidates: test_witnesses(),
             };
@@ -9843,6 +9890,7 @@ mod tests {
             },
             ordinal: 0,
             now_minute: 50_000,
+            incident_weather: adventuresim_core::weather::Precipitation::Clear,
             requested_family: Some(TemplateFamily::RecurringDepredation),
             witness_candidates: test_witnesses(),
         };
@@ -10235,6 +10283,7 @@ mod tests {
             },
             ordinal: 0,
             now_minute: 50_000,
+            incident_weather: adventuresim_core::weather::Precipitation::Clear,
             requested_family: Some(TemplateFamily::RecurringDepredation),
             witness_candidates: test_witnesses(),
         })
