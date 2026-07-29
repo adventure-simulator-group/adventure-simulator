@@ -16,12 +16,17 @@
       const method = root.querySelector("[data-herbal-method]:checked");
       methods.forEach((choice) => {
         const available = ingredient?.getAttribute(methodAttribute(choice.value));
+        const wrapper = choice.closest("label");
+        const methodLabel = wrapper?.dataset.methodLabel || choice.value;
+        const description = wrapper?.dataset.methodDescription || methodLabel;
+        const ingredientName = ingredient?.dataset.itemId?.replaceAll("_", " ") || "the selected ingredient";
+        const incompatibility = `${methodLabel} is not an authored preparation for ${ingredientName}.`;
         choice.disabled = !available;
-        choice.closest("label")?.classList.toggle("disabled", !available);
-        choice.closest("label")?.setAttribute(
-          "data-strategic-tooltip",
-          available ? choice.closest("label").textContent.trim() : "Not an authored preparation for this ingredient",
-        );
+        wrapper?.classList.toggle("disabled", !available);
+        wrapper?.setAttribute("aria-disabled", String(!available));
+        wrapper?.setAttribute("data-strategic-tooltip", available ? description : incompatibility);
+        const status = wrapper?.querySelector("[data-herbal-method-status]");
+        if (status) status.textContent = available ? description : incompatibility;
       });
       if (!ingredient || !method || method.disabled) {
         preview.textContent = ingredient
@@ -36,10 +41,11 @@
         submit.disabled = true;
         return;
       }
-      const [output, duration, units, effect, risk, degraded] = encoded.split("|");
+      const [output, duration, units, requirement, effect, risk, degraded] = encoded.split("|");
       preview.textContent =
         `${output} · ${duration} minutes · ${units} unit${units === "1" ? "" : "s"} · ` +
-        `${effect} · Risk: ${risk}${degraded === "true" ? " · Degradation warning" : ""}`;
+        `Requires: ${requirement} · ${effect} · ${risk}` +
+        `${degraded === "true" ? " · Degradation warning" : ""}`;
       submit.disabled = false;
     }
     form.addEventListener("change", refresh);

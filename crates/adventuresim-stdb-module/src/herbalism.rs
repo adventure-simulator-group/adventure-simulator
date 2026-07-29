@@ -48,6 +48,51 @@ fn capability(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
     ))
 }
 
+/// Stable, aggregate consumption plan across any number of fungible personal
+/// stacks. Each tuple contains the original row and its post-craft quantity.
+fn consumable_plan(
+    ctx: &ReducerContext,
+    character_id: u64,
+    item_id: &str,
+    required_units: u32,
+) -> Result<Vec<(InventoryItem, u32)>, String> {
+    let mut rows = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .filter(|row| row.item_id == item_id)
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|row| row.id);
+    let available = rows.iter().try_fold(0u32, |total, row| {
+        total
+            .checked_add(row.quantity)
+            .ok_or_else(|| "Consumable quantity could not be calculated".to_string())
+    })?;
+    if available < required_units {
+        return Err(format!(
+            "Preparation requires {required_units} unit(s) of {item_id}"
+        ));
+    }
+    let mut needed = required_units;
+    let mut plan = Vec::new();
+    for row in rows {
+        if needed == 0 {
+            break;
+        }
+        let used = row.quantity.min(needed);
+        let remaining = row
+            .quantity
+            .checked_sub(used)
+            .ok_or("Consumable quantity could not be calculated")?;
+        needed = needed
+            .checked_sub(used)
+            .ok_or("Consumable requirement could not be calculated")?;
+        plan.push((row, remaining));
+    }
+    Ok(plan)
+}
+
 #[reducer]
 pub fn prepare_herbal_remedy(
     ctx: &ReducerContext,
@@ -60,6 +105,7 @@ pub fn prepare_herbal_remedy(
     if actor.in_server {
         return Err("Herbalism is unavailable during a tactical encounter".into());
     }
+    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
 
     // Every fallible lookup and calculation is completed before strategic time
     // advances. A terminal safe-prefix interruption can therefore return Ok
@@ -113,6 +159,20 @@ pub fn prepare_herbal_remedy(
         .quantity
         .checked_sub(preview.input_units)
         .ok_or("Ingredient quantity could not be calculated")?;
+    let consumables = if let Some(required) = preview.required_consumable {
+        let consumable_definition = ctx
+            .db
+            .item()
+            .id()
+            .find(required.item_id.to_owned())
+            .ok_or("Herbal preparation consumable is not in the item catalogue")?;
+        if consumable_definition.kind != ItemKind::Ingredient {
+            return Err("Authored herbal consumable is not an ingredient".into());
+        }
+        consumable_plan(ctx, character_id, required.item_id, required.units)?
+    } else {
+        Vec::new()
+    };
     let duration = u64::from(preview.duration_minutes);
 
     if !crate::time::advance_character_wait_time(ctx, character_id, duration)? {
@@ -126,6 +186,16 @@ pub fn prepare_herbal_remedy(
             quantity: remaining,
             ..input
         });
+    }
+    for (row, remaining) in consumables {
+        if remaining == 0 {
+            ctx.db.inventory_item().id().delete(row.id);
+        } else {
+            ctx.db.inventory_item().id().update(InventoryItem {
+                quantity: remaining,
+                ..row
+            });
+        }
     }
     ctx.db.inventory_item().insert(InventoryItem {
         id: 0,
@@ -171,12 +241,17 @@ mod tests {
     fn reducer_keeps_all_mutation_after_terminal_wait_boundary() {
         let source = include_str!("herbalism.rs");
         let wait = source.find("advance_character_wait_time").unwrap();
+        let unresolved = source
+            .find("require_character_no_unresolved_encounter(ctx, character_id)?")
+            .unwrap();
         let delete = source.find("delete(input.id)").unwrap();
         let insert = source.find("insert(InventoryItem").unwrap();
         let training = source.find("apply_direct_training(").unwrap();
+        assert!(unresolved < wait);
         assert!(wait < delete && wait < insert && wait < training);
         assert!(source.contains("require_strategic_gateway(ctx)?"));
         assert!(source.contains("require_living_character(ctx, character_id)?"));
+        assert!(source.contains("require_character_no_unresolved_encounter(ctx, character_id)?"));
         assert!(source.contains("definition.kind != ItemKind::Ingredient"));
     }
 
@@ -185,5 +260,17 @@ mod tests {
         let source = include_str!("herbalism.rs");
         assert!(source.contains("method: HerbalPreparationMethod"));
         assert!(!source.contains("method: String"));
+    }
+
+    #[test]
+    fn tincture_consumable_is_aggregated_and_only_mutated_after_wait() {
+        let source = include_str!("herbalism.rs");
+        let plan = source.find("fn consumable_plan").unwrap();
+        let aggregate = source[plan..].find("checked_add(row.quantity)").unwrap() + plan;
+        let wait = source.find("advance_character_wait_time").unwrap();
+        let consume = source.find("for (row, remaining) in consumables").unwrap();
+        assert!(aggregate < wait && wait < consume);
+        assert!(source.contains("rows.sort_by_key(|row| row.id)"));
+        assert!(source.contains("available < required_units"));
     }
 }

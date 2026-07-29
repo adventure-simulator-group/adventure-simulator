@@ -1109,6 +1109,7 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
         ("willow_bark_fine", 2),
         ("comfrey_fine", 2),
         ("poppy", 2),
+        ("tincture_spirit", 4),
         ("sage_poor", 2),
     ] {
         if ctx

@@ -449,11 +449,22 @@ pub(super) fn herbalism_activity_dialog(
                 CraftOutcome::Medication(id) => (item_display_name(id), false),
                 CraftOutcome::DegradedWaste(id) => (item_display_name(id), true),
             };
+            let requirement = preview.required_consumable.map_or_else(
+                || "No additional consumable".to_string(),
+                |required| {
+                    format!(
+                        "{} × {}",
+                        item_display_name(required.item_id),
+                        required.units
+                    )
+                },
+            );
             format!(
-                "{}|{}|{}|{}|{}|{}",
+                "{}|{}|{}|{}|{}|{}|{}",
                 output,
                 preview.duration_minutes,
                 preview.input_units,
+                requirement,
                 preview.expected_effect,
                 preview.risk,
                 degraded
@@ -509,11 +520,21 @@ pub(super) fn herbalism_activity_dialog(
                     fieldset class="herbalism-methods" {
                         legend { "Preparation method" }
                         @for method in PreparationMethod::ALL {
+                            @let description_id = format!("herbal-method-{}-description", method.slug());
                             label class="btn btn-secondary"
-                                data-strategic-tooltip=(method.label()) {
+                                tabindex="0"
+                                aria-describedby=(&description_id)
+                                aria-disabled="true"
+                                data-method-label=(method.label())
+                                data-method-description=(method.description())
+                                data-strategic-tooltip=(method.description()) {
                                 input type="radio" name="method" value=(method.slug())
                                     data-herbal-method;
                                 (method.label())
+                                span id=(&description_id) class="sr-only"
+                                    data-herbal-method-status {
+                                    (method.description())
+                                }
                             }
                         }
                     }

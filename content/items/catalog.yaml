@@ -2,6 +2,25 @@
   "schema_version": 1,
   "items": [
     {
+      "id": "tincture_spirit",
+      "display_name": "Tincture spirit",
+      "weight_kg": 0.12,
+      "base_value": 4,
+      "tags": ["ingredient", "alcohol", "tincture_solvent"],
+      "presentation": {"icon": "beer-stein"},
+      "kind": "ingredient",
+      "capabilities": {
+        "alcohol": {
+          "serving_ml": 100,
+          "abv_basis_points": 5000,
+          "net_hydration_ml": 0,
+          "disinfectant_effectiveness": 100,
+          "disinfectant_focused": true,
+          "potable": true
+        }
+      }
+    },
+    {
       "id": "willow_bark_poor", "display_name": "Poor willow bark", "weight_kg": 0.08,
       "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
       "presentation": {"icon": "help"}, "kind": "ingredient"

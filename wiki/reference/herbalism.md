@@ -19,7 +19,10 @@ The playable loop is deliberately small:
 
 The three method families are **dry and grind**, **infuse or decoct**, and
 **tincture**. Each recipe uses one ingredient and one method. Methods carry
-authored heat rather than exposing temperature or duration controls.
+authored heat rather than exposing temperature or duration controls. Tincture
+is the one bounded exception to the one-input rule: it additionally consumes
+one fungible unit of alcoholic tincture spirit. The spirit is ordinary
+herbalist stock but is not itself selectable as a medicinal herb.
 
 Ingredients have public **Poor**, **Ordinary**, and **Fine** grades represented
 by bounded catalogue identities. Ordinary herbs retain their established IDs;
@@ -31,6 +34,11 @@ Herbalism capability. Low capability takes longer and may require two units;
 grade and capability determine one of three concrete potency identities. There
 is no random craft failure and the UI never auto-selects a method.
 
+Risk awareness is also deterministic. Novices receive a coarse but explicit
+safety warning, intermediate herbalists see the affected physiological
+systems, and skilled herbalists see the exact authored hazard range. Greater
+knowledge never removes or softens the safety warning.
+
 Comfrey decocted with excessive heat becomes visible spent-herb waste. Poppy
 tincture provides a strong neurologic benefit with meaningful oxygenation and
 renal-clearance hazards. These outcomes are authored and previewed.
@@ -41,8 +49,9 @@ The browser submits only the selected inventory-row ID and closed method. The
 gateway binds the selected session character. The reducer verifies the
 registered gateway, living strategic actor, personal ingredient ownership,
 catalogue kind, quantity, recipe, output, and arithmetic before advancing
-time. A terminal safe-prefix interruption consumes nothing, produces nothing,
-and grants no training. Success consumes the exact authored units, creates one
+time. Unresolved strategic encounters block preparation. A terminal safe-prefix
+interruption consumes neither herb nor tincture spirit, produces nothing, and
+grants no training. Success consumes the exact authored inputs, creates one
 concrete output, and trains Herbalism for elapsed craft time.
 
 Medicines use versioned generic `InterventionProfile` meter effects. Recipes

@@ -13,11 +13,17 @@ test("herbalism stage modal has accessible controls and a minimal authority payl
   assert.doesNotMatch(source, /name="(?:output|potency|profile|route|dose)"/);
   assert.match(source, /data-herbal-preview role="status"/);
   assert.match(source, /data-strategic-tooltip/);
+  assert.match(source, /aria-describedby/);
+  assert.match(source, /data-herbal-method-status/);
+  assert.match(source, /required_consumable/);
 });
 
 test("herbalism client disables incompatible methods and renders degradation preview", () => {
   const source = fs.readFileSync(path.join(root, "static/herbalism.js"), "utf8");
   assert.match(source, /choice\.disabled = !available/);
+  assert.match(source, /aria-disabled/);
+  assert.match(source, /incompatibility/);
+  assert.match(source, /Requires: \$\{requirement\}/);
   assert.match(source, /Degradation warning/);
   assert.match(source, /strategicHerbalism/);
 });

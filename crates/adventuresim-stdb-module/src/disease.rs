@@ -1975,9 +1975,25 @@ pub fn purchase_from_herbalist(
     }
     crate::strategic::consume_personal_gold(ctx, patient_id, cost)?;
     for (item_id, quantity) in item_ids.iter().zip(&quantities) {
-        for _ in 0..*quantity {
-            crate::add_inventory_item(ctx, patient_id, item_id, 1);
-        }
+        // The shared helper keeps medication individual while creating one
+        // fungible ingredient stack with the requested quantity.
+        crate::item::add_inventory_item_checked(ctx, patient_id, item_id, *quantity)?
+            .ok_or("Herbalist purchase did not create inventory")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod herbalist_purchase_source_tests {
+    #[test]
+    fn purchase_adds_requested_quantity_once_through_kind_aware_helper() {
+        let source = include_str!("disease.rs");
+        let purchase = source
+            .split("pub fn purchase_from_herbalist")
+            .nth(1)
+            .unwrap();
+        let body = purchase.split("#[cfg(test)]").next().unwrap();
+        assert!(body.contains("add_inventory_item_checked(ctx, patient_id, item_id, *quantity)"));
+        assert!(!body.contains("for _ in 0..*quantity"));
+    }
 }

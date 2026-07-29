@@ -4,6 +4,9 @@ Bounded herbal grades use the ordinary base ID plus `_poor` and `_fine`
 variants tagged `medicinal_herb` and `grade_*`. Concrete remedies use
 `herbal_preparation` and `potency_*`; every medication identity needs a
 versioned generic physiology intervention profile.
+`tincture_spirit` is the single authored alcoholic Herbalism consumable. Keep
+it tagged as `tincture_solvent`; do not generalize that tag into a solvent
+subsystem or expose it as a medicinal-herb selection.
 
 When browser-local developer mode is enabled, expanding a concrete inventory
 row shows an **Edit YAML** button that opens the definition at its compiled

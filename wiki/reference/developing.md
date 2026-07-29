@@ -6,6 +6,8 @@ Bootstrap the isolated profile with visual demos, select **Herbalism Demo**,
 and open the raised **Herbalism** skill action. Willow demonstrates public
 grade and potency, comfrey demonstrates dry/grind and excessive-heat waste,
 and poppy tincture demonstrates a strong benefit with a physiological hazard.
+The demo also carries tincture spirit so the bounded solvent requirement is
+visible in the preview and success path.
 The result uses the normal inventory transfer, merchant exchange, and medical
 administration paths.
 

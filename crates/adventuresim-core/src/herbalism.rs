@@ -55,6 +55,18 @@ impl PreparationMethod {
             Self::Tincture => "Tincture",
         }
     }
+
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::DryGrind => "Air-dry the herb, then grind it for a topical preparation.",
+            Self::InfuseDecoct => {
+                "Use an authored gentle infusion or stronger heated decoction, as the herb requires."
+            }
+            Self::Tincture => {
+                "Steep the herb in one unit of tincture spirit to extract a concentrated remedy."
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,16 +76,76 @@ pub enum CraftOutcome {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RequiredConsumable {
+    pub item_id: &'static str,
+    pub units: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RiskAwareness {
+    Coarse,
+    Intermediate,
+    Exact,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CraftPreview {
     pub base_ingredient_id: &'static str,
     pub grade: IngredientGrade,
     pub method: PreparationMethod,
     pub input_units: u32,
+    pub required_consumable: Option<RequiredConsumable>,
     pub duration_minutes: u32,
     pub potency_tier: u8,
     pub outcome: CraftOutcome,
     pub expected_effect: &'static str,
     pub risk: &'static str,
+    pub risk_awareness: RiskAwareness,
+}
+
+fn risk_projection(base: &str, skill: f32) -> (&'static str, RiskAwareness) {
+    let awareness = if skill < 1.5 {
+        RiskAwareness::Coarse
+    } else if skill < 3.5 {
+        RiskAwareness::Intermediate
+    } else {
+        RiskAwareness::Exact
+    };
+    let risk = match (base, awareness) {
+        ("willow_bark", RiskAwareness::Coarse) => {
+            "Safety warning: may dangerously affect bleeding; exact severity is unclear"
+        }
+        ("willow_bark", RiskAwareness::Intermediate) => {
+            "Safety warning: may meaningfully impair coagulation"
+        }
+        ("willow_bark", RiskAwareness::Exact) => {
+            "Safety warning: coagulation hazard rises from +0.02 to +0.07 by potency"
+        }
+        ("comfrey", RiskAwareness::Coarse) => {
+            "Safety warning: do not swallow; exact topical safety is unclear"
+        }
+        ("comfrey", RiskAwareness::Intermediate | RiskAwareness::Exact) => {
+            "Safety warning: topical use only"
+        }
+        ("poppy", RiskAwareness::Coarse) => {
+            "Safety warning: dangerous breathing and kidney effects; exact severity is unclear"
+        }
+        ("poppy", RiskAwareness::Intermediate) => {
+            "Safety warning: meaningful oxygenation and renal-clearance hazard"
+        }
+        ("poppy", RiskAwareness::Exact) => {
+            "Safety warning: oxygenation +0.04–0.16 and renal clearance +0.03–0.11 by potency"
+        }
+        ("sage", RiskAwareness::Coarse) => {
+            "Safety warning: may worsen fluid balance; exact severity is unclear"
+        }
+        ("sage", RiskAwareness::Intermediate) => "Safety warning: may increase dehydration",
+        ("sage", RiskAwareness::Exact) => {
+            "Safety warning: hydration hazard rises from +0.02 to +0.06 by potency"
+        }
+        _ => ("Safety warning: preparation risk is uncertain", awareness),
+    };
+    (risk, awareness)
 }
 
 pub const SUPPORTED_BASE_INGREDIENTS: [&str; 4] = ["willow_bark", "comfrey", "poppy", "sage"];
@@ -143,33 +215,34 @@ pub fn preview(
         PreparationMethod::Tincture => 360,
     };
     let duration_minutes = ((base_minutes as f32) * (1.25 - skill * 0.05)).round() as u32;
-    let (outcome, expected_effect, risk) = match (base, method) {
+    let (risk, risk_awareness) = risk_projection(base, skill);
+    let required_consumable =
+        (method == PreparationMethod::Tincture).then_some(RequiredConsumable {
+            item_id: "tincture_spirit",
+            units: 1,
+        });
+    let (outcome, expected_effect) = match (base, method) {
         ("willow_bark", PreparationMethod::InfuseDecoct) => (
             CraftOutcome::Medication(medication("willow", potency_tier)),
             "Reduces temperature and inflammation",
-            "May impair coagulation",
         ),
         ("comfrey", PreparationMethod::DryGrind) => (
             CraftOutcome::Medication(medication("comfrey", potency_tier)),
             "Supports tissue integrity and reduces inflammation",
-            "Topical use only",
         ),
         ("poppy", PreparationMethod::Tincture) => (
             CraftOutcome::Medication(medication("poppy", potency_tier)),
             "Strongly relieves pain and stress",
-            "Meaningful respiratory and renal hazard",
         ),
         ("sage", PreparationMethod::InfuseDecoct) => (
             CraftOutcome::Medication(medication("sage", potency_tier)),
             "Mildly reduces inflammation and stress",
-            "May increase dehydration",
         ),
         // Comfrey's useful constituents are authored as heat-sensitive. This
         // is a deliberate, visible degradation outcome rather than a roll.
         ("comfrey", PreparationMethod::InfuseDecoct) => (
             CraftOutcome::DegradedWaste("spent_herb_waste"),
             "No medicinal effect; excessive heat destroys the useful preparation",
-            "Ingredient becomes waste",
         ),
         _ => return None,
     };
@@ -178,11 +251,13 @@ pub fn preview(
         grade,
         method,
         input_units,
+        required_consumable,
         duration_minutes,
         potency_tier,
         outcome,
         expected_effect,
         risk,
+        risk_awareness,
     })
 }
 
@@ -201,6 +276,7 @@ mod tests {
             }
         }
         assert!(normalize_ingredient("mystery_lot").is_none());
+        assert!(normalize_ingredient("tincture_spirit").is_none());
         assert!(preview("sage", PreparationMethod::DryGrind, 5.0).is_none());
     }
 
@@ -246,7 +322,14 @@ mod tests {
         );
         assert!(degraded.expected_effect.contains("excessive heat"));
         let poppy = preview("poppy_fine", PreparationMethod::Tincture, 5.0).unwrap();
-        assert!(poppy.risk.contains("respiratory"));
+        assert!(poppy.risk.contains("oxygenation"));
+        assert_eq!(
+            poppy.required_consumable,
+            Some(RequiredConsumable {
+                item_id: "tincture_spirit",
+                units: 1
+            })
+        );
         assert_eq!(poppy.potency_tier, 3);
         let weak = crate::physiology::current_intervention_profile("weak_poppy_tincture").unwrap();
         let strong =
@@ -260,5 +343,46 @@ mod tests {
                     .get(crate::physiology::Meter::Oxygenation)
         );
         assert!(strong.route == crate::physiology::InterventionRoute::Oral);
+    }
+
+    #[test]
+    fn risk_awareness_improves_but_never_removes_the_warning() {
+        let novice = preview("poppy", PreparationMethod::Tincture, 0.0).unwrap();
+        let intermediate = preview("poppy", PreparationMethod::Tincture, 2.0).unwrap();
+        let master = preview("poppy", PreparationMethod::Tincture, 5.0).unwrap();
+        assert_eq!(novice.risk_awareness, RiskAwareness::Coarse);
+        assert_eq!(intermediate.risk_awareness, RiskAwareness::Intermediate);
+        assert_eq!(master.risk_awareness, RiskAwareness::Exact);
+        assert_ne!(novice.risk, master.risk);
+        for risk in [novice.risk, intermediate.risk, master.risk] {
+            assert!(risk.starts_with("Safety warning:"));
+        }
+    }
+
+    #[test]
+    fn only_tincture_requires_the_bounded_alcoholic_consumable() {
+        assert!(
+            preview("comfrey", PreparationMethod::DryGrind, 2.0)
+                .unwrap()
+                .required_consumable
+                .is_none()
+        );
+        assert!(
+            preview("willow_bark", PreparationMethod::InfuseDecoct, 2.0)
+                .unwrap()
+                .required_consumable
+                .is_none()
+        );
+        assert_eq!(
+            preview("poppy", PreparationMethod::Tincture, 2.0)
+                .unwrap()
+                .required_consumable
+                .unwrap()
+                .item_id,
+            "tincture_spirit"
+        );
+        for method in PreparationMethod::ALL {
+            assert!(!method.description().is_empty());
+        }
     }
 }
