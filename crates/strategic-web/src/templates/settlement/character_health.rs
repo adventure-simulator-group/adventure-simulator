@@ -7,8 +7,8 @@ use super::{
 };
 use crate::medical::{ChartGapPresentation, ChartReadingPresentation, MedicalPresentation};
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition, InventoryItem,
-    ItemDefinition, LimbInjury, LimbRegion, ProjectileKind, RetainedProjectile,
+    Character, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition, LimbInjury,
+    LimbRegion, ProjectileKind, RetainedProjectile,
 };
 use crate::templates::{
     decorative_game_icon, game_icon, item_display_name, sidebar_section, stat_icon_path,
@@ -1126,74 +1126,19 @@ pub(super) fn physiology_dialog(
     }
 }
 
-pub(super) fn physiology_controls(
-    medical: &MedicalPresentation,
-    action_base: &str,
-    inventory: &[InventoryItem],
-    definitions: &[ItemDefinition],
-) -> Markup {
-    let preparations = inventory
-        .iter()
-        .filter_map(|inventory| {
-            let definition = definitions
-                .iter()
-                .find(|item| item.id == inventory.item_id)?;
-            let profile =
-                adventuresim_core::physiology::intervention_profile(&inventory.item_id, 1)?;
-            (definition.kind == crate::spacetimedb::ItemKind::Medication)
-                .then_some((inventory, definition, profile))
-        })
-        .collect::<Vec<_>>();
+pub(super) fn physiology_controls(medical: &MedicalPresentation, action_base: &str) -> Markup {
     html! {
-        (sidebar_section("Administer preparation", html! {
-            p class="small-copy" {
-                "Choose a prepared item, route, amount, and optional region. "
-                "This interface makes no diagnosis or recommendation."
-            }
-            @if preparations.is_empty() {
-                p class="text-muted small-copy" { "No prepared interventions in personal inventory." }
-            } @else {
-                @for (inventory, definition, profile) in preparations {
-                    form method="post" action=(format!("{action_base}/physiology/administer")) {
-                        input type="hidden" name="inventory_item_id" value=(inventory.id);
-                        input type="hidden" name="route"
-                            value=(format!("{:?}", profile.route).to_ascii_lowercase());
-                        label {
-                            (item_display_name(&definition.id))
-                            " amount"
-                            input type="number" name="amount_milliunits"
-                                min="1" max="8000" value="1000" required;
-                        }
-                        label {
-                            "Region"
-                            select name="region" {
-                                option value="" { "Whole body" }
-                                @for region in adventuresim_core::physiology::BodyRegion::ALL {
-                                    option value=(region.as_str()) {
-                                        (region.as_str().replace('_', " "))
-                                    }
-                                }
-                            }
-                        }
-                        button type="submit" class="btn btn-small" {
-                            "Administer by "
-                            (format!("{:?}", profile.route).to_ascii_lowercase())
-                        }
-                    }
-                }
-            }
+        @if !medical.active_administrations.is_empty() {
+        (sidebar_section("Current medication", html! {
             @for administration in &medical.active_administrations {
                 form method="post"
                     action=(format!("{action_base}/physiology/{}/stop", administration.id)) {
-                    span {
-                        (&administration.preparation_id)
-                        " — " (&administration.route)
-                        ", " (administration.amount_milliunits) " milliunits"
-                    }
+                    span { (&administration.display_name) }
                     button type="submit" class="btn btn-small" { "Stop" }
                 }
             }
         }))
+        }
     }
 }
 
@@ -1821,6 +1766,49 @@ mod tests {
     }
 
     #[test]
+    fn physiology_controls_show_only_compact_current_medication() {
+        let empty = physiology_controls(
+            &crate::medical::MedicalPresentation::default(),
+            "/locations/settlement/test/party/1",
+        )
+        .into_string();
+        assert!(empty.is_empty());
+        for removed in [
+            "Administer preparation",
+            "No prepared interventions",
+            "amount_milliunits",
+            "name=\"route\"",
+            "name=\"region\"",
+        ] {
+            assert!(!empty.contains(removed));
+        }
+
+        let presentation = crate::medical::MedicalPresentation {
+            active_administrations: vec![crate::medical::AdministrationPresentation {
+                id: 12,
+                preparation_id: "oral_rehydration_draught".into(),
+                display_name: "Oral rehydration draught".into(),
+                profile_version: 1,
+                route: "oral".into(),
+                amount_milliunits: 1_000,
+                region: None,
+                administered_at: 100,
+                stopped_at: None,
+            }],
+            ..Default::default()
+        };
+        let current =
+            physiology_controls(&presentation, "/locations/settlement/test/party/1").into_string();
+        assert!(current.contains("Current medication"));
+        assert!(current.contains("Oral rehydration draught"));
+        assert!(current.contains(">Stop</button>"));
+        assert!(!current.contains("oral_rehydration_draught"));
+        assert!(!current.contains("milliunits"));
+        assert!(!current.contains("name=\"route\""));
+        assert!(!current.contains("name=\"region\""));
+    }
+
+    #[test]
     fn physician_notebook_uses_visual_readings_with_accessible_values() {
         let presentation = crate::medical::MedicalPresentation {
             readings: vec![
@@ -1860,6 +1848,8 @@ mod tests {
             administrations: vec![crate::medical::AdministrationPresentation {
                 id: 1,
                 preparation_id: "oral_rehydration".into(),
+                display_name: "Oral rehydration draught".into(),
+                profile_version: 1,
                 route: "oral".into(),
                 amount_milliunits: 1_000,
                 region: None,

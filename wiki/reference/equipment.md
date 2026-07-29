@@ -100,6 +100,14 @@ Demo fixture exercises each color and repair ceiling.
 Equippable personal-inventory rows expose a checkbox backed by the item's catalog slot. Checking
 it equips that exact inventory instance, displacing any item already occupying the selected slot;
 unchecking it unequips the instance. Non-equipment rows keep a disabled checkbox.
+Medication reuses the same familiar checkbox gesture without occupying an
+equipment slot. Checking it administers and consumes the quantity-one
+preparation as a standard course; it cannot be unchecked after administration.
+The checkbox is labeled as administering the preparation rather than equipping
+it, and is disabled when inspecting a companion because administration through
+this gesture is self-only. Direct member transfers and party-pool
+deposits/withdrawals preserve every preparation as an individual quantity-one
+course. Ordinary equipment behavior is unchanged.
 
 Smithing uses the shared trained-skill curve: 5,000 invested hours is rank 2.5. Database upgrades
 split any legacy durable stack into quantity-one instances while retaining the original row ID for

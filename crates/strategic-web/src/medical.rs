@@ -60,6 +60,8 @@ pub struct ChartGapPresentation {
 pub struct AdministrationPresentation {
     pub id: u64,
     pub preparation_id: String,
+    pub display_name: String,
+    pub profile_version: u16,
     pub route: String,
     pub amount_milliunits: u32,
     pub region: Option<String>,
@@ -70,6 +72,7 @@ pub struct AdministrationPresentation {
 pub fn sanitize(
     rows: &[BackendPhysiologyChart],
     administrations: &[BackendPhysiologyAdministration],
+    current_minute: u64,
 ) -> MedicalPresentation {
     let mut readings = rows
         .iter()
@@ -145,6 +148,18 @@ pub fn sanitize(
         .map(|row| AdministrationPresentation {
             id: row.id,
             preparation_id: row.preparation_id.clone(),
+            display_name: adventuresim_core::item_catalog::definition(&row.preparation_id)
+                .map_or_else(
+                    || {
+                        let mut readable = row.preparation_id.replace('_', " ");
+                        if let Some(first) = readable.get_mut(0..1) {
+                            first.make_ascii_uppercase();
+                        }
+                        readable
+                    },
+                    |definition| definition.display_name.clone(),
+                ),
+            profile_version: row.profile_version,
             route: row.route.clone(),
             amount_milliunits: row.amount_milliunits,
             region: row.region.clone(),
@@ -154,7 +169,18 @@ pub fn sanitize(
         .collect::<Vec<_>>();
     let active_administrations = administrations
         .iter()
-        .filter(|row| row.stopped_at.is_none())
+        .filter(|row| {
+            row.stopped_at.is_none()
+                && adventuresim_core::physiology::intervention_profile(
+                    &row.preparation_id,
+                    row.profile_version,
+                )
+                .is_some_and(|profile| {
+                    current_minute >= row.administered_at
+                        && current_minute
+                            < row.administered_at.saturating_add(profile.duration_minutes)
+                })
+        })
         .cloned()
         .collect();
     MedicalPresentation {
@@ -296,7 +322,7 @@ mod tests {
                 gap_to: Some(200),
             },
         ];
-        let presentation = sanitize(&rows, &[]);
+        let presentation = sanitize(&rows, &[], 200);
         assert_eq!(presentation.readings.len(), 1);
         assert_eq!(presentation.gaps.len(), 1);
         let regions = presentation.regional_humours.expect("regional readings");
@@ -317,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn administration_history_retains_timeline_boundaries_and_active_subset() {
+    fn administration_history_retains_boundaries_and_excludes_stopped_or_expired_courses() {
         let administrations = vec![
             BackendPhysiologyAdministration {
                 id: 1,
@@ -333,7 +359,7 @@ mod tests {
             BackendPhysiologyAdministration {
                 id: 2,
                 patient_id: 2,
-                preparation_id: "active_course".into(),
+                preparation_id: "oral_rehydration_draught".into(),
                 profile_version: 1,
                 route: "oral".into(),
                 amount_milliunits: 1_000,
@@ -341,16 +367,35 @@ mod tests {
                 administered_at: 300,
                 stopped_at: None,
             },
+            BackendPhysiologyAdministration {
+                id: 3,
+                patient_id: 2,
+                preparation_id: "cooling_willow_draught".into(),
+                profile_version: 1,
+                route: "oral".into(),
+                amount_milliunits: 1_000,
+                region: None,
+                administered_at: 100,
+                stopped_at: None,
+            },
         ];
-        let presentation = sanitize(&[], &administrations);
-        assert_eq!(presentation.administrations.len(), 2);
+        let presentation = sanitize(&[], &administrations, 500);
+        assert_eq!(presentation.administrations.len(), 3);
         assert_eq!(presentation.administrations[0].administered_at, 100);
         assert_eq!(presentation.administrations[0].stopped_at, Some(200));
         assert_eq!(presentation.active_administrations.len(), 1);
         assert_eq!(
             presentation.active_administrations[0].preparation_id,
-            "active_course"
+            "oral_rehydration_draught"
         );
+        assert_eq!(
+            presentation.active_administrations[0].display_name,
+            "Oral rehydration draught"
+        );
+
+        let expired = sanitize(&[], &administrations, 1_000);
+        assert!(expired.active_administrations.is_empty());
+        assert_eq!(expired.administrations.len(), 3);
     }
 
     #[test]

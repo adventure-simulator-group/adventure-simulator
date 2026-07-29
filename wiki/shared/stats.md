@@ -302,10 +302,12 @@ them. Cuts and blunt trauma remain visible without Physiology; private meter
 causes are disclosed only through the deliberately many-to-one four-humour
 projection. The chart never names a disease or recommends a treatment.
 
-Characters may explicitly administer a preparation they possess, choosing its
-amount and optional canonical body region through the preparation's supported
-route, or stop an active administration. These actions operate on generic,
-versioned physiology profiles rather than disease-keyed cures.
+Characters administer a preparation they possess by checking its personal-
+inventory checkbox. The trusted server consumes that concrete item and starts
+one standard 1,000-milliunit whole-body course through the preparation's
+intrinsic route. A compact current-medication status allows an active course to
+be stopped and disappears after a stop or natural expiry. These actions operate
+on generic, versioned physiology profiles rather than disease-keyed cures.
 
 Physiology uses a bounded party-check equation. Individual checks are sorted strongest-first, the leader receives full weight, and successive contributors receive weights of `1/2`, `1/4`, `1/8`, and so on:
 

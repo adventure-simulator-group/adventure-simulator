@@ -181,9 +181,15 @@ and explicit gaps, but never diagnoses or recommends. The active character's
 Cooking skill icon continues to open cooking.
 
 Herbalists sell concrete prepared interventions into personal inventory.
-The patient or an authorized, co-located party member may administer one with
-an explicit route, amount, and optional body region, and may stop an active
-administration. Physiology does not craft preparations; Herbalism #214 owns
+The active character self-administers a preparation from personal inventory by
+checking its inventory checkbox. This consumes the concrete item as one
+standard course; the trusted server supplies the current profile version,
+intrinsic route, 1,000-milliunit amount, and whole-body scope. Active courses
+appear as compact current-medication status with a Stop action until stopped or
+naturally expired. The generic reducer continues to authorize an eligible,
+co-located party member administering a patient's own preparation, but the
+inventory checkbox intentionally remains self-administration only.
+Physiology does not craft preparations; Herbalism #214 owns
 ingredients, lots, composition, recipes, and crafting, while Chemistry #215
 owns chemical behavior. Foraging remains deferred.
 
