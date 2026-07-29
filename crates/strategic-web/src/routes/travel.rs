@@ -26,6 +26,11 @@ const TERRAIN_PLAN_CACHE_ENTRIES: usize = 128;
 struct TerrainPlanKey {
     coordinates: [i32; 4],
     profile: adventuresim_terrain::TerrainSkillProfile,
+    weather_rules_version: u16,
+    weather_interval_start: u64,
+    ground_moisture_bps: u16,
+    snow_cover_bps: u16,
+    snow_check_millirank: u16,
 }
 
 impl TerrainPlanKey {
@@ -33,6 +38,8 @@ impl TerrainPlanKey {
         start: (f64, f64),
         goal: (f64, f64),
         profile: adventuresim_terrain::TerrainSkillProfile,
+        weather: Option<adventuresim_core::weather::WeatherSnapshot>,
+        snow_check_millirank: u16,
     ) -> Self {
         Self {
             coordinates: [
@@ -42,6 +49,11 @@ impl TerrainPlanKey {
                 (goal.1 * 100_000.0).round() as i32,
             ],
             profile,
+            weather_rules_version: weather.map_or(0, |value| value.rules_version),
+            weather_interval_start: weather.map_or(0, |value| value.interval_start_minute),
+            ground_moisture_bps: weather.map_or(0, |value| value.ground_moisture_bps),
+            snow_cover_bps: weather.map_or(0, |value| value.snow_cover_bps),
+            snow_check_millirank,
         }
     }
 }
@@ -109,7 +121,19 @@ impl TerrainPlanner {
         goal: (f64, f64),
         profile: adventuresim_terrain::TerrainSkillProfile,
     ) -> Result<adventuresim_terrain::RoutePlan, String> {
-        let key = TerrainPlanKey::new(start, goal, profile);
+        self.plan_with_profile_and_weather(start, goal, profile, None, 0)
+            .await
+    }
+
+    pub async fn plan_with_profile_and_weather(
+        &self,
+        start: (f64, f64),
+        goal: (f64, f64),
+        profile: adventuresim_terrain::TerrainSkillProfile,
+        weather: Option<adventuresim_core::weather::WeatherSnapshot>,
+        snow_check_millirank: u16,
+    ) -> Result<adventuresim_terrain::RoutePlan, String> {
+        let key = TerrainPlanKey::new(start, goal, profile, weather, snow_check_millirank);
         if let Some(plan) = self
             .cache
             .lock()
@@ -127,9 +151,23 @@ impl TerrainPlanner {
                 .map_err(|_| "terrain planner is shutting down")?;
         let pack = Arc::clone(&self.pack);
         let deadline = Instant::now() + TERRAIN_PLAN_TIMEOUT;
+        let routing_weather =
+            weather.map_or_else(adventuresim_terrain::RoutingWeather::default, |weather| {
+                adventuresim_terrain::RoutingWeather {
+                    ground_moisture_bps: weather.ground_moisture_bps,
+                    snow_cover_bps: weather.snow_cover_bps,
+                    snow_check_millirank,
+                }
+            });
         let task = tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            pack.plan_until_with_profile(start, goal, profile, deadline)
+            pack.plan_until_with_profile_and_weather(
+                start,
+                goal,
+                profile,
+                routing_weather,
+                deadline,
+            )
         });
         let plan = tokio::time::timeout(TERRAIN_PLAN_TIMEOUT + Duration::from_secs(1), task)
             .await
@@ -536,6 +574,36 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn route_cache_identity_distinguishes_departure_weather() {
+        let clear = adventuresim_core::weather::WeatherSnapshot {
+            rules_version: 1,
+            interval_start_minute: 0,
+            cell_latitude: 0,
+            cell_longitude: 0,
+            precipitation: adventuresim_core::weather::Precipitation::Clear,
+            intensity_bps: 0,
+            ground_moisture_bps: 0,
+            snow_cover_bps: 0,
+        };
+        let wet = adventuresim_core::weather::WeatherSnapshot {
+            interval_start_minute: 360,
+            precipitation: adventuresim_core::weather::Precipitation::Rain,
+            intensity_bps: 8_000,
+            ground_moisture_bps: 7_000,
+            ..clear
+        };
+        let profile = adventuresim_terrain::TerrainSkillProfile::default();
+        assert_ne!(
+            TerrainPlanKey::new((53.0, 10.0), (53.1, 10.1), profile, Some(clear), 0),
+            TerrainPlanKey::new((53.0, 10.0), (53.1, 10.1), profile, Some(wet), 0)
+        );
+        assert_ne!(
+            TerrainPlanKey::new((53.0, 10.0), (53.1, 10.1), profile, Some(wet), 0),
+            TerrainPlanKey::new((53.0, 10.0), (53.1, 10.1), profile, Some(wet), 5_000)
+        );
+    }
+
     fn settlement(id: &str, node: u64) -> Settlement {
         Settlement {
             id: id.to_string(),
@@ -627,20 +695,24 @@ mod tests {
             TerrainPlanKey::new(
                 (53.500_000_1, 10.000_000_1),
                 (53.6, 10.1),
-                Default::default()
+                Default::default(),
+                None,
+                0,
             ),
             TerrainPlanKey::new(
                 (53.500_000_2, 10.000_000_2),
                 (53.6, 10.1),
-                Default::default()
+                Default::default(),
+                None,
+                0,
             )
         );
         assert_ne!(
-            TerrainPlanKey::new((53.500_02, 10.0), (53.6, 10.1), Default::default()),
-            TerrainPlanKey::new((53.500_04, 10.0), (53.6, 10.1), Default::default())
+            TerrainPlanKey::new((53.500_02, 10.0), (53.6, 10.1), Default::default(), None, 0,),
+            TerrainPlanKey::new((53.500_04, 10.0), (53.6, 10.1), Default::default(), None, 0,)
         );
         assert_ne!(
-            TerrainPlanKey::new((53.5, 10.0), (53.6, 10.1), Default::default()),
+            TerrainPlanKey::new((53.5, 10.0), (53.6, 10.1), Default::default(), None, 0,),
             TerrainPlanKey::new(
                 (53.5, 10.0),
                 (53.6, 10.1),
@@ -648,6 +720,8 @@ mod tests {
                     forest: 1_000,
                     ..Default::default()
                 },
+                None,
+                0,
             )
         );
     }

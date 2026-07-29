@@ -3,8 +3,8 @@ use adventuresim_core::strategic_schedule::{
     apply_schedule_training, settlement_activity_outcome,
 };
 use adventuresim_core::strategic_time::{
-    MINUTES_PER_DAY, MINUTES_PER_YEAR, allocated_schedule_minutes,
-    elapsed_official_minutes as calculate_elapsed_official_minutes,
+    MINUTES_PER_DAY, MINUTES_PER_YEAR, WORLD_START_MINUTE, allocated_schedule_minutes,
+    official_minutes as calculate_official_minutes,
 };
 use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
 use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, table};
@@ -138,7 +138,7 @@ pub fn initialize_time(ctx: &ReducerContext) {
     if ctx.db.world_clock().id().find(0).is_none() {
         ctx.db.world_clock().insert(WorldClock {
             id: 0,
-            official_minutes: 0,
+            official_minutes: WORLD_START_MINUTE,
             epoch_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     }
@@ -154,7 +154,7 @@ pub fn refresh_clock(ctx: &ReducerContext) -> Result<u64, String> {
         .id()
         .find(0)
         .ok_or_else(|| "World clock is not initialized".to_string())?;
-    let official_minutes = calculate_elapsed_official_minutes(
+    let official_minutes = calculate_official_minutes(
         clock.epoch_micros,
         ctx.timestamp.to_micros_since_unix_epoch(),
     );
@@ -593,6 +593,7 @@ fn apply_training(
         terrain_hills: skills.terrain_hills_hours,
         terrain_wetlands: skills.terrain_wetlands_hours,
         terrain_urban: skills.terrain_urban_hours,
+        terrain_snow: skills.terrain_snow_hours,
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
@@ -699,6 +700,7 @@ fn apply_training(
     skills.terrain_hills_hours = hours.terrain_hills;
     skills.terrain_wetlands_hours = hours.terrain_wetlands;
     skills.terrain_urban_hours = hours.terrain_urban;
+    skills.terrain_snow_hours = hours.terrain_snow;
     skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
     excess
@@ -771,6 +773,7 @@ fn apply_organization_training(
                 "terrain_urban" => {
                     award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award)
                 }
+                "terrain_snow" => award_direct(Skill::TerrainSnow, &mut hours.terrain_snow, award),
                 "tailoring" => award_direct(Skill::Tailoring, &mut hours.tailoring, award),
                 "smithing" => award_direct(Skill::Smithing, &mut hours.smithing, award),
                 _ => {}
@@ -796,6 +799,7 @@ fn apply_organization_training(
                     award_direct(Skill::TerrainWetlands, &mut hours.terrain_wetlands, award)
                 }
                 "urban" => award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award),
+                "snow" => award_direct(Skill::TerrainSnow, &mut hours.terrain_snow, award),
                 _ => {}
             },
             TrainingTarget::EquippedWeaponSkills => {

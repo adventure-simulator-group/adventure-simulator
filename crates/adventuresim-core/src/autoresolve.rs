@@ -182,7 +182,8 @@ impl PlayerSkills for CombatSkills {
             | Skill::TerrainForest
             | Skill::TerrainHills
             | Skill::TerrainWetlands
-            | Skill::TerrainUrban => 0.0,
+            | Skill::TerrainUrban
+            | Skill::TerrainSnow => 0.0,
             Skill::Anatomy => self.anatomy_hours,
             Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,

@@ -76,7 +76,19 @@ pub enum TimeOfDay {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WeatherAuthority {
+    /// Compatibility state for non-strategic callers; applies no modifier.
     Unavailable,
+    Clear {
+        snow_cover_bps: u16,
+    },
+    Rain {
+        intensity_bps: u16,
+        snow_cover_bps: u16,
+    },
+    Snow {
+        intensity_bps: u16,
+        snow_cover_bps: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -262,11 +274,13 @@ pub fn resolve(input: ResolutionInput) -> Resolution {
     };
     let primary = primary_skill_bps(input.kind, input.skills);
     let assistance = input.skills.assistance_bps.min(2_000);
+    let weather = weather_modifier_bps(input.kind, input.weather);
     let effective = (i32::from(primary)
         + i32::from(assistance)
         + i32::from(input.skills.familiarity_bps) / 3
         + terrain_match
         + night
+        + weather
         - age_penalty)
         .clamp(500, 9_500) as u16;
     let roll = domain_roll(input.seed, input.attempt_index, input.kind);
@@ -313,6 +327,52 @@ pub fn resolve(input: ResolutionInput) -> Resolution {
             input.kind,
         ) < risk_bps,
         effective_skill_bps: effective,
+    }
+}
+
+/// Action-specific precipitation effects. Snow cover helps read tracks, while
+/// active heavy precipitation penalizes actions that depend on visibility.
+/// Contact-finding and approach remain social/navigation actions.
+pub fn weather_modifier_bps(kind: InvestigationActionKind, weather: WeatherAuthority) -> i32 {
+    let (precipitation_penalty, snow_cover, snowfall) = match weather {
+        WeatherAuthority::Unavailable | WeatherAuthority::Clear { snow_cover_bps: 0 } => {
+            (0, 0, false)
+        }
+        WeatherAuthority::Clear { snow_cover_bps } => (0, snow_cover_bps.min(10_000), false),
+        WeatherAuthority::Rain {
+            intensity_bps,
+            snow_cover_bps,
+        } => (
+            -i32::from(intensity_bps.min(10_000)) * 1_200 / 10_000,
+            snow_cover_bps.min(10_000),
+            false,
+        ),
+        WeatherAuthority::Snow {
+            intensity_bps,
+            snow_cover_bps,
+        } => (
+            -i32::from(intensity_bps.min(10_000)) * 1_000 / 10_000,
+            snow_cover_bps.min(10_000),
+            true,
+        ),
+    };
+    match kind {
+        InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks => {
+            let cover_bonus = i32::from(snow_cover) * 900 / 10_000;
+            // Active snowfall obscures the older prints it also makes visible.
+            cover_bonus
+                + if snowfall {
+                    precipitation_penalty / 2
+                } else {
+                    0
+                }
+        }
+        InvestigationActionKind::InspectSite
+        | InvestigationActionKind::SearchArea
+        | InvestigationActionKind::Watch
+        | InvestigationActionKind::Patrol
+        | InvestigationActionKind::LayAmbush => precipitation_penalty,
+        InvestigationActionKind::LocateContact | InvestigationActionKind::ApproachLead => 0,
     }
 }
 
@@ -414,6 +474,53 @@ mod tests {
         let a = resolve(input(InvestigationActionKind::SearchArea));
         assert_eq!(a, resolve(input(InvestigationActionKind::SearchArea)));
         assert_ne!(a, resolve(input(InvestigationActionKind::FollowTracks)));
+    }
+
+    #[test]
+    fn clear_weather_has_parity_and_precipitation_matrix_is_bounded() {
+        for kind in [
+            InvestigationActionKind::InspectSite,
+            InvestigationActionKind::SearchArea,
+            InvestigationActionKind::FollowTracks,
+            InvestigationActionKind::ReacquireTracks,
+            InvestigationActionKind::LocateContact,
+            InvestigationActionKind::Watch,
+            InvestigationActionKind::Patrol,
+            InvestigationActionKind::LayAmbush,
+            InvestigationActionKind::ApproachLead,
+        ] {
+            let old = input(kind);
+            let mut clear = old;
+            clear.weather = WeatherAuthority::Clear { snow_cover_bps: 0 };
+            assert_eq!(resolve(old), resolve(clear));
+        }
+        assert!(
+            weather_modifier_bps(
+                InvestigationActionKind::Watch,
+                WeatherAuthority::Rain {
+                    intensity_bps: 10_000,
+                    snow_cover_bps: 0,
+                },
+            ) < 0
+        );
+        assert!(
+            weather_modifier_bps(
+                InvestigationActionKind::FollowTracks,
+                WeatherAuthority::Clear {
+                    snow_cover_bps: 10_000,
+                },
+            ) > 0
+        );
+        assert_eq!(
+            weather_modifier_bps(
+                InvestigationActionKind::LocateContact,
+                WeatherAuthority::Snow {
+                    intensity_bps: 10_000,
+                    snow_cover_bps: 10_000,
+                },
+            ),
+            0
+        );
     }
 
     #[test]

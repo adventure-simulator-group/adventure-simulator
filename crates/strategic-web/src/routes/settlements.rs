@@ -1,6 +1,7 @@
 //! Settlement route handlers
 
 use adventuresim_core::{
+    durability::RepairService,
     equipment::{EncumbranceSummary, encumbrance_capacity_kg},
     prelude::{
         PartyProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
@@ -389,6 +390,20 @@ fn parse_surgery_limb(slug: &str) -> Option<LimbRegion> {
     })
 }
 
+async fn required_surgery_rows<T>(
+    state: &AppState,
+    sql: &str,
+    data_kind: &'static str,
+) -> Result<Vec<T>, Html<String>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    state.db.query(sql).await.map_err(|error| {
+        tracing::error!(%error, data_kind, "failed to load surgery data");
+        Html("<h1>Strategic medical data is unavailable</h1>".into())
+    })
+}
+
 async fn surgery(
     State(state): State<AppState>,
     Path((kind, id, patient_id, limb)): Path<(String, String, u64, String)>,
@@ -425,32 +440,46 @@ async fn surgery(
     {
         return Html("<h1>Surgeon and patient must be together</h1>".into());
     }
-    let injuries = state
-        .db
-        .query::<LimbInjury>(&format!(
-            "SELECT * FROM limb_injury WHERE character_id = {patient_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let projectiles = state
-        .db
-        .query::<RetainedProjectile>(&format!(
-            "SELECT * FROM retained_projectile WHERE character_id = {patient_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let inventory = state
-        .db
-        .query::<InventoryItem>(&format!(
-            "SELECT * FROM inventory_item WHERE character_id = {actor_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let item_definitions = state
-        .db
-        .query::<ItemDefinition>("SELECT * FROM item")
-        .await
-        .unwrap_or_default();
+    let injuries = match required_surgery_rows::<LimbInjury>(
+        &state,
+        &format!("SELECT * FROM limb_injury WHERE character_id = {patient_id}"),
+        "patient injuries",
+    )
+    .await
+    {
+        Ok(rows) => rows,
+        Err(response) => return response,
+    };
+    let projectiles = match required_surgery_rows::<RetainedProjectile>(
+        &state,
+        &format!("SELECT * FROM retained_projectile WHERE character_id = {patient_id}"),
+        "retained projectiles",
+    )
+    .await
+    {
+        Ok(rows) => rows,
+        Err(response) => return response,
+    };
+    let inventory = match required_surgery_rows::<InventoryItem>(
+        &state,
+        &format!("SELECT * FROM inventory_item WHERE character_id = {actor_id}"),
+        "surgeon inventory",
+    )
+    .await
+    {
+        Ok(rows) => rows,
+        Err(response) => return response,
+    };
+    let item_definitions = match required_surgery_rows::<ItemDefinition>(
+        &state,
+        "SELECT * FROM item",
+        "item definitions",
+    )
+    .await
+    {
+        Ok(rows) => rows,
+        Err(response) => return response,
+    };
     let alcohol_count = inventory
         .iter()
         .filter(|entry| {
@@ -485,13 +514,16 @@ async fn surgery(
     let actor_injuries = if actor_id == patient_id {
         injuries.clone()
     } else {
-        state
-            .db
-            .query::<LimbInjury>(&format!(
-                "SELECT * FROM limb_injury WHERE character_id = {actor_id}"
-            ))
-            .await
-            .unwrap_or_default()
+        match required_surgery_rows::<LimbInjury>(
+            &state,
+            &format!("SELECT * FROM limb_injury WHERE character_id = {actor_id}"),
+            "surgeon injuries",
+        )
+        .await
+        {
+            Ok(rows) => rows,
+            Err(response) => return response,
+        }
     };
     let quantity = |item_id: &str| {
         inventory
@@ -567,43 +599,20 @@ struct SurgeryProcedureForm {
     use_soap: bool,
 }
 
-/// SpacetimeDB's raw HTTP reducer API expects algebraic `Option<T>` values,
-/// not Serde's scalar-or-null representation: `Some(v) = {"some": v}` and
-/// `None = {"none": []}`.
-fn spacetime_option_u64(value: Option<u64>) -> serde_json::Value {
-    match value {
-        Some(value) => json!({ "some": value }),
-        None => json!({ "none": [] }),
-    }
-}
-
-fn spacetime_option_string(value: Option<&str>) -> serde_json::Value {
-    match value {
-        Some(value) => json!({ "some": value }),
-        None => json!({ "none": [] }),
-    }
-}
-
 fn schedule_allocation_reducer_arg(schedule: &ScheduleAllocation) -> serde_json::Value {
     let mut value = json!(schedule);
     value["apprenticeship_organization_id"] =
-        spacetime_option_string(schedule.apprenticeship_organization_id.as_deref());
+        crate::spacetimedb::sats_option(schedule.apprenticeship_organization_id.as_deref());
     value["practice_organization_id"] =
-        spacetime_option_string(schedule.practice_organization_id.as_deref());
+        crate::spacetimedb::sats_option(schedule.practice_organization_id.as_deref());
     value
 }
 
 #[cfg(test)]
 mod surgery_reducer_argument_tests {
-    use super::{schedule_allocation_reducer_arg, spacetime_option_u64};
+    use super::schedule_allocation_reducer_arg;
     use crate::spacetimedb::ScheduleAllocation;
     use serde_json::json;
-
-    #[test]
-    fn projectile_id_uses_spacetime_option_encoding() {
-        assert_eq!(spacetime_option_u64(Some(73)), json!({ "some": 73 }));
-        assert_eq!(spacetime_option_u64(None), json!({ "none": [] }));
-    }
 
     #[test]
     fn schedule_profession_ids_use_spacetime_option_encoding() {
@@ -643,7 +652,7 @@ async fn perform_surgery(
                 json!(patient_id),
                 json!(limb),
                 json!(form.procedure),
-                spacetime_option_u64(form.projectile_id),
+                crate::spacetimedb::sats_option(form.projectile_id),
                 json!(form.use_soap),
             ],
         )
@@ -676,26 +685,23 @@ struct RepairItemForm {
     inventory_item_id: u64,
 }
 
-fn repair_service(shop: &str) -> Option<&'static str> {
-    match shop {
-        "weapons" => Some("weapons"),
-        "armor" => Some("armor"),
-        "clothing" => Some("clothing"),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod repair_route_tests {
-    use super::repair_service;
+    use adventuresim_core::durability::RepairService;
 
     #[test]
     fn repair_routes_dispatch_all_and_only_the_three_authoritative_services() {
-        assert_eq!(repair_service("weapons"), Some("weapons"));
-        assert_eq!(repair_service("armor"), Some("armor"));
-        assert_eq!(repair_service("clothing"), Some("clothing"));
-        assert_eq!(repair_service("merchants"), None);
-        assert_eq!(repair_service("smith"), None);
+        assert_eq!(
+            RepairService::parse("weapons"),
+            Some(RepairService::Weapons)
+        );
+        assert_eq!(RepairService::parse("armor"), Some(RepairService::Armor));
+        assert_eq!(
+            RepairService::parse("clothing"),
+            Some(RepairService::Clothing)
+        );
+        assert_eq!(RepairService::parse("merchants"), None);
+        assert_eq!(RepairService::parse("smith"), None);
     }
 }
 
@@ -705,21 +711,24 @@ async fn submit_repair(
     session: Session,
     Form(form): Form<RepairItemForm>,
 ) -> Redirect {
-    if let Some(service) = repair_service(&shop) {
+    if let Some(service) = RepairService::parse(&shop) {
         if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
         {
-            let _ = state
+            if let Err(error) = state
                 .db
                 .call(
                     "submit_item_for_repair",
                     &[
                         json!(character.id),
                         json!(id),
-                        json!(service),
+                        json!(service.as_str()),
                         json!(form.inventory_item_id),
                     ],
                 )
-                .await;
+                .await
+            {
+                tracing::warn!(%error, character_id = character.id, settlement_id = %id, shop = service.as_str(), "failed to submit item for repair");
+            }
         }
     }
     Redirect::to(&format!("/settlements/{id}/{shop}"))
@@ -730,16 +739,19 @@ async fn submit_all_repairs(
     Path((id, shop)): Path<(String, String)>,
     session: Session,
 ) -> Redirect {
-    if let Some(service) = repair_service(&shop) {
+    if let Some(service) = RepairService::parse(&shop) {
         if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
         {
-            let _ = state
+            if let Err(error) = state
                 .db
                 .call(
                     "submit_all_repairable_items",
-                    &[json!(character.id), json!(id), json!(service)],
+                    &[json!(character.id), json!(id), json!(service.as_str())],
                 )
-                .await;
+                .await
+            {
+                tracing::warn!(%error, character_id = character.id, settlement_id = %id, shop = service.as_str(), "failed to submit repairable items");
+            }
         }
     }
     Redirect::to(&format!("/settlements/{id}/{shop}"))
@@ -750,16 +762,19 @@ async fn retrieve_repair(
     Path((id, shop, order_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Redirect {
-    if repair_service(&shop).is_some()
+    if RepairService::parse(&shop).is_some()
         && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     {
-        let _ = state
+        if let Err(error) = state
             .db
             .call(
                 "retrieve_repaired_item",
                 &[json!(character.id), json!(order_id)],
             )
-            .await;
+            .await
+        {
+            tracing::warn!(%error, character_id = character.id, settlement_id = %id, order_id, "failed to retrieve repaired item");
+        }
     }
     Redirect::to(&format!("/settlements/{id}/{shop}"))
 }
@@ -776,22 +791,25 @@ async fn retrieve_repairs(
     session: Session,
     Form(form): Form<RetrieveRepairsForm>,
 ) -> Redirect {
-    if let Some(service) = repair_service(&shop)
+    if let Some(service) = RepairService::parse(&shop)
         && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     {
-        let _ = state
+        if let Err(error) = state
             .db
             .call(
                 "retrieve_repaired_items",
                 &[
                     json!(character.id),
                     json!(id),
-                    json!(service),
+                    json!(service.as_str()),
                     json!(form.item_id),
                     json!(form.limit),
                 ],
             )
-            .await;
+            .await
+        {
+            tracing::warn!(%error, character_id = character.id, settlement_id = %id, shop = service.as_str(), "failed to retrieve repaired items");
+        }
     }
     Redirect::to(&format!("/settlements/{id}/{shop}"))
 }
@@ -1066,6 +1084,7 @@ async fn settlement_map(
                 crate::routes::party_terrain_profile(&state, character)
                     .await
                     .unwrap_or_default()
+                    .0
             } else {
                 adventuresim_terrain::TerrainSkillProfile::default()
             };

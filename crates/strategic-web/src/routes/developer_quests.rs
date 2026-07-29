@@ -138,6 +138,7 @@ async fn active_context(
         scope: adventuresim_core::local_problem::Scope::Settlement { settlement_id },
         ordinal: 0,
         now_minute,
+        incident_weather: adventuresim_core::weather::Precipitation::Clear,
         requested_family: Some(TemplateFamily::RecurringDepredation),
         witness_candidates: candidates,
     };

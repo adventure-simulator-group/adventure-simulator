@@ -719,9 +719,19 @@ other currently live-supported case route remains, including a patrol already
 supported by its exact clue. Approximate areas are private strategic geometry,
 not client-authored destinations.
 Resolution uses authoritative terrain, time of day, evidence age, relevant
-skills, bounded party assistance, and observer familiarity. Weather is
-explicitly unavailable until the strategic layer owns authoritative weather;
-clients must not infer or invent it.
+skills, bounded party assistance, observer familiarity, and strategic weather.
+Weather is queried from the actor's authoritative position and synchronized
+action start time; clients cannot submit it. Heavy precipitation penalizes
+visual field actions. Established snow can help track actions, while active
+snowfall partly offsets that help by obscuring visibility. Clear weather
+preserves the former resolution exactly, including the effective-skill clamp
+and generated route's guaranteed sixth attempt.
+
+Quest generation commits incident-time precipitation inside its private
+replayed `GenerationContext`. Rain and snow select `PoorPerception` (and a
+clear NightWindow selects `Darkness`) only at the perception/confidence stage.
+Reliability, deception, evasion, demeanor, memory, and disclosure mappings
+remain unchanged.
 
 Every attempt is idempotent and consumes strenuous strategic time, including a
 failed attempt. Failure may increase risk or uncertainty, but it does not

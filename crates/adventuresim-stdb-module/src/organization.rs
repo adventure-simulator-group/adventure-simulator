@@ -123,6 +123,7 @@ fn skill_hours(skills: &CharacterSkills, skill: &str, leaf: Option<&str>) -> Opt
         "terrain_hills" => (Skill::TerrainHills, skills.terrain_hills_hours),
         "terrain_wetlands" => (Skill::TerrainWetlands, skills.terrain_wetlands_hours),
         "terrain_urban" => (Skill::TerrainUrban, skills.terrain_urban_hours),
+        "terrain_snow" => (Skill::TerrainSnow, skills.terrain_snow_hours),
         "tailoring" => (Skill::Tailoring, skills.tailoring_hours),
         "smithing" => (Skill::Smithing, skills.smithing_hours),
         _ => return None,

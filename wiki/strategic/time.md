@@ -8,7 +8,7 @@ by the interval. If terminal physiological failure occurs, the clock and all
 work stop at that exact minute. This prevents a long skip from jumping over a
 fatal peak into apparent recovery.
 
-The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
+The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A newly initialized world begins on August 20 at 00:00. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
 
 The server stores an epoch rather than updating the clock table continuously. When a browser opens a page, it requests one snapshot of the character and official clocks and renders that snapshot without a wall-clock timer. The character snapshot also determines the interpolated location sky, the edge-to-edge sun or moon position, and building illumination until an explicit action returns a newer time. Authoritative reducers derive the current official minute from the epoch when gameplay needs it.
 

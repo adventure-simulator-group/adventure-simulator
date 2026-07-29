@@ -16,12 +16,12 @@ use super::{
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    Character, ContractPresentation, JourneyTerrainKind, Party, PartyJourney,
+    Character, ContractPresentation, JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, Settlement, StrategicEncounter,
 };
 use crate::templates::{
-    camp_location_layout_with_session, empty_state, game_icon, settlement_layout_with_session,
-    sidebar_section,
+    camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
+    settlement_layout_with_session, sidebar_section,
 };
 
 pub fn settlement_map_page(
@@ -879,6 +879,9 @@ pub fn camp_page(
             }
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
+                @if let Some(route) = terrain_route {
+                    (journey_weather_status(route))
+                }
                 div class="travel-planner-vertical" {
                     (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
                 }
@@ -978,6 +981,35 @@ fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
     }
 }
 
+fn journey_weather_status(route: &PartyJourneyRoute) -> Markup {
+    let (weather, icon) = match route.precipitation {
+        JourneyPrecipitation::Clear => ("Clear", "sun"),
+        JourneyPrecipitation::Rain => ("Rain", "water-drop"),
+        JourneyPrecipitation::Snow => ("Snow", "water-drop"),
+    };
+    let ground = if route.snow_cover_bps >= 6_000 {
+        "deep snow"
+    } else if route.snow_cover_bps >= 1_500 {
+        "snow-covered"
+    } else if route.ground_moisture_bps >= 7_000 {
+        "waterlogged"
+    } else if route.ground_moisture_bps >= 3_000 {
+        "muddy"
+    } else if route.ground_moisture_bps >= 800 {
+        "damp"
+    } else {
+        "dry"
+    };
+    html! {
+        p class="journey-weather-status text-muted small-copy"
+            aria-label=(format!("Departure conditions: {weather}; ground condition: {ground}")) {
+            span class="travel-resource-icon" { (decorative_game_icon(icon)) }
+            strong { "Departure: " (weather) }
+            " · " (ground)
+        }
+    }
+}
+
 fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
     route.map_or_else(String::new, |route| {
         route
@@ -1020,6 +1052,29 @@ mod tests {
     fn camp_foraging_affordance_is_discoverable_and_returns_to_camp() {
         assert_eq!(camp_forage_href(true), Some("/camp?forage=true"));
         assert_eq!(camp_forage_href(false), None);
+    }
+
+    #[test]
+    fn weather_status_has_visible_and_accessible_ground_output() {
+        let route = PartyJourneyRoute {
+            party_id: "party".into(),
+            package_digest: "a".repeat(64),
+            weather_rules_version: 1,
+            weather_interval_start: 0,
+            precipitation: JourneyPrecipitation::Rain,
+            intensity_bps: 8_000,
+            ground_moisture_bps: 8_000,
+            snow_cover_bps: 0,
+            distance_m: 1,
+            minutes: 1,
+            points: vec![],
+            spans: vec![],
+            return_route: None,
+        };
+        let rendered = journey_weather_status(&route).into_string();
+        assert!(rendered.contains("Departure conditions: Rain; ground condition: waterlogged"));
+        assert!(rendered.contains("<strong>Departure: Rain</strong>"));
+        assert!(rendered.contains("water-drop.svg"));
     }
     use crate::spacetimedb::*;
     use crate::templates::settlement::test_support::*;

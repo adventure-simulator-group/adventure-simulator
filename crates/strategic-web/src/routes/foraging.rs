@@ -456,6 +456,9 @@ pub(crate) async fn activity_dialog(
     let privileges = advisory_privileges(state, character.id).await;
     let illegal =
         environment.is_some_and(|environment| environment.settlement || environment.cultivated);
+    let available_source_rows = environment
+        .as_ref()
+        .map(|environment| source_rows(*environment, &privileges));
     html! {
         div class="character-action-overlay" data-character-action-dialog
             data-initial-focus=(if receipt.is_some() { ".modal-actions .btn" } else { "#forage-targets input:not(:disabled)" }) {
@@ -489,7 +492,9 @@ pub(crate) async fn activity_dialog(
                         p id="forage-source-help" class="text-muted small-copy" { "Choose food sources. Selected categories share one search-time budget." }
                         fieldset id="forage-targets" aria-describedby="forage-source-help" {
                             legend { "Food sources" }
-                            (source_rows(environment.expect("available environment"), &privileges))
+                            @if let Some(rows) = available_source_rows {
+                                (rows)
+                            }
                         }
                         label for="forage-hours" { "Search plan" }
                         input id="forage-hours" name="hours" type="range" min="1" max="24" value="4"

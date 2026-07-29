@@ -316,7 +316,7 @@ pub(crate) async fn execute_or_request_party_action(
 pub(crate) async fn party_terrain_profile(
     state: &AppState,
     actor: &Character,
-) -> Result<adventuresim_terrain::TerrainSkillProfile, String> {
+) -> Result<(adventuresim_terrain::TerrainSkillProfile, u16), String> {
     let member_ids = if let Some(party_id) = actor.party_id.as_deref() {
         state
             .db
@@ -332,7 +332,14 @@ pub(crate) async fn party_terrain_profile(
     } else {
         vec![actor.id]
     };
-    let mut checks = [Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    let mut checks = [
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    ];
     for id in member_ids {
         let Some(character) = state
             .db
@@ -381,6 +388,7 @@ pub(crate) async fn party_terrain_profile(
             adventuresim_core::skill::Skill::TerrainHills => skills.terrain_hills_hours,
             adventuresim_core::skill::Skill::TerrainWetlands => skills.terrain_wetlands_hours,
             adventuresim_core::skill::Skill::TerrainUrban => skills.terrain_urban_hours,
+            adventuresim_core::skill::Skill::TerrainSnow => skills.terrain_snow_hours,
             _ => 0.0,
         };
         for (index, skill) in [
@@ -389,6 +397,7 @@ pub(crate) async fn party_terrain_profile(
             adventuresim_core::skill::Skill::TerrainHills,
             adventuresim_core::skill::Skill::TerrainWetlands,
             adventuresim_core::skill::Skill::TerrainUrban,
+            adventuresim_core::skill::Skill::TerrainSnow,
         ]
         .into_iter()
         .enumerate()
@@ -412,18 +421,65 @@ pub(crate) async fn party_terrain_profile(
             * 1_000.0)
             .round() as u16
     };
-    Ok(adventuresim_terrain::TerrainSkillProfile {
-        plains: aggregate(&checks[0]),
-        forest: aggregate(&checks[1]),
-        hills: aggregate(&checks[2]),
-        wetlands: aggregate(&checks[3]),
-        urban: aggregate(&checks[4]),
-    })
+    Ok((
+        adventuresim_terrain::TerrainSkillProfile {
+            plains: aggregate(&checks[0]),
+            forest: aggregate(&checks[1]),
+            hills: aggregate(&checks[2]),
+            wetlands: aggregate(&checks[3]),
+            urban: aggregate(&checks[4]),
+        },
+        aggregate(&checks[5]),
+    ))
 }
 
 fn terrain_mental_check(training_rank: f32, intelligence: f32, head_health: f32) -> f32 {
     let head_health = head_health.clamp(0.0, 1.0);
     training_rank.min(intelligence.clamp(0.0, 5.0)) * head_health
+}
+
+async fn authoritative_party_departure_minute(
+    state: &AppState,
+    actor: &Character,
+) -> Result<u64, String> {
+    let member_ids = if let Some(party_id) = actor.party_id.as_deref() {
+        state
+            .db
+            .query::<PartyMember>(&format!(
+                "SELECT * FROM party_member WHERE party_id = {}",
+                sql_string_literal(party_id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|member| member.character_id)
+            .collect::<Vec<_>>()
+    } else {
+        vec![actor.id]
+    };
+    let mut departure = 0;
+    for id in member_ids {
+        let living = state
+            .db
+            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+            .await
+            .map_err(|error| error.to_string())?
+            .is_some_and(|character| character.alive);
+        if !living {
+            continue;
+        }
+        if let Some(time) = state
+            .db
+            .query_one::<CharacterTime>(&format!(
+                "SELECT * FROM character_time WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            departure = departure.max(time.minutes);
+        }
+    }
+    Ok(departure)
 }
 
 async fn planned_travel_call(
@@ -440,7 +496,7 @@ async fn planned_travel_call(
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Character not found")?;
-    let terrain_profile = party_terrain_profile(state, &character).await?;
+    let (terrain_profile, snow_check_millirank) = party_terrain_profile(state, &character).await?;
     let (reducer, destination) = match action {
         PartyAction::TravelToSettlement { settlement_id } => {
             let destination = state
@@ -526,8 +582,26 @@ async fn planned_travel_call(
     } else {
         return Ok(None);
     };
+    let departure_minute = authoritative_party_departure_minute(state, &character).await?;
+    let elevation_m = terrain
+        .forage_environment(origin.0, origin.1)
+        .map(|(cell, _, _)| cell.elevation_m)
+        .unwrap_or(0);
+    let weather = adventuresim_core::weather::weather_at(
+        0x4144_5645_4e54_5552,
+        departure_minute,
+        (origin.0 * 1_000_000.0).round() as i32,
+        (origin.1 * 1_000_000.0).round() as i32,
+        elevation_m,
+    );
     let plan = match terrain
-        .plan_with_profile(origin, destination, terrain_profile)
+        .plan_with_profile_and_weather(
+            origin,
+            destination,
+            terrain_profile,
+            Some(weather),
+            snow_check_millirank,
+        )
         .await
     {
         Ok(plan) => plan,
@@ -538,7 +612,13 @@ async fn planned_travel_call(
     };
     let return_plan = if matches!(action, PartyAction::TravelToCaseSite { .. }) {
         match terrain
-            .plan_with_profile(destination, origin, terrain_profile)
+            .plan_with_profile_and_weather(
+                destination,
+                origin,
+                terrain_profile,
+                Some(weather),
+                snow_check_millirank,
+            )
             .await
         {
             Ok(plan) => Some(plan),
@@ -550,7 +630,7 @@ async fn planned_travel_call(
     } else {
         None
     };
-    let route_json = terrain_route_json(terrain.digest(), &plan, return_plan.as_ref());
+    let route_json = terrain_route_json(terrain.digest(), &plan, return_plan.as_ref(), weather);
     let destination_id = match action {
         PartyAction::TravelToSettlement { settlement_id } => json!(settlement_id),
         PartyAction::TravelToCaseSite { case_site_id } => {
@@ -618,6 +698,7 @@ fn terrain_route_json(
     digest: &str,
     plan: &adventuresim_terrain::RoutePlan,
     return_plan: Option<&adventuresim_terrain::RoutePlan>,
+    weather: adventuresim_core::weather::WeatherSnapshot,
 ) -> serde_json::Value {
     let leg_json = |plan: &adventuresim_terrain::RoutePlan| {
         json!({
@@ -629,6 +710,12 @@ fn terrain_route_json(
     };
     json!({
         "package_digest": digest,
+        "weather_rules_version": weather.rules_version,
+        "weather_interval_start": weather.interval_start_minute,
+        "precipitation": match weather.precipitation { adventuresim_core::weather::Precipitation::Clear => "Clear", adventuresim_core::weather::Precipitation::Rain => "Rain", adventuresim_core::weather::Precipitation::Snow => "Snow" },
+        "intensity_bps": weather.intensity_bps,
+        "ground_moisture_bps": weather.ground_moisture_bps,
+        "snow_cover_bps": weather.snow_cover_bps,
         "distance_m": plan.distance_m,
         "minutes": plan.minutes,
         "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
@@ -660,10 +747,19 @@ mod terrain_route_payload_tests {
             distance_m: 500,
             minutes: 60,
         };
-        let payload = terrain_route_json(&"a".repeat(64), &plan, None);
+        let payload = terrain_route_json(
+            &"a".repeat(64),
+            &plan,
+            None,
+            adventuresim_core::weather::weather_at(1, 0, 53_000_000, 10_000_000, 0),
+        );
         let span: JourneyTerrainSpan = serde_json::from_value(payload["spans"][0].clone()).unwrap();
         assert!(matches!(span.kind, JourneyTerrainKind::Wetland));
         assert_eq!(span.terrain.wetlands, 1_000);
+        assert_eq!(payload["weather_rules_version"], 1);
+        assert!(payload["weather_interval_start"].as_u64().is_some());
+        assert!(payload["ground_moisture_bps"].as_u64().unwrap() <= 10_000);
+        assert!(payload["snow_cover_bps"].as_u64().unwrap() <= 10_000);
     }
 }
 
@@ -848,8 +944,10 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_micros();
-        let elapsed_micros = now_micros.saturating_sub(clock.epoch_micros.max(0) as u128);
-        (elapsed_micros.saturating_mul(73) / 84_000_000) as u64
+        adventuresim_core::strategic_time::official_minutes(
+            clock.epoch_micros,
+            i64::try_from(now_micros).unwrap_or(i64::MAX),
+        )
     });
     Json(CurrentTime {
         character_minutes: character_time.first().map_or(0, |time| time.minutes),

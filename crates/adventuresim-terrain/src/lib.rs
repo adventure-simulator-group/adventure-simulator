@@ -105,6 +105,9 @@ pub struct TerrainWeights {
 
 impl TerrainWeights {
     pub const TOTAL: u16 = 1_000;
+    /// Dry ground below ten percent imported wetlands absorbs rainfall without
+    /// becoming mechanically wetland.
+    pub const WETLAND_SUSCEPTIBILITY_THRESHOLD: u16 = 100;
     pub fn from_cover(
         canopy_percent: u8,
         hilly_fraction_percent: u8,
@@ -140,6 +143,62 @@ impl TerrainWeights {
             + u32::from(self.urban) * u32::from(profile.urban))
             / u32::from(Self::TOTAL)) as u16
     }
+
+    /// Derive temporary route weights and independent mud severity from an
+    /// authoritative departure-time ground-moisture snapshot.
+    ///
+    /// The imported five-member mixture is never changed in storage. Wetland
+    /// gain displaces the four underlying weights proportionally and the
+    /// final remainder is assigned deterministically, preserving normalization.
+    pub fn with_ground_moisture(self, moisture_bps: u16) -> WeatheredTerrain {
+        debug_assert!(self.is_normalized());
+        let moisture = u32::from(moisture_bps.min(10_000));
+        let susceptibility = if self.wetlands >= Self::WETLAND_SUSCEPTIBILITY_THRESHOLD {
+            u32::from(Self::TOTAL - self.wetlands)
+        } else {
+            0
+        };
+        let bonus = (susceptibility * moisture / 20_000) as u16;
+        let target_wetlands = self.wetlands.saturating_add(bonus).min(Self::TOTAL);
+        let old_underlying = Self::TOTAL - self.wetlands;
+        let new_underlying = Self::TOTAL - target_wetlands;
+        let scale = |weight: u16| -> u16 {
+            if old_underlying == 0 {
+                0
+            } else {
+                (u32::from(weight) * u32::from(new_underlying) / u32::from(old_underlying)) as u16
+            }
+        };
+        let forest = scale(self.forest);
+        let hills = scale(self.hills);
+        let urban = scale(self.urban);
+        let plains = new_underlying - forest - hills - urban;
+        let weights = Self {
+            plains,
+            forest,
+            hills,
+            wetlands: target_wetlands,
+            urban,
+        };
+        // Independent severity lets already-100% wetlands continue to worsen.
+        let saturation_bps = if self.wetlands < Self::WETLAND_SUSCEPTIBILITY_THRESHOLD {
+            0
+        } else {
+            (moisture * (5_000 + u32::from(self.wetlands) * 5) / 10_000).min(10_000) as u16
+        };
+        WeatheredTerrain {
+            weights,
+            saturation_bps,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WeatheredTerrain {
+    pub weights: TerrainWeights,
+    /// Mud/waterlogging speed severity, independent of normalized biome mix.
+    pub saturation_bps: u16,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -150,6 +209,23 @@ pub struct TerrainSkillProfile {
     pub hills: u16,
     pub wetlands: u16,
     pub urban: u16,
+}
+
+/// Departure-time overlays used consistently by route search and attestation.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoutingWeather {
+    pub ground_moisture_bps: u16,
+    pub snow_cover_bps: u16,
+    pub snow_check_millirank: u16,
+}
+
+impl RoutingWeather {
+    pub const fn is_valid(self) -> bool {
+        self.ground_moisture_bps <= 10_000
+            && self.snow_cover_bps <= 10_000
+            && self.snow_check_millirank <= TerrainSkillProfile::MAX
+    }
 }
 
 impl TerrainSkillProfile {
@@ -499,7 +575,7 @@ impl TerrainPack {
         goal: (f64, f64),
         profile: TerrainSkillProfile,
     ) -> Result<RoutePlan> {
-        self.plan_with_deadline(start, goal, profile, None)
+        self.plan_with_deadline(start, goal, profile, RoutingWeather::default(), None)
     }
 
     /// Plan with a cooperative deadline. This is intended for request-serving
@@ -520,7 +596,24 @@ impl TerrainPack {
         profile: TerrainSkillProfile,
         deadline: Instant,
     ) -> Result<RoutePlan> {
-        self.plan_with_deadline(start, goal, profile, Some(deadline))
+        self.plan_with_deadline(
+            start,
+            goal,
+            profile,
+            RoutingWeather::default(),
+            Some(deadline),
+        )
+    }
+
+    pub fn plan_until_with_profile_and_weather(
+        &self,
+        start: (f64, f64),
+        goal: (f64, f64),
+        profile: TerrainSkillProfile,
+        weather: RoutingWeather,
+        deadline: Instant,
+    ) -> Result<RoutePlan> {
+        self.plan_with_deadline(start, goal, profile, weather, Some(deadline))
     }
 
     fn plan_with_deadline(
@@ -528,11 +621,17 @@ impl TerrainPack {
         start: (f64, f64),
         goal: (f64, f64),
         profile: TerrainSkillProfile,
+        weather: RoutingWeather,
         deadline: Option<Instant>,
     ) -> Result<RoutePlan> {
         if !profile.is_valid() {
             return Err(Error::Validation(
                 "terrain skill profile exceeds rank five".into(),
+            ));
+        }
+        if !weather.is_valid() {
+            return Err(Error::Validation(
+                "routing weather exceeds bounded values".into(),
             ));
         }
         if ![start.0, start.1, goal.0, goal.1]
@@ -550,7 +649,7 @@ impl TerrainPack {
         }
         for window in expanding_windows(start, goal, self.bounds()) {
             check_deadline(deadline)?;
-            match self.plan_window(start, goal, window, profile, deadline) {
+            match self.plan_window(start, goal, window, profile, weather, deadline) {
                 Ok(plan) => return Ok(plan),
                 Err(Error::NoRoute) => continue,
                 Err(error) => return Err(error),
@@ -565,6 +664,7 @@ impl TerrainPack {
         goal: (f64, f64),
         [west, south, east, north]: [f64; 4],
         profile: TerrainSkillProfile,
+        weather: RoutingWeather,
         deadline: Option<Instant>,
     ) -> Result<RoutePlan> {
         if west >= east || south >= north {
@@ -616,8 +716,9 @@ impl TerrainPack {
         };
         let start_node = snap(&grid, coordinate(start), 8).ok_or(Error::NoRoute)?;
         let goal_node = snap(&grid, coordinate(goal), 8).ok_or(Error::NoRoute)?;
-        let mut plan =
-            astar_with_profile_and_deadline(&grid, start_node, goal_node, profile, deadline)?;
+        let mut plan = astar_with_profile_and_deadline(
+            &grid, start_node, goal_node, profile, weather, deadline,
+        )?;
         for point in &mut plan.points {
             let x = point.longitude;
             let y = point.latitude;
@@ -972,7 +1073,22 @@ pub fn astar_with_profile<G: RoutingGrid>(
             "terrain skill profile exceeds rank five".into(),
         ));
     }
-    astar_with_profile_and_deadline(grid, start, goal, profile, None)
+    astar_with_profile_and_deadline(grid, start, goal, profile, RoutingWeather::default(), None)
+}
+
+pub fn astar_with_profile_and_weather<G: RoutingGrid>(
+    grid: &G,
+    start: (u32, u32),
+    goal: (u32, u32),
+    profile: TerrainSkillProfile,
+    weather: RoutingWeather,
+) -> Result<RoutePlan> {
+    if !profile.is_valid() || !weather.is_valid() {
+        return Err(Error::Validation(
+            "terrain skill or weather profile exceeds bounded values".into(),
+        ));
+    }
+    astar_with_profile_and_deadline(grid, start, goal, profile, weather, None)
 }
 
 fn astar_with_profile_and_deadline<G: RoutingGrid>(
@@ -980,6 +1096,7 @@ fn astar_with_profile_and_deadline<G: RoutingGrid>(
     start: (u32, u32),
     goal: (u32, u32),
     profile: TerrainSkillProfile,
+    weather: RoutingWeather,
     deadline: Option<Instant>,
 ) -> Result<RoutePlan> {
     if start.0 >= grid.width()
@@ -1008,7 +1125,7 @@ fn astar_with_profile_and_deadline<G: RoutingGrid>(
             continue;
         }
         if current.index == goal_i {
-            return reconstruct(grid, &parent, start_i, goal_i, profile);
+            return reconstruct(grid, &parent, start_i, goal_i, profile, weather);
         }
         visited += 1;
         if visited % 256 == 0 {
@@ -1054,6 +1171,7 @@ fn astar_with_profile_and_deadline<G: RoutingGrid>(
                     grid.metres_per_cell(),
                     dx != 0 && dy != 0,
                     profile,
+                    weather,
                 );
                 let next_g = current.g.saturating_add(step);
                 let next_i = index(next);
@@ -1089,6 +1207,7 @@ fn step_seconds(
     metres: u32,
     diagonal: bool,
     profile: TerrainSkillProfile,
+    weather: RoutingWeather,
 ) -> u64 {
     let distance = u64::from(metres) * if diagonal { 1414 } else { 1000 } / 1000;
     let base = (distance * 3_600).div_ceil(u64::from(from.surface.speed_metres_per_hour().max(1)));
@@ -1098,10 +1217,23 @@ fn step_seconds(
     } else {
         1000
     };
-    let check = u64::from(from.terrain_weights().dot(profile));
+    let weathered = from
+        .terrain_weights()
+        .with_ground_moisture(weather.ground_moisture_bps);
+    let underlying_check = weathered.weights.dot(profile);
+    let cover = u32::from(weather.snow_cover_bps);
+    let check = u64::from(
+        ((u32::from(underlying_check) * (10_000 - cover))
+            + u32::from(weather.snow_check_millirank) * cover)
+            / 10_000,
+    );
+    let saturation_factor = 10_000 + u64::from(weathered.saturation_bps);
+    let snow_cost_bps = u64::from(weather.snow_cover_bps)
+        * u64::from(5_000u16.saturating_sub(weather.snow_check_millirank))
+        / 10_000;
     // check is milli-rank: 1 + rank/10 => (10_000 + check) / 10_000.
-    (base * uphill * 10_000)
-        .div_ceil(1000 * (10_000 + check))
+    (base * uphill * saturation_factor * (10_000 + snow_cost_bps))
+        .div_ceil(1000 * 10_000 * (10_000 + check))
         .max(1)
 }
 
@@ -1111,6 +1243,7 @@ fn reconstruct<G: RoutingGrid>(
     start: u32,
     goal: u32,
     profile: TerrainSkillProfile,
+    weather: RoutingWeather,
 ) -> Result<RoutePlan> {
     let mut nodes = vec![goal];
     let mut current = goal;
@@ -1133,16 +1266,23 @@ fn reconstruct<G: RoutingGrid>(
         let diagonal = a.0 != b.0 && a.1 != b.1;
         let step_distance =
             u64::from(grid.metres_per_cell()) * if diagonal { 1414 } else { 1000 } / 1000;
-        let step = step_seconds(from, to, grid.metres_per_cell(), diagonal, profile);
+        let step = step_seconds(from, to, grid.metres_per_cell(), diagonal, profile, weather);
         distance += step_distance;
         seconds += step;
-        let terrain = from.terrain_weights();
+        let terrain = from
+            .terrain_weights()
+            .with_ground_moisture(weather.ground_moisture_bps)
+            .weights;
         let training_multiplier_permille = if from.surface == Surface::Road {
             (from.underlying_surface().speed_metres_per_hour() / 5) as u16
         } else {
             1_000
         };
-        let check_millirank = terrain.dot(profile);
+        let underlying_check = terrain.dot(profile);
+        let cover = u32::from(weather.snow_cover_bps);
+        let check_millirank = (((u32::from(underlying_check) * (10_000 - cover))
+            + u32::from(weather.snow_check_millirank) * cover)
+            / 10_000) as u16;
         if let Some((_, _, _, _, duration)) =
             second_spans
                 .last_mut()
@@ -1391,6 +1531,93 @@ mod tests {
         let p = astar(&g, (0, 1), (6, 1)).unwrap();
         assert!(p.spans.iter().any(|s| s.surface == Surface::Road));
     }
+
+    #[test]
+    fn wet_weather_changes_search_cost_and_persisted_weathered_check() {
+        let mut g = grid(5, 3);
+        for x in 1..4 {
+            g.cells[(5 + x) as usize].wetland_fraction_percent = 100;
+        }
+        let profile = TerrainSkillProfile {
+            wetlands: 4_000,
+            plains: 500,
+            ..Default::default()
+        };
+        let dry =
+            astar_with_profile_and_weather(&g, (0, 1), (4, 1), profile, RoutingWeather::default())
+                .unwrap();
+        let wet = astar_with_profile_and_weather(
+            &g,
+            (0, 1),
+            (4, 1),
+            profile,
+            RoutingWeather {
+                ground_moisture_bps: 10_000,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_ne!(
+            dry.distance_m, wet.distance_m,
+            "weather must participate in A* search"
+        );
+        for span in &wet.spans {
+            assert_eq!(span.check_millirank, span.terrain.dot(profile));
+            assert!(span.terrain.is_normalized());
+        }
+    }
+
+    #[test]
+    fn snow_skill_changes_covered_cost_and_zero_cover_has_parity() {
+        let g = grid(3, 1);
+        let profile = TerrainSkillProfile {
+            plains: 1_000,
+            ..Default::default()
+        };
+        let unskilled = astar_with_profile_and_weather(
+            &g,
+            (0, 0),
+            (2, 0),
+            profile,
+            RoutingWeather {
+                snow_cover_bps: 10_000,
+                snow_check_millirank: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let skilled = astar_with_profile_and_weather(
+            &g,
+            (0, 0),
+            (2, 0),
+            profile,
+            RoutingWeather {
+                snow_cover_bps: 10_000,
+                snow_check_millirank: 5_000,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(skilled.minutes < unskilled.minutes);
+        assert_eq!(unskilled.spans[0].check_millirank, 0);
+        assert_eq!(skilled.spans[0].check_millirank, 5_000);
+
+        let clear_unskilled =
+            astar_with_profile_and_weather(&g, (0, 0), (2, 0), profile, RoutingWeather::default())
+                .unwrap();
+        let clear_skilled = astar_with_profile_and_weather(
+            &g,
+            (0, 0),
+            (2, 0),
+            profile,
+            RoutingWeather {
+                snow_check_millirank: 5_000,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(clear_unskilled, clear_skilled);
+    }
     #[test]
     fn woods_and_uphill_are_slower_directionally() {
         let mut g = grid(3, 1);
@@ -1500,6 +1727,22 @@ mod tests {
                 urban: 0,
             }
         );
+    }
+
+    #[test]
+    fn rainfall_respects_threshold_normalization_and_max_wetland_severity() {
+        let dry = TerrainWeights::from_cover(20, 20, 9).with_ground_moisture(10_000);
+        assert_eq!(dry.weights.wetlands, 90);
+        assert_eq!(dry.saturation_bps, 0);
+        assert!(dry.weights.is_normalized());
+
+        let susceptible = TerrainWeights::from_cover(20, 20, 10).with_ground_moisture(10_000);
+        assert!(susceptible.weights.wetlands > 100);
+        assert!(susceptible.weights.is_normalized());
+
+        let saturated = TerrainWeights::from_cover(0, 0, 100).with_ground_moisture(10_000);
+        assert_eq!(saturated.weights.wetlands, 1_000);
+        assert_eq!(saturated.saturation_bps, 10_000);
     }
 
     #[test]
@@ -1715,6 +1958,7 @@ mod tests {
                 (0, 0),
                 (99, 99),
                 TerrainSkillProfile::default(),
+                RoutingWeather::default(),
                 Some(Instant::now())
             ),
             Err(Error::Deadline)
