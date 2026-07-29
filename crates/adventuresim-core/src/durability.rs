@@ -33,6 +33,14 @@ impl RepairService {
         }
     }
 
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Weapons => "weapons",
+            Self::Armor => "armor",
+            Self::Clothing => "clothing",
+        }
+    }
+
     pub const fn matches(self, kind: RepairItemKind) -> bool {
         match self {
             Self::Weapons => matches!(kind, RepairItemKind::Weapon | RepairItemKind::Shield),
@@ -292,6 +300,9 @@ mod tests {
         assert!(clothing.matches(RepairItemKind::Clothing));
         assert!(!clothing.matches(RepairItemKind::Weapon));
         assert_eq!(RepairService::parse("smith"), None);
+        assert_eq!(weapons.as_str(), "weapons");
+        assert_eq!(armor.as_str(), "armor");
+        assert_eq!(clothing.as_str(), "clothing");
     }
     #[test]
     fn ductile_yields_sooner_but_brittle_fails_sooner() {

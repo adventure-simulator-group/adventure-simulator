@@ -443,7 +443,13 @@ fn normalize_religious_status(value: Value) -> Value {
         return Value::Object(status);
     }
 
-    let (variant, payload) = status.into_iter().next().expect("checked one variant");
+    let Some((variant, payload)) = status
+        .iter()
+        .next()
+        .map(|(variant, payload)| (variant.clone(), payload.clone()))
+    else {
+        return Value::Object(status);
+    };
     let payload = match variant.as_str() {
         "Established" => wrap_single_field(payload, "religion"),
         "LocallyDetermined" => wrap_single_field(payload, "church"),
@@ -464,10 +470,13 @@ fn normalize_western_arrangement(value: Value) -> Value {
         return Value::Object(arrangement);
     }
 
-    let (variant, payload) = arrangement
-        .into_iter()
+    let Some((variant, payload)) = arrangement
+        .iter()
         .next()
-        .expect("checked one arrangement variant");
+        .map(|(variant, payload)| (variant.clone(), payload.clone()))
+    else {
+        return Value::Object(arrangement);
+    };
     arrangement = [(variant, wrap_single_field(payload, "church"))]
         .into_iter()
         .collect();
