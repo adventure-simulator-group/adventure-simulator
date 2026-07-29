@@ -280,6 +280,15 @@ mod tests {
     }
 
     #[test]
+    fn initialized_world_uses_the_late_summer_weather_band() {
+        let interval = crate::strategic_time::WORLD_START_MINUTE / WEATHER_INTERVAL_MINUTES;
+        let day = interval * WEATHER_INTERVAL_MINUTES / 1_440 % 365;
+        assert_eq!(day, 231);
+        assert_eq!(seasonal_wetness_bps(interval), 3_000);
+        assert!(temperature_deci_c(interval, 160, 0) > 0);
+    }
+
+    #[test]
     fn moisture_and_snow_are_bounded_and_have_memory() {
         for minute in (0..525_600).step_by(360) {
             let sample = weather_at(19, minute, 53_500_000, 10_000_000, 80);

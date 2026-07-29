@@ -944,8 +944,10 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_micros();
-        let elapsed_micros = now_micros.saturating_sub(clock.epoch_micros.max(0) as u128);
-        (elapsed_micros.saturating_mul(73) / 84_000_000) as u64
+        adventuresim_core::strategic_time::official_minutes(
+            clock.epoch_micros,
+            i64::try_from(now_micros).unwrap_or(i64::MAX),
+        )
     });
     Json(CurrentTime {
         character_minutes: character_time.first().map_or(0, |time| time.minutes),

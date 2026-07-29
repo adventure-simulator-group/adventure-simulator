@@ -7,6 +7,9 @@ use crate::{
 
 pub const MINUTES_PER_DAY: u64 = 24 * 60;
 pub const MINUTES_PER_YEAR: u64 = 365 * MINUTES_PER_DAY;
+/// August 20 at 00:00 in the shared non-leap strategic calendar.
+pub const WORLD_START_DAY_OF_YEAR: u64 = 231;
+pub const WORLD_START_MINUTE: u64 = WORLD_START_DAY_OF_YEAR * MINUTES_PER_DAY;
 pub const DEFAULT_WALKING_MINUTES_PER_DAY: u16 = 8 * 60;
 pub const MIN_WALKING_MINUTES_PER_DAY: u16 = 1;
 pub const MAX_WALKING_MINUTES_PER_DAY: u16 = 24 * 60;
@@ -313,6 +316,11 @@ pub fn elapsed_official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
     (elapsed_micros.saturating_mul(73) / 84_000_000) as u64
 }
 
+/// Convert wall-clock timestamps to the shared absolute strategic calendar.
+pub fn official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
+    WORLD_START_MINUTE.saturating_add(elapsed_official_minutes(epoch_micros, now_micros))
+}
+
 /// Sum the daily minutes assigned to training and labor activities.
 pub fn allocated_schedule_minutes<const N: usize>(daily_minutes: [u16; N]) -> u64 {
     daily_minutes.into_iter().map(u64::from).sum()
@@ -386,11 +394,22 @@ mod tests {
             elapsed_official_minutes(0, one_week_micros),
             MINUTES_PER_YEAR
         );
+        assert_eq!(
+            official_minutes(0, one_week_micros),
+            WORLD_START_MINUTE + MINUTES_PER_YEAR
+        );
     }
 
     #[test]
     fn future_epoch_has_no_elapsed_official_minutes() {
         assert_eq!(elapsed_official_minutes(2_000_000, 1_000_000), 0);
+    }
+
+    #[test]
+    fn initialized_world_starts_on_august_twentieth() {
+        const DAYS_BEFORE_AUGUST: u64 = 31 + 28 + 31 + 30 + 31 + 30 + 31;
+        assert_eq!(WORLD_START_DAY_OF_YEAR, DAYS_BEFORE_AUGUST + 19);
+        assert_eq!(official_minutes(42, 42), WORLD_START_MINUTE);
     }
 
     #[test]
