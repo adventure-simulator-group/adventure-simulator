@@ -1072,7 +1072,7 @@ fn terrain_skill_rows(
         ),
         (
             "Snow",
-            "terrain",
+            "snow",
             Skill::TerrainSnow,
             skills.terrain_snow_hours,
         ),
@@ -2782,6 +2782,7 @@ mod tests {
         assert!(rendered.contains("Plains | 20%"));
         assert!(rendered.contains("Wetlands"));
         assert!(rendered.contains("/static/icons/stats/terrain/wetlands.png"));
+        assert!(rendered.contains("/static/icons/stats/terrain/snow.png"));
     }
 
     #[test]
