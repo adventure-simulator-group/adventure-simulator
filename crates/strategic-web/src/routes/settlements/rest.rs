@@ -452,6 +452,11 @@ pub(super) fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) ->
         ),
         ("Cooking", before.cooking_hours, after.cooking_hours),
         (
+            "Herbalism",
+            before.herbalism_hours,
+            after.herbalism_hours,
+        ),
+        (
             "Religion",
             before.religion_hours.total_direct(),
             after.religion_hours.total_direct(),

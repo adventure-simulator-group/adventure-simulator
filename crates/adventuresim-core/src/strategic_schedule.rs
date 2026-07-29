@@ -10,7 +10,7 @@ use crate::{
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 31;
+pub const SKILL_COUNT: usize = 32;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -45,6 +45,7 @@ pub struct SkillHours {
     pub deception: f32,
     pub physiology: f32,
     pub cooking: f32,
+    pub herbalism: f32,
     pub religion: ReligionHours,
     pub bestiary: BestiaryHours,
     pub stealth: f32,
@@ -81,6 +82,7 @@ impl SkillHours {
             self.deception,
             self.physiology,
             self.cooking,
+            self.herbalism,
             self.religion.total_direct(),
             self.bestiary.total_direct(),
             self.stealth,
@@ -886,5 +888,18 @@ mod tests {
         let repeated_projection =
             settlement_leisure_outcome(schedule, MINUTES_PER_DAY, repeated_fatigue);
         assert!((aggregate_projection.morale - repeated_projection.morale).abs() < 0.001);
+    }
+
+    #[test]
+    fn herbalism_is_in_the_stable_schedule_projection_and_roundtrips() {
+        let hours = SkillHours {
+            herbalism: 321.0,
+            ..Default::default()
+        };
+        assert_eq!(hours.values().len(), SKILL_COUNT);
+        assert!(hours.values().contains(&321.0));
+        let json = serde_json::to_string(&hours).unwrap();
+        let decoded: SkillHours = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.herbalism, 321.0);
     }
 }

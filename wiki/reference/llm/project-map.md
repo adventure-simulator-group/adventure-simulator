@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1428)
+## Files (1437)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -70,6 +70,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/filth.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/foraging.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/herbalism.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/inventory_measurement.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/investigation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/investigation_action.rs` — Rust source module for this component.
@@ -392,6 +393,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/geologic_setting_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/geologic_unit_id_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/habitat_suitability_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/herbal_preparation_method_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/historical_vegetation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/historical_wetland_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/historical_woodland_type.rs` — Generated SpacetimeDB data type.
@@ -577,6 +579,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/potential_vegetation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/pottery_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/pottery_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/prepare_herbal_remedy_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/present_organization_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/presentation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/production_scale_type.rs` — Generated SpacetimeDB data type.
@@ -801,6 +804,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/filth.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/foraging.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/herbalism.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/inventory_amount.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/investigation/actions.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/investigation/capabilities.rs` — Rust source module.
@@ -997,6 +1001,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/routes/settlements/mod.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements/overview.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements/party/cooking.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/party/herbalism.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements/party/inventory_medical.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements/party/location_personal.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/settlements/party/mod.rs` — Strategic web HTTP route handler.
@@ -1054,6 +1059,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/static/developer-quest-editor.js` — Repository support file.
 - `crates/strategic-web/static/dialogue-client.js` — Repository support file.
 - `crates/strategic-web/static/equipment-toggle.js` — Repository support file.
+- `crates/strategic-web/static/herbalism.js` — Repository support file.
 - `crates/strategic-web/static/icons/game/ATTRIBUTION.md` — Project documentation.
 - `crates/strategic-web/static/icons/game/acrobatic.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/ancient-sword.svg` — Vector UI or texture asset.
@@ -1323,6 +1329,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/equipment-toggle.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/food-remediation.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/herbalism.dom.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/herbalism.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/immediate-activity.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.dom.test.cjs` — Repository support file.
@@ -1396,6 +1404,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/foraging.md` — Project documentation.
 - `wiki/reference/forest-cover.md` — Project documentation.
 - `wiki/reference/geology.md` — Project documentation.
+- `wiki/reference/herbalism.md` — Project documentation.
 - `wiki/reference/historical-land-use.md` — Project documentation.
 - `wiki/reference/hydrology.md` — Project documentation.
 - `wiki/reference/industries.md` — Project documentation.

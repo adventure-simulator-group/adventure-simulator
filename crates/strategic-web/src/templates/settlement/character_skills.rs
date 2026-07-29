@@ -728,6 +728,7 @@ fn training_target_skill(
             "deception" => Some(Skill::Deception),
             "physiology" => Some(Skill::Physiology),
             "cooking" => Some(Skill::Cooking),
+            "herbalism" => Some(Skill::Herbalism),
             "anatomy" => Some(Skill::Anatomy),
             "polearm" => Some(Skill::Polearm),
             "axe" => Some(Skill::Axe),
@@ -783,6 +784,8 @@ fn character_aptitude(attributes: &CharacterAttributes, skill: Skill) -> f32 {
 pub(crate) struct CharacterSheetActions<'a> {
     pub(super) cooking_href: Option<&'a str>,
     pub(super) cooking_open: bool,
+    pub(super) herbalism_href: Option<&'a str>,
+    pub(super) herbalism_open: bool,
     pub(super) foraging_href: Option<&'a str>,
     pub(super) foraging_open: bool,
 }
@@ -973,6 +976,7 @@ fn skills_table(
                         ))
                     }
                     (party_skill_row(skills, "Cooking", "cooking", Skill::Cooking, intelligence, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
+                    (party_skill_row(skills, "Herbalism", "caduceus", Skill::Herbalism, intelligence, head_health, schedule.is_some(), actions.herbalism_href.map(|href| SkillAction::Get { href, label: "Open herbalism menu", open: actions.herbalism_open })))
                     (religion_skill_rows(skills, intelligence, head_health, schedule, training_religion))
                     (bestiary_skill_rows(skills, intelligence, head_health, schedule.is_some()))
                     (language_skill_rows(skills, instinct, intelligence, schedule.is_some()))
@@ -1802,6 +1806,7 @@ impl PlayerSkills for CharacterSkillHours<'_> {
             Skill::Deception => skills.deception_hours,
             Skill::Physiology => skills.physiology_hours,
             Skill::Cooking => skills.cooking_hours,
+            Skill::Herbalism => skills.herbalism_hours,
             Skill::Stealth => skills.stealth_hours,
             Skill::Balance => skills.balance_hours,
             Skill::TerrainPlains => skills.terrain_plains_hours,
@@ -2562,6 +2567,7 @@ mod tests {
             deception_hours: 0.0,
             physiology_hours: 0.0,
             cooking_hours: 0.0,
+            herbalism_hours: 0.0,
             religion_hours: adventuresim_world_schema::ReligionHours {
                 roman_catholic: 1_000.0,
                 ..Default::default()

@@ -40,6 +40,7 @@
 - [Historical equipment catalog](reference/equipment.md)
 - [Item definition authoring](reference/item-authoring.md)
 - [Food and cooking](reference/food-and-cooking.md)
+- [Herbalism](reference/herbalism.md)
 - [Foraging](reference/foraging.md)
 - [Measured inventory architecture](reference/measured-inventory.md)
 - [Physiology system](reference/physiology.md)

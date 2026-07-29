@@ -18,6 +18,7 @@ pub mod essential;
 pub mod filth;
 pub mod food;
 pub mod foraging;
+pub mod herbalism;
 pub mod inventory_measurement;
 pub mod investigation;
 pub mod investigation_action;

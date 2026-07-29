@@ -174,6 +174,7 @@ impl PlayerSkills for CombatSkills {
             Skill::Deception => self.deception_hours,
             Skill::Physiology => self.physiology_hours,
             Skill::Cooking => 0.0,
+            Skill::Herbalism => 0.0,
             Skill::Religion => self.religion_hours,
             Skill::Bestiary => self.bestiary_hours.aggregate_effective(),
             Skill::Stealth => self.stealth_hours,

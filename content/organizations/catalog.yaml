@@ -491,7 +491,7 @@
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
-                                                   "skill":  "physiology",
+                                                   "skill":  "herbalism",
                                                    "minimum":  2.0
                                                },
                                                {
@@ -510,7 +510,7 @@
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
-                                                   "skill":  "physiology",
+                                                   "skill":  "herbalism",
                                                    "minimum":  4.0
                                                },
                                                {
@@ -527,18 +527,18 @@
                          "training":  [
                                           {
                                               "kind":  "fixed_skill",
-                                              "skill":  "physiology",
+                                              "skill":  "herbalism",
                                               "weight":  0.5
                                           },
                                           {
-                                              "kind":  "bestiary",
-                                              "category":  "human",
-                                              "weight":  0.16666667
+                                              "kind":  "fixed_skill",
+                                              "skill":  "physiology",
+                                              "weight":  0.3
                                           },
                                           {
                                               "kind":  "fixed_skill",
                                               "skill":  "anatomy",
-                                              "weight":  0.33333333
+                                              "weight":  0.2
                                           }
                                       ],
                          "reward":  "gold"

@@ -583,6 +583,7 @@ fn apply_training(
         deception: skills.deception_hours,
         physiology: skills.physiology_hours,
         cooking: skills.cooking_hours,
+        herbalism: skills.herbalism_hours,
         religion: skills.religion_hours,
         bestiary: skills.bestiary_hours,
         anatomy: skills.anatomy_hours,
@@ -690,6 +691,7 @@ fn apply_training(
     skills.deception_hours = hours.deception;
     skills.physiology_hours = hours.physiology;
     skills.cooking_hours = hours.cooking;
+    skills.herbalism_hours = hours.herbalism;
     skills.religion_hours = hours.religion;
     skills.bestiary_hours = hours.bestiary;
     skills.anatomy_hours = hours.anatomy;
@@ -744,6 +746,7 @@ fn apply_organization_training(
                 "deception" => award_direct(Skill::Deception, &mut hours.deception, award),
                 "physiology" => award_direct(Skill::Physiology, &mut hours.physiology, award),
                 "cooking" => award_direct(Skill::Cooking, &mut hours.cooking, award),
+                "herbalism" => award_direct(Skill::Herbalism, &mut hours.herbalism, award),
                 "anatomy" => award_direct(Skill::Anatomy, &mut hours.anatomy, award),
                 "polearm" => award_direct(Skill::Polearm, &mut hours.polearm, award),
                 "axe" => award_direct(Skill::Axe, &mut hours.axe, award),

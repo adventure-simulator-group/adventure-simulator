@@ -1,5 +1,10 @@
 # Item definition authoring
 
+Bounded herbal grades use the ordinary base ID plus `_poor` and `_fine`
+variants tagged `medicinal_herb` and `grade_*`. Concrete remedies use
+`herbal_preparation` and `potency_*`; every medication identity needs a
+versioned generic physiology intervention profile.
+
 When browser-local developer mode is enabled, expanding a concrete inventory
 row shows an **Edit YAML** button that opens the definition at its compiled
 file and line in GitHub. Source locations are generated during catalog

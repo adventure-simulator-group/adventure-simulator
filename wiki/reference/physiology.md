@@ -3,8 +3,9 @@
 Physiology is the skill for observing health, administering prepared
 interventions, and improving wound recovery. It produces a fallible differential
 of possible diseases, but never reveals the authoritative disease identity or
-recommends a treatment. Preparation crafting and chemistry remain deliberately
-out of scope for issues #214 and #215.
+recommends a treatment. [Herbalism](herbalism.md) now owns bounded biological
+preparation while Alchemy #215 remains independent. Preparations act through
+versioned generic meter profiles and never disease-keyed effects.
 
 ## Private authority
 

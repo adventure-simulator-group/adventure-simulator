@@ -6,6 +6,7 @@
 
 include!("location_personal.rs");
 include!("cooking.rs");
+include!("herbalism.rs");
 include!("training_activity.rs");
 include!("inventory_medical.rs");
 include!("social.rs");

@@ -275,6 +275,7 @@ pub mod geologic_lithology_evidence_type;
 pub mod geologic_setting_type;
 pub mod geologic_unit_id_type;
 pub mod habitat_suitability_type;
+pub mod herbal_preparation_method_type;
 pub mod historical_vegetation_type;
 pub mod historical_wetland_type;
 pub mod historical_woodland_type;
@@ -458,6 +459,7 @@ pub mod potential_vegetation_posterior_type;
 pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
+pub mod prepare_herbal_remedy_reducer;
 pub mod present_organization_reducer;
 pub mod presentation_type;
 pub mod production_scale_type;
@@ -940,6 +942,7 @@ pub use geologic_lithology_evidence_type::GeologicLithologyEvidence;
 pub use geologic_setting_type::GeologicSetting;
 pub use geologic_unit_id_type::GeologicUnitId;
 pub use habitat_suitability_type::HabitatSuitability;
+pub use herbal_preparation_method_type::HerbalPreparationMethod;
 pub use historical_vegetation_type::HistoricalVegetation;
 pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
@@ -1123,6 +1126,7 @@ pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
 pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
+pub use prepare_herbal_remedy_reducer::prepare_herbal_remedy;
 pub use present_organization_reducer::present_organization;
 pub use presentation_type::Presentation;
 pub use production_scale_type::ProductionScale;
@@ -1656,6 +1660,11 @@ pub enum Reducer {
         source_id: String,
         action_kind: String,
     },
+    PrepareHerbalRemedy {
+        character_id: u64,
+        inventory_item_id: u64,
+        method: HerbalPreparationMethod,
+    },
     PresentOrganization {
         character_id: u64,
         organization_id: String,
@@ -2058,6 +2067,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformInvestigationAction { .. } => "perform_investigation_action",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
+            Reducer::PrepareHerbalRemedy { .. } => "prepare_herbal_remedy",
             Reducer::PresentOrganization { .. } => "present_organization",
             Reducer::PromoteOrganizationMembership { .. } => "promote_organization_membership",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
@@ -2691,6 +2701,15 @@ Reducer::BeginWorldDataImport{
                 target_id: target_id.clone(),
                 source_id: source_id.clone(),
                 action_kind: action_kind.clone(),
+}),
+            Reducer::PrepareHerbalRemedy{
+                character_id,
+                inventory_item_id,
+                method,
+}             => __sats::bsatn::to_vec(&prepare_herbal_remedy_reducer::PrepareHerbalRemedyArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+                method: method.clone(),
 }),
             Reducer::PresentOrganization{
                 character_id,

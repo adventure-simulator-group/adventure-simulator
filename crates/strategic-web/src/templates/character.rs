@@ -437,6 +437,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             deception_hours: spec.skills.deception,
             physiology_hours: spec.skills.physiology,
             cooking_hours: spec.skills.cooking,
+            herbalism_hours: spec.skills.herbalism,
             religion_hours: spec.skills.religion,
             oral_languages: Default::default(),
             written_languages: Default::default(),

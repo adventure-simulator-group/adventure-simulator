@@ -247,6 +247,7 @@ pub fn party_personal_page(
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
     cooking: bool,
+    herbalism: bool,
     inventory: &[InventoryItem],
     inventory_amounts: &[InventoryItemAmount],
     food_lots: &[FoodLot],
@@ -262,6 +263,12 @@ pub fn party_personal_page(
         active_character.id
     ));
     let cooking_open = cooking;
+    let herbalism_href = location.preserve_building(format!(
+        "{}/party/{}?herbalism=true",
+        location.base_path(),
+        active_character.id
+    ));
+    let herbalism_open = herbalism;
     let surgery_path_template = location.preserve_building(format!(
         "{}/party/{}/surgery/__limb__",
         location.base_path(),
@@ -307,6 +314,15 @@ pub fn party_personal_page(
                 food_lots,
                 item_definitions,
             ))
+        } @else if herbalism_open {
+            (super::trade::herbalism_activity_dialog(
+                location,
+                active_character,
+                skills,
+                attributes,
+                inventory,
+                item_definitions,
+            ))
         } @else if let Some(dialog) = foraging_dialog {
             (dialog)
         } @else {
@@ -345,6 +361,8 @@ pub fn party_personal_page(
         skill_actions: CharacterSheetActions {
             cooking_href: Some(&cooking_href),
             cooking_open,
+            herbalism_href: Some(&herbalism_href),
+            herbalism_open,
             foraging_href: Some(&foraging_href),
             foraging_open,
         },

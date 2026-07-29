@@ -42,6 +42,7 @@ const BUILDINGS: &[&str] = &[
 struct BuildingQuery {
     building: Option<String>,
     cook: Option<bool>,
+    herbalism: Option<bool>,
     forage: Option<bool>,
     forage_receipt: Option<String>,
     forage_error: Option<String>,
@@ -64,6 +65,9 @@ struct MerchantProviderPresenceRow {
 }
 
 impl BuildingQuery {
+    fn herbalism(&self) -> bool {
+        self.herbalism.unwrap_or(false)
+    }
     fn valid(&self) -> Option<&str> {
         self.building
             .as_deref()
@@ -330,6 +334,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/activity",
             post(perform_immediate_activity),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/herbalism",
+            post(prepare_herbal_remedy),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/religion/renounce",

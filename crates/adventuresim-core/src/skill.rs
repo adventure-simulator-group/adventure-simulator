@@ -39,6 +39,9 @@ pub enum Skill {
     /// Mental. Trained. Food preparation, safety, and kitchen technique. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Cooking,
+    /// Mental. Trained. Preparing biological medicines. (10000h)
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
+    Herbalism,
     /// Mental. Trained. Meta-skill for knowledge of religious traditions. (5000h each)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Religion,
@@ -484,6 +487,7 @@ impl Skill {
             Self::Deception => "Deception",
             Self::Physiology => "Physiology",
             Self::Cooking => "Cooking",
+            Self::Herbalism => "Herbalism",
             Self::Religion => "Religion",
             Self::Bestiary => "Bestiary",
             Self::Polearm => "Polearm",
@@ -569,6 +573,7 @@ impl Skill {
             Self::Physiology
             | Self::Anatomy
             | Self::Cooking
+            | Self::Herbalism
             | Self::Religion
             | Self::Bestiary
             | Self::TerrainPlains
@@ -649,6 +654,7 @@ impl Skill {
     pub const fn ordinary_correlations(self) -> &'static [(Skill, f32)] {
         match self {
             Self::Cooking => &[(Self::Knife, 0.15)],
+            Self::Herbalism => &[],
             Self::Knife => &[(Self::Cooking, 0.15), (Self::Sword, 0.20)],
             Self::Sword => &[(Self::Knife, 0.20)],
             Self::Dodge => &[(Self::Balance, 0.20)],

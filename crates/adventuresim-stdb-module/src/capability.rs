@@ -235,6 +235,7 @@ impl PlayerSkills for CharacterSkills {
             Skill::Deception => self.deception_hours,
             Skill::Physiology => self.physiology_hours,
             Skill::Cooking => self.cooking_hours,
+            Skill::Herbalism => self.herbalism_hours,
             // Generic recruitment/tactical summaries use the character's best-covered
             // tradition. Authoritative religious morale always selects a tradition.
             Skill::Religion => self.religion_hours.maximum_effective(),

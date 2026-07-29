@@ -314,6 +314,7 @@ pub fn bootstrap_development_world(
         crate::character::seed_damaged_character(ctx)?;
         crate::character::seed_religion_scholar_character(ctx)?;
         crate::character::seed_bestiary_scholar_character(ctx)?;
+        crate::character::seed_herbalism_demo_character(ctx)?;
         crate::social::seed_social_demo(ctx)?;
     }
     Ok(())

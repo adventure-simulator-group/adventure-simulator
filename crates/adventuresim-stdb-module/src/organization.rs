@@ -94,6 +94,7 @@ fn skill_hours(skills: &CharacterSkills, skill: &str, leaf: Option<&str>) -> Opt
         "deception" => (Skill::Deception, skills.deception_hours),
         "physiology" => (Skill::Physiology, skills.physiology_hours),
         "cooking" => (Skill::Cooking, skills.cooking_hours),
+        "herbalism" => (Skill::Herbalism, skills.herbalism_hours),
         "religion" => (
             Skill::Religion,
             skills

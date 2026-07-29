@@ -9,6 +9,7 @@ const SKILLS: &[&str] = &[
     "deception",
     "physiology",
     "cooking",
+    "herbalism",
     "religion",
     "bestiary",
     "anatomy",

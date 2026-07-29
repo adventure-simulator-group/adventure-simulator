@@ -1,5 +1,9 @@
 # Services
 
+At strategic locations, characters raise the Herbalism Stage Modal from their
+skill rail. Herbalist storefronts remain sources and exchange counterparties
+for medicinal ingredients and finished remedies.
+
 Unresolved local problems can impose capped trade and disease consequences. The
 inn is the discovery funnel; a settlement without an available inn uses overview.
 

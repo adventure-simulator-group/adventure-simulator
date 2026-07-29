@@ -1,5 +1,9 @@
 # Attributes
 
+Herbalism is a first-class trained mental skill governed by Intelligence. It
+prepares biological medicine and remains separate from patient-facing
+Physiology and food-facing Cooking.
+
 The Terrain family includes **Snow**, a mental, intuitive,
 Intelligence-governed skill with a 30,000-hour curve. Snow has symmetric 0.20
 ordinary correlation with Plains, Forest, Hills, Wetlands, and Urban. It is an
