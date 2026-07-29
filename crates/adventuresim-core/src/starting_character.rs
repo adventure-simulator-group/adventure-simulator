@@ -614,6 +614,7 @@ fn set_fixed_skill(
         "deception" => skills.deception = hours,
         "physiology" => skills.physiology = hours,
         "cooking" => skills.cooking = hours,
+        "herbalism" => skills.herbalism = hours,
         "anatomy" => skills.anatomy = hours,
         "stealth" => skills.stealth = hours,
         "balance" => skills.balance = hours,

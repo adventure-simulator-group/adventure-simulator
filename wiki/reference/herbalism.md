@@ -5,6 +5,19 @@ named biological ingredients into concrete medicines. It is separate from
 Physiology, which observes patients and administers preparations, and Cooking,
 which prepares food.
 
+## Professional boundary
+
+The College of Herbalists is institutionally separate from the College of
+Physicians and the Surgeons' Guild. Its apprenticeship and practice curriculum
+trains Herbalism only. Independent herbalists and master herbalists rank through
+preparation skill; they do not become physicians by advancing within the same
+organization.
+
+Physicians instead train Physiology and Anatomy for patient observation and
+administration. Surgeons train Anatomy, Knife, and Tailoring because surgery is
+a procedure assembled from the game's existing extraction and stitching
+checks, not a separate hidden Surgery skill.
+
 ## Bounded preparation model
 
 The playable loop is deliberately small:

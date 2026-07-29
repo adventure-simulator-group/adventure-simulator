@@ -381,6 +381,65 @@ mod tests {
     }
 
     #[test]
+    fn medical_crafts_have_distinct_organizations_and_curricula() {
+        let herbalists = organization("herbalists_college").unwrap();
+        let physicians = organization("physicians_college").unwrap();
+        let surgeons = organization("surgeons_guild").unwrap();
+
+        assert_eq!(herbalists.service_id.as_deref(), Some("herbalist"));
+        assert_eq!(physicians.service_id.as_deref(), Some("physician"));
+        assert_eq!(surgeons.service_id.as_deref(), Some("surgeon"));
+        let herbalist_start = herbalists.starting_role.as_ref().unwrap();
+        assert_eq!(herbalist_start.adult_rank_id, "herbalist");
+        assert_eq!(herbalist_start.old_rank_id, "master_herbalist");
+        assert!(physicians.starting_role.is_none());
+        assert!(surgeons.starting_role.is_none());
+
+        let fixed_curriculum = |definition: &OrganizationDefinition| -> Vec<(String, f32)> {
+            definition
+                .activity
+                .training
+                .iter()
+                .map(|entry| match &entry.target {
+                    TrainingTarget::FixedSkill { skill } => (skill.clone(), entry.weight),
+                    other => panic!("unexpected medical training target: {other:?}"),
+                })
+                .collect()
+        };
+        assert_eq!(
+            fixed_curriculum(herbalists),
+            vec![("herbalism".into(), 1.0)]
+        );
+        assert_eq!(
+            fixed_curriculum(physicians),
+            vec![("physiology".into(), 0.65), ("anatomy".into(), 0.35)]
+        );
+        assert_eq!(
+            fixed_curriculum(surgeons),
+            vec![
+                ("anatomy".into(), 0.5),
+                ("knife".into(), 0.25),
+                ("tailoring".into(), 0.25),
+            ]
+        );
+
+        for settlement in ["viabundus-0", "viabundus-2337", "viabundus-1826"] {
+            let locations = [
+                herbalists.chapter(settlement).unwrap().location_id.as_str(),
+                physicians.chapter(settlement).unwrap().location_id.as_str(),
+                surgeons.chapter(settlement).unwrap().location_id.as_str(),
+            ];
+            assert_eq!(
+                locations
+                    .into_iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len(),
+                3
+            );
+        }
+    }
+
+    #[test]
     fn ranger_common_licenses_are_inherited_and_high_game_is_master_only() {
         let definition = organization("lodge_hart_king").unwrap();
         let first = &definition.ranks[0];

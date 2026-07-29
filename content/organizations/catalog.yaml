@@ -426,12 +426,12 @@
     {
         "id":  "herbalists_college",
         "name":  "College of Herbalists",
-        "description":  "A local learned fellowship for remedies and wound care.",
+        "description":  "A local learned fellowship for gathering and preparing plant remedies.",
         "service_id":  "herbalist",
         "starting_role":  {
                               "profession":  "herbalist",
-                              "adult_rank_id":  "practitioner",
-                              "old_rank_id":  "physician"
+                              "adult_rank_id":  "herbalist",
+                              "old_rank_id":  "master_herbalist"
                           },
         "chapters":  [
                          {
@@ -485,13 +485,113 @@
                           "practice_reward_interval_minutes":  0
                       },
                       {
-                          "id":  "practitioner",
-                          "name":  "Practitioner",
-                          "description":  "A healer recognized for independent practice.",
+                          "id":  "herbalist",
+                          "name":  "Herbalist",
+                          "description":  "A herbalist recognized for independent preparation work.",
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
                                                    "skill":  "herbalism",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master_herbalist",
+                          "name":  "Master Herbalist",
+                          "description":  "A senior preparer and teacher of herbal methods.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "herbalism",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "herbalism",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ],
+        "public_threat_referrals":  false
+    },
+    {
+        "id":  "physicians_college",
+        "name":  "College of Physicians",
+        "description":  "A local learned fellowship for observing patients and administering treatment.",
+        "service_id":  "physician",
+        "chapters":  [
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-physicians-college",
+                             "building_name":  "College of Physicians",
+                             "building_kind":  "college",
+                             "representative_title":  "college registrar",
+                             "representative_profession":  "physician"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-physicians-college",
+                             "building_name":  "College of Physicians",
+                             "building_kind":  "college",
+                             "representative_title":  "college registrar",
+                             "representative_profession":  "physician"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-physicians-college",
+                             "building_name":  "College of Physicians",
+                             "building_kind":  "college",
+                             "representative_title":  "college registrar",
+                             "representative_profession":  "physician"
+                         }
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  1,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "student",
+                          "name":  "Student",
+                          "description":  "A supervised student of patient observation.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "physician",
+                          "name":  "Physician",
+                          "description":  "A physician recognized for independent practice.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "physiology",
                                                    "minimum":  2.0
                                                },
                                                {
@@ -504,13 +604,13 @@
                           "practice_reward_interval_minutes":  480
                       },
                       {
-                          "id":  "physician",
-                          "name":  "Physician",
-                          "description":  "A senior practitioner and teacher.",
+                          "id":  "master_physician",
+                          "name":  "Master Physician",
+                          "description":  "A senior physician and teacher of clinical practice.",
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
-                                                   "skill":  "herbalism",
+                                                   "skill":  "physiology",
                                                    "minimum":  4.0
                                                },
                                                {
@@ -527,18 +627,143 @@
                          "training":  [
                                           {
                                               "kind":  "fixed_skill",
-                                              "skill":  "herbalism",
-                                              "weight":  0.5
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
                                               "skill":  "physiology",
-                                              "weight":  0.3
+                                              "weight":  0.65
                                           },
                                           {
                                               "kind":  "fixed_skill",
                                               "skill":  "anatomy",
-                                              "weight":  0.2
+                                              "weight":  0.35
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ],
+        "public_threat_referrals":  false
+    },
+    {
+        "id":  "surgeons_guild",
+        "name":  "Surgeons\u0027 Guild",
+        "description":  "A local craft fellowship for operative wound care and surgical procedures.",
+        "service_id":  "surgeon",
+        "chapters":  [
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-surgeons-guild",
+                             "building_name":  "Surgeons Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "surgeon"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-surgeons-guild",
+                             "building_name":  "Surgeons Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "surgeon"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-surgeons-guild",
+                             "building_name":  "Surgeons Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "surgeon"
+                         }
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  1,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "description":  "A supervised apprentice in wound care and surgical tools.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "surgeon",
+                          "name":  "Surgeon",
+                          "description":  "A surgeon recognized for independent operative practice.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "anatomy",
+                                                   "minimum":  2.0
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "knife",
+                                                   "minimum":  2.0
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "tailoring",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master_surgeon",
+                          "name":  "Master Surgeon",
+                          "description":  "A senior surgeon and teacher of extraction and stitching.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "anatomy",
+                                                   "minimum":  4.0
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "knife",
+                                                   "minimum":  4.0
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "tailoring",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "anatomy",
+                                              "weight":  0.5
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "knife",
+                                              "weight":  0.25
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "tailoring",
+                                              "weight":  0.25
                                           }
                                       ],
                          "reward":  "gold"

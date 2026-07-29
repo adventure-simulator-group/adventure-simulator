@@ -408,6 +408,18 @@ pub(super) fn service_quest_greeting(service_id: &str) -> (&'static str, &'stati
             "Clothier",
             "Welcome, traveler. Cloth is scarce of late because",
         ),
+        "herbalist" => (
+            "Herbalist",
+            "Welcome. My stores and preparation work have suffered because",
+        ),
+        "physician" => (
+            "Physician",
+            "Welcome. Patient care has been made more difficult because",
+        ),
+        "surgeon" => (
+            "Surgeon",
+            "Welcome. The guild has urgent need of assistance because",
+        ),
         "inn" => (
             "Innkeeper",
             "Welcome. Travelers have been avoiding this road because",

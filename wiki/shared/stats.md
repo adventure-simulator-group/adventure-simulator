@@ -448,8 +448,9 @@ separate Terrain meta-skill and does not stack with Balance.
 ### Anatomy (mental, trained, 10000 hours)
 Anatomy represents trained knowledge of bodies and wounds. Intelligence governs
 its training speed and mastery cap, while head injury remains a performance
-penalty. Herbalist apprenticeship and practice divide their training between
-Physiology (one half) and Anatomy, Knife, and Tailoring (one sixth each).
+penalty. The College of Herbalists trains Herbalism; the College of Physicians
+trains Physiology and Anatomy; and the Surgeons' Guild trains Anatomy, Knife,
+and Tailoring.
 
 Surgery is a procedure, not a skill. Projectile extraction averages the
 treating character's Anatomy and Knife checks; stitching averages Anatomy and

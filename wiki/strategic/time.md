@@ -138,6 +138,6 @@ We are not actually simulating an economy (at least for the MVP) nor do quests o
 
 ## Language exposure
 
-Actual elapsed settlement time grants conserved ambient Oral exposure in the local distribution. Travel grants each party member at most one elapsed interval of conversation exposure, chosen from a sorted pre-gain snapshot, so companions do not multiply time. Profession work grants Written exposure from centralized literacy profiles: merchants write substantially more than smiths; medical work uses Latin; Catholic work uses Latin; Jewish work uses Hebrew and Yiddish; other current religious work uses German. A distinct physician service remains follow-up work; medical Latin currently uses the existing herbalist/medical profession seam.
+Actual elapsed settlement time grants conserved ambient Oral exposure in the local distribution. Travel grants each party member at most one elapsed interval of conversation exposure, chosen from a sorted pre-gain snapshot, so companions do not multiply time. Profession work grants Written exposure from centralized literacy profiles: merchants write substantially more than smiths; medical work uses Latin; Catholic work uses Latin; Jewish work uses Hebrew and Yiddish; other current religious work uses German. Herbalist, physician, and surgeon organization identities are distinct even where medical literacy uses the same language profile.
 Foraging advances the acting character's discrete personal strategic clock by
 the actual injury/disease-safe prefix, exactly once. It is not a wall-clock job.
