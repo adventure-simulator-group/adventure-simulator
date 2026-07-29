@@ -45,7 +45,7 @@ pub trait StrategicBackend {
 pub struct SettlementObservation {
     pub day: u32,
     pub gold: u32,
-    pub notoriety: f32,
+    pub infamy: f32,
     pub skills: SkillHours,
 }
 
@@ -58,7 +58,7 @@ pub enum StrategicIntent {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DayResult {
     pub gold_earned: u32,
-    pub notoriety_gained: f32,
+    pub infamy_gained: f32,
     pub risk_exposure: f32,
 }
 
@@ -67,7 +67,7 @@ pub struct NativeAgentState {
     profile: AgentProfile,
     day: u32,
     gold: u32,
-    notoriety: f32,
+    infamy: f32,
     skills: SkillHours,
 }
 
@@ -82,7 +82,7 @@ impl StrategicBackend for NativeSettlementBackend {
         SettlementObservation {
             day: state.day,
             gold: state.gold,
-            notoriety: state.notoriety,
+            infamy: state.infamy,
             skills: state.skills,
         }
     }
@@ -118,14 +118,17 @@ impl StrategicBackend for NativeSettlementBackend {
             .gold
             .checked_add(outcome.gold_earned)
             .ok_or("gold overflow")?;
-        state.notoriety += outcome.notoriety_gained;
+        state.infamy = (state.infamy + outcome.infamy_gained).clamp(
+            0.0,
+            adventuresim_core::reputation::REPUTATION_CAP as f32 / 100.0,
+        );
         state.day = state.day.checked_add(1).ok_or("day overflow")?;
         if state.day <= before {
             return Err("time did not advance".into());
         }
         Ok(DayResult {
             gold_earned: outcome.gold_earned,
-            notoriety_gained: outcome.notoriety_gained,
+            infamy_gained: outcome.infamy_gained,
             risk_exposure: outcome.thievery_discovery_chance + outcome.raiding_retaliation_chance,
         })
     }
@@ -147,7 +150,7 @@ pub struct DecisionEvent {
     pub agent_id: u32,
     pub intent: StrategicIntent,
     pub gold_earned: u32,
-    pub notoriety_gained: f32,
+    pub infamy_gained: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -156,7 +159,7 @@ pub struct Snapshot {
     pub day: u32,
     pub agent_id: u32,
     pub gold: u32,
-    pub notoriety: f32,
+    pub infamy: f32,
     pub total_skill_hours: f64,
 }
 
@@ -175,7 +178,7 @@ pub struct AgentMetrics {
     pub total_skill_hours_gained: f64,
     pub activity_minutes: u64,
     pub leisure_minutes: u64,
-    pub notoriety: f32,
+    pub infamy: f32,
     pub cumulative_risk_exposure: f32,
 }
 
@@ -184,7 +187,7 @@ pub struct AgentMetrics {
 pub enum ReportMetric {
     Wealth,
     SkillHoursGained,
-    Notoriety,
+    Infamy,
     RiskExposure,
 }
 
@@ -299,7 +302,7 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
             profile,
             day: 0,
             gold: 100,
-            notoriety: 0.0,
+            infamy: 0.0,
         })
         .collect();
     let mut trace = Vec::with_capacity((config.max_trace_events as usize).min(10_000));
@@ -325,7 +328,7 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
                 agent_id: state.profile.agent_id,
                 intent: StrategicIntent::FollowDowntimeScheduleOneDay,
                 gold_earned: result.gold_earned,
-                notoriety_gained: result.notoriety_gained,
+                infamy_gained: result.infamy_gained,
             };
             if recent.len() == 8 {
                 recent.pop_front();
@@ -336,7 +339,7 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
             }
             risks[state.profile.agent_id as usize] += result.risk_exposure;
             let obs = backend.observe(state);
-            if !obs.notoriety.is_finite()
+            if !obs.infamy.is_finite()
                 || !obs.skills.is_finite()
                 || !risks[state.profile.agent_id as usize].is_finite()
             {
@@ -351,7 +354,7 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
                         day: day + 1,
                         agent_id: state.profile.agent_id,
                         gold: state.gold,
-                        notoriety: state.notoriety,
+                        infamy: state.infamy,
                         total_skill_hours: total_skill_hours(state.skills),
                     });
                 }
@@ -379,7 +382,7 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
                     - total_skill_hours(state.profile.initial_skills),
                 activity_minutes: activity_daily * u64::from(config.days),
                 leisure_minutes: (MINUTES_PER_DAY - allocated) * u64::from(config.days),
-                notoriety: state.notoriety,
+                infamy: state.infamy,
                 cumulative_risk_exposure: risks[state.profile.agent_id as usize],
             }
         })
@@ -461,16 +464,16 @@ fn quantize_canonical_floats(report: &mut SimulationReport) {
         profile.spending_propensity = q32(profile.spending_propensity);
     }
     for event in &mut report.trace {
-        event.notoriety_gained = q32(event.notoriety_gained);
+        event.infamy_gained = q32(event.infamy_gained);
     }
     for snapshot in &mut report.snapshots {
-        snapshot.notoriety = q32(snapshot.notoriety);
+        snapshot.infamy = q32(snapshot.infamy);
         snapshot.total_skill_hours = q64(snapshot.total_skill_hours);
     }
     for metric in &mut report.metrics {
         quantize_skills(&mut metric.skill_hours);
         metric.total_skill_hours_gained = q64(metric.total_skill_hours_gained);
-        metric.notoriety = q32(metric.notoriety);
+        metric.infamy = q32(metric.infamy);
         metric.cumulative_risk_exposure = q32(metric.cumulative_risk_exposure);
     }
 }
@@ -520,7 +523,7 @@ fn frontier_objectives() -> Vec<ParetoObjective> {
             direction: Objective::Maximize,
         },
         ParetoObjective {
-            metric: ReportMetric::Notoriety,
+            metric: ReportMetric::Infamy,
             direction: Objective::Minimize,
         },
         ParetoObjective {
@@ -539,7 +542,7 @@ fn report_frontier(metrics: &[AgentMetrics]) -> Result<ReportFrontier, Simulatio
             values: vec![
                 f64::from(metric.wealth),
                 q64(metric.total_skill_hours_gained),
-                f64::from(q32(metric.notoriety)),
+                f64::from(q32(metric.infamy)),
                 f64::from(q32(metric.cumulative_risk_exposure)),
             ],
         })
@@ -594,14 +597,15 @@ pub fn validate_report(report: &SimulationReport) -> Result<(), String> {
     if report
         .trace
         .iter()
-        .any(|event| !event.notoriety_gained.is_finite())
-        || report.snapshots.iter().any(|snapshot| {
-            !snapshot.notoriety.is_finite() || !snapshot.total_skill_hours.is_finite()
-        })
+        .any(|event| !event.infamy_gained.is_finite())
+        || report
+            .snapshots
+            .iter()
+            .any(|snapshot| !snapshot.infamy.is_finite() || !snapshot.total_skill_hours.is_finite())
         || report.metrics.iter().any(|metric| {
             !metric.skill_hours.is_finite()
                 || !metric.total_skill_hours_gained.is_finite()
-                || !metric.notoriety.is_finite()
+                || !metric.infamy.is_finite()
                 || !metric.cumulative_risk_exposure.is_finite()
         })
     {
@@ -837,18 +841,18 @@ pub fn human_summary(report: &SimulationReport) -> String {
         .map(|m| f64::from(m.wealth))
         .sum::<f64>()
         / n;
-    let notoriety = report
+    let infamy = report
         .metrics
         .iter()
-        .map(|m| f64::from(m.notoriety))
+        .map(|m| f64::from(m.infamy))
         .sum::<f64>()
         / n;
     format!(
-        "{} agents for {} days; mean wealth {:.1}; mean notoriety {:.2}; Pareto frontier {:?}; digest {}",
+        "{} agents for {} days; mean wealth {:.1}; mean infamy {:.2}; Pareto frontier {:?}; digest {}",
         report.metrics.len(),
         report.manifest.config.days,
         wealth,
-        notoriety,
+        infamy,
         report.pareto_frontier.agent_ids,
         report.canonical_digest
     )

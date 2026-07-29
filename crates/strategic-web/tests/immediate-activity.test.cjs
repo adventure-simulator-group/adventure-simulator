@@ -26,13 +26,13 @@ test('profession rewards use persisted accrual and authoritative tier thresholds
   const eightHours = 8 * 60 * 1440;
   assert.deepEqual(professionReward({
     accrued: eightHours - 60 * 1440, threshold: eightHours, sign: -1, reward: 'gold',
-  }, 60), { gold: -1, virtue: 0 });
+  }, 60), { gold: -1, reputation: 0 });
   assert.deepEqual(professionReward({
     accrued: 0, threshold: eightHours, sign: 1, reward: 'gold',
-  }, 7 * 60), { gold: 0, virtue: 0 });
+  }, 7 * 60), { gold: 0, reputation: 0 });
   assert.deepEqual(professionReward({
-    accrued: 0, threshold: 2 * 60 * 1440, sign: 1, reward: 'virtue',
-  }, 4 * 60), { gold: 0, virtue: 2 });
+    accrued: 0, threshold: 2 * 60 * 1440, sign: 1, reward: 'fame',
+  }, 4 * 60), { gold: 0, reputation: 2 });
 });
 
 test('focus wrapping excludes hidden controls and wraps in both directions', () => {

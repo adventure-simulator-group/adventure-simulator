@@ -178,9 +178,9 @@ use crate::spacetimedb::{
     BackendPhysiologyAdministration, BackendPhysiologyChart, Character, CharacterAffinity,
     CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
-    CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
-    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, CharacterVirtue,
-    ContractPresentation, ContractPresentationStatus, FoodLot, InventoryItem, InventoryItemAmount,
+    CharacterPersonality, CharacterSettlementReputation, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
+    ContractPresentationStatus, FoodLot, InventoryItem, InventoryItemAmount,
     InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
     LimbRegion, Party, PartyInventoryItem, PartyItemAmount, PartyJourney, PartyJourneyItinerary,
     PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, RecruitmentOffer,
@@ -2849,9 +2849,13 @@ async fn render_party_personal(
         }
         None => 0.0,
     };
-    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", character_id)
-        .await
-        .map_or(0.0, |virtue| virtue.value);
+    let reputation = query_local_reputation(&state, character_id, &location.id).await;
+    let fame = reputation
+        .as_ref()
+        .map_or(0.0, |value| value.fame as f32 / 100.0);
+    let infamy = reputation
+        .as_ref()
+        .map_or(0.0, |value| value.infamy as f32 / 100.0);
     // Authoritative personality is private. Ordinary pages render only
     // observer-specific beliefs through the dedicated social route.
     let personality: Option<CharacterPersonality> = None;
@@ -2936,7 +2940,8 @@ async fn render_party_personal(
             combat_profile,
             activity_preview,
             religious_demand.as_ref(),
-            virtue,
+            fame,
+            infamy,
             personality.as_ref(),
             &medical,
             can_examine,
@@ -3893,9 +3898,13 @@ async fn render_party_stats(
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
         .await
         .and_then(|condition| condition.religion_id);
-    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", character_id)
-        .await
-        .map_or(0.0, |virtue| virtue.value);
+    let reputation = query_local_reputation(&state, character_id, &location.id).await;
+    let fame = reputation
+        .as_ref()
+        .map_or(0.0, |value| value.fame as f32 / 100.0);
+    let infamy = reputation
+        .as_ref()
+        .map_or(0.0, |value| value.infamy as f32 / 100.0);
     let personality: Option<CharacterPersonality> = None;
     let medical = medical_presentation(&state, active_character.id, character_id).await;
     let injuries = state
@@ -3935,7 +3944,8 @@ async fn render_party_stats(
             religion.as_deref(),
             active_party.as_ref(),
             selected_party.as_ref(),
-            virtue,
+            fame,
+            infamy,
             personality.as_ref(),
             &medical,
             can_examine,
@@ -4160,9 +4170,13 @@ async fn party_social(
         .ok()
         .and_then(|value| value.as_ref())
         .and_then(|value| value.religion_id.clone());
-    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", target_id)
-        .await
-        .map_or(0.0, |value| value.value);
+    let reputation = query_local_reputation(&state, target_id, &location.id).await;
+    let fame = reputation
+        .as_ref()
+        .map_or(0.0, |value| value.fame as f32 / 100.0);
+    let infamy = reputation
+        .as_ref()
+        .map_or(0.0, |value| value.infamy as f32 / 100.0);
     let target_minute = query_single::<CharacterTime>(&state, "character_time", target_id)
         .await
         .map_or(0, |v| v.minutes);
@@ -4317,7 +4331,8 @@ async fn party_social(
             true,
         ),
         religion_id,
-        virtue,
+        fame,
+        infamy,
         beliefs,
         shared_concerns,
         addressed_source_ids,
@@ -5113,8 +5128,7 @@ async fn rest(
     let before_time =
         query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
             .await;
-    let before_notoriety =
-        query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
+    let before_reputation = query_local_reputation(&state, character_id, &id).await;
     let character_settlement_id = before_character
         .as_ref()
         .and_then(|(character, _)| character.current_settlement_id.as_deref())
@@ -5174,8 +5188,7 @@ async fn rest(
     let after_time =
         query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
             .await;
-    let after_notoriety =
-        query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id).await;
+    let after_reputation = query_local_reputation(&state, character_id, &id).await;
     let summary = rest_summary(
         before_character
             .as_ref()
@@ -5189,8 +5202,8 @@ async fn rest(
         after_skills.as_ref(),
         before_time.as_ref(),
         after_time.as_ref(),
-        before_notoriety.as_ref(),
-        after_notoriety.as_ref(),
+        before_reputation.as_ref(),
+        after_reputation.as_ref(),
         at_inn,
         requested_minutes,
     );
@@ -5253,6 +5266,23 @@ async fn query_single<T: serde::de::DeserializeOwned>(
         .next()
 }
 
+async fn query_local_reputation(
+    state: &AppState,
+    character_id: u64,
+    settlement_id: &str,
+) -> Option<CharacterSettlementReputation> {
+    state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_settlement_reputation WHERE character_id = {character_id} AND settlement_id = {}",
+            crate::spacetimedb::sql_string_literal(settlement_id)
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+}
+
 fn rest_summary(
     before_inventory: &[InventoryItem],
     after_inventory: &[InventoryItem],
@@ -5262,8 +5292,8 @@ fn rest_summary(
     after_skills: Option<&CharacterSkills>,
     before_time: Option<&crate::spacetimedb::CharacterTime>,
     after_time: Option<&crate::spacetimedb::CharacterTime>,
-    before_notoriety: Option<&CharacterNotoriety>,
-    after_notoriety: Option<&CharacterNotoriety>,
+    before_reputation: Option<&CharacterSettlementReputation>,
+    after_reputation: Option<&CharacterSettlementReputation>,
     at_inn: bool,
     requested_minutes: u64,
 ) -> RestSummary {
@@ -5283,8 +5313,11 @@ fn rest_summary(
     let (full_board_gold_spent, additional_gold_spent) =
         rest_spending_breakdown(gold_spent, at_inn, requested_minutes);
     let gold_earned = after_currency.saturating_sub(before_currency);
-    let notoriety_gained = after_notoriety.map_or(0.0, |after| {
-        after.value - before_notoriety.map_or(0.0, |before| before.value)
+    let fame_gained = after_reputation.map_or(0.0, |after| {
+        (after.fame - before_reputation.map_or(0, |before| before.fame)) as f32 / 100.0
+    });
+    let infamy_gained = after_reputation.map_or(0.0, |after| {
+        (after.infamy - before_reputation.map_or(0, |before| before.infamy)) as f32 / 100.0
     });
     let healed = match (before_limbs, after_limbs) {
         (Some(before), Some(after)) => limb_deltas(before, after),
@@ -5299,7 +5332,8 @@ fn rest_summary(
         full_board_gold_spent,
         additional_gold_spent,
         gold_earned,
-        notoriety_gained,
+        fame_gained,
+        infamy_gained,
         healed,
         trained,
     }

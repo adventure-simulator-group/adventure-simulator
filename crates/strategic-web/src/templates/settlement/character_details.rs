@@ -121,7 +121,8 @@ pub(crate) struct CharacterSheetView<'a> {
     pub combat_profile: CombatTrainingProfile,
     pub religion_id: Option<&'a str>,
     pub training_religion_id: Option<&'a str>,
-    pub virtue: f32,
+    pub fame: f32,
+    pub infamy: f32,
     pub attributes_title: &'a str,
     pub skills_title: &'a str,
     pub description: &'a str,
@@ -184,7 +185,8 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
             (character_bio_rail(
                 view.character,
                 view.religion_id,
-                view.virtue,
+                view.fame,
+                view.infamy,
                 view.personality,
                 view.can_renounce,
                 view.location_path,
@@ -236,7 +238,8 @@ pub fn party_personal_page(
     combat_profile: CombatTrainingProfile,
     activity_preview: ActivityPreviewRates,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
-    virtue: f32,
+    fame: f32,
+    infamy: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     _can_examine: bool,
@@ -323,7 +326,8 @@ pub fn party_personal_page(
         combat_profile,
         religion_id,
         training_religion_id: religion_id.or(location.religion_id.as_deref()),
-        virtue,
+        fame,
+        infamy,
         attributes_title: "Your attributes",
         skills_title: "Your skills",
         description: "Your identity, condition, and capabilities",
@@ -372,7 +376,8 @@ pub fn party_stats_page(
     religion_id: Option<&str>,
     active_party: Option<&Party>,
     selected_party: Option<&Party>,
-    virtue: f32,
+    fame: f32,
+    infamy: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     _can_examine: bool,
@@ -447,7 +452,8 @@ pub fn party_stats_page(
         combat_profile,
         religion_id,
         training_religion_id: religion_id.or(location.religion_id.as_deref()),
-        virtue,
+        fame,
+        infamy,
         attributes_title: &selected_attributes_title,
         skills_title: &selected_skills_title,
         description: "Party member identity and capabilities",
@@ -495,7 +501,8 @@ pub(super) fn religion_name(religion_id: Option<&str>) -> &'static str {
 fn character_bio_rail(
     character: &Character,
     religion_id: Option<&str>,
-    virtue: f32,
+    fame: f32,
+    infamy: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     can_renounce: bool,
     location_path: &str,
@@ -507,7 +514,8 @@ fn character_bio_rail(
         (sidebar_section("Bio", html! {
             dl class="character-bio" {
                 div { dt class="metric-label" { (decorative_game_icon("calendar")) span { "Age" } } dd { (character.age_years) " years" } }
-                div { dt class="metric-label" { (decorative_game_icon("spiked-halo")) span { "Virtue" } } dd title="Immoral activities reduce Virtue; consequences will be added later." { (format!("{virtue:+.1}")) } }
+                div { dt class="metric-label" { (decorative_game_icon("spiked-halo")) span { "Fame" } } dd title="Favorable stories known in this settlement." { (format!("{fame:.1}")) } }
+                div { dt class="metric-label" { (decorative_game_icon("scales")) span { "Infamy" } } dd title="Crimes and scandals known in this settlement." { (format!("{infamy:.1}")) } }
                 @if let Some(personality) = personality {
                     @let tags = personality_tags(personality);
                     @if !tags.is_empty() {

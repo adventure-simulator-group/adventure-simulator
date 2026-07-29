@@ -2,7 +2,7 @@
 //!
 //! Companies and recruitment remain strategic authority. Automatic quest
 //! investigation/intervention was intentionally removed: unresolved hostile
-//! cases now escalate and spread through public notoriety until players act.
+//! cases now escalate and spread through public awareness until players act.
 
 use spacetimedb::table;
 

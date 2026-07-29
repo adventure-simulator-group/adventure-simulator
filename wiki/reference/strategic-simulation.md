@@ -60,8 +60,8 @@ party-decision limitation.
 
 Reports include a bounded decision trace, bounded periodic snapshots, terminal
 reason, wealth, final and gained skill hours, activity and leisure time,
-notoriety, and cumulative risk exposure. Reports also contain the typed Pareto
-frontier that maximizes wealth and skill-hour gain while minimizing notoriety
+settlement-aware Infamy, and cumulative risk exposure. Reports also contain the typed Pareto
+frontier that maximizes wealth and skill-hour gain while minimizing Infamy
 and risk exposure; the human summary prints its stable agent IDs. Risk exposure is a metric, not a fake
 combat or incident outcome. Pareto utilities require typed maximize/minimize
 objectives, preserve exact ties, and reject nonfinite values. The `matched`
@@ -570,13 +570,13 @@ normal settlement activity. NPC adventuring companies remain persistent
 recruiting entities, but there is no NPC quest-intervention policy, candidate
 view, strategy reducer, outcome table, or story anthology. Unresolved hostile
 `RecurringDepredation` cases continue until players resolve them; deterministic
-incident ordinals drive bounded combat escalation and public notoriety.
+incident ordinals drive bounded combat escalation and public awareness.
 
 Because the production world clock is tied to elapsed wall time, a claimed
 disposable simulation has one additional bounded reducer that advances that
 same authoritative clock by a requested number of game minutes. The core loop
 uses it once per active simulated day, then invokes ordinary settlement
-activity so follow-up incidents, escalating penalties, notoriety, and
+activity so follow-up incidents, escalating penalties, public awareness, and
 recruitment all occur through the production systems. The capability is
 absent from normal module builds. Simulation characters receive a small
 starting purse so an inn-only seed settlement cannot deadlock before its first

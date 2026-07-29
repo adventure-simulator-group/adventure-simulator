@@ -145,7 +145,7 @@ pub struct MonsterInvestigation {
     pub distinguishing_clues: Vec<String>,
     pub preparation_advice: String,
     /// Higher values make evidence easier to interpret and increase the
-    /// asymptotic cap on public notoriety.
+    /// asymptotic cap on public awareness.
     pub investigability: u8,
     pub identification_challenge: bool,
     pub location_challenge: bool,

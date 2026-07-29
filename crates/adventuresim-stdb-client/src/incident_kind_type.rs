@@ -13,6 +13,10 @@ pub enum IncidentKind {
     RaidingRetaliation,
 
     ThieveryDiscovery,
+
+    CarousingDisorder,
+
+    AuthorityArrest,
 }
 
 impl __sdk::InModule for IncidentKind {

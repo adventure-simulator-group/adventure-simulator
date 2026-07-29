@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub mod abandon_contract_reducer;
 pub mod accept_contract_reducer;
 pub mod accept_party_join_request_reducer;
+pub mod activity_incident_entropy_type;
 pub mod administer_preparation_reducer;
 pub mod advance_simulation_world_time_reducer;
 pub mod agricultural_commodity_type;
@@ -20,6 +21,7 @@ pub mod answer_dialogue_prompt_reducer;
 pub mod approach_dialogue_witness_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
+pub mod authority_arrest_charge_type;
 pub mod authorize_tactical_server_claim_reducer;
 pub mod automatic_social_chat_type;
 pub mod autoresolve_mission_reducer;
@@ -113,6 +115,7 @@ pub mod case_finale_authority_type;
 pub mod case_finale_execution_type;
 pub mod case_outcome_fact_type;
 pub mod case_outcome_type;
+pub mod case_reputation_participant_type;
 pub mod case_resolution_status_type;
 pub mod case_site_authority_type;
 pub mod case_site_id_type;
@@ -143,9 +146,9 @@ pub mod character_morale_source_table;
 pub mod character_morale_source_type;
 pub mod character_needs_table;
 pub mod character_needs_type;
-pub mod character_notoriety_table;
-pub mod character_notoriety_type;
 pub mod character_personality_type;
+pub mod character_settlement_reputation_table;
+pub mod character_settlement_reputation_type;
 pub mod character_skills_table;
 pub mod character_skills_type;
 pub mod character_stats_table;
@@ -159,8 +162,6 @@ pub mod character_topic_knowledge_type;
 pub mod character_training_schedule_table;
 pub mod character_training_schedule_type;
 pub mod character_type;
-pub mod character_virtue_table;
-pub mod character_virtue_type;
 pub mod charcoal_burning_industry_type;
 pub mod chat_with_party_member_reducer;
 pub mod choose_dialogue_topic_reducer;
@@ -220,6 +221,7 @@ pub mod direct_historical_vegetation_type;
 pub mod disband_party_reducer;
 pub mod discard_inventory_items_reducer;
 pub mod discover_investigation_lead_reducer;
+pub mod discovered_offense_type;
 pub mod disease_notice_type;
 pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
@@ -488,6 +490,7 @@ pub mod rename_saved_recruitment_role_reducer;
 pub mod repair_order_table;
 pub mod repair_order_type;
 pub mod report_contract_reducer;
+pub mod reputation_event_type;
 pub mod request_general_party_join_reducer;
 pub mod request_party_action_reducer;
 pub mod request_tactical_server_for_scene_reducer;
@@ -618,6 +621,7 @@ pub mod submit_item_for_repair_reducer;
 pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
+pub mod surrender_to_authority_reducer;
 pub mod synchronize_character_time_reducer;
 pub mod tactical_mission_resolution_type;
 pub mod tactical_server_claim_type;
@@ -670,6 +674,7 @@ pub mod written_language_hours_type;
 pub use abandon_contract_reducer::abandon_contract;
 pub use accept_contract_reducer::accept_contract;
 pub use accept_party_join_request_reducer::accept_party_join_request;
+pub use activity_incident_entropy_type::ActivityIncidentEntropy;
 pub use administer_preparation_reducer::administer_preparation;
 pub use advance_simulation_world_time_reducer::advance_simulation_world_time;
 pub use agricultural_commodity_type::AgriculturalCommodity;
@@ -681,6 +686,7 @@ pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
 pub use approach_dialogue_witness_reducer::approach_dialogue_witness;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
+pub use authority_arrest_charge_type::AuthorityArrestCharge;
 pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
 pub use automatic_social_chat_type::AutomaticSocialChat;
 pub use autoresolve_mission_reducer::autoresolve_mission;
@@ -774,6 +780,7 @@ pub use case_finale_authority_type::CaseFinaleAuthority;
 pub use case_finale_execution_type::CaseFinaleExecution;
 pub use case_outcome_fact_type::CaseOutcomeFact;
 pub use case_outcome_type::CaseOutcome;
+pub use case_reputation_participant_type::CaseReputationParticipant;
 pub use case_resolution_status_type::CaseResolutionStatus;
 pub use case_site_authority_type::CaseSiteAuthority;
 pub use case_site_id_type::CaseSiteId;
@@ -804,9 +811,9 @@ pub use character_morale_source_table::*;
 pub use character_morale_source_type::CharacterMoraleSource;
 pub use character_needs_table::*;
 pub use character_needs_type::CharacterNeeds;
-pub use character_notoriety_table::*;
-pub use character_notoriety_type::CharacterNotoriety;
 pub use character_personality_type::CharacterPersonality;
+pub use character_settlement_reputation_table::*;
+pub use character_settlement_reputation_type::CharacterSettlementReputation;
 pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
 pub use character_stats_table::*;
@@ -820,8 +827,6 @@ pub use character_topic_knowledge_type::CharacterTopicKnowledge;
 pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
-pub use character_virtue_table::*;
-pub use character_virtue_type::CharacterVirtue;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
 pub use chat_with_party_member_reducer::chat_with_party_member;
 pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
@@ -881,6 +886,7 @@ pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
 pub use disband_party_reducer::disband_party;
 pub use discard_inventory_items_reducer::discard_inventory_items;
 pub use discover_investigation_lead_reducer::discover_investigation_lead;
+pub use discovered_offense_type::DiscoveredOffense;
 pub use disease_notice_type::DiseaseNotice;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
@@ -1149,6 +1155,7 @@ pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
 pub use repair_order_table::*;
 pub use repair_order_type::RepairOrder;
 pub use report_contract_reducer::report_contract;
+pub use reputation_event_type::ReputationEvent;
 pub use request_general_party_join_reducer::request_general_party_join;
 pub use request_party_action_reducer::request_party_action;
 pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_scene;
@@ -1279,6 +1286,7 @@ pub use submit_item_for_repair_reducer::submit_item_for_repair;
 pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
+pub use surrender_to_authority_reducer::surrender_to_authority;
 pub use synchronize_character_time_reducer::synchronize_character_time;
 pub use tactical_mission_resolution_type::TacticalMissionResolution;
 pub use tactical_server_claim_type::TacticalServerClaim;
@@ -1894,6 +1902,10 @@ pub enum Reducer {
         service: String,
         inventory_item_id: u64,
     },
+    SurrenderToAuthority {
+        character_id: u64,
+        incident_id: String,
+    },
     SynchronizeCharacterTime {
         character_id: u64,
     },
@@ -2096,6 +2108,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
+            Reducer::SurrenderToAuthority { .. } => "surrender_to_authority",
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TrackCaseSite { .. } => "track_case_site",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
@@ -3123,6 +3136,13 @@ Reducer::BeginWorldDataImport{
                 service: service.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
+            Reducer::SurrenderToAuthority{
+                character_id,
+                incident_id,
+}             => __sats::bsatn::to_vec(&surrender_to_authority_reducer::SurrenderToAuthorityArgs {
+                character_id: character_id.clone(),
+                incident_id: incident_id.clone(),
+}),
             Reducer::SynchronizeCharacterTime{
                 character_id,
 }             => __sats::bsatn::to_vec(&synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
@@ -3312,13 +3332,12 @@ pub struct DbUpdate {
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
     character_needs: __sdk::TableUpdate<CharacterNeeds>,
-    character_notoriety: __sdk::TableUpdate<CharacterNotoriety>,
+    character_settlement_reputation: __sdk::TableUpdate<CharacterSettlementReputation>,
     character_skills: __sdk::TableUpdate<CharacterSkills>,
     character_stats: __sdk::TableUpdate<CharacterStats>,
     character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
     character_time: __sdk::TableUpdate<CharacterTime>,
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
-    character_virtue: __sdk::TableUpdate<CharacterVirtue>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
     food_lot: __sdk::TableUpdate<FoodLot>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
@@ -3557,9 +3576,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_needs" => db_update
                     .character_needs
                     .append(character_needs_table::parse_table_update(table_update)?),
-                "character_notoriety" => db_update
-                    .character_notoriety
-                    .append(character_notoriety_table::parse_table_update(table_update)?),
+                "character_settlement_reputation" => {
+                    db_update.character_settlement_reputation.append(
+                        character_settlement_reputation_table::parse_table_update(table_update)?,
+                    )
+                }
                 "character_skills" => db_update
                     .character_skills
                     .append(character_skills_table::parse_table_update(table_update)?),
@@ -3575,9 +3596,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_training_schedule" => db_update.character_training_schedule.append(
                     character_training_schedule_table::parse_table_update(table_update)?,
                 ),
-                "character_virtue" => db_update
-                    .character_virtue
-                    .append(character_virtue_table::parse_table_update(table_update)?),
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
@@ -3820,12 +3838,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character_needs = cache
             .apply_diff_to_table::<CharacterNeeds>("character_needs", &self.character_needs)
             .with_updates_by_pk(|row| &row.character_id);
-        diff.character_notoriety = cache
-            .apply_diff_to_table::<CharacterNotoriety>(
-                "character_notoriety",
-                &self.character_notoriety,
+        diff.character_settlement_reputation = cache
+            .apply_diff_to_table::<CharacterSettlementReputation>(
+                "character_settlement_reputation",
+                &self.character_settlement_reputation,
             )
-            .with_updates_by_pk(|row| &row.character_id);
+            .with_updates_by_pk(|row| &row.id);
         diff.character_skills = cache
             .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills)
             .with_updates_by_pk(|row| &row.character_id);
@@ -3846,9 +3864,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_training_schedule",
                 &self.character_training_schedule,
             )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_virtue = cache
-            .apply_diff_to_table::<CharacterVirtue>("character_virtue", &self.character_virtue)
             .with_updates_by_pk(|row| &row.character_id);
         diff.food_lot = cache
             .apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot)
@@ -4352,8 +4367,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_needs" => db_update
                     .character_needs
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_notoriety" => db_update
-                    .character_notoriety
+                "character_settlement_reputation" => db_update
+                    .character_settlement_reputation
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_skills" => db_update
                     .character_skills
@@ -4369,9 +4384,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_training_schedule" => db_update
                     .character_training_schedule
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_virtue" => db_update
-                    .character_virtue
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
@@ -4680,8 +4692,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_needs" => db_update
                     .character_needs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_notoriety" => db_update
-                    .character_notoriety
+                "character_settlement_reputation" => db_update
+                    .character_settlement_reputation
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_skills" => db_update
                     .character_skills
@@ -4697,9 +4709,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_training_schedule" => db_update
                     .character_training_schedule
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_virtue" => db_update
-                    .character_virtue
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
@@ -4916,13 +4925,12 @@ pub struct AppliedDiff<'r> {
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
     character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
-    character_notoriety: __sdk::TableAppliedDiff<'r, CharacterNotoriety>,
+    character_settlement_reputation: __sdk::TableAppliedDiff<'r, CharacterSettlementReputation>,
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
     character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
     character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
     character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
-    character_virtue: __sdk::TableAppliedDiff<'r, CharacterVirtue>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
     food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
@@ -5230,9 +5238,9 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.character_needs,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<CharacterNotoriety>(
-            "character_notoriety",
-            &self.character_notoriety,
+        callbacks.invoke_table_row_callbacks::<CharacterSettlementReputation>(
+            "character_settlement_reputation",
+            &self.character_settlement_reputation,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterSkills>(
@@ -5258,11 +5266,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>(
             "character_training_schedule",
             &self.character_training_schedule,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterVirtue>(
-            "character_virtue",
-            &self.character_virtue,
             event,
         );
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
@@ -6179,13 +6182,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_limbs_table::register_table(client_cache);
         character_morale_source_table::register_table(client_cache);
         character_needs_table::register_table(client_cache);
-        character_notoriety_table::register_table(client_cache);
+        character_settlement_reputation_table::register_table(client_cache);
         character_skills_table::register_table(client_cache);
         character_stats_table::register_table(client_cache);
         character_strategic_condition_table::register_table(client_cache);
         character_time_table::register_table(client_cache);
         character_training_schedule_table::register_table(client_cache);
-        character_virtue_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
         food_lot_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
@@ -6286,13 +6288,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_limbs",
         "character_morale_source",
         "character_needs",
-        "character_notoriety",
+        "character_settlement_reputation",
         "character_skills",
         "character_stats",
         "character_strategic_condition",
         "character_time",
         "character_training_schedule",
-        "character_virtue",
         "connected_players",
         "food_lot",
         "inventory_item",

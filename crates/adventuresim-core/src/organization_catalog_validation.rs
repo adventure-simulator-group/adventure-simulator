@@ -516,8 +516,8 @@ pub fn validate_documents(
             "activity",
         )?;
         keys(activity, &["training", "reward"], source, "activity")?;
-        if !["gold", "virtue"].contains(&text(activity, source, "reward")?) {
-            return Err(format!("{source}: activity.reward must be gold or virtue"));
+        if !["gold", "fame"].contains(&text(activity, source, "reward")?) {
+            return Err(format!("{source}: activity.reward must be gold or fame"));
         }
         let training = array(activity, source, "training")?;
         let mut total = 0.0;

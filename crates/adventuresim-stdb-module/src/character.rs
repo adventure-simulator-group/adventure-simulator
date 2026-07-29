@@ -26,7 +26,7 @@ use crate::{
     strategic::{inventory_quantity_target, party_authority, party_member, settlement},
     surgery::{limb_injury, retained_projectile},
     tactical::tactical_server_authority,
-    time::{character_notoriety, character_time, character_training_schedule},
+    time::{character_time, character_training_schedule},
 };
 
 /// General character info
@@ -676,10 +676,8 @@ fn delete_character_data(
         .character_training_schedule()
         .character_id()
         .delete(character.id);
-    ctx.db
-        .character_notoriety()
-        .character_id()
-        .delete(character.id);
+    crate::reputation::delete_character_reputation(ctx, character.id);
+    crate::strategic::delete_activity_incident_entropy(ctx, character.id);
     ctx.db.character_limbs().character_id().delete(character.id);
     ctx.db.character_equip().character_id().delete(character.id);
     ctx.db

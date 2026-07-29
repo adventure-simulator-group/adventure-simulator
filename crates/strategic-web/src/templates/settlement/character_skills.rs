@@ -505,9 +505,10 @@ pub(super) fn character_summary_icons(
 pub struct ActivityPreviewRates {
     labor_gold_per_hour: f32,
     thievery_gold_per_hour: f32,
-    thievery_virtue_per_hour: f32,
+    thievery_reputation_per_hour: f32,
     raiding_gold_per_hour: f32,
-    raiding_virtue_per_hour: f32,
+    raiding_reputation_per_hour: f32,
+    reputation_multiplier: f32,
     current_fatigue: f32,
     profession: std::collections::BTreeMap<String, ProfessionActivityPreview>,
 }
@@ -522,6 +523,7 @@ struct ProfessionActivityPreview {
     practice_reward: &'static str,
     tier_label: String,
     practice_allowed: bool,
+    reputation_multiplier: f32,
 }
 
 const PROFESSION_ACCRUAL_SCALE: u64 = MINUTES_PER_DAY;
@@ -549,8 +551,8 @@ impl ProfessionActivityPreview {
                 .saturating_mul(weight),
         );
         let delta = (after / threshold).saturating_sub(accrued / threshold) as f32 * sign;
-        if reward == "virtue" {
-            [0.0, delta]
+        if reward == "fame" {
+            [0.0, delta * self.reputation_multiplier]
         } else {
             [delta, 0.0]
         }
@@ -611,6 +613,11 @@ impl ActivityPreviewRates {
             settlement.population_level,
             settlement.population_estimate,
         );
+        let reputation_multiplier = adventuresim_core::reputation::local_multiplier_bps(
+            settlement.population_level,
+            settlement.population_estimate,
+        ) as f32
+            / 10_000.0;
         let combat = capability
             .weapon_precision
             .max(capability.athletics)
@@ -618,9 +625,11 @@ impl ActivityPreviewRates {
         Self {
             labor_gold_per_hour: (strength.max(0.0) + endurance.max(0.0)) / 8.0,
             thievery_gold_per_hour: population.max(0.0) * (1.0 + stealth.max(0.0)) / 8.0,
-            thievery_virtue_per_hour: -population.max(0.0) * 0.5 / (1.0 + stealth.max(0.0)),
+            thievery_reputation_per_hour: -population.max(0.0) * 0.5 / (1.0 + stealth.max(0.0))
+                * reputation_multiplier,
             raiding_gold_per_hour: (2.0 + combat.max(0.0)) / 6.0,
-            raiding_virtue_per_hour: -1.5,
+            raiding_reputation_per_hour: -1.5 * reputation_multiplier,
+            reputation_multiplier,
             current_fatigue,
             profession: Default::default(),
         }
@@ -656,7 +665,7 @@ impl ActivityPreviewRates {
                 u64::from(rank.practice_reward_interval_minutes) * MINUTES_PER_DAY;
             let practice_reward = match definition.activity.reward {
                 adventuresim_core::organization::ActivityReward::Gold => "gold",
-                adventuresim_core::organization::ActivityReward::Virtue => "virtue",
+                adventuresim_core::organization::ActivityReward::Fame => "fame",
             };
             self.profession.insert(
                 row.organization_id.clone(),
@@ -687,6 +696,7 @@ impl ActivityPreviewRates {
                         .rank(&row.rank_id)
                         .map_or_else(|| row.rank_id.clone(), |rank| rank.name.clone()),
                     practice_allowed: rank.practice_allowed,
+                    reputation_multiplier: self.reputation_multiplier,
                 },
             );
         }
@@ -987,7 +997,7 @@ fn skills_table(
                         tr class="schedule-section-heading" {
                             th { span class="sr-only" { "Activities" } }
                             th scope="col" title="Currency" { (schedule_header_icon("coins", "Currency")) }
-                            th scope="col" title="Virtue" { (schedule_header_icon("scales", "Virtue")) }
+                            th scope="col" title="Fame / Infamy" { (schedule_header_icon("scales", "Fame / Infamy")) }
                             th scope="col" title="Morale" { (schedule_header_icon("sun", "Morale")) }
                             th scope="col" title="Fatigue" { (schedule_header_icon("night-sleep", "Fatigue")) }
                             th scope="col" title="Effective skill-hours gained at the current daily allocation" { (schedule_header_icon("open-book", "Skill-hours")) }
@@ -1008,7 +1018,7 @@ fn skills_table(
                             },
                         ))
                         (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, combat_training, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
-                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, immediate_actions, ActivityEffectRates::carousing(), None, None, instinct_training, "Drink and socialize to improve morale and train Charm at 25% speed, at a small cost to Virtue."))
+                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, immediate_actions, ActivityEffectRates::carousing(), None, None, instinct_training, "Drink and socialize to improve morale and train Charm at 25% speed. Ordinary carousing changes no reputation, but a disorder incident can add Infamy; Drunkards are at substantially higher risk."))
                         @let apprenticeship_id = schedule.downtime.apprenticeship_organization_id.as_deref().filter(|id| preview.profession.contains_key(*id)).or_else(|| preview.profession.keys().next().map(String::as_str));
                         @if let Some(service_id) = apprenticeship_id {
                             (schedule_organization_selection("Training organization", "apprenticeship_organization_id", service_id, preview.profession.iter().map(|(id, entry)| (id.as_str(), entry.tier_label.as_str())).collect()))
@@ -1023,8 +1033,8 @@ fn skills_table(
                             }
                         }
                         (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, None, instinct_training, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
-                        (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, None, all_training, "Settlement downtime can earn coin and risk discovery while training Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, None, combat_training, "Settlement downtime can earn coin and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
+                        (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_reputation_per_hour, 0.0, 0.0), None, None, all_training, "Settlement downtime can earn coin and add local Infamy while risking discovery and training Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_reputation_per_hour, 0.0, 0.0), None, None, combat_training, "Settlement downtime can earn coin and add substantial local Infamy while risking retaliation."))
                         @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
                         (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, false, ActivityEffectRates::default(), Some(leisure), None, 1.0, "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
@@ -1897,7 +1907,7 @@ fn skill_rank_bar_markup(
 #[derive(Clone, Copy, Debug, Default)]
 struct ActivityEffectRates {
     gold_per_hour: f32,
-    virtue_per_hour: f32,
+    reputation_per_hour: f32,
     morale_per_hour: f32,
     fatigue_per_hour: f32,
     prayer_morale: bool,
@@ -1942,10 +1952,10 @@ fn leisure_preview(schedule: &ScheduleAllocation, current_fatigue: f32) -> Leisu
 }
 
 impl ActivityEffectRates {
-    const fn linear(gold: f32, virtue: f32, morale: f32, fatigue: f32) -> Self {
+    const fn linear(gold: f32, reputation: f32, morale: f32, fatigue: f32) -> Self {
         Self {
             gold_per_hour: gold,
-            virtue_per_hour: virtue,
+            reputation_per_hour: reputation,
             morale_per_hour: morale,
             fatigue_per_hour: fatigue,
             prayer_morale: false,
@@ -1974,7 +1984,7 @@ impl ActivityEffectRates {
     const fn carousing() -> Self {
         Self {
             gold_per_hour: 0.0,
-            virtue_per_hour: -0.125,
+            reputation_per_hour: 0.0,
             prayer_morale: true,
             prayer_morale_multiplier: 1.0,
             morale_limit: adventuresim_core::activity::CAROUSING_MORALE_LIMIT,
@@ -1994,7 +2004,7 @@ impl ActivityEffectRates {
         };
         [
             (self.gold_per_hour * hours).round(),
-            self.virtue_per_hour * hours,
+            self.reputation_per_hour * hours,
             morale,
             self.fatigue_per_hour * hours,
         ]
@@ -2101,7 +2111,7 @@ fn schedule_special_row(
         tr class="party-skill-row schedule-special-row" title=(description)
             data-activity-row data-activity-allocation=(allocation_name)
             data-gold-rate=(effects.gold_per_hour)
-            data-virtue-rate=(effects.virtue_per_hour)
+            data-reputation-rate=(effects.reputation_per_hour)
             data-morale-rate=(effects.morale_per_hour)
             data-fatigue-rate=(effects.fatigue_per_hour)
             data-prayer-morale=[effects.prayer_morale.then_some("true")]
@@ -2125,7 +2135,7 @@ fn schedule_special_row(
                 span class="sr-only" { (label) }
             }
             (activity_effect_cell("gold", values[0]))
-            (activity_effect_cell("virtue", values[1]))
+            (activity_effect_cell("reputation", values[1]))
             (activity_effect_cell("morale", values[2]))
             (activity_effect_cell("fatigue", values[3]))
             (activity_training_cell(
@@ -2232,14 +2242,14 @@ fn immediate_activity_dialog(action: &str) -> Markup {
                     thead { tr {
                         th scope="col" { "Activity" }
                         th scope="col" { (schedule_header_icon("coins", "Currency")) }
-                        th scope="col" { (schedule_header_icon("scales", "Virtue")) }
+                        th scope="col" { (schedule_header_icon("scales", "Fame / Infamy")) }
                         th scope="col" { (schedule_header_icon("sun", "Morale")) }
                         th scope="col" { (schedule_header_icon("night-sleep", "Fatigue")) }
                         th scope="col" { (schedule_header_icon("open-book", "Skill-hours")) }
                     } }
                     tbody { tr class="party-skill-row schedule-special-row" data-activity-preview-row {
                         th scope="row" data-activity-preview-label { "Activity" }
-                        @for kind in ["gold", "virtue", "morale", "fatigue"] {
+                        @for kind in ["gold", "reputation", "morale", "fatigue"] {
                             td class="schedule-effect schedule-effect-neutral" data-activity-effect=(kind) { "0" }
                         }
                         td class="schedule-effect schedule-training-effect" data-activity-effect="training" { "--" }
@@ -2611,7 +2621,7 @@ mod tests {
             1
         );
         assert!(!rendered.contains("aria-label=\"Automatic training\""));
-        for label in ["Currency", "Virtue", "Morale", "Fatigue"] {
+        for label in ["Currency", "Fame / Infamy", "Morale", "Fatigue"] {
             assert!(rendered.contains(&format!("aria-label=\"{label}\"")));
         }
         assert!(rendered.contains("data-religion-expand"));
@@ -2851,7 +2861,7 @@ mod tests {
             "Test activity",
         )
         .into_string();
-        for effect in ["gold", "virtue", "morale", "fatigue"] {
+        for effect in ["gold", "reputation", "morale", "fatigue"] {
             assert!(rendered.contains(&format!("data-activity-effect=\"{effect}\"")));
         }
         assert!(rendered.contains("schedule-effect-positive"));
@@ -2891,6 +2901,7 @@ mod tests {
             practice_reward: "gold",
             tier_label: "Apprentice".into(),
             practice_allowed: false,
+            reputation_multiplier: 1.0,
         };
         let apprenticeship = activity_training_cell(
             "Apprenticeship — herbalist",

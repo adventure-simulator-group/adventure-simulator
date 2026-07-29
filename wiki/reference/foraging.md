@@ -73,12 +73,12 @@ unlicensed or settlement/cultivated illegality also applies. Cultivated ground
 and otherwise-legal wilderness poaching start
 at DC 1.75; settlement exposure starts at DC 2.50; the worse base applies, plus
 0.075 per hour after the first, capped at 4.50. Failure subtracts exactly 1.0
-from `CharacterVirtue`; success avoids the loss. This never changes notoriety.
+as local Infamy; success avoids the reputation event.
 An interrupted search creates no partial yield. If illegal work consumed any
 time, it still makes exactly one exposure check using the actual elapsed
-duration and applies the same Virtue consequence on failure.
+duration and applies the same local Infamy consequence on failure.
 
 The reducer accepts stable category IDs rather than item IDs and retains those
 selected source IDs in one private replay authority row per character. The
 gateway-only projection omits seed, coordinates, context, DC, roll, and direct
-Virtue state, and exposes only the exact opaque request's player-safe result.
+reputation authority, and exposes only the exact opaque request's player-safe result.

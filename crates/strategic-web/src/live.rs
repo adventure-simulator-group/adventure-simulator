@@ -37,7 +37,7 @@ use adventuresim_stdb_client::{
     character_limbs_table::CharacterLimbsTableAccess,
     character_morale_source_table::CharacterMoraleSourceTableAccess,
     character_needs_table::CharacterNeedsTableAccess,
-    character_notoriety_table::CharacterNotorietyTableAccess,
+    character_settlement_reputation_table::CharacterSettlementReputationTableAccess,
     character_skills_table::CharacterSkillsTableAccess,
     character_stats_table::CharacterStatsTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
@@ -138,7 +138,7 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "character_needs",
     "character_strategic_condition",
     "character_morale_source",
-    "character_notoriety",
+    "character_settlement_reputation",
     "morale_event",
     "religious_demand",
     "recruitment_offer",
@@ -313,7 +313,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_needs());
         invalidate_on_changes!(state.0._connection.db.character_strategic_condition());
         invalidate_on_changes!(state.0._connection.db.character_morale_source());
-        invalidate_on_changes!(state.0._connection.db.character_notoriety());
+        invalidate_on_changes!(state.0._connection.db.character_settlement_reputation());
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
         invalidate_on_changes!(state.0._connection.db.recruitment_offer());
@@ -382,7 +382,7 @@ impl LiveState {
             .add_query(|query| query.from.retained_projectile())
             .add_query(|query| query.from.character_morale_source())
             .add_query(|query| query.from.character_needs())
-            .add_query(|query| query.from.character_notoriety())
+            .add_query(|query| query.from.character_settlement_reputation())
             .add_query(|query| query.from.character_skills())
             .add_query(|query| query.from.character_stats())
             .add_query(|query| query.from.character_strategic_condition())

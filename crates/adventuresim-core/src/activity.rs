@@ -71,7 +71,7 @@ pub fn thievery_gold(hours: f32, population_scale: f32, stealth_check: f32) -> u
         as u32
 }
 
-pub fn thievery_notoriety(hours: f32, population_scale: f32, stealth_check: f32) -> f32 {
+pub fn thievery_infamy(hours: f32, population_scale: f32, stealth_check: f32) -> f32 {
     hours.max(0.0) * population_scale.max(0.0) * 0.5 / (1.0 + stealth_check.max(0.0))
 }
 
@@ -85,7 +85,7 @@ pub fn raiding_gold(hours: f32, combat_check: f32) -> u32 {
     (hours.max(0.0) * (2.0 + combat_check.max(0.0)) / 6.0).round() as u32
 }
 
-pub fn raiding_notoriety(hours: f32) -> f32 {
+pub fn raiding_infamy(hours: f32) -> f32 {
     hours.max(0.0) * 1.5
 }
 
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn stealth_improves_thievery_outcomes() {
         assert!(thievery_gold(8.0, 2.0, 4.0) > thievery_gold(8.0, 2.0, 1.0));
-        assert!(thievery_notoriety(8.0, 2.0, 4.0) < thievery_notoriety(8.0, 2.0, 1.0));
+        assert!(thievery_infamy(8.0, 2.0, 4.0) < thievery_infamy(8.0, 2.0, 1.0));
         assert!(
             thievery_discovery_chance(8.0, 2.0, 4.0) < thievery_discovery_chance(8.0, 2.0, 1.0)
         );
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn raiding_is_conspicuous() {
         assert!(raiding_retaliation_chance(8.0) > 0.9);
-        assert_eq!(raiding_notoriety(8.0), 12.0);
+        assert_eq!(raiding_infamy(8.0), 12.0);
     }
 
     #[test]

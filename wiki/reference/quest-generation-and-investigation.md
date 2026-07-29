@@ -333,7 +333,7 @@ uninformed character receives no incident history, witness identity, evidence,
 or location. Follow-up evidence remains undiscovered merely because its hidden
 authority exists.
 
-Each follow-up also advances private public notoriety toward the threat's
+Each follow-up also advances private public awareness toward the threat's
 `investigability * 100` cap:
 `next = current + ceil((cap - current) * 3500 / 10000)`. At 6500 the case
 becomes publicly known. A cap below 6500 can never cross, so elusive threats

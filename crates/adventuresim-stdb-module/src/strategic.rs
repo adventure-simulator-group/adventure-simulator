@@ -1149,6 +1149,63 @@ mod healing_tests {
     }
 
     #[test]
+    fn activity_incidents_are_ordered_and_use_retry_stable_entropy() {
+        let source = include_str!("strategic.rs");
+        let reducer = source
+            .split("pub(crate) fn maybe_trigger_activity_incident")
+            .nth(1)
+            .and_then(|tail| tail.split("fn finish_strategic_incident").next())
+            .expect("activity incident reducer");
+        let retaliation = reducer.find("risks.raiding_retaliation").unwrap();
+        let discovery = reducer.find("risks.thievery_discovery").unwrap();
+        let disorder = reducer.find("risks.carousing_disorder").unwrap();
+        assert!(retaliation < discovery && discovery < disorder);
+        assert!(reducer.contains("adventuresim.activity-incident.v1"));
+        assert!(reducer.contains("IncidentKind::CarousingDisorder"));
+        assert!(reducer.contains("activity_incident_entropy()"));
+        assert!(reducer.contains("private_seed.to_le_bytes()"));
+        assert!(reducer.contains("has_charge && infamy > fame"));
+        assert!(reducer.contains("snapshot_arrest_charges"));
+    }
+
+    #[test]
+    fn authority_enforcement_is_charge_scoped_and_resistance_is_retry_stable() {
+        let source = include_str!("strategic.rs");
+        let surrender = source
+            .split("pub fn surrender_to_authority")
+            .nth(1)
+            .and_then(|tail| tail.split("fn finish_strategic_incident").next())
+            .expect("surrender reducer");
+        assert!(surrender.contains("unsettled_arrest_charges"));
+        assert!(surrender.contains("authority_fine"));
+        assert!(surrender.contains("settle_offenses(ctx, offenses)"));
+        assert!(!surrender.contains("local_reputation"));
+
+        let completion = source
+            .split("pub(crate) fn finish_incident_for_hostile_group")
+            .nth(1)
+            .and_then(|tail| tail.split("fn incident_group_matches").next())
+            .expect("incident completion");
+        assert!(completion.contains("IncidentKind::AuthorityArrest"));
+        assert!(completion.contains("resist-authority:"));
+        assert!(completion.contains("resisting_authority"));
+    }
+
+    #[test]
+    fn case_reputation_separates_canonical_and_public_battle_identity() {
+        let source = include_str!("strategic.rs");
+        let finale = source
+            .rsplit("fn execute_case_finale")
+            .next()
+            .and_then(|tail| tail.split("fn hostile_resolution_for_objective").next())
+            .expect("case finale");
+        assert!(finale.contains("crate::reputation::award_case_resolution"));
+        assert!(finale.contains("&case.id"));
+        assert!(finale.contains("&authority.public_case_id"));
+        assert!(finale.contains("&authority.settlement_id"));
+    }
+
+    #[test]
     fn autoresolve_uses_explicit_mission_and_exactly_once_source_authority() {
         let source = include_str!("strategic.rs");
         let body = source
@@ -4149,6 +4206,8 @@ pub enum IncidentKind {
     Religious,
     RaidingRetaliation,
     ThieveryDiscovery,
+    CarousingDisorder,
+    AuthorityArrest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -4179,6 +4238,19 @@ pub struct StrategicIncident {
     #[unique]
     pub hostile_group_id: String,
     pub created_at_minute: u64,
+}
+
+/// Private server entropy persisted for one activity interval. The public
+/// source identity remains deterministic while rolls cannot be predicted from
+/// player-controlled inputs.
+#[derive(Clone, Debug)]
+#[table(accessor = activity_incident_entropy)]
+pub struct ActivityIncidentEntropy {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub seed: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
@@ -14304,8 +14376,40 @@ pub(crate) fn maybe_trigger_activity_incident(
         .id()
         .find(settlement_id)
         .ok_or("Character's settlement not found")?;
-    let roll = |ctx: &ReducerContext| (ctx.random::<u64>() >> 40) as f32 / ((1_u32 << 24) as f32);
-    let outcome = if fervor_event_occurs(risks.raiding_retaliation, roll(ctx)) {
+    let occurrence_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    let entropy_id = format!(
+        "activity-entropy:{party_id}:{}:{character_id}:{occurrence_minute}",
+        settlement.id
+    );
+    let private_seed = if let Some(row) = ctx.db.activity_incident_entropy().id().find(&entropy_id)
+    {
+        row.seed
+    } else {
+        let seed = ctx.random::<u64>();
+        ctx.db
+            .activity_incident_entropy()
+            .insert(ActivityIncidentEntropy {
+                id: entropy_id,
+                character_id,
+                seed,
+            });
+        seed
+    };
+    let roll = |kind: &str| {
+        let mut hasher = Sha256::new();
+        hasher.update(b"adventuresim.activity-incident.v1\0");
+        hasher.update(private_seed.to_le_bytes());
+        hasher.update(kind.as_bytes());
+        let digest = hasher.finalize();
+        let sample = u32::from_le_bytes(digest[..4].try_into().unwrap());
+        sample as f32 / u32::MAX as f32
+    };
+    let outcome = if fervor_event_occurs(risks.raiding_retaliation, roll("raiding")) {
         Some((
             "raiding",
             "Retaliation at Dawn",
@@ -14313,7 +14417,7 @@ pub(crate) fn maybe_trigger_activity_incident(
             "armed_retainer",
             2,
         ))
-    } else if fervor_event_occurs(risks.thievery_discovery, roll(ctx)) {
+    } else if fervor_event_occurs(risks.thievery_discovery, roll("thievery")) {
         Some((
             "thievery",
             "Caught Red-Handed",
@@ -14321,36 +14425,58 @@ pub(crate) fn maybe_trigger_activity_incident(
             "town_watch",
             1,
         ))
+    } else if fervor_event_occurs(risks.carousing_disorder, roll("carousing_disorder")) {
+        Some((
+            "carousing_disorder",
+            "A Night Gone Wrong",
+            "A drunken scandal has drawn the town watch. The party can answer for the disorder or flee the settlement.",
+            "town_watch",
+            1,
+        ))
     } else {
-        None
+        let (fame, infamy) = crate::reputation::local_reputation(ctx, character_id, &settlement.id);
+        let has_charge =
+            !crate::reputation::unsettled_local_offenses(ctx, character_id, &settlement.id)
+                .is_empty();
+        (has_charge && infamy > fame && infamy.saturating_sub(fame) >= 1_000).then_some((
+            "authority_arrest",
+            "Wanted by the Watch",
+            "The local watch recognizes the party's wanted member and moves to make an arrest.",
+            "town_watch",
+            1,
+        ))
     };
     let Some((kind, title, description, enemy_type, difficulty)) = outcome else {
         return Ok(None);
     };
-    let (incident_kind, kind_key) = if kind == "raiding" {
-        (IncidentKind::RaidingRetaliation, "raiding")
-    } else {
-        (IncidentKind::ThieveryDiscovery, "thievery")
+    let (incident_kind, kind_key) = match kind {
+        "raiding" => (IncidentKind::RaidingRetaliation, "raiding"),
+        "thievery" => (IncidentKind::ThieveryDiscovery, "thievery"),
+        "carousing_disorder" => (IncidentKind::CarousingDisorder, "carousing_disorder"),
+        _ => (IncidentKind::AuthorityArrest, "authority_arrest"),
     };
-    let occurrence_minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .map_or(0, |time| time.minutes);
-    let source_id = activity_incident_source_id(
-        kind_key,
-        party_id,
-        &settlement.id,
-        character_id,
-        occurrence_minute,
-    );
-    create_strategic_incident(
+    let source_id = if incident_kind == IncidentKind::AuthorityArrest {
+        authority_arrest_source_id(
+            party_id,
+            &settlement.id,
+            character_id,
+            &crate::reputation::unsettled_local_offenses(ctx, character_id, &settlement.id),
+        )
+    } else {
+        activity_incident_source_id(
+            kind_key,
+            party_id,
+            &settlement.id,
+            character_id,
+            occurrence_minute,
+        )
+    };
+    let incident = create_strategic_incident(
         ctx,
         party_id,
         &settlement,
         character_id,
-        source_id,
+        source_id.clone(),
         IncidentSpec {
             kind: incident_kind,
             title,
@@ -14358,7 +14484,86 @@ pub(crate) fn maybe_trigger_activity_incident(
             enemy_type,
             difficulty,
         },
-    )
+    )?;
+    if let Some(incident_id) = incident.as_ref()
+        && incident_kind == IncidentKind::AuthorityArrest
+    {
+        if crate::reputation::snapshot_arrest_charges(
+            ctx,
+            &incident_id.value,
+            character_id,
+            &settlement.id,
+        ) == 0
+        {
+            return Err("Authority arrest has no unsettled offense provenance".into());
+        }
+    } else if incident.is_some() {
+        let infamy = match incident_kind {
+            IncidentKind::RaidingRetaliation => 500,
+            IncidentKind::ThieveryDiscovery => 300,
+            IncidentKind::CarousingDisorder => 200,
+            _ => 0,
+        };
+        crate::reputation::record_event(
+            ctx,
+            format!("incident-reputation:{}", source_id.value),
+            character_id,
+            &settlement.id,
+            kind_key,
+            &source_id.value,
+            0,
+            infamy,
+            occurrence_minute,
+        )?;
+        crate::reputation::record_discovered_offense(
+            ctx,
+            format!("offense:{}", source_id.value),
+            character_id,
+            &settlement.id,
+            kind_key,
+            u8::try_from(difficulty).unwrap_or(u8::MAX),
+            occurrence_minute,
+        );
+    }
+    Ok(incident)
+}
+
+/// Surrender to a local arrest and pay the bounded fine atomically. An
+/// insufficient balance leaves both money and incident untouched.
+#[reducer]
+pub fn surrender_to_authority(
+    ctx: &ReducerContext,
+    character_id: u64,
+    incident_id: String,
+) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    let incident = ctx
+        .db
+        .strategic_incident()
+        .id_key()
+        .find(&incident_id)
+        .ok_or("Authority incident not found")?;
+    if incident.status != IncidentStatus::Pending
+        || incident.kind != IncidentKind::AuthorityArrest
+        || incident.instigator_id != character_id
+    {
+        return Err("This character cannot surrender for that incident".into());
+    }
+    let offenses = crate::reputation::unsettled_arrest_charges(
+        ctx,
+        &incident.id.value,
+        character_id,
+        &incident.settlement_id,
+    );
+    let charges = offenses
+        .iter()
+        .map(|offense| (offense.severity, offense.settled))
+        .collect::<Vec<_>>();
+    let fine = adventuresim_core::reputation::authority_fine_for_charges(&charges)
+        .ok_or("This arrest has no unsettled charges")?;
+    crate::item::consume_personal_currency(ctx, character_id, fine)?;
+    crate::reputation::settle_offenses(ctx, offenses);
+    finish_strategic_incident(ctx, &incident.id, IncidentStatus::Resolved)
 }
 
 fn finish_strategic_incident(
@@ -14396,6 +14601,34 @@ pub(crate) fn finish_incident_for_hostile_group(
     let Some(incident) = incident else {
         return Ok(false);
     };
+    if incident.kind == IncidentKind::AuthorityArrest {
+        let minute = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(incident.instigator_id)
+            .map_or(0, |time| time.minutes);
+        crate::reputation::record_event(
+            ctx,
+            format!("resist-authority:{}", incident.id.value),
+            incident.instigator_id,
+            &incident.settlement_id,
+            "resisting_authority",
+            &incident.id.value,
+            0,
+            500,
+            minute,
+        )?;
+        crate::reputation::record_discovered_offense(
+            ctx,
+            format!("offense:resist-authority:{}", incident.id.value),
+            incident.instigator_id,
+            &incident.settlement_id,
+            "resisting_authority",
+            3,
+            minute,
+        );
+    }
     finish_strategic_incident(ctx, &incident.id, IncidentStatus::Resolved)?;
     Ok(true)
 }
@@ -14419,6 +14652,39 @@ fn activity_incident_source_id(
         value: format!(
             "activity:{kind}:{party_id}:{settlement_id}:{character_id}:{occurrence_minute}"
         ),
+    }
+}
+
+fn authority_arrest_source_id(
+    party_id: &str,
+    settlement_id: &str,
+    character_id: u64,
+    offenses: &[crate::reputation::DiscoveredOffense],
+) -> IncidentSourceId {
+    let mut hasher = Sha256::new();
+    hasher.update(b"adventuresim.authority-arrest.v1\0");
+    for offense in offenses {
+        hasher.update(offense.id.as_bytes());
+        hasher.update([0]);
+    }
+    let fingerprint = format!("{:x}", hasher.finalize());
+    IncidentSourceId {
+        value: format!(
+            "authority-arrest:{party_id}:{settlement_id}:{character_id}:{}",
+            &fingerprint[..16]
+        ),
+    }
+}
+
+pub(crate) fn delete_activity_incident_entropy(ctx: &ReducerContext, character_id: u64) {
+    for row in ctx
+        .db
+        .activity_incident_entropy()
+        .character_id()
+        .filter(character_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.activity_incident_entropy().id().delete(&row.id);
     }
 }
 
@@ -17562,20 +17828,46 @@ fn travel_to_settlement_impl(
         ctx.db.party_authority().id().update(party.clone());
         finish_party_journey(ctx, &party.id);
         let departing_incident = departing_case_site.as_ref().and_then(|site_id| {
-            ctx.db
-                .strategic_incident()
-                .iter()
-                .find(|incident| {
-                    incident.case_site_id.value == *site_id
-                        && incident.status == IncidentStatus::Pending
-                })
-                .map(|incident| incident.id)
+            ctx.db.strategic_incident().iter().find(|incident| {
+                incident.case_site_id.value == *site_id
+                    && incident.status == IncidentStatus::Pending
+            })
         });
-        if let Some(incident_id) = departing_incident.as_ref() {
-            finish_strategic_incident(ctx, incident_id, IncidentStatus::Avoided)?;
+        if let Some(incident) = departing_incident.as_ref() {
+            if incident.kind == IncidentKind::AuthorityArrest {
+                let minute = crate::time::refresh_clock(ctx)?;
+                crate::reputation::record_event(
+                    ctx,
+                    format!("avoid-authority:{}", incident.id.value),
+                    incident.instigator_id,
+                    &incident.settlement_id,
+                    "avoiding_authority",
+                    &incident.id.value,
+                    0,
+                    300,
+                    minute,
+                )?;
+                crate::reputation::record_discovered_offense(
+                    ctx,
+                    format!("offense:avoid-authority:{}", incident.id.value),
+                    incident.instigator_id,
+                    &incident.settlement_id,
+                    "avoiding_authority",
+                    2,
+                    minute,
+                );
+            }
+            finish_strategic_incident(ctx, &incident.id, IncidentStatus::Avoided)?;
         }
         if departing_incident.is_none() {
-            maybe_trigger_religious_incident(ctx, &party.id, &destination)?;
+            let religious = maybe_trigger_religious_incident(ctx, &party.id, &destination)?;
+            if religious.is_none() {
+                maybe_trigger_activity_incident(
+                    ctx,
+                    party.leader_id,
+                    crate::time::ActivityRisks::default(),
+                )?;
+            }
         }
     }
 
@@ -18984,11 +19276,11 @@ fn execute_case_finale(
     let now = crate::time::refresh_clock(ctx)?;
     if finale.kind == FinaleKind::ResolveLocalProblem
         && case.resolution_status == CaseResolutionStatus::Resolved
-        && let Some(problem_id) = case.local_problem_id
+        && let Some(problem_id) = case.local_problem_id.as_ref()
     {
         crate::local_problem::apply_outcome(
             ctx,
-            &problem_id,
+            problem_id,
             &crate::local_problem::LocalProblemOutcomeInput {
                 source_outcome_id: source_id.to_string(),
                 at_minute: now,
@@ -18996,6 +19288,34 @@ fn execute_case_finale(
                 resolve: true,
             },
         )?;
+    }
+    if case.resolution_status == CaseResolutionStatus::Resolved {
+        let quest_authority = ctx
+            .db
+            .quest_generation_authority()
+            .case_id()
+            .find(&case.id)
+            .or_else(|| {
+                ctx.db
+                    .quest_generation_authority()
+                    .iter()
+                    .find(|authority| {
+                        authority.public_case_id == case.id
+                            || authority.public_case_id == case.generated_case_id
+                            || authority.case_id == case.generated_case_id
+                    })
+            });
+        if let Some(authority) = quest_authority {
+            crate::reputation::award_case_resolution(
+                ctx,
+                &case.id,
+                &authority.public_case_id,
+                party_id,
+                &authority.settlement_id,
+                500,
+                now,
+            )?;
+        }
     }
     finale.status = FinaleStatus::Executed;
     ctx.db.case_finale_authority().id().update(finale.clone());

@@ -14,7 +14,8 @@ pub struct SocialPresentation {
     pub affinity: f32,
     pub familiarity_hours: f32,
     pub religion_id: Option<String>,
-    pub virtue: f32,
+    pub fame: f32,
+    pub infamy: f32,
     pub beliefs: Vec<crate::spacetimedb::SocialBelief>,
     pub shared_concerns: Vec<adventuresim_core::social::SocialTopic>,
     pub addressed_source_ids: Vec<String>,
@@ -256,7 +257,8 @@ pub fn party_social_dialog(
                 dl class="social-biography" {
                     div { dt { "Age" } dd { (selected.age_years) } }
                     div { dt { "Religion" } dd { (religion_name(social.religion_id.as_deref())) } }
-                    div { dt { "Virtue" } dd { (format!("{:+.0}", social.virtue)) } }
+                    div { dt { "Local fame" } dd { (format!("{:.1}", social.fame)) } }
+                    div { dt { "Local infamy" } dd { (format!("{:.1}", social.infamy)) } }
                     @if !is_self {
                         div { dt { "Affinity toward you" } dd { (affinity_label) " (" (affinity_certainty) ")" } }
                         div { dt { "Familiarity" } dd { (familiarity_label(social.familiarity_hours)) } }
