@@ -14016,6 +14016,13 @@ fn validate_route_departure_weather_interval(
     Ok(())
 }
 
+fn validate_camp_redirect_weather_interval(
+    route: &JourneyRoutePlan,
+    redirect_departure_minute: u64,
+) -> Result<(), String> {
+    validate_route_departure_weather_interval(route, redirect_departure_minute)
+}
+
 fn validate_return_journey_route(
     ctx: &ReducerContext,
     route: &JourneyRoutePlan,
@@ -16412,7 +16419,14 @@ fn redirect_camped_party_to_settlement(
         .party_id()
         .find(&party.id)
         .ok_or("Camp journey not found")?;
+    let redirect_departure_minute = living_party_member_ids(ctx, &party.id)
+        .into_iter()
+        .filter_map(|member_id| ctx.db.character_time().character_id().find(member_id))
+        .map(|time| time.minutes)
+        .max()
+        .unwrap_or(journey.departure_minute);
     let travel_minutes = if let Some(route) = route.as_ref() {
+        validate_camp_redirect_weather_interval(route, redirect_departure_minute)?;
         let current_route = ctx
             .db
             .party_journey_route_authority()
@@ -16443,12 +16457,7 @@ fn redirect_camped_party_to_settlement(
     });
     journey.total_minutes = travel_minutes;
     journey.completed_minutes = 0;
-    journey.departure_minute = living_party_member_ids(ctx, &party.id)
-        .into_iter()
-        .filter_map(|member_id| ctx.db.character_time().character_id().find(member_id))
-        .map(|time| time.minutes)
-        .max()
-        .unwrap_or(journey.departure_minute);
+    journey.departure_minute = redirect_departure_minute;
     journey.completed_elapsed_minutes = 0;
     journey.camp_stop_minutes.clear();
     if let Some(mut typed) = ctx.db.party_journey_itinerary().party_id().find(&party.id) {
@@ -16820,6 +16829,16 @@ mod departure_invariant_tests {
         assert!(validate_route_departure_weather_interval(&route, 360).is_err());
         route.weather_interval_start = 360;
         assert!(validate_route_departure_weather_interval(&route, 360).is_ok());
+    }
+
+    #[test]
+    fn camp_redirect_rejects_stale_six_hour_weather_snapshot() {
+        let mut route = route_fixture();
+        route.weather_interval_start = 360;
+        assert!(validate_camp_redirect_weather_interval(&route, 719).is_ok());
+        assert!(validate_camp_redirect_weather_interval(&route, 720).is_err());
+        route.weather_interval_start = 720;
+        assert!(validate_camp_redirect_weather_interval(&route, 720).is_ok());
     }
 
     #[test]
