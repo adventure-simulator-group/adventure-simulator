@@ -1,0 +1,705 @@
+impl LiveRunner {
+    pub(super) fn cycle(&mut self, party_id: &str, cycle: u32) -> Result<(), String> {
+        let Some((quest_owner, _)) = self.current_leader(party_id) else {
+            self.observe_deaths();
+            return Ok(());
+        };
+        let party_agents = self.party_agents(quest_owner)?;
+        for &agent in &party_agents {
+            if !self.ensure_medically_safe(agent)? {
+                self.metrics.quests_suppressed_for_health += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!("cycle={cycle}"),
+                );
+                return Ok(());
+            }
+            self.maintain_equipment(agent)?;
+        }
+        let Some((mut leader_agent, party)) =
+            self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+        else {
+            return Ok(());
+        };
+        let mut leader = quest_owner;
+        let active_contract = self.active_direct_contract(&party);
+        let resuming_contract = active_contract.is_some();
+        let quest = active_contract
+            .or_else(|| self.choose_quest(&party, &self.profiles[leader_agent as usize]))
+            .ok_or("no suitable available or accepted quest")?;
+        if quest.status == ContractStatus::ReadyToReport {
+            return self.turn_in_ready_direct_contract(party_id, leader, leader_agent, &quest);
+        }
+        if !resuming_contract {
+            if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
+                party_id,
+                leader,
+                leader_agent,
+                &quest.case_id,
+                quest.distance_m,
+            )? {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!(
+                        "quest={};acceptance_deferred={reason}",
+                        bounded_event_field(&quest.id)
+                    ),
+                );
+                self.settlement_activity_day(leader_agent)?;
+                return Ok(());
+            }
+            self.metrics.quests_attempted += 1;
+            self.metrics.direct_contracts_attempted += 1;
+            let result = reducer_call!(self, "interact_accept_contract", |cb| self
+                .connection
+                .reducers
+                .simulate_contract_issuer_interaction_then(
+                    leader,
+                    quest.id.clone(),
+                    ContractInteractionStage::Accept,
+                    cb,
+                ));
+            self.call(result)?;
+            let result = reducer_call!(self, "accept_quest", |cb| self
+                .connection
+                .reducers
+                .accept_contract_then(leader, quest.id.clone(), cb));
+            self.call(result)?;
+        }
+        let case_site = self
+            .connection
+            .db
+            .backend_case_site_pins()
+            .iter()
+            .filter(|site| site.owner_character_id == leader && site.case_id == quest.case_id)
+            .min_by_key(|site| (site.distance_m, site.case_site_id.clone()))
+            .ok_or("accepted quest did not disclose an exact case site")?;
+        let already_at_case_site = party
+            .current_case_site_id
+            .as_ref()
+            .is_some_and(|site| site.value == case_site.case_site_id);
+        if !already_at_case_site {
+            if matches!(
+                self.provision_case_site_journey(
+                    party_id,
+                    leader,
+                    leader_agent,
+                    &quest.case_id,
+                    case_site.distance_m,
+                )?,
+                TravelProvisionDecision::Deferred(_)
+            ) {
+                return Err(
+                    "accepted contract provisioning projection changed after disclosure".into(),
+                );
+            }
+            if !resuming_contract {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::AcceptContract,
+                    format!(
+                        "cycle={cycle};quest={};title={};difficulty={};opposition={} {};distance_m={}",
+                        quest.id,
+                        quest.title,
+                        quest.difficulty,
+                        quest.opposition_count_wording,
+                        quest.opposition_wording,
+                        case_site.distance_m
+                    ),
+                );
+            } else {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::Travel,
+                    format!(
+                        "direct_contract={};continuation=outbound;case_site={}",
+                        bounded_event_field(&quest.id),
+                        bounded_event_field(&case_site.case_site_id),
+                    ),
+                );
+            }
+
+            let outbound_before = self.expedition_member_observations(party_id)?;
+            let outbound_supplies_before = self.expedition_supplies(party_id);
+            let result = reducer_call!(self, "travel_to_case_site", |cb| self
+                .connection
+                .reducers
+                .travel_to_case_site_then(
+                    leader,
+                    CaseSiteId {
+                        value: case_site.case_site_id.clone(),
+                    },
+                    cb,
+                ));
+            self.call(result)?;
+            let outbound_after = self.expedition_member_observations(party_id)?;
+            let outbound_supplies_after = self.expedition_supplies(party_id);
+            self.emit_expedition_diagnostics(
+                party_id,
+                "journey_leg",
+                "travel_to_case_site",
+                if outbound_after.iter().any(expedition_member_needs_recovery) {
+                    "quest_suppressed_member_not_ready_after_outbound_leg"
+                } else {
+                    "quest_leg_outbound_all_members_ready"
+                },
+                &outbound_before,
+                &outbound_after,
+                outbound_supplies_before,
+                outbound_supplies_after,
+            );
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::Travel,
+                format!("outbound={}", case_site.case_site_id),
+            );
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
+        } else {
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::Travel,
+                format!(
+                    "direct_contract={};continuation=arrived_case_site",
+                    bounded_event_field(&quest.id)
+                ),
+            );
+        }
+
+        // Travel advances every member's disease clock. Re-observe public
+        // life/condition state before attempting a living-only combat reducer.
+        let unsafe_after_travel = self.unsafe_party_agents(&party_agents);
+        if !unsafe_after_travel.is_empty() {
+            for &agent in &unsafe_after_travel {
+                self.metrics.quests_suppressed_for_health += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!("after_travel;cycle={cycle}"),
+                );
+            }
+            self.observe_deaths();
+            let Some((current, _)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
+            leader = current;
+            let result = reducer_call!(self, "illness_retreat_to_settlement", |cb| self
+                .connection
+                .reducers
+                .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
+            self.call(result)?;
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
+            for &agent in &party_agents {
+                self.ensure_medically_safe(agent)?;
+            }
+            let Some((current_agent, _)) =
+                self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+            else {
+                return Ok(());
+            };
+            leader = quest_owner;
+            leader_agent = current_agent;
+            let result = reducer_call!(self, "abandon_unsafe_quest", |cb| self
+                .connection
+                .reducers
+                .abandon_contract_then(leader, quest.id.clone(), cb));
+            self.call(result)?;
+            self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
+            return Ok(());
+        }
+
+        let mut victory = false;
+        let mut winning_battle_id = None;
+        for attempt in 0..=MAX_DEFEAT_RETRIES {
+            let mission_id = format!(
+                "mission:sim-autoresolve:{}:{}:{}",
+                party_id, case_site.case_site_id, attempt
+            );
+            let battle_id = format!("battle:{mission_id}");
+            let result = reducer_call!(self, "autoresolve_mission", |cb| self
+                .connection
+                .reducers
+                .autoresolve_mission_then(leader, mission_id.clone(), cb));
+            self.call(result)?;
+            self.observe_deaths();
+            let Some((current, current_agent)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
+            leader = current;
+            leader_agent = current_agent;
+            let report = self
+                .connection
+                .db
+                .autoresolve_report()
+                .iter()
+                .find(|r| r.battle_id == battle_id)
+                .ok_or("autoresolve completed without a report")?;
+            if self
+                .connection
+                .db
+                .battle_result()
+                .iter()
+                .any(|r| r.battle_id == battle_id)
+            {
+                victory = true;
+                winning_battle_id = Some(battle_id.clone());
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::AutoresolveVictory,
+                    format!(
+                        "seed={};rounds={};summary={};log={:?}",
+                        report.seed, report.rounds, report.summary, report.log
+                    ),
+                );
+                break;
+            }
+            self.metrics.defeats += 1;
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::AutoresolveDefeat,
+                format!(
+                    "seed={};rounds={};summary={};log={:?}",
+                    report.seed, report.rounds, report.summary, report.log
+                ),
+            );
+            if attempt == MAX_DEFEAT_RETRIES {
+                break;
+            }
+            self.metrics.retries += 1;
+            let result = reducer_call!(self, "retreat_to_settlement", |cb| self
+                .connection
+                .reducers
+                .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
+            self.call(result)?;
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
+            self.observe_deaths();
+            let Some((current, _)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
+            leader = current;
+            for agent in self.party_agents(leader)? {
+                self.ensure_medically_safe(agent)?;
+            }
+            let Some((current_agent, _)) =
+                self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+            else {
+                return Ok(());
+            };
+            leader = quest_owner;
+            leader_agent = current_agent;
+            if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
+                party_id,
+                leader,
+                leader_agent,
+                &quest.case_id,
+                case_site.distance_m,
+            )? {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!(
+                        "quest={};retry_deferred={reason}",
+                        bounded_event_field(&quest.id)
+                    ),
+                );
+                let result =
+                    reducer_call!(self, "abandon_failed_unprovisioned_contract", |cb| self
+                        .connection
+                        .reducers
+                        .abandon_contract_then(leader, quest.id.clone(), cb));
+                self.call(result)?;
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::AbandonQuest,
+                    format!(
+                        "quest={};reason=failed_expedition_cannot_reprovision;detail={reason}",
+                        bounded_event_field(&quest.id)
+                    ),
+                );
+                self.settlement_activity_day(leader_agent)?;
+                return Ok(());
+            }
+            let result = reducer_call!(self, "retry_travel_to_case_site", |cb| self
+                .connection
+                .reducers
+                .travel_to_case_site_then(
+                    leader,
+                    CaseSiteId {
+                        value: case_site.case_site_id.clone(),
+                    },
+                    cb,
+                ));
+            self.call(result)?;
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
+            self.observe_deaths();
+            let Some((current, current_agent)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
+            leader = current;
+            leader_agent = current_agent;
+            let retry_agents = self.party_agents(leader)?;
+            if !self.unsafe_party_agents(&retry_agents).is_empty() {
+                // Reuse the same post-travel health gate on retries; the next
+                // iteration must never call a living-only combat reducer.
+                break;
+            }
+        }
+        if !victory {
+            let result = reducer_call!(self, "defeat_retreat_to_settlement", |cb| self
+                .connection
+                .reducers
+                .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
+            self.call(result)?;
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
+            self.observe_deaths();
+            let Some((current, _)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
+            leader = current;
+            for agent in self.party_agents(leader)? {
+                self.ensure_medically_safe(agent)?;
+            }
+            let Some((current_agent, _)) =
+                self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+            else {
+                return Ok(());
+            };
+            leader = quest_owner;
+            leader_agent = current_agent;
+            let result = reducer_call!(self, "abandon_defeated_quest", |cb| self
+                .connection
+                .reducers
+                .abandon_contract_then(leader, quest.id.clone(), cb));
+            self.call(result)?;
+            self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
+            let result = reducer_call!(self, "replenish_quests_after_abandon", |cb| self
+                .connection
+                .reducers
+                .ensure_settlement_activity_then(quest.settlement_id.clone(), cb));
+            self.call(result)?;
+            return Ok(());
+        }
+        let winning_battle_id = winning_battle_id.ok_or("victory had no battle authority")?;
+
+        let loot: Vec<_> = self
+            .connection
+            .db
+            .battle_loot_item()
+            .iter()
+            .filter(|row| row.loot_battle_id == winning_battle_id)
+            .collect();
+        let definitions: HashMap<_, _> = self
+            .connection
+            .db
+            .item()
+            .iter()
+            .map(|item| (item.id.clone(), item))
+            .collect();
+        for entry in &loot {
+            self.metrics.loot_items = self.metrics.loot_items.saturating_add(entry.quantity);
+            self.metrics.loot_value = self.metrics.loot_value.saturating_add(
+                u64::from(entry.quantity)
+                    * u64::from(
+                        definitions
+                            .get(&entry.item_id)
+                            .and_then(|i| i.base_value)
+                            .unwrap_or(0),
+                    ),
+            );
+        }
+        let result = reducer_call!(self, "store_battle_loot", |cb| self
+            .connection
+            .reducers
+            .store_battle_loot_then(leader, winning_battle_id, vec![], vec![], cb,));
+        self.call(result)?;
+        self.event(
+            leader_agent,
+            CoreLoopEventKind::StoreLoot,
+            format!("stacks={}", loot.len()),
+        );
+
+        let result = reducer_call!(self, "return_to_settlement", |cb| self
+            .connection
+            .reducers
+            .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
+        self.call(result)?;
+        self.event(
+            leader_agent,
+            CoreLoopEventKind::Travel,
+            format!("return={}", quest.settlement_id),
+        );
+        if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+            return Ok(());
+        }
+        self.observe_deaths();
+        let Some((current, current_agent)) = self.current_leader(party_id) else {
+            return Ok(());
+        };
+        leader = current;
+        leader_agent = current_agent;
+        self.turn_in_ready_direct_contract(party_id, leader, leader_agent, &quest)?;
+
+        let party = self.party_for(leader)?;
+        let sale: Vec<_> = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .filter(|row| row.party_id == party.id && !is_currency_id(&row.item_id))
+            .collect();
+        if !sale.is_empty() {
+            let before_coins: u64 = self
+                .connection
+                .db
+                .party_inventory_item()
+                .iter()
+                .filter(|row| row.party_id == party.id && is_currency_id(&row.item_id))
+                .map(|row| u64::from(row.quantity))
+                .sum();
+            let ids = sale.iter().map(|row| row.id).collect();
+            let quantities = sale.iter().map(|row| row.quantity).collect();
+            let result = reducer_call!(self, "liquidate_party_inventory", |cb| self
+                .connection
+                .reducers
+                .liquidate_party_inventory_then(
+                    leader,
+                    quest.settlement_id.clone(),
+                    ids,
+                    quantities,
+                    cb
+                ));
+            self.call(result)?;
+            let after_coins: u64 = self
+                .connection
+                .db
+                .party_inventory_item()
+                .iter()
+                .filter(|row| row.party_id == party.id && is_currency_id(&row.item_id))
+                .map(|row| u64::from(row.quantity))
+                .sum();
+            self.metrics.sale_proceeds += after_coins.saturating_sub(before_coins);
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::Liquidate,
+                format!("stacks={}", sale.len()),
+            );
+        }
+        // Spending priority is medical care, then repairs, then upgrades.
+        for agent in self.party_agents(leader)? {
+            if self.ensure_medically_safe(agent)? {
+                self.maintain_equipment(agent)?;
+            }
+        }
+        if let Some((current_agent, _)) =
+            self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+        {
+            self.try_upgrade(current_agent, &quest.settlement_id)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn try_upgrade(&mut self, agent: u32, settlement: &str) -> Result<(), String> {
+        let character_id = self.character_ids[agent as usize];
+        let profile = self.profiles[agent as usize].clone();
+        let equipped = self
+            .connection
+            .db
+            .character_equip()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .ok_or("missing equipment state")?;
+        let equipped_ids = [
+            equipped.left_hand_item_id,
+            equipped.right_hand_item_id,
+            equipped.left_arm_armor_id,
+            equipped.right_arm_armor_id,
+            equipped.left_leg_armor_id,
+            equipped.right_leg_armor_id,
+            equipped.head_armor_id,
+            equipped.chest_armor_id,
+            equipped.stomach_armor_id,
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<HashSet<_>>();
+        let inventories: Vec<_> = self
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| row.character_id == character_id)
+            .collect();
+        let definitions: Vec<_> = self.connection.db.item().iter().collect();
+        let equipped_definitions = inventories
+            .iter()
+            .filter(|row| equipped_ids.contains(&row.id))
+            .filter_map(|row| {
+                let definition = definitions.iter().find(|item| item.id == row.item_id)?;
+                let condition = self
+                    .connection
+                    .db
+                    .item_condition()
+                    .iter()
+                    .find(|value| value.inventory_item_id == row.id)
+                    .map_or(1.0, |value| {
+                        1.0 - (value.tier_1
+                            + value.tier_2
+                            + value.tier_3
+                            + value.tier_4
+                            + value.tier_5)
+                            .clamp(0.0, 1.0)
+                    });
+                Some((definition, condition))
+            })
+            .collect::<Vec<_>>();
+        let character = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == character_id)
+            .ok_or("missing upgrade character")?;
+        let party_id = character.party_id.ok_or("missing upgrade party")?;
+        let stake = self
+            .connection
+            .db
+            .party_stake()
+            .iter()
+            .find(|row| row.party_id == party_id && row.character_id == character_id)
+            .map_or(0, |row| row.value);
+        let mut candidates = definitions
+            .iter()
+            .filter_map(|candidate| {
+                let utility = equipment_utility(&profile, candidate)?;
+                let armor = matches!(candidate.kind, ItemKind::Armor | ItemKind::Clothing);
+                let current = equipped_definitions
+                    .iter()
+                    .filter(|(item, _)| {
+                        if candidate.melee || candidate.ranged {
+                            item.melee || item.ranged
+                        } else {
+                            armor
+                                && matches!(item.kind, ItemKind::Armor | ItemKind::Clothing)
+                                && item.slot == candidate.slot
+                        }
+                    })
+                    .filter_map(|(item, condition)| {
+                        equipment_utility(&profile, item).map(|utility| utility * *condition)
+                    })
+                    .fold(0.0, f32::max);
+                let cost = adventuresim_core::strategic_economy::merchant_buy_price(
+                    candidate.base_value.unwrap_or(1),
+                );
+                (utility > current && u64::from(cost) <= stake).then_some((
+                    utility - current,
+                    cost,
+                    candidate.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then_with(|| left.2.id.cmp(&right.2.id))
+        });
+        let Some((improvement, cost, candidate)) = candidates.into_iter().next() else {
+            return Ok(());
+        };
+        let mut treasury: Vec<_> = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
+            .collect();
+        treasury.sort_by_key(|row| (row.item_id.clone(), row.id));
+        if treasury
+            .iter()
+            .map(|row| u64::from(row.quantity))
+            .sum::<u64>()
+            < u64::from(cost)
+        {
+            return Ok(());
+        }
+        let mut remaining = cost;
+        for stack in treasury {
+            let quantity = remaining.min(stack.quantity);
+            let result = reducer_call!(self, "withdraw_earned_upgrade_coin", |cb| self
+                .connection
+                .reducers
+                .withdraw_party_inventory_item_then(character_id, stack.id, quantity, cb));
+            self.call(result)?;
+            remaining -= quantity;
+            if remaining == 0 {
+                break;
+            }
+        }
+        self.metrics.earned_gold_withdrawn += u64::from(cost);
+        let result = reducer_call!(self, "finalize_merchant_trade", |cb| self
+            .connection
+            .reducers
+            .finalize_merchant_trade_then(
+                character_id,
+                settlement.to_string(),
+                vec![candidate.id.clone()],
+                vec![1],
+                vec![],
+                vec![],
+                false,
+                cb,
+            ));
+        self.call(result)?;
+        self.metrics.equipment_purchases += 1;
+        self.event(
+            agent,
+            CoreLoopEventKind::Purchase,
+            format!(
+                "item={};earned_cost={cost};utility_gain={improvement:.3}",
+                candidate.id
+            ),
+        );
+        let inventory = self
+            .connection
+            .db
+            .inventory_item()
+            .iter()
+            .filter(|row| row.character_id == character_id && row.item_id == candidate.id)
+            .max_by_key(|row| row.id)
+            .ok_or("purchase succeeded but inventory was not coherent")?;
+        let destination = if candidate.melee || candidate.ranged {
+            ItemSlot::AnyHolding
+        } else {
+            candidate.slot
+        };
+        let result = reducer_call!(self, "equip_item", |cb| self
+            .connection
+            .reducers
+            .equip_item_then(character_id, inventory.id, destination, cb));
+        self.call(result)?;
+        let verified = self
+            .connection
+            .db
+            .character_equip()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .is_some_and(|row| equipped_at(&row, destination, inventory.id));
+        if !verified {
+            return Err("equip reducer completed without the requested equipped state".into());
+        }
+        self.metrics.equipment_upgrades += 1;
+        self.event(agent, CoreLoopEventKind::Equip, candidate.id);
+        Ok(())
+    }
+}

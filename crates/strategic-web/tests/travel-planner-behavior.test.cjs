@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const root = path.join(__dirname, "..");
 const plannerPath = path.join(root, "static", "travel-planner.js");
@@ -139,7 +140,7 @@ test("provisioning preserves the exact planner state in a reusable return URL", 
 test("party provisioning reads and updates the active inventory pane", () => {
   const trade = fs.readFileSync(path.join(root, "static", "party-trade.js"), "utf8");
   const template = fs.readFileSync(path.join(root, "src", "templates", "settlement.rs"), "utf8");
-  const strategic = fs.readFileSync(path.join(root, "..", "adventuresim-stdb-module", "src", "strategic.rs"), "utf8");
+  const strategic = readRustModuleSource(path.join(root, "..", "adventuresim-stdb-module", "src", "strategic", "mod.rs"));
   assert.match(trade, /\[data-inventory-pane\]:not\(\[hidden\]\)/);
   assert.match(template, /party-personal-currency/);
   assert.match(template, /Personal coin available for party purchases/);
@@ -230,7 +231,7 @@ test("camp renderer coalesces contiguous actual and forecast portions before der
 });
 
 test("authoritative travel guards stale sync, bounded legacy vectors, and terminal provision use", () => {
-  const strategic = fs.readFileSync(path.join(root, "..", "adventuresim-stdb-module", "src", "strategic.rs"), "utf8");
+  const strategic = readRustModuleSource(path.join(root, "..", "adventuresim-stdb-module", "src", "strategic", "mod.rs"));
   const time = fs.readFileSync(path.join(root, "..", "adventuresim-stdb-module", "src", "time.rs"), "utf8");
   assert.match(strategic, /synchronize_party_departure_time[\s\S]+revalidate_party_after_departure_sync/);
   assert.match(strategic, /pending_incident[\s\S]+departure_snapshot_allows_travel/);
@@ -260,7 +261,7 @@ test("alcohol chronology, authority, and automatic surgery consumption stay redu
   const condition = fs.readFileSync(path.join(moduleRoot, "condition.rs"), "utf8");
   const surgery = fs.readFileSync(path.join(moduleRoot, "surgery.rs"), "utf8");
   const time = fs.readFileSync(path.join(moduleRoot, "time.rs"), "utf8");
-  const settlements = fs.readFileSync(path.join(root, "src", "routes", "settlements.rs"), "utf8");
+  const settlements = readRustModuleSource(path.join(root, "src", "routes", "settlements", "mod.rs"));
   assert.match(alcohol, /rest_evenings\(start, end\)[\s\S]+nightly_morale_effect[\s\S]+upsert_refreshable_morale_event_at_without_refresh/);
   assert.match(alcohol, /tavern_units_affordable[\s\S]+personal_currency_total/);
   assert.match(condition, /travel_evening_segments[\s\S]+apply_elapsed_needs[\s\S]+consume_emergency_hydration/);

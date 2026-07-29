@@ -1,14 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const web = fs.readFileSync(
   "crates/strategic-web/src/routes/party_actions.rs",
   "utf8",
 );
-const moduleSource = fs.readFileSync(
-  "crates/adventuresim-stdb-module/src/strategic.rs",
-  "utf8",
+const moduleSource = readRustModuleSource(
+  "crates/adventuresim-stdb-module/src/strategic/mod.rs",
 );
 const tacticalModule = fs.readFileSync(
   "crates/adventuresim-stdb-module/src/tactical.rs",

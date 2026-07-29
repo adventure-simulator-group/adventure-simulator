@@ -2,11 +2,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const root = path.join(__dirname, "../..");
 const food = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/food.rs"), "utf8");
 const item = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/item.rs"), "utf8");
-const strategic = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/strategic.rs"), "utf8");
+const strategic = readRustModuleSource(path.join(root, "adventuresim-stdb-module/src/strategic/mod.rs"));
 const capability = fs.readFileSync(path.join(root, "adventuresim-stdb-module/src/capability.rs"), "utf8");
 const template = [
   "character_details.rs",

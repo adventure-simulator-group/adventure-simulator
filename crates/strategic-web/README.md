@@ -136,7 +136,8 @@ strategic-web/
 │   ├── routes/
 │   │   ├── home.rs
 │   │   ├── characters.rs
-│   │   ├── settlements.rs
+│   │   ├── settlements/    # Settlement route facade and behavior domains
+│   │   │   ├── mod.rs      # Stable route/API assembly
 │   │   ├── parties.rs
 │   │   └── quests.rs
 │   └── templates/

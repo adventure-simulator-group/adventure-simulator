@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readRustModuleSource } = require('./rust-module-source.cjs');
 
 const { exactEquipmentError } = require('../static/equipment-toggle.js');
 
@@ -43,9 +44,8 @@ test('parameterized preparation form and browser route are absent', () => {
     path.join(__dirname, '..', 'src', 'templates', 'settlement', 'character_health.rs'),
     'utf8',
   );
-  const routes = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'routes', 'settlements.rs'),
-    'utf8',
+  const routes = readRustModuleSource(
+    path.join(__dirname, '..', 'src', 'routes', 'settlements', 'mod.rs'),
   );
   const healthProduction = health.split('#[cfg(test)]')[0];
   const removedHeading = ['Administer', ' preparation'].join('');

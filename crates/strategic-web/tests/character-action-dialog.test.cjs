@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { readRustModuleSource } = require("./rust-module-source.cjs");
 
 const {
   wrappedFocusIndex, dialogOwnsBodyLock, openerIdentity, submitAutomaticChatToggle,
@@ -13,7 +14,7 @@ const chromeTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/se
 const template = [socialTemplate, healthTemplate, tradeTemplate, chromeTemplate].join("\n");
 const styles = fs.readFileSync(path.join(__dirname, "../static/css/strategic.css"), "utf8");
 const components = fs.readFileSync(path.join(__dirname, "../static/css/components.css"), "utf8");
-const routes = fs.readFileSync(path.join(__dirname, "../src/routes/settlements.rs"), "utf8");
+const routes = readRustModuleSource(path.join(__dirname, "../src/routes/settlements/mod.rs"));
 
 test("character dialogs trap focus in either direction", () => {
   assert.equal(wrappedFocusIndex(3, 0, true), 2);
