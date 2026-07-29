@@ -32,6 +32,9 @@ pub struct LayeredArmor {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InputAddressMapping {
     pub input: &'static str,
+    /// Position in the compact QWERTY slot map shown by clients.
+    pub keyboard_row: u8,
+    pub keyboard_column: u8,
     /// One input may address several physical anchors (for example a belt
     /// spans four authored locations).
     pub locations: &'static [EquipmentLocation],
@@ -54,56 +57,78 @@ const OUTSIDE_TO_INSIDE: &[EquipmentChannel] = &[
 pub const INPUT_ADDRESS_MAPPINGS: &[InputAddressMapping] = &[
     InputAddressMapping {
         input: "q",
+        keyboard_row: 1,
+        keyboard_column: 1,
         locations: &[EquipmentLocation::LeftBelt],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "e",
+        keyboard_row: 1,
+        keyboard_column: 3,
         locations: &[EquipmentLocation::RightBelt],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "f",
+        keyboard_row: 2,
+        keyboard_column: 4,
         locations: &[EquipmentLocation::FrontBelt],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "x",
+        keyboard_row: 3,
+        keyboard_column: 2,
         locations: &[EquipmentLocation::BackBelt],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "tab",
+        keyboard_row: 1,
+        keyboard_column: 0,
         locations: &[EquipmentLocation::LeftShoulder],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "r",
+        keyboard_row: 1,
+        keyboard_column: 4,
         locations: &[EquipmentLocation::RightShoulder],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "2",
+        keyboard_row: 0,
+        keyboard_column: 2,
         locations: &[EquipmentLocation::LeftPocket],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "3",
+        keyboard_row: 0,
+        keyboard_column: 3,
         locations: &[EquipmentLocation::RightPocket],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "1",
+        keyboard_row: 0,
+        keyboard_column: 1,
         locations: &[EquipmentLocation::BackLeftPocket],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "4",
+        keyboard_row: 0,
+        keyboard_column: 4,
         locations: &[EquipmentLocation::BackRightPocket],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "t",
+        keyboard_row: 1,
+        keyboard_column: 5,
         locations: &[
             EquipmentLocation::Head,
             EquipmentLocation::Face,
@@ -113,22 +138,65 @@ pub const INPUT_ADDRESS_MAPPINGS: &[InputAddressMapping] = &[
     },
     InputAddressMapping {
         input: "z",
+        keyboard_row: 3,
+        keyboard_column: 1,
         locations: &[EquipmentLocation::LeftFoot],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "c",
+        keyboard_row: 3,
+        keyboard_column: 3,
         locations: &[EquipmentLocation::RightFoot],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "`",
+        keyboard_row: 0,
+        keyboard_column: 0,
         locations: &[EquipmentLocation::LeftArm, EquipmentLocation::LeftHand],
         channel_order: OUTSIDE_TO_INSIDE,
     },
     InputAddressMapping {
         input: "5",
+        keyboard_row: 0,
+        keyboard_column: 5,
         locations: &[EquipmentLocation::RightArm, EquipmentLocation::RightHand],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "w",
+        keyboard_row: 1,
+        keyboard_column: 2,
+        locations: &[EquipmentLocation::Chest],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "s",
+        keyboard_row: 2,
+        keyboard_column: 2,
+        locations: &[EquipmentLocation::Stomach],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "d",
+        keyboard_row: 2,
+        keyboard_column: 3,
+        locations: &[EquipmentLocation::Back],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "v",
+        keyboard_row: 3,
+        keyboard_column: 4,
+        locations: &[EquipmentLocation::LeftLeg],
+        channel_order: OUTSIDE_TO_INSIDE,
+    },
+    InputAddressMapping {
+        input: "b",
+        keyboard_row: 3,
+        keyboard_column: 5,
+        locations: &[EquipmentLocation::RightLeg],
         channel_order: OUTSIDE_TO_INSIDE,
     },
 ];
@@ -751,6 +819,30 @@ mod tests {
                 EquipmentChannel::Outerwear,
                 EquipmentChannel::RigidArmor,
             ]
+        );
+        for (input, location) in [
+            ("w", EquipmentLocation::Chest),
+            ("s", EquipmentLocation::Stomach),
+            ("d", EquipmentLocation::Back),
+            ("v", EquipmentLocation::LeftLeg),
+            ("b", EquipmentLocation::RightLeg),
+        ] {
+            assert!(
+                INPUT_ADDRESS_MAPPINGS
+                    .iter()
+                    .find(|mapping| mapping.input == input)
+                    .is_some_and(|mapping| mapping.locations.contains(&location)),
+                "{location:?} must have a QWERTY equipment input"
+            );
+        }
+        let keyboard_cells = INPUT_ADDRESS_MAPPINGS
+            .iter()
+            .map(|mapping| (mapping.keyboard_row, mapping.keyboard_column))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            keyboard_cells.len(),
+            INPUT_ADDRESS_MAPPINGS.len(),
+            "slot inputs must occupy distinct cells in the QWERTY map"
         );
     }
 

@@ -189,10 +189,10 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
                     script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog-item-yaml-editor-1" defer {}
-                    script src="/static/party-trade.js?v=provision-party-food-1" defer {}
+                    script src="/static/party-trade.js?v=provision-party-food-1-slot-controls-1" defer {}
                     script src="/static/cooking.js?v=trade-pot-1" defer {}
                     script src="/static/herbalism.js?v=bounded-craft-1" defer {}
-                    script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
+                    script src="/static/equipment-toggle.js?v=location-keyboard-slots-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}

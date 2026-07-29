@@ -24,6 +24,9 @@ Ideally, the location of each slot button should correspond roughly to the slot'
 | <kbd>X</kbd> | A | Back belt.
 | <kbd>Tab</kbd> | Select | Left shoulder.
 | <kbd>R</kbd> | Start | Right shoulder.
+| <kbd>W</kbd> | | Chest.
+| <kbd>S</kbd> | | Stomach.
+| <kbd>D</kbd> | | Back.
 | <kbd>2</kbd> | ⇐ | Left pocket.
 | <kbd>3</kbd> | ⇒ | Right pocket.
 | <kbd>1</kbd> | ⇓⇐ | Back-left pocket.
@@ -34,6 +37,8 @@ Ideally, the location of each slot button should correspond roughly to the slot'
 | <kbd>5</kbd> | ⇑⇒ | Right arm.
 | | | Glasses?
 | | | Ears?
+| <kbd>V</kbd> | | Left leg.
+| <kbd>B</kbd> | | Right leg.
 | <kbd>Z</kbd> | ⇓⇓⇐ | Left foot.
 | <kbd>C</kbd> | ⇓⇓⇒ | Right foot.
 
@@ -71,6 +76,13 @@ The screen normally gives no indicator for what is in your slots or your hands. 
 * This map includes icons for each button and approximately corresponds to the keyboard/controller; the relative position of each slot should be based on the relative position of each button.
 * When holding an item, any slot it may be placed in is white, and all others are grayed out; if your hand is empty, slots with items in them are white, and empty ones are greyed out.
 * Each layer of item in a slot is visible in this interface. Layers for items that occupy multiple slots contiguously span all relevant slots.
+
+The strategic inventory uses a compact version of this map. An equipped row
+shows every applicable QWERTY key; lighter key text is nearer the surface and
+darker text is farther underneath. Clicking an equipped row removes it
+directly. Clicking an unequipped row opens the QWERTY map, where invalid keys
+are dimmed. A valid key can be clicked or pressed, and selects the outermost
+compatible placement or attachment target reachable through that slot.
 ## Bags
 Your entire inventory won't necessarily fit into the slot system, which is fine. The slot system is intended not to replace "standard inventory management" altogether but to make a *significant subset* of your inventory more manageable, that being the subset of items that you need readily accessible. If you don't need a given item readily accessible, you can put it in a bag.
 

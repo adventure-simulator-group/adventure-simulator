@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1469)
+## Files (1463)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -35,8 +35,6 @@ development, or other wiki document before changing a subsystem.
 - `content/dialogue/examples.yaml` — Repository support file.
 - `content/dialogue/organizations.yaml` — Repository support file.
 - `content/dialogue/services.yaml` — Repository support file.
-- `content/items/catalog.yaml` — Repository support file.
-- `content/items/catalog.yaml` — Repository support file.
 - `content/items/catalog.yaml` — Repository support file.
 - `content/organizations/catalog.yaml` — Repository support file.
 - `content/organizations/social-estates.yaml` — Repository support file.
@@ -79,11 +77,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/investigation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/investigation_action.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_catalog.rs` — Rust source module for this component.
-- `crates/adventuresim-core/src/item_catalog.rs` — Rust source module for this component.
-- `crates/adventuresim-core/src/item_catalog.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_catalog_schema.rs` — Rust source module for this component.
-- `crates/adventuresim-core/src/item_catalog_validation.rs` — Rust source module for this component.
-- `crates/adventuresim-core/src/item_catalog_validation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_catalog_validation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_references.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
@@ -533,8 +527,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/mission_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mission_outcome_candidate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mixed_lithology_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_type.rs` — Generated SpacetimeDB data type.
@@ -1057,6 +1049,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/components.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/inventory_browser.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/investigation.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mission.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.

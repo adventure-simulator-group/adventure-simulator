@@ -117,14 +117,17 @@ price, or any other item property.
 The local catalog assigns several starter and demo items across all five qualities so the Wounded
 Demo fixture exercises each color and repair ceiling.
 
-Equippable personal-inventory rows expose a checkbox. The chooser lists every
-valid authored placement with occupancy channels, protected body parts, and
-compatible free attachment points. Each parent requirement gets its own target
-selection. Equipped inventory also provides a location-grouped, outside-in
-layer summary, lists multi-location spans once, and names every parent
-attachment edge. Equipping never silently displaces another item; conflicts,
-descendant targets, and full/incompatible attachment points are excluded or
-reported exactly. Non-equipment rows keep a disabled checkbox.
+Equippable personal-inventory rows expose a compact slot-key control. Equipped
+items show every applicable QWERTY key, with lighter text toward the surface
+and darker text underneath. Clicking an equipped control unequips it directly.
+Clicking an unequipped control opens the keyboard-shaped slot map; invalid
+locations are dimmed, while clicking or pressing a valid key chooses the
+outermost compatible authored placement or attachment target. Equipped
+inventory also provides a location-grouped, outside-in layer summary, lists
+multi-location spans once, and names every parent attachment edge. Equipping
+never silently displaces another item; conflicts, descendant targets, and
+full/incompatible attachment points are excluded or reported exactly.
+Non-equipment rows keep a disabled slot control.
 
 Medication reuses the same familiar checkbox gesture without occupying an
 equipment slot. Checking it administers and consumes the quantity-one

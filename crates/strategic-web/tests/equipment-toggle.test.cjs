@@ -7,8 +7,11 @@ const { readRustModuleSource } = require('./rust-module-source.cjs');
 const {
   attachmentTargetsForPlacement,
   exactEquipmentError,
+  normalizedEquipmentInput,
+  parseInputMap,
   parsePlacementOptions,
   parsePlacements,
+  selectionForInput,
 } = require('../static/equipment-toggle.js');
 
 test('equipment errors preserve the exact reducer response', async () => {
@@ -97,6 +100,103 @@ test('multi-point placements submit one selected target per requirement', () => 
   ]);
 });
 
+test('slot input chooses the outermost compatible attachment target', () => {
+  const placements = [{
+    placementIndex: 2,
+    inputRanks: {},
+    requirements: [{
+      requirementIndex: 0,
+      targets: [
+        {
+          parentInventoryItemId: 11,
+          attachmentPointId: 'inner',
+          inputRanks: { q: 60000 },
+        },
+        {
+          parentInventoryItemId: 12,
+          attachmentPointId: 'outer',
+          inputRanks: { q: 160000 },
+        },
+      ],
+    }],
+  }];
+  assert.deepEqual(selectionForInput(placements, 'q'), {
+    placementIndex: 2,
+    attachmentTargets: [{
+      requirement_index: 0,
+      parent_inventory_item_id: 12,
+      attachment_point_id: 'outer',
+    }],
+  });
+  assert.equal(selectionForInput(placements, 'e'), null);
+});
+
+test('automatic target selection respects attachment-point capacity', () => {
+  const shared = {
+    parentInventoryItemId: 12,
+    attachmentPointId: 'single',
+    freeCapacity: 1,
+    inputRanks: { q: 160000 },
+  };
+  const alternate = {
+    parentInventoryItemId: 12,
+    attachmentPointId: 'second',
+    freeCapacity: 1,
+    inputRanks: { q: 150000 },
+  };
+  const selection = selectionForInput([{
+    placementIndex: 3,
+    requirements: [
+      { requirementIndex: 0, targets: [shared, alternate] },
+      { requirementIndex: 1, targets: [shared, alternate] },
+    ],
+  }], 'q');
+  assert.deepEqual(selection.attachmentTargets.map((target) => target.attachment_point_id), [
+    'single',
+    'second',
+  ]);
+});
+
+test('root placements expose every applicable key and preserve authored alternatives', () => {
+  const placements = [
+    { placementIndex: 0, inputRanks: { w: 40000, s: 40000 }, requirements: [] },
+    { placementIndex: 1, inputRanks: { v: 40000 }, requirements: [] },
+  ];
+  assert.equal(selectionForInput(placements, 'w').placementIndex, 0);
+  assert.equal(selectionForInput(placements, 's').placementIndex, 0);
+  assert.equal(selectionForInput(placements, 'v').placementIndex, 1);
+  assert.equal(selectionForInput(placements, 'b'), null);
+});
+
+test('mixed body and attachment placements require the same valid key', () => {
+  const placement = {
+    placementIndex: 4,
+    hasBody: true,
+    inputRanks: { w: 50000 },
+    requirements: [{
+      requirementIndex: 0,
+      targets: [{
+        parentInventoryItemId: 12,
+        attachmentPointId: 'mount',
+        freeCapacity: 1,
+        inputRanks: { w: 160000, q: 160000 },
+      }],
+    }],
+  };
+  assert.equal(selectionForInput([placement], 'q'), null);
+  assert.equal(selectionForInput([placement], 'w').placementIndex, 4);
+});
+
+test('keyboard input is normalized only while the slot chooser handles it', () => {
+  assert.equal(normalizedEquipmentInput({ key: 'Q' }), 'q');
+  assert.equal(normalizedEquipmentInput({ key: 'Tab' }), 'tab');
+  assert.equal(normalizedEquipmentInput({ key: 'Escape' }), '');
+  assert.deepEqual(
+    parseInputMap('[{"input":"w","label":"W","row":1,"column":2}]'),
+    [{ input: 'w', label: 'W', row: 1, column: 2 }],
+  );
+});
+
 test('equipment errors have an HTTP fallback when the reducer body is empty', async () => {
   const response = {
     status: 503,
@@ -111,8 +211,8 @@ test('medication checkbox submits no browser-selected medical parameters', () =>
     path.join(__dirname, '..', 'static', 'equipment-toggle.js'),
     'utf8',
   );
-  assert.match(client, /inventory_item_id: checkbox\.dataset\.inventoryItemId/);
-  assert.match(client, /equipped: String\(checkbox\.checked\)/);
+  assert.match(client, /inventory_item_id: control\.dataset\.inventoryItemId/);
+  assert.match(client, /await equipmentMutation\(checkbox, checkbox\.checked\)/);
   for (const parameter of ['patient_id', 'route', 'amount_milliunits', 'region']) {
     assert.doesNotMatch(client, new RegExp(`${parameter}:`));
   }
