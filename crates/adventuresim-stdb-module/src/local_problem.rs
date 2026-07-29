@@ -1706,8 +1706,8 @@ fn referral_fragments_json(presentation: lp::ReferralPresentation) -> Result<Str
 mod tests {
     use crate::local_problem::{
         BoundedHearingGraph, MAX_HEARING_DISTANCE_M, MAX_HEARING_GRAPH_EDGES,
-        MAX_HEARING_GRAPH_NODES, public_threat_in_hearing_range, referral_fragments_json,
-        stable_eligible_candidates,
+        MAX_HEARING_GRAPH_NODES, dialogue_capable_inn_contact, public_threat_in_hearing_range,
+        referral_fragments_json, stable_eligible_candidates,
     };
     use adventuresim_core::threat_escalation::{
         MAX_PUBLIC_THREAT_CANDIDATES, bounded_public_threat_candidates as bounded_public_candidates,

@@ -490,18 +490,31 @@ def process_snapshot(pid: int) -> dict[str, object] | None:
         kernel32.CloseHandle(handle)
 
 
+def executable_identity_matches(expected: object, actual: object) -> bool:
+    expected_path = str(expected)
+    actual_path = str(actual)
+    if os.path.normcase(expected_path) == os.path.normcase(actual_path):
+        return True
+    expected_name = Path(expected_path).stem.lower()
+    actual_name = Path(actual_path).stem.lower()
+    return (
+        expected_name in {"spacetime", "spacetimedb-cli"}
+        and actual_name in {"spacetime-standalone", "spacetimedb-standalone"}
+    )
+
+
 def identity_matches(expected: dict[str, object]) -> bool:
     actual = process_snapshot(int(expected.get("pid", 0)))
     if actual is None:
         return False
     if actual["start_token"] != expected.get("start_token"):
         return False
-    exe_matches = os.path.normcase(str(actual["executable"])) == os.path.normcase(str(expected.get("executable", "")))
-    if not exe_matches:
+    if not executable_identity_matches(expected.get("executable", ""), actual["executable"]):
         print(
-            f"note: executable path changed (likely exec'd): {expected.get('executable')} -> {actual['executable']}",
+            f"note: unexpected executable path change: {expected.get('executable')} -> {actual['executable']}",
             file=sys.stderr,
         )
+        return False
     return True
 
 

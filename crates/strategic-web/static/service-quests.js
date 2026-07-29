@@ -1,12 +1,3 @@
-const serviceQuestTabState = (activity) => {
-  if (activity.recruitment?.length) return "recruitment available";
-  if (activity.quests?.some((quest) => quest.state === "ready")) return "quest ready to report";
-  if (activity.quests?.some((quest) => quest.state === "available")) return "quest available";
-  return null;
-};
-
-if (typeof module !== "undefined") module.exports = { serviceQuestTabState };
-
 (() => {
   if (typeof document === "undefined") return;
   const refreshServiceQuests = () => {

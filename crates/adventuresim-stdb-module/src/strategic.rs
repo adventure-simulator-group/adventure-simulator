@@ -16971,13 +16971,15 @@ fn reconstruct_legacy_journey_coordinates(
 #[cfg(test)]
 mod departure_invariant_tests {
     use super::{
-        CampDurationMode, CaseSiteId, JourneyCaseSiteEndpoint, JourneyEndpoint, JourneyRoutePlan,
-        JourneyRoutePoint, JourneySettlementEndpoint, JourneyTerrainKind, JourneyTerrainSpan,
-        JourneyTerrainWeights, Party, PartyJourneyRoute, common_movement_prefix,
-        core_encounter_terrain, departure_requires_ready_party, departure_snapshot_allows_travel,
-        party_can_continue_travel, pending_incident_allows_departure,
-        reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
-        straight_line_distance_m, terrain_training_exposure, validate_journey_route_payload,
+        CampDurationMode, CaseSiteId, JourneyCaseSiteEndpoint, JourneyEndpoint,
+        JourneyPrecipitation, JourneyRoutePlan, JourneyRoutePoint, JourneySettlementEndpoint,
+        JourneyTerrainKind, JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
+        common_movement_prefix, core_encounter_terrain, departure_requires_ready_party,
+        departure_snapshot_allows_travel, party_can_continue_travel,
+        pending_incident_allows_departure, reconstruct_legacy_journey_coordinates,
+        route_position_at_minute, set_party_journey_state, straight_line_distance_m,
+        terrain_training_exposure, validate_camp_redirect_weather_interval,
+        validate_journey_route_payload, validate_route_departure_weather_interval,
         zero_boundary_requires_settlement,
     };
 
