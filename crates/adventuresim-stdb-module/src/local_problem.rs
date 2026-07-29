@@ -2057,7 +2057,7 @@ mod tests {
         assert!(source.contains("backend_local_problem_rumors"));
         assert!(source.matches("if !is_gateway(ctx)").count() >= 2);
         assert!(source.contains("#[table(accessor = local_problem_rumor_delivery)]"));
-        let strategic = include_str!("strategic.rs");
+        let strategic = crate::strategic::STRATEGIC_SOURCE;
         let start = strategic
             .split("pub fn start_dialogue")
             .nth(1)
@@ -2088,7 +2088,7 @@ mod tests {
         assert!(purchase.contains("character_time()"));
         assert!(purchase.contains("settlement_effects"));
         assert!(purchase.contains("adjust_price(base_price, problem_effects.buy_bps)"));
-        let strategic = include_str!("strategic.rs");
+        let strategic = crate::strategic::STRATEGIC_SOURCE;
         let trade = strategic
             .split("pub fn finalize_merchant_trade")
             .nth(1)
@@ -2121,7 +2121,7 @@ mod tests {
         assert!(surface.contains("contact_npc_id: contact.id"));
         assert!(surface.contains("discovery_session_id: session_id.into()"));
 
-        let strategic = include_str!("strategic.rs");
+        let strategic = crate::strategic::STRATEGIC_SOURCE;
         let start = strategic
             .split("pub fn start_dialogue")
             .nth(1)

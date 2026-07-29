@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1341)
+## Files (1428)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -88,7 +88,18 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/quest_catalog.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/quest_catalog_validation.rs` — Rust source module for this component.
-- `crates/adventuresim-core/src/quest_generation.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/quest_generation/assembly.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/audit.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/mod.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/model.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/projection.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/solver.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/tests.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/tests/projection_and_limits.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/tests/routes_and_evidence.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/tests/solver_and_generation.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/tests/testimony.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/validation.rs` — Rust source module.
 - `crates/adventuresim-core/src/reputation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_economy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_population.rs` — Rust source module for this component.
@@ -791,7 +802,19 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/foraging.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/inventory_amount.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/src/investigation.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/investigation/actions.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/capabilities.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/claims.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/geometry.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/mod.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/model.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/projections.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/sites.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/tests.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/tests/action_authority.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/tests/bestiary_and_corrections.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/tests/projection_and_referrals.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/investigation/tests/sites_and_actions.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/item.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/local_problem.rs` — Rust source module for this component.
@@ -803,7 +826,32 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/settlement_population.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/simulation.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/social.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/src/strategic.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/strategic/authority_model.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/autoresolve.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/contracts.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/custody_objectives.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/dialogue_bindings.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/dialogue_effects.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/dialogue_prompts.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/dialogue_provenance.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/dialogue_schema.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/dialogue_sessions.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/encounters.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/governance.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/incidents.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/inventory_trade.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/journey_camp.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/mission_bootstrap.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/mod.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/party_readiness.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/tests.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/tests/authority_trade_dialogue.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/tests/combat_party.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/tests/generated_world.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/travel_planning.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/travel_reducers.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/travel_tests.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/world_import.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/surgery.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
@@ -819,7 +867,22 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-strategic-sim/src/investigation_eval/report.rs` — Rust source module.
 - `crates/adventuresim-strategic-sim/src/investigation_eval/types.rs` — Rust source module.
 - `crates/adventuresim-strategic-sim/src/lib.rs` — Rust source module for this component.
-- `crates/adventuresim-strategic-sim/src/live_core.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/live_core/bootstrap.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/cycle.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/expedition.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/failure.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/generated_cases.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/mod.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/model.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/policy.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/settlement.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/tests.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/tests/configuration_and_medical.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/tests/failure_security.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/tests/policy_and_discovery.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/tests/recovery_and_cases.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/tests/travel.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/live_core/travel.rs` — Rust source module.
 - `crates/adventuresim-strategic-sim/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/profile.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/rng.rs` — Rust source module for this component.
@@ -925,7 +988,30 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/routes/parties.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/party_actions.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/quests.rs` — Strategic web HTTP route handler.
-- `crates/strategic-web/src/routes/settlements.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/camp.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/commerce.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/encumbrance.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/encumbrance_tests.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/herbalist_tests.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/medical.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/mod.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/overview.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/party/cooking.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/party/inventory_medical.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/party/location_personal.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/party/mod.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/party/social.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/party/training_activity.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/party/transfers.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/religion.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/religion_party.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/rendering.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/rest.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/rest_preview.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/rest_tests.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/router.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/service_quests.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/settlements/social_tests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/travel.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/session.rs` — Rust source module for this component.
 - `crates/strategic-web/src/spacetimedb/client.rs` — Strategic web SpacetimeDB integration module.
@@ -1249,6 +1335,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/tests/physical-evidence.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/quest-web-eval.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/rest-duration.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/rust-module-source.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/social-menu.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/strategic-map-behavior.test.cjs` — Repository support file.

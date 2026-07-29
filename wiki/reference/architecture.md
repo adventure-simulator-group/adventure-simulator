@@ -48,6 +48,16 @@ current party, character, location, time, custody, and source identity before
 changing state. Shared-core functions perform deterministic calculations, but
 do not grant authority by themselves.
 
+The largest strategic implementations are organized behind their established
+Rust module paths. `strategic` and `investigation` retain ordered same-scope
+source fragments because SpacetimeDB table, reducer, view, and generated
+accessor discovery is module-scope-sensitive; those fragments are not ordinary
+Rust child modules. Quest generation and the live strategic simulator use
+ordinary child modules where their dependency boundaries permit it. The web
+settlement router keeps route registration in a small facade and uses ordinary
+domain modules for handlers, forms, rendering, rest-preview policy, and
+behavior-local tests.
+
 The current deployment boundary is intentionally narrow:
 
 - `strategic-web` holds the registered strategic-gateway identity;
