@@ -1,10 +1,10 @@
 //! Bounded, deterministic escalation, normalized combat power, and public
-//! notoriety math for unresolved recurring hostile cases.
+//! public-awareness math for unresolved recurring hostile cases.
 
 use serde::{Deserialize, Serialize};
 
 pub const PUBLIC_THRESHOLD_BPS: u16 = 6_500;
-pub const NOTORIETY_GROWTH_BPS: u16 = 3_500;
+pub const AWARENESS_GROWTH_BPS: u16 = 3_500;
 pub const COMBAT_SCALE_BPS: u32 = 10_000;
 /// One baseline orc is 10,000 normalized power. No generated hostile group may
 /// escalate past thirty baseline-orc equivalents.
@@ -83,25 +83,25 @@ pub fn progress_for_follow_ups(follow_up_count: u16, growth_rate_bps: u16) -> u1
     })
 }
 
-pub fn notoriety_for_incident(investigability: u8, incident_ordinal: u16) -> u16 {
+pub fn awareness_for_incident(investigability: u8, incident_ordinal: u16) -> u16 {
     let cap = u16::from(investigability.min(100)) * 100;
-    (1..incident_ordinal).fold(0, |notoriety, _| {
-        asymptotic_step(notoriety, cap, NOTORIETY_GROWTH_BPS)
+    (1..incident_ordinal).fold(0, |awareness, _| {
+        asymptotic_step(awareness, cap, AWARENESS_GROWTH_BPS)
     })
 }
 
 pub fn first_public_incident(investigability: u8) -> Option<u16> {
     let cap = u16::from(investigability.min(100)) * 100;
     let mut ordinal = 1_u16;
-    let mut notoriety = 0_u16;
+    let mut awareness = 0_u16;
     loop {
-        if is_public(notoriety) {
+        if is_public(awareness) {
             return Some(ordinal);
         }
-        if notoriety >= cap || ordinal == u16::MAX {
+        if awareness >= cap || ordinal == u16::MAX {
             return None;
         }
-        notoriety = asymptotic_step(notoriety, cap, NOTORIETY_GROWTH_BPS);
+        awareness = asymptotic_step(awareness, cap, AWARENESS_GROWTH_BPS);
         ordinal += 1;
     }
 }
@@ -118,8 +118,8 @@ pub fn scheduled_public_since_minute(
     })
 }
 
-pub const fn is_public(notoriety_bps: u16) -> bool {
-    notoriety_bps >= PUBLIC_THRESHOLD_BPS
+pub const fn is_public(public_awareness_bps: u16) -> bool {
+    public_awareness_bps >= PUBLIC_THRESHOLD_BPS
 }
 
 fn interpolated_u32(base: u32, cap: u32, progress_bps: u16) -> u32 {
@@ -236,8 +236,12 @@ pub fn adjusted_difficulty_milli(difficulty: u16, investigability: u8) -> u16 {
 
 /// Bounded hearing allowance in 25 km road-distance units. Local and adjacent
 /// settlements are handled separately as a minimum.
-pub fn hearing_radius(population: u32, normalized_combat_power: u32, notoriety_bps: u16) -> u32 {
-    if !is_public(notoriety_bps) {
+pub fn hearing_radius(
+    population: u32,
+    normalized_combat_power: u32,
+    public_awareness_bps: u16,
+) -> u32 {
+    if !is_public(public_awareness_bps) {
         return 0;
     }
     let population_factor = if population == 0 {
@@ -246,7 +250,7 @@ pub fn hearing_radius(population: u32, normalized_combat_power: u32, notoriety_b
         population.min(100_000).ilog2().saturating_sub(7).min(9)
     };
     let danger_factor = normalized_combat_power.min(MAX_ORC_EQUIVALENT_POWER) / 50_000;
-    let post_threshold = u32::from(notoriety_bps.saturating_sub(PUBLIC_THRESHOLD_BPS)) / 700;
+    let post_threshold = u32::from(public_awareness_bps.saturating_sub(PUBLIC_THRESHOLD_BPS)) / 700;
     1u32.saturating_add(population_factor)
         .saturating_add(danger_factor)
         .saturating_add(post_threshold)
@@ -274,7 +278,7 @@ pub fn hearing_allows(
     road_distance_m: Option<u64>,
     population: u32,
     normalized_combat_power: u32,
-    notoriety_bps: u16,
+    public_awareness_bps: u16,
 ) -> bool {
     same_settlement
         || adjacent_settlement
@@ -283,7 +287,7 @@ pub fn hearing_allows(
                 <= u64::from(hearing_radius(
                     population,
                     normalized_combat_power,
-                    notoriety_bps,
+                    public_awareness_bps,
                 ))
                 .saturating_mul(25_000)
         })
@@ -323,9 +327,9 @@ mod tests {
     };
 
     #[test]
-    fn notoriety_is_monotonic_bounded_and_has_authored_crossing_behavior() {
+    fn awareness_is_monotonic_bounded_and_has_authored_crossing_behavior() {
         let orc = (1..=12)
-            .map(|ordinal| notoriety_for_incident(80, ordinal))
+            .map(|ordinal| awareness_for_incident(80, ordinal))
             .collect::<Vec<_>>();
         assert!(orc.windows(2).all(|pair| pair[0] <= pair[1]));
         assert_eq!(orc[0], 0);

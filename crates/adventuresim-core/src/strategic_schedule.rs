@@ -416,14 +416,14 @@ pub struct ActivityOutcomeInputs {
 #[serde(deny_unknown_fields)]
 pub struct ActivityOutcome {
     pub gold_earned: u32,
-    pub notoriety_gained: f32,
+    pub infamy_gained: f32,
     pub thievery_discovery_chance: f32,
     pub raiding_retaliation_chance: f32,
     pub labor_hours: f32,
     pub thievery_hours: f32,
     pub raiding_hours: f32,
     pub carousing_morale: f32,
-    pub virtue_lost: f32,
+    pub carousing_disorder_chance: f32,
 }
 
 /// Calculate authoritative economic and risk results for one settlement interval.
@@ -446,11 +446,11 @@ pub fn settlement_activity_outcome(
                 inputs.stealth_check,
             ))
             .saturating_add(raiding_gold(raiding_hours, inputs.combat_check)),
-        notoriety_gained: thievery_notoriety(
+        infamy_gained: thievery_infamy(
             thievery_hours,
             inputs.population_scale,
             inputs.stealth_check,
-        ) + raiding_notoriety(raiding_hours),
+        ) + raiding_infamy(raiding_hours),
         thievery_discovery_chance: thievery_discovery_chance(
             thievery_hours,
             inputs.population_scale,
@@ -461,7 +461,7 @@ pub fn settlement_activity_outcome(
         thievery_hours,
         raiding_hours,
         carousing_morale: days * carousing_morale_per_day(schedule.carousing_minutes),
-        virtue_lost: carousing_hours * 0.125,
+        carousing_disorder_chance: 1.0 - (-0.025 * carousing_hours).exp(),
     }
 }
 
@@ -723,8 +723,23 @@ mod tests {
         assert_eq!(outcome.labor_hours, 8.0);
         assert_eq!(outcome.thievery_hours, 1.0);
         assert!(outcome.gold_earned > 0);
-        assert!(outcome.notoriety_gained > 0.0);
+        assert!(outcome.infamy_gained > 0.0);
         assert!((0.0..=1.0).contains(&outcome.thievery_discovery_chance));
+    }
+
+    #[test]
+    fn ordinary_carousing_has_incident_risk_but_no_direct_infamy() {
+        let outcome = settlement_activity_outcome(
+            DailySchedule {
+                carousing_minutes: 8 * 60,
+                ..Default::default()
+            },
+            MINUTES_PER_DAY,
+            ActivityOutcomeInputs::default(),
+        );
+        assert_eq!(outcome.infamy_gained, 0.0);
+        assert!(outcome.carousing_disorder_chance > 0.0);
+        assert!(outcome.carousing_disorder_chance < 1.0);
     }
 
     #[test]

@@ -763,12 +763,18 @@ pub fn spend_time_with_settlement_npc(
     );
     let charm_check = crate::condition::mental_check(ctx, actor_id, Skill::Charm)?;
     let insight_check = crate::condition::mental_check(ctx, actor_id, Skill::Insight)?;
+    let (fame, infamy) =
+        crate::reputation::local_reputation(ctx, actor_id, &npc.home_settlement_id);
+    let familiarity_bps =
+        ((relationship.shared_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
+    let reputation_modifier =
+        adventuresim_core::reputation::npc_reaction_modifier(fame, infamy, familiarity_bps);
     let (morale_delta, affinity_delta, outcome) = resolve_casual_chat_segments(
         ctx,
         requested_minutes,
         charm_check,
         insight_check,
-        current,
+        (current + f32::from(reputation_modifier)).clamp(AFFINITY_MIN, AFFINITY_MAX),
         relationship.shared_minutes as f32 / 60.0,
         actor_disposition,
         target_disposition,
@@ -1345,11 +1351,26 @@ pub fn approach_dialogue_witness(
         observer_character_id,
         witness_approach_skill(approach),
     )?;
+    let npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&capability.npc_id)
+        .ok_or("Witness NPC not found")?;
+    let familiarity_minutes = relationship
+        .as_ref()
+        .map_or(0, |value| value.shared_minutes);
+    let familiarity_bps =
+        ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
+    let (fame, infamy) =
+        crate::reputation::local_reputation(ctx, observer_character_id, &npc.home_settlement_id);
+    let reputation_modifier =
+        adventuresim_core::reputation::npc_reaction_modifier(fame, infamy, familiarity_bps);
     let outcome = resolve_claim_challenge(ClaimChallengeInput {
         approach,
         claim_is_factually_accurate: claim.claim_is_factually_accurate,
         skill_check,
-        affinity,
+        affinity: (affinity + f32::from(reputation_modifier)).clamp(AFFINITY_MIN, AFFINITY_MAX),
         familiarity_hours: relationship.as_ref().map_or(0.0, |relationship| {
             relationship.shared_minutes as f32 / 60.0
         }),

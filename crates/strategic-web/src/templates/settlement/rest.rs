@@ -12,7 +12,8 @@ pub struct RestSummary {
     pub full_board_gold_spent: u32,
     pub additional_gold_spent: u32,
     pub gold_earned: u32,
-    pub notoriety_gained: f32,
+    pub fame_gained: f32,
+    pub infamy_gained: f32,
     pub healed: Vec<(String, f32)>,
     pub trained: Vec<(String, f32)>,
 }
@@ -203,7 +204,8 @@ pub(super) fn rest_service_menu(
                         }
                     }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " coin earned from activities." } }
-                    @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
+                    @if summary.fame_gained > 0.0 { p class="schedule-effect-positive" { (format!("+{:.1}", summary.fame_gained)) " local Fame." } }
+                    @if summary.infamy_gained > 0.0 { p class="schedule-effect-negative" { (format!("+{:.1}", summary.infamy_gained)) " local Infamy." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
                         p { "Healed:" }
                         ul { @for (part, amount) in &summary.healed { li { (part) ": +" (format!("{amount:.0}%")) } } }
@@ -358,7 +360,8 @@ mod tests {
             full_board_gold_spent: 1,
             additional_gold_spent: 0,
             gold_earned: 0,
-            notoriety_gained: 0.0,
+            fame_gained: 0.0,
+            infamy_gained: 0.0,
             healed: Vec::new(),
             trained: Vec::new(),
         };

@@ -357,7 +357,7 @@ fn forage_receipt_status(receipt: &BackendForageReceipt) -> Markup {
             @if receipt.legal_outcome == "unnoticed" {
                 p { "The illegal search went unnoticed." }
             } @else if receipt.legal_outcome == "noticed" {
-                p { "The illegal search was noticed. Virtue -1.0." }
+                p { "The illegal search was noticed. Local Infamy increased." }
             }
         }
     }
@@ -482,7 +482,7 @@ pub(crate) async fn activity_dialog(
                         p role="alert" class="badge badge-danger" { (message) }
                     }
                     @if illegal {
-                        p role="alert" class="badge badge-warning" { "Foraging here is illegal. One Stealth check is made when the search completes; failure costs 1 Virtue." }
+                        p role="alert" class="badge badge-warning" { "Foraging here is illegal. One Stealth check is made when the search completes; failure adds local Infamy." }
                     }
                     form method="post" action="/forage" {
                         input type="hidden" name="return_to" value=(return_to);

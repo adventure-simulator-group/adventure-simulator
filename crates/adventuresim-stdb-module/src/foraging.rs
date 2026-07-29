@@ -1,7 +1,7 @@
 //! Gateway-attested, server-authoritative personal foraging.
 
 use adventuresim_core::{
-    foraging::{self, ForageEnvironment, ILLEGAL_FORAGE_VIRTUE_LOSS, LocalTerrainMixture},
+    foraging::{self, ForageEnvironment, ILLEGAL_FORAGE_INFAMY, LocalTerrainMixture},
     prelude::*,
 };
 use sha2::{Digest, Sha256};
@@ -19,7 +19,7 @@ use crate::{
         route_position_at_minute, settlement, strategic_gateway_authority,
         strategic_gateway_authority__view,
     },
-    time::{CharacterVirtue, character_time, character_virtue},
+    time::character_time,
 };
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -59,7 +59,7 @@ pub struct ForageAttemptAuthority {
     pub illegal: bool,
     pub stealth_dc_millirank: Option<u16>,
     pub stealth_succeeded: Option<bool>,
-    pub virtue_lost: f32,
+    pub infamy_gained: f32,
     pub context_kind: String,
     pub context_id: String,
     pub latitude_e7: i32,
@@ -68,7 +68,7 @@ pub struct ForageAttemptAuthority {
 }
 
 /// Player-safe result projection. Exact location, context, roll/DC, private
-/// entropy, and authoritative virtue mutation are intentionally omitted.
+/// entropy, and authoritative reputation mutation are intentionally omitted.
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct BackendForageReceipt {
     pub character_id: u64,
@@ -495,23 +495,40 @@ pub fn forage_current_vicinity(
             yielded_quantities.push(found.quantity);
         }
     }
-    let virtue_lost = resolution
+    let infamy_gained = resolution
         .as_ref()
         .and_then(|result| result.stealth_succeeded)
         .is_some_and(|success| !success)
-        .then_some(ILLEGAL_FORAGE_VIRTUE_LOSS)
+        .then_some(ILLEGAL_FORAGE_INFAMY)
         .unwrap_or(0.0);
-    if virtue_lost > 0.0 {
-        let existing = ctx.db.character_virtue().character_id().find(character_id);
-        let mut virtue = existing.clone().unwrap_or(CharacterVirtue {
-            character_id,
-            value: 0.0,
-        });
-        virtue.value -= virtue_lost;
-        if existing.is_some() {
-            ctx.db.character_virtue().character_id().update(virtue);
-        } else {
-            ctx.db.character_virtue().insert(virtue);
+    if infamy_gained > 0.0 {
+        if let Some(settlement_id) = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .and_then(|character| character.current_settlement_id)
+        {
+            crate::reputation::record_event(
+                ctx,
+                format!("forage:{character_id}:{request_id}"),
+                character_id,
+                &settlement_id,
+                "illegal_foraging",
+                &request_id,
+                0,
+                (infamy_gained * 100.0).round() as i32,
+                completed_at,
+            )?;
+            crate::reputation::record_discovered_offense(
+                ctx,
+                format!("offense:forage:{character_id}:{request_id}"),
+                character_id,
+                &settlement_id,
+                "illegal_foraging",
+                1,
+                completed_at,
+            );
         }
     }
     let attempt = ForageAttemptAuthority {
@@ -530,7 +547,7 @@ pub fn forage_current_vicinity(
         illegal: environment.settlement || environment.cultivated || environment.license_violation,
         stealth_dc_millirank: resolution.as_ref().and_then(|row| row.stealth_dc_millirank),
         stealth_succeeded: resolution.as_ref().and_then(|row| row.stealth_succeeded),
-        virtue_lost,
+        infamy_gained,
         context_kind: attestation.context_kind,
         context_id: attestation.context_id,
         latitude_e7: attestation.latitude_e7,

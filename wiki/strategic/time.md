@@ -33,25 +33,25 @@ future automatic attempts without affecting manual actions or erasing history.
 Travel, generic waits, and intervals consumed entirely by required recovery or
 maintenance do not trigger automatic chats.
 
-At a settlement, every explicit activity in that plan can also be performed immediately by selecting its icon. The activity dialog chooses one to 24 whole hours, beginning at the character's current personal minute and showing the resulting end time. This advances personal time and applies that activity's training, economy, Morale, Virtue, Fatigue, and incident risk without changing the saved plan. Immediate activity is not rest: it does not heal, wash, repair equipment, provide inn service, or apply the plan's Leisure remainder. Prayer/Meditation and Carousing use their saturating morale curves over the selected interval rather than pretending their effects are linear.
+At a settlement, every explicit activity in that plan can also be performed immediately by selecting its icon. The activity dialog chooses one to 24 whole hours, beginning at the character's current personal minute and showing the resulting end time. This advances personal time and applies that activity's training, economy, Morale, settlement reputation, Fatigue, and incident risk without changing the saved plan. Immediate activity is not rest: it does not heal, wash, repair equipment, provide inn service, or apply the plan's Leisure remainder. Prayer/Meditation and Carousing use their saturating morale curves over the selected interval rather than pretending their effects are linear.
 
 Activities combine reduced-rate training with another strategic result:
 
-- **Apprenticeship** is available after accepting a service NPC's offer to teach their profession. It costs Gold and divides conserved training time among that profession's associated skills. At profession rank 2, **Practice** replaces paid instruction and earns a small wage; at rank 4 it earns a substantially better master's income. Religious variants are called novice, cleric, and teacher rather than apprentice, journeyman, and master, and their independent practice earns Virtue instead of Gold.
+- **Apprenticeship** is available after accepting a service NPC's offer to teach their profession. It costs Gold and divides conserved training time among that profession's associated skills. At profession rank 2, **Practice** replaces paid instruction and earns a small wage; at rank 4 it earns a substantially better master's income. Religious variants are called novice, cleric, and teacher rather than apprentice, journeyman, and master, and their visible independent practice earns local Fame instead of Gold.
 - **Combat Training** includes sparring and target practice. It trains equipment-relevant Melee, Ranged, Dodge, and Block along with Will and Balance.
-- **Carousing** trains Charm, grants saturating Morale, and imposes a small Virtue penalty.
+- **Carousing** trains Charm and grants saturating Morale. Ordinary carousing changes no reputation, but it can cause a disorder incident that adds local Infamy; Drunkards have substantially higher risk and Temperate characters lower risk.
 - **Prayer** recites and practices prayers rather than studying doctrine. For a professed character it trains their own Religion tradition at 25% speed, and its saturating morale is scaled by the party's knowledge of that tradition. A character with no professed religion instead sees **Meditate**, receives one quarter of the ordinary saturating morale independently of party Religion, and gains no Religion hours, Fervor, or neglect.
 
 Religion stores only direct hours in each tradition. Correlated knowledge is derived from those direct hours and never fed back into storage. Religious apprenticeship and practice train the tradition represented by the service NPC rather than an aggregate Religion skill.
 
 Within Combat Training, current equipped hands determine the relevant Melee, Ranged, Dodge, and Block weights described in [Stats](../shared/stats.md). Training deterministically catches the lowest normalized trained hours up before maintaining their weighted balance, while also practicing Will and Balance. Changing equipment redirects future training without rewriting the saved schedule.
 - **Labor** earns personal gold from effective Strength and Endurance checks during settlement downtime (`hours × (Strength + Endurance) / 4`, rounded) and trains Will at 25% speed.
-- **Thievery** earns more gold in more populous settlements during downtime and trains Stealth at 25% speed. Stealth improves the take while reducing both notoriety and the continuous chance of discovery.
-- **Raiding** earns gold during downtime and feeds the same equipment-derived leaf-skill distribution as Combat Training at 25% speed. It does not prefer Ranged over Melee or derive Block and Dodge practice from armor. Raiding produces high notoriety and a high retaliation chance.
+- **Thievery** earns more gold in more populous settlements during downtime and trains Stealth at 25% speed. Stealth improves the take while reducing both Infamy and the continuous chance of discovery.
+- **Raiding** earns gold during downtime and feeds the same equipment-derived leaf-skill distribution as Combat Training at 25% speed. It does not prefer Ranged over Melee or derive Block and Dodge practice from armor. Raiding produces high Infamy and a high retaliation chance.
 
-The schedule previews each activity's daily Gold, Virtue, Morale, and Fatigue at the currently assigned time. Notoriety is presented as negative Virtue so future honorable activities can use positive values on the same scale. Positive preview values are green, negative values are red, and zero is neutral.
+The schedule previews each activity's daily Gold, Fame/Infamy, Morale, and Fatigue at the currently assigned time. Fame is positive and Infamy is negative in this compact preview; the two remain independent stored tracks.
 
-Notoriety is persisted per character and displayed as strategic state, but it has no downstream consequences yet.
+See [settlement reputation](reputation.md) for population dilution, spillover, NPC reactions, and authority consequences.
 
 Thievery and Raiding discovery is resolved whenever settlement downtime advances, including explicit rest and off-screen catch-up. The continuous exposure formulas are:
 

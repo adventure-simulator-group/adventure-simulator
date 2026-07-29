@@ -38,6 +38,7 @@ pub mod provisioning;
 pub mod quest_catalog;
 mod quest_catalog_validation;
 pub mod quest_generation;
+pub mod reputation;
 pub mod settlement_economy;
 pub mod settlement_population;
 pub mod simulation_security;

@@ -154,7 +154,7 @@
     const hours = minutes / 60;
     const effects = {
       gold: hours * Number(row.dataset.goldRate || 0),
-      virtue: hours * Number(row.dataset.virtueRate || 0),
+      reputation: hours * Number(row.dataset.reputationRate || 0),
       morale: row.dataset.prayerMorale === 'true'
         ? Number(row.dataset.prayerMoraleMultiplier || 1) * Number(row.dataset.prayerMoraleLimit)
           * (1 - Math.exp(-minutes / Number(row.dataset.prayerMoraleScale)))

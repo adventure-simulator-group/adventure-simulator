@@ -41,7 +41,7 @@ fn recorded_manifest_replays_to_same_digest() {
 fn canonical_digest_quantizes_subprecision_float_noise() {
     let report = run(config(70, 2, 30)).unwrap();
     let mut noisy = report.clone();
-    noisy.metrics[0].notoriety += 0.000_001;
+    noisy.metrics[0].infamy += 0.000_001;
     assert_eq!(digest(&report).unwrap(), digest(&noisy).unwrap());
 }
 
@@ -90,8 +90,8 @@ fn matched_pair_changes_only_declared_activity_fields() {
     let mut thief = thief;
     thief.agent_id = 1;
     let report = run_profiles(config(9, 2, 365), vec![labor, thief]).unwrap();
-    assert_eq!(report.metrics[0].notoriety, 0.0);
-    assert!(report.metrics[1].notoriety > 0.0);
+    assert_eq!(report.metrics[0].infamy, 0.0);
+    assert!(report.metrics[1].infamy > 0.0);
 }
 
 #[test]
@@ -99,7 +99,8 @@ fn multi_year_smoke_tracks_time_allocation_and_finite_metrics() {
     let report = run(config(99, 16, 365 * 5)).unwrap();
     for (profile, metrics) in report.manifest.profiles.iter().zip(&report.metrics) {
         assert!(metrics.skill_hours.is_finite());
-        assert!(metrics.notoriety.is_finite());
+        assert!(metrics.infamy.is_finite());
+        assert!(metrics.infamy <= adventuresim_core::reputation::REPUTATION_CAP as f32 / 100.0);
         assert!(metrics.cumulative_risk_exposure.is_finite());
         assert_eq!(
             metrics.activity_minutes

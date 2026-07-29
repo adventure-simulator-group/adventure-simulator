@@ -101,7 +101,7 @@ until it is ready.
 ## Continuing problems
 
 Unresolved problems may worsen over time. New incidents can add witnesses,
-victims, evidence, settlement consequences, public notoriety, and stronger
+victims, evidence, settlement consequences, public awareness, and stronger
 hostile groups without rewriting earlier events. NPC adventuring companies
 still recruit, but they no longer investigate or resolve quests automatically.
 Conspicuous hostile cases eventually become public and can be referred through

@@ -1490,15 +1490,12 @@ pub struct CharacterTrainingSchedule {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterNotoriety {
+pub struct CharacterSettlementReputation {
+    pub id: String,
     pub character_id: u64,
-    pub value: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterVirtue {
-    pub character_id: u64,
-    pub value: f32,
+    pub settlement_id: String,
+    pub fame: i32,
+    pub infamy: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

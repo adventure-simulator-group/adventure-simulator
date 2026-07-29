@@ -216,7 +216,7 @@ pub enum TrainingTarget {
 #[serde(rename_all = "snake_case")]
 pub enum ActivityReward {
     Gold,
-    Virtue,
+    Fame,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]

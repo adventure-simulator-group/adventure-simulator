@@ -105,22 +105,6 @@ pub struct CharacterTrainingSchedule {
     pub travel: ScheduleAllocation,
 }
 
-#[derive(Clone, Debug)]
-#[table(accessor = character_virtue, public)]
-pub struct CharacterVirtue {
-    #[primary_key]
-    pub character_id: u64,
-    pub value: f32,
-}
-
-#[derive(Clone, Debug)]
-#[table(accessor = character_notoriety, public)]
-pub struct CharacterNotoriety {
-    #[primary_key]
-    pub character_id: u64,
-    pub value: f32,
-}
-
 impl ScheduleAllocation {
     pub fn allocated_minutes(&self) -> u64 {
         allocated_schedule_minutes([
@@ -841,25 +825,11 @@ fn apply_organization_training(
     excess
 }
 
-fn initialize_notoriety(ctx: &ReducerContext, character_id: u64) {
-    if ctx
-        .db
-        .character_notoriety()
-        .character_id()
-        .find(character_id)
-        .is_none()
-    {
-        ctx.db.character_notoriety().insert(CharacterNotoriety {
-            character_id,
-            value: 0.0,
-        });
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct ActivityRisks {
     pub thievery_discovery: f32,
     pub raiding_retaliation: f32,
+    pub carousing_disorder: f32,
 }
 
 fn apply_activity_outcomes(
@@ -1001,34 +971,19 @@ fn apply_activity_outcomes_inner(
             Some("activity:carousing".into()),
         )?;
     }
-    if outcome.virtue_lost > 0.0 {
-        let existing = ctx.db.character_virtue().character_id().find(character_id);
-        let mut virtue = existing.clone().unwrap_or(CharacterVirtue {
-            character_id,
-            value: 0.0,
-        });
-        virtue.value -= outcome.virtue_lost;
-        if existing.is_some() {
-            ctx.db.character_virtue().character_id().update(virtue);
-        } else {
-            ctx.db.character_virtue().insert(virtue);
-        }
-    }
     apply_organization_outcomes(ctx, character_id, schedule, elapsed, &settlement.id)?;
-    initialize_notoriety(ctx, character_id);
-    let notoriety_gain = outcome.notoriety_gained;
-    if notoriety_gain > 0.0 {
-        let mut notoriety = ctx
-            .db
-            .character_notoriety()
-            .character_id()
-            .find(character_id)
-            .ok_or("Character notoriety not found")?;
-        notoriety.value += notoriety_gain;
-        ctx.db
-            .character_notoriety()
-            .character_id()
-            .update(notoriety);
+    if outcome.infamy_gained > 0.0 {
+        crate::reputation::record_event(
+            ctx,
+            format!("activity:{character_id}:{interval_end_minute}:crime"),
+            character_id,
+            &settlement.id,
+            "criminal_activity",
+            &interval_end_minute.to_string(),
+            0,
+            (outcome.infamy_gained * 100.0).round() as i32,
+            interval_end_minute,
+        )?;
     }
     if apply_leisure {
         crate::condition::apply_settlement_leisure_condition(
@@ -1042,6 +997,15 @@ fn apply_activity_outcomes_inner(
     Ok(ActivityRisks {
         thievery_discovery: outcome.thievery_discovery_chance,
         raiding_retaliation: outcome.raiding_retaliation_chance,
+        carousing_disorder: {
+            let multiplier =
+                match crate::personality::personality_or_neutral(ctx, character_id).temperance {
+                    crate::personality::Temperance::Drunkard => 3.0,
+                    crate::personality::Temperance::Temperate => 0.35,
+                    crate::personality::Temperance::Neutral => 1.0,
+                };
+            (outcome.carousing_disorder_chance * multiplier).clamp(0.0, 0.95)
+        },
     })
 }
 
@@ -1234,28 +1198,24 @@ fn apply_organization_outcomes(
                     u32::try_from(reward).unwrap_or(u32::MAX),
                 )?;
             }
-            adventuresim_core::organization::ActivityReward::Virtue if reward > 0 => {
-                let mut virtue = ctx
+            adventuresim_core::organization::ActivityReward::Fame if reward > 0 => {
+                let minute = ctx
                     .db
-                    .character_virtue()
+                    .character_time()
                     .character_id()
                     .find(character_id)
-                    .unwrap_or(CharacterVirtue {
-                        character_id,
-                        value: 0.0,
-                    });
-                virtue.value += reward as f32;
-                if ctx
-                    .db
-                    .character_virtue()
-                    .character_id()
-                    .find(character_id)
-                    .is_some()
-                {
-                    ctx.db.character_virtue().character_id().update(virtue);
-                } else {
-                    ctx.db.character_virtue().insert(virtue);
-                }
+                    .map_or(0, |time| time.minutes);
+                crate::reputation::record_event(
+                    ctx,
+                    format!("profession:{character_id}:{organization_id}:{minute}"),
+                    character_id,
+                    settlement_id,
+                    "religious_practice",
+                    organization_id,
+                    i32::try_from(reward.saturating_mul(100)).unwrap_or(i32::MAX),
+                    0,
+                    minute,
+                )?;
             }
             _ => {}
         }

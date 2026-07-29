@@ -14,10 +14,10 @@
   };
   const activityKind = (allocation) => allocation.replace(/_minutes$/, '');
   const professionReward = ({ accrued, threshold, sign, reward }, minutes) => {
-    if (!(threshold > 0)) return { gold: 0, virtue: 0 };
+    if (!(threshold > 0)) return { gold: 0, reputation: 0 };
     const delta = (Math.floor((accrued + minutes * ACCRUAL_SCALE) / threshold)
       - Math.floor(accrued / threshold)) * sign;
-    return reward === 'virtue' ? { gold: 0, virtue: delta } : { gold: delta, virtue: 0 };
+    return reward === 'fame' ? { gold: 0, reputation: delta } : { gold: delta, reputation: 0 };
   };
   const wrappedFocusTarget = (active, focusable, backwards) => {
     if (!focusable.length) return null;
@@ -37,7 +37,7 @@
     const minutes = hours * 60;
     const values = {
       gold: hours * Number(source.dataset.goldRate || 0),
-      virtue: hours * Number(source.dataset.virtueRate || 0),
+      reputation: hours * Number(source.dataset.reputationRate || 0),
       morale: source.dataset.prayerMorale === 'true'
         ? Number(source.dataset.prayerMoraleMultiplier || 1)
           * Number(source.dataset.prayerMoraleLimit || 0)

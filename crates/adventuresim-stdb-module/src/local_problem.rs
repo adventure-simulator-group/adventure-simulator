@@ -45,7 +45,7 @@ pub struct LocalProblemAuthority {
     /// Includes the original offence represented by the generated case.
     pub incident_count: u16,
     pub recurring_hostile: bool,
-    pub notoriety_bps: u16,
+    pub public_awareness_bps: u16,
     pub public_since_minute: Option<u64>,
     pub resolved_at: Option<u64>,
     pub opaque_case_ref: String,
@@ -393,7 +393,7 @@ pub(crate) fn materialize_generated_problem(
             mitigation_bps: 0,
             incident_count: 1,
             recurring_hostile,
-            notoriety_bps: 0,
+            public_awareness_bps: 0,
             public_since_minute: None,
             resolved_at: None,
             opaque_case_ref: case.canonical_case_id.clone(),
@@ -590,13 +590,13 @@ pub(crate) fn ensure_generated_incidents(
                 return Err("Recurring-hostile authority has a non-hostile manifest".into());
             };
             let profile = adventuresim_core::bestiary::profile(threat);
-            let next_notoriety = adventuresim_core::threat_escalation::notoriety_for_incident(
+            let next_awareness = adventuresim_core::threat_escalation::awareness_for_incident(
                 profile.investigation.investigability,
                 due,
             );
-            problem.notoriety_bps = problem.notoriety_bps.max(next_notoriety);
+            problem.public_awareness_bps = problem.public_awareness_bps.max(next_awareness);
             if problem.public_since_minute.is_none()
-                && adventuresim_core::threat_escalation::is_public(problem.notoriety_bps)
+                && adventuresim_core::threat_escalation::is_public(problem.public_awareness_bps)
             {
                 problem.public_since_minute =
                     adventuresim_core::threat_escalation::scheduled_public_since_minute(
@@ -605,7 +605,7 @@ pub(crate) fn ensure_generated_incidents(
                         profile.investigation.investigability,
                     );
                 if problem.public_since_minute.is_none() {
-                    return Err("Public notoriety crossed without a crossing ordinal".into());
+                    return Err("Public awareness crossed without a crossing ordinal".into());
                 }
             }
             let Some((group_id, _, _, _)) = validated.manifest.hostile_groups.first() else {
@@ -697,7 +697,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
             mitigation_bps: 0,
             incident_count: 1,
             recurring_hostile: false,
-            notoriety_bps: 0,
+            public_awareness_bps: 0,
             public_since_minute: None,
             resolved_at: None,
             opaque_case_ref: format!("case:opaque:{}", problem.id.0),
@@ -770,7 +770,7 @@ pub fn ensure_route_problem(
             mitigation_bps: 0,
             incident_count: 1,
             recurring_hostile: false,
-            notoriety_bps: 0,
+            public_awareness_bps: 0,
             public_since_minute: None,
             resolved_at: None,
             opaque_case_ref: format!("case:opaque:{}", problem.id.0),
@@ -1139,7 +1139,7 @@ fn public_threat_in_hearing_range(
     afflicted_settlement_id: &str,
     afflicted_node: Option<u64>,
     listener_population: u32,
-    notoriety_bps: u16,
+    public_awareness_bps: u16,
     normalized_combat_power: u32,
 ) -> bool {
     let afflicted_node = afflicted_node;
@@ -1149,7 +1149,7 @@ fn public_threat_in_hearing_range(
         afflicted_node.and_then(|node| graph.distances.get(&node).copied()),
         listener_population,
         normalized_combat_power,
-        notoriety_bps,
+        public_awareness_bps,
     )
 }
 
@@ -1232,7 +1232,7 @@ fn surface_public_threat(
                 &afflicted,
                 afflicted_node,
                 listener.population_estimate,
-                problem.notoriety_bps,
+                problem.public_awareness_bps,
                 group.normalized_combat_power,
             )
             .then_some((validated, site_id, threat, group))
@@ -1872,7 +1872,7 @@ mod tests {
             .expect("incident materializer");
         assert!(incidents.contains("u16::MAX"));
         assert!(incidents.contains("saturating_add(16)"));
-        assert!(incidents.contains("notoriety_for_incident"));
+        assert!(incidents.contains("awareness_for_incident"));
         assert!(incidents.contains("combat_for_incident"));
     }
 
