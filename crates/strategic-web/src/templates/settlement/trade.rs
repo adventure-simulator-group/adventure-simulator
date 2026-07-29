@@ -2542,6 +2542,20 @@ mod tests {
     }
 
     #[test]
+    fn equipment_slot_dialog_is_centered_in_the_viewport() {
+        let css = include_str!("../../../static/css/strategic.css");
+        let rule = css
+            .split(".equipment-placement-modal {")
+            .nth(1)
+            .and_then(|tail| tail.split('}').next())
+            .expect("equipment placement dialog rule");
+        assert!(rule.contains("position: fixed"));
+        assert!(rule.contains("inset: 0"));
+        assert!(rule.contains("margin: auto"));
+        assert!(rule.contains("max-block-size: calc(100dvh - 2rem)"));
+    }
+
+    #[test]
     fn encumbrance_rail_scrolls_items_but_keeps_footer_and_meter_outside() {
         let markup = encumbrance_inventory_rail(
             maud::html! { table class="test-items" {} },
