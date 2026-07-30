@@ -154,7 +154,8 @@ pub fn initial_social_role(
 #[serde(deny_unknown_fields)]
 pub struct OrganizationChapter {
     pub settlement_id: String,
-    /// Stable, settlement-scoped navigation and NPC-presence identifier.
+    /// Stable settlement-scoped chapter identity and standalone navigation ID.
+    /// A service-linked chapter may derive a different physical NPC location.
     pub location_id: String,
     pub building_name: String,
     pub building_kind: ChapterBuildingKind,
@@ -442,15 +443,81 @@ pub fn organization_chapter_at(
     })
 }
 
+/// Ordinary settlement venue that can physically host representatives for a
+/// service-linked organization. The authored chapter location remains the
+/// chapter's stable institutional identity.
+pub fn service_npc_location_id(service_id: &str) -> Option<&'static str> {
+    match service_id {
+        "merchants" => Some("market"),
+        "weapons" => Some("forge"),
+        "armor" => Some("armoury"),
+        "clothing" => Some("tailor"),
+        "herbalist" => Some("herbalist"),
+        "inn" => Some("inn"),
+        "religion" => Some("church"),
+        _ => None,
+    }
+}
+
+pub fn service_npc_location_available(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    service_id: &str,
+) -> bool {
+    use crate::settlement_economy::{
+        SettlementActionService, Storefront, action_service_available, storefront_available,
+    };
+    match service_id {
+        "merchants" => storefront_available(profile, Storefront::General),
+        "weapons" => storefront_available(profile, Storefront::Weapons),
+        "armor" => storefront_available(profile, Storefront::Armor),
+        "clothing" => storefront_available(profile, Storefront::Clothing),
+        "herbalist" => storefront_available(profile, Storefront::Herbalist),
+        "inn" => action_service_available(profile, SettlementActionService::Inn),
+        "religion" => action_service_available(profile, SettlementActionService::Temple),
+        _ => false,
+    }
+}
+
+pub fn chapter_effective_location_id<'a>(
+    organization: &'a OrganizationDefinition,
+    chapter: &'a OrganizationChapter,
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+) -> &'a str {
+    if let Some(service_id) = organization.service_id.as_deref()
+        && service_npc_location_available(profile, service_id)
+        && let Some(location_id) = service_npc_location_id(service_id)
+    {
+        return location_id;
+    }
+    &chapter.location_id
+}
+
+pub fn chapter_has_standalone_building(
+    organization: &OrganizationDefinition,
+    chapter: &OrganizationChapter,
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+) -> bool {
+    chapter_effective_location_id(organization, chapter, profile) == chapter.location_id.as_str()
+}
+
+/// Stable representative identity is deliberately independent of provider
+/// ordinals and physical venue so co-location cannot collide with service NPCs.
+pub fn organization_representative_id(settlement_id: &str, organization_id: &str) -> String {
+    format!("npc:organization-representative:{settlement_id}:{organization_id}")
+}
+
 pub fn exact_representative_fields_match(
     npc_id: &str,
     expected_id: &str,
     home_settlement_id: &str,
     settlement_id: &str,
+    organization_id: &str,
+    expected_organization_id: &str,
     conversation_id: &str,
 ) -> bool {
     npc_id == expected_id
         && home_settlement_id == settlement_id
+        && organization_id == expected_organization_id
         && conversation_id == "organization-representative"
 }
 
@@ -894,27 +961,110 @@ mod tests {
             "npc:goslar:ranger-lodge:0",
             "goslar",
             "goslar",
+            "ranger_lodge",
+            "ranger_lodge",
             "organization-representative",
         );
         assert!(exact_representative_fields_match(
-            valid.0, valid.1, valid.2, valid.3, valid.4
+            valid.0, valid.1, valid.2, valid.3, valid.4, valid.5, valid.6
         ));
         assert!(!exact_representative_fields_match(
             "npc:goslar:ranger-lodge:1",
             valid.1,
             valid.2,
             valid.3,
-            valid.4
+            valid.4,
+            valid.5,
+            valid.6,
         ));
         assert!(!exact_representative_fields_match(
-            valid.0, valid.1, "other", valid.3, valid.4
+            valid.0, valid.1, "other", valid.3, valid.4, valid.5, valid.6
+        ));
+        assert!(!exact_representative_fields_match(
+            valid.0, valid.1, valid.2, valid.3, "other", valid.5, valid.6
         ));
         assert!(!exact_representative_fields_match(
             valid.0,
             valid.1,
             valid.2,
             valid.3,
-            "innkeeper"
+            valid.4,
+            valid.5,
+            "innkeeper",
         ));
+    }
+
+    #[test]
+    fn service_chapters_have_stable_physical_location_mappings() {
+        assert_eq!(service_npc_location_id("merchants"), Some("market"));
+        assert_eq!(service_npc_location_id("weapons"), Some("forge"));
+        assert_eq!(service_npc_location_id("armor"), Some("armoury"));
+        assert_eq!(service_npc_location_id("clothing"), Some("tailor"));
+        assert_eq!(service_npc_location_id("herbalist"), Some("herbalist"));
+        assert_eq!(service_npc_location_id("inn"), Some("inn"));
+        assert_eq!(service_npc_location_id("religion"), Some("church"));
+        assert_eq!(service_npc_location_id("physician"), None);
+        assert_eq!(service_npc_location_id("surgeon"), None);
+    }
+
+    #[test]
+    fn chapter_location_is_colocated_only_when_the_mapped_service_is_available() {
+        use adventuresim_world_schema::{SettlementEconomyProfile, SettlementService};
+
+        let merchant = organization("merchant_guild").unwrap();
+        let merchant_chapter = merchant.chapter("viabundus-0").unwrap();
+        let mut profile = SettlementEconomyProfile::stage_placeholder();
+        profile.services = vec![SettlementService::Market];
+        assert_eq!(
+            chapter_effective_location_id(merchant, merchant_chapter, &profile),
+            "market"
+        );
+        assert!(!chapter_has_standalone_building(
+            merchant,
+            merchant_chapter,
+            &profile
+        ));
+
+        profile.services.clear();
+        assert_eq!(
+            chapter_effective_location_id(merchant, merchant_chapter, &profile),
+            merchant_chapter.location_id
+        );
+        assert!(chapter_has_standalone_building(
+            merchant,
+            merchant_chapter,
+            &profile
+        ));
+
+        let physicians = organization("physicians_college").unwrap();
+        let physician_chapter = physicians.chapter("viabundus-0").unwrap();
+        profile.services = vec![SettlementService::Market, SettlementService::Temple];
+        assert_eq!(
+            chapter_effective_location_id(physicians, physician_chapter, &profile),
+            physician_chapter.location_id
+        );
+
+        for id in ["hunt_pale_lantern", "order_saint_george", "lodge_hart_king"] {
+            let definition = organization(id).unwrap();
+            let chapter = &definition.chapters[0];
+            assert!(definition.service_id.is_none());
+            assert!(chapter_has_standalone_building(
+                definition, chapter, &profile
+            ));
+        }
+    }
+
+    #[test]
+    fn representative_ids_are_location_independent_and_organization_unique() {
+        let merchant = organization_representative_id("viabundus-0", "merchant_guild");
+        assert_eq!(
+            merchant,
+            organization_representative_id("viabundus-0", "merchant_guild")
+        );
+        assert_ne!(
+            merchant,
+            organization_representative_id("viabundus-0", "weaponsmith_guild")
+        );
+        assert!(!merchant.ends_with(":0"));
     }
 }

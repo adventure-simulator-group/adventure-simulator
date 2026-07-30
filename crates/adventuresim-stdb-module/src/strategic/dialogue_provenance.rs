@@ -307,6 +307,46 @@ fn validate_dialogue_cardinality(
     Ok(())
 }
 
+fn local_service_organization_representative(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    location_id: &str,
+    service_id: &str,
+) -> Option<crate::settlement_population::SettlementNpc> {
+    adventuresim_core::organization::organizations_for_chapter(settlement_id)
+        .filter(|organization| organization.service_id.as_deref() == Some(service_id))
+        .find_map(|organization| {
+            let chapter = organization.chapter(settlement_id)?;
+            let settlement = ctx.db.settlement().id().find(&settlement_id.to_owned())?;
+            (adventuresim_core::organization::chapter_effective_location_id(
+                organization,
+                chapter,
+                &settlement.economy,
+            ) == location_id)
+                .then(|| {
+                    adventuresim_core::organization::organization_representative_id(
+                        settlement_id,
+                        &organization.id,
+                    )
+                })
+                .and_then(|id| ctx.db.settlement_npc().id().find(&id))
+                .filter(|npc| {
+                    exact_organization_representative(ctx, npc, settlement_id, location_id)
+                        .as_deref()
+                        == Some(organization.id.as_str())
+                        && ctx
+                            .db
+                            .settlement_npc_presence()
+                            .npc_id()
+                            .find(&npc.id)
+                            .is_some_and(|presence| {
+                                presence.settlement_id == settlement_id
+                                    && presence.location_id == location_id
+                            })
+                })
+        })
+}
+
 fn dialogue_fact_context(
     ctx: &ReducerContext,
     session: &DialogueSession,
@@ -357,6 +397,20 @@ fn dialogue_fact_context(
                             role: participant.role.clone(),
                         },
                         FactValue::Text(npc.service_id.clone()),
+                    );
+                    result.facts.insert(
+                        FactKey::LocalOrganizationRepresentative {
+                            role: participant.role.clone(),
+                        },
+                        FactValue::Bool(
+                            local_service_organization_representative(
+                                ctx,
+                                &session.settlement_id,
+                                &session.location_id,
+                                &npc.service_id,
+                            )
+                            .is_some(),
+                        ),
                     );
                 }
                 result.facts.insert(
@@ -537,7 +591,7 @@ fn dialogue_fact_context(
             let Some(npc) = ctx.db.settlement_npc().id().find(&representative.actor_id) else {
                 continue;
             };
-            let Ok(organization_id) = dialogue_organization_id(session, &npc) else {
+            let Ok(organization_id) = dialogue_organization_id(ctx, session, &npc) else {
                 continue;
             };
             let definition = adventuresim_core::organization::organization(&organization_id)
@@ -863,7 +917,7 @@ fn bind_organization_business_terms(
     bindings: &mut adventuresim_dialogue::RuntimeBindings,
 ) -> Result<(), String> {
     use adventuresim_dialogue::RuntimeSlot as S;
-    let organization_id = dialogue_organization_id(session, npc)?;
+    let organization_id = dialogue_organization_id(ctx, session, npc)?;
     let definition = adventuresim_core::organization::organization(&organization_id)
         .ok_or("Organization representative has an unknown organization")?;
     bindings.bind(S::OrganizationName, definition.name.clone());
@@ -981,6 +1035,19 @@ fn dialogue_runtime_bindings(
     );
     bindings.bind(S::Settlement, session.settlement_id.clone());
     bindings.bind(S::Location, session.location_id.clone());
+    if !npc.service_id.is_empty()
+        && let Some(representative) = local_service_organization_representative(
+            ctx,
+            &session.settlement_id,
+            &session.location_id,
+            &npc.service_id,
+        )
+    {
+        bindings.bind(
+            S::OrganizationRepresentativeName,
+            representative.name,
+        );
+    }
     if !npc.organization_id.is_empty() {
         bind_organization_business_terms(ctx, session, character_id, &npc, &mut bindings)?;
     }

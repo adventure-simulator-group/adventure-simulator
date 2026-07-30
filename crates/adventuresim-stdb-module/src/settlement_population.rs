@@ -271,6 +271,28 @@ fn insert_npc(
     is_default: bool,
 ) -> Result<(), String> {
     let id = format!("npc:{settlement_id}:{location}:{ordinal}");
+    insert_npc_with_id(
+        ctx,
+        id,
+        settlement_id,
+        location,
+        service,
+        provider_profession,
+        supplied_role,
+        is_default,
+    )
+}
+
+fn insert_npc_with_id(
+    ctx: &ReducerContext,
+    id: String,
+    settlement_id: &str,
+    location: &str,
+    service: &str,
+    provider_profession: &str,
+    supplied_role: &str,
+    is_default: bool,
+) -> Result<(), String> {
     if let Some(existing) = ctx.db.settlement_npc().id().find(&id) {
         let settlement = ctx
             .db
@@ -525,22 +547,36 @@ pub fn ensure_settlement_population(
         let chapter = organization
             .chapter(settlement_id)
             .expect("chapter iterator guarantees a local chapter");
-        insert_npc(
-            ctx,
+        let settlement = ctx
+            .db
+            .settlement()
+            .id()
+            .find(&settlement_id.to_owned())
+            .ok_or("Organization chapter references an unknown settlement")?;
+        let physical_location = adventuresim_core::organization::chapter_effective_location_id(
+            organization,
+            chapter,
+            &settlement.economy,
+        );
+        let representative_id = adventuresim_core::organization::organization_representative_id(
             settlement_id,
-            &chapter.location_id,
+            &organization.id,
+        );
+        insert_npc_with_id(
+            ctx,
+            representative_id.clone(),
+            settlement_id,
+            physical_location,
             "organization",
             &chapter.representative_profession,
             &chapter.representative_title,
-            0,
-            true,
+            physical_location == chapter.location_id.as_str(),
         )?;
-        let npc_id = format!("npc:{settlement_id}:{}:0", chapter.location_id);
         let mut representative = ctx
             .db
             .settlement_npc()
             .id()
-            .find(&npc_id)
+            .find(&representative_id)
             .ok_or("Organization representative was not seeded")?;
         representative.service_id.clear();
         representative.organization_id = organization.id.clone();
@@ -749,10 +785,11 @@ mod tests {
             .and_then(|tail| tail.split("pub fn npc_is_present").next())
             .expect("population seeding body");
         assert!(ensure.contains("organizations_for_chapter(settlement_id)"));
-        assert!(ensure.contains("chapter.location_id"));
+        assert!(ensure.contains("chapter_effective_location_id"));
         assert!(ensure.contains("representative.organization_id = organization.id.clone()"));
         assert!(ensure.contains("\"organization-representative\""));
-        assert!(ensure.contains("ordinal"));
+        assert!(ensure.contains("organization_representative_id"));
         assert!(source.contains("id = format!(\"npc:{settlement_id}:{location}:{ordinal}\")"));
+        assert!(ensure.contains("physical_location == chapter.location_id.as_str()"));
     }
 }

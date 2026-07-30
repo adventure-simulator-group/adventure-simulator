@@ -159,10 +159,12 @@ pub fn player_visible_npc_tabs(
         let chapter = organization
             .chapter(settlement_id)
             .expect("chapter iterator guarantees a local chapter");
-        tabs.push(SettlementNpcTab {
-            location_id: chapter.location_id.as_str(),
-            label: chapter.building_name.as_str(),
-        });
+        if crate::organization::chapter_has_standalone_building(organization, chapter, profile) {
+            tabs.push(SettlementNpcTab {
+                location_id: chapter.location_id.as_str(),
+                label: chapter.building_name.as_str(),
+            });
+        }
     }
     tabs
 }
@@ -431,6 +433,20 @@ mod tests {
         assert!(npc_location_is_navigable(&p, true, "viabundus-0", "keep"));
         assert!(npc_location_is_navigable(
             &p,
+            false,
+            "viabundus-0",
+            "organization-merchant-guild"
+        ));
+        assert!(npc_location_is_navigable(&p, false, "viabundus-0", "inn"));
+        let market = profile(vec![Service::Market], vec![Stock::GeneralGoods]);
+        assert!(npc_location_is_navigable(
+            &market,
+            false,
+            "viabundus-0",
+            "market"
+        ));
+        assert!(!npc_location_is_navigable(
+            &market,
             false,
             "viabundus-0",
             "organization-merchant-guild"

@@ -247,20 +247,65 @@ fn npc_matches_location_binding(
     npc: &SettlementNpcRow,
     settlement_id: &str,
     location_id: &str,
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
 ) -> bool {
-    match adventuresim_core::organization::organization_chapter_at(settlement_id, location_id) {
-        Some((organization, _)) => {
-            npc.organization_id == organization.id
-                && npc.conversation_id == "organization-representative"
-        }
-        None => npc.organization_id.is_empty(),
+    if npc.organization_id.is_empty() {
+        return npc.conversation_id != "organization-representative";
     }
+    let Some(organization) = adventuresim_core::organization::organization(&npc.organization_id)
+    else {
+        return false;
+    };
+    let Some(chapter) = organization.chapter(settlement_id) else {
+        return false;
+    };
+    let expected_id = adventuresim_core::organization::organization_representative_id(
+        settlement_id,
+        &organization.id,
+    );
+    adventuresim_core::organization::chapter_effective_location_id(organization, chapter, profile)
+        == location_id
+        && adventuresim_core::organization::exact_representative_fields_match(
+            &npc.id,
+            &expected_id,
+            &npc.home_settlement_id,
+            settlement_id,
+            &npc.organization_id,
+            &organization.id,
+            &npc.conversation_id,
+        )
 }
 
 #[cfg(test)]
 mod npc_navigation_tests {
-    use super::{npc_location_is_navigable, npc_presence_contains};
+    use super::{
+        SettlementNpcRow, npc_location_is_navigable, npc_matches_location_binding,
+        npc_presence_contains,
+    };
     use crate::spacetimedb::SettlementCategory;
+
+    fn npc(id: &str, organization_id: &str, conversation_id: &str) -> SettlementNpcRow {
+        SettlementNpcRow {
+            id: id.into(),
+            home_settlement_id: "viabundus-0".into(),
+            name: "Greta Test".into(),
+            age_band: "adult".into(),
+            presentation: "woman".into(),
+            height: "average".into(),
+            build: "sturdy".into(),
+            hair: "brown hair".into(),
+            facial_hair: "none visible".into(),
+            complexion: "fair".into(),
+            visible_features: "work-worn hands".into(),
+            clothing: "working clothes".into(),
+            profession: "merchant".into(),
+            household: "market household".into(),
+            local_role: "market steward".into(),
+            service_id: "merchants".into(),
+            organization_id: organization_id.into(),
+            conversation_id: conversation_id.into(),
+        }
+    }
 
     #[test]
     fn browser_npc_description_uses_presentation_not_private_sex() {
@@ -332,6 +377,70 @@ mod npc_navigation_tests {
             &SettlementCategory::City,
             "viabundus-0",
             "organization-not-authored"
+        ));
+    }
+
+    #[test]
+    fn service_location_accepts_default_visitor_and_only_exact_local_representatives() {
+        let mut profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        profile.services = vec![adventuresim_world_schema::SettlementService::Market];
+        let representative_id = adventuresim_core::organization::organization_representative_id(
+            "viabundus-0",
+            "merchant_guild",
+        );
+        let provider = npc("npc:viabundus-0:market:0", "", "service-professions");
+        let visitor = npc("npc:viabundus-0:market:1", "", "local-resident");
+        let representative = npc(
+            &representative_id,
+            "merchant_guild",
+            "organization-representative",
+        );
+        assert!(npc_matches_location_binding(
+            &provider,
+            "viabundus-0",
+            "market",
+            &profile
+        ));
+        assert!(npc_matches_location_binding(
+            &visitor,
+            "viabundus-0",
+            "market",
+            &profile
+        ));
+        assert!(npc_matches_location_binding(
+            &representative,
+            "viabundus-0",
+            "market",
+            &profile
+        ));
+
+        for spoofed in [
+            npc(
+                "npc:viabundus-0:market:0",
+                "merchant_guild",
+                "organization-representative",
+            ),
+            npc(
+                &representative_id,
+                "weaponsmith_guild",
+                "organization-representative",
+            ),
+            npc(&representative_id, "", "organization-representative"),
+        ] {
+            assert!(!npc_matches_location_binding(
+                &spoofed,
+                "viabundus-0",
+                "market",
+                &profile
+            ));
+        }
+        let mut wrong_settlement = representative;
+        wrong_settlement.home_settlement_id = "viabundus-2337".into();
+        assert!(!npc_matches_location_binding(
+            &wrong_settlement,
+            "viabundus-0",
+            "market",
+            &profile
         ));
     }
 
@@ -442,7 +551,7 @@ async fn location_npcs(
     let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && npc_presence_contains(presence.start_minute, presence.end_minute, minute)).filter_map(|presence| {
         let npc = npcs.iter().find(|npc| {
             npc.id == presence.npc_id
-                && npc_matches_location_binding(npc, &settlement_id, &location_id)
+                && npc_matches_location_binding(npc, &settlement_id, &location_id, &settlement.economy)
         })?;
         let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
         Some(NpcView { id: npc.id.clone(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} person with {} presentation, a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.presentation.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default })
@@ -496,7 +605,12 @@ async fn social_npc_in_scope(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .filter(|npc| {
             npc.home_settlement_id == settlement_id
-                && npc_matches_location_binding(npc, settlement_id, location_id)
+                && npc_matches_location_binding(
+                    npc,
+                    settlement_id,
+                    location_id,
+                    &settlement.economy,
+                )
         })
         .ok_or(StatusCode::NOT_FOUND)
 }
@@ -839,9 +953,6 @@ async fn start(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::BAD_REQUEST)?;
-    if !npc_matches_location_binding(&npc, &npc.home_settlement_id, &request.location_id) {
-        return Err(StatusCode::NOT_FOUND);
-    }
     let settlement = state
         .db
         .query_one::<Settlement>(&format!(
@@ -851,6 +962,14 @@ async fn start(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::BAD_REQUEST)?;
+    if !npc_matches_location_binding(
+        &npc,
+        &npc.home_settlement_id,
+        &request.location_id,
+        &settlement.economy,
+    ) {
+        return Err(StatusCode::NOT_FOUND);
+    }
     if !npc_location_is_navigable(
         &settlement.economy,
         &settlement.category,

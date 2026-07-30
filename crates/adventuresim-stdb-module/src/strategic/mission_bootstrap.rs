@@ -1744,12 +1744,13 @@ mod developer_quest_source_tests {
     fn organization_effects_resolve_only_from_the_bound_live_representative() {
         let source = STRATEGIC_SOURCE;
         let resolver = source
-            .split("fn dialogue_organization_id")
+            .split("fn exact_organization_representative")
             .nth(1)
             .and_then(|tail| tail.split("fn dialogue_service_id").next())
             .expect("organization dialogue authority");
         assert!(resolver.contains("npc.organization_id"));
-        assert!(resolver.contains("chapter_at_location"));
+        assert!(resolver.contains("chapter_effective_location_id"));
+        assert!(resolver.contains("organization_representative_id"));
         assert!(resolver.contains("session.settlement_id"));
         assert!(resolver.contains("session.location_id"));
         assert!(resolver.contains("\"organization-representative\""));
@@ -1762,7 +1763,7 @@ mod developer_quest_source_tests {
                     .next()
             })
             .expect("organization dialogue effects");
-        assert!(effects.contains("dialogue_organization_id(session, &live_npc)"));
+        assert!(effects.contains("dialogue_organization_id(ctx, session, &live_npc)"));
         assert!(!effects.contains("organization_id: String"));
     }
 

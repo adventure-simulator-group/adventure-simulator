@@ -461,6 +461,15 @@ pub(super) async fn settlement_npc_place(
     let Some(settlement) = settlement else {
         return Html("<h1>Settlement not found</h1>".into());
     };
+    if let Some((organization, chapter)) = organization_chapter
+        && !adventuresim_core::organization::chapter_has_standalone_building(
+            organization,
+            chapter,
+            &settlement.economy,
+        )
+    {
+        return Html("<h1>Settlement place not found</h1>".into());
+    }
     let active = get_active_character(&state, session.character_id_u64()).await;
     let Some((character, _)) = active.as_ref() else {
         return Html("<h1>Choose a character first</h1>".into());

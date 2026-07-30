@@ -210,6 +210,9 @@ pub enum FactKey {
     ParticipantReferralContact {
         role: String,
     },
+    LocalOrganizationRepresentative {
+        role: String,
+    },
     OrganizationMembership {
         player: String,
         representative: String,
@@ -282,6 +285,7 @@ impl FactKey {
             | Self::ParticipantPresent { role }
             | Self::ParticipantRumorCase { role }
             | Self::ParticipantReferralContact { role }
+            | Self::LocalOrganizationRepresentative { role }
             | Self::PriorQuestioning { role }
             | Self::PartyLeader { role }
             | Self::Service { role } => [Some(role.as_str()), None],

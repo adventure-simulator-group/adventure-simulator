@@ -54,6 +54,33 @@ pub(super) async fn begin_service_apprenticeship(
             message: "No local organization offers that professional activity.",
         });
     };
+    let settlement = state
+        .db
+        .query_one::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
+        .await
+        .ok()
+        .flatten();
+    let Some(settlement) = settlement else {
+        return Json(ApprenticeshipResult {
+            enrolled: false,
+            message: "The local training authority is unavailable.",
+        });
+    };
+    if organization.chapter(&id).is_some_and(|chapter| {
+        !adventuresim_core::organization::chapter_has_standalone_building(
+            organization,
+            chapter,
+            &settlement.economy,
+        )
+    }) {
+        return Json(ApprenticeshipResult {
+            enrolled: false,
+            message: "Speak to the local organization representative about apprenticeship.",
+        });
+    }
     let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     else {
         return Json(ApprenticeshipResult {
