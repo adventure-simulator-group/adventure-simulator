@@ -713,13 +713,23 @@ mod tests {
         assert!(injury_markup.contains("value=\"reassure\""));
         assert!(injury_markup.contains("class=\"social-action-label\">Reassure</span>"));
         assert!(injury_markup.contains("Sit at their bedside"));
-        assert!(injury_markup.contains("Physiology"));
-        assert!(injury_markup.contains("low risk"));
         assert!(injury_markup.contains("Reassure. Sit at their bedside"));
-        assert!(injury_markup.contains("Physiology Â· low risk"));
+        let reassurance_button = injury_markup
+            .split("value=\"reassure\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</button>").next())
+            .expect("rendered Reassure button");
+        assert!(reassurance_button.contains("Physiology"));
+        assert!(reassurance_button.contains("low risk"));
         assert!(injury_markup.contains("value=\"deception\""));
         assert!(injury_markup.contains("Claim the injury is less serious than it looks"));
-        assert!(injury_markup.contains("Deception Â· high risk"));
+        let reframe_button = injury_markup
+            .split("value=\"deception\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</button>").next())
+            .expect("rendered Injury Reframe button");
+        assert!(reframe_button.contains("Deception"));
+        assert!(reframe_button.contains("high risk"));
     }
 
     #[test]
