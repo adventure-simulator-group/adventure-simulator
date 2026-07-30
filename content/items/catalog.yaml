@@ -3274,124 +3274,124 @@
       }
     },
     {
-      "id": "primer_german_latin", "display_name": "German-Latin primer",
+      "id": "primer_german_latin", "display_name": "Vocabularius ex quo (German–Latin)",
       "weight_kg": 0.35, "base_value": 18, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "written", "language": "Latin"}, "lower_rank": 0, "upper_rank": 1}}
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "written", "language": "Latin"}, "quality": 1}}
     },
     {
-      "id": "primer_latin_german", "display_name": "Latin-German primer",
+      "id": "primer_latin_german", "display_name": "Vocabularius ex quo (Latin–German)",
       "weight_kg": 0.35, "base_value": 18, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "written", "language": "German"}, "lower_rank": 0, "upper_rank": 1}}
+      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "written", "language": "German"}, "quality": 1}}
     },
     {
-      "id": "primer_low_german", "display_name": "Low German-German primer",
+      "id": "primer_low_german", "display_name": "Teuthonista (Low German–German)",
       "weight_kg": 0.35, "base_value": 16, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "Low", "target": {"kind": "written", "language": "German"}, "lower_rank": 0, "upper_rank": 1}}
+      "capabilities": {"book": {"medium": "Low", "target": {"kind": "written", "language": "German"}, "quality": 1}}
     },
     {
-      "id": "primer_german_low", "display_name": "German-Low German primer",
+      "id": "primer_german_low", "display_name": "Teuthonista (German–Low German)",
       "weight_kg": 0.35, "base_value": 16, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "written", "language": "Low"}, "lower_rank": 0, "upper_rank": 1}}
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "written", "language": "Low"}, "quality": 1}}
     },
     {
-      "id": "latin_rhetoric_advanced", "display_name": "Advanced Latin rhetoric",
+      "id": "latin_rhetoric_advanced", "display_name": "De oratore",
       "weight_kg": 0.55, "base_value": 75, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "written", "language": "Latin"}, "lower_rank": 4, "upper_rank": 5}}
+      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "written", "language": "Latin"}, "quality": 5}}
     },
     {
-      "id": "catholic_summa_advanced", "display_name": "Advanced Catholic summa",
+      "id": "catholic_summa_advanced", "display_name": "Summa Theologiae",
       "weight_kg": 0.8, "base_value": 90, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "religion", "religion": "RomanCatholic"}, "lower_rank": 4, "upper_rank": 5}}
+      "presentation": {"icon": "holy-symbol"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "religion", "religion": "RomanCatholic"}, "quality": 5}}
     },
     {
-      "id": "bestiary_beasts_advanced", "display_name": "A compendium of beasts",
+      "id": "bestiary_beasts_advanced", "display_name": "Physiologus",
       "weight_kg": 0.7, "base_value": 70, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "bestiary", "category": "beast"}, "lower_rank": 4, "upper_rank": 5}}
+      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "bestiary", "category": "beast"}, "quality": 5}}
     },
     {
-      "id": "human_anatomy", "display_name": "On human anatomy",
+      "id": "human_anatomy", "display_name": "De humani corporis fabrica",
       "weight_kg": 0.65, "base_value": 55, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "skill", "skill": "physiology"}, "lower_rank": 3, "upper_rank": 4}}
+      "presentation": {"icon": "caduceus"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "skill", "skill": "physiology"}, "quality": 4}}
     },
     {
-      "id": "german_herbal", "display_name": "A German herbal",
+      "id": "german_herbal", "display_name": "New Kreütter Buch",
       "weight_kg": 0.6, "base_value": 45, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "herbalism"}, "lower_rank": 3, "upper_rank": 4}}
+      "presentation": {"icon": "caduceus"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "herbalism"}, "quality": 4}}
     },
     {
-      "id": "forest_wayfinding", "display_name": "Woodland ways and signs",
+      "id": "forest_wayfinding", "display_name": "Gejaidbuch (woodcraft)",
       "weight_kg": 0.3, "base_value": 22, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "terrain", "terrain": "forest"}, "lower_rank": 1, "upper_rank": 2}}
+      "presentation": {"icon": "treasure-map"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "terrain", "terrain": "forest"}, "quality": 2}}
     },
     {
-      "id": "field_surgery_manual", "display_name": "Field surgery manual",
+      "id": "field_surgery_manual", "display_name": "Feldbuch der Wundarznei",
       "weight_kg": 0.4, "base_value": 32, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "surgery"}, "lower_rank": 1, "upper_rank": 2}}
+      "presentation": {"icon": "scalpel"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "surgery"}, "quality": 2}}
     },
     {
-      "id": "kitchen_book", "display_name": "The good kitchen book",
+      "id": "kitchen_book", "display_name": "Küchenmeisterei",
       "weight_kg": 0.35, "base_value": 24, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "cooking"}, "lower_rank": 1, "upper_rank": 2}}
+      "presentation": {"icon": "meal"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "cooking"}, "quality": 2}}
     },
     {
-      "id": "tailors_pattern_book", "display_name": "A tailor's pattern book",
+      "id": "tailors_pattern_book", "display_name": "Hausbuch der Mendelschen Zwölfbrüderstiftung",
       "weight_kg": 0.4, "base_value": 30, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "tailoring"}, "lower_rank": 1, "upper_rank": 2}}
+      "presentation": {"icon": "clothes"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "tailoring"}, "quality": 2}}
     },
     {
-      "id": "smiths_handbook", "display_name": "The smith's handbook",
+      "id": "smiths_handbook", "display_name": "Probierbüchlein",
       "weight_kg": 0.45, "base_value": 34, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "smithing"}, "lower_rank": 1, "upper_rank": 2}}
+      "presentation": {"icon": "anvil"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "smithing"}, "quality": 2}}
     },
     {
-      "id": "captains_discourses", "display_name": "A captain's discourses",
+      "id": "captains_discourses", "display_name": "De re militari",
       "weight_kg": 0.4, "base_value": 38, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "command"}, "lower_rank": 1, "upper_rank": 2}}
+      "presentation": {"icon": "crown"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "skill", "skill": "command"}, "quality": 2}}
     },
     {
-      "id": "courtly_conversation", "display_name": "Courtly conversation",
+      "id": "courtly_conversation", "display_name": "De civilitate morum puerilium",
       "weight_kg": 0.3, "base_value": 28, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "charm"}, "lower_rank": 1, "upper_rank": 2}}
+      "presentation": {"icon": "rose"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "Latin", "target": {"kind": "skill", "skill": "charm"}, "quality": 2}}
     },
     {
-      "id": "fechtbuch_sword", "display_name": "Illustrated sword fechtbuch",
+      "id": "fechtbuch_sword", "display_name": "Fechtbuch von 1467",
       "weight_kg": 0.45, "base_value": 40, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "sword"}, "lower_rank": 0, "upper_rank": 1}}
+      "presentation": {"icon": "sword-brandish"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "sword"}, "quality": 1}}
     },
     {
-      "id": "hunting_with_bows", "display_name": "Hunting with bows",
+      "id": "hunting_with_bows", "display_name": "Gejaidbuch (bow hunting)",
       "weight_kg": 0.35, "base_value": 30, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "bow"}, "lower_rank": 0, "upper_rank": 1}}
+      "presentation": {"icon": "bow-arrow"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "bow"}, "quality": 1}}
     },
     {
-      "id": "manual_of_defence", "display_name": "A manual of defence",
+      "id": "manual_of_defence", "display_name": "Gladiatoria",
       "weight_kg": 0.4, "base_value": 35, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "block"}, "lower_rank": 0, "upper_rank": 1}}
+      "presentation": {"icon": "shield"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "block"}, "quality": 1}}
     },
     {
-      "id": "hunters_concealment", "display_name": "The hunter's concealment",
+      "id": "hunters_concealment", "display_name": "Liber Vagatorum",
       "weight_kg": 0.3, "base_value": 27, "tags": ["book"],
-      "presentation": {"icon": "open-book"}, "kind": "simple",
-      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "stealth"}, "lower_rank": 0, "upper_rank": 1}}
+      "presentation": {"icon": "hood"}, "kind": "simple",
+      "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "stealth"}, "quality": 1}}
     }
   ]
 }

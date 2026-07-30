@@ -5,6 +5,10 @@ use crate::skill::Skill;
 
 pub const READABLE_WRITTEN_RANK: f32 = 1.0;
 
+pub const fn rank_band(book: &Book) -> (u8, u8) {
+    (book.quality.saturating_sub(1), book.quality)
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BoundedBookGain {
     pub accepted_effective_hours: f32,
@@ -50,8 +54,7 @@ pub fn maximum_book_rank(target: &BookTarget) -> Option<u8> {
 }
 
 pub fn book_shape_is_valid(book: &Book) -> bool {
-    book.upper_rank == book.lower_rank.saturating_add(1)
-        && book.upper_rank <= maximum_book_rank(&book.target).unwrap_or(0)
+    (1..=maximum_book_rank(&book.target).unwrap_or(0)).contains(&book.quality)
         && match &book.target {
             BookTarget::Terrain { terrain } => matches!(
                 terrain.as_str(),
@@ -264,7 +267,7 @@ pub fn select_candidate<'a>(
         right
             .personal
             .cmp(&left.personal)
-            .then(left.book.lower_rank.cmp(&right.book.lower_rank))
+            .then(left.book.quality.cmp(&right.book.quality))
             .then(left.item_id.cmp(right.item_id))
     });
     values.dedup_by(|left, right| left.item_id == right.item_id);
@@ -313,8 +316,7 @@ mod tests {
             target: BookTarget::Skill {
                 skill: "cooking".into(),
             },
-            lower_rank: lower,
-            upper_rank: lower + 1,
+            quality: lower + 1,
             settlement_allowlist: Vec::new(),
         }
     }
@@ -508,5 +510,12 @@ mod tests {
             }),
             Some(1)
         );
+        let cooking = book(1);
+        assert_eq!(cooking.quality, 2);
+        assert_eq!(rank_band(&cooking), (1, 2));
+        assert!(book_shape_is_valid(&cooking));
+        let mut excessive = cooking;
+        excessive.quality = 3;
+        assert!(!book_shape_is_valid(&excessive));
     }
 }

@@ -136,13 +136,15 @@ Melee, ranged, Defense, and Stealth manuals only provide the 0→1 introduction.
 Advancement above the bounded practical and embodied bands is reserved for
 metis rather than book study.
 
-Each title teaches one adjacent integer band. Its lower rank is a hard
-prerequisite and progress clips at its upper rank. A readable medium requires
-rank 1 in that Written language. Reading converts real hours to effective
-target hours at `written rank / 5`, without applying the target aptitude's
-learning-speed multiplier again. Aptitude still caps the effective target
-rank. Terrain is governed by Instinct; its correlations and exposure sources
-are unchanged.
+Each title has the same 1–5 quality used by other items. Quality `N` teaches
+the adjacent `N-1→N` rank band: the lower rank is a hard prerequisite and
+progress clips at the quality rank. The inventory renders book names with the
+existing quality colors, while the item-type column uses the icon of the exact
+skill leaf the book trains. A readable medium requires rank 1 in that Written
+language. Reading converts real hours to effective target hours at `written
+rank / 5`, without applying the target aptitude's learning-speed multiplier
+again. Aptitude still caps the effective target rank. Terrain is governed by
+Instinct; its correlations and exposure sources are unchanged.
 Every skill has exactly one governing aptitude: Intelligence, Instinct, or
 Agility. Aptitude controls training speed and the effective-rank limit; trained
 skill rank supplies the check itself.

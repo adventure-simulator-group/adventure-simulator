@@ -743,10 +743,11 @@ impl ActivityPreviewRates {
                     attributes.intelligence,
                 );
                 rank_and_aptitude(&book.target).is_some_and(|(rank, aptitude)| {
+                    let (lower, upper) = adventuresim_core::book::rank_band(book);
                     medium_rank >= READABLE_WRITTEN_RANK
-                        && rank + 0.000_01 >= f32::from(book.lower_rank)
-                        && rank < f32::from(book.upper_rank).min(aptitude)
-                        && aptitude > f32::from(book.lower_rank)
+                        && rank + 0.000_01 >= f32::from(lower)
+                        && rank < f32::from(upper).min(aptitude)
+                        && aptitude > f32::from(lower)
                 })
             },
         );
@@ -757,13 +758,14 @@ impl ActivityPreviewRates {
             );
             let title = adventuresim_core::item_catalog::definition(selected.item_id)
                 .map_or(selected.item_id, |item| item.display_name.as_str());
+            let (lower, upper) = adventuresim_core::book::rank_band(selected.book);
             self.reading = Some(ReadingPreview {
                 rate: adventuresim_core::book::reading_rate(medium_rank),
                 description: format!(
                     "Read {title} ({:?}, ranks {}→{}). Literacy converts each reading hour into {:.0}% of an effective training hour.",
                     selected.book.medium,
-                    selected.book.lower_rank,
-                    selected.book.upper_rank,
+                    lower,
+                    upper,
                     adventuresim_core::book::reading_rate(medium_rank) * 100.0,
                 ),
             });
@@ -3315,7 +3317,11 @@ mod tests {
             .reading
             .expect("German primer is readable and useful");
         assert!((reading.rate - 0.5).abs() < f32::EPSILON);
-        assert!(reading.description.contains("German-Latin primer"));
+        assert!(
+            reading
+                .description
+                .contains("Vocabularius ex quo (German–Latin)")
+        );
         assert!(reading.description.contains("50%"));
     }
 

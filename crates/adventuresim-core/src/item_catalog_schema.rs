@@ -135,8 +135,8 @@ pub struct Capabilities {
 pub struct Book {
     pub medium: adventuresim_world_schema::WrittenLanguage,
     pub target: BookTarget,
-    pub lower_rank: u8,
-    pub upper_rank: u8,
+    /// Shared 1..=5 item quality. A quality-N book teaches rank N-1 to N.
+    pub quality: u8,
     #[serde(default)]
     pub settlement_allowlist: Vec<String>,
 }

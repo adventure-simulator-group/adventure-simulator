@@ -1377,6 +1377,8 @@ fn item_name_with_display_quality(
         .map(|_| "alcohol");
     let food_quality =
         quality_override.is_some() || adventuresim_core::food::definition(item_id).is_some();
+    let book_quality = adventuresim_core::item_catalog::definition(item_id)
+        .is_some_and(|item| item.capabilities.book.is_some());
     let quality = quality_override.or_else(|| {
         definition
             .filter(|item| {
@@ -1387,11 +1389,12 @@ fn item_name_with_display_quality(
                         | crate::spacetimedb::ItemKind::Shield
                         | crate::spacetimedb::ItemKind::Food
                 ) || adventuresim_core::food::definition(item_id).is_some()
+                    || book_quality
             })
             .map(|item| item.quality.clamp(1, 5))
     });
     let label = quality.map(|quality| {
-        if food_quality {
+        if food_quality || book_quality {
             format!("Quality {quality}")
         } else {
             match quality {
@@ -2253,6 +2256,21 @@ mod tests {
         let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
         assert!(rendered.contains("item-quality-4"));
         assert!(rendered.contains("knightly commission"));
+    }
+
+    #[test]
+    fn book_names_use_shared_quality_color_without_equipment_copy() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "human_anatomy".into(),
+            kind: crate::spacetimedb::ItemKind::Simple,
+            quality: 4,
+            ..Default::default()
+        };
+
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains("item-quality-4"));
+        assert!(rendered.contains("title=\"Quality 4\""));
+        assert!(!rendered.contains("knightly commission"));
     }
 
     #[test]

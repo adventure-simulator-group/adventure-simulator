@@ -39,11 +39,28 @@ custody, condition, and market state do not belong in definitions.
 
 Books remain ordinary `kind: simple` items and add `capabilities.book`. The
 capability authors a `medium` Written language, exactly one typed leaf target,
-adjacent `lower_rank`/`upper_rank` integers, and an optional
-`settlement_allowlist` for culturally rare stock. Validation rejects aggregate
-or unknown targets, non-adjacent bands, and bands beyond the target-family
-limit. Runtime resolves embedded metadata by stable item ID rather than
-widening the persisted item table.
+a shared `quality` from 1 through 5, and an optional `settlement_allowlist` for
+culturally rare stock. Quality is the teaching band: quality 1 teaches rank
+0→1, quality 2 teaches 1→2, and so on. Validation rejects aggregate or unknown
+targets and quality above the target-family limit. Runtime resolves embedded
+metadata by stable item ID rather than widening the persisted inventory row;
+the existing flattened item quality field carries the value needed for the
+standard five inventory-name colors.
+
+The starter catalog uses real works available by the 1544 setting wherever a
+reasonable match exists. Examples include the bilingual *Vocabularius ex quo*,
+Hans von Gersdorff's *Feldbuch der Wundarznei* (1517), *Küchenmeisterei*
+(1485), Erasmus's *De civilitate morum puerilium* (1530), Vesalius's *De
+humani corporis fabrica* (1543), Bock's *New Kreütter Buch* (1539), and the
+German *Fechtbuch* tradition. A work's assignment to a single game skill is a
+gameplay abstraction rather than a claim that the historical text was a modern
+coursebook. Useful collection records include the
+[Bodleian copy of *Vocabularius ex quo*](https://textinc7.bodleian.ox.ac.uk/catalog/tiv00363000),
+[National Library of Medicine records for Gersdorff](https://www.nlm.nih.gov/exhibition/historicalanatomies/gersdorff_bio.html)
+and [Vesalius](https://www.nlm.nih.gov/exhibition/historicalanatomies/vesalius_biblio.html),
+the [Bibliothèque nationale de France record for Erasmus](https://catalogue.bnf.fr/ark:/12148/cb30402412n),
+the [Metropolitan Museum's Talhoffer *Fechtbuch*](https://www.metmuseum.org/art/collection/search/32426),
+and the [Nuremberg Mendel Housebook](https://online-service.nuernberg.de/viewer/!toc/5d64f831-7a9d-47b4-9a01-d6a28f29ad99/307/-/).
 
 Every item requires `id`, `display_name`, `weight_kg`, `base_value`, `tags`,
 `presentation.icon`, and a tagged `kind`. Physical units are part of field
@@ -59,7 +76,7 @@ quality 1--5 and explicit physical/handling inputs.
 Capabilities compose independently of kind. Garlic remains an `ingredient`
 while carrying `capabilities.food`; alcohol remains a simple serving while
 carrying `capabilities.alcohol`. Food, alcohol, container, and durability are
-the supported capabilities. Executable effects, physiology profile versions,
+supported alongside books. Executable effects, physiology profile versions,
 currency assignment, and other mechanics remain typed Rust and are
 cross-validated against catalog membership.
 

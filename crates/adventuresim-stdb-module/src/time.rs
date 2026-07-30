@@ -942,8 +942,7 @@ fn apply_selected_book(
     let Some((rank, aptitude)) = target_snapshot(skills, &book.target, attributes) else {
         return Default::default();
     };
-    let lower = book.lower_rank;
-    let upper = book.upper_rank;
+    let (lower, upper) = adventuresim_core::book::rank_band(book);
     match &book.target {
         BookTarget::Written { language } => adventuresim_core::book::apply_written_book_training(
             &mut skills.written_languages,
@@ -1111,10 +1110,11 @@ fn apply_reading_training(
                 attributes.intelligence,
             );
             target_snapshot(skills, &book.target, attributes).is_some_and(|(rank, aptitude)| {
+                let (lower, upper) = adventuresim_core::book::rank_band(book);
                 medium_rank >= adventuresim_core::book::READABLE_WRITTEN_RANK
-                    && rank + 0.000_01 >= f32::from(book.lower_rank)
-                    && rank < f32::from(book.upper_rank).min(aptitude)
-                    && aptitude > f32::from(book.lower_rank)
+                    && rank + 0.000_01 >= f32::from(lower)
+                    && rank < f32::from(upper).min(aptitude)
+                    && aptitude > f32::from(lower)
             })
         }) else {
             break;

@@ -1323,6 +1323,11 @@
 .inventory-column-type { width: 1.45rem; min-width: 1.45rem; }
 .inventory-item-type { width: 1.45rem; padding-inline: 0.18rem !important; text-align: center; }
 .inventory-item-type .game-icon { width: 0.95rem; height: 0.95rem; }
+.inventory-item-type .language-monogram {
+  width: 0.95rem;
+  height: 0.95rem;
+  font-size: 0.72rem;
+}
 
 /* Smith inventories retain compact fixed-purpose columns while the rail grows
    to accommodate them and any enabled optional statistics. */

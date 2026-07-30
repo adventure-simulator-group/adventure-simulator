@@ -709,13 +709,7 @@ fn validate_capabilities(
     if let Some(book) = capabilities.get("book").and_then(Value::as_object) {
         reject_unknown(
             book,
-            &[
-                "medium",
-                "target",
-                "lower_rank",
-                "upper_rank",
-                "settlement_allowlist",
-            ],
+            &["medium", "target", "quality", "settlement_allowlist"],
             file,
             &format!("{path}.capabilities.book"),
             errors,
@@ -730,7 +724,7 @@ fn validate_capabilities(
         match parsed {
             Ok(book) if valid_book_shape(&book) => {}
             Ok(_) => errors.push(format!(
-                "{file}: {path}.capabilities.book: target must be a supported leaf with an adjacent legal rank band"
+                "{file}: {path}.capabilities.book: target must be a supported leaf with a legal quality"
             )),
             Err(error) => errors.push(format!(
                 "{file}: {path}.capabilities.book: {error}"
@@ -797,7 +791,7 @@ fn valid_book_shape(book: &crate::item_catalog_schema::Book) -> bool {
         }
         _ => return false,
     };
-    book.upper_rank == book.lower_rank.saturating_add(1) && book.upper_rank <= maximum
+    (1..=maximum).contains(&book.quality)
 }
 
 fn valid_id(id: &str) -> bool {
@@ -992,13 +986,12 @@ mod tests {
     }
 
     #[test]
-    fn book_capabilities_require_supported_adjacent_bands() {
+    fn book_capabilities_require_supported_quality() {
         let valid = json!({
             "book": {
                 "medium": "German",
                 "target": {"kind": "written", "language": "Latin"},
-                "lower_rank": 0,
-                "upper_rank": 1
+                "quality": 1
             }
         });
         let mut errors = Vec::new();
@@ -1015,8 +1008,7 @@ mod tests {
             "book": {
                 "medium": "German",
                 "target": {"kind": "skill", "skill": "sword"},
-                "lower_rank": 1,
-                "upper_rank": 2
+                "quality": 2
             }
         });
         let mut errors = Vec::new();
@@ -1027,10 +1019,6 @@ mod tests {
             "simple",
             &mut errors,
         );
-        assert!(
-            errors
-                .iter()
-                .any(|error| error.contains("adjacent legal rank band"))
-        );
+        assert!(errors.iter().any(|error| error.contains("legal quality")));
     }
 }
