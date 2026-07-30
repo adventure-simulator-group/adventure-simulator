@@ -1,6 +1,6 @@
 # Strategic route terrain
 
-World schema v25 and inference rules v9 attach a required `RouteTerrain` to
+World schema v26 and inference rules v10 attach a required `RouteTerrain` to
 every imported travel edge. The record is a static strategic fact used for
 travel planning and encounter selection. It never persists tactical positions,
 damage, HP, enemies, or simulation ticks.

@@ -286,6 +286,9 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         item.nutrition_kcal = food.nutrition_kcal;
         item.quality = food.quality;
     }
+    if let Some(book) = &definition.capabilities.book {
+        item.quality = book.quality;
+    }
     if let Some(container) = definition.capabilities.container {
         item.water_capacity_ml = container.capacity_ml;
     }
@@ -881,6 +884,16 @@ mod tests {
             adventuresim_core::item_catalog::definition("arming_sword").unwrap(),
         );
         assert!(sword.repairable);
+    }
+
+    #[test]
+    fn projection_exposes_book_quality_for_inventory_presentation() {
+        let book = project_definition(
+            adventuresim_core::item_catalog::definition("human_anatomy").unwrap(),
+        );
+        assert_eq!(book.kind, ItemKind::Simple);
+        assert_eq!(book.quality, 4);
+        assert!(!book.repairable);
     }
 
     #[test]

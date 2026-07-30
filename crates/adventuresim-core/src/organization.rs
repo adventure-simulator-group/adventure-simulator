@@ -312,10 +312,21 @@ pub struct TrainingEntry {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TrainingTarget {
-    FixedSkill { skill: String },
-    Religion { religion: String },
-    Bestiary { category: String },
-    Terrain { terrain: String },
+    FixedSkill {
+        skill: String,
+    },
+    Religion {
+        religion: String,
+    },
+    Bestiary {
+        category: String,
+    },
+    Terrain {
+        terrain: String,
+    },
+    Written {
+        language: adventuresim_world_schema::WrittenLanguage,
+    },
     EquippedWeaponSkills,
 }
 
@@ -452,6 +463,7 @@ pub fn service_npc_location_id(service_id: &str) -> Option<&'static str> {
         "weapons" => Some("forge"),
         "armor" => Some("armoury"),
         "clothing" => Some("tailor"),
+        "books" => Some("bookstore"),
         "herbalist" => Some("herbalist"),
         "inn" => Some("inn"),
         "religion" => Some("church"),
@@ -471,6 +483,7 @@ pub fn service_npc_location_available(
         "weapons" => storefront_available(profile, Storefront::Weapons),
         "armor" => storefront_available(profile, Storefront::Armor),
         "clothing" => storefront_available(profile, Storefront::Clothing),
+        "books" => storefront_available(profile, Storefront::Books),
         "herbalist" => storefront_available(profile, Storefront::Herbalist),
         "inn" => action_service_available(profile, SettlementActionService::Inn),
         "religion" => action_service_available(profile, SettlementActionService::Temple),
@@ -1000,6 +1013,7 @@ mod tests {
         assert_eq!(service_npc_location_id("weapons"), Some("forge"));
         assert_eq!(service_npc_location_id("armor"), Some("armoury"));
         assert_eq!(service_npc_location_id("clothing"), Some("tailor"));
+        assert_eq!(service_npc_location_id("books"), Some("bookstore"));
         assert_eq!(service_npc_location_id("herbalist"), Some("herbalist"));
         assert_eq!(service_npc_location_id("inn"), Some("inn"));
         assert_eq!(service_npc_location_id("religion"), Some("church"));

@@ -1798,6 +1798,7 @@ fn merchant_storefront(
         "armor" => Ok((Storefront::Armor, "armoury")),
         "clothing" => Ok((Storefront::Clothing, "tailor")),
         "inn" => Ok((Storefront::Inn, "inn")),
+        "books" => Ok((Storefront::Books, "bookstore")),
         _ => Err("Unknown merchant storefront".into()),
     }
 }
@@ -1961,7 +1962,14 @@ fn finalize_storefront_trade_impl(
             storefront,
             item_id,
             catalog_kind,
-        ) {
+        ) || (storefront == adventuresim_core::settlement_economy::Storefront::Books
+            && adventuresim_core::item_catalog::definition(item_id)
+                .and_then(|definition| definition.capabilities.book.as_ref())
+                .is_none_or(|book| {
+                    !book.settlement_allowlist.is_empty()
+                        && !book.settlement_allowlist.contains(&settlement_id)
+                }))
+        {
             return Err("This settlement does not stock that merchant item".into());
         }
         let quoted = adventuresim_core::strategic_economy::language_adjusted_buy_price(

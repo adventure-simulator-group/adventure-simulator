@@ -171,7 +171,7 @@ struct PersistedGenerationExplanation {
     profile: population::GeneratedPopulationProfile,
 }
 
-const SERVICES: [(&str, &str, &str, &str); 7] = [
+const SERVICES: [(&str, &str, &str, &str); 8] = [
     ("merchants", "market", "merchant", "market steward"),
     ("weapons", "forge", "weaponsmith", "master weaponsmith"),
     ("armor", "armoury", "armourer", "master armourer"),
@@ -179,6 +179,7 @@ const SERVICES: [(&str, &str, &str, &str); 7] = [
     ("herbalist", "herbalist", "herbalist", "local healer"),
     ("inn", "inn", "innkeeper", "innkeeper"),
     ("religion", "church", "cleric", "parish priest"),
+    ("books", "bookstore", "merchant", "bookseller"),
 ];
 const FEMALE_NAMES: [&str; 10] = [
     "Anna",
@@ -209,6 +210,7 @@ fn location_context(location: &str) -> Result<LocationContext, String> {
         "armoury" => LocationContext::Armoury,
         "tailor" => LocationContext::Tailor,
         "herbalist" => LocationContext::Herbalist,
+        "bookstore" => LocationContext::Market,
         "inn" => LocationContext::Inn,
         "church" => LocationContext::Church,
         "residences" => LocationContext::Residences,

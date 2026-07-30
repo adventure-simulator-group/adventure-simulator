@@ -83,6 +83,7 @@ pub struct StartingAttributes {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StartingSkills {
+    pub written: adventuresim_world_schema::WrittenLanguageHours,
     pub polearm: f32,
     pub axe: f32,
     pub bludgeon: f32,
@@ -401,6 +402,7 @@ pub fn generate(
     let primary_hours = 2600.0 + (hash("training", seed, slot) % 1800) as f32;
     let defense_hours = 1400.0 + (hash("defense", seed, slot) % 1400) as f32;
     let mut skills = StartingSkills {
+        written: adventuresim_world_schema::WrittenLanguageHours::default(),
         polearm: 120.0,
         axe: 120.0,
         bludgeon: 120.0,
@@ -774,6 +776,9 @@ fn apply_training_target(
             "snow" => skills.terrain_snow = hours,
             _ => return Err("unknown terrain in starting package"),
         },
+        TrainingTarget::Written { language } => {
+            *skills.written.direct_mut(*language) = hours.min(5_000.0);
+        }
         TrainingTarget::EquippedWeaponSkills => {
             return Err("equipped weapon training requires a starting loadout");
         }
@@ -1470,6 +1475,9 @@ mod tests {
                     assert_eq!(candidate.skills.surgery, 0.0);
                 }
                 StartingProfession::Cook => assert!(candidate.skills.cooking >= 30_000.0),
+                StartingProfession::Merchant => {
+                    assert!(candidate.skills.written.german > 0.0)
+                }
                 StartingProfession::WitchHunter => {
                     assert!(candidate.skills.bestiary.spirit >= 30_000.0)
                 }

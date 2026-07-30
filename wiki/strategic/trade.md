@@ -1,5 +1,10 @@
 # Trade
 
+Bookstores reuse ordinary merchant purchase authority. Buying supplies portable
+inventory access; characters may instead read useful bookstore titles free
+while in that city. Explicit title settlement allowlists constrain culturally
+rare catalogs.
+
 Local-problem pressure uses the same checked basis-point adjustment after base
 and language pricing for displayed quotes and reducer transfers, including food.
 

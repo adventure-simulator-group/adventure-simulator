@@ -35,7 +35,86 @@ pub fn item_icon_name(item_id: &str) -> &'static str {
 
 pub fn item_type_icon(item_id: &str) -> Markup {
     let readable = item_display_name(item_id);
+    if let Some(book) = adventuresim_core::item_catalog::definition(item_id)
+        .and_then(|item| item.capabilities.book.as_ref())
+    {
+        return book_target_icon(&readable, &book.target);
+    }
     game_icon(&format!("Item type: {readable}"), item_icon_name(item_id))
+}
+
+fn path_icon(label: &str, path: &str) -> Markup {
+    html! {
+        span class="game-icon" style=(format!("--game-icon: url('{path}')"))
+            role="img" aria-label=(label) title=(label) {}
+    }
+}
+
+/// Books use the exact leaf icon from the character skill rail, not a generic
+/// book glyph. The authored presentation icon remains a portable fallback for
+/// clients that do not understand typed book targets.
+fn book_target_icon(
+    title: &str,
+    target: &adventuresim_core::item_catalog_schema::BookTarget,
+) -> Markup {
+    use adventuresim_core::item_catalog_schema::BookTarget;
+    match target {
+        BookTarget::Written { language } => {
+            let descriptor = language.descriptor();
+            let label = format!("Item type: {title} — {} Written", descriptor.english);
+            html! {
+                span class=(if descriptor.germanic_style {
+                    "language-monogram language-written language-blackletter"
+                } else {
+                    "language-monogram language-written"
+                }) role="img" aria-label=(&label) title=(label) {
+                    (descriptor.monogram)
+                }
+            }
+        }
+        BookTarget::Religion { religion } => {
+            let label = format!("Item type: {title} — {} Religion", religion.label());
+            path_icon(&label, religion_icon_path(Some(religion.religion_id())))
+        }
+        BookTarget::Bestiary { category } => {
+            let label = format!("Item type: {title} — {} Bestiary", category.label());
+            path_icon(&label, &stat_icon_path("bestiary", category.id()))
+        }
+        BookTarget::Terrain { terrain } => {
+            let label = format!("Item type: {title} — {terrain} Terrain");
+            path_icon(&label, &stat_icon_path("terrain", terrain))
+        }
+        BookTarget::Skill { skill } => {
+            let (label, icon) = match skill.as_str() {
+                "physiology" => ("Physiology", "physiology"),
+                "herbalism" => ("Herbalism", "herbalism"),
+                "surgery" => ("Surgery", "surgeon"),
+                "cooking" => ("Cooking", "cooking"),
+                "tailoring" => ("Tailoring", "sewing-needle"),
+                "smithing" => ("Smithing", "smithing"),
+                "command" => ("Command", "command"),
+                "charm" => ("Charm", "charm"),
+                "polearm" => ("Polearm", "spear-hook"),
+                "axe" => ("Axe", "battle-axe"),
+                "bludgeon" => ("Bludgeon", "flanged-mace"),
+                "sword" => ("Sword", "sword"),
+                "knife" => ("Knife", "bowie-knife"),
+                "bow" => ("Bow", "bow-arrow"),
+                "crossbow" => ("Crossbow", "crossbow"),
+                "firearm" => ("Firearm", "musket"),
+                "throw" => ("Throw", "throwing-ball"),
+                "dodge" => ("Dodge", "dodge"),
+                "block" => ("Block", "block"),
+                "balance" => ("Balance", "balance"),
+                "stealth" => ("Stealth", "stealth"),
+                _ => ("Unknown skill", "help"),
+            };
+            path_icon(
+                &format!("Item type: {title} — {label}"),
+                &stat_icon_path("skills", icon),
+            )
+        }
+    }
 }
 
 /// Turn a stable snake-case item identifier into player-facing copy without
@@ -81,6 +160,7 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "command" => "crown",
         "deception" => "conversation",
         "physiology" => "caduceus",
+        "herbalism" => "caduceus",
         "cooking" => "meal",
         "faith" => "holy-symbol",
         "religion" => "holy-symbol",
@@ -413,6 +493,32 @@ mod icon_tests {
         let decorative = decorative_game_icon("sun").into_string();
         assert!(decorative.contains("aria-hidden=\"true\""));
         assert!(!decorative.contains("role=\"img\""));
+    }
+
+    #[test]
+    fn books_render_their_trained_skill_leaf_icons() {
+        for (item, expected) in [
+            ("primer_latin_german", "language-monogram language-written"),
+            (
+                "catholic_summa_advanced",
+                "/static/icons/religion/catholic-cross-bottony.png",
+            ),
+            (
+                "bestiary_beasts_advanced",
+                "/static/icons/stats/bestiary/beast.png",
+            ),
+            (
+                "forest_wayfinding",
+                "/static/icons/stats/terrain/forest.png",
+            ),
+            ("human_anatomy", "/static/icons/game/caduceus.svg"),
+            ("field_surgery_manual", "/static/icons/game/scalpel.svg"),
+            ("fechtbuch_sword", "/static/icons/game/sword-brandish.svg"),
+        ] {
+            let rendered = item_type_icon(item).into_string();
+            assert!(rendered.contains(expected), "{item}: {rendered}");
+            assert!(!rendered.contains("/help.svg"), "{item}: {rendered}");
+        }
     }
 
     #[test]

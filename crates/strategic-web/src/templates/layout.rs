@@ -264,6 +264,7 @@ fn settlement_top_bar(
         ("armor", "armor", "Armour", "armor"),
         ("clothing", "clothing", "Clothing", "clothing"),
         ("herbalist", "herbalist", "Herbalist", "medical-pack"),
+        ("books", "books", "Bookstore", "open-book"),
         ("inn", "inn", "Inn", "inn"),
         ("religion", "religion", "Church", "church"),
     ];
@@ -424,6 +425,7 @@ fn service_tab_available(
         "armor" => "armoury",
         "clothing" => "tailor",
         "herbalist" => "herbalist",
+        "books" => "bookstore",
         "inn" => "inn",
         "religion" => "church",
         _ => return false,
@@ -598,15 +600,16 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
         "armor" => 6,
         "clothing" => 7,
         "herbalist" => 8,
-        "inn" => 9,
-        "religion" => 10,
-        _ => (hash % 11) as usize,
+        "books" => 9,
+        "inn" => 10,
+        "religion" => 11,
+        _ => (hash % 12) as usize,
     };
     let settlement_shift = ((hash >> 24) % 9) as u64;
     let hue = if material == "stone" {
-        [46, 198, 218, 205, 224, 252, 282, 164, 128, 36, 214][service_slot] + settlement_shift
+        [46, 198, 218, 205, 224, 252, 282, 164, 128, 68, 36, 214][service_slot] + settlement_shift
     } else {
-        [35, 58, 16, 8, 20, 31, 43, 56, 104, 72, 350][service_slot] + settlement_shift
+        [35, 58, 16, 8, 20, 31, 43, 56, 104, 48, 72, 350][service_slot] + settlement_shift
     };
     let saturation = if material == "stone" {
         12 + (hash >> 8) % 13
@@ -795,6 +798,7 @@ mod tests {
             "armor",
             "clothing",
             "herbalist",
+            "books",
             "inn",
             "religion",
         ]
@@ -826,6 +830,27 @@ mod tests {
                 settlement_top_bar("Place", "p", &category, "map", None, None, None).into_string();
             assert!(markup.contains(&format!("data-building-tier=\"{tier}\"")));
         }
+    }
+
+    #[test]
+    fn bookstore_service_renders_a_navigable_books_tab() {
+        let mut economy = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        economy
+            .services
+            .push(adventuresim_world_schema::SettlementService::Bookstore);
+        let markup = settlement_top_bar(
+            "Place",
+            "p",
+            &SettlementCategory::City,
+            "books",
+            None,
+            Some(&economy),
+            None,
+        )
+        .into_string();
+        assert!(markup.contains("href=\"/settlements/p/books\""));
+        assert!(markup.contains("data-service-label=\"Bookstore\""));
+        assert!(markup.contains("nav-tab active"));
     }
 
     #[test]
@@ -893,8 +918,8 @@ mod tests {
             None,
         )
         .into_string();
-        assert_eq!(markup.matches("class=\"service-tab-building\"").count(), 10);
-        assert_eq!(markup.matches("class=\"service-tab-icon ").count(), 10);
+        assert_eq!(markup.matches("class=\"service-tab-building\"").count(), 11);
+        assert_eq!(markup.matches("class=\"service-tab-icon ").count(), 11);
         assert!(markup.contains("aria-label=\"Public square\""));
         assert!(markup.contains("href=\"/locations/settlement/s\""));
         assert!(markup.contains("data-service-id=\"public-square\""));
@@ -932,6 +957,7 @@ mod tests {
         assert!(css.contains("data-service-id=\"public-square\"].active"));
         assert!(css.contains("data-service-id=\"residences\"].active"));
         assert!(css.contains("data-service-id=\"keep\"].active"));
+        assert!(css.contains(".nav-tab[data-service-id=\"books\"]"));
 
         let town = settlement_top_bar(
             "Larger Place",
@@ -943,7 +969,7 @@ mod tests {
             None,
         )
         .into_string();
-        assert_eq!(town.matches("class=\"service-tab-building\"").count(), 11);
+        assert_eq!(town.matches("class=\"service-tab-building\"").count(), 12);
         assert!(town.contains("aria-label=\"Keep\""));
         assert!(town.contains("href=\"/settlements/t/places/keep\" class=\"nav-tab active\""));
         assert!(town.contains("service-tab-icon-castle"));
@@ -1169,7 +1195,7 @@ mod tests {
         .into_string();
         assert_eq!(markup.matches("building-chimney-smoke").count(), 1);
         assert!(markup.contains("aria-hidden=\"true\""));
-        assert_eq!(markup.matches("class=\"nav-tab").count(), 10);
+        assert_eq!(markup.matches("class=\"nav-tab").count(), 11);
     }
 
     #[test]

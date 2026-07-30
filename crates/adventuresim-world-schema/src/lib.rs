@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 mod language;
 pub use language::*;
-pub const WORLD_SCHEMA_VERSION: u32 = 25;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 9;
+pub const WORLD_SCHEMA_VERSION: u32 = 26;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 10;
 pub const MAX_EDGE_GEOMETRY_POINTS: usize = 512;
 pub const MAX_WORLD_GEOMETRY_POINTS: usize = 200_000;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
@@ -3031,6 +3031,7 @@ pub enum SettlementService {
     Tailor,
     Herbalist,
     Temple,
+    Bookstore,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -3052,6 +3053,7 @@ pub enum StockCategory {
     Armor,
     Herbs,
     GeneralGoods,
+    Books,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -3083,9 +3085,9 @@ pub struct SettlementEconomyProfile {
 }
 
 impl SettlementEconomyProfile {
-    pub const MAX_SERVICES: usize = 9;
+    pub const MAX_SERVICES: usize = 10;
     pub const MAX_SPECIALIZATIONS: usize = 8;
-    pub const MAX_STOCK: usize = 16;
+    pub const MAX_STOCK: usize = 17;
 
     pub fn stage_placeholder() -> Self {
         Self {
@@ -3129,7 +3131,7 @@ impl SettlementEconomyProfile {
     }
 }
 
-/// Single canonical rules-v8 economy projection used by import and database
+/// Single canonical economy projection used by import and database
 /// finalization. `documented_town` is direct Viabundus evidence; route count is
 /// taken from the finalized graph.
 pub fn infer_settlement_economy(
@@ -3186,6 +3188,9 @@ pub fn infer_settlement_economy(
         }
         if population_level >= 3 || industries.outputs().iter().any(forest_or_peat) {
             services.insert(SettlementService::Herbalist);
+        }
+        if population_level >= 4 {
+            services.insert(SettlementService::Bookstore);
         }
     }
     let mut stock = BTreeMap::<StockCategory, SettlementStock>::new();
@@ -3279,6 +3284,13 @@ pub fn infer_settlement_economy(
         add(
             StockCategory::Herbs,
             2 + u8::from(industries.outputs().iter().any(forest_or_peat)),
+            gap,
+        );
+    }
+    if services.contains(&SettlementService::Bookstore) {
+        add(
+            StockCategory::Books,
+            if population_level >= 5 { 4 } else { 2 },
             gap,
         );
     }
@@ -4693,6 +4705,13 @@ mod tests {
 
         let profile = infer_settlement_economy(5, 50_000, 8, true, &industries).unwrap();
 
+        assert!(profile.has_service(crate::SettlementService::Bookstore));
+        assert!(
+            profile
+                .stock
+                .iter()
+                .any(|entry| entry.category == StockCategory::Books && entry.abundance == 4)
+        );
         assert_eq!(
             profile.specializations.len(),
             SettlementEconomyProfile::MAX_SPECIALIZATIONS

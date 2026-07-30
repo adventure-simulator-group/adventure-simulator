@@ -457,14 +457,14 @@ pub(super) fn character_summary_icons(
         (
             label,
             finite_rank(
-                skill.capped_rank_for_aptitude(view.effective_skill_hours(skill), intelligence),
+                skill.capped_rank_for_aptitude(view.effective_skill_hours(skill), instinct),
             ),
         )
     })
     .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
     .collect::<Vec<_>>();
     if !terrain_entries.is_empty() {
-        let rank = finite_rank(terrain_family_rank(skills, intelligence));
+        let rank = finite_rank(terrain_family_rank(skills, instinct));
         icons.push(summary_mask_icon(
             format!("Terrain — {rank:.1}"),
             qualifying_tooltip("Terrain", &terrain_entries),
@@ -510,7 +510,14 @@ pub struct ActivityPreviewRates {
     raiding_reputation_per_hour: f32,
     reputation_multiplier: f32,
     current_fatigue: f32,
+    reading: Option<ReadingPreview>,
     profession: std::collections::BTreeMap<String, ProfessionActivityPreview>,
+}
+
+#[derive(Clone, Debug)]
+struct ReadingPreview {
+    rate: f32,
+    description: String,
 }
 
 #[derive(Clone, Debug)]
@@ -631,8 +638,139 @@ impl ActivityPreviewRates {
             raiding_reputation_per_hour: -1.5 * reputation_multiplier,
             reputation_multiplier,
             current_fatigue,
+            reading: None,
             profession: Default::default(),
         }
+    }
+
+    pub fn with_reading<'a>(
+        mut self,
+        attributes: Option<&CharacterAttributes>,
+        skills: Option<&CharacterSkills>,
+        settlement: Option<&Settlement>,
+        owned_item_ids: impl IntoIterator<Item = &'a str>,
+    ) -> Self {
+        use adventuresim_core::{
+            book::{BookCandidate, READABLE_WRITTEN_RANK, ordinary_skill, select_candidate},
+            item_catalog_schema::BookTarget,
+        };
+        let (Some(attributes), Some(skills)) = (attributes, skills) else {
+            return self;
+        };
+        let owned = owned_item_ids
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        let bookstore = settlement.is_some_and(|settlement| {
+            settlement
+                .economy
+                .has_service(adventuresim_world_schema::SettlementService::Bookstore)
+        });
+        let rank_and_aptitude = |target: &BookTarget| -> Option<(f32, f32)> {
+            match target {
+                BookTarget::Written { language } => Some((
+                    adventuresim_core::book::written_rank(
+                        skills.written_languages.effective(*language),
+                        attributes.intelligence,
+                    ),
+                    attributes.intelligence,
+                )),
+                BookTarget::Religion { religion } => Some((
+                    Skill::Religion.capped_rank_for_aptitude(
+                        skills.religion_hours.effective(*religion),
+                        attributes.intelligence,
+                    ),
+                    attributes.intelligence,
+                )),
+                BookTarget::Bestiary { category } => Some((
+                    Skill::Bestiary.capped_rank_for_aptitude(
+                        skills.bestiary_hours.effective(*category),
+                        attributes.intelligence,
+                    ),
+                    attributes.intelligence,
+                )),
+                BookTarget::Terrain { terrain } => {
+                    let skill = match terrain.as_str() {
+                        "plains" => Skill::TerrainPlains,
+                        "forest" => Skill::TerrainForest,
+                        "hills" => Skill::TerrainHills,
+                        "wetlands" => Skill::TerrainWetlands,
+                        "urban" => Skill::TerrainUrban,
+                        "snow" => Skill::TerrainSnow,
+                        _ => return None,
+                    };
+                    let aptitude = character_aptitude(attributes, skill);
+                    Some((
+                        skill.capped_rank_for_aptitude(
+                            CharacterSkillHours(skills).effective_skill_hours(skill),
+                            aptitude,
+                        ),
+                        aptitude,
+                    ))
+                }
+                BookTarget::Skill { .. } => {
+                    let skill = ordinary_skill(target)?;
+                    let aptitude = character_aptitude(attributes, skill);
+                    Some((
+                        skill.capped_rank_for_aptitude(
+                            CharacterSkillHours(skills).effective_skill_hours(skill),
+                            aptitude,
+                        ),
+                        aptitude,
+                    ))
+                }
+            }
+        };
+        let selected = select_candidate(
+            adventuresim_core::item_catalog::catalog()
+                .iter()
+                .filter_map(|item| {
+                    let book = item.capabilities.book.as_ref()?;
+                    let personal = owned.contains(item.id.as_str());
+                    let stocked = bookstore
+                        && (book.settlement_allowlist.is_empty()
+                            || settlement.is_some_and(|settlement| {
+                                book.settlement_allowlist.contains(&settlement.id)
+                            }));
+                    (personal || stocked).then_some(BookCandidate {
+                        item_id: &item.id,
+                        book,
+                        personal,
+                    })
+                }),
+            |book| {
+                let medium_rank = adventuresim_core::book::written_rank(
+                    skills.written_languages.effective(book.medium),
+                    attributes.intelligence,
+                );
+                rank_and_aptitude(&book.target).is_some_and(|(rank, aptitude)| {
+                    let (lower, upper) = adventuresim_core::book::rank_band(book);
+                    medium_rank >= READABLE_WRITTEN_RANK
+                        && rank + 0.000_01 >= f32::from(lower)
+                        && rank < f32::from(upper).min(aptitude)
+                        && aptitude > f32::from(lower)
+                })
+            },
+        );
+        if let Some(selected) = selected {
+            let medium_rank = adventuresim_core::book::written_rank(
+                skills.written_languages.effective(selected.book.medium),
+                attributes.intelligence,
+            );
+            let title = adventuresim_core::item_catalog::definition(selected.item_id)
+                .map_or(selected.item_id, |item| item.display_name.as_str());
+            let (lower, upper) = adventuresim_core::book::rank_band(selected.book);
+            self.reading = Some(ReadingPreview {
+                rate: adventuresim_core::book::reading_rate(medium_rank),
+                description: format!(
+                    "Read {title} ({:?}, ranks {}→{}). Literacy converts each reading hour into {:.0}% of an effective training hour.",
+                    selected.book.medium,
+                    lower,
+                    upper,
+                    adventuresim_core::book::reading_rate(medium_rank) * 100.0,
+                ),
+            });
+        }
+        self
     }
 
     pub fn with_professions(
@@ -712,6 +850,7 @@ fn training_target_label(target: &adventuresim_core::organization::TrainingTarge
         TrainingTarget::Religion { religion } => format!("{religion} Religion"),
         TrainingTarget::Bestiary { category } => format!("{category} Bestiary"),
         TrainingTarget::Terrain { terrain } => format!("{terrain} Terrain"),
+        TrainingTarget::Written { language } => format!("{language:?} literacy"),
         TrainingTarget::EquippedWeaponSkills => "equipped weapon skills".into(),
     }
 }
@@ -765,6 +904,7 @@ fn training_target_skill(
             "snow" => Some(Skill::TerrainSnow),
             _ => None,
         },
+        TrainingTarget::Written { .. } => None,
         TrainingTarget::EquippedWeaponSkills => Some(Skill::Polearm),
     }
 }
@@ -1002,7 +1142,7 @@ fn skills_table(
                     @if skills.stealth_hours > 0.0 { (party_skill_row(skills, "Stealth", "stealth", Skill::Stealth, all_agility, (upper_health + lower_health) * 0.5, schedule.is_some(), None)) }
                     (terrain_skill_rows(
                         skills,
-                        intelligence,
+                        instinct,
                         schedule.is_some(),
                         actions.foraging_href.map(|href| SkillAction::Get {
                             href,
@@ -1044,6 +1184,11 @@ fn skills_table(
                                 "Meditation gives modest morale independently of party Religion knowledge and does not train Religion or create Fervor."
                             },
                         ))
+                        @let reading_description = preview.reading.as_ref().map_or(
+                            "No readable carried or bookstore book can currently advance this character.",
+                            |reading| reading.description.as_str(),
+                        );
+                        (schedule_special_row("Reading", "open-book", "reading_minutes", schedule.downtime.reading_minutes, effective.reading_minutes, true, immediate_actions && preview.reading.is_some(), ActivityEffectRates::default(), None, None, preview.reading.as_ref().map_or(0.0, |reading| reading.rate), reading_description))
                         (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, effective.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, combat_training, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
                         (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, effective.carousing_minutes, true, carousing_action, ActivityEffectRates::carousing(), None, None, instinct_training, "Drink and socialize to improve morale and train Charm at 25% speed. Ordinary carousing changes no reputation, but a disorder incident can add Infamy; Drunkards are at substantially higher risk."))
                         @let apprenticeship_id = schedule.downtime.apprenticeship_organization_id.as_deref().filter(|id| preview.profession.contains_key(*id)).or_else(|| preview.profession.keys().next().map(String::as_str));
@@ -1954,6 +2099,7 @@ struct LeisurePreview {
 
 fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
+        reading_minutes: schedule.reading_minutes,
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
         apprenticeship_minutes: schedule.apprenticeship_minutes,
@@ -3150,6 +3296,33 @@ mod tests {
         assert!(rendered.contains("data-activity-location-unavailable=\"true\""));
         assert!(!rendered.contains(">+6</td>"));
         assert!(!rendered.contains(">-3.0</td>"));
+    }
+
+    #[test]
+    fn reading_preview_names_the_selected_title_and_uses_medium_literacy() {
+        let skills = CharacterSkills {
+            written_languages: adventuresim_world_schema::WrittenLanguageHours {
+                german: 2_500.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let preview = ActivityPreviewRates::default().with_reading(
+            Some(&test_attributes(5.0)),
+            Some(&skills),
+            None,
+            ["primer_german_latin"],
+        );
+        let reading = preview
+            .reading
+            .expect("German primer is readable and useful");
+        assert!((reading.rate - 0.5).abs() < f32::EPSILON);
+        assert!(
+            reading
+                .description
+                .contains("Vocabularius ex quo (German–Latin)")
+        );
+        assert!(reading.description.contains("50%"));
     }
 
     #[test]

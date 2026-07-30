@@ -1,4 +1,14 @@
 # Character
+
+Literacy is not universal. A character whose authoritative relational estate
+is Noble begins with rank-1 literacy in local written German or Low German;
+Burgher estate alone grants nothing. Merchant-family literacy is represented
+by the merchant starting profession. Learned religious curricula teach their
+authored languages over time (Latin and German for Catholic and Lutheran
+organizations; Hebrew, Yiddish, and German for the Jewish organization).
+Professing a religion or merely joining an organization grants no instant
+literacy. Bidirectional German–Latin and German–Low German primers let each
+currently authored literate upbringing enter the wider book catalog.
 Characters are created by investing some amount of [favor](../shared/magic.md) into them. The more powerful the character, as determined by their [stats](../shared/stats.md), the more favor you need to invest. The exact kind of favor you need also depends on what character you want. If you want an elf character, you need to go do some quests with the elves.
 
 You aren't exactly spawning a character into the world; ostensibly, you are obtaining control over a character who already exists! This means you don't always have to start "fresh" with a young, untrained character with no background. You can create a wealthy, skilled character simply by spending a lot of favor on him.

@@ -557,6 +557,14 @@ pub(super) async fn herbalist(
     merchant_shop(state, id, session, MerchantShop::Herbalist).await
 }
 
+pub(super) async fn bookstore(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Html<String> {
+    merchant_shop(state, id, session, MerchantShop::Books).await
+}
+
 pub(super) async fn purchase_from_herbalist(
     State(state): State<AppState>,
     Path(id): Path<String>,

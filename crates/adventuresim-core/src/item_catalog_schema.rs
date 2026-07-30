@@ -124,6 +124,41 @@ pub struct Capabilities {
     pub food: Option<Food>,
     pub alcohol: Option<Alcohol>,
     pub container: Option<Container>,
+    pub book: Option<Book>,
+}
+
+/// Authored teaching metadata. Books remain ordinary `simple` items; this
+/// capability is resolved from the embedded catalog and is never flattened
+/// into a persisted inventory row.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Book {
+    pub medium: adventuresim_world_schema::WrittenLanguage,
+    pub target: BookTarget,
+    /// Shared 1..=5 item quality. A quality-N book teaches rank N-1 to N.
+    pub quality: u8,
+    #[serde(default)]
+    pub settlement_allowlist: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BookTarget {
+    Written {
+        language: adventuresim_world_schema::WrittenLanguage,
+    },
+    Religion {
+        religion: adventuresim_world_schema::OfficialReligion,
+    },
+    Bestiary {
+        category: adventuresim_world_schema::BestiaryCategory,
+    },
+    Terrain {
+        terrain: String,
+    },
+    Skill {
+        skill: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

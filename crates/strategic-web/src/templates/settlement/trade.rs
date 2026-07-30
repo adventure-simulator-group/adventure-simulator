@@ -38,6 +38,7 @@ pub enum MerchantShop {
     Clothing,
     Herbalist,
     Inn,
+    Books,
 }
 impl MerchantShop {
     pub fn storefront(self) -> adventuresim_core::settlement_economy::Storefront {
@@ -49,6 +50,7 @@ impl MerchantShop {
             Self::Clothing => S::Clothing,
             Self::Herbalist => S::Herbalist,
             Self::Inn => S::Inn,
+            Self::Books => S::Books,
         }
     }
 
@@ -73,12 +75,22 @@ impl MerchantShop {
             crate::spacetimedb::ItemKind::Medication => C::Medication,
             crate::spacetimedb::ItemKind::Food => C::Food,
         };
-        adventuresim_core::settlement_economy::storefront_stocks(
+        let stocked = adventuresim_core::settlement_economy::storefront_stocks(
             &settlement.economy,
             self.storefront(),
             &item.id,
             kind,
-        )
+        );
+        stocked
+            && (!matches!(self, Self::Books)
+                || adventuresim_core::item_catalog::definition(&item.id).is_some_and(
+                    |definition| {
+                        definition.capabilities.book.as_ref().is_some_and(|book| {
+                            book.settlement_allowlist.is_empty()
+                                || book.settlement_allowlist.contains(&settlement.id)
+                        })
+                    },
+                ))
     }
     pub fn service_id(self) -> &'static str {
         match self {
@@ -88,6 +100,7 @@ impl MerchantShop {
             Self::Clothing => "clothing",
             Self::Herbalist => "herbalist",
             Self::Inn => "inn",
+            Self::Books => "books",
         }
     }
 
@@ -99,6 +112,7 @@ impl MerchantShop {
             Self::Clothing => "Tailor",
             Self::Herbalist => "Herbalist",
             Self::Inn => "The Inn",
+            Self::Books => "Bookstore",
         }
     }
 
@@ -128,6 +142,8 @@ impl MerchantShop {
                         "cooking_pan" | "cooking_pot" | "portable_oven"
                     )
             }
+            Self::Books => adventuresim_core::item_catalog::definition(&item.id)
+                .is_some_and(|definition| definition.capabilities.book.is_some()),
         }
     }
 
@@ -1361,6 +1377,8 @@ fn item_name_with_display_quality(
         .map(|_| "alcohol");
     let food_quality =
         quality_override.is_some() || adventuresim_core::food::definition(item_id).is_some();
+    let book_quality = adventuresim_core::item_catalog::definition(item_id)
+        .is_some_and(|item| item.capabilities.book.is_some());
     let quality = quality_override.or_else(|| {
         definition
             .filter(|item| {
@@ -1371,11 +1389,12 @@ fn item_name_with_display_quality(
                         | crate::spacetimedb::ItemKind::Shield
                         | crate::spacetimedb::ItemKind::Food
                 ) || adventuresim_core::food::definition(item_id).is_some()
+                    || book_quality
             })
             .map(|item| item.quality.clamp(1, 5))
     });
     let label = quality.map(|quality| {
-        if food_quality {
+        if food_quality || book_quality {
             format!("Quality {quality}")
         } else {
             match quality {
@@ -2237,6 +2256,21 @@ mod tests {
         let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
         assert!(rendered.contains("item-quality-4"));
         assert!(rendered.contains("knightly commission"));
+    }
+
+    #[test]
+    fn book_names_use_shared_quality_color_without_equipment_copy() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "human_anatomy".into(),
+            kind: crate::spacetimedb::ItemKind::Simple,
+            quality: 4,
+            ..Default::default()
+        };
+
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains("item-quality-4"));
+        assert!(rendered.contains("title=\"Quality 4\""));
+        assert!(!rendered.contains("knightly commission"));
     }
 
     #[test]

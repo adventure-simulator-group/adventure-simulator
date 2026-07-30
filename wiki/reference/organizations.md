@@ -7,6 +7,10 @@ currently asserting.
 
 ## Content
 
+Training entries may use `kind: written` with a typed Written language. These
+entries use normal Intelligence-governed language training and apply both to
+generated starting professionals and later scheduled organization training.
+
 `content/organizations/*.yaml` is compiled into `adventuresim-core`. Definitions
 declare stable IDs, names, chapters, recognition, admission requirements and
 fees, arbitrary ordered ranks, recurring dues, activity training and rewards,

@@ -567,7 +567,7 @@ pub fn initial_oral_languages(
         OralLanguage::Low
     };
     let yiddish = npc
-        && (stable_mix(character_id ^ 0x5949_4444_4953_48) % 10_000)
+        && (stable_mix(character_id ^ 0x0059_4944_4449_5348) % 10_000)
             < u64::from(profile.yiddish_incidence_bp);
     let mut hours = OralLanguageHours::default();
     *hours.direct_mut(german) = if yiddish {
@@ -588,19 +588,11 @@ pub fn initial_character_languages(
     npc: bool,
 ) -> (OralLanguageHours, WrittenLanguageHours) {
     let oral = initial_oral_languages(profile, character_id, npc);
-    let written = if oral.yiddish > 0.0 {
-        WrittenLanguageHours {
-            yiddish: 1_000.0,
-            hebrew: 500.0,
-            german: 500.0,
-            ..Default::default()
-        }
-    } else {
-        WrittenLanguageHours {
-            german: 1_000.0,
-            ..Default::default()
-        }
-    };
+    // Literacy is social and institutional, never a universal consequence of
+    // speaking the local language. Noble estate and authored professional
+    // curricula are applied by character authority after relational roles are
+    // established.
+    let written = WrittenLanguageHours::default();
     (oral, written)
 }
 
@@ -767,7 +759,7 @@ mod tests {
         }
     }
     #[test]
-    fn final_location_reinitializes_complete_bilingual_identity() {
+    fn final_location_reinitializes_oral_identity_without_granting_literacy() {
         let origin = SettlementLanguageProfile {
             east_central_bp: 0,
             west_central_bp: 10_000,
@@ -792,7 +784,7 @@ mod tests {
         assert_eq!(origin_written.yiddish, 0.0);
         let (oral, written) = initial_character_languages(final_place, id, true);
         assert!(oral.east_central > 0.0 && oral.yiddish > 0.0);
-        assert!(written.yiddish > 0.0 && written.hebrew > 0.0);
+        assert_eq!(written, WrittenLanguageHours::default());
         assert_eq!(oral.west_central, 0.0);
     }
 }

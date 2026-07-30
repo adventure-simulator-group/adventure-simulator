@@ -1,5 +1,10 @@
 # Services
 
+City- and Capital-scale settlements infer a Bookstore service and Books stock.
+The bookseller uses ordinary merchant purchase authority and also supplies the
+free on-site fallback catalog for Reading. Book-capability items are excluded
+from General Goods stock.
+
 At strategic locations, characters raise the Herbalism Stage Modal from their
 skill rail. Herbalist storefronts remain sources and exchange counterparties
 for medicinal ingredients and finished remedies.

@@ -12,6 +12,7 @@ pub enum Storefront {
     Clothing,
     Herbalist,
     Inn,
+    Books,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -150,6 +151,11 @@ pub fn player_visible_npc_tabs(
             action_service_location_id(SettlementActionService::Temple),
             "Church",
         ),
+        (
+            storefront_available(profile, Storefront::Books),
+            "bookstore",
+            "Bookstore",
+        ),
     ] {
         if available {
             tabs.push(SettlementNpcTab { location_id, label });
@@ -215,6 +221,12 @@ pub fn item_stock_category(id: &str, kind: CatalogKind) -> Option<Stock> {
         {
             Stock::Metalwares
         }
+        CatalogKind::Simple
+            if crate::item_catalog::definition(id)
+                .is_some_and(|item| item.capabilities.book.is_some()) =>
+        {
+            Stock::Books
+        }
         CatalogKind::Simple => Stock::GeneralGoods,
         CatalogKind::Food => crate::item_catalog::definition(id)
             .and_then(|item| {
@@ -248,6 +260,7 @@ pub fn storefront_available(profile: &SettlementEconomyProfile, storefront: Stor
         Storefront::Clothing => profile.has_service(Service::Tailor),
         Storefront::Herbalist => profile.has_service(Service::Herbalist),
         Storefront::Inn => profile.has_service(Service::Inn),
+        Storefront::Books => profile.has_service(Service::Bookstore),
     }
 }
 
@@ -276,16 +289,19 @@ pub fn storefront_stocks(
     let category_available = profile.stock.iter().any(|entry| entry.category == category);
     category_available
         && match storefront {
-            Storefront::General => !matches!(
-                kind,
-                CatalogKind::Ingredient
-                    | CatalogKind::Medication
-                    | CatalogKind::Weapon
-                    | CatalogKind::Shield
-                    | CatalogKind::Armor
-                    | CatalogKind::Clothing
-                    | CatalogKind::Food
-            ),
+            Storefront::General => {
+                !matches!(
+                    kind,
+                    CatalogKind::Ingredient
+                        | CatalogKind::Medication
+                        | CatalogKind::Weapon
+                        | CatalogKind::Shield
+                        | CatalogKind::Armor
+                        | CatalogKind::Clothing
+                        | CatalogKind::Food
+                ) && crate::item_catalog::definition(id)
+                    .is_none_or(|item| item.capabilities.book.is_none())
+            }
             Storefront::Weapons => matches!(kind, CatalogKind::Weapon | CatalogKind::Shield),
             Storefront::Armor => kind == CatalogKind::Armor,
             Storefront::Clothing => kind == CatalogKind::Clothing,
@@ -297,6 +313,11 @@ pub fn storefront_stocks(
                 (matches!(kind, CatalogKind::Food) || crate::food::definition(id).is_some())
                     || crate::item_catalog::definition(id)
                         .is_some_and(|item| item.tags.iter().any(|tag| tag == "cooking_tool"))
+            }
+            Storefront::Books => {
+                kind == CatalogKind::Simple
+                    && crate::item_catalog::definition(id)
+                        .is_some_and(|item| item.capabilities.book.is_some())
             }
         }
 }
@@ -328,6 +349,29 @@ mod tests {
             Storefront::Weapons,
             "club",
             CatalogKind::Weapon
+        ));
+    }
+
+    #[test]
+    fn books_are_exclusive_to_bookstores_with_books_stock() {
+        let bookstore = profile(vec![Service::Bookstore], vec![Stock::Books]);
+        assert!(storefront_stocks(
+            &bookstore,
+            Storefront::Books,
+            "primer_german_latin",
+            CatalogKind::Simple,
+        ));
+        assert!(!storefront_stocks(
+            &bookstore,
+            Storefront::General,
+            "primer_german_latin",
+            CatalogKind::Simple,
+        ));
+        assert!(!storefront_stocks(
+            &profile(vec![Service::Bookstore], vec![Stock::GeneralGoods]),
+            Storefront::Books,
+            "primer_german_latin",
+            CatalogKind::Simple,
         ));
     }
 

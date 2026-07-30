@@ -932,6 +932,7 @@ mod tests {
         assert!(!chat.contains("lubeck:merchants"));
         assert_eq!(npc_location_id("religion"), "church");
         assert_eq!(npc_location_id("inn"), "inn");
+        assert_eq!(npc_location_id("books"), "bookstore");
         let church_strip = npc_portrait_strip("lubeck", "church").into_string();
         assert!(church_strip.contains("Finding the people here…"));
         assert!(!church_strip.contains("â"));

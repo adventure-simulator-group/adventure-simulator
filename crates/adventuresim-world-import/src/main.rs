@@ -602,6 +602,7 @@ fn encode_economy(profile: &adventuresim_world_schema::SettlementEconomyProfile)
             S::Tailor => "Tailor",
             S::Herbalist => "Herbalist",
             S::Temple => "Temple",
+            S::Bookstore => "Bookstore",
         })
     };
     let stock = |v| {
@@ -622,6 +623,7 @@ fn encode_economy(profile: &adventuresim_world_schema::SettlementEconomyProfile)
             C::Armor => "Armor",
             C::Herbs => "Herbs",
             C::GeneralGoods => "GeneralGoods",
+            C::Books => "Books",
         })
     };
     json!({

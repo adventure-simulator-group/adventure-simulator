@@ -36,7 +36,7 @@ non-unknown class inferred from already typed forest, elevation, latitude, and
 HYDE 3.5 context. Reports reconcile posterior, categorical, and inferred outcomes
 exactly to settlement count.
 
-Inference-rules version 9 and world schema version 25 identify the complete
+Inference-rules version 10 and world schema version 26 identify the complete
 post-hydrology synthesis contract. Older artifacts or caches cannot share
 identity with Jung-derived or reconstructed historical results.
 

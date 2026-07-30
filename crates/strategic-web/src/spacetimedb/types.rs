@@ -1492,6 +1492,7 @@ pub struct CharacterStats {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScheduleAllocation {
+    pub reading_minutes: u16,
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
     pub apprenticeship_minutes: u16,
