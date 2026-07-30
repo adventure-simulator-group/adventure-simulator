@@ -412,7 +412,30 @@
       status.textContent = "";
     }
   }
+  async function loadAutopsyDemo(button) {
+    if (!document.documentElement.hasAttribute("data-developer-mode")) return;
+    if (document.querySelector("[data-environment]")?.dataset.environment !== "settlement") return;
+    if (!window.confirm("Prepare the selected character and load three autoresolve-derived autopsy demo bodies here?")) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Loading...";
+    try {
+      const response = await fetch("/api/developer/autopsy-demo", {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || `Autopsy demo failed (${response.status})`);
+      window.location.assign(body.redirect_to || window.location.href);
+    } catch (error) {
+      window.alert(error.message);
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
   document.addEventListener("click", (event) => {
+    const autopsyDemo = event.target.closest("[data-developer-autopsy-demo]");
+    if (autopsyDemo) loadAutopsyDemo(autopsyDemo);
     const open = event.target.closest("[data-developer-quest-open]");
     if (open) openEditor(open);
     if (event.target.closest("[data-developer-quest-close]")) dialog.close();

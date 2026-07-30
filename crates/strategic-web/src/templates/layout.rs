@@ -361,6 +361,12 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
+                    button type="button" class="btn btn-small developer-autopsy-demo-button"
+                        data-developer-autopsy-demo data-developer-only
+                        aria-label="Load the autopsy demo"
+                        title="Prepare this character and load autoresolve-derived demo bodies" {
+                        "Autopsy demo"
+                    }
                     button type="button" class="developer-quest-button" data-developer-quest-open
                         data-developer-only aria-label="Spawn a developer quest"
                         title="Spawn a developer quest" {

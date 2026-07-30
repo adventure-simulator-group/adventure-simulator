@@ -329,6 +329,25 @@ pub fn bootstrap_development_world(
     Ok(())
 }
 
+/// Load the one-shot autopsy visual fixture for the currently selected
+/// character. The reducer is callable only from module binaries compiled for
+/// the isolated development bootstrap; ordinary builds contain no enabling
+/// capability.
+#[reducer]
+pub fn load_autopsy_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    let enabled = COMPILED_DEV_BOOTSTRAP_TOKEN.is_some_and(|token| {
+        adventuresim_core::simulation_security::simulation_bootstrap_authorized(
+            COMPILED_DEV_BOOTSTRAP_TOKEN,
+            token,
+        )
+    });
+    if !enabled {
+        return Err("Autopsy demo loading is disabled in this module build".into());
+    }
+    crate::corpse::seed_autopsy_demo(ctx, character_id)
+}
+
 /// Seed a standalone tactical mission: a solo party occupying a typed case
 /// site with a bound hostile group, mission, and tactical-server request.
 ///

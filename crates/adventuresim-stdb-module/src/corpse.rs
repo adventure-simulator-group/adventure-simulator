@@ -18,6 +18,7 @@ use crate::{
     character::{character, character__view, character_limbs, character_skills},
     condition::character_condition,
     investigation::character_case_site_occupancy,
+    item::inventory_item,
     settlement_population::{SettlementNpc, settlement_npc},
     social::settlement_npc_relationship,
     strategic::{strategic_encounter, strategic_gateway_authority__view},
@@ -684,6 +685,229 @@ fn persist_body(
             projectile: injury.projectile,
             contact_stress: injury.contact_stress,
         });
+    }
+    Ok(())
+}
+
+const AUTOPSY_DEMO_RECENT_VICTIM_ID: u64 = u64::MAX - 10_001;
+const AUTOPSY_DEMO_BURIED_VICTIM_ID: u64 = u64::MAX - 10_002;
+const AUTOPSY_DEMO_ENEMY_ID: u64 = u64::MAX - 10_003;
+
+fn persist_autopsy_demo_body(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    settlement_id: &str,
+    source_suffix: &str,
+    display_name: &str,
+    creature_kind: &str,
+    victim_id: u64,
+    death_minute: u64,
+    discovered_minute: u64,
+    buried: bool,
+    party_killed_enemy: bool,
+    outcome: &BattleOutcome,
+) -> Result<String, String> {
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(actor_id)
+        .ok_or("Autopsy demo character not found")?;
+    let party_id = actor
+        .party_id
+        .ok_or("Autopsy demo character has no party")?;
+    let source_id = format!("autopsy-demo:{actor_id}:{source_suffix}");
+    let corpse_id = format!("corpse:{source_id}");
+    if ctx.db.strategic_corpse().id().find(&corpse_id).is_none() {
+        let victim = outcome
+            .enemies
+            .iter()
+            .find(|enemy| enemy.id == victim_id)
+            .ok_or("Autopsy demo outcome omitted its designated body")?;
+        persist_body(
+            ctx,
+            StrategicCorpse {
+                id: corpse_id.clone(),
+                source_id,
+                discovering_party_id: party_id,
+                subject_character_id: None,
+                display_name: display_name.into(),
+                creature_kind: creature_kind.into(),
+                settlement_id: settlement_id.into(),
+                case_site_id: String::new(),
+                death_minute,
+                discovered_minute,
+                buried,
+                exhumed: false,
+                burned: false,
+                party_killed_enemy,
+                handling_damage_bps: 0,
+                opened: false,
+                opening_quality_bps: 0,
+                opening_obscuration_bps: 0,
+                revision: 0,
+            },
+            post_combat_body(victim, &outcome.log),
+        )?;
+    }
+    Ok(corpse_id)
+}
+
+/// Prepare the selected character and three deterministic bodies for a local
+/// visual demo. Every wound is produced by ordinary strategic autoresolve;
+/// only custody time and identity are staged by the fixture.
+pub(crate) fn seed_autopsy_demo(ctx: &ReducerContext, actor_id: u64) -> Result<(), String> {
+    let actor = crate::character::require_living_character(ctx, actor_id)?;
+    let settlement_id = actor
+        .current_settlement_id
+        .clone()
+        .ok_or("Load the autopsy demo while in a settlement")?;
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Autopsy demo character has no skills")?;
+    skills.surgery_hours = skills.surgery_hours.max(20_000.0);
+    skills.knife_hours = skills.knife_hours.max(20_000.0);
+    skills.physiology_hours = skills.physiology_hours.max(20_000.0);
+    skills.bestiary_hours = adventuresim_world_schema::BestiaryHours {
+        beast: 8_000.0,
+        undead: 8_000.0,
+        human: 8_000.0,
+        werekin: 8_000.0,
+        elf: 8_000.0,
+        dwarf: 8_000.0,
+        fey: 8_000.0,
+        spirit: 8_000.0,
+        greenskin: 8_000.0,
+        insectoid: 8_000.0,
+        draconid: 8_000.0,
+        construct: 8_000.0,
+        wildmen: 8_000.0,
+    };
+    ctx.db.character_skills().character_id().update(skills);
+    crate::capability::refresh_character_capability(ctx, actor_id)?;
+    if !ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(actor_id)
+        .any(|row| row.item_id == "surgery_kit")
+    {
+        crate::add_inventory_item(ctx, actor_id, "surgery_kit", 1);
+    }
+    let mut actor_time = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Autopsy demo character has no clock")?;
+    actor_time.minutes = actor_time.minutes.max(4_000);
+    let minute = actor_time.minutes;
+    ctx.db.character_time().character_id().update(actor_time);
+
+    let build_outcome = |victim_id: u64, victim_kind: &str, attacker_kind: &str, seed: u64| {
+        let attacker = crate::strategic::autoresolve_enemy(
+            victim_id.saturating_sub(100),
+            attacker_kind,
+            12,
+            10_000,
+        )?;
+        let victim = crate::strategic::autoresolve_enemy(victim_id, victim_kind, 1, 10_000)?;
+        adventuresim_core::autopsy::resolve_death_required_incident(
+            &[attacker],
+            &[victim],
+            victim_id,
+            seed,
+            128,
+        )
+        .ok_or_else(|| {
+            String::from("Autopsy demo autoresolve could not produce its required death")
+        })
+    };
+    let recent = build_outcome(
+        AUTOPSY_DEMO_RECENT_VICTIM_ID,
+        "poacher",
+        "bear",
+        0x4155_544f_5053_5901,
+    )?;
+    let buried = build_outcome(
+        AUTOPSY_DEMO_BURIED_VICTIM_ID,
+        "smuggler",
+        "bear",
+        0x4155_544f_5053_5902,
+    )?;
+    let enemy = build_outcome(
+        AUTOPSY_DEMO_ENEMY_ID,
+        "kobold",
+        "armed_retainer",
+        0x4155_544f_5053_5903,
+    )?;
+    let recent_id = persist_autopsy_demo_body(
+        ctx,
+        actor_id,
+        &settlement_id,
+        "recent-victim",
+        "Elsbeth Bauer",
+        "human",
+        AUTOPSY_DEMO_RECENT_VICTIM_ID,
+        minute.saturating_sub(150),
+        minute.saturating_sub(120),
+        false,
+        false,
+        &recent,
+    )?;
+    let buried_id = persist_autopsy_demo_body(
+        ctx,
+        actor_id,
+        &settlement_id,
+        "buried-victim",
+        "Konrad Weiss",
+        "human",
+        AUTOPSY_DEMO_BURIED_VICTIM_ID,
+        minute.saturating_sub(3_000),
+        minute.saturating_sub(1_500),
+        true,
+        false,
+        &buried,
+    )?;
+    persist_autopsy_demo_body(
+        ctx,
+        actor_id,
+        &settlement_id,
+        "slain-enemy",
+        "Fallen kobold",
+        "kobold",
+        AUTOPSY_DEMO_ENEMY_ID,
+        minute.saturating_sub(150),
+        minute.saturating_sub(120),
+        false,
+        true,
+        &enemy,
+    )?;
+
+    let family_npc = ctx
+        .db
+        .settlement_npc()
+        .home_settlement_id()
+        .filter(&settlement_id)
+        .filter(|npc| {
+            npc.profession != "cleric"
+                && !matches!(
+                    npc.local_role.as_str(),
+                    "reeve" | "local lord" | "magistrate"
+                )
+        })
+        .min_by(|left, right| left.id.cmp(&right.id))
+        .ok_or("Autopsy demo settlement has no NPC available as explicit family")?;
+    for corpse_id in [recent_id, buried_id] {
+        materialize_corpse_family_bindings(
+            ctx,
+            &corpse_id,
+            &settlement_id,
+            std::slice::from_ref(&family_npc.id),
+        )?;
     }
     Ok(())
 }

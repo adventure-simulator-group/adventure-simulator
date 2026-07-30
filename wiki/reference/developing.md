@@ -1,5 +1,33 @@
 # Development Workflow
 
+## Autopsy demo
+
+Start a disposable strategic-only stack:
+
+```powershell
+just autopsy-demo
+```
+
+Create or select an adventurer, enable browser-local developer mode, return to
+their settlement overview, and choose **Autopsy demo** in the top bar. The
+one-shot loader raises that character's Surgery, Physiology, and Bestiary
+skills, supplies a surgery kit, and stages three bodies in the current
+settlement: a recent victim, an unidentified interred victim, and an enemy
+killed by the party. All physical injuries come from ordinary strategic
+autoresolve. The loader adjusts only custody and discovery times to make each
+state immediately accessible.
+
+The recent and buried victims share an explicitly bound local family member so
+dialogue permission and unauthorized consequences can be exercised. Burning
+either victim demonstrates the severe social and reputation penalty; burning
+the fallen enemy demonstrates the penalty exemption. Loading is intentionally
+one-shot for the selected character. Restart the isolated profile to obtain a
+clean run after irreversible actions.
+
+The loader reducer is disabled in normal module builds. Like the existing
+developer quest UI, browser-local developer mode only hides the control; do not
+deploy a development-bootstrap module to an untrusted environment.
+
 ## Herbalism demo
 
 Bootstrap the isolated profile with visual demos, select **Herbalism Demo**,

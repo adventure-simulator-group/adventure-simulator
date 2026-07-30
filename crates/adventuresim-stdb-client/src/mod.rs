@@ -396,6 +396,7 @@ pub mod limb_injury_table;
 pub mod limb_injury_type;
 pub mod limb_region_type;
 pub mod liquidate_party_inventory_reducer;
+pub mod load_autopsy_demo_reducer;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -1099,6 +1100,7 @@ pub use limb_injury_table::*;
 pub use limb_injury_type::LimbInjury;
 pub use limb_region_type::LimbRegion;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
+pub use load_autopsy_demo_reducer::load_autopsy_demo;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -1750,6 +1752,9 @@ pub enum Reducer {
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    LoadAutopsyDemo {
+        character_id: u64,
+    },
     OpenCorpse {
         actor_id: u64,
         corpse_id: String,
@@ -2194,6 +2199,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::LoadAutopsyDemo { .. } => "load_autopsy_demo",
             Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
@@ -2868,6 +2874,11 @@ Reducer::BeginWorldDataImport{
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::LoadAutopsyDemo{
+                character_id,
+}             => __sats::bsatn::to_vec(&load_autopsy_demo_reducer::LoadAutopsyDemoArgs {
+                character_id: character_id.clone(),
 }),
             Reducer::OpenCorpse{
                 actor_id,

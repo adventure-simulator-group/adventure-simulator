@@ -95,3 +95,13 @@ issue deliberately adds the reusable helper and materialization seam without
 inventing a second wound generator. A later outbreak/threat incident can call
 that seam. Tactical combat parity is intentionally deferred while its combat
 pipeline is being refactored.
+
+## Development demonstration
+
+The isolated-development **Autopsy demo** loader applies high Surgery,
+Physiology, and broad Bestiary training to the selected character and stages a
+recent victim, an interred victim, and a party-slain enemy in the character's
+current settlement. Each body is produced by the same bounded strategic
+autoresolve and post-combat-body materialization used by gameplay. The fixture
+authors custody time, identity, and explicit family binding, but never wounds or
+findings. See [Development Workflow](developing.md#autopsy-demo).

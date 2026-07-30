@@ -111,7 +111,7 @@ fn quest_encounter_archetype(
     }
 }
 
-fn autoresolve_enemy(
+pub(crate) fn autoresolve_enemy(
     id: u64,
     enemy_type: &str,
     difficulty: i32,

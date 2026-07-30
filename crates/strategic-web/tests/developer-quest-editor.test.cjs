@@ -42,7 +42,17 @@ test("submission handles structured 422 diagnostics, override, and duplicate pre
   assert.match(script, /if \(submitting \|\| !draft\) return/);
   assert.match(script, /submit\.disabled = true/);
   assert.match(script, /data-developer-field-error/);
-  assert.doesNotMatch(script, /location\.(assign|replace)|window\.location/);
+  const questSubmission = script.split('form.addEventListener("submit"')[1];
+  assert.doesNotMatch(questSubmission, /location\.(assign|replace)|window\.location/);
+});
+
+test("autopsy demo loader is explicit, settlement-only, and redirects after success", () => {
+  assert.match(layout, /data-developer-autopsy-demo/);
+  assert.match(script, /fetch\("\/api\/developer\/autopsy-demo"/);
+  assert.match(script, /Prepare the selected character/);
+  assert.match(script, /window\.location\.assign\(body\.redirect_to/);
+  assert.match(route, /\.route\("\/api\/developer\/autopsy-demo"/);
+  assert.match(route, /"load_autopsy_demo"/);
 });
 
 test("HTTP adapter derives settlement and leaves discovery to normal rumors", () => {

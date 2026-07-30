@@ -47,6 +47,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/developer/quests/schema", get(schema))
         .route("/api/developer/quests", post(spawn))
+        .route("/api/developer/autopsy-demo", post(load_autopsy_demo))
 }
 
 async fn active_context(
@@ -272,6 +273,66 @@ async fn spawn(
     }
 }
 
+async fn load_autopsy_demo(State(state): State<AppState>, session: Session) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"message":"Select a character before loading the autopsy demo"})),
+        )
+            .into_response();
+    };
+    let character = match state
+        .db
+        .query_one::<crate::spacetimedb::Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+    {
+        Ok(Some(character)) => character,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"message":"Selected character was not found"})),
+            )
+                .into_response();
+        }
+        Err(error) => {
+            tracing::error!(%error, character_id, "failed to load autopsy demo character");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"message":"Strategic data is unavailable"})),
+            )
+                .into_response();
+        }
+    };
+    let Some(settlement_id) = character.current_settlement_id else {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"message":"Load the autopsy demo while in a settlement"})),
+        )
+            .into_response();
+    };
+    match state
+        .db
+        .call("load_autopsy_demo", &[json!(character_id)])
+        .await
+    {
+        Ok(()) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "status":"loaded",
+                "redirect_to":format!("/locations/settlement/{settlement_id}")
+            })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"message":error.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -281,6 +342,14 @@ mod tests {
         assert!(!source.contains("struct SpawnRequest {\n    settlement"));
         assert!(source.contains("StatusCode::UNPROCESSABLE_ENTITY"));
         assert!(source.contains("allow_implausible"));
+    }
+
+    #[test]
+    fn autopsy_demo_loader_uses_selected_character_and_server_derived_settlement() {
+        let source = include_str!("developer_quests.rs");
+        assert!(source.contains("/api/developer/autopsy-demo"));
+        assert!(source.contains("\"load_autopsy_demo\", &[json!(character_id)]"));
+        assert!(source.contains("character.current_settlement_id"));
     }
 
     #[test]
