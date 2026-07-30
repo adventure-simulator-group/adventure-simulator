@@ -105,10 +105,15 @@
   };
   const choicesForControl = (control) => {
     const placements = parsePlacementOptions(control.dataset.equipmentPlacementOptions);
-    return parseInputMap(control.dataset.equipmentInputMap).map((input) => ({
-      ...input,
-      selection: selectionForInput(placements, input.input),
-    }));
+    return parseInputMap(control.dataset.equipmentInputMap).map((input) => {
+      const selection = selectionForInput(placements, input.input);
+      return {
+        ...input,
+        selection,
+        current: String(selection?.occupant?.inventoryItemId)
+          === String(control.dataset.inventoryItemId),
+      };
+    });
   };
   const createSlotKeyboard = (choices, onChoose = null) => {
     const keyboard = document.createElement('div');
@@ -119,6 +124,7 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'equipment-slot-choice';
+      if (choice.current) button.classList.add('is-current-placement');
       button.dataset.equipmentInput = choice.input;
       button.style.setProperty('--equipment-key-row', Number(choice.row) + 1);
       button.style.setProperty('--equipment-key-column', Number(choice.column) + 1);
@@ -126,8 +132,9 @@
       button.title = `${choice.label}: ${(choice.locations || []).join(', ')}`;
       button.setAttribute(
         'aria-label',
-        `${choice.label}, ${(choice.locations || []).join(', ')}${button.disabled ? ', unavailable' : ''}`,
+        `${choice.label}, ${(choice.locations || []).join(', ')}${choice.current ? ', current placement' : ''}${button.disabled ? ', unavailable' : ''}`,
       );
+      if (choice.current) button.setAttribute('aria-current', 'true');
       if (onChoose === null) button.tabIndex = -1;
       const key = document.createElement('kbd');
       key.textContent = choice.label;

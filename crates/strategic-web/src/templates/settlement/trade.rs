@@ -21,8 +21,8 @@ use super::{
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCondition, CharacterEquipmentGraph, CharacterLimbs,
     CharacterSkills, CharacterStats, EquipmentBodyPart, EquipmentChannel, EquipmentLocation,
-    EquipmentOccupancy, FoodLot, InventoryItem, InventoryItemAmount,
-    InventoryQuantityTarget, ItemDefinition, ItemSlot, PartyInventoryItem, Settlement,
+    FoodLot, InventoryItem, InventoryItemAmount, InventoryQuantityTarget, ItemDefinition,
+    PartyInventoryItem, Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
@@ -1702,9 +1702,8 @@ fn equipment_control(
                                         .into_iter()
                                         .flat_map(|equip| equip.equipment_occupancies.iter())
                                         .filter(|row| {
-                                            row.inventory_item_id != inventory.id
-                                                && row.parent_inventory_item_id
-                                                    == Some(target.parent_inventory_item_id)
+                                            row.parent_inventory_item_id
+                                                == Some(target.parent_inventory_item_id)
                                                 && row.attachment_point_id.as_deref()
                                                     == Some(target.attachment_point_id.as_str())
                                         })
@@ -1780,9 +1779,7 @@ fn equipment_control(
                                                 })
                                             })
                                             .find(|(_, occupied)| {
-                                                occupied.inventory_item_id != inventory.id
-                                                    && occupied.location
-                                                        == Some(requirement.location)
+                                                occupied.location == Some(requirement.location)
                                                     && occupied.channel == requirement.channel
                                                     && occupied.order == requirement.order
                                             })

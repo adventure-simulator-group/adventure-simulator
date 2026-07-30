@@ -269,7 +269,13 @@ test('slot chooser uses an icon cell, an X close control, and red invalid-key fe
   control.dataset.equipmentPlacementOptions = JSON.stringify([{
     placementIndex: 0,
     inputRanks: { y: 20000 },
-    inputOccupants: {},
+    inputOccupants: {
+      y: {
+        inventoryItemId: 7,
+        itemName: 'Padded skirt',
+        icon: '/static/icons/game/skirt.svg',
+      },
+    },
     requirements: [],
   }]);
 
@@ -282,7 +288,11 @@ test('slot chooser uses an icon cell, an X close control, and red invalid-key fe
     dialog.querySelector('.equipment-slot-close').getAttribute('aria-label'),
     'Close equipment slot picker',
   );
-  assert.ok(dialog.querySelector('[data-equipment-input="y"] .equipment-slot-choice-icon'));
+  const current = dialog.querySelector('[data-equipment-input="y"]');
+  assert.ok(current.querySelector('.equipment-slot-choice-icon[role="img"]'));
+  assert.equal(current.classList.contains('is-current-placement'), true);
+  assert.equal(current.getAttribute('aria-current'), 'true');
+  assert.match(current.getAttribute('aria-label'), /current placement/);
 
   const invalidKey = new window.Event('keydown', { bubbles: true, cancelable: true });
   invalidKey.key = 'q';

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1462)
+## Files (1460)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1050,8 +1050,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/components.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/inventory_browser.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/investigation.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mission.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.

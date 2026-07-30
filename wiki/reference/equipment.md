@@ -131,6 +131,8 @@ previews the same map without a modal backdrop. While merely hovering, a
 mapped key equips or reassigns the item immediately. Keyboard focus preserves
 normal Tab navigation; Space opens the modal before slot keys become active,
 and Escape closes it. Clicking an equipped control still unequips it directly.
+An equipped item's current placement is highlighted and shows that item's icon
+in both the preview and modal maps.
 Equipped controls name their occupied locations and protection coverage to
 assistive technology and in their tooltip. An attached item's row names its parent and
 attachment point directly. Swaps validate the complete destination and every

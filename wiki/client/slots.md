@@ -94,7 +94,9 @@ without a modal backdrop and accepts a slot key immediately, including moving
 an already equipped item to another compatible placement. Reaching the control
 with keyboard Tab navigation shows the same preview while leaving Tab
 navigation active; press Space to open the modal, then choose a slot key or
-press Escape to close it. Clicking an equipped control still unequips it.
+press Escape to close it. An equipped item's current placement is highlighted
+and carries its item icon in either map. Clicking an equipped control still
+unequips it.
 
 ## Bags
 Your entire inventory won't necessarily fit into the slot system, which is fine. The slot system is intended not to replace "standard inventory management" altogether but to make a *significant subset* of your inventory more manageable, that being the subset of items that you need readily accessible. If you don't need a given item readily accessible, you can put it in a bag.
