@@ -307,9 +307,9 @@
 
   const equipmentControlSelector =
     '[data-equipment-toggle]:not([data-equipment-medication])';
-  const refreshSlotPreview = () => {
+  const refreshSlotPreview = (preferredControl = null) => {
     const focused = document.activeElement?.closest?.(equipmentControlSelector);
-    showSlotPreview(hoveredEquipmentControl || focused);
+    showSlotPreview(hoveredEquipmentControl || preferredControl || focused);
   };
 
   document.addEventListener('mouseover', (event) => {
@@ -327,8 +327,9 @@
   });
 
   document.addEventListener('focusin', (event) => {
-    if (!event.target.closest?.(equipmentControlSelector)) return;
-    refreshSlotPreview();
+    const control = event.target.closest?.(equipmentControlSelector);
+    if (!control) return;
+    refreshSlotPreview(control);
   });
 
   document.addEventListener('focusout', (event) => {

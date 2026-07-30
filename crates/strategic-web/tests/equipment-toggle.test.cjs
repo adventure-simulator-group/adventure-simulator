@@ -329,6 +329,73 @@ test('slot preview mirrors the keyboard map without creating a modal', () => {
   delete global.window;
 });
 
+test('hover accepts slot keys while keyboard focus waits for modal activation', async () => {
+  const { window, document } = parseHTML(
+    '<html><body><main id="strategic-page"><button id="equip"></button></main></body></html>',
+  );
+  global.window = window;
+  global.document = document;
+  window.HTMLElement.prototype.showModal = function showModal() {
+    this.setAttribute('open', '');
+  };
+  window.HTMLElement.prototype.close = function close() {
+    this.removeAttribute('open');
+    this.dispatchEvent(new window.Event('close'));
+  };
+  const mutations = [];
+  window.strategicSubmitMutation = async (path, options) => {
+    mutations.push({ path, body: options.body });
+  };
+  const control = document.querySelector('#equip');
+  control.dataset.inventoryItemId = '7';
+  control.dataset.equipmentToggle = '';
+  control.dataset.equipmentEquipped = 'false';
+  control.dataset.equipmentInputMap = JSON.stringify([
+    { input: 'g', label: 'G', row: 1, column: 1, locations: ['Chest'] },
+  ]);
+  control.dataset.equipmentPlacementOptions = JSON.stringify([{
+    placementIndex: 0,
+    inputRanks: { g: 20000 },
+    inputOccupants: {},
+    requirements: [],
+  }]);
+
+  const modulePath = require.resolve('../static/equipment-toggle.js');
+  delete require.cache[modulePath];
+  require(modulePath);
+
+  control.focus();
+  const focusIn = new window.Event('focusin', { bubbles: true });
+  control.dispatchEvent(focusIn);
+  assert.ok(document.querySelector('.equipment-slot-preview'));
+  const focusedKey = new window.Event('keydown', { bubbles: true, cancelable: true });
+  focusedKey.key = 'g';
+  control.dispatchEvent(focusedKey);
+  await Promise.resolve();
+  assert.equal(mutations.length, 0);
+
+  control.click();
+  assert.ok(document.querySelector('.equipment-slot-modal'));
+  document.querySelector('.equipment-slot-close').click();
+
+  control.blur();
+  const hover = new window.Event('mouseover', { bubbles: true });
+  hover.relatedTarget = null;
+  control.dispatchEvent(hover);
+  assert.ok(document.querySelector('.equipment-slot-preview'));
+  const hoveredKey = new window.Event('keydown', { bubbles: true, cancelable: true });
+  hoveredKey.key = 'g';
+  document.dispatchEvent(hoveredKey);
+  await Promise.resolve();
+  assert.equal(mutations.length, 1);
+  assert.equal(mutations[0].path, '/api/equipment');
+  assert.equal(mutations[0].body.get('placement_index'), '0');
+
+  delete require.cache[modulePath];
+  delete global.document;
+  delete global.window;
+});
+
 test('equipment errors have an HTTP fallback when the reducer body is empty', async () => {
   const response = {
     status: 503,
