@@ -7,8 +7,8 @@ use super::{
 };
 use crate::medical::{ChartGapPresentation, ChartReadingPresentation, MedicalPresentation};
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition, LimbInjury,
-    LimbRegion, ProjectileKind, RetainedProjectile,
+    BackendCorpse, Character, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition,
+    LimbInjury, LimbRegion, ProjectileKind, RetainedProjectile,
 };
 use crate::templates::{
     decorative_game_icon, game_icon, item_display_name, sidebar_section, stat_icon_path,
@@ -276,7 +276,117 @@ pub fn surgery_dialog(
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
                     }
+                    (surgery_procedure_row(
+                        &action,
+                        "Open the body",
+                        "scalpel",
+                        "open-body",
+                        &[SurgeryItemRequirement::SurgeryKitReusable],
+                        surgery_duration("open-body", surgery_skill, 1.0),
+                        1.0,
+                        surgery_skill,
+                        Some("Patient is alive"),
+                        Some("This procedure is available only for dead subjects"),
+                        None,
+                        false,
+                        false,
+                        None,
+                    ))
                 }
+                }
+            }
+        }
+    }
+}
+
+fn corpse_action_form(
+    corpse: &BackendCorpse,
+    case_site_id: &str,
+    action_kind: &str,
+    discipline: &str,
+    stage: &str,
+    label: &str,
+    disabled: Option<&str>,
+) -> Markup {
+    let unauthorized = corpse.permission == "none";
+    let warning = "No permission: proceeding is likely to seriously upset the family and bring substantial settlement infamy.";
+    html! {
+        form method="post"
+            action=(format!("/locations/case-site/{case_site_id}/corpses/{}/action", corpse.corpse_id))
+            class=(if unauthorized { "surgery-procedure autopsy-action unauthorized-action" } else { "surgery-procedure autopsy-action" })
+            data-strategic-tooltip=[unauthorized.then_some(warning)]
+            onsubmit=[unauthorized.then_some("return confirm('You do not have permission. The family will be seriously upset and the settlement will regard this as infamous. Proceed?')")] {
+            input type="hidden" name="action_kind" value=(action_kind);
+            input type="hidden" name="discipline" value=(discipline);
+            input type="hidden" name="stage" value=(stage);
+            input type="hidden" name="expected_revision" value=(corpse.revision);
+            input type="hidden" name="confirm_unauthorized" value=(if unauthorized { "true" } else { "false" });
+            input type="hidden" name="action_id" value=(format!("autopsy:{}:{action_kind}:{discipline}:{stage}:{}", corpse.corpse_id, corpse.revision));
+            (game_icon(label, if action_kind == "open" { "scalpel" } else { "magnifying-glass" }))
+            div class="surgery-procedure-copy" {
+                strong { (label) }
+                @if unauthorized { small { " Permission missing" } }
+            }
+            button type="submit"
+                class=(if unauthorized { "btn btn-danger" } else { "btn btn-primary" })
+                disabled[disabled.is_some()]
+                title=[disabled] {
+                (label)
+            }
+        }
+    }
+}
+
+/// Corpse examinations deliberately reuse the existing Physiology notebook and
+/// Surgery procedure-window idioms; there is no third autopsy dialogue.
+pub fn corpse_medical_dialog(corpse: &BackendCorpse, case_site_id: &str, window: &str) -> Markup {
+    let close_href = format!("/locations/case-site/{case_site_id}/enemy");
+    let internal_disabled = (!corpse.opened).then_some("Open the body in Surgery first");
+    let title = if window == "surgery" {
+        "Surgery"
+    } else {
+        "Physiology"
+    };
+    html! {
+        div class="character-action-overlay" data-character-action-dialog {
+            a class="character-action-backdrop" href=(&close_href) aria-label=(format!("Close {title} window")) {}
+            section class=(if window == "surgery" { "character-action-dialog surgery-dialog" } else { "character-action-dialog physiology-dialog" })
+                data-physiology-dialog[window == "physiology"]
+                role="dialog" aria-modal="true" aria-labelledby="corpse-medical-title" tabindex="-1" {
+                header class="character-action-dialog-header" {
+                    h2 id="corpse-medical-title" { (corpse.display_name) " — " (title) }
+                    a class="character-action-dialog-close" href=(&close_href) aria-label=(format!("Close {title} window")) { "×" }
+                }
+                p class="text-muted small-copy" {
+                    "Body: " (corpse.location.replace('_', " ")) "; decomposition: " (&corpse.decomposition) "."
+                }
+                div class="surgery-procedures" {
+                    @if corpse.location == "interred" {
+                        (corpse_action_form(corpse, case_site_id, "exhume", "surgery", "handling", "Exhume the body", None))
+                    }
+                    (corpse_action_form(corpse, case_site_id, "examine", window, "external", "External examination", None))
+                    (corpse_action_form(corpse, case_site_id, "examine", "bestiary", "external", "Interpret external creature signs", None))
+                    @if window == "surgery" {
+                        (corpse_action_form(
+                            corpse,
+                            case_site_id,
+                            "open",
+                            "surgery",
+                            "opening",
+                            "Open the body",
+                            corpse.opened.then_some("The body is already open"),
+                        ))
+                    }
+                    (corpse_action_form(corpse, case_site_id, "examine", window, "internal", "Internal examination", internal_disabled))
+                    (corpse_action_form(corpse, case_site_id, "examine", "bestiary", "internal", "Interpret internal creature signs", internal_disabled))
+                }
+                @if !corpse.findings.is_empty() {
+                    section class="physiology-chart-readings" aria-label="Recorded autopsy findings" {
+                        h3 { "Observed findings" }
+                        ul {
+                            @for finding in &corpse.findings { li { (finding) } }
+                        }
+                    }
                 }
             }
         }
@@ -1484,6 +1594,42 @@ pub(super) fn stat_icon(label: &str, category: &str, icon: &str, decorative: boo
 mod tests {
     use super::*;
     use crate::spacetimedb::*;
+
+    fn corpse_fixture(permission: &str, opened: bool) -> BackendCorpse {
+        BackendCorpse {
+            owner_character_id: 7,
+            corpse_id: "corpse:battle:1".into(),
+            display_name: "Fallen kobold".into(),
+            creature_kind: "kobold".into(),
+            source_id: "battle:1".into(),
+            location: "scene".into(),
+            decomposition: "fresh".into(),
+            case_site_id: "site:1".into(),
+            settlement_id: "town".into(),
+            opened,
+            permission: permission.into(),
+            revision: u32::from(opened),
+            findings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn corpse_uses_existing_medical_windows_and_warns_before_unauthorized_actions() {
+        let physiology =
+            corpse_medical_dialog(&corpse_fixture("none", false), "site:1", "physiology")
+                .into_string();
+        assert!(physiology.contains("physiology-dialog"));
+        assert!(physiology.contains("btn btn-danger"));
+        assert!(physiology.contains("No permission"));
+        assert!(physiology.contains("return confirm"));
+        assert!(physiology.contains("Open the body in Surgery first"));
+
+        let surgery = corpse_medical_dialog(&corpse_fixture("family", true), "site:1", "surgery")
+            .into_string();
+        assert!(surgery.contains("surgery-dialog"));
+        assert!(surgery.contains("Open the body"));
+        assert!(!surgery.contains("btn btn-danger"));
+    }
 
     #[test]
     fn public_filth_serialization_and_template_expose_only_aggregate_origin() {

@@ -23,7 +23,7 @@ pub(crate) use character_details::{
     CharacterSheetView, character_sheet_markup, character_stats_panel, character_visual_preview,
 };
 pub use character_details::{party_personal_page, party_stats_page};
-pub use character_health::surgery_dialog;
+pub use character_health::{corpse_medical_dialog, surgery_dialog};
 pub use character_skills::ActivityPreviewRates;
 pub(crate) use character_skills::{CharacterSheetActions, CharacterSkillHours};
 pub(crate) use chrome::{

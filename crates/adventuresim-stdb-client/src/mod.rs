@@ -25,6 +25,7 @@ pub mod attach_item_at_placement_reducer;
 pub mod authority_arrest_charge_type;
 pub mod authorize_tactical_server_claim_reducer;
 pub mod automatic_social_chat_type;
+pub mod autopsy_action_receipt_type;
 pub mod autoresolve_mission_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
@@ -44,6 +45,8 @@ pub mod backend_character_personalities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_contract_type;
 pub mod backend_contracts_table;
+pub mod backend_corpse_type;
+pub mod backend_corpses_table;
 pub mod backend_dialogue_event_type;
 pub mod backend_dialogue_events_table;
 pub mod backend_dialogue_participant_type;
@@ -187,6 +190,11 @@ pub mod contract_type;
 pub mod conviction_type;
 pub mod cook_food_reducer;
 pub mod cooking_method_type;
+pub mod corpse_body_state_type;
+pub mod corpse_family_binding_type;
+pub mod corpse_injury_type;
+pub mod corpse_permission_kind_type;
+pub mod corpse_permission_type;
 pub mod courtship_type;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
@@ -254,6 +262,8 @@ pub mod equipment_occupancy_type;
 pub mod equipment_parent_requirement_type;
 pub mod equipment_placement_type;
 pub mod evidence_presentation_kind_type;
+pub mod examine_corpse_reducer;
+pub mod exhume_corpse_reducer;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
 pub mod fallback_historical_vegetation_type;
@@ -419,6 +429,7 @@ pub mod npc_sex_type;
 pub mod objective_continuity_guard_type;
 pub mod objective_continuity_kind_type;
 pub mod official_religion_type;
+pub mod open_corpse_reducer;
 pub mod oral_language_hours_type;
 pub mod organic_soil_type;
 pub mod organization_membership_table;
@@ -632,6 +643,7 @@ pub mod stone_content_percent_type;
 pub mod stop_preparation_reducer;
 pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
+pub mod strategic_corpse_type;
 pub mod strategic_encounter_loss_type;
 pub mod strategic_encounter_table;
 pub mod strategic_encounter_type;
@@ -712,6 +724,7 @@ pub use attach_item_at_placement_reducer::attach_item_at_placement;
 pub use authority_arrest_charge_type::AuthorityArrestCharge;
 pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
 pub use automatic_social_chat_type::AutomaticSocialChat;
+pub use autopsy_action_receipt_type::AutopsyActionReceipt;
 pub use autoresolve_mission_reducer::autoresolve_mission;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
@@ -731,6 +744,8 @@ pub use backend_character_personalities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_contract_type::BackendContract;
 pub use backend_contracts_table::*;
+pub use backend_corpse_type::BackendCorpse;
+pub use backend_corpses_table::*;
 pub use backend_dialogue_event_type::BackendDialogueEvent;
 pub use backend_dialogue_events_table::*;
 pub use backend_dialogue_participant_type::BackendDialogueParticipant;
@@ -874,6 +889,11 @@ pub use contract_type::Contract;
 pub use conviction_type::Conviction;
 pub use cook_food_reducer::cook_food;
 pub use cooking_method_type::CookingMethod;
+pub use corpse_body_state_type::CorpseBodyState;
+pub use corpse_family_binding_type::CorpseFamilyBinding;
+pub use corpse_injury_type::CorpseInjury;
+pub use corpse_permission_kind_type::CorpsePermissionKind;
+pub use corpse_permission_type::CorpsePermission;
 pub use courtship_type::Courtship;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
@@ -941,6 +961,8 @@ pub use equipment_occupancy_type::EquipmentOccupancy;
 pub use equipment_parent_requirement_type::EquipmentParentRequirement;
 pub use equipment_placement_type::EquipmentPlacement;
 pub use evidence_presentation_kind_type::EvidencePresentationKind;
+pub use examine_corpse_reducer::examine_corpse;
+pub use exhume_corpse_reducer::exhume_corpse;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
 pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
@@ -1106,6 +1128,7 @@ pub use npc_sex_type::NpcSex;
 pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
 pub use objective_continuity_kind_type::ObjectiveContinuityKind;
 pub use official_religion_type::OfficialReligion;
+pub use open_corpse_reducer::open_corpse;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use organic_soil_type::OrganicSoil;
 pub use organization_membership_table::*;
@@ -1319,6 +1342,7 @@ pub use stone_content_percent_type::StoneContentPercent;
 pub use stop_preparation_reducer::stop_preparation;
 pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
+pub use strategic_corpse_type::StrategicCorpse;
 pub use strategic_encounter_loss_type::StrategicEncounterLoss;
 pub use strategic_encounter_table::*;
 pub use strategic_encounter_type::StrategicEncounter;
@@ -1604,6 +1628,22 @@ pub enum Reducer {
         inventory_item_id: u64,
         placement_index: u16,
     },
+    ExamineCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        discipline: String,
+        stage: String,
+        action_id: String,
+        expected_revision: u32,
+        confirm_unauthorized: bool,
+    },
+    ExhumeCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        action_id: String,
+        expected_revision: u32,
+        confirm_unauthorized: bool,
+    },
     FinalizeMerchantTrade {
         character_id: u64,
         settlement_id: String,
@@ -1688,6 +1728,13 @@ pub enum Reducer {
         settlement_id: String,
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
+    },
+    OpenCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        action_id: String,
+        expected_revision: u32,
+        confirm_unauthorized: bool,
     },
     PayOrganizationDues {
         character_id: u64,
@@ -2105,6 +2152,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::EquipItemAtPlacement { .. } => "equip_item_at_placement",
+            Reducer::ExamineCorpse { .. } => "examine_corpse",
+            Reducer::ExhumeCorpse { .. } => "exhume_corpse",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
@@ -2122,6 +2171,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformInvestigationAction { .. } => "perform_investigation_action",
@@ -2589,6 +2639,36 @@ Reducer::BeginWorldDataImport{
                 inventory_item_id: inventory_item_id.clone(),
                 placement_index: placement_index.clone(),
 }),
+            Reducer::ExamineCorpse{
+                actor_id,
+                corpse_id,
+                discipline,
+                stage,
+                action_id,
+                expected_revision,
+                confirm_unauthorized,
+}             => __sats::bsatn::to_vec(&examine_corpse_reducer::ExamineCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                discipline: discipline.clone(),
+                stage: stage.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                confirm_unauthorized: confirm_unauthorized.clone(),
+}),
+            Reducer::ExhumeCorpse{
+                actor_id,
+                corpse_id,
+                action_id,
+                expected_revision,
+                confirm_unauthorized,
+}             => __sats::bsatn::to_vec(&exhume_corpse_reducer::ExhumeCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                confirm_unauthorized: confirm_unauthorized.clone(),
+}),
             Reducer::FinalizeMerchantTrade{
                 character_id,
                 settlement_id,
@@ -2741,6 +2821,19 @@ Reducer::BeginWorldDataImport{
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::OpenCorpse{
+                actor_id,
+                corpse_id,
+                action_id,
+                expected_revision,
+                confirm_unauthorized,
+}             => __sats::bsatn::to_vec(&open_corpse_reducer::OpenCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                confirm_unauthorized: confirm_unauthorized.clone(),
 }),
             Reducer::PayOrganizationDues{
                 character_id,
@@ -3404,6 +3497,7 @@ pub struct DbUpdate {
     backend_character_personalities: __sdk::TableUpdate<CharacterPersonality>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_contracts: __sdk::TableUpdate<BackendContract>,
+    backend_corpses: __sdk::TableUpdate<BackendCorpse>,
     backend_dialogue_events: __sdk::TableUpdate<BackendDialogueEvent>,
     backend_dialogue_participants: __sdk::TableUpdate<BackendDialogueParticipant>,
     backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
@@ -3551,6 +3645,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_contracts" => db_update
                     .backend_contracts
                     .append(backend_contracts_table::parse_table_update(table_update)?),
+                "backend_corpses" => db_update
+                    .backend_corpses
+                    .append(backend_corpses_table::parse_table_update(table_update)?),
                 "backend_dialogue_events" => db_update.backend_dialogue_events.append(
                     backend_dialogue_events_table::parse_table_update(table_update)?,
                 ),
@@ -4207,6 +4304,8 @@ impl __sdk::DbUpdate for DbUpdate {
         );
         diff.backend_contracts = cache
             .apply_diff_to_table::<BackendContract>("backend_contracts", &self.backend_contracts);
+        diff.backend_corpses =
+            cache.apply_diff_to_table::<BackendCorpse>("backend_corpses", &self.backend_corpses);
         diff.backend_dialogue_events = cache.apply_diff_to_table::<BackendDialogueEvent>(
             "backend_dialogue_events",
             &self.backend_dialogue_events,
@@ -4375,6 +4474,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_contracts" => db_update
                     .backend_contracts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_corpses" => db_update
+                    .backend_corpses
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_dialogue_events" => db_update
                     .backend_dialogue_events
@@ -4704,6 +4806,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_contracts" => db_update
                     .backend_contracts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_corpses" => db_update
+                    .backend_corpses
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_dialogue_events" => db_update
                     .backend_dialogue_events
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -5011,6 +5116,7 @@ pub struct AppliedDiff<'r> {
     backend_character_personalities: __sdk::TableAppliedDiff<'r, CharacterPersonality>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
+    backend_corpses: __sdk::TableAppliedDiff<'r, BackendCorpse>,
     backend_dialogue_events: __sdk::TableAppliedDiff<'r, BackendDialogueEvent>,
     backend_dialogue_participants: __sdk::TableAppliedDiff<'r, BackendDialogueParticipant>,
     backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
@@ -5180,6 +5286,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendContract>(
             "backend_contracts",
             &self.backend_contracts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendCorpse>(
+            "backend_corpses",
+            &self.backend_corpses,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendDialogueEvent>(
@@ -6279,6 +6390,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_character_personalities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_contracts_table::register_table(client_cache);
+        backend_corpses_table::register_table(client_cache);
         backend_dialogue_events_table::register_table(client_cache);
         backend_dialogue_participants_table::register_table(client_cache);
         backend_dialogue_prompts_table::register_table(client_cache);
@@ -6386,6 +6498,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_character_personalities",
         "backend_committed_cuts",
         "backend_contracts",
+        "backend_corpses",
         "backend_dialogue_events",
         "backend_dialogue_participants",
         "backend_dialogue_prompts",

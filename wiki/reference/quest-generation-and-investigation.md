@@ -1,5 +1,10 @@
 # Quest generation and investigation
 
+Strategic quest autoresolve can leave opponent corpses in the counterparty
+area. Those bodies derive from the ordinary combat outcome rather than authored
+wound clues; see [Autopsies](autopsies.md). Generated victim incidents should
+use the same bounded autoresolve seam when a producer is added.
+
 This page is the canonical technical reference for authored quest content, deterministic case generation, observer-specific investigation knowledge, evidence, and discovery.
 
 ## Source-aware ambiguity

@@ -22,6 +22,43 @@ pub fn choose_dialogue_topic(
     if session.revision != expected_revision {
         return Err("Dialogue action used a stale session revision".into());
     }
+    if let Some(corpse_id) = topic_id.strip_prefix("corpse-permission:") {
+        let option_id = format!("{session_id}:{topic_id}");
+        if ctx
+            .db
+            .dialogue_topic_option()
+            .id()
+            .find(&option_id)
+            .is_none()
+        {
+            return Err("Corpse permission topic is not currently available".into());
+        }
+        let npc_id = ctx
+            .db
+            .dialogue_participant()
+            .session_id()
+            .filter(&session_id)
+            .find(|participant| participant.character_id.is_none())
+            .map(|participant| participant.actor_id)
+            .ok_or("Dialogue has no NPC participant")?;
+        crate::corpse::grant_permission_from_dialogue(
+            ctx,
+            character_id,
+            corpse_id,
+            &npc_id,
+        )?;
+        session.revision = session.revision.saturating_add(1);
+        ctx.db.dialogue_session().id().update(session.clone());
+        ctx.db.dialogue_action().insert(DialogueAction {
+            id: action_row_id,
+            session_id,
+            action_id,
+            action_kind: format!("corpse-permission:{corpse_id}"),
+            resulting_revision: session.revision,
+        });
+        refresh_dialogue_topic_options(ctx, &session, character_id)?;
+        return Ok(());
+    }
     let conversation = adventuresim_dialogue::find_conversation(&session.conversation_id)
         .ok_or("Unknown dialogue conversation")?;
     let topic = conversation

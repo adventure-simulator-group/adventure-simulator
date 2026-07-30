@@ -1,0 +1,64 @@
+# Autopsies
+
+Autopsies use durable strategic body state produced by ordinary combat
+autoresolve. The corpse boundary stores final regional health, blood loss, and a
+bounded sequence of physical injuries. It does not store tactical ticks,
+positions, a replay, attacker identity, weapon identity, or a canonical
+cause-of-death answer.
+
+## Custody and decomposition
+
+Death time and discovery time are separate. A body's displayed location is
+derived dynamically from elapsed time after discovery:
+
+1. at the scene for the first 90 minutes;
+2. in local custody (for example, a church or residence) until 24 hours;
+3. interred thereafter, unless it has been exhumed.
+
+Decomposition is calculated independently from time since death and accumulated
+handling damage. Prompt scene examination retains both scene context and
+better-preserved anatomy, while a promptly discovered but badly handled body can
+still lose information.
+
+## Medical workflow
+
+A corpse portrait opens the existing Physiology and Surgery windows. Both
+windows support external examination. `Open the body` is an ordinary Surgery
+procedure: it is disabled for living patients and, on a corpse, unlocks internal
+observations in both windows. Low Surgery produces incision damage and bounded
+obscuration; it does not make Surgery interpret physiological effects or name a
+culprit.
+
+- Surgery observes wound geometry, tissue damage, and physical instrument
+  properties.
+- Physiology interprets systemic effects and possible physical mechanisms.
+- Bestiary checks interpret already-observed signs through learned creature
+  lore. They do not read a hidden attacker identity.
+
+Findings are observer-scoped. Another character cannot obtain a private result
+merely by subscribing to corpse authority.
+
+## Permission
+
+Permission is requested through an automatically available, corpse-specific
+topic in ordinary dialogue. Explicitly bound family members, a local priest, or
+a local secular authority may grant it. Family permission avoids social
+penalties. Priest or authority permission prevents settlement infamy, but
+bypassing bound family causes a modest family morale and affinity loss.
+Proceeding without any permission remains possible after a qualitative warning
+and causes a much larger family penalty plus settlement infamy. Receipts make
+all actions and consequences retry-safe.
+
+## Autoresolve dogfooding
+
+Enemy corpses after a strategic quest battle use the same post-combat-body
+materialization function intended for generated victims. Incapacitation alone
+does not create a corpse. A reusable bounded seed-search helper can run a
+death-required incident through ordinary autoresolve and fail cleanly when the
+designated victim survives every attempt.
+
+The present quest-incident generator has no victim-combat producer, so this
+issue deliberately adds the reusable helper and materialization seam without
+inventing a second wound generator. A later outbreak/threat incident can call
+that seam. Tactical combat parity is intentionally deferred while its combat
+pipeline is being refactored.

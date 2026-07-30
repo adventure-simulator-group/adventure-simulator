@@ -232,6 +232,15 @@ pub fn autoresolve_mission(
         return Ok(());
     }
 
+    crate::corpse::persist_autoresolve_enemy_corpses(
+        ctx,
+        &battle_id,
+        &party_id,
+        &case_site.origin_settlement_id,
+        &case_site.id.value,
+        &hostile_group.enemy_type,
+        &outcome,
+    )?;
     complete_bound_mission_success(ctx, &mission_id)?;
     Ok(())
 }

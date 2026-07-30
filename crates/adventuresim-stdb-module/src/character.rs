@@ -169,6 +169,12 @@ pub fn transition_character_to_dead(
         source_id,
         strategic_minute,
     });
+    crate::corpse::persist_character_death_corpse(
+        ctx,
+        character_id,
+        death.source_id.as_deref().unwrap_or("character-death"),
+        strategic_minute,
+    )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::social::close_physiology_presence(ctx, character_id);
     character.alive = false;

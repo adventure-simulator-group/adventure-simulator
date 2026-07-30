@@ -25,11 +25,11 @@ use super::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendInvestigationAction,
-    BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
-    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
-    ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
-    PartyInventoryItem, PartyStake, Settlement,
+    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendCorpse,
+    BackendInvestigationAction, BattleLootItem, BattleResult, Character, CharacterAttributes,
+    CharacterLimbs, CharacterStats, CharacterStrategicCondition, CharacterTime,
+    CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus, FoodLot,
+    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Settlement,
 };
 use crate::templates::quest::{
     CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
@@ -46,6 +46,10 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/case-site/{id}", get(quest_location_base))
         .route("/locations/case-site/{id}/map", get(quest_location_map))
         .route("/locations/case-site/{id}/enemy", get(quest_location_enemy))
+        .route(
+            "/locations/case-site/{id}/corpses/{corpse_id}/action",
+            post(perform_corpse_action),
+        )
         .route(
             "/locations/case-site/{id}/loot",
             get(quest_location_legacy_loot),
@@ -344,14 +348,20 @@ async fn store_battle_loot(
     )
 }
 
-#[derive(Default, serde::Deserialize)]
+#[derive(Clone, Default, serde::Deserialize)]
 struct QuestMapQuery {
     destination: Option<String>,
 }
 
+#[derive(Clone, Default, serde::Deserialize)]
+struct QuestEnemyQuery {
+    corpse: Option<String>,
+    medical: Option<String>,
+}
+
 enum QuestLocationTab {
     Map(Option<String>),
-    Enemy,
+    Enemy(QuestEnemyQuery),
 }
 
 fn case_site_page_presentation(
@@ -520,9 +530,92 @@ async fn quest_location_map(
 async fn quest_location_enemy(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<QuestEnemyQuery>,
     session: Session,
 ) -> Response {
-    render_quest_location(state, id, session, QuestLocationTab::Enemy).await
+    render_quest_location(state, id, session, QuestLocationTab::Enemy(query)).await
+}
+
+#[derive(serde::Deserialize)]
+struct CorpseActionForm {
+    action_kind: String,
+    discipline: String,
+    stage: String,
+    action_id: String,
+    expected_revision: u32,
+    #[serde(default)]
+    confirm_unauthorized: bool,
+}
+
+async fn perform_corpse_action(
+    State(state): State<AppState>,
+    Path((id, corpse_id)): Path<(String, String)>,
+    session: Session,
+    Form(form): Form<CorpseActionForm>,
+) -> Redirect {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    let result = match form.action_kind.as_str() {
+        "open" => {
+            state
+                .db
+                .call(
+                    "open_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                        json!(form.confirm_unauthorized),
+                    ],
+                )
+                .await
+        }
+        "exhume" => {
+            state
+                .db
+                .call(
+                    "exhume_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                        json!(form.confirm_unauthorized),
+                    ],
+                )
+                .await
+        }
+        _ => {
+            state
+                .db
+                .call(
+                    "examine_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.discipline),
+                        json!(&form.stage),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                        json!(form.confirm_unauthorized),
+                    ],
+                )
+                .await
+        }
+    };
+    if let Err(error) = result {
+        tracing::warn!(%error, actor_id, %corpse_id, "corpse medical action failed");
+    }
+    let window = if form.discipline == "surgery" || form.action_kind == "open" {
+        "surgery"
+    } else {
+        "physiology"
+    };
+    Redirect::to(&format!(
+        "/locations/case-site/{id}/enemy?corpse={corpse_id}&medical={window}"
+    ))
 }
 
 async fn quest_location_legacy_loot(Path(id): Path<String>) -> Redirect {
@@ -956,6 +1049,36 @@ async fn render_quest_location(
             .unwrap_or_default(),
         &site.case_site_id,
     );
+    let corpses = state
+        .db
+        .query::<BackendCorpse>(&format!(
+            "SELECT * FROM backend_corpses WHERE owner_character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|corpse| corpse.case_site_id == site.case_site_id)
+        .collect::<Vec<_>>();
+    let selected_corpse_coordinate = match &tab {
+        QuestLocationTab::Enemy(query) => query.corpse.as_deref().and_then(|corpse_id| {
+            corpses
+                .iter()
+                .position(|corpse| corpse.corpse_id == corpse_id)
+                .map(|index| {
+                    (
+                        index,
+                        if query.medical.as_deref() == Some("surgery") {
+                            "surgery"
+                        } else {
+                            "physiology"
+                        },
+                    )
+                })
+        }),
+        QuestLocationTab::Map(_) => None,
+    };
+    let selected_corpse =
+        selected_corpse_coordinate.map(|(index, window)| (&corpses[index], window));
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let soap_preview = soap_rest_preview(
         &state,
@@ -982,8 +1105,10 @@ async fn render_quest_location(
             soap_preview,
             recovery_notice.as_ref(),
             logged_in_as,
+            &corpses,
+            None,
         ),
-        QuestLocationTab::Enemy => quest_location_enemy_page(
+        QuestLocationTab::Enemy(_query) => quest_location_enemy_page(
             &presentation,
             site,
             &onsite_actions,
@@ -1004,6 +1129,8 @@ async fn render_quest_location(
             &food_lots,
             &targets,
             logged_in_as,
+            &corpses,
+            selected_corpse,
         ),
     };
     Html(page.into_string()).into_response()

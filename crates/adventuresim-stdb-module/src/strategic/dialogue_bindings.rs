@@ -1010,5 +1010,27 @@ fn refresh_dialogue_topic_options(
             });
         }
     }
+    if let Some(npc_id) = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .find(|participant| participant.character_id.is_none())
+        .map(|participant| participant.actor_id)
+    {
+        for (topic_id, label) in
+            crate::corpse::permission_topics_for_npc(ctx, character_id, &npc_id)
+        {
+            ctx.db.dialogue_topic_option().insert(DialogueTopicOption {
+                id: format!("{}:{topic_id}", session.id),
+                gateway_bucket: 0,
+                session_id: session.id.clone(),
+                topic_id,
+                public_case_id: String::new(),
+                label,
+                source_ref_json: "[]".into(),
+            });
+        }
+    }
     Ok(())
 }

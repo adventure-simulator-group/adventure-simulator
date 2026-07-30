@@ -527,6 +527,65 @@ fn record_settlement_npc_morale_event(
     Ok(())
 }
 
+/// Retry-safe social consequence shared by corpse permission and unauthorized
+/// autopsy actions. The caller supplies a globally stable event ID.
+pub(crate) fn apply_corpse_family_offense(
+    ctx: &ReducerContext,
+    observer_character_id: u64,
+    npc_id: &str,
+    event_id: &str,
+    morale_delta: f32,
+    affinity_delta: f32,
+) -> Result<(), String> {
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(observer_character_id)
+        .map_or(0, |row| row.minutes);
+    let morale_id = format!("corpse-family:{event_id}");
+    if ctx
+        .db
+        .settlement_npc_morale_event()
+        .id()
+        .find(&morale_id)
+        .is_some()
+    {
+        return Ok(());
+    }
+    let mut relationship = ctx
+        .db
+        .settlement_npc_relationship()
+        .id()
+        .find(&format!("{observer_character_id}:{npc_id}"))
+        .unwrap_or(SettlementNpcRelationship {
+            id: format!("{observer_character_id}:{npc_id}"),
+            observer_character_id,
+            npc_id: npc_id.into(),
+            affinity_anchor: 0.0,
+            affinity_anchor_minute: now,
+            shared_minutes: 0,
+        });
+    relationship.affinity_anchor =
+        (relationship.affinity_anchor + affinity_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
+    relationship.affinity_anchor_minute = now;
+    if ctx
+        .db
+        .settlement_npc_relationship()
+        .id()
+        .find(&relationship.id)
+        .is_some()
+    {
+        ctx.db
+            .settlement_npc_relationship()
+            .id()
+            .update(relationship);
+    } else {
+        ctx.db.settlement_npc_relationship().insert(relationship);
+    }
+    record_settlement_npc_morale_event(ctx, morale_id, npc_id, "corpse_handling", morale_delta, now)
+}
+
 const MIN_CASUAL_CHAT_MINUTES: u64 = 15;
 const MAX_CASUAL_CHAT_MINUTES: u64 = 8 * 60;
 
