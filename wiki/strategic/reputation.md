@@ -30,6 +30,12 @@ disorder third, preserving the one-incident-per-party ordering. Each interval
 persists a private server-generated entropy seed, so its rolls are retry-stable
 without being predictable from public timing or character inputs.
 
+Thievery can contribute local Infamy only while inside a settlement. Raiding
+is performed at a stationary named outdoor location; its currency, Infamy,
+discovered offense, and activity-incident source all use that location's
+authoritative origin settlement. Carousing is executable only where the
+settlement economy includes an inn.
+
 Settlement NPC checks receive a bounded local reputation modifier that falls
 to zero as personal familiarity reaches its cap. Personal affinity itself is
 not rewritten. When local Infamy exceeds Fame by the arrest threshold, the

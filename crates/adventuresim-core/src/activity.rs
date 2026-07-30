@@ -2,6 +2,51 @@
 
 use crate::strategic_time::MINUTES_PER_DAY;
 
+pub const THIEVERY_UNAVAILABLE_REASON: &str = "Thievery is only available inside settlements.";
+pub const RAIDING_UNAVAILABLE_REASON: &str =
+    "Raiding is only available at an eligible outdoor location.";
+pub const CAROUSING_UNAVAILABLE_REASON: &str = "Carousing requires a settlement with an inn.";
+
+/// The location facts which affect ordinary downtime activities. This is kept
+/// independent of persistence and transport types so both authoritative
+/// execution and observer-facing rendering use the same policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActivityLocation {
+    Settlement { has_inn: bool },
+    NamedOutdoorLocation,
+    IneligibleNamedLocation,
+    JourneyCamp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationActivity {
+    Carousing,
+    Thievery,
+    Raiding,
+}
+
+impl ActivityLocation {
+    pub const fn allows(self, activity: LocationActivity) -> bool {
+        match (self, activity) {
+            (Self::Settlement { has_inn: true }, LocationActivity::Carousing) => true,
+            (Self::Settlement { .. }, LocationActivity::Thievery) => true,
+            (Self::NamedOutdoorLocation, LocationActivity::Raiding) => true,
+            _ => false,
+        }
+    }
+
+    pub const fn unavailable_reason(self, activity: LocationActivity) -> Option<&'static str> {
+        if self.allows(activity) {
+            return None;
+        }
+        Some(match activity {
+            LocationActivity::Carousing => CAROUSING_UNAVAILABLE_REASON,
+            LocationActivity::Thievery => THIEVERY_UNAVAILABLE_REASON,
+            LocationActivity::Raiding => RAIDING_UNAVAILABLE_REASON,
+        })
+    }
+}
+
 pub const ACTIVITY_TRAINING_RATE: f32 = 0.25;
 pub const PRAYER_MORALE_LIMIT: f32 = 4.0;
 pub const PRAYER_MORALE_SCALE_MINUTES: f32 = 60.0;
@@ -96,6 +141,26 @@ pub fn raiding_retaliation_chance(hours: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn location_activity_matrix_distinguishes_inns_settlements_and_outdoors() {
+        let inn = ActivityLocation::Settlement { has_inn: true };
+        let no_inn = ActivityLocation::Settlement { has_inn: false };
+        let outdoors = ActivityLocation::NamedOutdoorLocation;
+        let ineligible = ActivityLocation::IneligibleNamedLocation;
+        let camp = ActivityLocation::JourneyCamp;
+
+        assert!(inn.allows(LocationActivity::Thievery));
+        assert!(inn.allows(LocationActivity::Carousing));
+        assert!(!inn.allows(LocationActivity::Raiding));
+        assert!(no_inn.allows(LocationActivity::Thievery));
+        assert!(!no_inn.allows(LocationActivity::Carousing));
+        assert!(outdoors.allows(LocationActivity::Raiding));
+        assert!(!outdoors.allows(LocationActivity::Thievery));
+        assert!(!outdoors.allows(LocationActivity::Carousing));
+        assert!(!ineligible.allows(LocationActivity::Raiding));
+        assert!(!camp.allows(LocationActivity::Raiding));
+    }
 
     #[test]
     fn prayer_has_saturating_morale_and_fervor_scaled_observance() {

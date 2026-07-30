@@ -1,3 +1,4 @@
+use adventuresim_core::activity::{ActivityLocation, LocationActivity};
 use adventuresim_core::strategic_schedule::{
     ActivityOutcomeInputs, DailySchedule, SkillHours, apply_religion_training,
     apply_schedule_training, settlement_activity_outcome,
@@ -13,8 +14,9 @@ use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::condition::{character_condition as _, character_strategic_condition as _};
 use crate::disease::character_illness_status as _;
+use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
 use crate::organization::organization_membership as _;
-use crate::strategic::{party_authority, party_member as _};
+use crate::strategic::{party_authority, party_member as _, strategic_incident as _};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
     character_limbs, character_skills, character_stats, settlement,
@@ -132,6 +134,91 @@ impl ScheduleAllocation {
         ];
         values.into_iter().all(|minutes| minutes % 15 == 0)
     }
+}
+
+#[derive(Clone, Debug)]
+struct ActivityExecutionLocation {
+    policy: ActivityLocation,
+    origin_settlement_id: Option<String>,
+}
+
+fn activity_execution_location(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<ActivityExecutionLocation, String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if let Some(settlement_id) = character.current_settlement_id {
+        let settlement = ctx
+            .db
+            .settlement()
+            .id()
+            .find(&settlement_id)
+            .ok_or("Character's settlement not found")?;
+        return Ok(ActivityExecutionLocation {
+            policy: ActivityLocation::Settlement {
+                has_inn: settlement
+                    .economy
+                    .has_service(adventuresim_world_schema::SettlementService::Inn),
+            },
+            origin_settlement_id: Some(settlement_id),
+        });
+    }
+    if let Some(occupancy) = ctx
+        .db
+        .character_case_site_occupancy()
+        .character_id()
+        .find(character_id)
+    {
+        let site = ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&occupancy.case_site_id.value)
+            .ok_or("Character's case site not found")?;
+        return Ok(ActivityExecutionLocation {
+            policy: if site.distance_m > 0 && !site.case_id.starts_with("incident:") {
+                ActivityLocation::NamedOutdoorLocation
+            } else {
+                ActivityLocation::IneligibleNamedLocation
+            },
+            origin_settlement_id: Some(site.origin_settlement_id),
+        });
+    }
+    Ok(ActivityExecutionLocation {
+        policy: ActivityLocation::JourneyCamp,
+        origin_settlement_id: None,
+    })
+}
+
+fn location_activity(activity: ImmediateActivity) -> Option<LocationActivity> {
+    match activity {
+        ImmediateActivity::Carousing => Some(LocationActivity::Carousing),
+        ImmediateActivity::Thievery => Some(LocationActivity::Thievery),
+        ImmediateActivity::Raiding => Some(LocationActivity::Raiding),
+        _ => None,
+    }
+}
+
+pub(crate) fn effective_location_schedule(
+    schedule: &ScheduleAllocation,
+    location: ActivityLocation,
+) -> ScheduleAllocation {
+    let mut effective = schedule.clone();
+    if !location.allows(LocationActivity::Carousing) {
+        effective.carousing_minutes = 0;
+    }
+    if !location.allows(LocationActivity::Thievery) {
+        effective.thievery_minutes = 0;
+    }
+    if !location.allows(LocationActivity::Raiding) {
+        effective.raiding_minutes = 0;
+    }
+    effective
 }
 
 pub fn initialize_time(ctx: &ReducerContext) {
@@ -881,13 +968,8 @@ fn apply_activity_outcomes_inner(
     interval_end_minute: u64,
     apply_leisure: bool,
 ) -> Result<ActivityRisks, String> {
-    let character = ctx
-        .db
-        .character()
-        .id()
-        .find(character_id)
-        .ok_or("Character not found")?;
-    let Some(settlement_id) = character.current_settlement_id.as_ref() else {
+    let location = activity_execution_location(ctx, character_id)?;
+    let Some(settlement_id) = location.origin_settlement_id.as_ref() else {
         return Ok(ActivityRisks::default());
     };
     let settlement = ctx
@@ -1054,8 +1136,35 @@ pub fn perform_immediate_activity(
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     let character = crate::character::require_living_character(ctx, character_id)?;
-    if character.current_settlement_id.is_none() {
-        return Err("Activities may only be performed at a settlement".into());
+    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
+    if let Some(party_id) = character.party_id.as_ref()
+        && ctx
+            .db
+            .strategic_incident()
+            .party_id()
+            .filter(party_id)
+            .any(|incident| incident.status == crate::strategic::IncidentStatus::Pending)
+    {
+        return Err("Resolve the strategic incident before performing an activity".into());
+    }
+    let location = activity_execution_location(ctx, character_id)?;
+    if let Some(location_activity) = location_activity(activity)
+        && let Some(reason) = location.policy.unavailable_reason(location_activity)
+    {
+        return Err(reason.into());
+    }
+    if location.policy == ActivityLocation::NamedOutdoorLocation
+        && !matches!(activity, ImmediateActivity::Raiding)
+    {
+        return Err("This activity may only be performed at a settlement".into());
+    }
+    if location.policy == ActivityLocation::JourneyCamp {
+        return Err(
+            "Immediate activities are unavailable while travelling or at a journey camp".into(),
+        );
+    }
+    if location.policy == ActivityLocation::IneligibleNamedLocation {
+        return Err("Immediate activities are unavailable at this location".into());
     }
     if !(60..=MINUTES_PER_DAY).contains(&requested_minutes) || requested_minutes % 60 != 0 {
         return Err("Activity duration must use whole hours from one to 24 hours".into());
@@ -1460,8 +1569,10 @@ fn rest_for_minutes(
         .character_id()
         .find(character_id)
         .ok_or_else(|| "Character training schedule not found".to_string())?;
-    let effective_schedule =
-        effective_organization_schedule(ctx, character_id, &saved_schedule.downtime);
+    let effective_schedule = effective_location_schedule(
+        &effective_organization_schedule(ctx, character_id, &saved_schedule.downtime),
+        activity_execution_location(ctx, character_id)?.policy,
+    );
     let conversation_choice = character.party_id.as_ref().and_then(|party_id| {
         let snapshot: Vec<_> = crate::strategic::living_party_member_ids(ctx, party_id)
             .into_iter()
@@ -1509,15 +1620,9 @@ fn rest_for_minutes(
         crate::filth::wash_before_explicit_rest(ctx, character_id)?;
     }
 
-    let schedule = ctx
-        .db
-        .character_training_schedule()
-        .character_id()
-        .find(character_id)
-        .ok_or_else(|| "Character training schedule not found".to_string())?;
     let starting_minute = character_time.minutes;
     let requested_recovery = adventuresim_core::strategic_schedule::restorative_leisure_minutes(
-        core_schedule(&schedule.downtime),
+        core_schedule(&effective_schedule),
         starting_minute,
         requested_minutes,
     );
@@ -1531,7 +1636,7 @@ fn rest_for_minutes(
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let physiology_check = party_physiology_check(ctx, character_id)?;
     let recovery_elapsed = adventuresim_core::strategic_schedule::restorative_leisure_minutes(
-        core_schedule(&schedule.downtime),
+        core_schedule(&effective_schedule),
         starting_minute,
         elapsed,
     );
@@ -1847,7 +1952,10 @@ fn advance_personal_camp_time(
         .character_id()
         .find(member_id)
         .ok_or("Character training schedule not found")?;
-    let allowed = allowed_camp_schedule(&schedule.downtime);
+    let allowed = effective_location_schedule(
+        &allowed_camp_schedule(&schedule.downtime),
+        ActivityLocation::JourneyCamp,
+    );
     let downtime = elapsed.saturating_sub(fatigue_rest.max(convalescing));
     if downtime > 0 {
         let mut skills = ctx
@@ -2079,7 +2187,10 @@ pub fn rest_at_camp(
                 .character_id()
                 .find(member_id)
                 .ok_or("Character training schedule not found")?;
-            let allowed = allowed_camp_schedule(&schedule.downtime);
+            let allowed = effective_location_schedule(
+                &allowed_camp_schedule(&schedule.downtime),
+                ActivityLocation::JourneyCamp,
+            );
             let mut skills = ctx
                 .db
                 .character_skills()
@@ -2213,8 +2324,15 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .character_id()
         .find(character_id)
         .ok_or_else(|| "Character training schedule not found".to_string())?;
-    let effective_schedule =
+    let execution_location = activity_execution_location(ctx, character_id)?;
+    let organization_schedule =
         effective_organization_schedule(ctx, character_id, &saved_schedule.downtime);
+    let effective_schedule = if execution_location.policy == ActivityLocation::JourneyCamp {
+        let camp_schedule = allowed_camp_schedule(&organization_schedule);
+        effective_location_schedule(&camp_schedule, execution_location.policy)
+    } else {
+        effective_location_schedule(&organization_schedule, execution_location.policy)
+    };
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
     let (elapsed, terminal) =
@@ -2328,6 +2446,42 @@ mod tests {
         assert!(require_settlement_rest_service(&profile, true).is_err());
         profile.services.push(SettlementService::Temple);
         assert!(require_settlement_rest_service(&profile, false).is_ok());
+    }
+
+    #[test]
+    fn effective_schedule_filters_location_activities_without_mutating_saved_plan() {
+        let saved = ScheduleAllocation {
+            carousing_minutes: 60,
+            thievery_minutes: 90,
+            raiding_minutes: 120,
+            labor_minutes: 180,
+            ..ScheduleAllocation::default()
+        };
+        let settlement =
+            effective_location_schedule(&saved, ActivityLocation::Settlement { has_inn: false });
+        assert_eq!(settlement.carousing_minutes, 0);
+        assert_eq!(settlement.thievery_minutes, 90);
+        assert_eq!(settlement.raiding_minutes, 0);
+        assert_eq!(settlement.labor_minutes, 180);
+        let saved_recovery = adventuresim_core::strategic_schedule::restorative_leisure_minutes(
+            core_schedule(&saved),
+            0,
+            MINUTES_PER_DAY,
+        );
+        let effective_recovery = adventuresim_core::strategic_schedule::restorative_leisure_minutes(
+            core_schedule(&settlement),
+            0,
+            MINUTES_PER_DAY,
+        );
+        assert!(effective_recovery > saved_recovery);
+
+        let outdoors = effective_location_schedule(&saved, ActivityLocation::NamedOutdoorLocation);
+        assert_eq!(outdoors.carousing_minutes, 0);
+        assert_eq!(outdoors.thievery_minutes, 0);
+        assert_eq!(outdoors.raiding_minutes, 120);
+        assert_eq!(saved.carousing_minutes, 60);
+        assert_eq!(saved.thievery_minutes, 90);
+        assert_eq!(saved.raiding_minutes, 120);
     }
 
     #[test]
@@ -2569,6 +2723,17 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("const ACTIVITY_MINUTE_SCALE").next())
             .expect("immediate organization interval");
+        let availability = immediate.find("unavailable_reason").unwrap();
+        let clock_initialization = immediate.find("ensure_character_time").unwrap();
+        assert!(
+            availability < clock_initialization,
+            "location availability must reject before clock or outcome mutation"
+        );
+        assert!(immediate.contains("require_character_no_unresolved_encounter"));
+        assert!(immediate.contains("IncidentStatus::Pending"));
+        assert!(source.contains("site.distance_m > 0"));
+        assert!(source.contains("!site.case_id.starts_with(\"incident:\")"));
+        assert!(source.contains("ActivityLocation::IneligibleNamedLocation"));
         assert!(
             immediate.find("validate_organization_schedule").unwrap()
                 < immediate.find(".update(character_time)").unwrap()

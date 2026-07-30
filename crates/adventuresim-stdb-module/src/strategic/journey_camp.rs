@@ -102,7 +102,10 @@ fn party_itinerary_members(
             .character_id()
             .find(member_id)
             .ok_or("Party member schedule not found")?;
-        let allowed = crate::time::allowed_camp_schedule(&schedule.downtime);
+        let allowed = crate::time::effective_location_schedule(
+            &crate::time::allowed_camp_schedule(&schedule.downtime),
+            adventuresim_core::activity::ActivityLocation::JourneyCamp,
+        );
         members.push(ItineraryMember {
             fatigue_capacity: attributes
                 .attr_by_parts(SimpleAttribute::Endurance, &limbs)

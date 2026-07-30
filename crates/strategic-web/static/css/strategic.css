@@ -1782,6 +1782,20 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
 }
 .schedule-activity-button:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
 .schedule-activity-button:hover .schedule-special-icon { filter: brightness(1.25); }
+.schedule-activity-unavailable {
+  display: grid;
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  margin-inline: auto;
+  place-items: center;
+  opacity: .38;
+  cursor: help;
+}
+.schedule-activity-unavailable:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
 body.activity-modal-open { overflow: hidden; }
 body.faux-dialog-open { overflow: hidden; }
 .activity-modal { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 1rem; }

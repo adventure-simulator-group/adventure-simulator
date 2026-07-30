@@ -121,7 +121,13 @@
         assert!(reducer.contains("IncidentKind::CarousingDisorder"));
         assert!(reducer.contains("activity_incident_entropy()"));
         assert!(reducer.contains("private_seed.to_le_bytes()"));
-        assert!(reducer.contains("has_charge && infamy > fame"));
+        assert!(reducer.contains("current_case_site_id.is_none()"));
+        assert!(reducer.contains("&& has_charge"));
+        assert!(reducer.contains("origin_settlement_id"));
+        assert!(reducer.contains("current_case_site_id.as_deref()"));
+        assert!(source.contains("let current_site = current_case_site_id"));
+        assert!(source.contains("site.longitude_e7"));
+        assert!(source.contains("site.distance_m"));
         assert!(reducer.contains("snapshot_arrest_charges"));
     }
 

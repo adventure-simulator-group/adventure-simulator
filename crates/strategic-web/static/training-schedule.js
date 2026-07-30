@@ -270,9 +270,19 @@
       .map(([name, input]) => [name, Number(input.value)]));
   }
 
+  function effectiveAllocation(allocation, unavailableNames = []) {
+    const effective = { ...allocation };
+    unavailableNames.forEach((name) => {
+      if (Object.hasOwn(effective, name)) effective[name] = 0;
+    });
+    return effective;
+  }
+
   function render(root, state) {
     const allValues = values(root, state, false);
-    const allocation = values(root, state);
+    const unavailableNames = [...root.querySelectorAll('[data-activity-location-unavailable="true"]')]
+      .map((row) => row.dataset.activityAllocation);
+    const allocation = effectiveAllocation(values(root, state), unavailableNames);
     Object.entries(allValues).forEach(([name, minutes]) => {
       root.querySelectorAll(`[data-schedule-value="${name}"] [data-schedule-display]`).forEach((output) => {
         output.textContent = format(minutes);
@@ -367,6 +377,7 @@
   if (typeof module !== 'undefined') module.exports = {
     calculateLeisurePreview,
     createLatestSaveQueue,
+    effectiveAllocation,
     parseClock,
     signedEffect,
     stepClockValue,

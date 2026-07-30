@@ -6,10 +6,38 @@ const test = require("node:test");
 const {
   calculateLeisurePreview,
   createLatestSaveQueue,
+  effectiveAllocation,
   parseClock,
   signedEffect,
   stepClockValue,
 } = require("../static/training-schedule.js");
+
+test("location mask preserves editable allocations while projecting unavailable time to Leisure", () => {
+  const saved = {
+    carousing_minutes: 120,
+    labor_minutes: 240,
+    raiding_minutes: 180,
+    thievery_minutes: 60,
+  };
+  const effective = effectiveAllocation(saved, [
+    "carousing_minutes",
+    "raiding_minutes",
+  ]);
+  assert.deepEqual(saved, {
+    carousing_minutes: 120,
+    labor_minutes: 240,
+    raiding_minutes: 180,
+    thievery_minutes: 60,
+  });
+  assert.deepEqual(effective, {
+    carousing_minutes: 0,
+    labor_minutes: 240,
+    raiding_minutes: 0,
+    thievery_minutes: 60,
+  });
+  const leisure = 1440 - Object.values(effective).reduce((sum, value) => sum + value, 0);
+  assert.equal(leisure, 1140);
+});
 
 test("schedule editor contains only activity allocations", () => {
   const source = fs.readFileSync(
