@@ -836,7 +836,8 @@ fn align_and_advance(
     } else {
         vec![actor_id, patient_id]
     };
-    let disease_plan = crate::disease::plan_party_disease_interval(ctx, &participants, duration)?;
+    let disease_plan =
+        crate::disease::plan_party_disease_interval(ctx, &participants, duration, true)?;
     let safe_duration = participants.iter().try_fold(duration, |limit, id| {
         let disease = crate::disease::preview_elapsed_for_disease_in_plan(
             ctx,

@@ -56,7 +56,10 @@ Multi-character strategic time actions snapshot disease exposure before the
 first participant clock mutates. The reducer-local plan projects only the
 explicit co-advancing set, prefetches bounded pair-presence coverage, and gives
 preview and commit the same deterministic acquisition proposals. Solo
-catch-up reads recorded history instead of projecting absent companions.
+catch-up reads indexed recorded history and caps open-span overlap at the
+peer's already-elapsed clock. Route candidates are resolved simultaneously
+within each absolute minute and become contact sources on the following
+minute.
 
 The largest strategic implementations are organized behind their established
 Rust module paths. `strategic` and `investigation` retain ordered same-scope

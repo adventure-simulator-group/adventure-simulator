@@ -89,8 +89,15 @@ Shared travel, camp rest, and treatment snapshot the explicitly co-advancing
 participants and their capability-pinned Physiology coverage before changing
 any clock. Every participant is previewed and committed against that immutable
 plan, so character ID and reducer iteration order cannot change prevention or
-transmission. Solo catch-up uses recorded co-presence only and never projects
-an absent physician into the interval.
+transmission. Community, blood, and contact acquisitions resolve together in
+absolute-minute order. Acquisitions within one minute are simultaneous and a
+new infection can transmit onward starting on the following minute, making
+secondary spread agree between one long interval and equivalent chunks.
+
+Solo catch-up uses recorded co-presence only. An open span may cover the
+catching-up character through the lesser of their requested horizon and an
+already-ahead peer's current clock, but never borrows time the peer has not
+elapsed.
 
 The authoritative database initializes private key material from runtime
 randomness and persists one private key for the lifetime of the database.

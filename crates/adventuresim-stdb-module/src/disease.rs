@@ -836,6 +836,7 @@ pub(crate) fn party_physiology_check_at(
     disease::historical_physiology_check_at(coverage, minute)
 }
 
+#[cfg(test)]
 pub(crate) fn protected_exposure_at(
     ctx: &ReducerContext,
     character_id: u64,
@@ -936,6 +937,7 @@ pub fn plan_party_disease_interval(
     ctx: &ReducerContext,
     member_ids: &[u64],
     requested: u64,
+    allow_healing: bool,
 ) -> Result<PartyDiseaseIntervalPlan, String> {
     let mut ids = member_ids.to_vec();
     ids.sort_unstable();
@@ -958,40 +960,52 @@ pub fn plan_party_disease_interval(
     let mut coverage = BTreeMap::<u64, Vec<CachedCoverage>>::new();
     let mut pairs = Vec::new();
     let id_set = ids.iter().copied().collect::<BTreeSet<_>>();
-    for span in ctx
-        .db
-        .physiology_presence_span()
-        .iter()
-        .filter(|span| id_set.contains(&span.low_id) || id_set.contains(&span.high_id))
-    {
-        let current_joint = starts
-            .get(&span.low_id)
-            .copied()
-            .unwrap_or_else(|| {
+    let mut spans_by_id = BTreeMap::new();
+    for id in &ids {
+        for span in ctx
+            .db
+            .physiology_presence_span()
+            .presence_low_id()
+            .filter(*id)
+            .chain(
                 ctx.db
-                    .character_time()
-                    .character_id()
-                    .find(span.low_id)
-                    .map_or(0, |row| row.minutes)
-            })
-            .min(starts.get(&span.high_id).copied().unwrap_or_else(|| {
-                ctx.db
-                    .character_time()
-                    .character_id()
-                    .find(span.high_id)
-                    .map_or(0, |row| row.minutes)
-            }));
-        let projected_joint = match (
+                    .physiology_presence_span()
+                    .presence_high_id()
+                    .filter(*id),
+            )
+        {
+            spans_by_id.entry(span.id).or_insert(span);
+        }
+    }
+    let peer_ids = spans_by_id
+        .values()
+        .flat_map(|span| [span.low_id, span.high_id])
+        .collect::<BTreeSet<_>>();
+    let clocks = peer_ids
+        .into_iter()
+        .map(|id| {
+            (
+                id,
+                starts.get(&id).copied().unwrap_or_else(|| {
+                    ctx.db
+                        .character_time()
+                        .character_id()
+                        .find(id)
+                        .map_or(0, |row| row.minutes)
+                }),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    for span in spans_by_id.into_values() {
+        let Some(end) = disease::projected_presence_end(
+            span.ended_at,
             horizons.get(&span.low_id).copied(),
             horizons.get(&span.high_id).copied(),
-        ) {
-            (Some(low), Some(high)) if span.ended_at.is_none() => low.min(high),
-            _ => current_joint,
+            clocks[&span.low_id],
+            clocks[&span.high_id],
+        ) else {
+            continue;
         };
-        let end = span
-            .ended_at
-            .unwrap_or(projected_joint)
-            .min(projected_joint);
         if end < span.started_at {
             continue;
         }
@@ -1027,7 +1041,7 @@ pub fn plan_party_disease_interval(
                 },
             ]);
         }
-        if id_set.contains(&span.low_id) && id_set.contains(&span.high_id) {
+        if id_set.contains(&span.low_id) || id_set.contains(&span.high_id) {
             pairs.push(CachedPairPresence {
                 low_id: span.low_id,
                 high_id: span.high_id,
@@ -1066,7 +1080,14 @@ pub fn plan_party_disease_interval(
             (character_id, segments)
         })
         .collect();
-    let base_work = requested.saturating_mul(ids.len() as u64);
+    let blood_routes = disease::STARTER_DISEASES
+        .iter()
+        .filter(|definition| definition.supports(TransmissionVector::Blood))
+        .count()
+        .max(1) as u64;
+    let base_work = requested
+        .saturating_mul(ids.len() as u64)
+        .saturating_mul(blood_routes);
     if base_work > MAX_PARTY_INTERVAL_WORK {
         return Err("Party disease interval exceeds bounded exposure work".into());
     }
@@ -1075,17 +1096,34 @@ pub fn plan_party_disease_interval(
         work_units: base_work,
         ..Default::default()
     };
-    let mut source_episodes = BTreeMap::<u64, Vec<InfectionEpisode>>::new();
+    let source_ids = pairs
+        .iter()
+        .flat_map(|pair| [pair.low_id, pair.high_id])
+        .chain(ids.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let initial = source_ids
+        .iter()
+        .map(|id| character_episodes(ctx, *id).map(|episodes| (*id, episodes)))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let immunities = ids
+        .iter()
+        .map(|id| {
+            (
+                *id,
+                ctx.db
+                    .character_attributes()
+                    .character_id()
+                    .find(*id)
+                    .map_or(3.0, |row| row.immunity),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut scheduled = Vec::new();
     for id in &ids {
         let start = starts[id];
         let end = horizons[id];
-        let mut episodes = character_episodes(ctx, *id)?;
-        let immunity = ctx
-            .db
-            .character_attributes()
-            .character_id()
-            .find(*id)
-            .map_or(3.0, |row| row.immunity);
+        let episodes = &initial[id];
+        let immunity = immunities[id];
         let Some(character) = ctx.db.character().id().find(*id) else {
             continue;
         };
@@ -1154,7 +1192,7 @@ pub fn plan_party_disease_interval(
                     definition.primary_community_vector,
                     |minute| plan.check_at(*id, minute),
                 ) {
-                    episodes.push(InfectionEpisode {
+                    scheduled.push(InfectionEpisode {
                         id: disease::outbreak_exposure_seed(*id, &format!("{source_id}:{at}")),
                         character_id: *id,
                         disease_id,
@@ -1165,113 +1203,67 @@ pub fn plan_party_disease_interval(
                 }
             }
         }
-        source_episodes.insert(*id, episodes);
+        scheduled.extend(crate::filth::blood_episodes_through(
+            ctx,
+            *id,
+            start,
+            end,
+            false,
+            allow_healing,
+            Some(&plan),
+        )?);
     }
-    let initial = ids
-        .iter()
-        .map(|id| character_episodes(ctx, *id).map(|episodes| (*id, episodes)))
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-    let mut contact_proposals = Vec::new();
-    for target_id in &ids {
-        let immunity = ctx
-            .db
-            .character_attributes()
-            .character_id()
-            .find(*target_id)
-            .map_or(3.0, |row| row.immunity);
-        for source_id in ids.iter().filter(|source_id| *source_id != target_id) {
-            let windows = pairs
-                .iter()
-                .filter(|pair| {
-                    (pair.low_id == *target_id && pair.high_id == *source_id)
-                        || (pair.high_id == *target_id && pair.low_id == *source_id)
-                })
-                .map(|pair| {
-                    (
-                        pair.start.max(starts[target_id].saturating_add(1)),
-                        pair.end.min(horizons[target_id]),
-                    )
-                })
-                .filter(|(start, end)| start <= end)
+    let windows = pairs
+        .into_iter()
+        .filter_map(|pair| {
+            let participant_starts = [pair.low_id, pair.high_id]
+                .into_iter()
+                .filter_map(|id| starts.get(&id).copied())
                 .collect::<Vec<_>>();
-            for source_episode in &source_episodes[source_id] {
-                let definition = disease::definition(source_episode.disease_id);
-                if !definition.supports(TransmissionVector::CloseContact) {
-                    continue;
-                }
-                'window: for (start, end) in &windows {
-                    plan.work_units = plan
-                        .work_units
-                        .saturating_add(end.saturating_sub(*start).saturating_add(1));
-                    if plan.work_units > MAX_PARTY_INTERVAL_WORK {
-                        return Err("Party disease interval exceeds bounded exposure work".into());
-                    }
-                    for minute in *start..=*end {
-                        if disease::has_unresolved_disease(
-                            &initial[target_id],
-                            source_episode.disease_id,
-                            minute,
-                            immunity,
-                        ) {
-                            continue;
-                        }
-                        let infectiousness =
-                            disease::close_contact_infectiousness(*source_episode, minute);
-                        let exposure = disease::residual_exposure(
-                            infectiousness / 1_440.0,
-                            TransmissionVector::CloseContact,
-                            plan.check_at(*target_id, minute),
-                        );
-                        let prior = disease::acquired_immunity(
-                            &initial[target_id],
-                            source_episode.disease_id,
-                            minute,
-                            immunity,
-                        );
-                        let seed = disease::outbreak_exposure_seed(
-                            *target_id,
-                            &format!("party:{source_id}:{}:{minute}", source_episode.id),
-                        );
-                        if disease::acquisition_succeeds(
-                            seed, definition, immunity, prior, exposure,
-                        ) {
-                            contact_proposals.push(InfectionEpisode {
-                                id: seed,
-                                character_id: *target_id,
-                                disease_id: source_episode.disease_id,
-                                contracted_at: minute,
-                                ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
-                                phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
-                            });
-                            break 'window;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    for id in ids {
-        let environmental = source_episodes
-            .remove(&id)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|episode| {
-                !initial[&id]
-                    .iter()
-                    .any(|existing| existing.id == episode.id)
-            });
-        let contacts = contact_proposals
-            .iter()
-            .copied()
-            .filter(|episode| episode.character_id == id);
-        plan.proposals.insert(
-            id,
-            merge_acquisition_proposals(Vec::new(), environmental.chain(contacts)),
-        );
-    }
+            let participant_horizons = [pair.low_id, pair.high_id]
+                .into_iter()
+                .filter_map(|id| horizons.get(&id).copied())
+                .collect::<Vec<_>>();
+            let start = participant_starts
+                .into_iter()
+                .max()
+                .unwrap_or(pair.start)
+                .saturating_add(1)
+                .max(pair.start);
+            let end = participant_horizons
+                .into_iter()
+                .min()
+                .unwrap_or(pair.end)
+                .min(pair.end);
+            (start <= end).then_some(disease::ContactWindow {
+                low_id: pair.low_id,
+                high_id: pair.high_id,
+                start,
+                end,
+            })
+        })
+        .collect::<Vec<_>>();
+    let from = starts.values().copied().min().unwrap_or(0);
+    let to = horizons.values().copied().max().unwrap_or(from);
+    let resolved = disease::resolve_acquisition_timeline(
+        &id_set,
+        &initial,
+        scheduled,
+        &windows,
+        &immunities,
+        from,
+        to,
+        plan.work_units,
+        MAX_PARTY_INTERVAL_WORK,
+        |character_id, minute| plan.check_at(character_id, minute),
+    )
+    .map_err(str::to_string)?;
+    plan.proposals = resolved.proposals;
+    plan.work_units = resolved.work_units;
     Ok(plan)
 }
 
+#[cfg(test)]
 fn party_contact_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1370,9 +1362,11 @@ fn party_contact_episodes_through(
                         minute,
                         immunity,
                     );
-                    let seed = disease::outbreak_exposure_seed(
+                    let seed = disease::contact_exposure_seed(
                         character_id,
-                        &format!("party:{}:{}:{minute}", source_id, source_episode.id),
+                        source_id,
+                        source_episode.id,
+                        minute,
                     );
                     if disease::acquisition_succeeds(seed, definition, immunity, prior, exposure) {
                         proposals.push(InfectionEpisode {
@@ -1393,6 +1387,7 @@ fn party_contact_episodes_through(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn first_protected_presence_exposure_minute(
     ctx: &ReducerContext,
     episodes: &[InfectionEpisode],
@@ -1452,6 +1447,7 @@ pub fn effective_attributes(
     Ok(attributes)
 }
 
+#[cfg(test)]
 fn outbreak_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1605,6 +1601,7 @@ fn persist_acquisition_episodes(
     Ok(())
 }
 
+#[cfg(test)]
 fn merge_acquisition_proposals(
     mut proposals: Vec<InfectionEpisode>,
     additional: impl IntoIterator<Item = InfectionEpisode>,
@@ -1776,6 +1773,13 @@ fn clip_elapsed_for_disease_planned(
     if requested == 0 {
         return Ok((0, None));
     }
+    let owned_plan;
+    let plan = if let Some(plan) = plan {
+        plan
+    } else {
+        owned_plan = plan_party_disease_interval(ctx, &[character_id], requested, allow_healing)?;
+        &owned_plan
+    };
     let now = ctx
         .db
         .character_time()
@@ -1790,26 +1794,7 @@ fn clip_elapsed_for_disease_planned(
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
     let interval_end = now.saturating_add(requested);
-    let community_and_contact = if let Some(plan) = plan {
-        plan.proposals_for(character_id, now, interval_end)
-    } else {
-        merge_acquisition_proposals(
-            outbreak_episodes_through(ctx, character_id, now, interval_end)?,
-            party_contact_episodes_through(ctx, character_id, now, interval_end)?,
-        )
-    };
-    let proposed = merge_acquisition_proposals(
-        community_and_contact,
-        crate::filth::blood_episodes_through(
-            ctx,
-            character_id,
-            now,
-            interval_end,
-            false,
-            allow_healing,
-            plan,
-        )?,
-    );
+    let proposed = plan.proposals_for(character_id, now, interval_end);
     episodes.extend(proposed.iter().copied());
     let mut events = episodes
         .iter()
@@ -1846,7 +1831,7 @@ fn clip_elapsed_for_disease_planned(
         through,
         true,
         allow_healing,
-        plan,
+        Some(plan),
     )?;
     for event in events.iter().filter(|event| event.minute <= through) {
         match event.kind {
@@ -1922,6 +1907,13 @@ fn preview_elapsed_for_disease_planned(
     allow_healing: bool,
     plan: Option<&PartyDiseaseIntervalPlan>,
 ) -> Result<u64, String> {
+    let owned_plan;
+    let plan = if let Some(plan) = plan {
+        plan
+    } else {
+        owned_plan = plan_party_disease_interval(ctx, &[character_id], requested, allow_healing)?;
+        &owned_plan
+    };
     let now = ctx
         .db
         .character_time()
@@ -1935,26 +1927,7 @@ fn preview_elapsed_for_disease_planned(
         .find(character_id)
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
-    let community_and_contact = if let Some(plan) = plan {
-        plan.proposals_for(character_id, now, now.saturating_add(requested))
-    } else {
-        merge_acquisition_proposals(
-            outbreak_episodes_through(ctx, character_id, now, now.saturating_add(requested))?,
-            party_contact_episodes_through(ctx, character_id, now, now.saturating_add(requested))?,
-        )
-    };
-    episodes.extend(merge_acquisition_proposals(
-        community_and_contact,
-        crate::filth::blood_episodes_through(
-            ctx,
-            character_id,
-            now,
-            now.saturating_add(requested),
-            false,
-            allow_healing,
-            plan,
-        )?,
-    ));
+    episodes.extend(plan.proposals_for(character_id, now, now.saturating_add(requested)));
     Ok(first_private_terminal(
         ctx,
         character_id,
@@ -2690,6 +2663,17 @@ mod herbalist_purchase_source_tests {
     #[test]
     fn interval_authority_assembles_community_contact_and_blood_exposure() {
         let source = include_str!("disease.rs");
+        let plan = source
+            .split("pub fn plan_party_disease_interval")
+            .nth(1)
+            .unwrap()
+            .split("fn party_contact_episodes_through")
+            .next()
+            .unwrap();
+        assert!(plan.contains("settlement_outbreak"));
+        assert!(plan.contains("local_problem_authority"));
+        assert!(plan.contains("blood_episodes_through"));
+        assert!(plan.contains("resolve_acquisition_timeline"));
         let clip = source
             .split("fn clip_elapsed_for_disease_planned")
             .nth(1)
@@ -2697,32 +2681,23 @@ mod herbalist_purchase_source_tests {
             .split("pub fn clip_elapsed_for_disease")
             .next()
             .unwrap();
-        for assembler in [
-            "outbreak_episodes_through",
-            "party_contact_episodes_through",
-            "blood_episodes_through",
-        ] {
-            assert!(clip.contains(assembler));
-        }
         assert!(clip.contains("infection_occurs_through"));
     }
 
     #[test]
-    fn contact_transmission_uses_private_presence_and_stable_source_minute_seed() {
+    fn interval_plan_prefetches_private_presence_through_both_indexes() {
         let source = include_str!("disease.rs");
-        let contact = source
-            .split("fn party_contact_episodes_through")
+        let plan = source
+            .split("pub fn plan_party_disease_interval")
             .nth(1)
             .unwrap()
-            .split("fn first_protected_presence_exposure_minute")
+            .split("fn party_contact_episodes_through")
             .next()
             .unwrap();
-        assert!(contact.contains("physiology_presence_span"));
-        assert!(contact.contains("joint_now"));
-        assert!(contact.contains("party:{}:{}:{minute}"));
-        assert!(contact.contains("protected_exposure_at"));
-        assert!(contact.contains("merge_acquisition_proposals(Vec::new(), proposals)"));
-        assert!(!contact.contains("character_illness_status"));
+        assert!(plan.contains("presence_low_id()"));
+        assert!(plan.contains("presence_high_id()"));
+        assert!(plan.contains("spans_by_id.entry(span.id).or_insert(span)"));
+        assert!(!plan.contains("physiology_presence_span()\n        .iter()"));
     }
 
     #[test]
@@ -2740,7 +2715,7 @@ mod herbalist_purchase_source_tests {
         assert!(plan.contains("MAX_PARTY_INTERVAL_SPANS"));
         assert!(plan.contains("MAX_PARTY_INTERVAL_WORK"));
         assert!(plan.contains("horizons"));
-        assert!(plan.contains("source_episodes"));
+        assert!(plan.contains("resolve_acquisition_timeline"));
 
         let time = include_str!("time.rs");
         let rest = time.split("pub fn rest_at_camp").nth(1).unwrap();

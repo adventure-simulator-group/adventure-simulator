@@ -538,7 +538,7 @@ fn advance_party_movement(
     requested_minutes: u64,
 ) -> Result<(u64, bool), String> {
     let disease_plan =
-        crate::disease::plan_party_disease_interval(ctx, traveler_ids, requested_minutes)?;
+        crate::disease::plan_party_disease_interval(ctx, traveler_ids, requested_minutes, false)?;
     let mut safe_prefixes = Vec::with_capacity(traveler_ids.len());
     for member_id in traveler_ids {
         safe_prefixes.push(crate::time::preview_travel_time_in_plan(

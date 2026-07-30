@@ -21,10 +21,18 @@ identical interval does not reroll exposure.
 
 Lazy catch-up and other solo elapsed-time actions do not project an absent
 companion forward and do not retroactively substitute the character's current
-Physiology rank. They use only recorded pair-presence history. Point actions
-can use the current rank without changing elapsed-time semantics. Planning
-prefetches and caps relevant presence spans and exposure work, so long rests
-remain bounded instead of rescanning all historical spans for every minute.
+Physiology rank. They use only recorded pair-presence history, including open
+span overlap through an already-ahead peer's current clock but never beyond
+it. Point actions can use the current rank without changing elapsed-time
+semantics. Planning fetches relevant spans through the low/high participant
+indexes, deduplicates them, compiles piecewise coverage, and caps both spans
+and exposure work.
+
+All assembled community, infected-blood, and contact candidates enter one
+absolute-minute timeline. Candidates in the same minute resolve
+simultaneously; a newly infected character becomes a contact source on the
+next minute. This preserves multi-person transmission chains across whole and
+chunked travel, sleep, treatment, rest, and catch-up intervals.
 
 The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A newly initialized world begins on August 20 at 00:00. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
 

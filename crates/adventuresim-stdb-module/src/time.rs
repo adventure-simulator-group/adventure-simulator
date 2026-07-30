@@ -2096,7 +2096,7 @@ pub fn rest_at_camp(
     // and injury interval clipping, and dead members were excluded above.
     crate::filth::wash_party_before_explicit_rest(ctx, &members)?;
     let disease_plan =
-        crate::disease::plan_party_disease_interval(ctx, &members, requested_minutes)?;
+        crate::disease::plan_party_disease_interval(ctx, &members, requested_minutes, true)?;
     let elapsed = members
         .iter()
         .try_fold(requested_minutes, |limit, member_id| {

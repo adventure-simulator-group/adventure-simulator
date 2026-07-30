@@ -67,6 +67,12 @@ transmission independent of character ID or reducer iteration order. Solo
 catch-up uses recorded co-presence only; it cannot borrow future protection
 from a physician who is not advancing with the patient.
 
+Community, blood, and close-contact acquisitions share one absolute-minute
+timeline. Characters infected in the same minute do not infect one another
+instantaneously; each becomes a possible contact source on the following
+minute. Long shared rests and equivalent shorter chunks therefore preserve the
+same secondary-spread chain.
+
 Prepared interventions act on the patient's condition rather than naming a
 disease they magically cure. Treatment may improve or worsen the evidence
 available to an observer, but never reveals hidden truth directly.

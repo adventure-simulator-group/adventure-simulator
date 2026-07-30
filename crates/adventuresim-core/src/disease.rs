@@ -294,6 +294,25 @@ pub fn elapsed_presence_window(
     (start <= end).then_some((start, end))
 }
 
+/// End of a recorded presence span for an interval plan. Explicitly
+/// co-advancing participants may project to their shared horizon. A solo
+/// participant may consume already-recorded overlap only through the peer's
+/// current clock.
+pub fn projected_presence_end(
+    ended_at: Option<u64>,
+    low_horizon: Option<u64>,
+    high_horizon: Option<u64>,
+    low_clock: u64,
+    high_clock: u64,
+) -> Option<u64> {
+    ended_at.or_else(|| match (low_horizon, high_horizon) {
+        (Some(low), Some(high)) => Some(low.min(high)),
+        (Some(low), None) => Some(low.min(high_clock)),
+        (None, Some(high)) => Some(high.min(low_clock)),
+        (None, None) => None,
+    })
+}
+
 /// Disease-agnostic infectiousness for close company. Contact risk begins
 /// during incubation, peaks through the acute phases, and declines during
 /// recovery. It does not depend on whether symptoms are publicly visible.
@@ -320,6 +339,191 @@ pub fn close_contact_infectiousness(episode: InfectionEpisode, at: u64) -> f32 {
         return ((resolved - age) / definition.recovery_minutes.max(1) as f32).clamp(0.0, 1.0);
     }
     0.0
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContactWindow {
+    pub low_id: u64,
+    pub high_id: u64,
+    pub start: u64,
+    pub end: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AcquisitionTimeline {
+    pub proposals: std::collections::BTreeMap<u64, Vec<InfectionEpisode>>,
+    pub work_units: u64,
+}
+
+/// Resolve already-assembled route candidates and contact transmission in one
+/// absolute-minute timeline. Acquisitions at a minute are simultaneous and
+/// become eligible contact sources only on the following minute.
+pub fn resolve_acquisition_timeline(
+    target_ids: &std::collections::BTreeSet<u64>,
+    initial: &std::collections::BTreeMap<u64, Vec<InfectionEpisode>>,
+    scheduled: impl IntoIterator<Item = InfectionEpisode>,
+    windows: &[ContactWindow],
+    immunity: &std::collections::BTreeMap<u64, f32>,
+    from: u64,
+    to: u64,
+    initial_work: u64,
+    max_work: u64,
+    physiology_check_at: impl Fn(u64, u64) -> f32,
+) -> Result<AcquisitionTimeline, &'static str> {
+    if to <= from || initial_work > max_work {
+        return (initial_work <= max_work)
+            .then_some(AcquisitionTimeline {
+                work_units: initial_work,
+                ..Default::default()
+            })
+            .ok_or("Disease interval exceeds bounded exposure work");
+    }
+    let mut scheduled_by_minute = std::collections::BTreeMap::<u64, Vec<InfectionEpisode>>::new();
+    let mut work_units = initial_work;
+    for episode in scheduled {
+        if target_ids.contains(&episode.character_id)
+            && episode.contracted_at > from
+            && episode.contracted_at <= to
+        {
+            work_units = work_units.saturating_add(1);
+            if work_units > max_work {
+                return Err("Disease interval exceeds bounded exposure work");
+            }
+            scheduled_by_minute
+                .entry(episode.contracted_at)
+                .or_default()
+                .push(episode);
+        }
+    }
+    let mut state = initial.clone();
+    let mut result = AcquisitionTimeline {
+        work_units,
+        ..Default::default()
+    };
+    let first_scheduled = scheduled_by_minute.keys().next().copied();
+    let first_contact = windows
+        .iter()
+        .filter_map(|window| {
+            let start = window.start.max(from.saturating_add(1));
+            (start <= window.end && start <= to).then_some(start)
+        })
+        .min();
+    let Some(mut minute) = first_scheduled.into_iter().chain(first_contact).min() else {
+        return Ok(result);
+    };
+    while minute <= to {
+        let mut candidates = scheduled_by_minute.remove(&minute).unwrap_or_default();
+        for window in windows {
+            result.work_units = result.work_units.saturating_add(1);
+            if result.work_units > max_work {
+                return Err("Disease interval exceeds bounded exposure work");
+            }
+            if minute < window.start || minute > window.end {
+                continue;
+            }
+            for (source_id, target_id) in [
+                (window.low_id, window.high_id),
+                (window.high_id, window.low_id),
+            ] {
+                if !target_ids.contains(&target_id) {
+                    continue;
+                }
+                let target_immunity = immunity.get(&target_id).copied().unwrap_or(3.0);
+                let target_episodes = state.get(&target_id).map_or(&[][..], Vec::as_slice);
+                for source_episode in state.get(&source_id).into_iter().flatten() {
+                    result.work_units = result.work_units.saturating_add(1);
+                    if result.work_units > max_work {
+                        return Err("Disease interval exceeds bounded exposure work");
+                    }
+                    if source_episode.contracted_at >= minute
+                        || !definition(source_episode.disease_id)
+                            .supports(TransmissionVector::CloseContact)
+                        || has_unresolved_disease(
+                            target_episodes,
+                            source_episode.disease_id,
+                            minute,
+                            target_immunity,
+                        )
+                    {
+                        continue;
+                    }
+                    let exposure = residual_exposure(
+                        close_contact_infectiousness(*source_episode, minute) / 1_440.0,
+                        TransmissionVector::CloseContact,
+                        physiology_check_at(target_id, minute),
+                    );
+                    let prior = acquired_immunity(
+                        target_episodes,
+                        source_episode.disease_id,
+                        minute,
+                        target_immunity,
+                    );
+                    let seed =
+                        contact_exposure_seed(target_id, source_id, source_episode.id, minute);
+                    if acquisition_succeeds(
+                        seed,
+                        definition(source_episode.disease_id),
+                        target_immunity,
+                        prior,
+                        exposure,
+                    ) {
+                        candidates.push(InfectionEpisode {
+                            id: seed,
+                            character_id: target_id,
+                            disease_id: source_episode.disease_id,
+                            contracted_at: minute,
+                            ruleset_version: source_episode.ruleset_version,
+                            phenotype_key_version: source_episode.phenotype_key_version,
+                        });
+                    }
+                }
+            }
+        }
+        candidates.sort_by_key(|episode| {
+            (
+                episode.character_id,
+                episode.disease_id as u8,
+                episode.contracted_at,
+                episode.id,
+            )
+        });
+        for candidate in candidates {
+            let current = state.entry(candidate.character_id).or_default();
+            let target_immunity = immunity
+                .get(&candidate.character_id)
+                .copied()
+                .unwrap_or(3.0);
+            if has_unresolved_disease(current, candidate.disease_id, minute, target_immunity) {
+                continue;
+            }
+            current.push(candidate);
+            current.sort_by_key(|episode| (episode.contracted_at, episode.id));
+            result
+                .proposals
+                .entry(candidate.character_id)
+                .or_default()
+                .push(candidate);
+        }
+        let next_scheduled = scheduled_by_minute
+            .range(minute.saturating_add(1)..)
+            .next()
+            .map(|(next, _)| *next);
+        let next_contact = windows
+            .iter()
+            .filter_map(|window| {
+                let next = minute.saturating_add(1).max(window.start);
+                (next <= window.end && next <= to).then_some(next)
+            })
+            .min();
+        let Some(next) = next_scheduled.into_iter().chain(next_contact).min() else {
+            break;
+        };
+        if next <= minute {
+            break;
+        }
+        minute = next;
+    }
+    Ok(result)
 }
 
 const DAY: u64 = 1_440;
@@ -635,6 +839,24 @@ pub fn outbreak_exposure_seed(character_id: u64, outbreak_id: &str) -> u64 {
         .copied()
         .chain(character_id.to_le_bytes())
         .chain(outbreak_id.bytes()))
+}
+
+/// Contact candidates vary at minute granularity. FNV supplies stable domain
+/// identity and this finalizer avalanches adjacent minute suffixes so the high
+/// 53 bits consumed by acquisition rolls are not correlated.
+pub fn contact_exposure_seed(
+    target_id: u64,
+    source_id: u64,
+    source_episode_id: u64,
+    minute: u64,
+) -> u64 {
+    let mut value = outbreak_exposure_seed(
+        target_id,
+        &format!("party:{source_id}:{source_episode_id}:{minute}"),
+    );
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 /// True while an episode of the same disease remains unresolved at the
@@ -1724,5 +1946,265 @@ mod tests {
             close_contact_infectiousness(e(21, DiseaseId::Dysentery), 100),
             0.0
         );
+    }
+
+    fn timeline_episode(id: u64, character_id: u64, contracted_at: u64) -> InfectionEpisode {
+        InfectionEpisode {
+            id,
+            character_id,
+            disease_id: DiseaseId::Influenza,
+            contracted_at,
+            ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+            phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+        }
+    }
+
+    #[test]
+    fn chronological_contact_chain_is_order_independent_and_chunk_invariant() {
+        let targets = [1, 2, 3].into_iter().collect();
+        let initial = [(1, vec![timeline_episode(11, 1, 0)])]
+            .into_iter()
+            .collect();
+        let immunity = [(1, 0.0), (2, 0.0), (3, 0.0)].into_iter().collect();
+        let windows = [
+            ContactWindow {
+                low_id: 1,
+                high_id: 2,
+                start: 1,
+                end: 30_000,
+            },
+            ContactWindow {
+                low_id: 2,
+                high_id: 3,
+                start: 1,
+                end: 30_000,
+            },
+        ];
+        let whole = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            [],
+            &windows,
+            &immunity,
+            0,
+            30_000,
+            0,
+            2_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        let b_at = whole.proposals[&2][0].contracted_at;
+        let c_at = whole.proposals[&3][0].contracted_at;
+        assert!(
+            c_at > b_at,
+            "new sources become eligible on the next minute"
+        );
+
+        let reversed = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            [],
+            &[windows[1], windows[0]],
+            &immunity,
+            0,
+            30_000,
+            0,
+            2_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        assert_eq!(whole.proposals, reversed.proposals);
+
+        let first = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            [],
+            &windows,
+            &immunity,
+            0,
+            b_at,
+            0,
+            2_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        let mut split_initial = initial.clone();
+        for (id, episodes) in &first.proposals {
+            split_initial.entry(*id).or_default().extend(episodes);
+        }
+        let second = resolve_acquisition_timeline(
+            &targets,
+            &split_initial,
+            [],
+            &windows,
+            &immunity,
+            b_at,
+            30_000,
+            first.work_units,
+            2_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        let mut split = first.proposals;
+        for (id, episodes) in second.proposals {
+            split.entry(id).or_default().extend(episodes);
+        }
+        assert_eq!(whole.proposals, split);
+    }
+
+    #[test]
+    fn blood_scheduled_acquisition_becomes_contact_source_next_minute() {
+        let targets = [2, 3].into_iter().collect();
+        let immunity = [(2, 0.0), (3, 0.0)].into_iter().collect();
+        let blood = timeline_episode(22, 2, 100);
+        let result = resolve_acquisition_timeline(
+            &targets,
+            &Default::default(),
+            [blood],
+            &[ContactWindow {
+                low_id: 2,
+                high_id: 3,
+                start: 1,
+                end: 30_000,
+            }],
+            &immunity,
+            0,
+            30_000,
+            0,
+            1_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        assert_eq!(result.proposals[&2], vec![blood]);
+        assert!(result.proposals[&3][0].contracted_at > blood.contracted_at);
+    }
+
+    #[test]
+    fn synchronized_prevention_and_clipped_timeline_are_executable() {
+        let targets = [1, 2].into_iter().collect();
+        let initial = [(1, vec![timeline_episode(31, 1, 0)])]
+            .into_iter()
+            .collect();
+        let immunity = [(1, 0.0), (2, 0.0)].into_iter().collect();
+        let window = [ContactWindow {
+            low_id: 1,
+            high_id: 2,
+            start: 1,
+            end: 30_000,
+        }];
+        let unprotected = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            [],
+            &window,
+            &immunity,
+            0,
+            30_000,
+            0,
+            1_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        let protected = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            [],
+            &window,
+            &immunity,
+            0,
+            30_000,
+            0,
+            1_000_000,
+            |_, _| 5.0,
+        )
+        .unwrap();
+        assert!(
+            protected
+                .proposals
+                .get(&2)
+                .and_then(|episodes| episodes.first())
+                .map(|episode| episode.contracted_at)
+                .unwrap_or(u64::MAX)
+                > unprotected.proposals[&2][0].contracted_at
+        );
+
+        let scheduled_after_death_clip = timeline_episode(32, 2, 501);
+        let clipped = resolve_acquisition_timeline(
+            &targets,
+            &Default::default(),
+            [scheduled_after_death_clip],
+            &[],
+            &immunity,
+            0,
+            500,
+            0,
+            1_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        assert!(clipped.proposals.is_empty());
+        assert_eq!(
+            resolve_acquisition_timeline(
+                &targets,
+                &initial,
+                [],
+                &window,
+                &immunity,
+                0,
+                30_000,
+                0,
+                1,
+                |_, _| 0.0,
+            ),
+            Err("Disease interval exceeds bounded exposure work")
+        );
+    }
+
+    #[test]
+    fn solo_catchup_uses_only_already_elapsed_peer_overlap() {
+        assert_eq!(
+            projected_presence_end(None, Some(300), None, 100, 250),
+            Some(250)
+        );
+        assert_eq!(
+            projected_presence_end(None, Some(200), None, 100, 250),
+            Some(200)
+        );
+        assert_eq!(
+            projected_presence_end(None, Some(300), Some(280), 100, 250),
+            Some(280)
+        );
+        assert_eq!(
+            projected_presence_end(Some(175), Some(300), None, 100, 250),
+            Some(175)
+        );
+
+        let target_horizon = 20_000;
+        let peer_clock = 10_000;
+        let overlap_end =
+            projected_presence_end(None, Some(target_horizon), None, 100, peer_clock).unwrap();
+        let targets = [2].into_iter().collect();
+        let initial = [(1, vec![timeline_episode(41, 1, 0)])]
+            .into_iter()
+            .collect();
+        let result = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            [],
+            &[ContactWindow {
+                low_id: 1,
+                high_id: 2,
+                start: 101,
+                end: overlap_end,
+            }],
+            &[(2, 0.0)].into_iter().collect(),
+            100,
+            target_horizon,
+            0,
+            1_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        assert!(result.proposals[&2][0].contracted_at <= peer_clock);
     }
 }
