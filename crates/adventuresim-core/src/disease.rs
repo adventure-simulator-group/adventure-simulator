@@ -172,6 +172,9 @@ pub struct DiseaseDefinition {
     pub symptoms: &'static [Symptom],
     pub acquired_immunity: f32,
     pub transmission_vectors: &'static [TransmissionVector],
+    /// Route represented by abstract settlement/outbreak intensity. Direct
+    /// exposures such as food, wounds, and blood always supply their route.
+    pub primary_community_vector: TransmissionVector,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -187,6 +190,85 @@ impl DiseaseDefinition {
     pub fn supports(&self, vector: TransmissionVector) -> bool {
         self.transmission_vectors.contains(&vector)
     }
+}
+
+/// Maximum fraction of route exposure that perfect Physiology practice can
+/// prevent. Every route retains residual risk. Wounds remain Surgery's domain;
+/// blood protection is deliberately modest because cleaning and wound closure
+/// are the stronger modeled controls.
+pub fn maximum_preventable_fraction(vector: TransmissionVector) -> f32 {
+    match vector {
+        TransmissionVector::CloseContact => 0.90,
+        TransmissionVector::FoodWater => 0.94,
+        TransmissionVector::Vermin => 0.65,
+        TransmissionVector::Wound => 0.0,
+        TransmissionVector::Blood => 0.30,
+    }
+}
+
+pub fn residual_exposure(exposure: f32, vector: TransmissionVector, physiology_check: f32) -> f32 {
+    let competence = (physiology_check.clamp(0.0, 5.0) / 5.0).powf(1.25);
+    exposure.max(0.0) * (1.0 - maximum_preventable_fraction(vector) * competence)
+}
+
+/// Aggregate distinct practitioners whose pinned capability covers `minute`.
+/// Duplicate spans for one practitioner use the strongest matching pinned
+/// value, which makes adjacent join/rejoin and band-boundary records harmless.
+pub fn historical_physiology_check_at(
+    spans: impl IntoIterator<Item = (u64, u64, u64, f32)>,
+    minute: u64,
+) -> f32 {
+    let mut contributors = std::collections::BTreeMap::<u64, f32>::new();
+    for (contributor_id, start, end, check) in spans {
+        if minute < start || minute > end {
+            continue;
+        }
+        contributors
+            .entry(contributor_id)
+            .and_modify(|value| *value = (*value).max(check))
+            .or_insert(check);
+    }
+    crate::capability::aggregate_bounded_party_check(contributors.into_values())
+}
+
+pub fn elapsed_presence_window(
+    span_start: u64,
+    span_end: Option<u64>,
+    joint_now: u64,
+    from: u64,
+    to: u64,
+) -> Option<(u64, u64)> {
+    let start = span_start.max(from.saturating_add(1));
+    let end = span_end.unwrap_or(joint_now).min(joint_now).min(to);
+    (start <= end).then_some((start, end))
+}
+
+/// Disease-agnostic infectiousness for close company. Contact risk begins
+/// during incubation, peaks through the acute phases, and declines during
+/// recovery. It does not depend on whether symptoms are publicly visible.
+pub fn close_contact_infectiousness(episode: InfectionEpisode, at: u64) -> f32 {
+    if at < episode.contracted_at {
+        return 0.0;
+    }
+    let definition = definition(episode.disease_id);
+    if !definition.supports(TransmissionVector::CloseContact) {
+        return 0.0;
+    }
+    let age = at.saturating_sub(episode.contracted_at) as f32;
+    let incubation = definition.incubation_minutes.max(1) as f32;
+    if age < incubation {
+        return 0.15 + 0.45 * age / incubation;
+    }
+    let acute_end =
+        (definition.incubation_minutes + definition.rise_minutes + definition.peak_minutes) as f32;
+    if age < acute_end {
+        return 1.0;
+    }
+    let resolved = acute_end + definition.recovery_minutes.max(1) as f32;
+    if age < resolved {
+        return ((resolved - age) / definition.recovery_minutes.max(1) as f32).clamp(0.0, 1.0);
+    }
+    0.0
 }
 
 const DAY: u64 = 1_440;
@@ -245,6 +327,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         COUGH,
         0.30,
         &[TransmissionVector::CloseContact],
+        TransmissionVector::CloseContact,
     ),
     d(
         DiseaseId::Dysentery,
@@ -264,6 +347,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         FLUX,
         0.15,
         &[TransmissionVector::FoodWater],
+        TransmissionVector::FoodWater,
     ),
     d(
         DiseaseId::Typhus,
@@ -283,6 +367,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         SPOTTED,
         0.55,
         &[TransmissionVector::CloseContact, TransmissionVector::Vermin],
+        TransmissionVector::Vermin,
     ),
     d(
         DiseaseId::Tetanus,
@@ -306,6 +391,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         LOCKJAW,
         0.05,
         &[TransmissionVector::Wound],
+        TransmissionVector::Wound,
     ),
     d(
         DiseaseId::Erysipelas,
@@ -324,6 +410,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         RASH,
         0.15,
         &[TransmissionVector::Wound],
+        TransmissionVector::Wound,
     ),
     d(
         DiseaseId::Smallpox,
@@ -347,6 +434,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         POX,
         0.90,
         &[TransmissionVector::CloseContact],
+        TransmissionVector::CloseContact,
     ),
     d(
         DiseaseId::Plague,
@@ -374,6 +462,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
             TransmissionVector::Vermin,
             TransmissionVector::Blood,
         ],
+        TransmissionVector::Vermin,
     ),
     d(
         DiseaseId::Consumption,
@@ -396,6 +485,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         CONSUMPTION,
         0.20,
         &[TransmissionVector::CloseContact],
+        TransmissionVector::CloseContact,
     ),
 ];
 const Z: AttributeImpairment = AttributeImpairment {
@@ -426,6 +516,7 @@ const fn d(
     symptoms: &'static [Symptom],
     acquired_immunity: f32,
     transmission_vectors: &'static [TransmissionVector],
+    primary_community_vector: TransmissionVector,
 ) -> DiseaseDefinition {
     DiseaseDefinition {
         id,
@@ -441,6 +532,7 @@ const fn d(
         symptoms,
         acquired_immunity,
         transmission_vectors,
+        primary_community_vector,
     }
 }
 
@@ -579,6 +671,42 @@ pub fn first_eligible_presence_exposure_minute(
             immunity,
             prior_immunity,
             intensity,
+        )
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn first_eligible_protected_presence_exposure_minute(
+    episodes: &[InfectionEpisode],
+    disease_id: DiseaseId,
+    character_id: u64,
+    exposure_id: &str,
+    from: u64,
+    to: u64,
+    intensity: f32,
+    base_acquisition: f32,
+    immunity: f32,
+    vector: TransmissionVector,
+    physiology_check_at: impl Fn(u64) -> f32,
+) -> Option<u64> {
+    if to <= from || intensity <= 0.0 {
+        return None;
+    }
+    ((from + 1)..=to).find(|minute| {
+        if has_unresolved_disease(episodes, disease_id, *minute, immunity) {
+            return false;
+        }
+        let prior_immunity = acquired_immunity(episodes, disease_id, *minute, immunity);
+        let key = format!("{exposure_id}:{minute}");
+        acquisition_succeeds(
+            outbreak_exposure_seed(character_id, &key),
+            &DiseaseDefinition {
+                base_acquisition: base_acquisition / 1_440.0,
+                ..*definition(disease_id)
+            },
+            immunity,
+            prior_immunity,
+            residual_exposure(intensity, vector, physiology_check_at(*minute)),
         )
     })
 }
@@ -1306,5 +1434,155 @@ mod tests {
         });
         assert!(whole.is_some());
         assert_eq!(whole, chunked);
+    }
+
+    #[test]
+    fn physiology_prevention_is_route_ordered_bounded_and_monotonic() {
+        let exposure = 1.0;
+        for vector in [
+            TransmissionVector::FoodWater,
+            TransmissionVector::CloseContact,
+            TransmissionVector::Vermin,
+            TransmissionVector::Blood,
+        ] {
+            assert_eq!(residual_exposure(exposure, vector, 0.0), exposure);
+            assert!(residual_exposure(exposure, vector, 5.0) > 0.0);
+            assert!(
+                residual_exposure(exposure, vector, 5.0) < residual_exposure(exposure, vector, 2.5)
+            );
+        }
+        assert!(
+            residual_exposure(exposure, TransmissionVector::FoodWater, 5.0)
+                < residual_exposure(exposure, TransmissionVector::CloseContact, 5.0)
+        );
+        assert!(
+            residual_exposure(exposure, TransmissionVector::CloseContact, 5.0)
+                < residual_exposure(exposure, TransmissionVector::Vermin, 5.0)
+        );
+        assert!(
+            residual_exposure(exposure, TransmissionVector::Vermin, 5.0)
+                < residual_exposure(exposure, TransmissionVector::Blood, 5.0)
+        );
+        assert_eq!(
+            residual_exposure(exposure, TransmissionVector::Wound, 5.0),
+            exposure
+        );
+    }
+
+    #[test]
+    fn every_community_route_is_authored_and_supported() {
+        for definition in STARTER_DISEASES {
+            assert!(definition.supports(definition.primary_community_vector));
+        }
+        assert_eq!(
+            definition(DiseaseId::Dysentery).primary_community_vector,
+            TransmissionVector::FoodWater
+        );
+        assert_eq!(
+            definition(DiseaseId::Plague).primary_community_vector,
+            TransmissionVector::Vermin
+        );
+    }
+
+    #[test]
+    fn maximum_physician_protection_retains_acquisition_risk() {
+        let definition = definition(DiseaseId::Influenza);
+        let residual = residual_exposure(1.0, TransmissionVector::CloseContact, 5.0);
+        assert!(residual > 0.0);
+        assert!(
+            (0..10_000).any(|seed| { acquisition_succeeds(seed, definition, 0.0, 0.0, residual) })
+        );
+    }
+
+    #[test]
+    fn historical_party_support_respects_join_leave_and_band_boundaries() {
+        let spans = [
+            (7, 100, 199, 1.0),
+            (8, 100, 199, 4.0),
+            (7, 200, 300, 3.0),
+            (8, 200, 300, 4.0),
+            (9, 225, 250, 2.0),
+        ];
+        assert_eq!(historical_physiology_check_at(spans, 99), 0.0);
+        let before_training = historical_physiology_check_at(spans, 150);
+        let after_training = historical_physiology_check_at(spans, 210);
+        let with_supporter = historical_physiology_check_at(spans, 240);
+        assert!(after_training > before_training);
+        assert!(with_supporter > after_training);
+        assert_eq!(historical_physiology_check_at(spans, 301), 0.0);
+    }
+
+    #[test]
+    fn duplicate_coverage_does_not_count_one_supporter_twice() {
+        let duplicate = historical_physiology_check_at([(7, 0, 100, 4.0), (7, 50, 150, 4.0)], 75);
+        assert!((duplicate - 4.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn changing_historical_protection_is_chunk_invariant() {
+        let spans = [(7, 101, 500, 1.0), (7, 501, 1_000, 5.0)];
+        let evaluate = |from, to| {
+            first_eligible_protected_presence_exposure_minute(
+                &[],
+                DiseaseId::Influenza,
+                77,
+                "protected",
+                from,
+                to,
+                10_000.0,
+                definition(DiseaseId::Influenza).base_acquisition,
+                0.0,
+                TransmissionVector::CloseContact,
+                |minute| historical_physiology_check_at(spans, minute),
+            )
+        };
+        let whole = evaluate(100, 1_000);
+        let chunked = (100..1_000)
+            .step_by(100)
+            .find_map(|from| evaluate(from, (from + 100).min(1_000)));
+        assert!(whole.is_some());
+        assert_eq!(whole, chunked);
+    }
+
+    #[test]
+    fn presence_window_never_advances_beyond_the_lagging_source_clock() {
+        assert_eq!(
+            elapsed_presence_window(100, None, 250, 150, 500),
+            Some((151, 250))
+        );
+        assert_eq!(elapsed_presence_window(100, None, 150, 150, 500), None);
+        assert_eq!(
+            elapsed_presence_window(100, Some(220), 300, 150, 500),
+            Some((151, 220))
+        );
+    }
+
+    #[test]
+    fn close_contact_infectiousness_precedes_symptoms_and_resolves() {
+        let episode = e(20, DiseaseId::Influenza);
+        let definition = definition(episode.disease_id);
+        assert!(close_contact_infectiousness(episode, episode.contracted_at) > 0.0);
+        assert_eq!(
+            close_contact_infectiousness(
+                episode,
+                episode.contracted_at + definition.incubation_minutes + definition.rise_minutes
+            ),
+            1.0
+        );
+        assert_eq!(
+            close_contact_infectiousness(
+                episode,
+                episode.contracted_at
+                    + definition.incubation_minutes
+                    + definition.rise_minutes
+                    + definition.peak_minutes
+                    + definition.recovery_minutes
+            ),
+            0.0
+        );
+        assert_eq!(
+            close_contact_infectiousness(e(21, DiseaseId::Dysentery), 100),
+            0.0
+        );
     }
 }

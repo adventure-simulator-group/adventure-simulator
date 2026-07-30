@@ -8,6 +8,16 @@ by the interval. If terminal physiological failure occurs, the clock and all
 work stop at that exact minute. This prevents a long skip from jumping over a
 fatal peak into apparent recovery.
 
+The same centralized interval evaluation assembles settlement exposure,
+within-party close-contact transmission, and infected-blood exposure before
+acquisition. Preventive Physiology uses private, capability-pinned pair-presence
+spans at each absolute minute and clamps open spans to both characters' clocks.
+It therefore cannot grant protection or transmission for time a companion has
+not yet elapsed, and splitting an otherwise identical interval does not reroll
+exposure. A solo character has no retroactive interval fallback to their current
+Physiology rank; point actions can use the current rank without changing elapsed
+time semantics.
+
 The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A newly initialized world begins on August 20 at 00:00. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
 
 The server stores an epoch rather than updating the clock table continuously. When a browser opens a page, it requests one snapshot of the character and official clocks and renders that snapshot without a wall-clock timer. The character snapshot also determines the interpolated location sky, the edge-to-edge sun or moon position, and building illumination until an explicit action returns a newer time. Authoritative reducers derive the current official minute from the epoch when gameplay needs it.

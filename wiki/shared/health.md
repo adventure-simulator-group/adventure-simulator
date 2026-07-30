@@ -44,6 +44,16 @@ water, vermin, wounds, or infected blood. Filth raises some risks. Blood on a
 character remains visibly dirty until washed, while its infectiousness fades
 over strategic time.
 
+Physiology knowledge in a co-located party passively reduces preventable
+exposure: physicians can warn against suspect food or water, separate close
+company, and reduce vermin contact. The reduction is dramatic for food, water,
+and close contact, bounded for vermin, and modest for infected blood. It never
+removes all risk. Wound acquisition remains Surgery's responsibility, and
+Physiology does not invent missing space, clean water, soap, bandages, or
+disinfectant. Those physical controls retain their stronger modeled effects.
+Infections capable of close-contact spread can pass between party members,
+including before symptoms make the source publicly identifiable.
+
 Prepared interventions act on the patient's condition rather than naming a
 disease they magically cure. Treatment may improve or worsen the evidence
 available to an observer, but never reveals hidden truth directly.

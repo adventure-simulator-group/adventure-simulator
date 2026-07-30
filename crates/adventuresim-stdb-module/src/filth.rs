@@ -212,7 +212,13 @@ pub fn blood_episodes_through(
                 continue;
             }
             let route = filth::timed_cut_exposure(&routes, minute.saturating_sub(from));
-            let exposure = filth::blood_exposure(&relevant, disease_id, minute, route) / 1_440.0;
+            let exposure = crate::disease::protected_exposure_at(
+                ctx,
+                character_id,
+                minute,
+                adventuresim_core::disease::TransmissionVector::Blood,
+                filth::blood_exposure(&relevant, disease_id, minute, route) / 1_440.0,
+            );
             if exposure <= 0.0 {
                 continue;
             }
@@ -866,4 +872,22 @@ pub(crate) fn seed_demo(
         crate::add_inventory_item(ctx, character_id, SOAP_ITEM_ID, 3 - existing);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod source_tests {
+    #[test]
+    fn blood_route_receives_partial_physician_protection_after_physical_controls() {
+        let source = include_str!("filth.rs");
+        let exposure = source
+            .split("pub fn blood_episodes_through")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Reusable strategic boundary").next())
+            .expect("blood exposure source");
+        let prevention = exposure.find("protected_exposure_at").unwrap();
+        let physical = exposure.find("filth::blood_exposure").unwrap();
+        assert!(prevention < physical);
+        assert!(exposure.contains("TransmissionVector::Blood"));
+        assert!(exposure.contains("timed_cut_exposure"));
+    }
 }
