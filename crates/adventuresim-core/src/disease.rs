@@ -22,7 +22,7 @@ pub enum DiseaseId {
     Plague,
     Consumption,
     Mahrdruck,
-    NachzehrerWasting,
+    ShroudFever,
     Bilwisschuss,
     Kobeldunst,
 }
@@ -218,6 +218,80 @@ pub struct DiagnosticPattern {
     pub longitudinal_weight: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClassicalElement {
+    Air,
+    Water,
+    Fire,
+    Earth,
+}
+
+impl ClassicalElement {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Air => "air",
+            Self::Water => "water",
+            Self::Fire => "fire",
+            Self::Earth => "earth",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ElementalKind {
+    Sylph,
+    Nymph,
+    Salamander,
+    Pygmy,
+}
+
+impl ElementalKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Sylph => "sylph",
+            Self::Nymph => "nymph",
+            Self::Salamander => "salamander",
+            Self::Pygmy => "pygmy",
+        }
+    }
+}
+
+/// Learned Paracelsian classification of each fantastic disease's physical
+/// source. The associated Humour is an observer-facing correspondence created
+/// by the source biology, not a causal substance in the patient.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ElementalAssociation {
+    pub kind: ElementalKind,
+    pub element: ClassicalElement,
+    pub projected_humour: Humour,
+}
+
+pub fn elemental_association(id: DiseaseId) -> Option<ElementalAssociation> {
+    Some(match id {
+        DiseaseId::Mahrdruck => ElementalAssociation {
+            kind: ElementalKind::Sylph,
+            element: ClassicalElement::Air,
+            projected_humour: Humour::Sanguine,
+        },
+        DiseaseId::ShroudFever => ElementalAssociation {
+            kind: ElementalKind::Nymph,
+            element: ClassicalElement::Water,
+            projected_humour: Humour::Phlegmatic,
+        },
+        DiseaseId::Bilwisschuss => ElementalAssociation {
+            kind: ElementalKind::Salamander,
+            element: ClassicalElement::Fire,
+            projected_humour: Humour::Choleric,
+        },
+        DiseaseId::Kobeldunst => ElementalAssociation {
+            kind: ElementalKind::Pygmy,
+            element: ClassicalElement::Earth,
+            projected_humour: Humour::Melancholic,
+        },
+        _ => return None,
+    })
+}
+
 /// Open, weighted evidence vocabulary for future investigation and outbreak
 /// generators. IDs deliberately name physical traces rather than diagnoses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -233,7 +307,7 @@ pub fn diagnostic_pattern(id: DiseaseId) -> DiagnosticPattern {
             minimum_observation_minutes: 2 * 1_440,
             longitudinal_weight: 0.42,
         },
-        DiseaseId::NachzehrerWasting => DiagnosticPattern {
+        DiseaseId::ShroudFever => DiagnosticPattern {
             minimum_observation_minutes: 8 * 1_440,
             longitudinal_weight: 0.38,
         },
@@ -255,22 +329,22 @@ pub fn diagnostic_pattern(id: DiseaseId) -> DiagnosticPattern {
 pub fn evidence_hooks(id: DiseaseId) -> &'static [DiseaseEvidenceHook] {
     match id {
         DiseaseId::Mahrdruck => &[DiseaseEvidenceHook {
-            evidence_id: "straw_mite_husks",
+            evidence_id: "night_sylph_castings",
             support_bps: 9_200,
             required_site: Some("occupied_house"),
         }],
-        DiseaseId::NachzehrerWasting => &[DiseaseEvidenceHook {
-            evidence_id: "black_grave_mould",
+        DiseaseId::ShroudFever => &[DiseaseEvidenceHook {
+            evidence_id: "nymph_grave_mould",
             support_bps: 9_500,
             required_site: Some("graveyard"),
         }],
         DiseaseId::Bilwisschuss => &[DiseaseEvidenceHook {
-            evidence_id: "barbed_rye_galls",
+            evidence_id: "salamander_rye_galls",
             support_bps: 9_300,
             required_site: Some("abandoned_farm"),
         }],
         DiseaseId::Kobeldunst => &[DiseaseEvidenceHook {
-            evidence_id: "iridescent_ore_biofilm",
+            evidence_id: "pygmy_ore_biofilm",
             support_bps: 9_500,
             required_site: Some("cave"),
         }],
@@ -878,13 +952,18 @@ const MAHRDRUCK: &[Symptom] = &[
     Symptom::AirHunger,
     Symptom::Fatigued,
 ];
-const GRAVE_WASTING: &[Symptom] = &[Symptom::Wasting, Symptom::OralFilaments, Symptom::Feverish];
+const SHROUD_FEVER: &[Symptom] = &[
+    Symptom::AirHunger,
+    Symptom::Coughing,
+    Symptom::OralFilaments,
+    Symptom::Feverish,
+];
 const BILWIS: &[Symptom] = &[
     Symptom::FocalContracture,
-    Symptom::Spasms,
+    Symptom::Feverish,
     Symptom::EyeBurning,
 ];
-const MINE_VAPOUR: &[Symptom] = &[Symptom::EyeBurning, Symptom::Trembling, Symptom::AirHunger];
+const MINE_VAPOUR: &[Symptom] = &[Symptom::EyeBurning, Symptom::Trembling, Symptom::Fatigued];
 
 pub const STARTER_DISEASES: [DiseaseDefinition; 12] = [
     d(
@@ -1067,15 +1146,16 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 12] = [
     d(
         DiseaseId::Mahrdruck,
         "Mahrdruck",
-        "Clusters among sleepers using the same infested straw or bedding.",
+        "Clusters where nocturnal sylphs roost in shared straw and leave irritating castings.",
         2 * DAY,
         2 * DAY,
         4 * DAY,
         5 * DAY,
         0.28,
         VitalImpairment {
-            phlegmatic: 0.48,
-            melancholic: 0.38,
+            sanguine: 0.65,
+            phlegmatic: 0.10,
+            melancholic: 0.15,
             ..VZ
         },
         AttributeImpairment {
@@ -1089,18 +1169,18 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 12] = [
         TransmissionVector::Vermin,
     ),
     d(
-        DiseaseId::NachzehrerWasting,
-        "Nachzehrer wasting",
-        "Follows exposure to mould from disturbed graves; it does not pass between patients.",
+        DiseaseId::ShroudFever,
+        "Shroud fever",
+        "Follows wet grave mould carried through groundwater by nymphs; it does not pass between patients.",
         5 * DAY,
         8 * DAY,
         12 * DAY,
         20 * DAY,
         0.24,
         VitalImpairment {
-            sanguine: 0.22,
-            choleric: 0.24,
-            melancholic: 0.52,
+            phlegmatic: 0.68,
+            choleric: 0.12,
+            melancholic: 0.10,
             ..VZ
         },
         AttributeImpairment {
@@ -1108,7 +1188,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 12] = [
             immunity: 0.22,
             ..Z
         },
-        GRAVE_WASTING,
+        SHROUD_FEVER,
         0.25,
         &[TransmissionVector::Environmental],
         TransmissionVector::Environmental,
@@ -1116,15 +1196,15 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 12] = [
     d(
         DiseaseId::Bilwisschuss,
         "Bilwisschuss",
-        "Follows barbed dust shed by blighted rye; it does not pass between patients.",
+        "Follows toxin-bearing galls left by heat-loving field salamanders; it does not pass between patients.",
         8 * 60,
         DAY,
         3 * DAY,
         6 * DAY,
         0.32,
         VitalImpairment {
-            choleric: 0.18,
-            melancholic: 0.68,
+            choleric: 0.72,
+            melancholic: 0.12,
             ..VZ
         },
         AttributeImpairment {
@@ -1140,16 +1220,16 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 12] = [
     d(
         DiseaseId::Kobeldunst,
         "Kobeldunst",
-        "Follows breathing vapour above living ore film in an unventilated mine; it is not contagious.",
+        "Follows breathing vapour from ore film tended by subterranean pygmies; it is not contagious.",
         2 * 60,
         12 * 60,
         2 * DAY,
         4 * DAY,
         0.38,
         VitalImpairment {
-            phlegmatic: 0.42,
-            choleric: 0.18,
-            melancholic: 0.40,
+            phlegmatic: 0.12,
+            choleric: 0.08,
+            melancholic: 0.70,
             ..VZ
         },
         AttributeImpairment {
@@ -1728,7 +1808,7 @@ pub fn private_meter_state(
 const WHOLE_BODY: [f32; physiology::REGION_COUNT] = [0.35, 0.35, 0.35, 0.35, 0.8, 0.6, 0.5];
 const HEAD_CHEST: [f32; physiology::REGION_COUNT] = [0.05, 0.05, 0.05, 0.05, 1.0, 0.15, 0.8];
 const LIMBS: [f32; physiology::REGION_COUNT] = [0.8, 0.8, 0.8, 0.8, 0.25, 0.1, 0.15];
-const MAHR_O2: &[CurvePoint] = &[
+const MAHR_TISSUE: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1750,7 +1830,7 @@ const MAHR_O2: &[CurvePoint] = &[
         loss: 0.0,
     },
 ];
-const MAHR_NEURO: &[CurvePoint] = &[
+const MAHR_PERFUSION: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1772,7 +1852,7 @@ const MAHR_NEURO: &[CurvePoint] = &[
         loss: 0.0,
     },
 ];
-const GRAVE_NUTRITION: &[CurvePoint] = &[
+const SHROUD_OXYGENATION: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1794,7 +1874,7 @@ const GRAVE_NUTRITION: &[CurvePoint] = &[
         loss: 0.0,
     },
 ];
-const GRAVE_INFLAMMATION: &[CurvePoint] = &[
+const SHROUD_NEUROLOGIC: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1816,7 +1896,7 @@ const GRAVE_INFLAMMATION: &[CurvePoint] = &[
         loss: 0.0,
     },
 ];
-const GRAVE_TISSUE: &[CurvePoint] = &[
+const SHROUD_INFLAMMATION: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1838,7 +1918,7 @@ const GRAVE_TISSUE: &[CurvePoint] = &[
         loss: 0.0,
     },
 ];
-const BILWIS_NEURO: &[CurvePoint] = &[
+const BILWIS_TEMPERATURE: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1882,7 +1962,7 @@ const BILWIS_INFLAMMATION: &[CurvePoint] = &[
         loss: 0.0,
     },
 ];
-const MINE_O2: &[CurvePoint] = &[
+const MINE_NEUROLOGIC: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1904,7 +1984,7 @@ const MINE_O2: &[CurvePoint] = &[
         loss: 0.0,
     },
 ];
-const MINE_NEURO: &[CurvePoint] = &[
+const MINE_NUTRITION: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1926,7 +2006,7 @@ const MINE_NEURO: &[CurvePoint] = &[
         loss: 0.0,
     },
 ];
-const MINE_RENAL: &[CurvePoint] = &[
+const MINE_TISSUE: &[CurvePoint] = &[
     CurvePoint {
         minute: 0,
         loss: 0.0,
@@ -1950,37 +2030,37 @@ const MINE_RENAL: &[CurvePoint] = &[
 ];
 const MAHR_CURVES: &[MeterCurve] = &[
     MeterCurve {
-        meter: Meter::Neurologic,
-        points: MAHR_NEURO,
+        meter: Meter::Perfusion,
+        points: MAHR_PERFUSION,
         regional_weights: HEAD_CHEST,
     },
     MeterCurve {
-        meter: Meter::Oxygenation,
-        points: MAHR_O2,
+        meter: Meter::TissueIntegrity,
+        points: MAHR_TISSUE,
         regional_weights: HEAD_CHEST,
     },
 ];
-const GRAVE_CURVES: &[MeterCurve] = &[
+const SHROUD_CURVES: &[MeterCurve] = &[
     MeterCurve {
-        meter: Meter::Nutrition,
-        points: GRAVE_NUTRITION,
+        meter: Meter::Oxygenation,
+        points: SHROUD_OXYGENATION,
+        regional_weights: WHOLE_BODY,
+    },
+    MeterCurve {
+        meter: Meter::Neurologic,
+        points: SHROUD_NEUROLOGIC,
         regional_weights: WHOLE_BODY,
     },
     MeterCurve {
         meter: Meter::Inflammation,
-        points: GRAVE_INFLAMMATION,
-        regional_weights: WHOLE_BODY,
-    },
-    MeterCurve {
-        meter: Meter::TissueIntegrity,
-        points: GRAVE_TISSUE,
+        points: SHROUD_INFLAMMATION,
         regional_weights: HEAD_CHEST,
     },
 ];
 const BILWIS_CURVES: &[MeterCurve] = &[
     MeterCurve {
-        meter: Meter::Neurologic,
-        points: BILWIS_NEURO,
+        meter: Meter::Temperature,
+        points: BILWIS_TEMPERATURE,
         regional_weights: LIMBS,
     },
     MeterCurve {
@@ -1991,18 +2071,18 @@ const BILWIS_CURVES: &[MeterCurve] = &[
 ];
 const MINE_CURVES: &[MeterCurve] = &[
     MeterCurve {
-        meter: Meter::Oxygenation,
-        points: MINE_O2,
-        regional_weights: HEAD_CHEST,
-    },
-    MeterCurve {
         meter: Meter::Neurologic,
-        points: MINE_NEURO,
+        points: MINE_NEUROLOGIC,
         regional_weights: HEAD_CHEST,
     },
     MeterCurve {
-        meter: Meter::RenalClearance,
-        points: MINE_RENAL,
+        meter: Meter::Nutrition,
+        points: MINE_NUTRITION,
+        regional_weights: HEAD_CHEST,
+    },
+    MeterCurve {
+        meter: Meter::TissueIntegrity,
+        points: MINE_TISSUE,
         regional_weights: WHOLE_BODY,
     },
 ];
@@ -2010,7 +2090,7 @@ const MINE_CURVES: &[MeterCurve] = &[
 pub fn fantastic_meter_curves(id: DiseaseId) -> Option<&'static [MeterCurve]> {
     match id {
         DiseaseId::Mahrdruck => Some(MAHR_CURVES),
-        DiseaseId::NachzehrerWasting => Some(GRAVE_CURVES),
+        DiseaseId::ShroudFever => Some(SHROUD_CURVES),
         DiseaseId::Bilwisschuss => Some(BILWIS_CURVES),
         DiseaseId::Kobeldunst => Some(MINE_CURVES),
         _ => None,
@@ -2061,17 +2141,17 @@ pub fn disease_peak_meters(disease_id: DiseaseId) -> &'static [(Meter, f32)] {
             (Meter::Nutrition, 0.25),
             (Meter::TissueIntegrity, 0.20),
         ],
-        DiseaseId::Mahrdruck => &[(Meter::Neurologic, 0.62), (Meter::Oxygenation, 0.58)],
-        DiseaseId::NachzehrerWasting => &[
-            (Meter::Nutrition, 0.58),
-            (Meter::Inflammation, 0.48),
-            (Meter::TissueIntegrity, 0.38),
+        DiseaseId::Mahrdruck => &[(Meter::Perfusion, 0.62), (Meter::TissueIntegrity, 0.58)],
+        DiseaseId::ShroudFever => &[
+            (Meter::Oxygenation, 0.58),
+            (Meter::Neurologic, 0.48),
+            (Meter::Inflammation, 0.38),
         ],
-        DiseaseId::Bilwisschuss => &[(Meter::Neurologic, 0.72), (Meter::Inflammation, 0.32)],
+        DiseaseId::Bilwisschuss => &[(Meter::Temperature, 0.72), (Meter::Inflammation, 0.32)],
         DiseaseId::Kobeldunst => &[
-            (Meter::Oxygenation, 0.52),
-            (Meter::Neurologic, 0.46),
-            (Meter::RenalClearance, 0.34),
+            (Meter::Neurologic, 0.52),
+            (Meter::Nutrition, 0.46),
+            (Meter::TissueIntegrity, 0.34),
         ],
     }
 }
@@ -2165,7 +2245,7 @@ fn disease_region_weights(episode: InfectionEpisode) -> Vec<(BodyRegion, f32)> {
         }
         DiseaseId::Consumption => vec![(Chest, 1.0), (Abdomen, 0.3)],
         DiseaseId::Mahrdruck => vec![(Head, 0.8), (Chest, 1.0)],
-        DiseaseId::NachzehrerWasting => vec![
+        DiseaseId::ShroudFever => vec![
             (Head, 0.7),
             (Chest, 0.8),
             (Abdomen, 1.0),
@@ -2333,7 +2413,7 @@ mod tests {
     fn structural_minutes_include_every_fantastic_curve_point() {
         for (index, id) in [
             DiseaseId::Mahrdruck,
-            DiseaseId::NachzehrerWasting,
+            DiseaseId::ShroudFever,
             DiseaseId::Bilwisschuss,
             DiseaseId::Kobeldunst,
         ]
@@ -3293,21 +3373,25 @@ mod tests {
     #[test]
     fn fantastic_diseases_have_distinct_ordered_meter_courses() {
         let cases = [
-            (DiseaseId::Mahrdruck, Meter::Neurologic, Meter::Oxygenation),
             (
-                DiseaseId::NachzehrerWasting,
-                Meter::Nutrition,
+                DiseaseId::Mahrdruck,
+                Meter::Perfusion,
                 Meter::TissueIntegrity,
             ),
             (
+                DiseaseId::ShroudFever,
+                Meter::Oxygenation,
+                Meter::Inflammation,
+            ),
+            (
                 DiseaseId::Bilwisschuss,
-                Meter::Neurologic,
+                Meter::Temperature,
                 Meter::Inflammation,
             ),
             (
                 DiseaseId::Kobeldunst,
-                Meter::Oxygenation,
-                Meter::RenalClearance,
+                Meter::Neurologic,
+                Meter::TissueIntegrity,
             ),
         ];
         for (index, (id, early_meter, later_meter)) in cases.into_iter().enumerate() {
@@ -3392,7 +3476,7 @@ mod tests {
 
     #[test]
     fn fantastic_regional_projection_preserves_each_meter_curve_weights() {
-        let infection = e(951, DiseaseId::NachzehrerWasting);
+        let infection = e(951, DiseaseId::ShroudFever);
         let now = infection.contracted_at + 19 * DAY;
         let baseline = private_regional_meter_state(
             infection.character_id,
@@ -3413,47 +3497,60 @@ mod tests {
         let delta = |region: BodyRegion, meter: Meter| {
             affected[region.index()].get(meter) - baseline[region.index()].get(meter)
         };
-        let curves = fantastic_meter_curves(DiseaseId::NachzehrerWasting).unwrap();
-        let nutrition = curves
+        let curves = fantastic_meter_curves(DiseaseId::ShroudFever).unwrap();
+        let systemic_water = curves
             .iter()
-            .find(|curve| curve.meter == Meter::Nutrition)
+            .find(|curve| curve.meter == Meter::Oxygenation)
             .unwrap();
-        let tissue = curves
+        let focal_inflammation = curves
             .iter()
-            .find(|curve| curve.meter == Meter::TissueIntegrity)
+            .find(|curve| curve.meter == Meter::Inflammation)
             .unwrap();
         assert!(
-            nutrition.regional_weights[BodyRegion::LeftArm.index()]
-                > tissue.regional_weights[BodyRegion::LeftArm.index()]
+            systemic_water.regional_weights[BodyRegion::LeftArm.index()]
+                > focal_inflammation.regional_weights[BodyRegion::LeftArm.index()]
         );
         assert!(
-            delta(BodyRegion::Chest, Meter::TissueIntegrity)
-                > delta(BodyRegion::LeftArm, Meter::TissueIntegrity) * 4.0
+            delta(BodyRegion::Chest, Meter::Inflammation)
+                > delta(BodyRegion::LeftArm, Meter::Inflammation) * 4.0
         );
     }
 
     #[test]
-    fn fantastic_signatures_are_coordinated_but_humours_remain_projection() {
+    fn elemental_diseases_project_to_four_distinct_dominant_humours() {
         let mut signatures = std::collections::BTreeSet::new();
+        let mut associations = std::collections::BTreeSet::new();
         for id in [
             DiseaseId::Mahrdruck,
-            DiseaseId::NachzehrerWasting,
+            DiseaseId::ShroudFever,
             DiseaseId::Bilwisschuss,
             DiseaseId::Kobeldunst,
         ] {
             let meters = MeterVector::from_entries(disease_peak_meters(id));
             let projected = physiology::humours(meters);
             assert!(projected.iter().filter(|value| **value > 0.05).count() >= 2);
+            let association = elemental_association(id).unwrap();
+            let dominant = Humour::ALL
+                .into_iter()
+                .max_by(|left, right| projected[left.index()].total_cmp(&projected[right.index()]))
+                .unwrap();
+            assert_eq!(dominant, association.projected_humour, "{id:?}");
             signatures.insert(projected.map(|value| (value * 100.0).round() as i16));
+            associations.insert((
+                association.element as u8,
+                association.kind as u8,
+                association.projected_humour.index(),
+            ));
         }
         assert_eq!(signatures.len(), 4);
+        assert_eq!(associations.len(), 4);
     }
 
     #[test]
     fn fantastic_routes_and_evidence_are_physical_and_open() {
         assert!(definition(DiseaseId::Mahrdruck).supports(TransmissionVector::Vermin));
         for id in [
-            DiseaseId::NachzehrerWasting,
+            DiseaseId::ShroudFever,
             DiseaseId::Bilwisschuss,
             DiseaseId::Kobeldunst,
         ] {
@@ -3465,13 +3562,13 @@ mod tests {
         assert_eq!(
             evidence_hooks(DiseaseId::Mahrdruck),
             &[DiseaseEvidenceHook {
-                evidence_id: "straw_mite_husks",
+                evidence_id: "night_sylph_castings",
                 support_bps: 9_200,
                 required_site: Some("occupied_house"),
             }]
         );
         assert_eq!(
-            evidence_hooks(DiseaseId::NachzehrerWasting)[0].required_site,
+            evidence_hooks(DiseaseId::ShroudFever)[0].required_site,
             Some("graveyard")
         );
         assert_eq!(
@@ -3539,7 +3636,7 @@ mod tests {
     fn existing_generic_preparations_overlap_without_disease_keys() {
         for id in [
             DiseaseId::Mahrdruck,
-            DiseaseId::NachzehrerWasting,
+            DiseaseId::ShroudFever,
             DiseaseId::Bilwisschuss,
             DiseaseId::Kobeldunst,
         ] {

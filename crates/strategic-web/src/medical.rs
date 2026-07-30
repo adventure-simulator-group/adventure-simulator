@@ -6,7 +6,7 @@
 
 use crate::spacetimedb::{BackendPhysiologyAdministration, BackendPhysiologyChart};
 use adventuresim_core::{
-    disease::{DiseaseId, definition},
+    disease::{DiseaseId, definition, elemental_association},
     physiology::{BodyRegion, Humour},
 };
 
@@ -205,7 +205,7 @@ fn disease_id_from_public_key(key: &str) -> Option<DiseaseId> {
         "plague" => DiseaseId::Plague,
         "consumption" => DiseaseId::Consumption,
         "mahrdruck" => DiseaseId::Mahrdruck,
-        "nachzehrer_wasting" => DiseaseId::NachzehrerWasting,
+        "shroud_fever" => DiseaseId::ShroudFever,
         "bilwisschuss" => DiseaseId::Bilwisschuss,
         "kobeldunst" => DiseaseId::Kobeldunst,
         _ => return None,
@@ -216,6 +216,14 @@ fn typical_disease_effects(public_disease_key: &str) -> Vec<String> {
     let Some(disease_id) = disease_id_from_public_key(public_disease_key) else {
         return Vec::new();
     };
+    let elemental = elemental_association(disease_id).map(|association| {
+        format!(
+            "Paracelsian association: {} {} / {}",
+            association.element.as_str(),
+            association.kind.as_str(),
+            association.projected_humour.public_name()
+        )
+    });
     let mut focal_effects = [[0.0_f32; 4]; 7];
     let mut whole_body_effects = [0.0_f32; 4];
     for symptom in definition(disease_id).symptoms {
@@ -255,29 +263,27 @@ fn typical_disease_effects(public_disease_key: &str) -> Vec<String> {
             })
             .then_with(|| a.2.index().cmp(&b.2.index()))
     });
-    ranked
-        .into_iter()
-        .take(5)
-        .map(|(_, region, humour)| {
-            let region = match region {
-                Some(BodyRegion::LeftArm) => "left arm",
-                Some(BodyRegion::RightArm) => "right arm",
-                Some(BodyRegion::LeftLeg) => "left leg",
-                Some(BodyRegion::RightLeg) => "right leg",
-                Some(BodyRegion::Chest) => "chest",
-                Some(BodyRegion::Abdomen) => "stomach",
-                Some(BodyRegion::Head) => "head",
-                None => "whole body",
-            };
-            let humour = match humour {
-                Humour::Sanguine => "blood",
-                Humour::Phlegmatic => "phlegm",
-                Humour::Choleric => "yellow bile",
-                Humour::Melancholic => "black bile",
-            };
-            format!("▲ {region} {humour}")
-        })
-        .collect()
+    let mut result = elemental.into_iter().collect::<Vec<_>>();
+    result.extend(ranked.into_iter().take(5).map(|(_, region, humour)| {
+        let region = match region {
+            Some(BodyRegion::LeftArm) => "left arm",
+            Some(BodyRegion::RightArm) => "right arm",
+            Some(BodyRegion::LeftLeg) => "left leg",
+            Some(BodyRegion::RightLeg) => "right leg",
+            Some(BodyRegion::Chest) => "chest",
+            Some(BodyRegion::Abdomen) => "stomach",
+            Some(BodyRegion::Head) => "head",
+            None => "whole body",
+        };
+        let humour = match humour {
+            Humour::Sanguine => "blood",
+            Humour::Phlegmatic => "phlegm",
+            Humour::Choleric => "yellow bile",
+            Humour::Melancholic => "black bile",
+        };
+        format!("▲ {region} {humour}")
+    }));
+    result
 }
 
 #[cfg(test)]
@@ -432,5 +438,29 @@ mod tests {
             assert!(effects.len() <= 5, "{disease_key}: {effects:?}");
         }
         assert!(typical_disease_effects("unknown").is_empty());
+    }
+
+    #[test]
+    fn fantastic_disease_tooltips_disclose_elemental_correspondence() {
+        for (key, expected) in [
+            ("mahrdruck", "Paracelsian association: air sylph / Sanguine"),
+            (
+                "shroud_fever",
+                "Paracelsian association: water nymph / Phlegmatic",
+            ),
+            (
+                "bilwisschuss",
+                "Paracelsian association: fire salamander / Choleric",
+            ),
+            (
+                "kobeldunst",
+                "Paracelsian association: earth pygmy / Melancholic",
+            ),
+        ] {
+            assert_eq!(
+                typical_disease_effects(key).first().map(String::as_str),
+                Some(expected),
+            );
+        }
     }
 }

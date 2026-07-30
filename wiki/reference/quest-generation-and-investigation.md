@@ -780,7 +780,8 @@ or invoke that result.
 ## Disease evidence hooks
 
 The investigation catalogue includes open physical traces for fantastic
-disease: bedding arthropod husks, grave mould, rye galls, and ore biofilm.
+disease: night-sylph castings, waterborne grave mould, salamander-opened rye
+galls, and pygmy-tended ore biofilm.
 Disease definitions attach weights and optional site constraints to these IDs.
 Generators must combine them with visible exposure timing, environment,
 Bestiary knowledge, and other clues; they must not select evidence by revealing

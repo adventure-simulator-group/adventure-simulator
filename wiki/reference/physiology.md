@@ -172,7 +172,10 @@ coordinated, authored meter sequences. Once an observer has enough uninterrupted
 authorized history, a pure scorer compares only the actual quantized visible
 readings and their timestamps with public definitions. Absence resets that
 sequence, self charts do not synthesize prior readings, early readings remain
-ambiguous, and ordinary diseases do not receive the added pattern weight. See
+ambiguous, and ordinary diseases do not receive the added pattern weight. Their
+air/sanguine, water/phlegmatic, fire/choleric, and earth/melancholic signatures
+are consequences of physical meter bundles, not evidence that Humours cause
+disease. See
 [Fantastic diseases](fantastic-diseases.md).
 
 It contains no authoritative diagnosis, recommendation, infection row,

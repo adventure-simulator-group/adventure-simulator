@@ -142,4 +142,7 @@ adapted motif in the MVP's exact place and year.
 Disease evidence remains physically authored and weighted rather than coupled
 to a hidden threat identity. Open bedding, grave, crop, and mine evidence can
 later support threat, corpse, or environment inferences alongside Bestiary
-categories. See [Fantastic diseases](fantastic-diseases.md).
+categories. Learned characters may also classify the four source populations
+as sylph/air, nymph/water, salamander/fire, and pygmy/earth. That Paracelsian
+taxonomy does not replace regional names or turn a Bestiary category into a
+guaranteed diagnosis. See [Fantastic diseases](fantastic-diseases.md).

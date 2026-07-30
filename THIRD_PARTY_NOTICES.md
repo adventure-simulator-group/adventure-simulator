@@ -19,6 +19,12 @@ library-catalogue, and public-domain sources. Source text is not redistributed:
 - D. L. Ashliman's research collection, “The Mare in Scandinavian Belief,”
   used only for explicitly later comparative variants:
   <https://sites.pitt.edu/~dash/nightmare.html#mart>
+- *Deutsche Biographie*, “Paracelsus,” used for the 1566 abridged publication
+  history of *Liber de nymphis*:
+  <https://www.deutsche-biographie.de/sfz93903.html?language=en>
+- New York Public Library research catalogue, *Liber de nymphis, sylphis,
+  pygmaeis et salamandris*, used for the Huser/Basel 1591 textual history:
+  <https://test.nypl.org/research/research-catalog/bib/pb9916825293506421>
 
 ## Strategic map data
 

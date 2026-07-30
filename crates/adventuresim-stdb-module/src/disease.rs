@@ -809,7 +809,7 @@ pub(crate) fn parse_id(value: &str) -> Result<DiseaseId, String> {
         "plague" => Ok(DiseaseId::Plague),
         "consumption" => Ok(DiseaseId::Consumption),
         "mahrdruck" => Ok(DiseaseId::Mahrdruck),
-        "nachzehrer_wasting" => Ok(DiseaseId::NachzehrerWasting),
+        "shroud_fever" => Ok(DiseaseId::ShroudFever),
         "bilwisschuss" => Ok(DiseaseId::Bilwisschuss),
         "kobeldunst" => Ok(DiseaseId::Kobeldunst),
         _ => Err("Unknown disease".into()),
@@ -2076,7 +2076,7 @@ pub(crate) fn disease_key(id: DiseaseId) -> &'static str {
         DiseaseId::Plague => "plague",
         DiseaseId::Consumption => "consumption",
         DiseaseId::Mahrdruck => "mahrdruck",
-        DiseaseId::NachzehrerWasting => "nachzehrer_wasting",
+        DiseaseId::ShroudFever => "shroud_fever",
         DiseaseId::Bilwisschuss => "bilwisschuss",
         DiseaseId::Kobeldunst => "kobeldunst",
     }
@@ -2884,7 +2884,7 @@ mod fantastic_differential_tests {
 
         for id in [
             DiseaseId::Mahrdruck,
-            DiseaseId::NachzehrerWasting,
+            DiseaseId::ShroudFever,
             DiseaseId::Bilwisschuss,
             DiseaseId::Kobeldunst,
         ] {
@@ -2918,10 +2918,7 @@ mod fantastic_differential_tests {
             let key = disease_key(definition.id);
             assert_eq!(parse_id(key), Ok(definition.id), "{key}");
         }
-        assert_eq!(
-            disease_key(DiseaseId::NachzehrerWasting),
-            "nachzehrer_wasting"
-        );
+        assert_eq!(disease_key(DiseaseId::ShroudFever), "shroud_fever");
     }
 
     #[test]
