@@ -329,7 +329,7 @@ test('slot preview mirrors the keyboard map without creating a modal', () => {
   delete global.window;
 });
 
-test('hover accepts slot keys while keyboard focus waits for modal activation', async () => {
+test('hover reassigns equipped or unequipped items while keyboard focus waits for Space', async () => {
   const { window, document } = parseHTML(
     '<html><body><main id="strategic-page"><button id="equip"></button></main></body></html>',
   );
@@ -390,6 +390,31 @@ test('hover accepts slot keys while keyboard focus waits for modal activation', 
   assert.equal(mutations.length, 1);
   assert.equal(mutations[0].path, '/api/equipment');
   assert.equal(mutations[0].body.get('placement_index'), '0');
+
+  control.disabled = false;
+  control.dataset.equipmentEquipped = 'true';
+  control.dispatchEvent(hover);
+  assert.ok(document.querySelector('.equipment-slot-preview'));
+  const equippedHoverKey = new window.Event('keydown', {
+    bubbles: true,
+    cancelable: true,
+  });
+  equippedHoverKey.key = 'g';
+  document.dispatchEvent(equippedHoverKey);
+  await Promise.resolve();
+  assert.equal(mutations.length, 2);
+  assert.equal(mutations[1].body.get('equipped'), 'true');
+
+  control.disabled = false;
+  control.focus();
+  control.dispatchEvent(focusIn);
+  assert.ok(document.querySelector('.equipment-slot-preview'));
+  const space = new window.Event('keydown', { bubbles: true, cancelable: true });
+  space.key = ' ';
+  space.code = 'Space';
+  control.dispatchEvent(space);
+  assert.ok(document.querySelector('.equipment-slot-modal'));
+  document.querySelector('.equipment-slot-close').click();
 
   delete require.cache[modulePath];
   delete global.document;

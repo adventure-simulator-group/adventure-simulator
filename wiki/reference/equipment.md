@@ -126,12 +126,13 @@ when their key is pressed. Eligible occupied locations show the current item's
 icon; selecting one atomically unequips that occupant and equips the new item.
 Eligible empty locations retain the same icon-sized negative space. Clicking
 or pressing a valid key chooses the outermost compatible authored placement or
-attachment target. Hovering or keyboard-focusing an unequipped control previews
-the same map without a modal backdrop. While merely hovering, a mapped key
-equips immediately. Keyboard focus preserves normal Tab navigation; Space
-opens the modal before slot keys become active, and Escape closes it. Equipped
-controls name their occupied locations and protection coverage to assistive
-technology and in their tooltip. An attached item's row names its parent and
+attachment target. Hovering or keyboard-focusing any equippable control
+previews the same map without a modal backdrop. While merely hovering, a
+mapped key equips or reassigns the item immediately. Keyboard focus preserves
+normal Tab navigation; Space opens the modal before slot keys become active,
+and Escape closes it. Clicking an equipped control still unequips it directly.
+Equipped controls name their occupied locations and protection coverage to
+assistive technology and in their tooltip. An attached item's row names its parent and
 attachment point directly. Swaps validate the complete destination and every
 displaced item before changing the graph; descendant targets and incompatible
 attachment points remain excluded or are reported exactly.

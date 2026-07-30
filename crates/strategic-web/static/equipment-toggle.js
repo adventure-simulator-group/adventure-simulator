@@ -239,7 +239,6 @@
     if (
       !control
       || control.disabled
-      || control.dataset.equipmentEquipped === 'true'
       || !control.matches('[data-equipment-toggle]:not([data-equipment-medication])')
     ) {
       hideSlotPreview();
@@ -338,8 +337,28 @@
   });
 
   document.addEventListener('keydown', async (event) => {
+    const focusedControl = event.target.closest?.(equipmentControlSelector);
+    if (
+      focusedControl
+      && (event.key === ' ' || event.code === 'Space')
+    ) {
+      event.preventDefault();
+      if (focusedControl.disabled) return;
+      hideSlotPreview();
+      const selection = await chooseSlot(focusedControl);
+      if (selection === null) return;
+      const status = statusFor(focusedControl);
+      clearStatus(status);
+      focusedControl.disabled = true;
+      try {
+        await equipmentMutation(focusedControl, true, selection);
+      } catch (error) {
+        reportEquipmentError(focusedControl, status, error);
+      }
+      return;
+    }
     const control = hoveredEquipmentControl;
-    if (!control || control.disabled || control.dataset.equipmentEquipped === 'true') return;
+    if (!control || control.disabled) return;
     if (document.activeElement === control) return;
     if (event.target.matches?.('input, textarea, select, [contenteditable="true"]')) return;
     const input = normalizedEquipmentInput(event);

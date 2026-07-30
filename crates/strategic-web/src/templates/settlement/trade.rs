@@ -1946,7 +1946,7 @@ fn equipment_control(
                 data-wear-placements=(placement_labels)
                 data-equipment-input-map=(input_map_json)
                 data-equipment-placement-options=(placement_options_json)
-                aria-haspopup=[(!equipped && equippable).then_some("dialog")]
+                aria-haspopup=[equippable.then_some("dialog")]
                 aria-describedby=(format!("equipment-status-{}", inventory.id))
                 aria-label=(label)
                 title=(title) {
