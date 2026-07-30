@@ -1490,7 +1490,14 @@ pub(crate) fn insert_new_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, temporary, None)
+    insert_character_with_origin(ctx, name, id, temporary, temporary, None, None)
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NpcLifeFacts {
+    pub age_years: u16,
+    pub organization_id: Option<String>,
+    pub literacy: Option<adventuresim_world_schema::WrittenLanguage>,
 }
 
 pub(crate) fn insert_new_npc_character(
@@ -1499,14 +1506,32 @@ pub(crate) fn insert_new_npc_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, true, None)
+    insert_character_with_origin(ctx, name, id, temporary, true, None, None)
+}
+
+pub(crate) fn insert_new_npc_character_with_life(
+    ctx: &ReducerContext,
+    name: String,
+    id: u64,
+    temporary: bool,
+    facts: NpcLifeFacts,
+) -> Result<(), String> {
+    insert_character_with_origin(ctx, name, id, temporary, true, None, Some(&facts))
 }
 
 fn insert_starting_character(
     ctx: &ReducerContext,
     spec: &StartingCharacterSpec,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, spec.name.clone(), spec.id, false, false, Some(spec))
+    insert_character_with_origin(
+        ctx,
+        spec.name.clone(),
+        spec.id,
+        false,
+        false,
+        Some(spec),
+        None,
+    )
 }
 
 fn initial_membership_minutes(now: u64, dues_interval_days: Option<u32>) -> (u64, u64) {
@@ -1586,6 +1611,7 @@ fn insert_character_with_origin(
     temporary: bool,
     npc: bool,
     starting: Option<&StartingCharacterSpec>,
+    npc_life: Option<&NpcLifeFacts>,
 ) -> Result<(), String> {
     log::info!("New character created: {name} (ID: {id})");
 
@@ -1640,7 +1666,10 @@ fn insert_character_with_origin(
         server: Identity::ZERO,
         in_server: false,
         temporary,
-        age_years: starting.map_or(25, |spec| spec.age_years),
+        age_years: starting.map_or_else(
+            || npc_life.map_or(25, |facts| facts.age_years),
+            |spec| spec.age_years,
+        ),
         alive: true,
     });
     if !temporary {
@@ -1662,85 +1691,8 @@ fn insert_character_with_origin(
         calories_used: 0.0,
         focus: 1.0,
     });
-    let (oral_languages, mut written_languages) =
-        adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
-    let generated_skills = starting.map(|spec| &spec.skills);
-    if let Some(generated) = generated_skills {
-        written_languages = generated.written;
-    }
-    if !temporary
-        && crate::social_estate::character_estate(ctx, id)
-            .is_ok_and(|estate| estate == adventuresim_core::organization::Estate::Noble)
-    {
-        let local = if start_settlement.languages.dominant_german()
-            == adventuresim_world_schema::OralLanguage::Low
-        {
-            adventuresim_world_schema::WrittenLanguage::Low
-        } else {
-            adventuresim_world_schema::WrittenLanguage::German
-        };
-        *written_languages.direct_mut(local) = written_languages.direct(local).max(1_000.0);
-    }
-    let _character_skills = ctx.db.character_skills().insert(CharacterSkills {
-        character_id: id,
-        polearm_hours: generated_skills.map_or(2000.0, |s| s.polearm),
-        axe_hours: generated_skills.map_or(2000.0, |s| s.axe),
-        bludgeon_hours: generated_skills.map_or(2000.0, |s| s.bludgeon),
-        sword_hours: generated_skills.map_or(2000.0, |s| s.sword),
-        knife_hours: generated_skills.map_or(2000.0, |s| s.knife),
-        dodge_hours: generated_skills.map_or(1000.0, |s| s.dodge),
-        block_hours: generated_skills.map_or(1000.0, |s| s.block),
-        bow_hours: generated_skills.map_or(1000.0, |s| s.bow),
-        crossbow_hours: generated_skills.map_or(1000.0, |s| s.crossbow),
-        firearm_hours: generated_skills.map_or(1000.0, |s| s.firearm),
-        throw_hours: generated_skills.map_or(1000.0, |s| s.throw),
-        will_hours: generated_skills.map_or(1000.0, |s| s.will),
-        insight_hours: generated_skills.map_or(1000.0, |s| s.insight),
-        charm_hours: generated_skills.map_or(1000.0, |s| s.charm),
-        command_hours: generated_skills.map_or(1000.0, |s| s.command),
-        deception_hours: generated_skills.map_or(1000.0, |s| s.deception),
-        physiology_hours: generated_skills.map_or(1000.0, |s| s.physiology),
-        cooking_hours: generated_skills.map_or(0.0, |s| s.cooking),
-        herbalism_hours: generated_skills.map_or(0.0, |s| s.herbalism),
-        religion_hours: generated_skills
-            .map_or_else(adventuresim_world_schema::ReligionHours::default, |s| {
-                s.religion
-            }),
-        bestiary_hours: generated_skills.map_or(
-            adventuresim_world_schema::BestiaryHours {
-                beast: 1000.0,
-                human: 1000.0,
-                ..Default::default()
-            },
-            |s| s.bestiary,
-        ),
-        oral_languages,
-        written_languages,
-        stealth_hours: generated_skills.map_or(1000.0, |s| s.stealth),
-        balance_hours: generated_skills.map_or(1000.0, |s| s.balance),
-        terrain_plains_hours: generated_skills.map_or(0.0, |s| s.terrain_plains),
-        terrain_forest_hours: generated_skills.map_or(0.0, |s| s.terrain_forest),
-        terrain_hills_hours: generated_skills.map_or(0.0, |s| s.terrain_hills),
-        terrain_wetlands_hours: generated_skills.map_or(0.0, |s| s.terrain_wetlands),
-        terrain_urban_hours: generated_skills.map_or(0.0, |s| s.terrain_urban),
-        terrain_snow_hours: generated_skills.map_or(0.0, |s| s.terrain_snow),
-        surgery_hours: generated_skills.map_or(1000.0, |s| s.surgery),
-        tailoring_hours: generated_skills.map_or(1000.0, |s| s.tailoring),
-        smithing_hours: generated_skills.map_or(1000.0, |s| s.smithing),
-    });
-    crate::time::initialize_character_time(ctx, id)?;
-    let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
-        character_id: id,
-        left_arm_health: 1.0,
-        right_arm_health: 1.0,
-        left_leg_health: 1.0,
-        right_leg_health: 1.0,
-        head_health: 1.0,
-        chest_health: 1.0,
-        stomach_health: 1.0,
-    });
     let generated_attributes = starting.map(|spec| &spec.attributes);
-    let _character_attrs = ctx.db.character_attributes().insert(CharacterAttributes {
+    let character_attributes = CharacterAttributes {
         character_id: id,
         endurance: generated_attributes.map_or(2.0, |a| a.endurance),
         immunity: generated_attributes.map_or(2.0, |a| a.immunity),
@@ -1757,6 +1709,218 @@ fn insert_character_with_origin(
         right_arm_agility: generated_attributes.map_or(3.0, |a| a.agility),
         left_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
         right_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
+    };
+    let _character_attrs = ctx
+        .db
+        .character_attributes()
+        .insert(character_attributes.clone());
+    let (oral_languages, mut written_languages) =
+        adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
+    let creation_literacy = npc_life.and_then(|facts| facts.literacy).or_else(|| {
+        (!temporary
+            && crate::social_estate::character_estate(ctx, id)
+                .is_ok_and(|estate| estate == adventuresim_core::organization::Estate::Noble))
+        .then(|| {
+            if start_settlement.languages.dominant_german()
+                == adventuresim_world_schema::OralLanguage::Low
+            {
+                adventuresim_world_schema::WrittenLanguage::Low
+            } else {
+                adventuresim_world_schema::WrittenLanguage::German
+            }
+        })
+    });
+    let life_skills = (starting.is_none() && (!temporary || npc)).then(|| {
+        let profile = adventuresim_core::strategic_schedule::ActivityTrainingProfile {
+            combat: adventuresim_core::strategic_schedule::CombatTrainingProfile {
+                weapons: adventuresim_core::equipment::WeaponSkillDistribution {
+                    sword: 1.0,
+                    ..Default::default()
+                },
+                block: 1.0,
+                ..Default::default()
+            },
+        };
+        let organization = npc_life
+            .and_then(|facts| facts.organization_id.as_deref())
+            .and_then(adventuresim_core::organization::organization);
+        adventuresim_core::life_simulation::simulate_life(
+            adventuresim_core::life_simulation::LifeSimulationInput {
+                stable_seed: id ^ 0x6765_6e65_7269_6300,
+                age_years: npc_life.map_or(25, |facts| facts.age_years),
+                attributes: &character_attributes,
+                organization,
+                rank_requirements: &[],
+                religion: None,
+                activity_profile: profile,
+                native_oral: oral_languages,
+                literacy: creation_literacy,
+            },
+        )
+    });
+    let generated_skills = starting.map(|spec| &spec.skills);
+    let persisted_oral_languages = life_skills.map_or(oral_languages, |simulated| simulated.oral);
+    if let Some(generated) = generated_skills {
+        written_languages = generated.written;
+    } else if let Some(simulated) = life_skills {
+        written_languages = simulated.written;
+    }
+    if let Some(language) = creation_literacy
+        && starting.is_some()
+    {
+        adventuresim_core::life_simulation::apply_creation_literacy(
+            &mut written_languages,
+            character.age_years,
+            language,
+            &character_attributes,
+        );
+    }
+    let _character_skills = ctx.db.character_skills().insert(CharacterSkills {
+        character_id: id,
+        polearm_hours: generated_skills.map_or_else(
+            || life_skills.map_or(2000.0, |s| s.skills.polearm),
+            |s| s.polearm,
+        ),
+        axe_hours: generated_skills
+            .map_or_else(|| life_skills.map_or(2000.0, |s| s.skills.axe), |s| s.axe),
+        bludgeon_hours: generated_skills.map_or_else(
+            || life_skills.map_or(2000.0, |s| s.skills.bludgeon),
+            |s| s.bludgeon,
+        ),
+        sword_hours: generated_skills.map_or_else(
+            || life_skills.map_or(2000.0, |s| s.skills.sword),
+            |s| s.sword,
+        ),
+        knife_hours: generated_skills.map_or_else(
+            || life_skills.map_or(2000.0, |s| s.skills.knife),
+            |s| s.knife,
+        ),
+        dodge_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.dodge),
+            |s| s.dodge,
+        ),
+        block_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.block),
+            |s| s.block,
+        ),
+        bow_hours: generated_skills
+            .map_or_else(|| life_skills.map_or(1000.0, |s| s.skills.bow), |s| s.bow),
+        crossbow_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.crossbow),
+            |s| s.crossbow,
+        ),
+        firearm_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.firearm),
+            |s| s.firearm,
+        ),
+        throw_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.throw),
+            |s| s.throw,
+        ),
+        will_hours: generated_skills
+            .map_or_else(|| life_skills.map_or(1000.0, |s| s.skills.will), |s| s.will),
+        insight_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.insight),
+            |s| s.insight,
+        ),
+        charm_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.charm),
+            |s| s.charm,
+        ),
+        command_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.command),
+            |s| s.command,
+        ),
+        deception_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.deception),
+            |s| s.deception,
+        ),
+        physiology_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.physiology),
+            |s| s.physiology,
+        ),
+        cooking_hours: generated_skills.map_or_else(
+            || life_skills.map_or(0.0, |s| s.skills.cooking),
+            |s| s.cooking,
+        ),
+        herbalism_hours: generated_skills.map_or_else(
+            || life_skills.map_or(0.0, |s| s.skills.herbalism),
+            |s| s.herbalism,
+        ),
+        religion_hours: generated_skills.map_or_else(
+            || life_skills.map_or_else(Default::default, |s| s.skills.religion),
+            |s| s.religion,
+        ),
+        bestiary_hours: generated_skills.map_or_else(
+            || {
+                life_skills.map_or(
+                    adventuresim_world_schema::BestiaryHours {
+                        beast: 1000.0,
+                        human: 1000.0,
+                        ..Default::default()
+                    },
+                    |s| s.skills.bestiary,
+                )
+            },
+            |s| s.bestiary,
+        ),
+        oral_languages: persisted_oral_languages,
+        written_languages,
+        stealth_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.stealth),
+            |s| s.stealth,
+        ),
+        balance_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.balance),
+            |s| s.balance,
+        ),
+        terrain_plains_hours: generated_skills.map_or_else(
+            || life_skills.map_or(0.0, |s| s.skills.terrain_plains),
+            |s| s.terrain_plains,
+        ),
+        terrain_forest_hours: generated_skills.map_or_else(
+            || life_skills.map_or(0.0, |s| s.skills.terrain_forest),
+            |s| s.terrain_forest,
+        ),
+        terrain_hills_hours: generated_skills.map_or_else(
+            || life_skills.map_or(0.0, |s| s.skills.terrain_hills),
+            |s| s.terrain_hills,
+        ),
+        terrain_wetlands_hours: generated_skills.map_or_else(
+            || life_skills.map_or(0.0, |s| s.skills.terrain_wetlands),
+            |s| s.terrain_wetlands,
+        ),
+        terrain_urban_hours: generated_skills.map_or_else(
+            || life_skills.map_or(0.0, |s| s.skills.terrain_urban),
+            |s| s.terrain_urban,
+        ),
+        terrain_snow_hours: generated_skills.map_or_else(
+            || life_skills.map_or(0.0, |s| s.skills.terrain_snow),
+            |s| s.terrain_snow,
+        ),
+        surgery_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.surgery),
+            |s| s.surgery,
+        ),
+        tailoring_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.tailoring),
+            |s| s.tailoring,
+        ),
+        smithing_hours: generated_skills.map_or_else(
+            || life_skills.map_or(1000.0, |s| s.skills.smithing),
+            |s| s.smithing,
+        ),
+    });
+    crate::time::initialize_character_time(ctx, id)?;
+    let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
+        character_id: id,
+        left_arm_health: 1.0,
+        right_arm_health: 1.0,
+        left_leg_health: 1.0,
+        right_leg_health: 1.0,
+        head_health: 1.0,
+        chest_health: 1.0,
+        stomach_health: 1.0,
     });
     if starting.is_some() {
         let mut personality = crate::personality::CharacterPersonality::neutral(id);
@@ -2641,5 +2805,44 @@ mod starting_character_boundary_tests {
             .next()
             .unwrap();
         assert!(reducer.contains("refresh_equipment_dependents(ctx, character_id)"));
+    }
+
+    #[test]
+    fn production_full_characters_simulate_life_but_tactical_fixtures_keep_authored_overrides() {
+        let source = include_str!("character.rs");
+        let insertion = source
+            .split("fn insert_character_with_origin")
+            .nth(1)
+            .unwrap()
+            .split("#[reducer]\npub fn equip_item")
+            .next()
+            .unwrap();
+        assert!(insertion.contains("starting.is_none() && (!temporary || npc)"));
+        assert!(insertion.contains("life_simulation::simulate_life"));
+        let tactical = source
+            .split("pub fn create_temporary_character")
+            .nth(1)
+            .unwrap()
+            .split("fn scale_temporary_enemy")
+            .next()
+            .unwrap();
+        assert!(tactical.contains("insert_new_character"));
+        assert!(tactical.contains("scale_temporary_enemy"));
+    }
+
+    #[test]
+    fn creation_persists_only_the_current_skill_projection() {
+        let source = include_str!("character.rs");
+        assert!(source.contains("character_skills().insert"));
+        for forbidden in [
+            concat!("CharacterTraining", "History"),
+            concat!("character_training_", "history"),
+            concat!("CharacterSchedule", "History"),
+            concat!("character_schedule_", "history"),
+            concat!("CharacterActivity", "History"),
+            concat!("character_activity_", "history"),
+        ] {
+            assert!(!source.contains(forbidden));
+        }
     }
 }

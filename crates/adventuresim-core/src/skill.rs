@@ -507,6 +507,45 @@ mod tests {
 }
 
 impl Skill {
+    /// Canonical stable identifier used by authored curricula and requirements.
+    pub fn from_training_id(id: &str) -> Option<Self> {
+        Some(match id {
+            "polearm" => Self::Polearm,
+            "axe" => Self::Axe,
+            "bludgeon" => Self::Bludgeon,
+            "sword" => Self::Sword,
+            "knife" => Self::Knife,
+            "dodge" => Self::Dodge,
+            "block" => Self::Block,
+            "bow" => Self::Bow,
+            "crossbow" => Self::Crossbow,
+            "firearm" => Self::Firearm,
+            "throw" => Self::Throw,
+            "will" => Self::Will,
+            "insight" => Self::Insight,
+            "charm" => Self::Charm,
+            "command" => Self::Command,
+            "deception" => Self::Deception,
+            "physiology" => Self::Physiology,
+            "cooking" => Self::Cooking,
+            "herbalism" => Self::Herbalism,
+            "religion" => Self::Religion,
+            "bestiary" => Self::Bestiary,
+            "stealth" => Self::Stealth,
+            "balance" => Self::Balance,
+            "surgery" => Self::Surgery,
+            "terrain_plains" => Self::TerrainPlains,
+            "terrain_forest" => Self::TerrainForest,
+            "terrain_hills" => Self::TerrainHills,
+            "terrain_wetlands" => Self::TerrainWetlands,
+            "terrain_urban" => Self::TerrainUrban,
+            "terrain_snow" => Self::TerrainSnow,
+            "tailoring" => Self::Tailoring,
+            "smithing" => Self::Smithing,
+            _ => return None,
+        })
+    }
+
     /// Canonical player-facing name used anywhere a skill is described.
     pub const fn label(self) -> &'static str {
         match self {

@@ -2,6 +2,7 @@
 
 use crate::attribute::PlayerAttributes;
 use crate::equipment::WeaponSkillDistribution;
+use crate::organization::{OrganizationDefinition, TrainingTarget};
 use crate::skill::{Skill, apply_direct_training};
 use crate::{
     activity::*,
@@ -407,6 +408,134 @@ pub fn apply_religion_training(
         .excess_effective_hours;
     }
     0.0
+}
+
+/// Apply one organization's authored curriculum using the same aptitude-aware
+/// learning and caps as ordinary schedule training. Written-language leaves
+/// are returned to the caller because they are intentionally stored outside
+/// [`SkillHours`].
+pub fn apply_organization_training(
+    hours: &mut SkillHours,
+    work_hours: f32,
+    definition: &OrganizationDefinition,
+    activities: ActivityTrainingProfile,
+    attributes: &impl PlayerAttributes,
+) -> (f32, Vec<(adventuresim_world_schema::WrittenLanguage, f32)>) {
+    apply_curriculum_training(
+        hours,
+        work_hours,
+        &definition.activity.training,
+        activities,
+        attributes,
+    )
+}
+
+/// Apply authored curriculum entries without requiring database or clock state.
+pub fn apply_curriculum_training(
+    hours: &mut SkillHours,
+    work_hours: f32,
+    entries: &[crate::organization::TrainingEntry],
+    activities: ActivityTrainingProfile,
+    attributes: &impl PlayerAttributes,
+) -> (f32, Vec<(adventuresim_world_schema::WrittenLanguage, f32)>) {
+    let mut excess = 0.0;
+    let mut written = Vec::new();
+    let mut award_direct = |skill: Skill, stored: &mut f32, real_hours: f32| {
+        excess +=
+            apply_direct_training(skill, stored, real_hours, attributes).excess_effective_hours;
+    };
+    for entry in entries {
+        let award = work_hours * entry.weight;
+        match &entry.target {
+            TrainingTarget::FixedSkill { skill } => {
+                if let Some((kind, stored)) = fixed_skill_target(hours, skill) {
+                    award_direct(kind, stored, award);
+                }
+            }
+            TrainingTarget::Religion { religion } => {
+                if let Some(religion) = OfficialReligion::from_id(religion) {
+                    award_direct(Skill::Religion, hours.religion.direct_mut(religion), award);
+                }
+            }
+            TrainingTarget::Bestiary { category } => {
+                if let Some(category) = adventuresim_world_schema::BestiaryCategory::ALL
+                    .into_iter()
+                    .find(|value| format!("{value:?}").eq_ignore_ascii_case(category))
+                {
+                    award_direct(Skill::Bestiary, hours.bestiary.direct_mut(category), award);
+                }
+            }
+            TrainingTarget::Terrain { terrain } => {
+                if let Some((kind, stored)) = terrain_target(hours, terrain) {
+                    award_direct(kind, stored, award);
+                }
+            }
+            TrainingTarget::EquippedWeaponSkills => {
+                let weights = activities.combat.weapons.weights();
+                let total = weights.into_iter().sum::<f32>();
+                if total > 0.0 {
+                    for ((skill, target), weight) in [
+                        (Skill::Polearm, &mut hours.polearm),
+                        (Skill::Axe, &mut hours.axe),
+                        (Skill::Bludgeon, &mut hours.bludgeon),
+                        (Skill::Sword, &mut hours.sword),
+                        (Skill::Knife, &mut hours.knife),
+                        (Skill::Bow, &mut hours.bow),
+                        (Skill::Crossbow, &mut hours.crossbow),
+                        (Skill::Firearm, &mut hours.firearm),
+                        (Skill::Throw, &mut hours.throw),
+                    ]
+                    .into_iter()
+                    .zip(weights)
+                    {
+                        award_direct(skill, target, award * weight / total);
+                    }
+                }
+            }
+            TrainingTarget::Written { language } => written.push((*language, award)),
+        }
+    }
+    (excess, written)
+}
+
+fn fixed_skill_target<'a>(hours: &'a mut SkillHours, skill: &str) -> Option<(Skill, &'a mut f32)> {
+    Some(match skill {
+        "will" => (Skill::Will, &mut hours.will),
+        "insight" => (Skill::Insight, &mut hours.insight),
+        "charm" => (Skill::Charm, &mut hours.charm),
+        "command" => (Skill::Command, &mut hours.command),
+        "deception" => (Skill::Deception, &mut hours.deception),
+        "physiology" => (Skill::Physiology, &mut hours.physiology),
+        "cooking" => (Skill::Cooking, &mut hours.cooking),
+        "herbalism" => (Skill::Herbalism, &mut hours.herbalism),
+        "surgery" => (Skill::Surgery, &mut hours.surgery),
+        "polearm" => (Skill::Polearm, &mut hours.polearm),
+        "axe" => (Skill::Axe, &mut hours.axe),
+        "bludgeon" => (Skill::Bludgeon, &mut hours.bludgeon),
+        "sword" => (Skill::Sword, &mut hours.sword),
+        "knife" => (Skill::Knife, &mut hours.knife),
+        "bow" => (Skill::Bow, &mut hours.bow),
+        "crossbow" => (Skill::Crossbow, &mut hours.crossbow),
+        "firearm" => (Skill::Firearm, &mut hours.firearm),
+        "throw" => (Skill::Throw, &mut hours.throw),
+        "block" => (Skill::Block, &mut hours.block),
+        "dodge" => (Skill::Dodge, &mut hours.dodge),
+        "stealth" => (Skill::Stealth, &mut hours.stealth),
+        "balance" => (Skill::Balance, &mut hours.balance),
+        "terrain_plains" => (Skill::TerrainPlains, &mut hours.terrain_plains),
+        "terrain_forest" => (Skill::TerrainForest, &mut hours.terrain_forest),
+        "terrain_hills" => (Skill::TerrainHills, &mut hours.terrain_hills),
+        "terrain_wetlands" => (Skill::TerrainWetlands, &mut hours.terrain_wetlands),
+        "terrain_urban" => (Skill::TerrainUrban, &mut hours.terrain_urban),
+        "terrain_snow" => (Skill::TerrainSnow, &mut hours.terrain_snow),
+        "tailoring" => (Skill::Tailoring, &mut hours.tailoring),
+        "smithing" => (Skill::Smithing, &mut hours.smithing),
+        _ => return None,
+    })
+}
+
+fn terrain_target<'a>(hours: &'a mut SkillHours, terrain: &str) -> Option<(Skill, &'a mut f32)> {
+    fixed_skill_target(hours, &format!("terrain_{terrain}"))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]

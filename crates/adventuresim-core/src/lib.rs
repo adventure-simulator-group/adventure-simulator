@@ -29,6 +29,7 @@ pub mod item_catalog_schema;
 mod item_catalog_validation;
 pub mod item_references;
 pub mod leadership;
+pub mod life_simulation;
 pub mod local_problem;
 pub mod mission;
 pub mod morale;

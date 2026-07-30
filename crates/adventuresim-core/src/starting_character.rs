@@ -3,10 +3,10 @@
 use adventuresim_world_schema::{BestiaryHours, ReligionHours};
 use serde::{Deserialize, Serialize};
 
-use crate::organization::{Requirement, StartingProfession, TrainingTarget, catalog};
+use crate::organization::{Requirement, StartingProfession, catalog};
 use crate::skill::Skill;
 
-pub const GENERATOR_VERSION: u16 = 3;
+pub const GENERATOR_VERSION: u16 = 4;
 pub const YOUNG_ROSTER_SIZE: u8 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,7 +81,32 @@ pub struct StartingAttributes {
     pub agility: f32,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+impl crate::attribute::PlayerAttributes for StartingAttributes {
+    fn raw_limb_attr(
+        &self,
+        attr: crate::attribute::LimbAttribute,
+        _limb: crate::body::BodyPart,
+    ) -> f32 {
+        match attr {
+            crate::attribute::LimbAttribute::Strength => self.strength,
+            crate::attribute::LimbAttribute::Agility => self.agility,
+        }
+    }
+
+    fn raw_single_body_part_attr(&self, attr: crate::attribute::SimpleAttribute) -> f32 {
+        match attr {
+            crate::attribute::SimpleAttribute::Endurance => self.endurance,
+            crate::attribute::SimpleAttribute::Immunity => self.immunity,
+            crate::attribute::SimpleAttribute::Gut => self.gut,
+            crate::attribute::SimpleAttribute::Intelligence => self.intelligence,
+            crate::attribute::SimpleAttribute::Instinct => self.instinct,
+            crate::attribute::SimpleAttribute::Eyesight => self.eyesight,
+            crate::attribute::SimpleAttribute::Hearing => self.hearing,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct StartingSkills {
     pub written: adventuresim_world_schema::WrittenLanguageHours,
     pub polearm: f32,
@@ -291,7 +316,7 @@ fn tier_hash(domain: &str, seed: &str, age_tier: StartingAgeTier, slot: u8) -> u
 
 fn hash(domain: &str, seed: &str, slot: u8) -> u64 {
     let mut value = 0xcbf29ce484222325_u64;
-    for byte in b"adventuresim.starting-character.v3"
+    for byte in b"adventuresim.starting-character.v4"
         .iter()
         .chain(domain.as_bytes())
         .chain(seed.as_bytes())
@@ -352,7 +377,7 @@ pub fn generate(
             "Winter",
         ],
     );
-    let (background, weapon, weapon_slot, armor, primary, defense, currency_base) = match slot {
+    let (background, weapon, weapon_slot, armor, _primary, defense, currency_base) = match slot {
         0 => (
             "Militia runner",
             "katzbalger",
@@ -399,55 +424,6 @@ pub fn generate(
             105,
         ),
     };
-    let primary_hours = 2600.0 + (hash("training", seed, slot) % 1800) as f32;
-    let defense_hours = 1400.0 + (hash("defense", seed, slot) % 1400) as f32;
-    let mut skills = StartingSkills {
-        written: adventuresim_world_schema::WrittenLanguageHours::default(),
-        polearm: 120.0,
-        axe: 120.0,
-        bludgeon: 120.0,
-        sword: 120.0,
-        knife: 300.0,
-        dodge: 600.0,
-        block: 500.0,
-        bow: 120.0,
-        crossbow: 120.0,
-        firearm: 60.0,
-        throw: 250.0,
-        will: 700.0,
-        insight: 500.0,
-        charm: 400.0,
-        command: 250.0,
-        deception: 300.0,
-        physiology: 250.0,
-        bestiary: BestiaryHours::default(),
-        surgery: 0.0,
-        stealth: 450.0,
-        balance: 600.0,
-        cooking: 300.0,
-        herbalism: 0.0,
-        religion: ReligionHours::default(),
-        terrain_plains: 0.0,
-        terrain_forest: 0.0,
-        terrain_hills: 0.0,
-        terrain_wetlands: 0.0,
-        terrain_urban: 0.0,
-        terrain_snow: 0.0,
-        tailoring: 300.0,
-        smithing: 300.0,
-    };
-    match primary {
-        "sword" => skills.sword = primary_hours,
-        "bow" => skills.bow = primary_hours,
-        "polearm" => skills.polearm = primary_hours,
-        "crossbow" => skills.crossbow = primary_hours,
-        _ => skills.knife = primary_hours,
-    }
-    if defense == "block" {
-        skills.block = defense_hours
-    } else {
-        skills.dodge = defense_hours
-    }
     let variation = |domain: &str| 2.0 + (hash(domain, seed, slot) % 17) as f32 / 10.0;
     let mut inventory = vec![
         item(weapon, 1, Some(weapon_slot)),
@@ -496,7 +472,7 @@ pub fn generate(
             strength: variation("strength"),
             agility: variation("agility"),
         },
-        skills,
+        skills: StartingSkills::default(),
         currency: currency_base + (hash("currency", seed, slot) % 61) as u32,
         settlement_selector: hash("settlement", seed, slot),
         inventory,
@@ -508,6 +484,7 @@ pub fn generate(
     if age_tier != StartingAgeTier::Young {
         apply_professional_start(&mut spec, seed, slot)?;
     }
+    simulate_starting_life(&mut spec, seed, slot)?;
     Ok(spec)
 }
 
@@ -583,65 +560,6 @@ fn generated_personality(seed: &str, tier: StartingAgeTier, slot: u8) -> Startin
         })
         .collect();
     personality_with_demographics(traits, seed, tier, slot)
-}
-
-fn set_religion_hours(
-    hours: &mut ReligionHours,
-    religion: &str,
-    value: f32,
-) -> Result<(), &'static str> {
-    match religion {
-        "roman_catholic" => hours.roman_catholic = value,
-        "lutheran" => hours.lutheran = value,
-        "reformed" => hours.reformed = value,
-        "anglican" => hours.anglican = value,
-        "eastern_orthodox" => hours.eastern_orthodox = value,
-        "islamic" => hours.islamic = value,
-        "judaism" => hours.judaism = value,
-        _ => return Err("unknown religion in starting package"),
-    }
-    Ok(())
-}
-
-fn set_fixed_skill(
-    skills: &mut StartingSkills,
-    skill: &str,
-    hours: f32,
-) -> Result<(), &'static str> {
-    match skill {
-        "will" => skills.will = hours,
-        "insight" => skills.insight = hours,
-        "charm" => skills.charm = hours,
-        "command" => skills.command = hours,
-        "deception" => skills.deception = hours,
-        "physiology" => skills.physiology = hours,
-        "cooking" => skills.cooking = hours,
-        "herbalism" => skills.herbalism = hours,
-        "surgery" => skills.surgery = hours,
-        "stealth" => skills.stealth = hours,
-        "balance" => skills.balance = hours,
-        "terrain_plains" => skills.terrain_plains = hours,
-        "terrain_forest" => skills.terrain_forest = hours,
-        "terrain_hills" => skills.terrain_hills = hours,
-        "terrain_wetlands" => skills.terrain_wetlands = hours,
-        "terrain_urban" => skills.terrain_urban = hours,
-        "terrain_snow" => skills.terrain_snow = hours,
-        "tailoring" => skills.tailoring = hours,
-        "smithing" => skills.smithing = hours,
-        "polearm" => skills.polearm = hours,
-        "axe" => skills.axe = hours,
-        "bludgeon" => skills.bludgeon = hours,
-        "sword" => skills.sword = hours,
-        "knife" => skills.knife = hours,
-        "bow" => skills.bow = hours,
-        "crossbow" => skills.crossbow = hours,
-        "firearm" => skills.firearm = hours,
-        "throw" => skills.throw = hours,
-        "block" => skills.block = hours,
-        "dodge" => skills.dodge = hours,
-        _ => return Err("unknown fixed skill in starting package"),
-    }
-    Ok(())
 }
 
 fn fixed_skill_hours(skills: &StartingSkills, skill: &str) -> Option<(Skill, f32)> {
@@ -741,89 +659,168 @@ fn requirement_met(
     }
 }
 
-fn apply_training_target(
-    skills: &mut StartingSkills,
-    target: &TrainingTarget,
-    hours: f32,
-) -> Result<(), &'static str> {
-    match target {
-        TrainingTarget::FixedSkill { skill } => set_fixed_skill(skills, skill, hours)?,
-        TrainingTarget::Religion { religion } => {
-            set_religion_hours(&mut skills.religion, religion, hours)?
-        }
-        TrainingTarget::Bestiary { category } => match category.as_str() {
-            "beast" => skills.bestiary.beast = hours,
-            "undead" => skills.bestiary.undead = hours,
-            "human" => skills.bestiary.human = hours,
-            "werekin" => skills.bestiary.werekin = hours,
-            "elf" => skills.bestiary.elf = hours,
-            "dwarf" => skills.bestiary.dwarf = hours,
-            "fey" => skills.bestiary.fey = hours,
-            "spirit" => skills.bestiary.spirit = hours,
-            "greenskin" => skills.bestiary.greenskin = hours,
-            "insectoid" => skills.bestiary.insectoid = hours,
-            "draconid" => skills.bestiary.draconid = hours,
-            "construct" => skills.bestiary.construct = hours,
-            "wildmen" => skills.bestiary.wildmen = hours,
-            _ => return Err("unknown bestiary category in starting package"),
-        },
-        TrainingTarget::Terrain { terrain } => match terrain.as_str() {
-            "plains" => skills.terrain_plains = hours,
-            "forest" => skills.terrain_forest = hours,
-            "hills" => skills.terrain_hills = hours,
-            "wetlands" => skills.terrain_wetlands = hours,
-            "urban" => skills.terrain_urban = hours,
-            "snow" => skills.terrain_snow = hours,
-            _ => return Err("unknown terrain in starting package"),
-        },
-        TrainingTarget::Written { language } => {
-            *skills.written.direct_mut(*language) = hours.min(5_000.0);
-        }
-        TrainingTarget::EquippedWeaponSkills => {
-            return Err("equipped weapon training requires a starting loadout");
-        }
-    }
-    Ok(())
-}
-
-fn apply_equipped_weapon_training(
-    skills: &mut StartingSkills,
+fn starting_activity_profile(
     inventory: &[StartingItem],
-    hours: f32,
-) -> Result<(), &'static str> {
-    let mut trained = false;
-    for equipped in inventory.iter().filter(|item| {
+) -> crate::strategic_schedule::ActivityTrainingProfile {
+    use crate::strategic_schedule::{
+        ActivityTrainingProfile, CombatTrainingProfile, EquippedCombatItem,
+    };
+    let hands = inventory.iter().filter_map(|item| {
         matches!(
             item.equipped,
             Some(StartingSlot::LeftHand | StartingSlot::RightHand)
         )
-    }) {
-        let targets: &[&str] = match equipped.item_id.as_str() {
-            "club" | "flanged_mace" | "war_hammer" | "walking_staff" => &["bludgeon"],
-            "hand_axe" => &["axe", "knife"],
-            "utility_knife" | "rondel_dagger" | "misericorde" => &["knife", "sword"],
-            "baselard" | "bauernwehr" | "katzbalger" => &["knife", "sword"],
-            "arming_sword" | "kriegsmesser" | "longsword" | "messer" | "rapier" | "zweihander" => {
-                &["sword"]
+        .then(|| {
+            let definition = crate::item_catalog::definition(&item.item_id);
+            let (shield, balance) = definition.map_or((false, 1.0), |definition| match &definition
+                .kind
+            {
+                crate::item_catalog_schema::ItemKind::Shield { .. } => (true, 1.0),
+                crate::item_catalog_schema::ItemKind::Weapon { balance, .. } => (false, *balance),
+                _ => (false, 1.0),
+            });
+            EquippedCombatItem {
+                weapons: crate::equipment::weapon_skill_distribution_for_item(&item.item_id),
+                shield,
+                balance,
             }
-            "hunting_spear" | "military_pike" => &["polearm"],
-            "halberd" => &["polearm", "axe", "bludgeon"],
-            "self_bow" | "longbow" => &["bow"],
-            "light_crossbow" | "heavy_crossbow" => &["crossbow"],
-            "matchlock_arquebus" | "hooked_arquebus" => &["firearm"],
-            "buckler" | "targe" | "round_shield" | "heater_shield" | "pavise" => &["block"],
-            _ => return Err("unknown equipped weapon in starting package"),
-        };
-        for target in targets {
-            set_fixed_skill(skills, target, hours / targets.len() as f32)?;
-            trained = true;
+        })
+    });
+    ActivityTrainingProfile {
+        combat: CombatTrainingProfile::from_equipped_hands(hands),
+    }
+}
+
+fn simulate_starting_life(
+    spec: &mut StartingCharacterSpec,
+    seed: &str,
+    slot: u8,
+) -> Result<(), &'static str> {
+    let organization = spec
+        .organization
+        .as_ref()
+        .map(|starting| {
+            crate::organization::organization(&starting.organization_id)
+                .ok_or("starting organization is not in the catalog")
+        })
+        .transpose()?;
+    let requirements = organization
+        .into_iter()
+        .flat_map(|definition| {
+            let rank_id = &spec
+                .organization
+                .as_ref()
+                .expect("paired organization")
+                .rank_id;
+            requirements_through_rank(definition, rank_id)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let religion = spec
+        .religion_id
+        .as_deref()
+        .and_then(adventuresim_world_schema::OfficialReligion::from_id);
+    let result =
+        crate::life_simulation::simulate_life(crate::life_simulation::LifeSimulationInput {
+            stable_seed: tier_hash("life-simulation", seed, spec.age_tier, slot),
+            age_years: spec.age_years,
+            attributes: &spec.attributes,
+            organization,
+            rank_requirements: &requirements,
+            religion,
+            activity_profile: starting_activity_profile(&spec.inventory),
+            native_oral: Default::default(),
+            literacy: None,
+        });
+    spec.skills = StartingSkills::from_life_simulation(result.skills, result.written);
+    if !requirements
+        .iter()
+        .all(|requirement| requirement_met(&spec.skills, requirement, spec.religion_id.as_deref()))
+    {
+        return Err("simulated professional life does not meet its starting requirements");
+    }
+    Ok(())
+}
+
+impl StartingSkills {
+    #[cfg(test)]
+    fn as_skill_hours(&self) -> crate::strategic_schedule::SkillHours {
+        crate::strategic_schedule::SkillHours {
+            polearm: self.polearm,
+            axe: self.axe,
+            bludgeon: self.bludgeon,
+            sword: self.sword,
+            knife: self.knife,
+            dodge: self.dodge,
+            block: self.block,
+            bow: self.bow,
+            crossbow: self.crossbow,
+            firearm: self.firearm,
+            throw: self.throw,
+            will: self.will,
+            insight: self.insight,
+            charm: self.charm,
+            command: self.command,
+            deception: self.deception,
+            physiology: self.physiology,
+            cooking: self.cooking,
+            herbalism: self.herbalism,
+            religion: self.religion,
+            bestiary: self.bestiary,
+            stealth: self.stealth,
+            balance: self.balance,
+            surgery: self.surgery,
+            terrain_plains: self.terrain_plains,
+            terrain_forest: self.terrain_forest,
+            terrain_hills: self.terrain_hills,
+            terrain_wetlands: self.terrain_wetlands,
+            terrain_urban: self.terrain_urban,
+            terrain_snow: self.terrain_snow,
+            tailoring: self.tailoring,
+            smithing: self.smithing,
         }
     }
-    if !trained {
-        return Err("equipped weapon training has no equipped weapon");
+
+    fn from_life_simulation(
+        hours: crate::strategic_schedule::SkillHours,
+        written: adventuresim_world_schema::WrittenLanguageHours,
+    ) -> Self {
+        Self {
+            written,
+            polearm: hours.polearm,
+            axe: hours.axe,
+            bludgeon: hours.bludgeon,
+            sword: hours.sword,
+            knife: hours.knife,
+            dodge: hours.dodge,
+            block: hours.block,
+            bow: hours.bow,
+            crossbow: hours.crossbow,
+            firearm: hours.firearm,
+            throw: hours.throw,
+            will: hours.will,
+            insight: hours.insight,
+            charm: hours.charm,
+            command: hours.command,
+            deception: hours.deception,
+            physiology: hours.physiology,
+            bestiary: hours.bestiary,
+            surgery: hours.surgery,
+            stealth: hours.stealth,
+            balance: hours.balance,
+            cooking: hours.cooking,
+            herbalism: hours.herbalism,
+            religion: hours.religion,
+            terrain_plains: hours.terrain_plains,
+            terrain_forest: hours.terrain_forest,
+            terrain_hills: hours.terrain_hills,
+            terrain_wetlands: hours.terrain_wetlands,
+            terrain_urban: hours.terrain_urban,
+            terrain_snow: hours.terrain_snow,
+            tailoring: hours.tailoring,
+            smithing: hours.smithing,
+        }
     }
-    skills.dodge = skills.dodge.max(hours * 0.5);
-    Ok(())
 }
 
 fn required_religion<'a>(
@@ -843,6 +840,24 @@ fn required_religion<'a>(
         selected = Some(religion.clone());
     }
     Ok(selected)
+}
+
+fn requirements_through_rank<'a>(
+    organization: &'a crate::organization::OrganizationDefinition,
+    rank_id: &str,
+) -> Vec<&'a Requirement> {
+    let mut requirements = organization
+        .admission
+        .requirements
+        .iter()
+        .collect::<Vec<_>>();
+    for rank in &organization.ranks {
+        requirements.extend(rank.requirements.iter());
+        if rank.id == rank_id {
+            break;
+        }
+    }
+    requirements
 }
 
 fn professional_loadout(
@@ -1140,21 +1155,8 @@ fn apply_professional_start(
     let rank = organization
         .rank(rank_id)
         .ok_or("starting organization rank is missing")?;
-    let religion_id = required_religion(
-        organization
-            .admission
-            .requirements
-            .iter()
-            .chain(rank.requirements.iter()),
-    )?;
-    let hours = match spec.age_tier {
-        // The slowest authored training curves reach rank 3 at 22,500 hours
-        // and rank 4 at 60,000 hours. These distributions therefore clear
-        // journeyman/master requirements without making every skill equal.
-        StartingAgeTier::Adult => 30_000.0,
-        StartingAgeTier::Old => 100_000.0,
-        StartingAgeTier::Young => unreachable!(),
-    } + (tier_hash("professional-hours", seed, spec.age_tier, slot) % 2_001) as f32;
+    let starting_requirements = requirements_through_rank(organization, rank_id);
+    let religion_id = required_religion(starting_requirements.iter().copied())?;
     let adult = spec.age_tier == StartingAgeTier::Adult;
     let purse_base = match profession {
         StartingProfession::Merchant => 360,
@@ -1206,86 +1208,27 @@ fn apply_professional_start(
                 0.0
             },
     };
-    for entry in &organization.activity.training {
-        let target_hours = hours * (0.8 + entry.weight * 0.2);
-        if entry.target == TrainingTarget::EquippedWeaponSkills {
-            apply_equipped_weapon_training(&mut spec.skills, &spec.inventory, target_hours)?;
-        } else {
-            apply_training_target(&mut spec.skills, &entry.target, target_hours)?;
-        }
-    }
-    for requirement in organization
-        .admission
-        .requirements
+    // Credentials are never patched onto the skill projection. Raise the
+    // underlying aptitudes that govern authored requirements, then let the
+    // life simulator earn every hour through curricula under normal caps.
+    for skill in starting_requirements
         .iter()
-        .chain(rank.requirements.iter())
+        .copied()
+        .filter_map(|requirement| match requirement {
+            Requirement::SkillRating { skill, .. } => Skill::from_training_id(skill),
+            Requirement::ProfessedReligion { .. } => None,
+        })
     {
-        match requirement {
-            Requirement::ProfessedReligion { religion } => {
-                set_religion_hours(&mut spec.skills.religion, religion, hours)?
+        match skill.governing_aptitude_kind() {
+            crate::skill::GoverningAptitude::Intelligence => {
+                spec.attributes.intelligence = 5.0;
             }
-            Requirement::SkillRating { skill, leaf, .. } => {
-                if skill == "religion" {
-                    if let Some(religion) = leaf {
-                        set_religion_hours(&mut spec.skills.religion, religion, hours)?;
-                    }
-                } else if skill == "bestiary" {
-                    if let Some(category) = leaf {
-                        apply_training_target(
-                            &mut spec.skills,
-                            &TrainingTarget::Bestiary {
-                                category: category.clone(),
-                            },
-                            hours,
-                        )?;
-                    }
-                } else {
-                    set_fixed_skill(&mut spec.skills, skill, hours)?;
-                }
+            crate::skill::GoverningAptitude::Instinct => {
+                spec.attributes.instinct = 5.0;
             }
-        }
-    }
-    match profession {
-        StartingProfession::Merchant => {
-            spec.skills.insight = hours;
-            spec.skills.command = hours * 0.6;
-            spec.skills.knife = hours * 0.35;
-            spec.skills.sword = hours * 0.35;
-        }
-        StartingProfession::Weaponsmith | StartingProfession::Armourer => {
-            spec.skills.smithing = hours;
-            spec.skills.bludgeon = hours * 0.45;
-        }
-        StartingProfession::Tailor => {
-            spec.skills.tailoring = hours;
-            spec.skills.knife = hours * 0.35;
-        }
-        StartingProfession::Herbalist => {
-            spec.skills.herbalism = hours;
-            spec.skills.physiology = hours * 0.7;
-            spec.skills.bludgeon = hours * 0.3;
-        }
-        StartingProfession::Cook => {
-            spec.skills.cooking = hours;
-            spec.skills.knife = hours * 0.4;
-        }
-        StartingProfession::LearnedReligiousPractitioner => {
-            spec.skills.will = hours * 0.75;
-            spec.skills.bludgeon = hours * 0.3;
-            spec.skills.knife = hours * 0.3;
-        }
-        StartingProfession::WitchHunter => {
-            spec.skills.bestiary.spirit = hours;
-            spec.skills.crossbow = hours * 0.75;
-        }
-        StartingProfession::Knight => {
-            spec.skills.sword = hours;
-            spec.skills.block = hours * 0.8;
-        }
-        StartingProfession::Forester => {
-            spec.skills.terrain_forest = hours;
-            spec.skills.bestiary.beast = hours * 0.8;
-            spec.skills.bow = hours * 0.75;
+            crate::skill::GoverningAptitude::Agility(_) => {
+                spec.attributes.agility = 5.0;
+            }
         }
     }
     spec.background = format!(
@@ -1302,15 +1245,6 @@ fn apply_professional_start(
         rank_name: rank.name.clone(),
     });
     spec.religion_id = religion_id;
-    if !organization
-        .admission
-        .requirements
-        .iter()
-        .chain(rank.requirements.iter())
-        .all(|requirement| requirement_met(&spec.skills, requirement, spec.religion_id.as_deref()))
-    {
-        return Err("generated professional package does not meet its starting requirements");
-    }
     spec.settlement_selector = tier_hash("settlement", seed, spec.age_tier, slot);
     Ok(())
 }
@@ -1454,38 +1388,15 @@ mod tests {
                 .rank(&candidate.organization.as_ref().unwrap().rank_id)
                 .unwrap();
             assert!(
-                organization
-                    .admission
-                    .requirements
-                    .iter()
-                    .chain(rank.requirements.iter())
+                requirements_through_rank(organization, &rank.id)
+                    .into_iter()
                     .all(|requirement| requirement_met(
                         &candidate.skills,
                         requirement,
                         candidate.religion_id.as_deref()
                     ))
             );
-            match candidate.profession.unwrap() {
-                StartingProfession::Weaponsmith | StartingProfession::Armourer => {
-                    assert!(candidate.skills.smithing >= 30_000.0)
-                }
-                StartingProfession::Tailor => assert!(candidate.skills.tailoring >= 30_000.0),
-                StartingProfession::Herbalist => {
-                    assert!(candidate.skills.herbalism >= 30_000.0);
-                    assert_eq!(candidate.skills.surgery, 0.0);
-                }
-                StartingProfession::Cook => assert!(candidate.skills.cooking >= 30_000.0),
-                StartingProfession::Merchant => {
-                    assert!(candidate.skills.written.german > 0.0)
-                }
-                StartingProfession::WitchHunter => {
-                    assert!(candidate.skills.bestiary.spirit >= 30_000.0)
-                }
-                StartingProfession::Forester => {
-                    assert!(candidate.skills.terrain_forest >= 30_000.0)
-                }
-                _ => {}
-            }
+            assert!(candidate.skills.as_skill_hours().is_finite());
         }
         for (slot, profession) in StartingProfession::ALL.into_iter().enumerate() {
             let adult = &adult[slot];
@@ -1494,6 +1405,19 @@ mod tests {
             assert!(old.currency > adult.currency);
             assert_ne!(old.inventory, adult.inventory);
             assert_ne!(old.attributes, adult.attributes);
+            assert!(
+                old.skills
+                    .as_skill_hours()
+                    .values()
+                    .into_iter()
+                    .sum::<f32>()
+                    > adult
+                        .skills
+                        .as_skill_hours()
+                        .values()
+                        .into_iter()
+                        .sum::<f32>()
+            );
             let adult_right = adult
                 .inventory
                 .iter()
@@ -1554,18 +1478,66 @@ mod tests {
     }
 
     #[test]
-    fn unknown_fixed_training_skill_fails_closed() {
-        let mut skills = generate(GENERATOR_VERSION, SEED, StartingAgeTier::Young, 0)
-            .unwrap()
-            .skills;
-        assert!(set_fixed_skill(&mut skills, "future_unknown_skill", 100.0).is_err());
-    }
-    #[test]
     fn rejects_untrusted_coordinates() {
         assert!(generate(1, SEED, StartingAgeTier::Young, 0).is_err());
+        assert!(generate(3, SEED, StartingAgeTier::Young, 0).is_err());
         assert!(generate(GENERATOR_VERSION, "ABC", StartingAgeTier::Young, 0).is_err());
         assert!(generate(GENERATOR_VERSION, SEED, StartingAgeTier::Young, 5).is_err());
         assert!(generate(GENERATOR_VERSION, SEED, StartingAgeTier::Adult, 10).is_err());
+    }
+
+    #[test]
+    fn intelligence_requirement_preserves_unrelated_attribute_variation() {
+        let slot = StartingProfession::ALL
+            .iter()
+            .position(|profession| *profession == StartingProfession::Herbalist)
+            .unwrap() as u8;
+        let candidate = generate(GENERATOR_VERSION, SEED, StartingAgeTier::Adult, slot).unwrap();
+        assert_eq!(candidate.attributes.intelligence, 5.0);
+        let expected_instinct = 2.0
+            + (tier_hash("professional-instinct", SEED, StartingAgeTier::Adult, slot) % 13) as f32
+                / 10.0;
+        let expected_agility = 2.0
+            + (tier_hash("professional-agility", SEED, StartingAgeTier::Adult, slot) % 13) as f32
+                / 10.0;
+        assert_eq!(candidate.attributes.instinct, expected_instinct);
+        assert_eq!(candidate.attributes.agility, expected_agility);
+    }
+
+    #[test]
+    fn generated_loadouts_use_canonical_weapon_profiles() {
+        for tier in StartingAgeTier::ALL {
+            for candidate in roster(GENERATOR_VERSION, SEED, tier).unwrap() {
+                let profile = starting_activity_profile(&candidate.inventory);
+                let mut expected = crate::equipment::WeaponSkillDistribution::default();
+                for item in candidate.inventory.iter().filter(|item| {
+                    matches!(
+                        item.equipped,
+                        Some(StartingSlot::LeftHand | StartingSlot::RightHand)
+                    )
+                }) {
+                    let canonical =
+                        crate::equipment::weapon_skill_distribution_for_item(&item.item_id);
+                    for (target, weight) in [
+                        &mut expected.polearm,
+                        &mut expected.axe,
+                        &mut expected.bludgeon,
+                        &mut expected.sword,
+                        &mut expected.knife,
+                        &mut expected.bow,
+                        &mut expected.crossbow,
+                        &mut expected.firearm,
+                        &mut expected.throw,
+                    ]
+                    .into_iter()
+                    .zip(canonical.weights())
+                    {
+                        *target = target.max(weight);
+                    }
+                }
+                assert_eq!(profile.combat.weapons, expected);
+            }
+        }
     }
 
     #[test]
