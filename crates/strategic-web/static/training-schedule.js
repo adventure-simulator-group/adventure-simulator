@@ -1,6 +1,16 @@
 (() => {
   const DAY = 1440;
   const STEP = 15;
+  const activityOrder = [
+    'combat_training_minutes',
+    'carousing_minutes',
+    'apprenticeship_minutes',
+    'profession_practice_minutes',
+    'labor_minutes',
+    'prayer_minutes',
+    'thievery_minutes',
+    'raiding_minutes',
+  ];
   const leisureTip = 'It is strongly recommended to leave enough leisure time for sleep, and a moderate amount beyond that for morale.';
 
   function format(minutes) {
@@ -270,9 +280,57 @@
       .map(([name, input]) => [name, Number(input.value)]));
   }
 
+  function redistributionRoll(seed, segment) {
+    const wrap = (value) => BigInt.asUintN(64, value);
+    let value = wrap(
+      BigInt(seed)
+      ^ 0xA4C71D5B93E2F860n
+      ^ wrap(BigInt(segment) * 0x9E3779B97F4A7C15n),
+    );
+    value = wrap((value ^ (value >> 30n)) * 0xBF58476D1CE4E5B9n);
+    value = wrap((value ^ (value >> 27n)) * 0x94D049BB133111EBn);
+    return value ^ (value >> 31n);
+  }
+
+  function effectiveAllocation(allocation, unavailableNames = [], seed = 0n) {
+    const effective = { ...allocation };
+    const unavailable = new Set(unavailableNames);
+    let unavailableSegments = 0;
+    activityOrder.forEach((name) => {
+      if (unavailable.has(name) && Object.hasOwn(effective, name)) {
+        unavailableSegments += Math.floor(effective[name] / STEP);
+        effective[name] = 0;
+      }
+    });
+    const candidates = activityOrder
+      .filter((name) => !unavailable.has(name) && Number(allocation[name] || 0) > 0);
+    const totalWeight = candidates
+      .reduce((sum, name) => sum + BigInt(allocation[name]), 0n);
+    if (totalWeight === 0n) return effective;
+
+    for (let segment = 0; segment < unavailableSegments; segment += 1) {
+      let draw = redistributionRoll(seed, segment) % totalWeight;
+      for (const name of candidates) {
+        const weight = BigInt(allocation[name]);
+        if (draw < weight) {
+          effective[name] += STEP;
+          break;
+        }
+        draw -= weight;
+      }
+    }
+    return effective;
+  }
+
   function render(root, state) {
     const allValues = values(root, state, false);
-    const allocation = values(root, state);
+    const unavailableNames = [...root.querySelectorAll('[data-activity-location-unavailable="true"]')]
+      .map((row) => row.dataset.activityAllocation);
+    const allocation = effectiveAllocation(
+      values(root, state),
+      unavailableNames,
+      BigInt(root.dataset.activityRedistributionSeed || 0),
+    );
     Object.entries(allValues).forEach(([name, minutes]) => {
       root.querySelectorAll(`[data-schedule-value="${name}"] [data-schedule-display]`).forEach((output) => {
         output.textContent = format(minutes);
@@ -367,6 +425,7 @@
   if (typeof module !== 'undefined') module.exports = {
     calculateLeisurePreview,
     createLatestSaveQueue,
+    effectiveAllocation,
     parseClock,
     signedEffect,
     stepClockValue,

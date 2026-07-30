@@ -165,12 +165,35 @@ pub(super) async fn render_party_personal(
     let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = false;
     let stats = query_single::<CharacterStats>(&state, "character_stats", character_id).await;
+    let case_site = if location.kind == LocationKind::CaseSite {
+        state
+            .db
+            .query_one::<BackendCaseSitePin>(&format!(
+                "SELECT * FROM backend_case_site_pins WHERE case_site_id = {}",
+                sql_string_literal(&location.id)
+            ))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
     let settlement = if location.kind == LocationKind::Settlement {
         state
             .db
             .query_one::<Settlement>(&format!(
                 "SELECT * FROM settlement WHERE id = {}",
                 sql_string_literal(&location.id)
+            ))
+            .await
+            .ok()
+            .flatten()
+    } else if let Some(site) = case_site.as_ref() {
+        state
+            .db
+            .query_one::<Settlement>(&format!(
+                "SELECT * FROM settlement WHERE id = {}",
+                sql_string_literal(&site.origin_settlement_id)
             ))
             .await
             .ok()
@@ -193,6 +216,24 @@ pub(super) async fn render_party_personal(
         &location.id,
         character_minute,
     );
+    let activity_location = match location.kind {
+        LocationKind::Settlement => adventuresim_core::activity::ActivityLocation::Settlement {
+            has_inn: settlement
+                .as_ref()
+                .is_some_and(|settlement| settlement.economy
+                .has_service(adventuresim_world_schema::SettlementService::Inn)),
+        },
+        LocationKind::CaseSite
+            if case_site
+                .as_ref()
+                .is_some_and(|site| site.distance_m > 0 && !site.case_id.starts_with("incident:")) =>
+        {
+            adventuresim_core::activity::ActivityLocation::NamedOutdoorLocation
+        }
+        LocationKind::CaseSite => {
+            adventuresim_core::activity::ActivityLocation::IneligibleNamedLocation
+        }
+    };
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -204,7 +245,10 @@ pub(super) async fn render_party_personal(
         }
         None => 0.0,
     };
-    let reputation = query_local_reputation(&state, character_id, &location.id).await;
+    let reputation_location_id = settlement
+        .as_ref()
+        .map_or(location.id.as_str(), |settlement| settlement.id.as_str());
+    let reputation = query_local_reputation(&state, character_id, reputation_location_id).await;
     let fame = reputation
         .as_ref()
         .map_or(0.0, |value| value.fame as f32 / 100.0);
@@ -294,6 +338,7 @@ pub(super) async fn render_party_personal(
             schedule.first(),
             combat_profile,
             activity_preview,
+            activity_location,
             religious_demand.as_ref(),
             fame,
             infamy,
@@ -316,4 +361,17 @@ pub(super) async fn render_party_personal(
         )
         .into_string(),
     )
+}
+
+#[cfg(test)]
+mod location_activity_tests {
+    #[test]
+    fn case_site_preview_uses_origin_settlement_and_positive_distance_policy() {
+        let source = include_str!("location_personal.rs");
+        let origin = source.find("site.origin_settlement_id").unwrap();
+        let preview = source.find("ActivityPreviewRates::from_character").unwrap();
+        assert!(origin < preview);
+        assert!(source.contains("site.distance_m > 0 && !site.case_id.starts_with"));
+        assert!(source.contains("ActivityLocation::IneligibleNamedLocation"));
+    }
 }

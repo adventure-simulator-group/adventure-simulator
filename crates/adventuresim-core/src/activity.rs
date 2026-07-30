@@ -2,6 +2,109 @@
 
 use crate::strategic_time::MINUTES_PER_DAY;
 
+pub const THIEVERY_UNAVAILABLE_REASON: &str = "Thievery is only available inside settlements.";
+pub const RAIDING_UNAVAILABLE_REASON: &str =
+    "Raiding is only available at an eligible outdoor location.";
+pub const CAROUSING_UNAVAILABLE_REASON: &str = "Carousing requires a settlement with an inn.";
+
+/// The location facts which affect ordinary downtime activities. This is kept
+/// independent of persistence and transport types so both authoritative
+/// execution and observer-facing rendering use the same policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActivityLocation {
+    Settlement { has_inn: bool },
+    NamedOutdoorLocation,
+    IneligibleNamedLocation,
+    JourneyCamp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationActivity {
+    Carousing,
+    Thievery,
+    Raiding,
+}
+
+pub const ACTIVITY_SEGMENT_MINUTES: u16 = 15;
+
+/// Replace unavailable planned activities one quarter-hour at a time.
+///
+/// Each replacement draw is weighted by the original planned minutes of the
+/// available, non-Leisure activities. The seed makes authoritative execution
+/// and client previews agree without persisting a second schedule. When no
+/// planned activity is available, the removed time remains unallocated and is
+/// therefore Leisure.
+pub fn redistribute_unavailable_segments<const N: usize>(
+    allocations: [u16; N],
+    available: [bool; N],
+    seed: u64,
+) -> [u16; N] {
+    let mut effective = allocations;
+    let mut unavailable_segments = 0_u64;
+    for index in 0..N {
+        if !available[index] {
+            unavailable_segments = unavailable_segments
+                .saturating_add(u64::from(effective[index] / ACTIVITY_SEGMENT_MINUTES));
+            effective[index] = 0;
+        }
+    }
+
+    let total_weight = allocations
+        .iter()
+        .zip(available)
+        .filter_map(|(minutes, is_available)| is_available.then_some(u64::from(*minutes)))
+        .sum::<u64>();
+    if total_weight == 0 {
+        return effective;
+    }
+
+    for segment in 0..unavailable_segments {
+        let mut draw = redistribution_roll(seed, segment) % total_weight;
+        for index in 0..N {
+            let weight = if available[index] {
+                u64::from(allocations[index])
+            } else {
+                0
+            };
+            if draw < weight {
+                effective[index] = effective[index].saturating_add(ACTIVITY_SEGMENT_MINUTES);
+                break;
+            }
+            draw = draw.saturating_sub(weight);
+        }
+    }
+    effective
+}
+
+fn redistribution_roll(seed: u64, segment: u64) -> u64 {
+    let mut value = seed ^ 0xA4C7_1D5B_93E2_F860 ^ segment.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^ (value >> 31)
+}
+
+impl ActivityLocation {
+    pub const fn allows(self, activity: LocationActivity) -> bool {
+        match (self, activity) {
+            (Self::Settlement { has_inn: true }, LocationActivity::Carousing) => true,
+            (Self::Settlement { .. }, LocationActivity::Thievery) => true,
+            (Self::NamedOutdoorLocation, LocationActivity::Raiding) => true,
+            _ => false,
+        }
+    }
+
+    pub const fn unavailable_reason(self, activity: LocationActivity) -> Option<&'static str> {
+        if self.allows(activity) {
+            return None;
+        }
+        Some(match activity {
+            LocationActivity::Carousing => CAROUSING_UNAVAILABLE_REASON,
+            LocationActivity::Thievery => THIEVERY_UNAVAILABLE_REASON,
+            LocationActivity::Raiding => RAIDING_UNAVAILABLE_REASON,
+        })
+    }
+}
+
 pub const ACTIVITY_TRAINING_RATE: f32 = 0.25;
 pub const PRAYER_MORALE_LIMIT: f32 = 4.0;
 pub const PRAYER_MORALE_SCALE_MINUTES: f32 = 60.0;
@@ -96,6 +199,77 @@ pub fn raiding_retaliation_chance(hours: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn location_activity_matrix_distinguishes_inns_settlements_and_outdoors() {
+        let inn = ActivityLocation::Settlement { has_inn: true };
+        let no_inn = ActivityLocation::Settlement { has_inn: false };
+        let outdoors = ActivityLocation::NamedOutdoorLocation;
+        let ineligible = ActivityLocation::IneligibleNamedLocation;
+        let camp = ActivityLocation::JourneyCamp;
+
+        assert!(inn.allows(LocationActivity::Thievery));
+        assert!(inn.allows(LocationActivity::Carousing));
+        assert!(!inn.allows(LocationActivity::Raiding));
+        assert!(no_inn.allows(LocationActivity::Thievery));
+        assert!(!no_inn.allows(LocationActivity::Carousing));
+        assert!(outdoors.allows(LocationActivity::Raiding));
+        assert!(!outdoors.allows(LocationActivity::Thievery));
+        assert!(!outdoors.allows(LocationActivity::Carousing));
+        assert!(!ineligible.allows(LocationActivity::Raiding));
+        assert!(!camp.allows(LocationActivity::Raiding));
+    }
+
+    #[test]
+    fn unavailable_segments_are_weighted_by_existing_available_allocations() {
+        let allocations = [60, 120, 90];
+        let available = [true, true, false];
+        let mut first = 0_u64;
+        let mut second = 0_u64;
+        for seed in 0..4_000 {
+            let effective = redistribute_unavailable_segments(allocations, available, seed);
+            first += u64::from(effective[0] - allocations[0]);
+            second += u64::from(effective[1] - allocations[1]);
+            assert_eq!(
+                effective
+                    .iter()
+                    .map(|minutes| u64::from(*minutes))
+                    .sum::<u64>(),
+                270
+            );
+        }
+        let ratio = second as f64 / first as f64;
+        assert!((1.9..2.1).contains(&ratio), "observed ratio {ratio}");
+    }
+
+    #[test]
+    fn unavailable_segments_become_leisure_without_an_available_plan() {
+        assert_eq!(
+            redistribute_unavailable_segments([60, 120], [false, false], 7),
+            [0, 0]
+        );
+    }
+
+    #[test]
+    fn redistribution_is_seeded_and_uses_quarter_hour_segments() {
+        let allocations = [60, 120, 90];
+        let available = [true, true, false];
+        let first = redistribute_unavailable_segments(allocations, available, 42);
+        assert_eq!(first, [75, 195, 0]);
+        assert_eq!(
+            first,
+            redistribute_unavailable_segments(allocations, available, 42)
+        );
+        assert!(
+            first
+                .iter()
+                .all(|minutes| minutes % ACTIVITY_SEGMENT_MINUTES == 0)
+        );
+        assert_eq!(
+            first.iter().map(|minutes| u64::from(*minutes)).sum::<u64>(),
+            270
+        );
+    }
 
     #[test]
     fn prayer_has_saturating_morale_and_fervor_scaled_observance() {

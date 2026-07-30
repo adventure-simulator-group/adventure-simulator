@@ -311,6 +311,7 @@ pub fn character_candidates_page(
         schedule: None,
         schedule_action: None,
         activity_preview: None,
+        activity_location: None,
         professes_religion: false,
         prayer_religion_check: 0.0,
         skill_actions: CharacterSheetActions::default(),

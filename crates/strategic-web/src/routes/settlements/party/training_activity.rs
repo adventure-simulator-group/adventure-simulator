@@ -29,6 +29,20 @@ mod training_schedule_form_tests {
         assert_eq!(form.labor_minutes, 15);
         assert_eq!(form.prayer_minutes, 30);
     }
+
+    #[test]
+    fn immediate_route_checks_resolved_location_before_calling_reducer() {
+        let source = include_str!("training_activity.rs");
+        let handler = source
+            .split_once("pub(super) async fn perform_immediate_activity(\n")
+            .map(|(_, tail)| tail)
+            .and_then(|tail| tail.split("pub(super) async fn party_member").next())
+            .expect("immediate activity handler");
+        let resolve = handler.find("resolve_location").unwrap();
+        let co_location = handler.find("character_is_at_location").unwrap();
+        let reducer_call = handler.find("\"perform_immediate_activity\"").unwrap();
+        assert!(resolve < co_location && co_location < reducer_call);
+    }
 }
 
 pub(super) async fn update_training_schedule(
@@ -114,6 +128,29 @@ pub(super) async fn perform_immediate_activity(
         return (
             StatusCode::FORBIDDEN,
             "Select this character before performing an activity",
+        )
+            .into_response();
+    }
+    let location = match resolve_location(&state, &kind, &id).await {
+        LocationLookup::Found(location) => location,
+        LocationLookup::NotFound => {
+            return (StatusCode::NOT_FOUND, "Location not found").into_response();
+        }
+        LocationLookup::Unavailable => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic location data is unavailable",
+            )
+                .into_response();
+        }
+    };
+    let Some((character, _)) = get_active_character(&state, Some(character_id)).await else {
+        return (StatusCode::FORBIDDEN, "Select this character first").into_response();
+    };
+    if !character_is_at_location(&character, &location) {
+        return (
+            StatusCode::CONFLICT,
+            "Character is no longer at this location",
         )
             .into_response();
     }

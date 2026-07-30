@@ -104,7 +104,7 @@ pub(crate) fn character_stats_panel(
         ))
         (party_skills_rail(
             &format!("{}'s skills", character.name), attributes, skills, limbs, None, None, None,
-            false, 0.0, None, combat_profile, CharacterSheetActions::default(),
+            None, false, 0.0, None, combat_profile, CharacterSheetActions::default(),
         ))
         (physiology_dialog(medical, "physiology-chart-dialog", &character.name))
     }
@@ -137,6 +137,7 @@ pub(crate) struct CharacterSheetView<'a> {
     pub schedule: Option<&'a CharacterTrainingSchedule>,
     pub schedule_action: Option<&'a str>,
     pub activity_preview: Option<ActivityPreviewRates>,
+    pub activity_location: Option<adventuresim_core::activity::ActivityLocation>,
     pub professes_religion: bool,
     pub prayer_religion_check: f32,
     pub skill_actions: CharacterSheetActions<'a>,
@@ -202,6 +203,7 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
                 view.schedule,
                 view.schedule_action,
                 view.activity_preview,
+                view.activity_location,
                 view.professes_religion,
                 view.prayer_religion_check,
                 view.training_religion_id,
@@ -237,6 +239,7 @@ pub fn party_personal_page(
     schedule: Option<&CharacterTrainingSchedule>,
     combat_profile: CombatTrainingProfile,
     activity_preview: ActivityPreviewRates,
+    activity_location: adventuresim_core::activity::ActivityLocation,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
     fame: f32,
     infamy: f32,
@@ -356,6 +359,7 @@ pub fn party_personal_page(
         schedule,
         schedule_action: Some(&schedule_action),
         activity_preview: Some(activity_preview),
+        activity_location: Some(activity_location),
         professes_religion: religion_id.is_some(),
         prayer_religion_check,
         skill_actions: CharacterSheetActions {
@@ -484,6 +488,7 @@ pub fn party_stats_page(
         schedule: None,
         schedule_action: None,
         activity_preview: None,
+        activity_location: None,
         professes_religion: religion_id.is_some(),
         prayer_religion_check: 0.0,
         skill_actions: CharacterSheetActions::default(),

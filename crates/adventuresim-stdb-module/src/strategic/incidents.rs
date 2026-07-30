@@ -11,6 +11,7 @@ fn create_strategic_incident(
     party_id: &str,
     settlement: &Settlement,
     instigator_id: u64,
+    current_case_site_id: Option<&str>,
     source_id: IncidentSourceId,
     spec: IncidentSpec<'_>,
 ) -> Result<Option<IncidentId>, String> {
@@ -18,7 +19,16 @@ fn create_strategic_incident(
     let Some(mut party) = ctx.db.party_authority().id().find(&party_id.to_string()) else {
         return Ok(None);
     };
-    if party.current_settlement_id.as_deref() != Some(&settlement.id) {
+    let at_expected_location = current_case_site_id.map_or_else(
+        || party.current_settlement_id.as_deref() == Some(&settlement.id),
+        |case_site_id| {
+            party
+                .current_case_site_id
+                .as_ref()
+                .is_some_and(|id| id.value == case_site_id)
+        },
+    );
+    if !at_expected_location {
         return Ok(None);
     }
     if ctx
@@ -44,6 +54,29 @@ fn create_strategic_incident(
     };
     let case_site_id = format!("case-site:{incident_key}");
     let enemy_count = living_party_member_ids(ctx, party_id).len().max(2) as i32;
+    let current_site = current_case_site_id
+        .and_then(|id| ctx.db.case_site_authority().id_key().find(id.to_string()));
+    let (scene_key, longitude_e7, latitude_e7, coordinates_are_geographic, distance_m) =
+        current_site.map_or_else(
+            || {
+                (
+                    settlement.scene_key.clone(),
+                    (settlement.coord_x * 10_000_000.0).round() as i32,
+                    (settlement.coord_y * 10_000_000.0).round() as i32,
+                    settlement.source_node_id.is_some(),
+                    0,
+                )
+            },
+            |site| {
+                (
+                    site.scene_key,
+                    site.longitude_e7,
+                    site.latitude_e7,
+                    site.coordinates_are_geographic,
+                    site.distance_m,
+                )
+            },
+        );
     let site = CaseSiteAuthority {
         id_key: case_site_id.clone(),
         id: CaseSiteId::from(case_site_id.clone()),
@@ -51,11 +84,11 @@ fn create_strategic_incident(
         origin_settlement_id: settlement.id.clone(),
         name: spec.title.into(),
         description: spec.description,
-        scene_key: settlement.scene_key.clone(),
-        longitude_e7: (settlement.coord_x * 10_000_000.0).round() as i32,
-        latitude_e7: (settlement.coord_y * 10_000_000.0).round() as i32,
-        coordinates_are_geographic: settlement.source_node_id.is_some(),
-        distance_m: 0,
+        scene_key,
+        longitude_e7,
+        latitude_e7,
+        coordinates_are_geographic,
+        distance_m,
     };
     ctx.db.case_site_authority().insert(site.clone());
     let hostile_group_id = format!("hostile-group:{}", incident_id.value);
@@ -152,6 +185,7 @@ fn maybe_trigger_religious_incident(
         party_id,
         settlement,
         instigator_id,
+        None,
         source_id,
         IncidentSpec {
             kind: IncidentKind::Religious,
@@ -180,15 +214,26 @@ pub(crate) fn maybe_trigger_activity_incident(
     let Some(party_id) = character.party_id.as_deref() else {
         return Ok(None);
     };
-    let Some(settlement_id) = character.current_settlement_id.as_ref() else {
+    let current_case_site_id =
+        crate::investigation::character_case_site_id(ctx, character_id);
+    let settlement_id = if let Some(settlement_id) = character.current_settlement_id.as_ref() {
+        settlement_id.clone()
+    } else if let Some(case_site_id) = current_case_site_id.as_ref() {
+        ctx.db
+            .case_site_authority()
+            .id_key()
+            .find(case_site_id)
+            .ok_or("Character's case site not found")?
+            .origin_settlement_id
+    } else {
         return Ok(None);
     };
     let settlement = ctx
         .db
         .settlement()
         .id()
-        .find(settlement_id)
-        .ok_or("Character's settlement not found")?;
+        .find(&settlement_id)
+        .ok_or("Activity origin settlement not found")?;
     let occurrence_minute = ctx
         .db
         .character_time()
@@ -226,7 +271,7 @@ pub(crate) fn maybe_trigger_activity_incident(
         Some((
             "raiding",
             "Retaliation at Dawn",
-            "The people raided from the surrounding countryside have tracked the party back to town. An armed band closes in; fight them or flee by road.",
+            "The people raided in the surrounding countryside have rallied an armed band. They close in on the party; fight them or flee by road.",
             "armed_retainer",
             2,
         ))
@@ -251,7 +296,10 @@ pub(crate) fn maybe_trigger_activity_incident(
         let has_charge =
             !crate::reputation::unsettled_local_offenses(ctx, character_id, &settlement.id)
                 .is_empty();
-        (has_charge && infamy > fame && infamy.saturating_sub(fame) >= 1_000).then_some((
+        (current_case_site_id.is_none()
+            && has_charge
+            && infamy > fame
+            && infamy.saturating_sub(fame) >= 1_000).then_some((
             "authority_arrest",
             "Wanted by the Watch",
             "The local watch recognizes the party's wanted member and moves to make an arrest.",
@@ -289,6 +337,7 @@ pub(crate) fn maybe_trigger_activity_incident(
         party_id,
         &settlement,
         character_id,
+        current_case_site_id.as_deref(),
         source_id.clone(),
         IncidentSpec {
             kind: incident_kind,
