@@ -699,7 +699,9 @@ mod service_availability_tests {
             .expect("service apprenticeship handler");
         assert!(handler.contains("organizations_for_chapter(&id)"));
         assert!(handler.contains("organization.service_id"));
-        assert!(handler.contains("chapter_has_standalone_building"));
+        assert!(handler.contains("exact_apprenticeship_representative_present"));
+        assert!(handler.contains("settlement_npc_presence"));
+        assert!(handler.contains("chapter_effective_location_id"));
         assert!(handler.contains("Speak to the local organization representative"));
         assert!(handler.contains("\"join_organization\""));
         for forbidden in [

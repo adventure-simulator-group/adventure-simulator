@@ -37,6 +37,46 @@ pub(super) struct ApprenticeshipResult {
     message: &'static str,
 }
 
+#[derive(Deserialize)]
+struct ApprenticeshipRepresentativeRow {
+    id: String,
+    home_settlement_id: String,
+    organization_id: String,
+    conversation_id: String,
+}
+
+#[derive(Deserialize)]
+struct ApprenticeshipRepresentativePresenceRow {
+    npc_id: String,
+    settlement_id: String,
+    location_id: String,
+}
+
+fn exact_apprenticeship_representative_present(
+    representative: Option<&ApprenticeshipRepresentativeRow>,
+    presences: &[ApprenticeshipRepresentativePresenceRow],
+    expected_id: &str,
+    settlement_id: &str,
+    organization_id: &str,
+    effective_location_id: &str,
+) -> bool {
+    representative.is_some_and(|representative| {
+        adventuresim_core::organization::exact_representative_fields_match(
+            &representative.id,
+            expected_id,
+            &representative.home_settlement_id,
+            settlement_id,
+            &representative.organization_id,
+            organization_id,
+            &representative.conversation_id,
+        ) && presences.iter().any(|presence| {
+            presence.npc_id == representative.id
+                && presence.settlement_id == settlement_id
+                && presence.location_id == effective_location_id
+        })
+    })
+}
+
 pub(super) async fn begin_service_apprenticeship(
     State(state): State<AppState>,
     Path((id, service_id)): Path<(String, String)>,
@@ -69,13 +109,61 @@ pub(super) async fn begin_service_apprenticeship(
             message: "The local training authority is unavailable.",
         });
     };
-    if organization.chapter(&id).is_some_and(|chapter| {
-        !adventuresim_core::organization::chapter_has_standalone_building(
+    let chapter = organization
+        .chapter(&id)
+        .expect("chapter iterator guarantees a local chapter");
+    let effective_location_id =
+        adventuresim_core::organization::chapter_effective_location_id(
             organization,
             chapter,
             &settlement.economy,
-        )
-    }) {
+        );
+    let representative_id = adventuresim_core::organization::organization_representative_id(
+        &id,
+        &organization.id,
+    );
+    let representative = match state
+        .db
+        .query_one::<ApprenticeshipRepresentativeRow>(&format!(
+            "SELECT * FROM backend_settlement_npcs WHERE id = {}",
+            sql_string_literal(&representative_id)
+        ))
+        .await
+    {
+        Ok(representative) => representative,
+        Err(error) => {
+            tracing::warn!(%error, %representative_id, "failed to verify apprenticeship representative");
+            return Json(ApprenticeshipResult {
+                enrolled: false,
+                message: "The local training authority is unavailable.",
+            });
+        }
+    };
+    let presences = match state
+        .db
+        .query::<ApprenticeshipRepresentativePresenceRow>(&format!(
+            "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
+            sql_string_literal(&representative_id)
+        ))
+        .await
+    {
+        Ok(presences) => presences,
+        Err(error) => {
+            tracing::warn!(%error, %representative_id, "failed to verify apprenticeship representative presence");
+            return Json(ApprenticeshipResult {
+                enrolled: false,
+                message: "The local training authority is unavailable.",
+            });
+        }
+    };
+    if exact_apprenticeship_representative_present(
+        representative.as_ref(),
+        &presences,
+        &representative_id,
+        &id,
+        &organization.id,
+        effective_location_id,
+    ) {
         return Json(ApprenticeshipResult {
             enrolled: false,
             message: "Speak to the local organization representative about apprenticeship.",
@@ -113,6 +201,83 @@ pub(super) async fn begin_service_apprenticeship(
                 message: "I cannot take you on just now.",
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod apprenticeship_representative_tests {
+    use super::*;
+
+    fn representative(
+        id: &str,
+        settlement_id: &str,
+        organization_id: &str,
+    ) -> ApprenticeshipRepresentativeRow {
+        ApprenticeshipRepresentativeRow {
+            id: id.into(),
+            home_settlement_id: settlement_id.into(),
+            organization_id: organization_id.into(),
+            conversation_id: "organization-representative".into(),
+        }
+    }
+
+    fn presence(
+        id: &str,
+        settlement_id: &str,
+        location_id: &str,
+    ) -> ApprenticeshipRepresentativePresenceRow {
+        ApprenticeshipRepresentativePresenceRow {
+            npc_id: id.into(),
+            settlement_id: settlement_id.into(),
+            location_id: location_id.into(),
+        }
+    }
+
+    #[test]
+    fn standalone_exact_representative_blocks_direct_apprenticeship() {
+        let id = adventuresim_core::organization::organization_representative_id(
+            "viabundus-0",
+            "physicians_college",
+        );
+        let representative = representative(&id, "viabundus-0", "physicians_college");
+        let presences = [presence(
+            &id,
+            "viabundus-0",
+            "organization-physicians-college",
+        )];
+        assert!(exact_apprenticeship_representative_present(
+            Some(&representative),
+            &presences,
+            &id,
+            "viabundus-0",
+            "physicians_college",
+            "organization-physicians-college",
+        ));
+    }
+
+    #[test]
+    fn missing_or_wrong_presence_keeps_the_direct_fallback_available() {
+        let id = adventuresim_core::organization::organization_representative_id(
+            "viabundus-0",
+            "merchant_guild",
+        );
+        let representative = representative(&id, "viabundus-0", "merchant_guild");
+        assert!(!exact_apprenticeship_representative_present(
+            Some(&representative),
+            &[],
+            &id,
+            "viabundus-0",
+            "merchant_guild",
+            "market",
+        ));
+        assert!(!exact_apprenticeship_representative_present(
+            Some(&representative),
+            &[presence(&id, "viabundus-0", "forge")],
+            &id,
+            "viabundus-0",
+            "merchant_guild",
+            "market",
+        ));
     }
 }
 
