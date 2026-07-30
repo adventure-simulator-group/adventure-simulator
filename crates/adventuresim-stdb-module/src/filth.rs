@@ -143,14 +143,16 @@ fn predicted_wound_routes(
         .collect())
 }
 
-pub fn blood_episodes_through(
+pub fn blood_exposure_attempts_through(
     ctx: &ReducerContext,
     character_id: u64,
     from: u64,
     to: u64,
     persist_checkpoint: bool,
     allow_healing: bool,
-) -> Result<Vec<adventuresim_core::disease::InfectionEpisode>, String> {
+    plan: Option<&crate::disease::PartyDiseaseIntervalPlan>,
+    max_work: u64,
+) -> Result<Vec<adventuresim_core::disease::AcquisitionAttempt>, String> {
     if to <= from {
         return Ok(Vec::new());
     }
@@ -166,15 +168,9 @@ pub fn blood_episodes_through(
     if !has_active_compatible_foreign_blood {
         return Ok(Vec::new());
     }
-    let immunity = ctx
-        .db
-        .character_attributes()
-        .character_id()
-        .find(character_id)
-        .map_or(3.0, |attributes| attributes.immunity);
     let routes = predicted_wound_routes(ctx, character_id, allow_healing)?;
-    let mut episodes = crate::disease::character_episodes(ctx, character_id)?;
-    let original_len = episodes.len();
+    let mut attempts = Vec::new();
+    let mut work = 0;
     for disease_id in adventuresim_core::disease::STARTER_DISEASES
         .iter()
         .filter(|definition| {
@@ -206,40 +202,43 @@ pub fn blood_episodes_through(
             .into_iter()
             .flat_map(|(window_start, window_end)| window_start..=window_end)
         {
-            if adventuresim_core::disease::has_unresolved_disease(
-                &episodes, disease_id, minute, immunity,
-            ) {
-                continue;
-            }
+            adventuresim_core::disease::add_bounded_work(&mut work, 1, max_work)
+                .map_err(str::to_string)?;
             let route = filth::timed_cut_exposure(&routes, minute.saturating_sub(from));
-            let exposure = filth::blood_exposure(&relevant, disease_id, minute, route) / 1_440.0;
+            let check = plan.map_or_else(
+                || crate::disease::party_physiology_check_at(ctx, character_id, minute),
+                |plan| plan.check_at(character_id, minute),
+            );
+            // Any infectious deposit still present here survived or preceded
+            // explicit washing, so clean handling is not available for this
+            // dose. Bandaging/stitching still raises the physical affordance
+            // through the predicted cut-route state.
+            let affordance = adventuresim_core::disease::blood_caregiving_affordance(false, route);
+            let exposure = adventuresim_core::disease::residual_exposure_with_affordance(
+                filth::blood_exposure(&relevant, disease_id, minute, route) / 1_440.0,
+                adventuresim_core::disease::TransmissionVector::Blood,
+                check,
+                affordance,
+            );
             if exposure <= 0.0 {
                 continue;
             }
-            let prior = adventuresim_core::disease::acquired_immunity(
-                &episodes, disease_id, minute, immunity,
-            );
             let seed = adventuresim_core::disease::outbreak_exposure_seed(
                 character_id,
                 &format!("blood:{}:{minute}", crate::disease::disease_key(disease_id)),
             );
-            if adventuresim_core::disease::acquisition_succeeds(
-                seed,
-                adventuresim_core::disease::definition(disease_id),
-                immunity,
-                prior,
-                exposure,
-            ) {
-                episodes.push(adventuresim_core::disease::InfectionEpisode {
+            attempts.push(adventuresim_core::disease::AcquisitionAttempt::exposure(
+                adventuresim_core::disease::InfectionEpisode {
                     id: seed,
                     character_id,
                     disease_id,
                     contracted_at: minute,
                     ruleset_version: adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
                     phenotype_key_version: adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
-                });
-                break;
-            }
+                },
+                adventuresim_core::disease::definition(disease_id).base_acquisition,
+                exposure,
+            ));
         }
         if persist_checkpoint {
             let row = BloodExposureCheckpoint {
@@ -255,7 +254,7 @@ pub fn blood_episodes_through(
             }
         }
     }
-    Ok(episodes.split_off(original_len))
+    Ok(attempts)
 }
 
 pub fn next_travel_dirt_boundary(ctx: &ReducerContext, character_id: u64) -> u64 {
@@ -866,4 +865,23 @@ pub(crate) fn seed_demo(
         crate::add_inventory_item(ctx, character_id, SOAP_ITEM_ID, 3 - existing);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod source_tests {
+    #[test]
+    fn blood_route_receives_partial_physician_protection_after_physical_controls() {
+        let source = include_str!("filth.rs");
+        let exposure = source
+            .split("pub fn blood_exposure_attempts_through")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Reusable strategic boundary").next())
+            .expect("blood exposure source");
+        let prevention = exposure.find("residual_exposure").unwrap();
+        let physical = exposure.find("filth::blood_exposure").unwrap();
+        assert!(prevention < physical);
+        assert!(exposure.contains("TransmissionVector::Blood"));
+        assert!(exposure.contains("timed_cut_exposure"));
+        assert!(exposure.contains("blood_caregiving_affordance(false, route)"));
+    }
 }

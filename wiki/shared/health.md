@@ -44,6 +44,35 @@ water, vermin, wounds, or infected blood. Filth raises some risks. Blood on a
 character remains visibly dirty until washed, while its infectiousness fades
 over strategic time.
 
+Physiology knowledge in a co-located party passively reduces preventable
+exposure: physicians can warn against suspect food or water, separate close
+company, and reduce vermin contact. The reduction is dramatic for food, water,
+and close contact, bounded for vermin, and modest for infected blood. It never
+removes all risk. Wound acquisition remains Surgery's responsibility, and
+Physiology does not invent missing space, clean water, soap, bandages, or
+disinfectant. Those physical controls retain their stronger modeled effects.
+Infections capable of close-contact spread can pass between party members,
+including before symptoms make the source publicly identifiable.
+
+The exposure calculation keeps the preventable behavior dose separate from
+unavoidable environmental dose. Existing physical state also caps the
+preventable share where relevant: soap-backed washing removes blood first,
+while an unprotected wound and unavailable clean handling sharply limit what
+knowledge alone can prevent.
+
+Shared sleep is the overnight form of close-contact co-presence. Sleep, travel,
+and treatment evaluate all co-advancing party members
+from one pre-action snapshot. This makes prevention and close-contact
+transmission independent of character ID or reducer iteration order. Solo
+catch-up uses recorded co-presence only; it cannot borrow future protection
+from a physician who is not advancing with the patient.
+
+Community, blood, and close-contact acquisitions share one absolute-minute
+timeline. Characters infected in the same minute do not infect one another
+instantaneously; each becomes a possible contact source on the following
+minute. Long shared rests and equivalent shorter chunks therefore preserve the
+same secondary-spread chain.
+
 Prepared interventions act on the patient's condition rather than naming a
 disease they magically cure. Treatment may improve or worsen the evidence
 available to an observer, but never reveals hidden truth directly.

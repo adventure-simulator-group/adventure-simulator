@@ -1,11 +1,12 @@
 # Physiology system
 
-Physiology is the skill for observing health, administering prepared
-interventions, and improving wound recovery. It produces a fallible differential
-of possible diseases, but never reveals the authoritative disease identity or
-recommends a treatment. [Herbalism](herbalism.md) now owns bounded biological
-preparation while Alchemy #215 remains independent. Preparations act through
-versioned generic meter profiles and never disease-keyed effects.
+Physiology is the skill for preventing avoidable disease exposure, observing
+health, administering prepared interventions, and improving wound recovery. It
+produces a fallible differential of possible diseases, but never reveals the
+authoritative disease identity or recommends a treatment.
+[Herbalism](herbalism.md) now owns bounded biological preparation while
+Alchemy #215 remains independent. Preparations act through versioned generic
+meter profiles and never disease-keyed effects.
 
 ## Professional boundary
 
@@ -65,6 +66,41 @@ together. The earliest integer-minute terminal crossing wins, with a stable
 meter-order tie-break, so splitting an interval into smaller calls cannot change
 the result.
 
+Disease exposure is assembled by an explicit transmission route before the
+private acquisition roll. Abstract settlement outbreaks use each disease's
+authored primary community route; contaminated food and water, wounds, infected
+blood, and within-party close contact retain their direct routes. Party
+Physiology sharply reduces avoidable food/water and close-contact exposure,
+reduces vermin exposure by a lower ceiling, and only modestly reduces blood
+exposure. Wound risk is unchanged because Surgery and physical wound care own
+that route. Every route retains residual risk, and available washing supplies,
+wound closure, and other physical affordances continue to determine their own
+stronger effects.
+
+Each route splits its dose into an unavoidable/environmental component and a
+preventable party-behavior component. Physiology reduces only the latter.
+Route preventability and the current physical-affordance multiplier are named
+inputs to that split. Infected blood illustrates the distinction: automatic
+washing with actual soap removes blood before exposure, while bandaging or
+stitching lowers the real cut route; if infectious blood remains, missing clean
+handling and an open wound cap how much additional Physiology judgment can do.
+
+Shared travel, camp rest, and treatment snapshot the explicitly co-advancing
+participants and their capability-pinned Physiology coverage before changing
+any clock. Every participant is previewed and committed against that immutable
+plan, so character ID and reducer iteration order cannot change prevention or
+transmission. Community, blood, and contact acquisitions resolve together in
+absolute-minute order. Acquisitions within one minute are simultaneous and a
+new infection can transmit onward starting on the following minute, making
+secondary spread agree between one long interval and equivalent chunks.
+Environmental sources retain stable later attempts, allowing exposure to
+resume if an earlier episode resolves while the outbreak continues.
+
+Solo catch-up uses recorded co-presence only. An open span may cover the
+catching-up character through the lesser of their requested horizon and an
+already-ahead peer's current clock, but never borrows time the peer has not
+elapsed.
+
 The authoritative database initializes private key material from runtime
 randomness and persists one private key for the lifetime of the database.
 Changing its version requires recreating the disposable pre-launch database;
@@ -87,6 +123,20 @@ observer's Physiology capability band at that boundary, preventing later
 training from sharpening historical observations. Every notebook records at
 most one examination per day. Higher bands produce more finely quantized
 readings and a better-calibrated differential, but do not add examinations.
+
+The same private spans bound passive prevention. Each span pins both members'
+Physiology bands and is clamped to their lesser personal clock, so joining,
+leaving, training across a band boundary, lazy catch-up, and split time advances
+cannot rewrite who supplied knowledge during an elapsed minute. A character
+without any pair-presence history receives no interval-wide solo fallback,
+because applying a current skill retroactively would make catch-up chunking
+change outcomes. Point-in-time actions such as consuming a food lot may use the
+actor's current capability safely.
+
+Close-contact transmission reads source infections and pair presence only
+inside private authority. Browsers learn neither who exposed whom nor whether a
+Physiology reduction changed a particular roll; ordinary symptom notices remain
+the first public illness signal.
 
 The trusted strategic gateway derives a bounded, pre-quantized chart on demand
 from causal infection, administration, presence, capability, ruleset, and key

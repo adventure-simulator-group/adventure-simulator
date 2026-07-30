@@ -15,6 +15,40 @@ by the interval. If terminal physiological failure occurs, the clock and all
 work stop at that exact minute. This prevents a long skip from jumping over a
 fatal peak into apparent recovery.
 
+The same centralized interval evaluation assembles settlement exposure,
+within-party close-contact transmission, and infected-blood exposure before
+acquisition. Party travel, camp rest, and treatment first construct one
+immutable interval plan for the characters explicitly advancing together.
+That plan projects only those characters' open pair-presence spans through
+their shared horizon, then supplies the same acquisition proposals to every
+preview and commit. Participant iteration order therefore cannot change who
+was protected or infected. Existing closed spans and companions who are not
+co-advancing remain clamped to their recorded clocks. Splitting an otherwise
+identical interval does not reroll exposure.
+
+Lazy catch-up and other solo elapsed-time actions do not project an absent
+companion forward and do not retroactively substitute the character's current
+Physiology rank. They use only recorded pair-presence history, including open
+span overlap through an already-ahead peer's current clock but never beyond
+it. Point actions can use the current rank without changing elapsed-time
+semantics. Planning fetches relevant spans through the low/high participant
+indexes, deduplicates them, compiles piecewise coverage, and caps both spans
+and exposure work.
+
+All assembled community, infected-blood, and contact candidates enter one
+absolute-minute timeline. Candidates in the same minute resolve
+simultaneously; a newly infected character becomes a contact source on the
+next minute. This preserves multi-person transmission chains across whole and
+chunked travel, sleep, treatment, rest, and catch-up intervals.
+Long-running outbreaks and local problems keep stable future attempts in that
+timeline, so exposure resumes after an earlier episode resolves instead of
+depending on where the player split the action.
+
+The interval work reservation includes both the side-effect-free infected-blood
+planning pass and the bounded checkpoint pass over the actually committed
+prefix. Raw indexed presence rows are rejected as soon as their deduplicated
+count exceeds the cap, before coverage materialization.
+
 The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A newly initialized world begins on August 20 at 00:00. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
 
 The server stores an epoch rather than updating the clock table continuously. When a browser opens a page, it requests one snapshot of the character and official clocks and renders that snapshot without a wall-clock timer. The character snapshot also determines the interpolated location sky, the edge-to-edge sun or moon position, and building illumination until an explicit action returns a newer time. Authoritative reducers derive the current official minute from the epoch when gameplay needs it.

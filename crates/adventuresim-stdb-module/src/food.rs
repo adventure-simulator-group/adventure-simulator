@@ -591,12 +591,19 @@ fn expose_to_dysentery(
     let prior = disease::acquired_immunity(&episodes, DiseaseId::Dysentery, minute, immunity);
     let seed =
         disease::outbreak_exposure_seed(character_id, &format!("food:{lot_id}:{}", minute / 1));
+    let protected_dose = crate::disease::protected_point_exposure(
+        ctx,
+        character_id,
+        minute,
+        adventuresim_core::disease::TransmissionVector::FoodWater,
+        dose,
+    )?;
     if disease::acquisition_succeeds(
         seed,
         disease::definition(DiseaseId::Dysentery),
         immunity,
         prior,
-        dose,
+        protected_dose,
     ) {
         ctx.db.infection_episode().insert(InfectionEpisodeRow {
             id: 0,
@@ -1159,5 +1166,18 @@ mod tests {
             .and_then(|tail| tail.split("pub fn create_party_food_lot").next())
             .expect("personal lot constructor");
         assert!(constructor.contains("quality: definition.default_quality.clamp(1, 5)"));
+    }
+
+    #[test]
+    fn hidden_food_contamination_uses_explicit_food_water_prevention() {
+        let source = include_str!("food.rs");
+        let exposure = source
+            .split("fn expose_to_dysentery")
+            .nth(1)
+            .and_then(|tail| tail.split("fn consume_food_amount").next())
+            .expect("foodborne exposure source");
+        assert!(exposure.contains("protected_point_exposure"));
+        assert!(exposure.contains("TransmissionVector::FoodWater"));
+        assert!(exposure.contains("protected_dose"));
     }
 }
