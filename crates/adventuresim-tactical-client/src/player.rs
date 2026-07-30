@@ -1,6 +1,6 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
-    bevy_replicon::prelude::ClientTriggerExt, prelude::AttackRequest,
+    bevy_replicon::prelude::ClientTriggerExt, message::DefendRequest, prelude::AttackRequest,
 };
 use bevy::prelude::*;
 
@@ -54,6 +54,8 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(on_new_player_added_hook)
             .add_observer(on_attack_fired_hook)
+            .add_observer(on_dodge_fired)
+            .add_observer(on_parry_fired)
             .add_systems(
                 Update,
                 (
@@ -142,6 +144,14 @@ fn on_new_player_added_hook(
                 (
                     Action::<Attack>::new(),
                     bindings![MouseButton::Left],
+                ),
+                (
+                    Action::<Dodge>::new(),
+                    bindings![KeyCode::KeyF],
+                ),
+                (
+                    Action::<Parry>::new(),
+                    bindings![KeyCode::KeyG],
                 ),
             ]),
         ));
@@ -298,4 +308,12 @@ fn update_character_look_rotation(
     for (mut transform, look) in &mut q_characters {
         transform.rotation = Quat::from_rotation_y(look.yaw + std::f32::consts::PI);
     }
+}
+
+fn on_dodge_fired(_event: On<Fire<Dodge>>, mut cmd: Commands) {
+    cmd.client_trigger(DefendRequest::Dodge);
+}
+
+fn on_parry_fired(_event: On<Fire<Parry>>, mut cmd: Commands) {
+    cmd.client_trigger(DefendRequest::Parry);
 }

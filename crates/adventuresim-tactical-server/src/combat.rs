@@ -1,16 +1,77 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::{FromClient, SendMode, ServerTriggerExt, ToClients},
-    message::SuccessfulAttackResponse,
+    message::{DefendRequest, SuccessfulAttackResponse},
     prelude::AttackRequest,
 };
 use bevy::prelude::*;
+
+/// Maximum window (in seconds) after pressing dodge/parry that the response
+/// is still considered valid. A fresh press gives `input_reflex = 1.0`;
+/// a press older than this window is treated as no response.
+const MAX_REFLEX_WINDOW: f32 = 0.5;
+
+/// Stores the defender's most recent dodge/parry choice along with the
+/// server timestamp when it was received. Consumed on each attack resolution.
+#[derive(Component)]
+struct PendingDefenderResponse {
+    choice: DefendRequest,
+    set_at: f32,
+}
 
 pub struct CombatPlugin;
 
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_attack_action_triggered);
+        app.add_observer(on_attack_action_triggered)
+            .add_observer(on_defender_response);
+    }
+}
+
+fn on_defender_response(
+    event: On<FromClient<DefendRequest>>,
+    mut cmd: Commands,
+    time: Res<Time<()>>,
+) {
+    let Some(entity) = event.client_id.entity() else {
+        warn!(
+            "Got defender response from an unknown client: {:?}",
+            event.client_id
+        );
+        return;
+    };
+
+    cmd.entity(entity).insert(PendingDefenderResponse {
+        choice: **event,
+        set_at: time.elapsed_secs(),
+    });
+}
+
+fn resolve_defender_response(
+    pending: Option<&PendingDefenderResponse>,
+    time: &Time<()>,
+    defender_view: &TacticalPlayerView,
+) -> DefenderResponse {
+    let Some(pending) = pending else {
+        return DefenderResponse::None;
+    };
+
+    let elapsed = time.elapsed_secs() - pending.set_at;
+    if elapsed > MAX_REFLEX_WINDOW {
+        return DefenderResponse::None;
+    }
+
+    let input_reflex = (1.0 - elapsed / MAX_REFLEX_WINDOW).clamp(0.0, 1.0);
+
+    match pending.choice {
+        DefendRequest::Dodge => DefenderResponse::Dodge { input_reflex },
+        DefendRequest::Parry => {
+            if defender_view.shield_block_bonus() > 0.0 {
+                DefenderResponse::Parry { input_reflex }
+            } else {
+                DefenderResponse::None
+            }
+        }
     }
 }
 
@@ -20,6 +81,8 @@ fn on_attack_action_triggered(
     viewer: TacticalPlayerViewer,
     q_character: Query<&CharacterLook>,
     q_bestiary_categories: Query<&BestiaryCategories>,
+    q_pending: Query<&PendingDefenderResponse>,
+    time: Res<Time<()>>,
 ) {
     let Some(entity) = event.client_id.entity() else {
         warn!(
@@ -57,7 +120,12 @@ fn on_attack_action_triggered(
         return;
     };
 
-    let defender_response = DefenderResponse::Dodge { input_reflex: 1.0 };
+    let pending = q_pending.get(event.target).ok();
+    let defender_response = resolve_defender_response(pending, &time, &defender_view);
+
+    // Consume the pending response so it is not reused.
+    cmd.entity(event.target).remove::<PendingDefenderResponse>();
+
     let fallback_categories = BestiaryCategories::default();
     let defender_categories = q_bestiary_categories
         .get(event.target)
