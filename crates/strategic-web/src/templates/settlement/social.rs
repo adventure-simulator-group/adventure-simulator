@@ -61,6 +61,7 @@ fn social_actions(
         ("awareness", Listen, "listen"),
         ("awareness", Commiserate, "commiserate"),
         ("prayer", Pray, "pray"),
+        ("heart-beats", Reassure, "reassure"),
         ("juggler", LightenMood, "lighten_mood"),
         ("crown", Rally, "command"),
         ("conversation", Reframe, "deception"),
@@ -86,6 +87,7 @@ fn social_action_label(
         SocialActionKind::Commiserate if shares_concern => "Commiserate",
         SocialActionKind::Commiserate => "Feign sympathy",
         SocialActionKind::Pray => "Pray",
+        SocialActionKind::Reassure => "Reassure",
         SocialActionKind::LightenMood => "Joke",
         SocialActionKind::Rally => "Rally",
         SocialActionKind::Reframe => "Reframe",
@@ -313,20 +315,29 @@ pub fn party_social_dialog(
                                     @for (default_icon, action, value) in social_actions(is_self, topic, social.joke_blocked, social.flirt_blocked) {
                                       @let action_shares_concern = action != adventuresim_core::social::SocialActionKind::Commiserate || shares_concern;
                                       @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
-                                      @let prayer_approach = social.religion_id.as_deref()
-                                          .and_then(adventuresim_world_schema::OfficialReligion::from_id)
-                                          .and_then(|religion| adventuresim_core::social::prayer_approach(religion, topic));
-                                      @let description = if action == adventuresim_core::social::SocialActionKind::Pray {
-                                          prayer_approach.map_or_else(
-                                              || action.description(topic, action_shares_concern).to_owned(),
-                                              |approach| format!("{} {}", approach.devotion, approach.intention),
-                                          )
-                                      } else {
-                                          action.description(topic, action_shares_concern).to_owned()
-                                      };
+                                       @let prayer_approach = social.religion_id.as_deref()
+                                           .and_then(adventuresim_world_schema::OfficialReligion::from_id)
+                                           .and_then(|religion| adventuresim_core::social::prayer_approach(religion, topic));
+                                       @let reassurance_approach = adventuresim_core::social::bedside_reassurance_approach(topic);
+                                       @let description = if action == adventuresim_core::social::SocialActionKind::Pray {
+                                           prayer_approach.map_or_else(
+                                               || action.description(topic, action_shares_concern).to_owned(),
+                                               |approach| format!("{} {}", approach.devotion, approach.intention),
+                                           )
+                                       } else if action == adventuresim_core::social::SocialActionKind::Reassure {
+                                           reassurance_approach.map_or_else(
+                                               || action.description(topic, action_shares_concern).to_owned(),
+                                               |approach| approach.counsel.to_owned(),
+                                           )
+                                       } else {
+                                           action.description(topic, action_shares_concern).to_owned()
+                                       };
                                       @let label = social_action_label(action, action_shares_concern);
                                       @let disabled_reason = if action == adventuresim_core::social::SocialActionKind::Pray { social.prayer_disabled_reason.as_deref() } else { None };
-                                      @let risk = prayer_approach.map_or(action.risk(), |approach| approach.risk);
+                                       @let risk = prayer_approach.map_or_else(
+                                           || reassurance_approach.map_or(action.risk(), |approach| approach.risk),
+                                           |approach| approach.risk,
+                                       );
                                       @let tooltip = if let Some(reason) = disabled_reason {
                                           format!("{}\nUnavailable: {}", description, reason)
                                       } else {
@@ -678,6 +689,28 @@ mod tests {
         assert!(!response_markup.contains(
             "class=\"social-action\" aria-label=\"Ask how they feel about the defeat\" title="
         ));
+
+        let injury_source = CharacterMoraleSource {
+            id: "fresh-injury".into(),
+            character_id: target.id,
+            kind: "injury".into(),
+            label: "Painful injury".into(),
+            magnitude: -2.0,
+        };
+        let injury_markup = party_social_dialog(
+            &location,
+            &target,
+            &actor,
+            &[injury_source],
+            &SocialPresentation::default(),
+        )
+        .into_string();
+        assert!(injury_markup.contains("value=\"reassure\""));
+        assert!(injury_markup.contains("class=\"social-action-label\">Reassure</span>"));
+        assert!(injury_markup.contains("Sit at their bedside"));
+        assert!(injury_markup.contains("Physiology"));
+        assert!(injury_markup.contains("low risk"));
+        assert!(injury_markup.contains("Reassure. Sit at their bedside"));
     }
 
     #[test]
@@ -764,7 +797,7 @@ mod tests {
         );
         assert_eq!(
             social_actions(false, SocialTopic::Hunger, false, false).len(),
-            4
+            5
         );
         assert_eq!(
             social_actions(false, SocialTopic::Faith, false, false).len(),
@@ -782,6 +815,26 @@ mod tests {
                 .any(|(_, action, _)| *action == SocialActionKind::Rally)
         );
         assert_eq!(SocialActionKind::Commiserate.skill_name(false), "Deception");
+        assert_eq!(SocialActionKind::Reassure.skill_name(false), "Physiology");
+        for topic in [
+            SocialTopic::Injury,
+            SocialTopic::Fatigue,
+            SocialTopic::Hunger,
+        ] {
+            assert!(
+                social_actions(false, topic, false, false)
+                    .iter()
+                    .any(|(_, action, value)| *action == SocialActionKind::Reassure
+                        && *value == "reassure")
+            );
+        }
+        for topic in [SocialTopic::Defeat, SocialTopic::Faith, SocialTopic::Filth] {
+            assert!(
+                social_actions(false, topic, false, false)
+                    .iter()
+                    .all(|(_, action, _)| *action != SocialActionKind::Reassure)
+            );
+        }
         assert_eq!(
             SocialActionKind::Flirt.description(SocialTopic::Injury, false),
             "Tell them the scar makes them look striking"

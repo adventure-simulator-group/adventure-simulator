@@ -472,6 +472,7 @@ pub enum SocialActionKind {
     Listen,
     Commiserate,
     Pray,
+    Reassure,
     LightenMood,
     Rally,
     Reframe,
@@ -485,6 +486,7 @@ impl SocialActionKind {
             Self::Listen => "listen",
             Self::Commiserate => "commiserate",
             Self::Pray => "pray",
+            Self::Reassure => "reassure",
             Self::LightenMood => "lighten_mood",
             Self::Rally => "command",
             Self::Reframe => "deception",
@@ -499,6 +501,7 @@ impl SocialActionKind {
             Self::Commiserate if shares_concern => "Insight",
             Self::Commiserate => "Deception",
             Self::Pray => "Religion",
+            Self::Reassure => "Physiology",
             Self::LightenMood => "Charm",
             Self::Rally => "Command",
             Self::Reframe => "Deception",
@@ -510,6 +513,10 @@ impl SocialActionKind {
         match self {
             Self::Reflect | Self::Listen | Self::Commiserate => true,
             Self::Pray => !matches!(topic, SocialTopic::Filth),
+            Self::Reassure => matches!(
+                topic,
+                SocialTopic::Injury | SocialTopic::Fatigue | SocialTopic::Hunger
+            ),
             Self::LightenMood => !matches!(topic, SocialTopic::Faith),
             Self::Rally => matches!(
                 topic,
@@ -549,6 +556,15 @@ impl SocialActionKind {
             }
             (Self::Commiserate, SocialTopic::Filth, false) => "Feign sympathy about being filthy",
             (Self::Pray, _, _) => "Offer a prayer in their tradition",
+            (Self::Reassure, SocialTopic::Injury, _) => {
+                "Sit with them and speak calmly about what can be plainly observed"
+            }
+            (Self::Reassure, SocialTopic::Fatigue, _) => {
+                "Attend to their weariness and acknowledge what they are feeling"
+            }
+            (Self::Reassure, SocialTopic::Hunger, _) => {
+                "Stay with them and acknowledge the bodily distress of hunger"
+            }
             (Self::LightenMood, SocialTopic::Defeat, _) => "Joke about bouncing back from defeat",
             (Self::LightenMood, SocialTopic::Injury, _) => "Joke to distract them from the pain",
             (Self::LightenMood, SocialTopic::Fatigue, _) => "Joke to help keep them awake",
@@ -580,12 +596,51 @@ impl SocialActionKind {
             Self::Listen => 0.05,
             Self::Commiserate => 0.2,
             Self::Pray => 0.45,
+            Self::Reassure => 0.12,
             Self::LightenMood => 0.45,
             Self::Rally => 0.55,
             Self::Reframe => 0.65,
             Self::Flirt => 0.85,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BedsideReassuranceApproach {
+    pub counsel: &'static str,
+    pub effectiveness: f32,
+    pub risk: f32,
+}
+
+/// Closed catalog for honest bedside attention. It is deliberately limited to
+/// bodily concerns that a physician can acknowledge without diagnosing,
+/// predicting, triaging, or prescribing treatment.
+pub const fn bedside_reassurance_approach(
+    topic: SocialTopic,
+) -> Option<BedsideReassuranceApproach> {
+    let (counsel, effectiveness, risk) = match topic {
+        SocialTopic::Injury => (
+            "Sit at their bedside, attend to what they describe, and speak calmly about what is plainly visible",
+            0.55,
+            0.12,
+        ),
+        SocialTopic::Fatigue => (
+            "Attend to their weariness and acknowledge the strain they describe",
+            0.42,
+            0.08,
+        ),
+        SocialTopic::Hunger => (
+            "Stay with them and acknowledge the bodily distress they describe",
+            0.25,
+            0.06,
+        ),
+        SocialTopic::Defeat | SocialTopic::Faith | SocialTopic::Filth => return None,
+    };
+    Some(BedsideReassuranceApproach {
+        counsel,
+        effectiveness,
+        risk,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -662,6 +717,17 @@ impl SocialResolutionProfile {
             chance_modifier: 0.0,
             failure_multiplier: 1.0,
         }
+    }
+}
+
+pub const fn bedside_reassurance_resolution_profile(
+    approach: BedsideReassuranceApproach,
+) -> SocialResolutionProfile {
+    SocialResolutionProfile {
+        risk: approach.risk,
+        effectiveness: approach.effectiveness,
+        chance_modifier: 0.0,
+        failure_multiplier: 1.0,
     }
 }
 
@@ -1863,6 +1929,82 @@ mod tests {
     }
 
     #[test]
+    fn bedside_reassurance_is_authored_only_for_bodily_concerns() {
+        let injury = bedside_reassurance_approach(SocialTopic::Injury).expect("injury reassurance");
+        let fatigue =
+            bedside_reassurance_approach(SocialTopic::Fatigue).expect("fatigue reassurance");
+        let hunger = bedside_reassurance_approach(SocialTopic::Hunger).expect("hunger reassurance");
+
+        assert_eq!(injury.effectiveness, 0.55);
+        assert_eq!(injury.risk, 0.12);
+        assert_eq!(fatigue.effectiveness, 0.42);
+        assert_eq!(fatigue.risk, 0.08);
+        assert_eq!(hunger.effectiveness, 0.25);
+        assert_eq!(hunger.risk, 0.06);
+        assert!(hunger.effectiveness < fatigue.effectiveness);
+        assert!(fatigue.effectiveness < injury.effectiveness);
+        for topic in [SocialTopic::Defeat, SocialTopic::Faith, SocialTopic::Filth] {
+            assert_eq!(bedside_reassurance_approach(topic), None);
+            assert!(!SocialActionKind::Reassure.available_for(topic));
+        }
+        for approach in [injury, fatigue, hunger] {
+            let copy = approach.counsel.to_ascii_lowercase();
+            for unsupported_claim in [
+                "humour", "diagnos", "prognos", "recover", "treat", "cure", "prescri",
+            ] {
+                assert!(
+                    !copy.contains(unsupported_claim),
+                    "bedside copy made unsupported claim: {copy}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bedside_reassurance_is_conservative_beside_riskier_approaches() {
+        let attempt = |topic, action| SocialAttempt {
+            action,
+            topic,
+            skill_check: 5.0,
+            affinity: 0.0,
+            familiarity_hours: 0.0,
+            diagnosis_correct: None,
+            sensitivity: 0.5,
+            roll: 0.0,
+        };
+        for topic in [
+            SocialTopic::Injury,
+            SocialTopic::Fatigue,
+            SocialTopic::Hunger,
+        ] {
+            let approach = bedside_reassurance_approach(topic).unwrap();
+            let profile = bedside_reassurance_resolution_profile(approach);
+            let reassurance = resolve_social_attempt_with_profile(
+                attempt(topic, SocialActionKind::Reassure),
+                profile,
+            );
+            let prayer_approach =
+                prayer_approach(OfficialReligion::Anglican, topic).expect("prayer topic");
+            let prayer_profile = prayer_resolution_profile(prayer_approach, 0);
+            let prayer = resolve_social_attempt_with_profile(
+                attempt(topic, SocialActionKind::Pray),
+                prayer_profile,
+            );
+
+            assert!(profile.risk < prayer_profile.risk);
+            assert!(reassurance.morale_delta < prayer.morale_delta);
+        }
+        assert!(
+            bedside_reassurance_approach(SocialTopic::Hunger)
+                .unwrap()
+                .effectiveness
+                < bedside_reassurance_approach(SocialTopic::Injury)
+                    .unwrap()
+                    .effectiveness
+        );
+    }
+
+    #[test]
     fn target_tradition_study_gates_correlated_religion_knowledge() {
         let mut hours = adventuresim_world_schema::ReligionHours {
             roman_catholic: 1_000.0,
@@ -1911,7 +2053,7 @@ mod tests {
     }
 
     #[test]
-    fn automatic_care_can_select_prayer_but_never_for_filth() {
+    fn automatic_care_can_select_prayer_and_reassurance_only_where_authored() {
         assert_eq!(
             choose_automatic_social_action(
                 SocialTopic::Injury,
@@ -1935,6 +2077,33 @@ mod tests {
                     5.0,
                     2.0,
                     0.3,
+                )],
+            ),
+            None
+        );
+        assert_eq!(
+            choose_automatic_social_action(
+                SocialTopic::Fatigue,
+                [
+                    AutomaticSocialCandidate::ordinary(SocialActionKind::Listen, 2.0, 0.0),
+                    AutomaticSocialCandidate::with_resolved_risk(
+                        SocialActionKind::Reassure,
+                        4.0,
+                        0.0,
+                        0.08,
+                    ),
+                ],
+            ),
+            Some(SocialActionKind::Reassure)
+        );
+        assert_eq!(
+            choose_automatic_social_action(
+                SocialTopic::Defeat,
+                [AutomaticSocialCandidate::with_resolved_risk(
+                    SocialActionKind::Reassure,
+                    5.0,
+                    2.0,
+                    0.06,
                 )],
             ),
             None
