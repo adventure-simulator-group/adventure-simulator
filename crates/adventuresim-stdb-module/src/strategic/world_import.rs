@@ -317,12 +317,17 @@ fn discard_placeholder_settlement_data(ctx: &ReducerContext) -> Result<(), Strin
             .filter(settlement_id)
             .collect::<Vec<_>>()
         {
+            crate::social_estate::delete_settlement_npc_social_roles(ctx, &npc.id);
             ctx.db
                 .settlement_npc_seed_explanation()
                 .npc_id()
                 .delete(&npc.id);
             ctx.db.settlement_npc().id().delete(&npc.id);
         }
+        crate::social_estate::delete_unreferenced_settlement_social_organizations(
+            ctx,
+            settlement_id,
+        );
         let settlement_id = settlement_id.to_string();
         ctx.db
             .settlement_smith()

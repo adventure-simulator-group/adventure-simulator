@@ -138,13 +138,24 @@ Choices may contain `result_turns`; these are appended to the durable transcript
 only after the prompt resolves and its effects succeed.
 
 Conditions are a typed tree: `always`, `all`, `any`, `not`, and `fact`. Fact keys
-are allowlisted in `FactKey`; participant profession, organization, religion,
+are allowlisted in `FactKey`; participant estate, profession, organization, religion,
 familiarity, clothing,
 service role, location, time period, quest state, and flags are supported. New
 world facts require a Rust resolver change. Never put executable code, SQL, or
 client-trusted effects in content. Effects are likewise a closed enum. A client
 sends catalog revision and stable topic/choice IDs; the authoritative reducer
 resolves turns and effects from the embedded catalog.
+
+`participant_estate` is resolved once per participant from that actor's
+server-authoritative estate basis and intrinsic organization-role definition.
+It supports both durable Characters and persistent settlement NPCs without
+enumerating house IDs in authored dialogue. Because role-keyed scalar facts
+would otherwise overwrite each other, the compiler rejects
+`participant_estate` for any authored dialogue role whose maximum cardinality
+is greater than one. Its comparison value must be textual `serf`, `freeman`,
+`burgher`, or `noble`. `participant_profession` retains its existing meaning;
+the broader multi-profession predicate is intentionally deferred until all
+professional assignment sources can populate it faithfully.
 
 Investigation dialogue uses generic facts and effects rather than per-case
 content IDs. A local-problem referral records the character-owned safe rumor

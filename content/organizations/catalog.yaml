@@ -1,6 +1,8 @@
 [
     {
         "id":  "merchant_guild",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "Company of Merchants",
         "description":  "A local fellowship of traders, factors, and market brokers.",
         "service_id":  "merchants",
@@ -110,6 +112,8 @@
     },
     {
         "id":  "weaponsmith_guild",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "Weaponsmiths\u0027 Guild",
         "description":  "A local fellowship governing weapon and shield work.",
         "service_id":  "weapons",
@@ -215,6 +219,8 @@
     },
     {
         "id":  "armourers_guild",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "Armourers\u0027 Guild",
         "description":  "A local fellowship of makers and fitters of armor.",
         "service_id":  "armor",
@@ -320,6 +326,8 @@
     },
     {
         "id":  "tailors_guild",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "Tailors\u0027 Guild",
         "description":  "A local fellowship of cutters, fitters, and clothing repairers.",
         "service_id":  "clothing",
@@ -425,6 +433,8 @@
     },
     {
         "id":  "herbalists_fellowship",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "Fellowship of Herbalists",
         "description":  "An informal local fellowship where practical gathering and remedy-making are shared through mentorship without university enrollment.",
         "service_id":  "herbalist",
@@ -530,6 +540,8 @@
     },
     {
         "id":  "physicians_college",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "College of Physicians",
         "description":  "A learned clinical college for observing patients, forming fallible differentials, and administering non-operative treatment.",
         "service_id":  "physician",
@@ -630,6 +642,8 @@
     },
     {
         "id":  "surgeons_guild",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "Surgeons\u0027 Guild",
         "description":  "A local craft fellowship for operative wound care and surgical procedures.",
         "service_id":  "surgeon",
@@ -730,6 +744,8 @@
     },
     {
         "id":  "cooks_guild",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "Cooks\u0027 Guild",
         "description":  "A local fellowship of tavern and household cooks.",
         "service_id":  "inn",
@@ -835,6 +851,15 @@
     },
     {
         "id":  "roman_catholic_learned_chapter",
+        "kind":  "religious_organization",
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Confraternity of Christian Doctrine",
         "description":  "A learned Roman Catholic confraternity recognized across settlements.",
         "service_id":  "religion",
@@ -924,6 +949,15 @@
     },
     {
         "id":  "reformed_learned_chapter",
+        "kind":  "religious_organization",
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Company of Reformed Readers",
         "description":  "A learned Reformed fellowship recognized across settlements.",
         "service_id":  "religion",
@@ -1001,6 +1035,15 @@
     },
     {
         "id":  "orthodox_learned_brotherhood",
+        "kind":  "religious_organization",
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Brotherhood of Orthodox Readers",
         "description":  "A learned Eastern Orthodox brotherhood recognized across settlements.",
         "service_id":  "religion",
@@ -1078,6 +1121,15 @@
     },
     {
         "id":  "lutheran_learned_visitation",
+        "kind":  "religious_organization",
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Lutheran Visitation of Readers",
         "description":  "A learned Lutheran visitation represented at Goslar and GÃƒÂ¶ttingen.",
         "service_id":  "religion",
@@ -1165,6 +1217,15 @@
     },
     {
         "id":  "anglican_learned_fellowship",
+        "kind":  "religious_organization",
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Royal Fellowship of Readers",
         "description":  "A learned Anglican fellowship; no researched Viabundus chapter is currently assigned.",
         "service_id":  "religion",
@@ -1212,6 +1273,15 @@
     },
     {
         "id":  "islamic_learned_fellowship",
+        "kind":  "religious_organization",
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Fellowship of Learned Readers",
         "description":  "A universal-recognition Islamic learned fellowship; no researched Viabundus chapter is currently assigned.",
         "historical_fantasy_note":  "A generic gameplay institution pending settlement-specific historical research.",
@@ -1260,6 +1330,15 @@
     },
     {
         "id":  "jewish_learned_fellowship",
+        "kind":  "religious_organization",
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Fellowship of Learned Readers",
         "description":  "A universal-recognition Jewish learned fellowship; no researched Viabundus chapter is currently assigned.",
         "historical_fantasy_note":  "A generic gameplay institution pending settlement-specific historical research.",
@@ -1308,6 +1387,8 @@
     },
     {
         "id": "hunt_pale_lantern",
+        "kind": "professional_association",
+        "roles": [],
         "name": "The Hunt of the Pale Lantern",
         "description": "A secular fellowship investigating supernatural threats and protecting the public from them.",
         "historical_fantasy_note": "An invented historical-fantasy institution modeled on commissioned investigators and territorial visitations.",
@@ -1400,6 +1481,8 @@
     },
     {
         "id": "order_saint_george",
+        "kind": "professional_association",
+        "roles": [],
         "name": "The Order of St. George",
         "description": "A military fellowship dedicated to defending travelers and settlements from extraordinary threats.",
         "historical_fantasy_note": "An invented historical-fantasy order named for the widely honored warrior saint.",
@@ -1492,6 +1575,8 @@
     },
     {
         "id": "lodge_hart_king",
+        "kind": "professional_association",
+        "roles": [],
         "name": "The Lodge of the Hart King",
         "description": "Sworn wardens of forests, roads, game, and dangerous beasts.",
         "historical_fantasy_note": "An invented body using period-appropriate territorial forest-office language.",
@@ -1603,6 +1688,8 @@
     },
     {
         "id":  "test_catholic_polearm_cooks",
+        "kind":  "professional_association",
+        "roles":  [],
         "name":  "Confraternity of the Long Spoon",
         "description":  "Catalog-only validation fixture demonstrating arbitrary cross-domain requirements.",
         "historical_fantasy_note":  "Unavailable test content; it exists to prove the evaluator has no cook, Catholic, or polearm special case.",

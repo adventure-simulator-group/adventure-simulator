@@ -987,6 +987,34 @@ mod tests {
         assert_eq!(select_response(topic, &f).unwrap().id, "morning");
     }
     #[test]
+    fn participant_estate_is_a_typed_scalar_fact() {
+        let key = FactKey::ParticipantEstate {
+            role: "speaker".into(),
+        };
+        assert_eq!(key.participant_roles().collect::<Vec<_>>(), ["speaker"]);
+        let mut facts = FactContext::default();
+        facts
+            .facts
+            .insert(key.clone(), FactValue::Text("noble".into()));
+        assert!(facts.matches(&Condition::Fact {
+            key,
+            equals: FactValue::Text("noble".into()),
+        }));
+        let key = FactKey::ParticipantEstate {
+            role: "speaker".into(),
+        };
+        for estate in ["serf", "freeman", "burgher", "noble"] {
+            assert!(key.authoring_value_is_valid(&FactValue::Text(estate.into())));
+        }
+        assert!(!key.authoring_value_is_valid(&FactValue::Text("priest".into())));
+        assert!(!key.authoring_value_is_valid(&FactValue::Bool(true)));
+        let compiler = include_str!("../build.rs");
+        assert!(compiler.contains("participant_estate requires a role with max=1"));
+        assert!(compiler.contains("definition.max == 1"));
+        assert!(compiler.contains("participant_estate requires a valid textual estate"));
+        assert!(compiler.contains("key.authoring_value_is_valid(equals)"));
+    }
+    #[test]
     fn conversation_start_selects_contextual_authored_greeting() {
         let conversation = find_conversation("service-professions").unwrap();
         let mut facts = FactContext::default();

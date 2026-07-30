@@ -344,6 +344,13 @@ fn dialogue_fact_context(
         );
         if participant.character_id.is_none() {
             if let Some(npc) = ctx.db.settlement_npc().id().find(&participant.actor_id) {
+                let estate = crate::social_estate::settlement_npc_estate(ctx, &npc.id)?;
+                result.facts.insert(
+                    FactKey::ParticipantEstate {
+                        role: participant.role.clone(),
+                    },
+                    FactValue::Text(estate.id().into()),
+                );
                 if !npc.service_id.is_empty() {
                     result.facts.insert(
                         FactKey::Service {
@@ -395,6 +402,13 @@ fn dialogue_fact_context(
             }
         }
         if let Some(id) = participant.character_id {
+            let estate = crate::social_estate::character_estate(ctx, id)?;
+            result.facts.insert(
+                FactKey::ParticipantEstate {
+                    role: participant.role.clone(),
+                },
+                FactValue::Text(estate.id().into()),
+            );
             if let Some(character) = ctx.db.character().id().find(id) {
                 let age = match character.age_years {
                     0..=12 => "child",

@@ -14,6 +14,21 @@ and privileges such as bearing arms, wearing armor, or licensed foraging.
 Organization-level privileges are inherited at every rank; rank-level
 privileges are additive.
 
+Definitions also declare a typed organization `kind` and an additive `roles`
+catalog. A role has exactly one purpose: `estate`, `profession`, or `office`.
+Estate roles intrinsically map to one of `serf`, `freeman`, `burgher`, or
+`noble`; the validator permits those roles only on compatible organization
+kinds. For example, `house_habsburg/prince` always derives Noble and cannot be
+paired with a separately writable Serf value, because no such actor scalar
+exists. Professional roles are independent, so a House member may
+simultaneously hold a denomination-specific
+`learned_religious_practitioner` role.
+
+This role layer is additive. Existing `organization_membership` ranks, dues,
+training, presentation, privileges, UI labels, and starting professions keep
+their current semantics. The first-pass social roles do not yet grant gameplay
+rights or impose movement, faction, or eligibility restrictions.
+
 Chapters are explicit authored records, not settlement-ID flags. Every record
 names its settlement, a bounded stable `organization-*` location ID, building
 name and kind, and the title and profession of its representative. Each
@@ -123,3 +138,33 @@ python scripts/validate_organization_world.py --world path\to\compiled-world.jso
 
 The cross-world check is separate because the catalog can be compiled without
 the large Viabundus dataset.
+
+### Social estate basis
+
+Private SpacetimeDB tables materialize organization instances and actor-role
+assignments. Every durable `Character` and persistent `SettlementNpc` receives
+exactly one estate-bearing assignment selected as its exclusive estate basis;
+transient tactical enemies do not. The basis tables use actor IDs as primary
+keys, while authoritative insertion verifies that the assignment belongs to
+the actor, the instance references a known definition, and the role belongs to
+that definition. Actor deletion removes the basis before its assignments.
+
+The specifically authored House of Habsburg and Habsburg Crown Lordships remain
+available for explicit historical content and tests. Generic assignment does
+not claim that every settlement belongs to them: chapterless local-house and
+local-lordship templates instead produce distinct `noble-house:<settlement-id>`
+and `lordship:<settlement-id>` instances. Civic communities similarly use
+`civic:<settlement-id>`. None creates buildings, services, or representatives.
+Citizenship derives Burgher only in urban settlements; `free_resident` derives
+Freeman explicitly, never from missing data. The initial assignment uses the
+persistence-contract stable hash with versioned settlement and actor-domain
+keys, is order-independent, and does not consume reducer RNG.
+
+Settlement clerics receive their professional role from the settlement's
+authoritative church religion and the matching existing denomination-specific
+learned organization. Starting learned religious practitioners receive the
+same role from their already-selected starting organization. Recruiting-party
+leader Characters copy the exact estate and professional assignments of their
+source settlement NPC; transient tactical enemies remain excluded. When actors
+are deleted, an organization instance is removed only after both Character and
+settlement-NPC role tables show that it is unreferenced.

@@ -81,11 +81,23 @@ fn validate_condition_roles(
             }
         }
         Condition::Not { condition } => validate_condition_roles(condition, roles, relative),
-        Condition::Fact { key, .. } => {
+        Condition::Fact { key, equals } => {
             for role in key.participant_roles() {
                 assert!(
                     roles.contains_key(role),
                     "unknown fact role {role} in {relative}"
+                );
+            }
+            if let authoring_schema::FactKey::ParticipantEstate { role } = key {
+                assert!(
+                    roles
+                        .get(role)
+                        .is_some_and(|definition| definition.max == 1),
+                    "participant_estate requires a role with max=1 in {relative}:{role}"
+                );
+                assert!(
+                    key.authoring_value_is_valid(equals),
+                    "participant_estate requires a valid textual estate in {relative}:{role}"
                 );
             }
         }

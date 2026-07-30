@@ -654,6 +654,7 @@ fn delete_character_data(
     {
         ctx.db.organization_membership().id().delete(row.id);
     }
+    crate::social_estate::delete_character_social_roles(ctx, character.id);
     if ctx
         .db
         .organization_presentation()
@@ -1371,6 +1372,20 @@ fn insert_character_with_origin(
         age_years: starting.map_or(25, |spec| spec.age_years),
         alive: true,
     });
+    if !temporary {
+        let urban = matches!(
+            start_settlement.category,
+            crate::strategic::SettlementCategory::Town
+                | crate::strategic::SettlementCategory::City
+                | crate::strategic::SettlementCategory::Capital
+        );
+        crate::social_estate::ensure_character_social_roles(
+            ctx,
+            character.id,
+            &start_settlement.id,
+            urban,
+        )?;
+    }
     let _character_stats = ctx.db.character_stats().insert(CharacterStats {
         character_id: id,
         calories_used: 0.0,
@@ -1626,6 +1641,11 @@ fn insert_character_with_origin(
                 character_id: character.id,
                 organization_id: starting_organization.organization_id.clone(),
             });
+        crate::social_estate::ensure_character_professional_role(
+            ctx,
+            character.id,
+            &starting_organization.organization_id,
+        )?;
     }
     crate::capability::refresh_character_capability(ctx, character.id)?;
     crate::condition::initialize_character_condition(ctx, character.id)?;
