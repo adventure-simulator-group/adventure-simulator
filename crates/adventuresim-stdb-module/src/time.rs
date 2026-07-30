@@ -586,7 +586,7 @@ fn apply_training(
         herbalism: skills.herbalism_hours,
         religion: skills.religion_hours,
         bestiary: skills.bestiary_hours,
-        anatomy: skills.anatomy_hours,
+        surgery: skills.surgery_hours,
         stealth: skills.stealth_hours,
         balance: skills.balance_hours,
         terrain_plains: skills.terrain_plains_hours,
@@ -694,7 +694,7 @@ fn apply_training(
     skills.herbalism_hours = hours.herbalism;
     skills.religion_hours = hours.religion;
     skills.bestiary_hours = hours.bestiary;
-    skills.anatomy_hours = hours.anatomy;
+    skills.surgery_hours = hours.surgery;
     skills.stealth_hours = hours.stealth;
     skills.balance_hours = hours.balance;
     skills.terrain_plains_hours = hours.terrain_plains;
@@ -747,7 +747,7 @@ fn apply_organization_training(
                 "physiology" => award_direct(Skill::Physiology, &mut hours.physiology, award),
                 "cooking" => award_direct(Skill::Cooking, &mut hours.cooking, award),
                 "herbalism" => award_direct(Skill::Herbalism, &mut hours.herbalism, award),
-                "anatomy" => award_direct(Skill::Anatomy, &mut hours.anatomy, award),
+                "surgery" => award_direct(Skill::Surgery, &mut hours.surgery, award),
                 "polearm" => award_direct(Skill::Polearm, &mut hours.polearm, award),
                 "axe" => award_direct(Skill::Axe, &mut hours.axe, award),
                 "bludgeon" => award_direct(Skill::Bludgeon, &mut hours.bludgeon, award),

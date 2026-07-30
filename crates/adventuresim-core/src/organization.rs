@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn medical_crafts_have_distinct_organizations_and_curricula() {
-        let herbalists = organization("herbalists_college").unwrap();
+        let herbalists = organization("herbalists_fellowship").unwrap();
         let physicians = organization("physicians_college").unwrap();
         let surgeons = organization("surgeons_guild").unwrap();
 
@@ -391,7 +391,17 @@ mod tests {
         assert_eq!(surgeons.service_id.as_deref(), Some("surgeon"));
         let herbalist_start = herbalists.starting_role.as_ref().unwrap();
         assert_eq!(herbalist_start.adult_rank_id, "herbalist");
-        assert_eq!(herbalist_start.old_rank_id, "master_herbalist");
+        assert_eq!(herbalist_start.old_rank_id, "elder_herbalist");
+        assert_eq!(herbalists.name, "Fellowship of Herbalists");
+        assert_eq!(herbalists.admission.joining_fee, 0);
+        assert_eq!(
+            herbalists
+                .ranks
+                .iter()
+                .map(|rank| rank.id.as_str())
+                .collect::<Vec<_>>(),
+            ["learner", "herbalist", "elder_herbalist"]
+        );
         assert!(physicians.starting_role.is_none());
         assert!(surgeons.starting_role.is_none());
 
@@ -412,16 +422,22 @@ mod tests {
         );
         assert_eq!(
             fixed_curriculum(physicians),
-            vec![("physiology".into(), 0.65), ("anatomy".into(), 0.35)]
+            vec![("physiology".into(), 1.0)]
         );
-        assert_eq!(
-            fixed_curriculum(surgeons),
-            vec![
-                ("anatomy".into(), 0.5),
-                ("knife".into(), 0.25),
-                ("tailoring".into(), 0.25),
-            ]
-        );
+        assert_eq!(fixed_curriculum(surgeons), vec![("surgery".into(), 1.0)]);
+        for (definition, rank_id, expected_skill) in [
+            (physicians, "physician", "physiology"),
+            (physicians, "master_physician", "physiology"),
+            (surgeons, "surgeon", "surgery"),
+            (surgeons, "master_surgeon", "surgery"),
+        ] {
+            let requirements = &definition.rank(rank_id).unwrap().requirements;
+            assert_eq!(requirements.len(), 1);
+            assert!(matches!(
+                &requirements[0],
+                Requirement::SkillRating { skill, .. } if skill == expected_skill
+            ));
+        }
 
         for settlement in ["viabundus-0", "viabundus-2337", "viabundus-1826"] {
             let locations = [

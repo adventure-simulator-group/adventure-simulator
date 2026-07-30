@@ -424,38 +424,38 @@
         "public_threat_referrals":  false
     },
     {
-        "id":  "herbalists_college",
-        "name":  "College of Herbalists",
-        "description":  "A local learned fellowship for gathering and preparing plant remedies.",
+        "id":  "herbalists_fellowship",
+        "name":  "Fellowship of Herbalists",
+        "description":  "An informal local fellowship where practical gathering and remedy-making are shared through mentorship without university enrollment.",
         "service_id":  "herbalist",
         "starting_role":  {
                               "profession":  "herbalist",
                               "adult_rank_id":  "herbalist",
-                              "old_rank_id":  "master_herbalist"
+                              "old_rank_id":  "elder_herbalist"
                           },
         "chapters":  [
                          {
                              "settlement_id":  "viabundus-0",
-                             "location_id":  "organization-herbalists-college",
-                             "building_name":  "College of Herbalists",
-                             "building_kind":  "college",
-                             "representative_title":  "college registrar",
+                             "location_id":  "organization-herbalists-fellowship",
+                             "building_name":  "Herbalists Meeting House",
+                             "building_kind":  "workshop",
+                             "representative_title":  "fellowship mentor",
                              "representative_profession":  "herbalist"
                          },
                          {
                              "settlement_id":  "viabundus-2337",
-                             "location_id":  "organization-herbalists-college",
-                             "building_name":  "College of Herbalists",
-                             "building_kind":  "college",
-                             "representative_title":  "college registrar",
+                             "location_id":  "organization-herbalists-fellowship",
+                             "building_name":  "Herbalists Meeting House",
+                             "building_kind":  "workshop",
+                             "representative_title":  "fellowship mentor",
                              "representative_profession":  "herbalist"
                          },
                          {
                              "settlement_id":  "viabundus-1826",
-                             "location_id":  "organization-herbalists-college",
-                             "building_name":  "College of Herbalists",
-                             "building_kind":  "college",
-                             "representative_title":  "college registrar",
+                             "location_id":  "organization-herbalists-fellowship",
+                             "building_name":  "Herbalists Meeting House",
+                             "building_kind":  "workshop",
+                             "representative_title":  "fellowship mentor",
                              "representative_profession":  "herbalist"
                          }
                      ],
@@ -468,16 +468,16 @@
                                                ]
                         },
         "admission":  {
-                          "joining_fee":  1,
+                          "joining_fee":  0,
                           "requirements":  [
 
                                            ]
                       },
         "ranks":  [
                       {
-                          "id":  "student",
-                          "name":  "Student",
-                          "description":  "A supervised student of remedies.",
+                          "id":  "learner",
+                          "name":  "Learner",
+                          "description":  "A learner gaining practical experience through shared work and mentorship.",
                           "requirements":  [
 
                                            ],
@@ -499,9 +499,9 @@
                           "practice_reward_interval_minutes":  480
                       },
                       {
-                          "id":  "master_herbalist",
-                          "name":  "Master Herbalist",
-                          "description":  "A senior preparer and teacher of herbal methods.",
+                          "id":  "elder_herbalist",
+                          "name":  "Elder Herbalist",
+                          "description":  "A senior herbalist who mentors others and preserves local methods.",
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
@@ -531,7 +531,7 @@
     {
         "id":  "physicians_college",
         "name":  "College of Physicians",
-        "description":  "A local learned fellowship for observing patients and administering treatment.",
+        "description":  "A learned clinical college for observing patients, forming fallible differentials, and administering non-operative treatment.",
         "service_id":  "physician",
         "chapters":  [
                          {
@@ -577,7 +577,7 @@
                       {
                           "id":  "student",
                           "name":  "Student",
-                          "description":  "A supervised student of patient observation.",
+                          "description":  "A supervised student of patient assessment and non-operative treatment.",
                           "requirements":  [
 
                                            ],
@@ -593,11 +593,6 @@
                                                    "kind":  "skill_rating",
                                                    "skill":  "physiology",
                                                    "minimum":  2.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "anatomy",
-                                                   "minimum":  2.0
                                                }
                                            ],
                           "practice_allowed":  true,
@@ -612,11 +607,6 @@
                                                    "kind":  "skill_rating",
                                                    "skill":  "physiology",
                                                    "minimum":  4.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "anatomy",
-                                                   "minimum":  4.0
                                                }
                                            ],
                           "practice_allowed":  true,
@@ -628,12 +618,7 @@
                                           {
                                               "kind":  "fixed_skill",
                                               "skill":  "physiology",
-                                              "weight":  0.65
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "anatomy",
-                                              "weight":  0.35
+                                              "weight":  1.0
                                           }
                                       ],
                          "reward":  "gold"
@@ -692,7 +677,7 @@
                       {
                           "id":  "apprentice",
                           "name":  "Apprentice",
-                          "description":  "A supervised apprentice in wound care and surgical tools.",
+                          "description":  "A supervised apprentice learning operative procedures.",
                           "requirements":  [
 
                                            ],
@@ -706,17 +691,7 @@
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
-                                                   "skill":  "anatomy",
-                                                   "minimum":  2.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "knife",
-                                                   "minimum":  2.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "tailoring",
+                                                   "skill":  "surgery",
                                                    "minimum":  2.0
                                                }
                                            ],
@@ -730,17 +705,7 @@
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
-                                                   "skill":  "anatomy",
-                                                   "minimum":  4.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "knife",
-                                                   "minimum":  4.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "tailoring",
+                                                   "skill":  "surgery",
                                                    "minimum":  4.0
                                                }
                                            ],
@@ -752,18 +717,8 @@
                          "training":  [
                                           {
                                               "kind":  "fixed_skill",
-                                              "skill":  "anatomy",
-                                              "weight":  0.5
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "knife",
-                                              "weight":  0.25
-                                          },
-                                          {
-                                              "kind":  "fixed_skill",
-                                              "skill":  "tailoring",
-                                              "weight":  0.25
+                                              "skill":  "surgery",
+                                              "weight":  1.0
                                           }
                                       ],
                          "reward":  "gold"

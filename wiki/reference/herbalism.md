@@ -7,16 +7,17 @@ which prepares food.
 
 ## Professional boundary
 
-The College of Herbalists is institutionally separate from the College of
-Physicians and the Surgeons' Guild. Its apprenticeship and practice curriculum
-trains Herbalism only. Independent herbalists and master herbalists rank through
-preparation skill; they do not become physicians by advancing within the same
-organization.
+The Fellowship of Herbalists is institutionally separate from the College of
+Physicians and the Surgeons' Guild. It is an informal, fee-free network based
+in workshops and meeting houses rather than a university. Learners enter
+through practice and mentorship without university enrollment.
+Its curriculum trains Herbalism only, and advancement runs from learner through
+herbalist to elder herbalist.
 
-Physicians instead train Physiology and Anatomy for patient observation and
-administration. Surgeons train Anatomy, Knife, and Tailoring because surgery is
-a procedure assembled from the game's existing extraction and stitching
-checks, not a separate hidden Surgery skill.
+Physicians instead train Physiology for patient assessment, fallible
+differentials, and non-operative treatment.
+Surgeons train Surgery for operative procedures. Knife and Tailoring have
+modest symmetric correlations with Surgery, but are not direct procedure inputs.
 
 ## Bounded preparation model
 

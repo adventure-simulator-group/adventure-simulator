@@ -3,8 +3,8 @@
 use maud::{Markup, html};
 
 use super::settlement::{
-    CharacterPortraitView, CharacterSheetActions, CharacterSheetView, character_portrait_overlay,
-    character_sheet_markup,
+    CharacterPortraitView, CharacterSheetActions, CharacterSheetView, CharacterSkillHours,
+    character_portrait_overlay, character_sheet_markup,
 };
 use super::{entry_layout, item_display_name, item_type_icon, panel, sidebar_section};
 use crate::medical::MedicalPresentation;
@@ -20,7 +20,7 @@ use adventuresim_core::starting_character::{
 };
 use adventuresim_core::{
     equipment::weapon_skill_distribution_for_item,
-    skill::Skill,
+    skill::{PlayerSkills, Skill},
     strategic_schedule::{CombatTrainingProfile, EquippedCombatItem},
 };
 
@@ -450,10 +450,11 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             terrain_urban_hours: spec.skills.terrain_urban,
             terrain_snow_hours: spec.skills.terrain_snow,
             bestiary_hours: spec.skills.bestiary,
-            anatomy_hours: spec.skills.anatomy,
+            surgery_hours: spec.skills.surgery,
             tailoring_hours: spec.skills.tailoring,
             smithing_hours: spec.skills.smithing,
         };
+        let effective_skill_hours = CharacterSkillHours(&skills);
         let armor_slots = spec
             .inventory
             .iter()
@@ -638,13 +639,14 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             endurance: spec.attributes.endurance,
             physiology: Skill::Physiology
                 .capped_rank_for_aptitude(spec.skills.physiology, spec.attributes.intelligence),
-            anatomy: Skill::Anatomy
-                .capped_rank_for_aptitude(spec.skills.anatomy, spec.attributes.intelligence),
             knife: Skill::Knife
                 .capped_rank_for_aptitude(spec.skills.knife, spec.attributes.agility),
             tailoring: Skill::Tailoring
                 .capped_rank_for_aptitude(spec.skills.tailoring, spec.attributes.agility),
-            surgery: 0.0,
+            surgery: Skill::Surgery.capped_rank_for_aptitude(
+                effective_skill_hours.effective_skill_hours(Skill::Surgery),
+                spec.attributes.intelligence,
+            ),
             command: Skill::Command
                 .capped_rank_for_aptitude(spec.skills.command, spec.attributes.instinct),
             religion: Skill::Religion.capped_rank_for_aptitude(
@@ -894,7 +896,7 @@ mod creation_tests {
         let preview = CandidatePresentation::from(&young);
         assert!(!preview.capability.ranged);
 
-        let adult = roster(
+        let mut adult = roster(
             adventuresim_core::starting_character::GENERATOR_VERSION,
             "00112233445566778899aabbccddeeff",
             StartingAgeTier::Adult,
@@ -905,8 +907,23 @@ mod creation_tests {
         .unwrap();
         let preview = CandidatePresentation::from(&adult);
         assert!(preview.capability.physiology > 0.0);
-        assert!(preview.capability.anatomy > 0.0);
+        assert_eq!(preview.capability.surgery, 0.0);
         assert!(preview.capability.weapon_precision > 0.0);
+
+        adult.skills.knife = 10_000.0;
+        adult.skills.tailoring = 10_000.0;
+        assert_eq!(
+            CandidatePresentation::from(&adult).capability.surgery,
+            0.0,
+            "correlated crafts must not unlock a trained skill without direct Surgery study"
+        );
+
+        adult.skills.surgery = 100.0;
+        let correlated = CandidatePresentation::from(&adult).capability.surgery;
+        adult.skills.knife = 0.0;
+        adult.skills.tailoring = 0.0;
+        let direct_only = CandidatePresentation::from(&adult).capability.surgery;
+        assert!(correlated > direct_only);
     }
 
     #[test]

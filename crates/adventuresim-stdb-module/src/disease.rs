@@ -1770,7 +1770,7 @@ pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         .find(PHYSICIAN_ID)
         .ok_or_else(|| "Physician Demo is missing skill data".to_string())?;
     physician_skills.physiology_hours = 1_000_000.0;
-    physician_skills.anatomy_hours = 1_000_000.0;
+    physician_skills.surgery_hours = 0.0;
     physician_skills.knife_hours = 1_000_000.0;
     physician_skills.tailoring_hours = 1_000_000.0;
     ctx.db

@@ -72,10 +72,11 @@ related fields cannot add beyond the skill's authored mastery range. Correlation
 knowledge, not merely that two tags can coexist. Wildmen transfer strongly
 with Human (`0.65`) and more modestly with Fey (`0.30`).
 
-Surgery is expressed through separate trained skills rather than a Surgery
-leaf. Projectile extraction averages Anatomy with Knife, stitching averages
-Anatomy with Tailoring, and bandaging and splinting use Anatomy alone. Each
-skill retains its own governing aptitude, mastery cap, and injury penalties.
+Surgery is a direct trained skill. Projectile extraction, stitching, bandaging,
+and splinting all use its effective check. Knife and Tailoring are correlated
+with Surgery, so practice in those crafts can contribute indirectly after
+direct Surgery study unlocks that transfer; neither craft is a procedure input.
+Each skill retains its own governing aptitude, mastery cap, and injury penalties.
 
 Procedural physical-evidence topics may author atomic Bestiary implications.
 Each implication names exactly one category, a fixed support value from 0 to

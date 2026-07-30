@@ -1157,7 +1157,7 @@ mod tests {
     #[test]
     fn medical_organizations_have_distinct_professions_and_charges() {
         for (id, profession, charge) in [
-            ("herbalists_college", "Herbalist", "medical-pack"),
+            ("herbalists_fellowship", "Herbalist", "medical-pack"),
             ("physicians_college", "Physician", "caduceus"),
             ("surgeons_guild", "Apprentice Surgeon", "scalpel"),
         ] {

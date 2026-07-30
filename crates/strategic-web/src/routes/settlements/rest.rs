@@ -427,7 +427,10 @@ pub(super) fn limb_deltas(before: &CharacterLimbs, after: &CharacterLimbs) -> Ve
     .collect()
 }
 
-pub(super) fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(String, f32)> {
+pub(super) fn skill_deltas(
+    before: &CharacterSkills,
+    after: &CharacterSkills,
+) -> Vec<(String, f32)> {
     [
         ("Polearm", before.polearm_hours, after.polearm_hours),
         ("Axe", before.axe_hours, after.axe_hours),
@@ -451,11 +454,7 @@ pub(super) fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) ->
             after.physiology_hours,
         ),
         ("Cooking", before.cooking_hours, after.cooking_hours),
-        (
-            "Herbalism",
-            before.herbalism_hours,
-            after.herbalism_hours,
-        ),
+        ("Herbalism", before.herbalism_hours, after.herbalism_hours),
         (
             "Religion",
             before.religion_hours.total_direct(),
@@ -468,7 +467,7 @@ pub(super) fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) ->
         ),
         ("Stealth", before.stealth_hours, after.stealth_hours),
         ("Balance", before.balance_hours, after.balance_hours),
-        ("Anatomy", before.anatomy_hours, after.anatomy_hours),
+        ("Surgery", before.surgery_hours, after.surgery_hours),
         ("Tailoring", before.tailoring_hours, after.tailoring_hours),
         ("Smithing", before.smithing_hours, after.smithing_hours),
     ]
@@ -481,21 +480,21 @@ pub(super) fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) ->
 }
 
 #[cfg(test)]
-mod anatomy_skill_delta_tests {
+mod surgery_skill_delta_tests {
     use super::skill_deltas;
     use crate::spacetimedb::CharacterSkills;
 
     #[test]
-    fn anatomy_training_is_reported_as_a_leaf_skill_delta() {
+    fn surgery_training_is_reported_as_a_leaf_skill_delta() {
         let before = CharacterSkills {
-            anatomy_hours: 12.0,
+            surgery_hours: 12.0,
             ..Default::default()
         };
         let after = CharacterSkills {
-            anatomy_hours: 13.5,
+            surgery_hours: 13.5,
             ..Default::default()
         };
-        assert_eq!(skill_deltas(&before, &after), vec![("Anatomy".into(), 1.5)]);
+        assert_eq!(skill_deltas(&before, &after), vec![("Surgery".into(), 1.5)]);
     }
 }
 

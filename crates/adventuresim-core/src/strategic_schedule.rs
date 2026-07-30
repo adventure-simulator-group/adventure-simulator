@@ -50,7 +50,7 @@ pub struct SkillHours {
     pub bestiary: BestiaryHours,
     pub stealth: f32,
     pub balance: f32,
-    pub anatomy: f32,
+    pub surgery: f32,
     pub terrain_plains: f32,
     pub terrain_forest: f32,
     pub terrain_hills: f32,
@@ -87,7 +87,7 @@ impl SkillHours {
             self.bestiary.total_direct(),
             self.stealth,
             self.balance,
-            self.anatomy,
+            self.surgery,
             self.terrain_plains,
             self.terrain_forest,
             self.terrain_hills,
@@ -517,7 +517,7 @@ mod tests {
         assert!((combat_total - 6.0).abs() < 0.001);
         assert!((skills.charm - 1.0).abs() < 0.001);
         assert_eq!(skills.physiology, 0.0);
-        assert_eq!(skills.anatomy, 0.0);
+        assert_eq!(skills.surgery, 0.0);
         assert_eq!(skills.knife, 0.0);
         assert_eq!(skills.tailoring, 0.0);
     }

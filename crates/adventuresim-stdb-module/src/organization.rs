@@ -105,7 +105,7 @@ fn skill_hours(skills: &CharacterSkills, skill: &str, leaf: Option<&str>) -> Opt
             Skill::Bestiary,
             skills.bestiary_hours.direct(bestiary_category(leaf?)?),
         ),
-        "anatomy" => (Skill::Anatomy, skills.anatomy_hours),
+        "surgery" => (Skill::Surgery, skills.surgery_hours),
         "polearm" => (Skill::Polearm, skills.polearm_hours),
         "axe" => (Skill::Axe, skills.axe_hours),
         "bludgeon" => (Skill::Bludgeon, skills.bludgeon_hours),

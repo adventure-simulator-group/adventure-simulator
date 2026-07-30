@@ -25,7 +25,7 @@ pub(crate) use character_details::{
 pub use character_details::{party_personal_page, party_stats_page};
 pub use character_health::surgery_dialog;
 pub use character_skills::ActivityPreviewRates;
-pub(crate) use character_skills::CharacterSheetActions;
+pub(crate) use character_skills::{CharacterSheetActions, CharacterSkillHours};
 pub(crate) use chrome::{
     CharacterPortraitView, character_portrait_overlay, party_portrait_overlay,
     settlement_description,

@@ -12,7 +12,7 @@ const SKILLS: &[&str] = &[
     "herbalism",
     "religion",
     "bestiary",
-    "anatomy",
+    "surgery",
     "polearm",
     "axe",
     "bludgeon",

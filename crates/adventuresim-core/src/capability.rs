@@ -153,7 +153,6 @@ pub struct CharacterCapabilities {
     pub athletics: f32,
     pub endurance: f32,
     pub physiology: f32,
-    pub anatomy: f32,
     pub knife: f32,
     pub tailoring: f32,
     pub surgery: f32,
@@ -280,9 +279,9 @@ pub fn evaluate_capabilities(
         * equipment.armor_penalty(BodyPart::FULL_BODY)
         * encumbrance;
     let (quarter_armor, half_armor, three_quarter_armor, full_armor) = armor_tiers(equipment);
-    let anatomy = skills
+    let surgery = skills
         .skill_check_by_parts(
-            Skill::Anatomy,
+            Skill::Surgery,
             attributes,
             body,
             essentials,
@@ -332,10 +331,9 @@ pub fn evaluate_capabilities(
                 LimbWeights::all_equal(),
             )
             .clamp(0.0, 5.0),
-        anatomy,
         knife,
         tailoring,
-        surgery: ((anatomy + knife) * 0.5).min((anatomy + tailoring) * 0.5),
+        surgery,
         command: skills
             .skill_check_by_parts(
                 Skill::Command,
@@ -511,13 +509,14 @@ mod tests {
     }
 
     #[test]
-    fn surgery_coverage_requires_both_procedure_pairs() {
-        let coverage = |anatomy: f32, knife: f32, tailoring: f32| {
-            ((anatomy + knife) * 0.5).min((anatomy + tailoring) * 0.5)
+    fn surgery_capability_is_the_direct_surgery_check() {
+        let capability = CharacterCapabilities {
+            surgery: 4.0,
+            knife: 0.0,
+            tailoring: 0.0,
+            ..Default::default()
         };
-        assert_eq!(coverage(0.0, 5.0, 5.0), 2.5);
-        assert_eq!(coverage(5.0, 5.0, 0.0), 2.5);
-        assert_eq!(coverage(4.0, 4.0, 4.0), 4.0);
+        assert_eq!(capability.surgery, 4.0);
     }
 
     #[test]

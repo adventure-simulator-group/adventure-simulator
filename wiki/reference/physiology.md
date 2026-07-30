@@ -9,11 +9,11 @@ versioned generic meter profiles and never disease-keyed effects.
 
 ## Professional boundary
 
-The College of Physicians is distinct from both the College of Herbalists and
-the Surgeons' Guild. Physician training is 65% Physiology and 35% Anatomy;
-recognized physicians require rank 2 in both, and master physicians require
-rank 4 in both. Herbalists prepare remedies through Herbalism, while surgeons
-train the Anatomy, Knife, and Tailoring checks used by operative procedures.
+The College of Physicians is distinct from both the Fellowship of Herbalists
+and the Surgeons' Guild. Physician training and advancement use Physiology
+only: physicians observe patients, form fallible differentials, and administer
+non-operative treatment. Herbalists prepare remedies through Herbalism, while
+surgeons train Surgery for operative procedures.
 Membership and advancement in one organization never confer a rank in another.
 
 ## Private authority

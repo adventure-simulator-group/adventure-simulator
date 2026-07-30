@@ -349,7 +349,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
             human: initial(&mut rng),
             ..Default::default()
         },
-        anatomy: initial(&mut rng),
+        surgery: initial(&mut rng),
         stealth: initial(&mut rng),
         balance: initial(&mut rng),
         terrain_plains: initial(&mut rng),
@@ -374,7 +374,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         }
         BuildRole::Healer => {
             initial_skills.physiology = specialty;
-            initial_skills.anatomy = specialty * 0.7;
+            initial_skills.surgery = specialty * 0.7;
             initial_skills.knife = specialty * 0.7;
             initial_skills.tailoring = specialty * 0.7;
         }

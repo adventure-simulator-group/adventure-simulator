@@ -38,7 +38,7 @@
           ], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
           { "id": "surgeon-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "surgeon" }, "turns": [
             { "speaker": "professional", "fragments": [
-              { "kind": "text", "value": "A surgeon learns anatomy, clean tool work, extraction, and stitching. Surgery is a procedure combining those crafts, not a single hidden skill. Ask if you wish to become an " },
+              { "kind": "text", "value": "A surgeon learns operative wound care, extraction, and stitching. Every procedure checks Surgery directly; Knife and Tailoring practice can contribute indirectly through related experience. Ask if you wish to become an " },
               { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }
             ] }
           ], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },

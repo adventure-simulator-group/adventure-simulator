@@ -733,9 +733,7 @@ fn procedure_check(
     };
     Ok(adventuresim_core::surgery::procedure_skill(
         procedure,
-        check(Skill::Anatomy),
-        check(Skill::Knife),
-        check(Skill::Tailoring),
+        check(Skill::Surgery),
         actor_id == patient_id,
     ))
 }

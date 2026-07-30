@@ -25,20 +25,10 @@ pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
     .max(0.0)
 }
 
-/// Compose the procedure's complete leaf checks and apply self-treatment once.
-pub fn procedure_skill(
-    procedure: &str,
-    anatomy: f32,
-    knife: f32,
-    tailoring: f32,
-    self_treatment: bool,
-) -> f32 {
-    let composite = match procedure {
-        "extract" => (anatomy + knife) * 0.5,
-        "stitch" => (anatomy + tailoring) * 0.5,
-        _ => anatomy,
-    };
-    effective_skill(composite, self_treatment)
+/// Every operative procedure directly checks Surgery. Knife and Tailoring
+/// contribute only through Surgery's ordinary skill correlations.
+pub fn procedure_skill(_procedure: &str, surgery: f32, self_treatment: bool) -> f32 {
+    effective_skill(surgery, self_treatment)
 }
 
 pub fn procedure_duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
@@ -181,12 +171,11 @@ mod tests {
     }
 
     #[test]
-    fn procedure_composition_distinguishes_extraction_from_stitching() {
-        assert_eq!(procedure_skill("extract", 5.0, 5.0, 0.0, false), 5.0);
-        assert_eq!(procedure_skill("stitch", 5.0, 5.0, 0.0, false), 2.5);
-        assert!(procedure_skill("extract", 5.0, 5.0, 0.0, false) >= 4.0);
-        assert!(procedure_skill("stitch", 5.0, 5.0, 0.0, false) < 4.0);
-        assert_eq!(procedure_skill("extract", 5.0, 5.0, 0.0, true), 2.5);
+    fn every_procedure_uses_the_same_direct_surgery_check() {
+        for procedure in ["bandage", "splint", "extract", "stitch"] {
+            assert_eq!(procedure_skill(procedure, 5.0, false), 5.0);
+            assert_eq!(procedure_skill(procedure, 5.0, true), 2.5);
+        }
     }
 
     #[test]
