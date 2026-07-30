@@ -266,7 +266,8 @@ fn derive_physiology_chart(ctx: &ViewContext) -> Vec<BackendPhysiologyChart> {
     spans.sort_by_key(|span| (span.low_id, span.high_id, span.started_at, span.id));
     let mut result = Vec::new();
     let mut previous = BTreeMap::<(u64, u64), u64>::new();
-    let mut observed_minutes = BTreeMap::<(u64, u64), u64>::new();
+    let mut continuous_starts = BTreeMap::<(u64, u64), u64>::new();
+    let mut visible_history = BTreeMap::<(u64, u64), Vec<VisibleHumourReading>>::new();
     for span in spans {
         let joint_now = clock(span.low_id).min(clock(span.high_id));
         let end = span.ended_at.unwrap_or(joint_now).min(joint_now);
@@ -278,7 +279,6 @@ fn derive_physiology_chart(ctx: &ViewContext) -> Vec<BackendPhysiologyChart> {
             (span.high_id, span.low_id, span.high_observer_band),
         ] {
             let pair = (observer_id, patient_id);
-            let observed_before = observed_minutes.get(&pair).copied().unwrap_or(0);
             if result.len() >= PHYSIOLOGY_CHART_MAX_ROWS {
                 return result;
             }
@@ -304,8 +304,13 @@ fn derive_physiology_chart(ctx: &ViewContext) -> Vec<BackendPhysiologyChart> {
                         gap_from: Some(previous_end),
                         gap_to: Some(start),
                     });
+                    continuous_starts.insert(pair, start);
+                    visible_history.remove(&pair);
                 }
+            } else {
+                continuous_starts.insert(pair, start);
             }
+            let continuous_start = continuous_starts.get(&pair).copied().unwrap_or(start);
             let cadence = physiology::observation_cadence_minutes(band).max(1);
             let available = PHYSIOLOGY_CHART_MAX_ROWS
                 .saturating_sub(result.len())
@@ -322,26 +327,28 @@ fn derive_physiology_chart(ctx: &ViewContext) -> Vec<BackendPhysiologyChart> {
                 if result.len() >= PHYSIOLOGY_CHART_MAX_ROWS {
                     return result;
                 }
-                result.push(derive_chart_reading(
+                let history = visible_history.entry(pair).or_default();
+                let (reading, visible) = derive_chart_reading(
                     &key.key,
                     key.version,
                     observer_id,
                     patient_id,
                     band,
                     minute,
-                    observed_before.saturating_add(minute.saturating_sub(span.started_at)),
+                    minute.saturating_sub(continuous_start),
                     &patient_state,
-                ));
+                    history,
+                );
+                if history.last().map(|row| row.observed_at) != Some(visible.observed_at) {
+                    history.push(visible);
+                }
+                result.push(reading);
                 if end.saturating_sub(minute) < stride {
                     break;
                 }
                 minute = minute.saturating_add(stride);
             }
             previous.insert(pair, end);
-            observed_minutes.insert(
-                pair,
-                observed_before.saturating_add(end.saturating_sub(span.started_at)),
-            );
         }
     }
     for patient_time in ctx.db.character_time().minutes().filter(0u64..) {
@@ -366,16 +373,18 @@ fn derive_physiology_chart(ctx: &ViewContext) -> Vec<BackendPhysiologyChart> {
                 capability.physiology.round().clamp(0.0, 5.0) as u8
             });
         let patient_state = chart_patient_state(ctx, patient.id);
-        result.push(derive_chart_reading(
+        let (reading, _) = derive_chart_reading(
             &key.key,
             key.version,
             patient.id,
             patient.id,
             band,
             patient_time.minutes,
-            patient_time.minutes.min(PHYSIOLOGY_CHART_MAX_RANGE_MINUTES),
+            0,
             &patient_state,
-        ));
+            &[],
+        );
+        result.push(reading);
     }
     result
 }
@@ -413,6 +422,12 @@ fn chart_patient_state(ctx: &ViewContext, patient_id: u64) -> ChartPatientState 
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct VisibleHumourReading {
+    observed_at: u64,
+    mix: [f32; physiology::HUMOUR_COUNT],
+}
+
 fn derive_chart_reading(
     key: &[u8],
     key_version: u16,
@@ -422,7 +437,8 @@ fn derive_chart_reading(
     minute: u64,
     observation_minutes: u64,
     patient_state: &ChartPatientState,
-) -> BackendPhysiologyChart {
+    prior_visible: &[VisibleHumourReading],
+) -> (BackendPhysiologyChart, VisibleHumourReading) {
     let regional = chart_regional_state(key, key_version, patient_id, minute, patient_state);
     let mut public = physiology::regional_humours(&regional);
     for symptom in
@@ -449,16 +465,13 @@ fn derive_chart_reading(
         }
     }
     let quantized = public.map(|values| physiology::quantize_humours(values, band));
-    let possible_diseases = derive_possible_diseases(
-        key,
-        key_version,
-        patient_id,
-        minute,
-        observation_minutes,
-        band,
-        patient_state,
-        &public,
-    );
+    let visible = VisibleHumourReading {
+        observed_at: minute,
+        mix: visible_mix_from_quantized(&quantized),
+    };
+    let mut visible_sequence = prior_visible.to_vec();
+    visible_sequence.push(visible);
+    let possible_diseases = derive_possible_diseases(observation_minutes, band, &visible_sequence);
     let mut known_interventions = if band == 0 {
         Vec::new()
     } else {
@@ -483,23 +496,26 @@ fn derive_chart_reading(
     };
     known_interventions.sort();
     known_interventions.dedup();
-    BackendPhysiologyChart {
-        id: format!("reading:{observer_id}:{patient_id}:{minute}"),
-        observer_id,
-        patient_id,
-        observed_at: minute,
-        physiology_band: band,
-        observation_minutes,
-        sanguine_bps: quantized.iter().map(|values| values[0]).collect(),
-        phlegmatic_bps: quantized.iter().map(|values| values[1]).collect(),
-        choleric_bps: quantized.iter().map(|values| values[2]).collect(),
-        melancholic_bps: quantized.iter().map(|values| values[3]).collect(),
-        possible_diseases,
-        known_interventions,
-        confidence_bps: [1_500, 3_000, 5_000, 7_000, 8_500, 9_500][usize::from(band.min(5))],
-        gap_from: None,
-        gap_to: None,
-    }
+    (
+        BackendPhysiologyChart {
+            id: format!("reading:{observer_id}:{patient_id}:{minute}"),
+            observer_id,
+            patient_id,
+            observed_at: minute,
+            physiology_band: band,
+            observation_minutes,
+            sanguine_bps: quantized.iter().map(|values| values[0]).collect(),
+            phlegmatic_bps: quantized.iter().map(|values| values[1]).collect(),
+            choleric_bps: quantized.iter().map(|values| values[2]).collect(),
+            melancholic_bps: quantized.iter().map(|values| values[3]).collect(),
+            possible_diseases,
+            known_interventions,
+            confidence_bps: [1_500, 3_000, 5_000, 7_000, 8_500, 9_500][usize::from(band.min(5))],
+            gap_from: None,
+            gap_to: None,
+        },
+        visible,
+    )
 }
 
 fn chart_regional_state(
@@ -531,22 +547,13 @@ fn chart_regional_state(
 }
 
 fn derive_possible_diseases(
-    key: &[u8],
-    key_version: u16,
-    patient_id: u64,
-    minute: u64,
     observation_minutes: u64,
     band: u8,
-    patient_state: &ChartPatientState,
-    observed: &[[f32; physiology::HUMOUR_COUNT]; physiology::REGION_COUNT],
+    visible_sequence: &[VisibleHumourReading],
 ) -> Vec<BackendPhysiologyDifferential> {
-    let mut observed_mix = [0.0; physiology::HUMOUR_COUNT];
-    for region in observed {
-        for (total, value) in observed_mix.iter_mut().zip(region) {
-            *total += value.abs() / physiology::REGION_COUNT as f32;
-        }
-    }
-    normalize_mix(&mut observed_mix);
+    let observed_mix = visible_sequence
+        .last()
+        .map_or([0.25; physiology::HUMOUR_COUNT], |reading| reading.mix);
     let reliability_by_band = [0.12, 0.24, 0.42, 0.62, 0.80, 0.94];
     let time_factor = (observation_minutes as f32 / (8.0 * 1_440.0)).clamp(0.0, 1.0);
     let reliability = reliability_by_band[usize::from(band.min(5))] * (0.25 + 0.75 * time_factor);
@@ -568,17 +575,15 @@ fn derive_possible_diseases(
                 .zip(expected)
                 .map(|(actual, candidate)| (actual - candidate).abs())
                 .sum::<f32>();
-            let treatment = treatment_response_evidence(
-                key,
-                key_version,
-                patient_id,
-                minute,
-                patient_state,
+            let longitudinal = longitudinal_sequence_bonus(
+                visible_sequence,
+                observation_minutes,
+                band,
                 definition.id,
             );
             (
                 definition,
-                (1.0 - shape_fit * 0.5 + treatment).clamp(0.0, 1.0),
+                (1.0 - shape_fit * 0.5 + longitudinal).clamp(0.0, 1.0),
             )
         })
         .collect::<Vec<_>>();
@@ -589,7 +594,7 @@ fn derive_possible_diseases(
             let differentiated = (0.5 + (fit - mean) * 2.2).clamp(0.0, 1.0);
             let likelihood = 0.5 + (differentiated - 0.5) * reliability;
             BackendPhysiologyDifferential {
-                disease_id: format!("{:?}", definition.id).to_ascii_lowercase(),
+                disease_id: disease_key(definition.id).to_owned(),
                 label: definition.period_name.to_owned(),
                 likelihood_bps: (likelihood * 10_000.0).round() as u16,
             }
@@ -604,6 +609,119 @@ fn derive_possible_diseases(
     result
 }
 
+fn longitudinal_sequence_bonus(
+    visible_sequence: &[VisibleHumourReading],
+    observation_minutes: u64,
+    band: u8,
+    candidate: DiseaseId,
+) -> f32 {
+    let pattern = disease::diagnostic_pattern(candidate);
+    let history_span = visible_sequence
+        .first()
+        .zip(visible_sequence.last())
+        .map_or(0, |(first, last)| {
+            last.observed_at.saturating_sub(first.observed_at)
+        });
+    if band < 3
+        || observation_minutes < pattern.minimum_observation_minutes
+        || history_span < pattern.minimum_observation_minutes
+        || visible_sequence.len() < 3
+    {
+        return 0.0;
+    }
+    visible_sequence_fit(visible_sequence, candidate) * pattern.longitudinal_weight
+}
+
+fn visible_mix_from_quantized(
+    quantized: &[[i16; physiology::HUMOUR_COUNT]; physiology::REGION_COUNT],
+) -> [f32; physiology::HUMOUR_COUNT] {
+    let mut mix = [0.0; physiology::HUMOUR_COUNT];
+    for region in quantized {
+        for (humour, value) in mix.iter_mut().zip(region) {
+            *humour += f32::from(value.abs()) / physiology::REGION_COUNT as f32;
+        }
+    }
+    normalize_mix(&mut mix);
+    mix
+}
+
+/// Scores only a bounded sequence of public Humour mixes against public
+/// disease definitions. Supplying the same visible sequence always produces
+/// the same result, regardless of its hidden cause.
+fn visible_sequence_fit(visible: &[VisibleHumourReading], candidate: DiseaseId) -> f32 {
+    if visible.len() < 2 {
+        return 0.0;
+    }
+    let definition = disease::definition(candidate);
+    let total = definition
+        .incubation_minutes
+        .saturating_add(definition.rise_minutes)
+        .saturating_add(definition.peak_minutes)
+        .saturating_add(definition.recovery_minutes);
+    let first_minute = visible.first().map_or(0, |reading| reading.observed_at);
+    let last_minute = visible
+        .last()
+        .map_or(first_minute, |reading| reading.observed_at);
+    let window = last_minute.saturating_sub(first_minute);
+    if window == 0 {
+        return 0.0;
+    }
+    let mut best = f32::INFINITY;
+    for step in 0..=24_u64 {
+        let latest_age = window.saturating_add(total.saturating_sub(window) * step / 24);
+        let mut error = 0.0;
+        for reading in visible {
+            let age = latest_age.saturating_sub(last_minute.saturating_sub(reading.observed_at));
+            let expected = expected_public_mix(candidate, age);
+            error += reading
+                .mix
+                .iter()
+                .zip(expected)
+                .map(|(left, right)| (left - right).abs())
+                .sum::<f32>();
+        }
+        best = best.min(error / visible.len() as f32);
+    }
+    (1.0 - best * 0.5).clamp(0.0, 1.0)
+}
+
+fn expected_public_mix(candidate: DiseaseId, age: u64) -> [f32; physiology::HUMOUR_COUNT] {
+    let definition = disease::definition(candidate);
+    let mut meters = physiology::MeterVector::ZERO;
+    if let Some(curves) = disease::fantastic_meter_curves(candidate) {
+        for curve in curves {
+            meters.0[curve.meter.index()] = physiology::piecewise(curve, age);
+        }
+    } else {
+        let (_, progress) = {
+            let i = definition.incubation_minutes;
+            let rise_end = i.saturating_add(definition.rise_minutes);
+            let peak_end = rise_end.saturating_add(definition.peak_minutes);
+            let end = peak_end.saturating_add(definition.recovery_minutes);
+            if age < i {
+                (0, 0.0)
+            } else if age < rise_end {
+                (1, (age - i) as f32 / definition.rise_minutes.max(1) as f32)
+            } else if age < peak_end {
+                (2, 1.0)
+            } else if age < end {
+                (
+                    3,
+                    1.0 - (age - peak_end) as f32 / definition.recovery_minutes.max(1) as f32,
+                )
+            } else {
+                (4, 0.0)
+            }
+        };
+        for (meter, peak) in disease::disease_peak_meters(candidate) {
+            meters.0[meter.index()] = peak * progress;
+        }
+    }
+    let mut expected = physiology::humours(meters).map(f32::abs);
+    normalize_mix(&mut expected);
+    expected
+}
+
 fn normalize_mix(values: &mut [f32; physiology::HUMOUR_COUNT]) {
     let total = values.iter().sum::<f32>();
     if total > f32::EPSILON {
@@ -613,74 +731,6 @@ fn normalize_mix(values: &mut [f32; physiology::HUMOUR_COUNT]) {
     } else {
         values.fill(1.0 / physiology::HUMOUR_COUNT as f32);
     }
-}
-
-fn treatment_response_evidence(
-    key: &[u8],
-    key_version: u16,
-    patient_id: u64,
-    minute: u64,
-    patient_state: &ChartPatientState,
-    candidate: disease::DiseaseId,
-) -> f32 {
-    let mut evidence = 0.0;
-    for administration in patient_state
-        .interventions
-        .iter()
-        .filter(|value| value.administered_at < minute)
-    {
-        let Some(profile) = physiology::intervention_profile(
-            &administration.preparation_id,
-            administration.profile_version,
-        ) else {
-            continue;
-        };
-        let overlap = disease::disease_peak_meters(candidate)
-            .iter()
-            .map(|(meter, disease_loss)| {
-                disease_loss * (-profile.loss_delta_per_unit.get(*meter)).max(0.0)
-            })
-            .sum::<f32>();
-        if overlap <= 0.005 {
-            continue;
-        }
-        let before = chart_regional_state(
-            key,
-            key_version,
-            patient_id,
-            administration.administered_at,
-            patient_state,
-        );
-        let comparison_minute = minute.min(
-            administration
-                .administered_at
-                .saturating_add(profile.duration_minutes.saturating_sub(1)),
-        );
-        if comparison_minute <= administration.administered_at {
-            continue;
-        }
-        let after = chart_regional_state(
-            key,
-            key_version,
-            patient_id,
-            comparison_minute,
-            patient_state,
-        );
-        let before_burden = regional_burden(&before);
-        let after_burden = regional_burden(&after);
-        let direction = (before_burden - after_burden).clamp(-0.25, 0.25);
-        evidence += direction * overlap * 6.0;
-    }
-    evidence.clamp(-0.30, 0.30)
-}
-
-fn regional_burden(regional: &[physiology::MeterVector; physiology::REGION_COUNT]) -> f32 {
-    physiology::regional_humours(regional)
-        .iter()
-        .flat_map(|values| values.iter())
-        .map(|value| value.abs())
-        .sum::<f32>()
-        / (physiology::REGION_COUNT * physiology::HUMOUR_COUNT) as f32
 }
 
 fn notice(
@@ -758,6 +808,10 @@ pub(crate) fn parse_id(value: &str) -> Result<DiseaseId, String> {
         "smallpox" => Ok(DiseaseId::Smallpox),
         "plague" => Ok(DiseaseId::Plague),
         "consumption" => Ok(DiseaseId::Consumption),
+        "mahrdruck" => Ok(DiseaseId::Mahrdruck),
+        "nachzehrer_wasting" => Ok(DiseaseId::NachzehrerWasting),
+        "bilwisschuss" => Ok(DiseaseId::Bilwisschuss),
+        "kobeldunst" => Ok(DiseaseId::Kobeldunst),
         _ => Err("Unknown disease".into()),
     }
 }
@@ -1603,16 +1657,7 @@ fn persist_acquisition_episodes(
     episodes: impl IntoIterator<Item = InfectionEpisode>,
 ) -> Result<(), String> {
     for episode in episodes {
-        let disease_id = match episode.disease_id {
-            DiseaseId::Influenza => "influenza",
-            DiseaseId::Dysentery => "dysentery",
-            DiseaseId::Typhus => "typhus",
-            DiseaseId::Tetanus => "tetanus",
-            DiseaseId::Erysipelas => "erysipelas",
-            DiseaseId::Smallpox => "smallpox",
-            DiseaseId::Plague => "plague",
-            DiseaseId::Consumption => "consumption",
-        };
+        let disease_id = disease_key(episode.disease_id);
         if !ctx
             .db
             .infection_episode()
@@ -2030,6 +2075,10 @@ pub(crate) fn disease_key(id: DiseaseId) -> &'static str {
         DiseaseId::Smallpox => "smallpox",
         DiseaseId::Plague => "plague",
         DiseaseId::Consumption => "consumption",
+        DiseaseId::Mahrdruck => "mahrdruck",
+        DiseaseId::NachzehrerWasting => "nachzehrer_wasting",
+        DiseaseId::Bilwisschuss => "bilwisschuss",
+        DiseaseId::Kobeldunst => "kobeldunst",
     }
 }
 
@@ -2293,7 +2342,7 @@ pub fn record_committed_cut(
             ctx.db.infection_episode().insert(InfectionEpisodeRow {
                 id: 0,
                 character_id,
-                disease_id: format!("{disease_id:?}").to_ascii_lowercase(),
+                disease_id: disease_key(disease_id).to_owned(),
                 contracted_at: at,
                 ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
                 phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
@@ -2334,7 +2383,7 @@ pub fn record_standing_cut_exposure(
             ctx.db.infection_episode().insert(InfectionEpisodeRow {
                 id: 0,
                 character_id,
-                disease_id: format!("{disease_id:?}").to_ascii_lowercase(),
+                disease_id: disease_key(disease_id).to_owned(),
                 contracted_at,
                 ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
                 phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
@@ -2511,7 +2560,7 @@ pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         ctx.db.infection_episode().insert(InfectionEpisodeRow {
             id: 0,
             character_id: id,
-            disease_id: format!("{disease_id:?}").to_ascii_lowercase(),
+            disease_id: disease_key(disease_id).to_owned(),
             contracted_at: FIXTURE_NOW - age,
             ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
             phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
@@ -2777,5 +2826,118 @@ mod herbalist_purchase_source_tests {
         assert!(treatment.contains("plan_party_disease_interval"));
         assert!(treatment.contains("preview_elapsed_for_disease_in_plan"));
         assert!(treatment.contains("advance_character_wait_time_in_plan"));
+    }
+}
+
+#[cfg(test)]
+mod fantastic_differential_tests {
+    use super::*;
+
+    #[test]
+    fn visible_sequence_score_is_independent_of_hidden_cause() {
+        let visible = vec![
+            VisibleHumourReading {
+                observed_at: 100,
+                mix: [0.12, 0.45, 0.18, 0.25],
+            },
+            VisibleHumourReading {
+                observed_at: 1_540,
+                mix: [0.10, 0.38, 0.16, 0.36],
+            },
+            VisibleHumourReading {
+                observed_at: 2_980,
+                mix: [0.08, 0.28, 0.14, 0.50],
+            },
+        ];
+        let first = visible_sequence_fit(&visible, DiseaseId::Mahrdruck);
+        let copied_from_an_unrelated_patient = visible.clone();
+        let second = visible_sequence_fit(&copied_from_an_unrelated_patient, DiseaseId::Mahrdruck);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn one_or_too_short_visible_sequence_has_no_longitudinal_bonus() {
+        let one = [VisibleHumourReading {
+            observed_at: 5_000,
+            mix: expected_public_mix(DiseaseId::Mahrdruck, 4 * 1_440),
+        }];
+        assert_eq!(visible_sequence_fit(&one, DiseaseId::Mahrdruck), 0.0);
+
+        let too_short = [
+            VisibleHumourReading {
+                observed_at: 5_000,
+                mix: expected_public_mix(DiseaseId::Mahrdruck, 4 * 1_440),
+            },
+            VisibleHumourReading {
+                observed_at: 5_030,
+                mix: expected_public_mix(DiseaseId::Mahrdruck, 4 * 1_440 + 30),
+            },
+            VisibleHumourReading {
+                observed_at: 5_060,
+                mix: expected_public_mix(DiseaseId::Mahrdruck, 4 * 1_440 + 60),
+            },
+        ];
+        assert_eq!(
+            longitudinal_sequence_bonus(&too_short, 60, 5, DiseaseId::Mahrdruck),
+            0.0
+        );
+
+        for id in [
+            DiseaseId::Mahrdruck,
+            DiseaseId::NachzehrerWasting,
+            DiseaseId::Bilwisschuss,
+            DiseaseId::Kobeldunst,
+        ] {
+            let pattern = disease::diagnostic_pattern(id);
+            assert!(pattern.minimum_observation_minutes >= 1_440);
+            assert!(pattern.longitudinal_weight > 0.0);
+        }
+        assert_eq!(
+            disease::diagnostic_pattern(DiseaseId::Influenza).longitudinal_weight,
+            0.0
+        );
+    }
+
+    #[test]
+    fn coordinated_public_sequences_rank_their_authored_pattern() {
+        let id = DiseaseId::Kobeldunst;
+        let visible = [6 * 60, 21 * 60, 36 * 60]
+            .map(|age| VisibleHumourReading {
+                observed_at: age,
+                mix: expected_public_mix(id, age),
+            })
+            .to_vec();
+        let own = visible_sequence_fit(&visible, id);
+        let ordinary = visible_sequence_fit(&visible, DiseaseId::Dysentery);
+        assert!(own > ordinary, "{own} <= {ordinary}");
+    }
+
+    #[test]
+    fn canonical_disease_keys_round_trip_for_every_authored_disease() {
+        for definition in adventuresim_core::disease::STARTER_DISEASES {
+            let key = disease_key(definition.id);
+            assert_eq!(parse_id(key), Ok(definition.id), "{key}");
+        }
+        assert_eq!(
+            disease_key(DiseaseId::NachzehrerWasting),
+            "nachzehrer_wasting"
+        );
+    }
+
+    #[test]
+    fn fantastic_evidence_hooks_reference_authored_evidence_and_sites() {
+        let source = include_str!("../../../content/quests/investigation.yaml");
+        for definition in adventuresim_core::disease::STARTER_DISEASES {
+            for hook in disease::evidence_hooks(definition.id) {
+                assert!(
+                    source.contains(&format!(r#""id":"{}""#, hook.evidence_id)),
+                    "{}",
+                    hook.evidence_id
+                );
+                if let Some(site) = hook.required_site {
+                    assert!(source.contains(&format!(r#""id":"{site}""#)), "{site}");
+                }
+            }
+        }
     }
 }

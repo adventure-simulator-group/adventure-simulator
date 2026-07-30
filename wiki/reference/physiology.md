@@ -165,9 +165,15 @@ early treatment response deliberately ambiguous.
 
 Possible diseases are ordered and colored from red through yellow to green.
 Physiology skill and time spent observing make those colors better calibrated.
-The differential also compares the expected action of known treatment with the
-patient's subsequent regional burden, so improvement or deterioration can
-strengthen or weaken a candidate without exposing private disease identity.
+Known interventions remain visible as timeline markers so the player can
+interpret subsequent improvement or deterioration; they are not a hidden
+disease-identity input to the differential. Fantastic diseases add strongly
+coordinated, authored meter sequences. Once an observer has enough uninterrupted
+authorized history, a pure scorer compares only the actual quantized visible
+readings and their timestamps with public definitions. Absence resets that
+sequence, self charts do not synthesize prior readings, early readings remain
+ambiguous, and ordinary diseases do not receive the added pattern weight. See
+[Fantastic diseases](fantastic-diseases.md).
 
 It contains no authoritative diagnosis, recommendation, infection row,
 phenotype, or raw private meter. Browser subscriptions never include the

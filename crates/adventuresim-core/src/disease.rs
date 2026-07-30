@@ -3,7 +3,7 @@
 //! An infection is completely described by its identity, associations and two
 //! character-local timestamps. Everything else in this module is derived.
 
-use crate::physiology::{self, BodyRegion, Humour, Meter, MeterVector};
+use crate::physiology::{self, BodyRegion, CurvePoint, Humour, Meter, MeterCurve, MeterVector};
 use serde::{Deserialize, Serialize};
 
 pub const DISEASE_RULESET_VERSION: u16 = 1;
@@ -21,6 +21,10 @@ pub enum DiseaseId {
     Smallpox,
     Plague,
     Consumption,
+    Mahrdruck,
+    NachzehrerWasting,
+    Bilwisschuss,
+    Kobeldunst,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +50,12 @@ pub enum Symptom {
     Lockjaw,
     Buboes,
     Trembling,
+    NightParalysis,
+    AirHunger,
+    OralFilaments,
+    Wasting,
+    FocalContracture,
+    EyeBurning,
 }
 
 impl Symptom {
@@ -62,6 +72,12 @@ impl Symptom {
             Self::Lockjaw => "locked jaw",
             Self::Buboes => "swellings",
             Self::Trembling => "trembling",
+            Self::NightParalysis => "waking unable to move",
+            Self::AirHunger => "struggling for breath",
+            Self::OralFilaments => "dark threads at the gums",
+            Self::Wasting => "wasting",
+            Self::FocalContracture => "one-sided contracture",
+            Self::EyeBurning => "burning eyes",
         }
     }
 
@@ -69,10 +85,16 @@ impl Symptom {
     /// deliberately lossy humour vocabulary as the private meter state.
     pub const fn humour(self) -> Humour {
         match self {
-            Self::Coughing | Self::Sneezing => Humour::Phlegmatic,
+            Self::Coughing | Self::Sneezing | Self::AirHunger => Humour::Phlegmatic,
             Self::Feverish | Self::Vomiting | Self::BloodyStool => Humour::Choleric,
-            Self::Rash | Self::Buboes => Humour::Sanguine,
-            Self::Fatigued | Self::Spasms | Self::Lockjaw | Self::Trembling => Humour::Melancholic,
+            Self::Rash | Self::Buboes | Self::OralFilaments | Self::EyeBurning => Humour::Sanguine,
+            Self::Fatigued
+            | Self::Spasms
+            | Self::Lockjaw
+            | Self::Trembling
+            | Self::NightParalysis
+            | Self::Wasting
+            | Self::FocalContracture => Humour::Melancholic,
         }
     }
 
@@ -89,14 +111,24 @@ impl Symptom {
             Self::Spasms | Self::Trembling => &[LeftArm, RightArm, LeftLeg, RightLeg],
             Self::Lockjaw => &[Head],
             Self::Buboes => &[Chest, Abdomen, LeftArm, RightArm, LeftLeg, RightLeg],
+            Self::NightParalysis | Self::AirHunger => &[Head, Chest],
+            Self::OralFilaments => &[Head],
+            Self::Wasting => &[Chest, Abdomen, LeftArm, RightArm, LeftLeg, RightLeg],
+            Self::FocalContracture => &[LeftArm, RightArm, LeftLeg, RightLeg],
+            Self::EyeBurning => &[Head],
         }
     }
 
     pub const fn humour_deviation(self) -> f32 {
         match self {
-            Self::Coughing | Self::BloodyStool | Self::Spasms | Self::Lockjaw | Self::Buboes => {
-                0.055
-            }
+            Self::Coughing
+            | Self::BloodyStool
+            | Self::Spasms
+            | Self::Lockjaw
+            | Self::Buboes
+            | Self::NightParalysis
+            | Self::OralFilaments
+            | Self::FocalContracture => 0.055,
             _ => 0.035,
         }
     }
@@ -177,11 +209,81 @@ pub struct DiseaseDefinition {
     pub primary_community_vector: TransmissionVector,
 }
 
+/// Public diagnostic affordances authored for a disease. These values describe
+/// how readily a *visible sequence* can be distinguished; they are never a
+/// shortcut from an infection episode to its identity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DiagnosticPattern {
+    pub minimum_observation_minutes: u64,
+    pub longitudinal_weight: f32,
+}
+
+/// Open, weighted evidence vocabulary for future investigation and outbreak
+/// generators. IDs deliberately name physical traces rather than diagnoses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiseaseEvidenceHook {
+    pub evidence_id: &'static str,
+    pub support_bps: u16,
+    pub required_site: Option<&'static str>,
+}
+
+pub fn diagnostic_pattern(id: DiseaseId) -> DiagnosticPattern {
+    match id {
+        DiseaseId::Mahrdruck => DiagnosticPattern {
+            minimum_observation_minutes: 2 * 1_440,
+            longitudinal_weight: 0.42,
+        },
+        DiseaseId::NachzehrerWasting => DiagnosticPattern {
+            minimum_observation_minutes: 8 * 1_440,
+            longitudinal_weight: 0.38,
+        },
+        DiseaseId::Bilwisschuss => DiagnosticPattern {
+            minimum_observation_minutes: 2 * 1_440,
+            longitudinal_weight: 0.44,
+        },
+        DiseaseId::Kobeldunst => DiagnosticPattern {
+            minimum_observation_minutes: 1_440,
+            longitudinal_weight: 0.40,
+        },
+        _ => DiagnosticPattern {
+            minimum_observation_minutes: 8 * 1_440,
+            longitudinal_weight: 0.0,
+        },
+    }
+}
+
+pub fn evidence_hooks(id: DiseaseId) -> &'static [DiseaseEvidenceHook] {
+    match id {
+        DiseaseId::Mahrdruck => &[DiseaseEvidenceHook {
+            evidence_id: "straw_mite_husks",
+            support_bps: 9_200,
+            required_site: Some("occupied_house"),
+        }],
+        DiseaseId::NachzehrerWasting => &[DiseaseEvidenceHook {
+            evidence_id: "black_grave_mould",
+            support_bps: 9_500,
+            required_site: Some("graveyard"),
+        }],
+        DiseaseId::Bilwisschuss => &[DiseaseEvidenceHook {
+            evidence_id: "barbed_rye_galls",
+            support_bps: 9_300,
+            required_site: Some("abandoned_farm"),
+        }],
+        DiseaseId::Kobeldunst => &[DiseaseEvidenceHook {
+            evidence_id: "iridescent_ore_biofilm",
+            support_bps: 9_500,
+            required_site: Some("cave"),
+        }],
+        _ => &[],
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TransmissionVector {
     CloseContact,
     FoodWater,
     Vermin,
+    Environmental,
     Wound,
     Blood,
 }
@@ -201,6 +303,7 @@ pub fn maximum_preventable_fraction(vector: TransmissionVector) -> f32 {
         TransmissionVector::CloseContact => 0.90,
         TransmissionVector::FoodWater => 0.94,
         TransmissionVector::Vermin => 0.65,
+        TransmissionVector::Environmental => 0.80,
         TransmissionVector::Wound => 0.0,
         TransmissionVector::Blood => 0.30,
     }
@@ -770,8 +873,20 @@ const RASH: &[Symptom] = &[Symptom::Rash, Symptom::Feverish];
 const POX: &[Symptom] = &[Symptom::Rash, Symptom::Feverish, Symptom::Fatigued];
 const BUBOES: &[Symptom] = &[Symptom::Buboes, Symptom::Feverish, Symptom::Trembling];
 const CONSUMPTION: &[Symptom] = &[Symptom::Coughing, Symptom::Fatigued, Symptom::Feverish];
+const MAHRDRUCK: &[Symptom] = &[
+    Symptom::NightParalysis,
+    Symptom::AirHunger,
+    Symptom::Fatigued,
+];
+const GRAVE_WASTING: &[Symptom] = &[Symptom::Wasting, Symptom::OralFilaments, Symptom::Feverish];
+const BILWIS: &[Symptom] = &[
+    Symptom::FocalContracture,
+    Symptom::Spasms,
+    Symptom::EyeBurning,
+];
+const MINE_VAPOUR: &[Symptom] = &[Symptom::EyeBurning, Symptom::Trembling, Symptom::AirHunger];
 
-pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
+pub const STARTER_DISEASES: [DiseaseDefinition; 12] = [
     d(
         DiseaseId::Influenza,
         "Catarrhal fever",
@@ -948,6 +1063,105 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         0.20,
         &[TransmissionVector::CloseContact],
         TransmissionVector::CloseContact,
+    ),
+    d(
+        DiseaseId::Mahrdruck,
+        "Mahrdruck",
+        "Clusters among sleepers using the same infested straw or bedding.",
+        2 * DAY,
+        2 * DAY,
+        4 * DAY,
+        5 * DAY,
+        0.28,
+        VitalImpairment {
+            phlegmatic: 0.48,
+            melancholic: 0.38,
+            ..VZ
+        },
+        AttributeImpairment {
+            endurance: 0.45,
+            instinct: 0.30,
+            ..Z
+        },
+        MAHRDRUCK,
+        0.18,
+        &[TransmissionVector::Vermin],
+        TransmissionVector::Vermin,
+    ),
+    d(
+        DiseaseId::NachzehrerWasting,
+        "Nachzehrer wasting",
+        "Follows exposure to mould from disturbed graves; it does not pass between patients.",
+        5 * DAY,
+        8 * DAY,
+        12 * DAY,
+        20 * DAY,
+        0.24,
+        VitalImpairment {
+            sanguine: 0.22,
+            choleric: 0.24,
+            melancholic: 0.52,
+            ..VZ
+        },
+        AttributeImpairment {
+            endurance: 0.62,
+            immunity: 0.22,
+            ..Z
+        },
+        GRAVE_WASTING,
+        0.25,
+        &[TransmissionVector::Environmental],
+        TransmissionVector::Environmental,
+    ),
+    d(
+        DiseaseId::Bilwisschuss,
+        "Bilwisschuss",
+        "Follows barbed dust shed by blighted rye; it does not pass between patients.",
+        8 * 60,
+        DAY,
+        3 * DAY,
+        6 * DAY,
+        0.32,
+        VitalImpairment {
+            choleric: 0.18,
+            melancholic: 0.68,
+            ..VZ
+        },
+        AttributeImpairment {
+            limb_agility: 0.72,
+            instinct: 0.28,
+            ..Z
+        },
+        BILWIS,
+        0.04,
+        &[TransmissionVector::Environmental],
+        TransmissionVector::Environmental,
+    ),
+    d(
+        DiseaseId::Kobeldunst,
+        "Kobeldunst",
+        "Follows breathing vapour above living ore film in an unventilated mine; it is not contagious.",
+        2 * 60,
+        12 * 60,
+        2 * DAY,
+        4 * DAY,
+        0.38,
+        VitalImpairment {
+            phlegmatic: 0.42,
+            choleric: 0.18,
+            melancholic: 0.40,
+            ..VZ
+        },
+        AttributeImpairment {
+            endurance: 0.42,
+            intelligence: 0.28,
+            limb_agility: 0.25,
+            ..Z
+        },
+        MINE_VAPOUR,
+        0.0,
+        &[TransmissionVector::Environmental],
+        TransmissionVector::Environmental,
     ),
 ];
 const Z: AttributeImpairment = AttributeImpairment {
@@ -1395,7 +1609,7 @@ pub fn interval_events(
 /// no standalone disease event occurs there.
 pub fn structural_minutes(e: InfectionEpisode, from: u64, to: u64) -> Vec<u64> {
     let d = definition(e.disease_id);
-    [
+    let mut ages = vec![
         d.incubation_minutes,
         d.incubation_minutes.saturating_add(d.rise_minutes),
         d.incubation_minutes
@@ -1405,11 +1619,22 @@ pub fn structural_minutes(e: InfectionEpisode, from: u64, to: u64) -> Vec<u64> {
             .saturating_add(d.rise_minutes)
             .saturating_add(d.peak_minutes)
             .saturating_add(d.recovery_minutes),
-    ]
-    .into_iter()
-    .map(|age| wall_minute_for_age(e, age as f32))
-    .filter(|minute| *minute >= from && *minute <= to)
-    .collect()
+    ];
+    if let Some(curves) = fantastic_meter_curves(e.disease_id) {
+        ages.extend(
+            curves
+                .iter()
+                .flat_map(|curve| curve.points.iter().map(|point| point.minute)),
+        );
+    }
+    let mut minutes = ages
+        .into_iter()
+        .map(|age| wall_minute_for_age(e, age as f32))
+        .filter(|minute| *minute >= from && *minute <= to)
+        .collect::<Vec<_>>();
+    minutes.sort_unstable();
+    minutes.dedup();
+    minutes
 }
 
 pub fn combined_state(
@@ -1480,14 +1705,316 @@ pub fn private_meter_state(
         episode.character_id,
         episode.id,
     );
-    let peak = disease_peak_meters(episode.disease_id);
     let mut meters = MeterVector::ZERO;
-    for (meter, loss) in peak {
-        meters.0[meter.index()] = (meters.0[meter.index()]
-            + loss * state.progress * state.severity * phenotype[meter.index()])
-        .clamp(-1.0, 2.0);
+    if let Some(curves) = fantastic_meter_curves(episode.disease_id) {
+        let age = now.saturating_sub(episode.contracted_at);
+        for curve in curves {
+            meters.0[curve.meter.index()] = (physiology::piecewise(curve, age)
+                * state.severity
+                * phenotype[curve.meter.index()])
+            .clamp(-1.0, 2.0);
+        }
+    } else {
+        for (meter, loss) in disease_peak_meters(episode.disease_id) {
+            meters.0[meter.index()] = (meters.0[meter.index()]
+                + loss * state.progress * state.severity * phenotype[meter.index()])
+            .clamp(-1.0, 2.0);
+        }
     }
     meters
+}
+
+// BodyRegion is ordered limbs, chest, abdomen, head.
+const WHOLE_BODY: [f32; physiology::REGION_COUNT] = [0.35, 0.35, 0.35, 0.35, 0.8, 0.6, 0.5];
+const HEAD_CHEST: [f32; physiology::REGION_COUNT] = [0.05, 0.05, 0.05, 0.05, 1.0, 0.15, 0.8];
+const LIMBS: [f32; physiology::REGION_COUNT] = [0.8, 0.8, 0.8, 0.8, 0.25, 0.1, 0.15];
+const MAHR_O2: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 3 * DAY,
+        loss: 0.12,
+    },
+    CurvePoint {
+        minute: 4 * DAY,
+        loss: 0.58,
+    },
+    CurvePoint {
+        minute: 8 * DAY,
+        loss: 0.18,
+    },
+    CurvePoint {
+        minute: 13 * DAY,
+        loss: 0.0,
+    },
+];
+const MAHR_NEURO: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 2 * DAY,
+        loss: 0.08,
+    },
+    CurvePoint {
+        minute: 4 * DAY,
+        loss: 0.62,
+    },
+    CurvePoint {
+        minute: 8 * DAY,
+        loss: 0.24,
+    },
+    CurvePoint {
+        minute: 13 * DAY,
+        loss: 0.0,
+    },
+];
+const GRAVE_NUTRITION: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 6 * DAY,
+        loss: 0.08,
+    },
+    CurvePoint {
+        minute: 13 * DAY,
+        loss: 0.58,
+    },
+    CurvePoint {
+        minute: 25 * DAY,
+        loss: 0.52,
+    },
+    CurvePoint {
+        minute: 45 * DAY,
+        loss: 0.0,
+    },
+];
+const GRAVE_INFLAMMATION: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 9 * DAY,
+        loss: 0.12,
+    },
+    CurvePoint {
+        minute: 16 * DAY,
+        loss: 0.48,
+    },
+    CurvePoint {
+        minute: 25 * DAY,
+        loss: 0.32,
+    },
+    CurvePoint {
+        minute: 45 * DAY,
+        loss: 0.0,
+    },
+];
+const GRAVE_TISSUE: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 12 * DAY,
+        loss: 0.08,
+    },
+    CurvePoint {
+        minute: 19 * DAY,
+        loss: 0.38,
+    },
+    CurvePoint {
+        minute: 28 * DAY,
+        loss: 0.28,
+    },
+    CurvePoint {
+        minute: 45 * DAY,
+        loss: 0.0,
+    },
+];
+const BILWIS_NEURO: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 8 * 60,
+        loss: 0.04,
+    },
+    CurvePoint {
+        minute: DAY,
+        loss: 0.72,
+    },
+    CurvePoint {
+        minute: 4 * DAY,
+        loss: 0.62,
+    },
+    CurvePoint {
+        minute: 10 * DAY,
+        loss: 0.0,
+    },
+];
+const BILWIS_INFLAMMATION: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: DAY,
+        loss: 0.08,
+    },
+    CurvePoint {
+        minute: 2 * DAY,
+        loss: 0.32,
+    },
+    CurvePoint {
+        minute: 5 * DAY,
+        loss: 0.16,
+    },
+    CurvePoint {
+        minute: 10 * DAY,
+        loss: 0.0,
+    },
+];
+const MINE_O2: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 2 * 60,
+        loss: 0.08,
+    },
+    CurvePoint {
+        minute: 12 * 60,
+        loss: 0.52,
+    },
+    CurvePoint {
+        minute: 2 * DAY,
+        loss: 0.42,
+    },
+    CurvePoint {
+        minute: 6 * DAY + 14 * 60,
+        loss: 0.0,
+    },
+];
+const MINE_NEURO: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 6 * 60,
+        loss: 0.06,
+    },
+    CurvePoint {
+        minute: 18 * 60,
+        loss: 0.46,
+    },
+    CurvePoint {
+        minute: 3 * DAY,
+        loss: 0.28,
+    },
+    CurvePoint {
+        minute: 6 * DAY + 14 * 60,
+        loss: 0.0,
+    },
+];
+const MINE_RENAL: &[CurvePoint] = &[
+    CurvePoint {
+        minute: 0,
+        loss: 0.0,
+    },
+    CurvePoint {
+        minute: 12 * 60,
+        loss: 0.04,
+    },
+    CurvePoint {
+        minute: 2 * DAY,
+        loss: 0.34,
+    },
+    CurvePoint {
+        minute: 4 * DAY,
+        loss: 0.22,
+    },
+    CurvePoint {
+        minute: 6 * DAY + 14 * 60,
+        loss: 0.0,
+    },
+];
+const MAHR_CURVES: &[MeterCurve] = &[
+    MeterCurve {
+        meter: Meter::Neurologic,
+        points: MAHR_NEURO,
+        regional_weights: HEAD_CHEST,
+    },
+    MeterCurve {
+        meter: Meter::Oxygenation,
+        points: MAHR_O2,
+        regional_weights: HEAD_CHEST,
+    },
+];
+const GRAVE_CURVES: &[MeterCurve] = &[
+    MeterCurve {
+        meter: Meter::Nutrition,
+        points: GRAVE_NUTRITION,
+        regional_weights: WHOLE_BODY,
+    },
+    MeterCurve {
+        meter: Meter::Inflammation,
+        points: GRAVE_INFLAMMATION,
+        regional_weights: WHOLE_BODY,
+    },
+    MeterCurve {
+        meter: Meter::TissueIntegrity,
+        points: GRAVE_TISSUE,
+        regional_weights: HEAD_CHEST,
+    },
+];
+const BILWIS_CURVES: &[MeterCurve] = &[
+    MeterCurve {
+        meter: Meter::Neurologic,
+        points: BILWIS_NEURO,
+        regional_weights: LIMBS,
+    },
+    MeterCurve {
+        meter: Meter::Inflammation,
+        points: BILWIS_INFLAMMATION,
+        regional_weights: LIMBS,
+    },
+];
+const MINE_CURVES: &[MeterCurve] = &[
+    MeterCurve {
+        meter: Meter::Oxygenation,
+        points: MINE_O2,
+        regional_weights: HEAD_CHEST,
+    },
+    MeterCurve {
+        meter: Meter::Neurologic,
+        points: MINE_NEURO,
+        regional_weights: HEAD_CHEST,
+    },
+    MeterCurve {
+        meter: Meter::RenalClearance,
+        points: MINE_RENAL,
+        regional_weights: WHOLE_BODY,
+    },
+];
+
+pub fn fantastic_meter_curves(id: DiseaseId) -> Option<&'static [MeterCurve]> {
+    match id {
+        DiseaseId::Mahrdruck => Some(MAHR_CURVES),
+        DiseaseId::NachzehrerWasting => Some(GRAVE_CURVES),
+        DiseaseId::Bilwisschuss => Some(BILWIS_CURVES),
+        DiseaseId::Kobeldunst => Some(MINE_CURVES),
+        _ => None,
+    }
 }
 
 pub fn disease_peak_meters(disease_id: DiseaseId) -> &'static [(Meter, f32)] {
@@ -1534,6 +2061,18 @@ pub fn disease_peak_meters(disease_id: DiseaseId) -> &'static [(Meter, f32)] {
             (Meter::Nutrition, 0.25),
             (Meter::TissueIntegrity, 0.20),
         ],
+        DiseaseId::Mahrdruck => &[(Meter::Neurologic, 0.62), (Meter::Oxygenation, 0.58)],
+        DiseaseId::NachzehrerWasting => &[
+            (Meter::Nutrition, 0.58),
+            (Meter::Inflammation, 0.48),
+            (Meter::TissueIntegrity, 0.38),
+        ],
+        DiseaseId::Bilwisschuss => &[(Meter::Neurologic, 0.72), (Meter::Inflammation, 0.32)],
+        DiseaseId::Kobeldunst => &[
+            (Meter::Oxygenation, 0.52),
+            (Meter::Neurologic, 0.46),
+            (Meter::RenalClearance, 0.34),
+        ],
     }
 }
 
@@ -1548,6 +2087,35 @@ pub fn private_regional_meter_state(
     let baseline = physiology::baseline_meters(phenotype_secret, key_version, patient_id);
     let mut regions = [baseline; physiology::REGION_COUNT];
     for episode in episodes {
+        if let Some(curves) = fantastic_meter_curves(episode.disease_id) {
+            let state = evaluate(*episode, now, immunity);
+            let age = now.saturating_sub(episode.contracted_at);
+            let phenotype = physiology::phenotype_multipliers(
+                phenotype_secret,
+                episode.phenotype_key_version,
+                episode.character_id,
+                episode.id,
+            );
+            for curve in curves {
+                let loss = (physiology::piecewise(curve, age)
+                    * state.severity
+                    * phenotype[curve.meter.index()])
+                .clamp(-1.0, 2.0);
+                let total = curve
+                    .regional_weights
+                    .iter()
+                    .copied()
+                    .sum::<f32>()
+                    .max(f32::EPSILON);
+                for region in BodyRegion::ALL {
+                    let mut contribution = MeterVector::ZERO;
+                    contribution.0[curve.meter.index()] =
+                        loss * curve.regional_weights[region.index()] / total;
+                    regions[region.index()].add_bounded(contribution);
+                }
+            }
+            continue;
+        }
         let meters = private_meter_state(*episode, now, immunity, phenotype_secret);
         let weights = disease_region_weights(*episode);
         let total = weights
@@ -1596,6 +2164,22 @@ fn disease_region_weights(episode: InfectionEpisode) -> Vec<(BodyRegion, f32)> {
             vec![(Chest, 1.0), (Abdomen, 0.75), (Head, 0.55), (limb, 0.8)]
         }
         DiseaseId::Consumption => vec![(Chest, 1.0), (Abdomen, 0.3)],
+        DiseaseId::Mahrdruck => vec![(Head, 0.8), (Chest, 1.0)],
+        DiseaseId::NachzehrerWasting => vec![
+            (Head, 0.7),
+            (Chest, 0.8),
+            (Abdomen, 1.0),
+            (LeftArm, 0.3),
+            (RightArm, 0.3),
+            (LeftLeg, 0.3),
+            (RightLeg, 0.3),
+        ],
+        DiseaseId::Bilwisschuss => {
+            let limb =
+                [LeftArm, RightArm, LeftLeg, RightLeg][(severity_seed(episode) as usize) % 4];
+            vec![(limb, 1.0), (Head, 0.3)]
+        }
+        DiseaseId::Kobeldunst => vec![(Head, 1.0), (Chest, 0.9), (Abdomen, 0.35)],
     }
 }
 
@@ -1645,6 +2229,7 @@ pub fn first_combined_terminal(
     }
     let mut points = vec![from, to];
     for e in episodes {
+        points.extend(structural_minutes(*e, from, to));
         points.extend(
             interval_events(*e, from, to, immunity)
                 .into_iter()
@@ -1742,6 +2327,33 @@ mod tests {
                 .saturating_add(definition.peak_minutes) as f32,
         );
         assert!(structural_minutes(infection, 0, u64::MAX).contains(&recovery_start));
+    }
+
+    #[test]
+    fn structural_minutes_include_every_fantastic_curve_point() {
+        for (index, id) in [
+            DiseaseId::Mahrdruck,
+            DiseaseId::NachzehrerWasting,
+            DiseaseId::Bilwisschuss,
+            DiseaseId::Kobeldunst,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let infection = e(100 + index as u64, id);
+            let structural = structural_minutes(infection, 0, u64::MAX);
+            for point in fantastic_meter_curves(id)
+                .unwrap()
+                .iter()
+                .flat_map(|curve| curve.points)
+            {
+                assert!(
+                    structural.contains(&infection.contracted_at.saturating_add(point.minute)),
+                    "{id:?} missing {}",
+                    point.minute
+                );
+            }
+        }
     }
     #[test]
     fn zero_immunity_can_make_mild_disease_fatal() {
@@ -2676,5 +3288,311 @@ mod tests {
             add_bounded_work(&mut work, 2, 5),
             Err("Disease interval exceeds bounded exposure work")
         );
+    }
+
+    #[test]
+    fn fantastic_diseases_have_distinct_ordered_meter_courses() {
+        let cases = [
+            (DiseaseId::Mahrdruck, Meter::Neurologic, Meter::Oxygenation),
+            (
+                DiseaseId::NachzehrerWasting,
+                Meter::Nutrition,
+                Meter::TissueIntegrity,
+            ),
+            (
+                DiseaseId::Bilwisschuss,
+                Meter::Neurologic,
+                Meter::Inflammation,
+            ),
+            (
+                DiseaseId::Kobeldunst,
+                Meter::Oxygenation,
+                Meter::RenalClearance,
+            ),
+        ];
+        for (index, (id, early_meter, later_meter)) in cases.into_iter().enumerate() {
+            let episode = e(900 + index as u64, id);
+            let definition = definition(id);
+            let early = private_meter_state(
+                episode,
+                episode.contracted_at + definition.incubation_minutes + definition.rise_minutes / 2,
+                0.0,
+                b"fantastic-course-test",
+            );
+            let later = private_meter_state(
+                episode,
+                episode.contracted_at
+                    + definition.incubation_minutes
+                    + definition.rise_minutes
+                    + definition.peak_minutes / 2,
+                0.0,
+                b"fantastic-course-test",
+            );
+            assert!(early.get(early_meter) > 0.0, "{id:?}");
+            assert!(later.get(later_meter) > 0.0, "{id:?}");
+            assert_ne!(early, later, "{id:?} must have an ordered course");
+        }
+    }
+
+    #[test]
+    fn kobeldunst_curves_are_zero_when_the_episode_resolves() {
+        let infection = e(950, DiseaseId::Kobeldunst);
+        let definition = definition(infection.disease_id);
+        let resolved_at = infection
+            .contracted_at
+            .saturating_add(definition.incubation_minutes)
+            .saturating_add(definition.rise_minutes)
+            .saturating_add(definition.peak_minutes)
+            .saturating_add(definition.recovery_minutes);
+        assert_eq!(
+            evaluate(infection, resolved_at, 3.0).stage,
+            DiseaseStage::Resolved
+        );
+        assert_eq!(
+            private_meter_state(infection, resolved_at, 3.0, b"kobeldunst-resolution"),
+            MeterVector::ZERO
+        );
+        assert!(
+            fantastic_meter_curves(infection.disease_id)
+                .unwrap()
+                .iter()
+                .all(|curve| curve.points.last().unwrap().minute
+                    == resolved_at.saturating_sub(infection.contracted_at))
+        );
+    }
+
+    #[test]
+    fn fantastic_terminal_crossing_is_stable_when_split_at_an_interior_peak() {
+        let episodes = (0..8)
+            .map(|index| e(960 + index, DiseaseId::Kobeldunst))
+            .collect::<Vec<_>>();
+        let from = episodes[0].contracted_at;
+        let peak = from + 12 * 60;
+        let to = from + 3 * DAY;
+        let mut state = |minute| {
+            physiology::combined_meter_state(
+                episodes
+                    .iter()
+                    .map(|episode| private_meter_state(*episode, minute, 3.0, b"curve-peak")),
+                &[],
+                minute,
+            )
+        };
+        let boundaries = episodes
+            .iter()
+            .flat_map(|episode| structural_minutes(*episode, from, to))
+            .chain([from, to])
+            .collect::<Vec<_>>();
+        let whole = physiology::first_terminal_crossing(&boundaries, &mut state);
+        let first = physiology::first_terminal_crossing(&[from, peak], &mut state);
+        let second = physiology::first_terminal_crossing(&[peak, to], &mut state);
+        assert!(whole.is_some());
+        assert_eq!(whole, first.or(second));
+    }
+
+    #[test]
+    fn fantastic_regional_projection_preserves_each_meter_curve_weights() {
+        let infection = e(951, DiseaseId::NachzehrerWasting);
+        let now = infection.contracted_at + 19 * DAY;
+        let baseline = private_regional_meter_state(
+            infection.character_id,
+            &[],
+            now,
+            3.0,
+            b"regional-curve-weights",
+            infection.phenotype_key_version,
+        );
+        let affected = private_regional_meter_state(
+            infection.character_id,
+            &[infection],
+            now,
+            3.0,
+            b"regional-curve-weights",
+            infection.phenotype_key_version,
+        );
+        let delta = |region: BodyRegion, meter: Meter| {
+            affected[region.index()].get(meter) - baseline[region.index()].get(meter)
+        };
+        let curves = fantastic_meter_curves(DiseaseId::NachzehrerWasting).unwrap();
+        let nutrition = curves
+            .iter()
+            .find(|curve| curve.meter == Meter::Nutrition)
+            .unwrap();
+        let tissue = curves
+            .iter()
+            .find(|curve| curve.meter == Meter::TissueIntegrity)
+            .unwrap();
+        assert!(
+            nutrition.regional_weights[BodyRegion::LeftArm.index()]
+                > tissue.regional_weights[BodyRegion::LeftArm.index()]
+        );
+        assert!(
+            delta(BodyRegion::Chest, Meter::TissueIntegrity)
+                > delta(BodyRegion::LeftArm, Meter::TissueIntegrity) * 4.0
+        );
+    }
+
+    #[test]
+    fn fantastic_signatures_are_coordinated_but_humours_remain_projection() {
+        let mut signatures = std::collections::BTreeSet::new();
+        for id in [
+            DiseaseId::Mahrdruck,
+            DiseaseId::NachzehrerWasting,
+            DiseaseId::Bilwisschuss,
+            DiseaseId::Kobeldunst,
+        ] {
+            let meters = MeterVector::from_entries(disease_peak_meters(id));
+            let projected = physiology::humours(meters);
+            assert!(projected.iter().filter(|value| **value > 0.05).count() >= 2);
+            signatures.insert(projected.map(|value| (value * 100.0).round() as i16));
+        }
+        assert_eq!(signatures.len(), 4);
+    }
+
+    #[test]
+    fn fantastic_routes_and_evidence_are_physical_and_open() {
+        assert!(definition(DiseaseId::Mahrdruck).supports(TransmissionVector::Vermin));
+        for id in [
+            DiseaseId::NachzehrerWasting,
+            DiseaseId::Bilwisschuss,
+            DiseaseId::Kobeldunst,
+        ] {
+            let definition = definition(id);
+            assert!(definition.supports(TransmissionVector::Environmental));
+            assert!(!definition.supports(TransmissionVector::CloseContact));
+            assert!(!evidence_hooks(id).is_empty());
+        }
+        assert_eq!(
+            evidence_hooks(DiseaseId::Mahrdruck),
+            &[DiseaseEvidenceHook {
+                evidence_id: "straw_mite_husks",
+                support_bps: 9_200,
+                required_site: Some("occupied_house"),
+            }]
+        );
+        assert_eq!(
+            evidence_hooks(DiseaseId::NachzehrerWasting)[0].required_site,
+            Some("graveyard")
+        );
+        assert_eq!(
+            evidence_hooks(DiseaseId::Bilwisschuss)[0].required_site,
+            Some("abandoned_farm")
+        );
+        assert_eq!(
+            evidence_hooks(DiseaseId::Kobeldunst)[0].required_site,
+            Some("cave")
+        );
+        assert!(
+            residual_exposure(1.0, TransmissionVector::Environmental, 5.0)
+                < residual_exposure(1.0, TransmissionVector::Environmental, 0.0)
+        );
+    }
+
+    #[test]
+    fn fantastic_environmental_and_vermin_acquisition_is_partition_independent() {
+        for (index, (id, vector)) in [
+            (DiseaseId::Mahrdruck, TransmissionVector::Vermin),
+            (DiseaseId::Bilwisschuss, TransmissionVector::Environmental),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let definition = definition(id);
+            let from = 10_000;
+            let to = from + 5 * DAY;
+            let exposure_id = format!("fantastic-route-{index}");
+            let whole = first_eligible_protected_presence_exposure_minute(
+                &[],
+                id,
+                7,
+                &exposure_id,
+                from,
+                to,
+                1.0,
+                definition.base_acquisition,
+                2.5,
+                vector,
+                |_| 1.5,
+            );
+            let split = (from..to)
+                .step_by((6 * 60) as usize)
+                .find_map(|chunk_from| {
+                    first_eligible_protected_presence_exposure_minute(
+                        &[],
+                        id,
+                        7,
+                        &exposure_id,
+                        chunk_from,
+                        chunk_from.saturating_add(6 * 60).min(to),
+                        1.0,
+                        definition.base_acquisition,
+                        2.5,
+                        vector,
+                        |_| 1.5,
+                    )
+                });
+            assert_eq!(whole, split, "{id:?}");
+        }
+    }
+
+    #[test]
+    fn existing_generic_preparations_overlap_without_disease_keys() {
+        for id in [
+            DiseaseId::Mahrdruck,
+            DiseaseId::NachzehrerWasting,
+            DiseaseId::Bilwisschuss,
+            DiseaseId::Kobeldunst,
+        ] {
+            let profile = physiology::INTERVENTION_PROFILES
+                .iter()
+                .find(|profile| {
+                    disease_peak_meters(id).iter().any(|(meter, loss)| {
+                        *loss > 0.0 && profile.loss_delta_per_unit.get(*meter) < 0.0
+                    })
+                })
+                .unwrap_or_else(|| panic!("no obtainable generic preparation helps {id:?}"));
+            let administration = physiology::Administration {
+                id: 10 + id as u64,
+                patient_id: 1,
+                preparation_id: profile.preparation_id.to_owned(),
+                profile_version: profile.version,
+                route: profile.route,
+                amount_milliunits: 1_000,
+                region: None,
+                administered_at: 100,
+                stopped_at: None,
+                sensitivity_bps: 0,
+                adverse_bps: 1_500,
+            };
+            let effect = administration.effect_at(101);
+            assert!(
+                disease_peak_meters(id)
+                    .iter()
+                    .any(|(meter, _)| effect.get(*meter) < 0.0),
+                "{id:?} receives no administered generic benefit"
+            );
+        }
+        let poppy = physiology::INTERVENTION_PROFILES
+            .iter()
+            .find(|profile| profile.loss_delta_per_unit.get(Meter::Neurologic) < -0.1)
+            .unwrap();
+        assert!(poppy.adverse_delta_per_unit.get(Meter::Oxygenation) > 0.0);
+
+        let administration = physiology::Administration {
+            id: 1,
+            patient_id: 1,
+            preparation_id: poppy.preparation_id.to_owned(),
+            profile_version: poppy.version,
+            route: poppy.route,
+            amount_milliunits: 1_000,
+            region: None,
+            administered_at: 100,
+            stopped_at: None,
+            sensitivity_bps: 0,
+            adverse_bps: 2_500,
+        };
+        let effect = administration.effect_at(101);
+        assert!(effect.get(Meter::Neurologic) < 0.0);
+        assert!(effect.get(Meter::Oxygenation) > 0.0);
     }
 }

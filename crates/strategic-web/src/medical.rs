@@ -204,6 +204,10 @@ fn disease_id_from_public_key(key: &str) -> Option<DiseaseId> {
         "smallpox" => DiseaseId::Smallpox,
         "plague" => DiseaseId::Plague,
         "consumption" => DiseaseId::Consumption,
+        "mahrdruck" => DiseaseId::Mahrdruck,
+        "nachzehrer_wasting" => DiseaseId::NachzehrerWasting,
+        "bilwisschuss" => DiseaseId::Bilwisschuss,
+        "kobeldunst" => DiseaseId::Kobeldunst,
         _ => return None,
     })
 }

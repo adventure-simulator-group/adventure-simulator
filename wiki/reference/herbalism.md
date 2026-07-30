@@ -73,6 +73,12 @@ never inspect or name a disease. Administration continues to resolve intrinsic
 route and course semantics from the trusted preparation profile. No tactical
 tick state is persisted.
 
+Fantastic diseases add no recipe-keyed cures. Existing preparations may help
+when their generic meter effects fit a patient and retain exactly the same
+hazards when the diagnosis is wrong. Environmental controls such as fresh
+bedding and mine ventilation are not Herbalism recipes. See
+[Fantastic diseases](fantastic-diseases.md).
+
 ## Explicitly deferred
 
 Ingredient condition/spoilage, arbitrary mixing, exact heat/duration/dose,
