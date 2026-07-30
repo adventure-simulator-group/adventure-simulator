@@ -317,6 +317,7 @@ fn discard_placeholder_settlement_data(ctx: &ReducerContext) -> Result<(), Strin
             .filter(settlement_id)
             .collect::<Vec<_>>()
         {
+            crate::social_estate::delete_settlement_npc_social_roles(ctx, &npc.id);
             ctx.db
                 .settlement_npc_seed_explanation()
                 .npc_id()

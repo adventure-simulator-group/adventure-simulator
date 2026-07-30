@@ -84,6 +84,15 @@ private random seed stored for the browser tab, but nothing is stored on the
 server until a candidate is confirmed. Age is intended to carry further
 tradeoffs later; those tradeoffs are deliberately not specified yet.
 
+Every confirmed, durable character also receives one relational social-estate
+basis. Estate is derived from an organization role rather than stored as a
+writable Character field: a lordship serf, explicit civic free resident,
+urban civic citizen (Burgher), or noble-house member. The deterministic,
+domain-separated assignment does not alter candidate IDs, previews,
+professional membership, rank, equipment, dues, or presentation. Multiple
+orthogonal roles are supported (for example, a noble-house member who is also
+a priest), but estate-dependent gameplay rules are intentionally deferred.
+
 Players may create multiple characters in the same browser. The strategic
 header's portrait menu lists the browser's remembered non-temporary characters,
 marks the current one, and switches between them. **Character select** returns

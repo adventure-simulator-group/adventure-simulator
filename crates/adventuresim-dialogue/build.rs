@@ -88,6 +88,14 @@ fn validate_condition_roles(
                     "unknown fact role {role} in {relative}"
                 );
             }
+            if let authoring_schema::FactKey::ParticipantEstate { role } = key {
+                assert!(
+                    roles
+                        .get(role)
+                        .is_some_and(|definition| definition.max == 1),
+                    "participant_estate requires a role with max=1 in {relative}:{role}"
+                );
+            }
         }
         Condition::Always => {}
     }

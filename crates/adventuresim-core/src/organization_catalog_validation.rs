@@ -218,10 +218,12 @@ pub fn validate_documents(
                 "id",
                 "name",
                 "description",
+                "kind",
                 "historical_fantasy_note",
                 "service_id",
                 "public_threat_referrals",
                 "starting_role",
+                "roles",
                 "chapters",
                 "recognition",
                 "admission",
@@ -252,6 +254,56 @@ pub fn validate_documents(
         }
         text(org, source, "name")?;
         text(org, source, "description")?;
+        let organization_kind = text(org, source, "kind")?;
+        if !matches!(
+            organization_kind,
+            "professional_association"
+                | "religious_organization"
+                | "noble_house"
+                | "lordship"
+                | "civic_community"
+        ) {
+            return Err(format!(
+                "{source}: organization.kind {organization_kind:?} is invalid"
+            ));
+        }
+        let mut role_ids = BTreeSet::new();
+        for (index, role) in array(org, source, "roles")?.iter().enumerate() {
+            let at = format!("roles[{index}]");
+            let role = object(role, source, &at)?;
+            let purpose = text(role, source, "purpose")?;
+            match purpose {
+                "estate" => {
+                    keys(role, &["id", "name", "purpose", "estate"], source, &at)?;
+                    let estate = text(role, source, "estate")?;
+                    let legal = matches!(
+                        (organization_kind, estate),
+                        ("noble_house", "noble")
+                            | ("lordship", "serf")
+                            | ("civic_community", "freeman" | "burgher")
+                    );
+                    if !legal {
+                        return Err(format!(
+                            "{source}: {at} cannot map {organization_kind} to estate {estate:?}"
+                        ));
+                    }
+                }
+                "profession" => {
+                    keys(role, &["id", "name", "purpose", "profession"], source, &at)?;
+                    text(role, source, "profession")?;
+                }
+                "office" => keys(role, &["id", "name", "purpose"], source, &at)?,
+                _ => return Err(format!("{source}: {at}.purpose {purpose:?} is invalid")),
+            }
+            let role_id = text(role, source, "id")?;
+            if !stable_id(role_id) {
+                return Err(format!("{source}: {at}.id {role_id:?} is not snake_case"));
+            }
+            if !role_ids.insert(role_id) {
+                return Err(format!("{source}: duplicate role id {role_id:?}"));
+            }
+            text(role, source, "name")?;
+        }
         if let Some(starting_role) = org.get("starting_role") {
             let starting_role = object(starting_role, source, "starting_role")?;
             keys(
@@ -653,6 +705,8 @@ mod tests {
             "id": "test_body",
             "name": "Test Body",
             "description": "A validator fixture.",
+            "kind": "professional_association",
+            "roles": [],
             "chapters": [{
                 "settlement_id": "viabundus-0",
                 "location_id": "organization-test-body",
@@ -728,6 +782,31 @@ mod tests {
             validate(duplicate, json!([]))
                 .unwrap_err()
                 .contains("duplicate")
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_roles_and_illegal_estate_kind_pairs() {
+        let mut duplicate = valid_organization();
+        duplicate["roles"] = json!([
+            {"id": "member", "name": "Member", "purpose": "office"},
+            {"id": "member", "name": "Other", "purpose": "office"}
+        ]);
+        assert!(
+            validate(duplicate, json!([]))
+                .unwrap_err()
+                .contains("duplicate role")
+        );
+
+        let mut prince_serf = valid_organization();
+        prince_serf["kind"] = json!("noble_house");
+        prince_serf["roles"] = json!([
+            {"id": "prince", "name": "Prince", "purpose": "estate", "estate": "serf"}
+        ]);
+        assert!(
+            validate(prince_serf, json!([]))
+                .unwrap_err()
+                .contains("cannot map noble_house to estate")
         );
     }
 

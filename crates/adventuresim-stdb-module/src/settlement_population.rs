@@ -271,7 +271,27 @@ fn insert_npc(
     is_default: bool,
 ) -> Result<(), String> {
     let id = format!("npc:{settlement_id}:{location}:{ordinal}");
-    if ctx.db.settlement_npc().id().find(&id).is_some() {
+    if let Some(existing) = ctx.db.settlement_npc().id().find(&id) {
+        let urban = ctx
+            .db
+            .settlement()
+            .id()
+            .find(&settlement_id.to_owned())
+            .is_some_and(|settlement| {
+                matches!(
+                    settlement.category,
+                    crate::strategic::SettlementCategory::Town
+                        | crate::strategic::SettlementCategory::City
+                        | crate::strategic::SettlementCategory::Capital
+                )
+            });
+        crate::social_estate::ensure_settlement_npc_social_roles(
+            ctx,
+            &id,
+            settlement_id,
+            urban,
+            &existing.profession,
+        )?;
         return Ok(());
     }
     let input = GenerationInput {
@@ -309,7 +329,7 @@ fn insert_npc(
         SURNAMES[population::stable_hash(&format!("{id}:house")) as usize % SURNAMES.len()],
         profile.household_kind
     );
-    ctx.db.settlement_npc().insert(SettlementNpc {
+    let npc = ctx.db.settlement_npc().insert(SettlementNpc {
         id: id.clone(),
         projection_id: population::stable_hash(&id),
         home_settlement_id: settlement_id.into(),
@@ -358,6 +378,26 @@ fn insert_npc(
             "service-professions".into()
         },
     });
+    let urban = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id.to_owned())
+        .is_some_and(|settlement| {
+            matches!(
+                settlement.category,
+                crate::strategic::SettlementCategory::Town
+                    | crate::strategic::SettlementCategory::City
+                    | crate::strategic::SettlementCategory::Capital
+            )
+        });
+    crate::social_estate::ensure_settlement_npc_social_roles(
+        ctx,
+        &npc.id,
+        settlement_id,
+        urban,
+        &npc.profession,
+    )?;
     let (start_minute, end_minute) = match profile.schedule {
         Schedule::Day => (360, 1200),
         Schedule::Evening => (720, 1380),

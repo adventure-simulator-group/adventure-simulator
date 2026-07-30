@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1437)
+## Files (1439)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -37,6 +37,7 @@ development, or other wiki document before changing a subsystem.
 - `content/dialogue/services.yaml` — Repository support file.
 - `content/items/catalog.yaml` — Repository support file.
 - `content/organizations/catalog.yaml` — Repository support file.
+- `content/organizations/social-estates.yaml` — Repository support file.
 - `content/quests/bestiary.yaml` — Repository support file.
 - `content/quests/generation.yaml` — Repository support file.
 - `content/quests/investigation.yaml` — Repository support file.
@@ -830,6 +831,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/settlement_population.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/simulation.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/social.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/social_estate.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/strategic/authority_model.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/autoresolve.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/contracts.rs` — Rust source module.

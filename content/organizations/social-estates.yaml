@@ -1,0 +1,108 @@
+[
+  {
+    "id": "house_habsburg",
+    "name": "House of Habsburg",
+    "description": "The royal and imperial dynasty whose members hold noble estate.",
+    "kind": "noble_house",
+    "roles": [
+      {"id": "house_member", "name": "Member of the house", "purpose": "estate", "estate": "noble"},
+      {"id": "prince", "name": "Prince", "purpose": "estate", "estate": "noble"}
+    ],
+    "public_threat_referrals": false,
+    "chapters": [],
+    "recognition": {"kind": "universal"},
+    "admission": {"joining_fee": 0, "requirements": []},
+    "ranks": [
+      {
+        "id": "member",
+        "name": "Member",
+        "description": "A catalog placeholder; social roles, not ranks, carry estate.",
+        "requirements": [],
+        "practice_allowed": false,
+        "practice_reward_interval_minutes": 0,
+        "privileges": []
+      }
+    ],
+    "activity": {"training": [], "reward": "fame"},
+    "privileges": []
+  },
+  {
+    "id": "habsburg_crown_lordships",
+    "name": "Habsburg Crown Lordships",
+    "description": "The aggregate lordships under Habsburg authority for first-pass social assignment.",
+    "kind": "lordship",
+    "roles": [
+      {"id": "serf", "name": "Bound tenant", "purpose": "estate", "estate": "serf"}
+    ],
+    "public_threat_referrals": false,
+    "chapters": [],
+    "recognition": {"kind": "universal"},
+    "admission": {"joining_fee": 0, "requirements": []},
+    "ranks": [
+      {
+        "id": "member",
+        "name": "Subject",
+        "description": "A catalog placeholder; social roles, not ranks, carry estate.",
+        "requirements": [],
+        "practice_allowed": false,
+        "practice_reward_interval_minutes": 0,
+        "privileges": []
+      }
+    ],
+    "activity": {"training": [], "reward": "fame"},
+    "privileges": []
+  },
+  {
+    "id": "settlement_civic_community",
+    "name": "Settlement civic community",
+    "description": "A template instantiated deterministically for each imported settlement.",
+    "kind": "civic_community",
+    "roles": [
+      {"id": "free_resident", "name": "Free resident", "purpose": "estate", "estate": "freeman"},
+      {"id": "citizen", "name": "Citizen", "purpose": "estate", "estate": "burgher"}
+    ],
+    "public_threat_referrals": false,
+    "chapters": [],
+    "recognition": {"kind": "universal"},
+    "admission": {"joining_fee": 0, "requirements": []},
+    "ranks": [
+      {
+        "id": "member",
+        "name": "Resident",
+        "description": "A catalog placeholder; social roles, not ranks, carry estate.",
+        "requirements": [],
+        "practice_allowed": false,
+        "practice_reward_interval_minutes": 0,
+        "privileges": []
+      }
+    ],
+    "activity": {"training": [], "reward": "fame"},
+    "privileges": []
+  },
+  {
+    "id": "roman_catholic_church",
+    "name": "Roman Catholic Church",
+    "description": "A chapterless institutional identity for clerical professional roles.",
+    "kind": "religious_organization",
+    "roles": [
+      {"id": "priest", "name": "Priest", "purpose": "profession", "profession": "priest"}
+    ],
+    "public_threat_referrals": false,
+    "chapters": [],
+    "recognition": {"kind": "universal"},
+    "admission": {"joining_fee": 0, "requirements": []},
+    "ranks": [
+      {
+        "id": "member",
+        "name": "Cleric",
+        "description": "A catalog placeholder; professional roles remain orthogonal to estate.",
+        "requirements": [],
+        "practice_allowed": false,
+        "practice_reward_interval_minutes": 0,
+        "privileges": []
+      }
+    ],
+    "activity": {"training": [], "reward": "fame"},
+    "privileges": []
+  }
+]

@@ -156,6 +156,9 @@ pub enum Condition {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FactKey {
+    ParticipantEstate {
+        role: String,
+    },
     ParticipantProfession {
         role: String,
     },
@@ -254,7 +257,8 @@ pub enum FactKey {
 impl FactKey {
     pub fn participant_roles(&self) -> impl Iterator<Item = &str> {
         let roles: [Option<&str>; 2] = match self {
-            Self::ParticipantProfession { role }
+            Self::ParticipantEstate { role }
+            | Self::ParticipantProfession { role }
             | Self::ParticipantOrganization { role }
             | Self::ParticipantReligion { role }
             | Self::ParticipantAgeBand { role }
