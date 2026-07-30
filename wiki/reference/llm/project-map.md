@@ -82,6 +82,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/item_references.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/life_simulation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/local_problem.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/mission.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.

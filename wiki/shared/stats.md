@@ -1,5 +1,13 @@
 # Attributes
 
+Creation-time training begins at age six and is earned through a bounded,
+deterministic life simulation using these same skill curves, governing
+aptitudes, and caps. Only final current hours are persisted; the schedules and
+activities used to derive them are not retained.
+Per-phase curriculum weights are normalized to a single conserved work-time
+budget; adding prerequisites cannot multiply the hours available in that
+phase.
+
 Herbalism is a first-class trained mental skill governed by Intelligence. It
 prepares biological medicine and remains separate from patient-facing
 Physiology and food-facing Cooking.

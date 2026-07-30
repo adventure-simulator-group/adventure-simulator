@@ -954,7 +954,85 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
         while ctx.db.character().id().find(leader_id).is_some() {
             leader_id = leader_id.wrapping_add(1) | (1_u64 << 63);
         }
-        crate::character::insert_new_npc_character(ctx, leader_name.clone(), leader_id, true)?;
+        let age_draw = adventuresim_core::settlement_population::stable_hash(&format!(
+            "{}:materialized-age",
+            npc.id
+        ));
+        let (minimum_age, span) = match npc.age_band {
+            crate::settlement_population::NpcAgeBand::Child => (6, 7),
+            crate::settlement_population::NpcAgeBand::Adolescent => (13, 5),
+            crate::settlement_population::NpcAgeBand::Adult => (18, 42),
+            crate::settlement_population::NpcAgeBand::Elder => (60, 16),
+        };
+        let organization_id = if npc.organization_id.is_empty() {
+            let profession = match (npc.service_id.as_str(), npc.profession.as_str()) {
+                ("merchants", _) | ("books", _) | (_, "merchant") => {
+                    Some(adventuresim_core::organization::StartingProfession::Merchant)
+                }
+                ("weapons", _) | (_, "weaponsmith") => {
+                    Some(adventuresim_core::organization::StartingProfession::Weaponsmith)
+                }
+                ("armor", _) | (_, "armourer") => {
+                    Some(adventuresim_core::organization::StartingProfession::Armourer)
+                }
+                ("clothing", _) | (_, "tailor") => {
+                    Some(adventuresim_core::organization::StartingProfession::Tailor)
+                }
+                ("herbalist", _) | (_, "herbalist") => {
+                    Some(adventuresim_core::organization::StartingProfession::Herbalist)
+                }
+                ("inn", _) | (_, "innkeeper") => {
+                    Some(adventuresim_core::organization::StartingProfession::Cook)
+                }
+                ("religion", _) | (_, "cleric") => Some(
+                    adventuresim_core::organization::StartingProfession::LearnedReligiousPractitioner,
+                ),
+                _ => None,
+            };
+            profession.and_then(|profession| {
+                adventuresim_core::organization::catalog()
+                    .organizations
+                    .iter()
+                    .find(|definition| {
+                        definition
+                            .starting_role
+                            .as_ref()
+                            .is_some_and(|role| role.profession == profession)
+                    })
+                    .map(|definition| definition.id.clone())
+            })
+        } else {
+            Some(npc.organization_id.clone())
+        };
+        crate::character::insert_new_npc_character_with_life(
+            ctx,
+            leader_name.clone(),
+            leader_id,
+            true,
+            crate::character::NpcLifeFacts {
+                age_years: minimum_age + (age_draw % span) as u16,
+                organization_id,
+                literacy: (crate::social_estate::settlement_npc_estate(ctx, &npc.id)
+                    .is_ok_and(|estate| {
+                        estate == adventuresim_core::organization::Estate::Noble
+                    }))
+                .then(|| {
+                    let settlement = ctx
+                        .db
+                        .settlement()
+                        .id()
+                        .find(&settlement_id.to_string())
+                        .expect("recruitment settlement exists");
+                    if settlement.languages.dominant_german()
+                        == adventuresim_world_schema::OralLanguage::Low
+                    {
+                        adventuresim_world_schema::WrittenLanguage::Low
+                    } else {
+                        adventuresim_world_schema::WrittenLanguage::German
+                    }
+                }),
+            },
+        )?;
         crate::social_estate::copy_settlement_npc_social_roles_to_character(
             ctx, &npc.id, leader_id,
         )?;

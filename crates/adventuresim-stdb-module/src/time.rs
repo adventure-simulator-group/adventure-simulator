@@ -1,7 +1,7 @@
 use adventuresim_core::activity::{ActivityLocation, LocationActivity};
 use adventuresim_core::strategic_schedule::{
-    ActivityOutcomeInputs, DailySchedule, SkillHours, apply_religion_training,
-    apply_schedule_training, settlement_activity_outcome,
+    ActivityOutcomeInputs, DailySchedule, SkillHours, apply_organization_training,
+    apply_religion_training, apply_schedule_training, settlement_activity_outcome,
 };
 use adventuresim_core::strategic_time::{
     MINUTES_PER_DAY, MINUTES_PER_YEAR, WORLD_START_MINUTE, allocated_schedule_minutes,
@@ -903,24 +903,21 @@ fn apply_training(
             organization_id.and_then(adventuresim_core::organization::organization)
         {
             let work_hours = elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(minutes) / 60.0;
-            excess += apply_organization_training(
+            let (organization_excess, written) = apply_organization_training(
                 &mut hours,
                 work_hours,
                 definition,
                 activities,
                 &attributes,
             );
-            for entry in &definition.activity.training {
-                if let adventuresim_core::organization::TrainingTarget::Written { language } =
-                    &entry.target
-                {
-                    excess += adventuresim_core::skill::apply_language_training(
-                        skills.written_languages.direct_mut(*language),
-                        work_hours * entry.weight,
-                        attributes.intelligence,
-                    )
-                    .excess_effective_hours;
-                }
+            excess += organization_excess;
+            for (language, award) in written {
+                excess += adventuresim_core::skill::apply_language_training(
+                    skills.written_languages.direct_mut(language),
+                    award,
+                    attributes.intelligence,
+                )
+                .excess_effective_hours;
             }
         }
     }
@@ -1270,121 +1267,6 @@ pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         thievery: schedule.thievery_minutes,
         raiding: schedule.raiding_minutes,
     }
-}
-
-fn apply_organization_training(
-    hours: &mut SkillHours,
-    work_hours: f32,
-    definition: &adventuresim_core::organization::OrganizationDefinition,
-    activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
-    attributes: &impl PlayerAttributes,
-) -> f32 {
-    use adventuresim_core::organization::TrainingTarget;
-    let mut excess = 0.0;
-    let mut award_direct = |skill: Skill, stored: &mut f32, real_hours: f32| {
-        excess +=
-            adventuresim_core::skill::apply_direct_training(skill, stored, real_hours, attributes)
-                .excess_effective_hours;
-    };
-    for entry in &definition.activity.training {
-        let award = work_hours * entry.weight;
-        match &entry.target {
-            TrainingTarget::FixedSkill { skill } => match skill.as_str() {
-                "will" => award_direct(Skill::Will, &mut hours.will, award),
-                "insight" => award_direct(Skill::Insight, &mut hours.insight, award),
-                "charm" => award_direct(Skill::Charm, &mut hours.charm, award),
-                "command" => award_direct(Skill::Command, &mut hours.command, award),
-                "deception" => award_direct(Skill::Deception, &mut hours.deception, award),
-                "physiology" => award_direct(Skill::Physiology, &mut hours.physiology, award),
-                "cooking" => award_direct(Skill::Cooking, &mut hours.cooking, award),
-                "herbalism" => award_direct(Skill::Herbalism, &mut hours.herbalism, award),
-                "surgery" => award_direct(Skill::Surgery, &mut hours.surgery, award),
-                "polearm" => award_direct(Skill::Polearm, &mut hours.polearm, award),
-                "axe" => award_direct(Skill::Axe, &mut hours.axe, award),
-                "bludgeon" => award_direct(Skill::Bludgeon, &mut hours.bludgeon, award),
-                "sword" => award_direct(Skill::Sword, &mut hours.sword, award),
-                "knife" => award_direct(Skill::Knife, &mut hours.knife, award),
-                "bow" => award_direct(Skill::Bow, &mut hours.bow, award),
-                "crossbow" => award_direct(Skill::Crossbow, &mut hours.crossbow, award),
-                "firearm" => award_direct(Skill::Firearm, &mut hours.firearm, award),
-                "throw" => award_direct(Skill::Throw, &mut hours.throw, award),
-                "block" => award_direct(Skill::Block, &mut hours.block, award),
-                "dodge" => award_direct(Skill::Dodge, &mut hours.dodge, award),
-                "stealth" => award_direct(Skill::Stealth, &mut hours.stealth, award),
-                "balance" => award_direct(Skill::Balance, &mut hours.balance, award),
-                "terrain_plains" => {
-                    award_direct(Skill::TerrainPlains, &mut hours.terrain_plains, award)
-                }
-                "terrain_forest" => {
-                    award_direct(Skill::TerrainForest, &mut hours.terrain_forest, award)
-                }
-                "terrain_hills" => {
-                    award_direct(Skill::TerrainHills, &mut hours.terrain_hills, award)
-                }
-                "terrain_wetlands" => {
-                    award_direct(Skill::TerrainWetlands, &mut hours.terrain_wetlands, award)
-                }
-                "terrain_urban" => {
-                    award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award)
-                }
-                "terrain_snow" => award_direct(Skill::TerrainSnow, &mut hours.terrain_snow, award),
-                "tailoring" => award_direct(Skill::Tailoring, &mut hours.tailoring, award),
-                "smithing" => award_direct(Skill::Smithing, &mut hours.smithing, award),
-                _ => {}
-            },
-            TrainingTarget::Religion { religion } => {
-                if let Some(religion) = OfficialReligion::from_id(religion) {
-                    award_direct(Skill::Religion, hours.religion.direct_mut(religion), award);
-                }
-            }
-            TrainingTarget::Bestiary { category } => {
-                if let Some(category) = adventuresim_world_schema::BestiaryCategory::ALL
-                    .into_iter()
-                    .find(|value| format!("{value:?}").eq_ignore_ascii_case(category))
-                {
-                    award_direct(Skill::Bestiary, hours.bestiary.direct_mut(category), award);
-                }
-            }
-            TrainingTarget::Terrain { terrain } => match terrain.as_str() {
-                "plains" => award_direct(Skill::TerrainPlains, &mut hours.terrain_plains, award),
-                "forest" => award_direct(Skill::TerrainForest, &mut hours.terrain_forest, award),
-                "hills" => award_direct(Skill::TerrainHills, &mut hours.terrain_hills, award),
-                "wetlands" => {
-                    award_direct(Skill::TerrainWetlands, &mut hours.terrain_wetlands, award)
-                }
-                "urban" => award_direct(Skill::TerrainUrban, &mut hours.terrain_urban, award),
-                "snow" => award_direct(Skill::TerrainSnow, &mut hours.terrain_snow, award),
-                _ => {}
-            },
-            TrainingTarget::EquippedWeaponSkills => {
-                let weights = activities.combat.weapons.weights();
-                let total = weights.into_iter().sum::<f32>();
-                if total > 0.0 {
-                    for ((skill, target), weight) in [
-                        (Skill::Polearm, &mut hours.polearm),
-                        (Skill::Axe, &mut hours.axe),
-                        (Skill::Bludgeon, &mut hours.bludgeon),
-                        (Skill::Sword, &mut hours.sword),
-                        (Skill::Knife, &mut hours.knife),
-                        (Skill::Bow, &mut hours.bow),
-                        (Skill::Crossbow, &mut hours.crossbow),
-                        (Skill::Firearm, &mut hours.firearm),
-                        (Skill::Throw, &mut hours.throw),
-                    ]
-                    .into_iter()
-                    .zip(weights)
-                    {
-                        award_direct(skill, target, award * weight / total);
-                    }
-                }
-            }
-            TrainingTarget::Written { .. } => {
-                // Written leaves live beside the ordinary SkillHours structure
-                // and are applied by the caller.
-            }
-        }
-    }
-    excess
 }
 
 #[derive(Clone, Copy, Debug, Default)]

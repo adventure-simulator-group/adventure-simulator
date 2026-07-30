@@ -1,7 +1,8 @@
 # Character
 
 Literacy is not universal. A character whose authoritative relational estate
-is Noble begins with rank-1 literacy in local written German or Low German;
+is Noble spends part of the simulated student-age phase learning local written
+German or Low German through the normal Intelligence learning rate and cap;
 Burgher estate alone grants nothing. Merchant-family literacy is represented
 by the merchant starting profession. Learned religious curricula teach their
 authored languages over time (Latin and German for Catholic and Lutheran
@@ -93,6 +94,31 @@ Players cannot customize individual fields. The roster is reproduced from a
 private random seed stored for the browser tab, but nothing is stored on the
 server until a candidate is confirmed. Age is intended to carry further
 tradeoffs later; those tradeoffs are deliberately not specified yet.
+
+Initial training is not an authored final-hours package. At authoritative
+creation, a deterministic pure simulation advances coarse life phases from age
+six through the character's current age. Childhood and student/apprentice
+activities may participate in this creation-only simulation without appearing
+in the adult live schedule UI; professional phases use the selected
+organization's authored curriculum. The calculation is analytical in the
+number of phases rather than ticking days or minutes, and normal aptitude
+learning rates and caps apply.
+
+This is deliberately not event sourcing. Persistence retains only the current
+`CharacterSkills` projection (plus the character's other current state), never
+historical activity transitions, schedules, or phase records. Recreating the
+same candidate coordinates reproduces the same result, but gameplay never
+replays a stored life history. Generic full Characters and settlement NPCs
+materialized as recruiting-party leaders use the same one-time simulation;
+lightweight settlement demographic rows, temporary tactical enemies, exact
+strategic-simulator evaluation profiles, imports without a full Character, and
+purpose-built fixtures remain outside that contract.
+
+Native oral language is an acquired identity supplied by the character's
+upbringing settlement, rather than credited study hours competing for a daily
+training budget. Written language is different: organization curricula and
+noble literacy both consume aptitude-aware historical study, and persistence
+does not patch a minimum written rank after simulation.
 
 Every confirmed, durable character also receives one relational social-estate
 basis. Estate is derived from an organization role rather than stored as a
