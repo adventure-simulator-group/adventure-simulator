@@ -5951,7 +5951,7 @@ body.chat-resizing {
 .equipment-slot-choice kbd {
   padding: 0;
   color: hsl(40 50% var(--equipment-layer-lightness, 88%));
-  font: 700 0.78rem/1.1 var(--font-mono, monospace);
+  font: 700 0.78rem/1.1 system-ui, -apple-system, "Segoe UI", sans-serif;
   background: none;
   border: 0;
   box-shadow: none;
