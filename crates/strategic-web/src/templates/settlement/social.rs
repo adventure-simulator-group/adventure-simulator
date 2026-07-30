@@ -334,10 +334,15 @@ pub fn party_social_dialog(
                                        };
                                       @let label = social_action_label(action, action_shares_concern);
                                       @let disabled_reason = if action == adventuresim_core::social::SocialActionKind::Pray { social.prayer_disabled_reason.as_deref() } else { None };
-                                       @let risk = prayer_approach.map_or_else(
-                                           || reassurance_approach.map_or(action.risk(), |approach| approach.risk),
-                                           |approach| approach.risk,
-                                       );
+                                        @let risk = match action {
+                                            adventuresim_core::social::SocialActionKind::Pray => {
+                                                prayer_approach.map_or(action.risk(), |approach| approach.risk)
+                                            }
+                                            adventuresim_core::social::SocialActionKind::Reassure => {
+                                                reassurance_approach.map_or(action.risk(), |approach| approach.risk)
+                                            }
+                                            _ => action.risk(),
+                                        };
                                       @let tooltip = if let Some(reason) = disabled_reason {
                                           format!("{}\nUnavailable: {}", description, reason)
                                       } else {
@@ -711,6 +716,10 @@ mod tests {
         assert!(injury_markup.contains("Physiology"));
         assert!(injury_markup.contains("low risk"));
         assert!(injury_markup.contains("Reassure. Sit at their bedside"));
+        assert!(injury_markup.contains("Physiology Â· low risk"));
+        assert!(injury_markup.contains("value=\"deception\""));
+        assert!(injury_markup.contains("Claim the injury is less serious than it looks"));
+        assert!(injury_markup.contains("Deception Â· high risk"));
     }
 
     #[test]
