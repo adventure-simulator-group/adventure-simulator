@@ -60,6 +60,9 @@ const BESTIARY: &[&str] = &[
     "wildmen",
 ];
 const TERRAINS: &[&str] = &["plains", "forest", "hills", "urban"];
+const WRITTEN_LANGUAGES: &[&str] = &[
+    "German", "Low", "Latin", "Hebrew", "Yiddish", "Elven", "Dwarfish",
+];
 
 fn object<'a>(
     value: &'a Value,
@@ -614,6 +617,12 @@ pub fn validate_documents(
                         return Err(format!("{source}: {at}.terrain is unknown"));
                     }
                 }
+                "written" => {
+                    keys(entry, &["kind", "language", "weight"], source, &at)?;
+                    if !WRITTEN_LANGUAGES.contains(&text(entry, source, "language")?) {
+                        return Err(format!("{source}: {at}.language is unknown"));
+                    }
+                }
                 "equipped_weapon_skills" => keys(entry, &["kind", "weight"], source, &at)?,
                 _ => {
                     return Err(format!(
@@ -763,6 +772,23 @@ mod tests {
             validate(forbidden, json!([]))
                 .unwrap_err()
                 .contains("leaf is forbidden")
+        );
+    }
+
+    #[test]
+    fn accepts_written_training_and_rejects_unknown_written_language() {
+        let mut written = valid_organization();
+        written["activity"]["training"] =
+            json!([{"kind": "written", "language": "Latin", "weight": 1.0}]);
+        assert!(validate(written, json!([])).is_ok());
+
+        let mut unknown = valid_organization();
+        unknown["activity"]["training"] =
+            json!([{"kind": "written", "language": "atlantean", "weight": 1.0}]);
+        assert!(
+            validate(unknown, json!([]))
+                .unwrap_err()
+                .contains("language is unknown")
         );
     }
 

@@ -44,6 +44,10 @@ sinks; the runner therefore does not assert naive currency conservation.
 
 ## Profiles and results
 
+Simulator-authored schedules currently allocate zero Reading minutes, keeping
+existing policy behavior stable. Camp and travel policy explicitly mask the
+player-facing Reading allocation.
+
 Profiles retain their seed and all inputs needed for inspection: a deterministic sparse personality
 (two through four non-neutral axes across thirteen behavioral axes), plus
 always-assigned Sex, Presentation, and Inclination; correlated, bounded attributes; an explicit personality-by-attribute

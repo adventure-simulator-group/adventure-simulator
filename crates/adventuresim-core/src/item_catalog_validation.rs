@@ -508,7 +508,7 @@ fn validate_capabilities(
 ) {
     reject_unknown(
         capabilities,
-        &["durability", "food", "alcohol", "container"],
+        &["durability", "food", "alcohol", "container", "book"],
         file,
         &format!("{path}.capabilities"),
         errors,
@@ -706,6 +706,98 @@ fn validate_capabilities(
             "{file}: {path}.capabilities.container: container kind requires capacity metadata"
         ));
     }
+    if let Some(book) = capabilities.get("book").and_then(Value::as_object) {
+        reject_unknown(
+            book,
+            &[
+                "medium",
+                "target",
+                "lower_rank",
+                "upper_rank",
+                "settlement_allowlist",
+            ],
+            file,
+            &format!("{path}.capabilities.book"),
+            errors,
+        );
+        if kind != "simple" {
+            errors.push(format!(
+                "{file}: {path}.capabilities.book: books must use kind simple"
+            ));
+        }
+        let parsed =
+            serde_json::from_value::<crate::item_catalog_schema::Book>(Value::Object(book.clone()));
+        match parsed {
+            Ok(book) if valid_book_shape(&book) => {}
+            Ok(_) => errors.push(format!(
+                "{file}: {path}.capabilities.book: target must be a supported leaf with an adjacent legal rank band"
+            )),
+            Err(error) => errors.push(format!(
+                "{file}: {path}.capabilities.book: {error}"
+            )),
+        }
+    }
+}
+
+fn valid_book_shape(book: &crate::item_catalog_schema::Book) -> bool {
+    use crate::item_catalog_schema::BookTarget;
+    let mut settlements = BTreeSet::new();
+    if book.settlement_allowlist.len() > 64
+        || book.settlement_allowlist.iter().any(|id| {
+            id.is_empty()
+                || id.len() > 96
+                || !id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b'-')
+                })
+                || !settlements.insert(id)
+        })
+    {
+        return false;
+    }
+    let maximum = match &book.target {
+        BookTarget::Written { .. } | BookTarget::Religion { .. } | BookTarget::Bestiary { .. } => 5,
+        BookTarget::Skill { skill } if matches!(skill.as_str(), "physiology" | "herbalism") => 4,
+        BookTarget::Terrain { terrain }
+            if matches!(
+                terrain.as_str(),
+                "plains" | "forest" | "hills" | "wetlands" | "urban" | "snow"
+            ) =>
+        {
+            2
+        }
+        BookTarget::Skill { skill }
+            if matches!(
+                skill.as_str(),
+                "surgery" | "cooking" | "tailoring" | "smithing" | "command" | "charm"
+            ) =>
+        {
+            2
+        }
+        BookTarget::Skill { skill }
+            if matches!(
+                skill.as_str(),
+                "polearm"
+                    | "axe"
+                    | "bludgeon"
+                    | "sword"
+                    | "knife"
+                    | "bow"
+                    | "crossbow"
+                    | "firearm"
+                    | "throw"
+                    | "dodge"
+                    | "block"
+                    | "balance"
+                    | "stealth"
+            ) =>
+        {
+            1
+        }
+        _ => return false,
+    };
+    book.upper_rank == book.lower_rank.saturating_add(1) && book.upper_rank <= maximum
 }
 
 fn valid_id(id: &str) -> bool {
@@ -897,5 +989,48 @@ mod tests {
         let error =
             validate_documents(&[document(vec![item])], &["currency.yaml".into()]).unwrap_err();
         assert!(error.contains("currency IDs must match the supported gameplay registry"));
+    }
+
+    #[test]
+    fn book_capabilities_require_supported_adjacent_bands() {
+        let valid = json!({
+            "book": {
+                "medium": "German",
+                "target": {"kind": "written", "language": "Latin"},
+                "lower_rank": 0,
+                "upper_rank": 1
+            }
+        });
+        let mut errors = Vec::new();
+        validate_capabilities(
+            valid.as_object().unwrap(),
+            "books.yaml",
+            "item latin_primer",
+            "simple",
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+
+        let excessive = json!({
+            "book": {
+                "medium": "German",
+                "target": {"kind": "skill", "skill": "sword"},
+                "lower_rank": 1,
+                "upper_rank": 2
+            }
+        });
+        let mut errors = Vec::new();
+        validate_capabilities(
+            excessive.as_object().unwrap(),
+            "books.yaml",
+            "item master_sword_book",
+            "simple",
+            &mut errors,
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("adjacent legal rank band"))
+        );
     }
 }

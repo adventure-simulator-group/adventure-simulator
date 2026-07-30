@@ -100,7 +100,12 @@
                                           {
                                               "kind":  "fixed_skill",
                                               "skill":  "command",
-                                              "weight":  1.0
+                                              "weight":  0.75
+                                          },
+                                          {
+                                              "kind":  "written",
+                                              "language":  "German",
+                                              "weight":  0.25
                                           }
                                       ],
                          "reward":  "gold"
@@ -937,7 +942,17 @@
                                           {
                                               "kind":  "religion",
                                               "religion":  "roman_catholic",
-                                              "weight":  1.0
+                                              "weight":  0.5
+                                          },
+                                          {
+                                              "kind":  "written",
+                                              "language":  "Latin",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "written",
+                                              "language":  "German",
+                                              "weight":  0.15
                                           }
                                       ],
                          "reward":  "fame"
@@ -1205,7 +1220,17 @@
                                           {
                                               "kind":  "religion",
                                               "religion":  "lutheran",
-                                              "weight":  1.0
+                                              "weight":  0.5
+                                          },
+                                          {
+                                              "kind":  "written",
+                                              "language":  "German",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "written",
+                                              "language":  "Latin",
+                                              "weight":  0.15
                                           }
                                       ],
                          "reward":  "fame"
@@ -1375,7 +1400,22 @@
                                           {
                                               "kind":  "religion",
                                               "religion":  "judaism",
-                                              "weight":  1.0
+                                              "weight":  0.5
+                                          },
+                                          {
+                                              "kind":  "written",
+                                              "language":  "Hebrew",
+                                              "weight":  0.25
+                                          },
+                                          {
+                                              "kind":  "written",
+                                              "language":  "Yiddish",
+                                              "weight":  0.15
+                                          },
+                                          {
+                                              "kind":  "written",
+                                              "language":  "German",
+                                              "weight":  0.1
                                           }
                                       ],
                          "reward":  "fame"

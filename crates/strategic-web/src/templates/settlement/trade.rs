@@ -38,6 +38,7 @@ pub enum MerchantShop {
     Clothing,
     Herbalist,
     Inn,
+    Books,
 }
 impl MerchantShop {
     pub fn storefront(self) -> adventuresim_core::settlement_economy::Storefront {
@@ -49,6 +50,7 @@ impl MerchantShop {
             Self::Clothing => S::Clothing,
             Self::Herbalist => S::Herbalist,
             Self::Inn => S::Inn,
+            Self::Books => S::Books,
         }
     }
 
@@ -73,12 +75,22 @@ impl MerchantShop {
             crate::spacetimedb::ItemKind::Medication => C::Medication,
             crate::spacetimedb::ItemKind::Food => C::Food,
         };
-        adventuresim_core::settlement_economy::storefront_stocks(
+        let stocked = adventuresim_core::settlement_economy::storefront_stocks(
             &settlement.economy,
             self.storefront(),
             &item.id,
             kind,
-        )
+        );
+        stocked
+            && (!matches!(self, Self::Books)
+                || adventuresim_core::item_catalog::definition(&item.id).is_some_and(
+                    |definition| {
+                        definition.capabilities.book.as_ref().is_some_and(|book| {
+                            book.settlement_allowlist.is_empty()
+                                || book.settlement_allowlist.contains(&settlement.id)
+                        })
+                    },
+                ))
     }
     pub fn service_id(self) -> &'static str {
         match self {
@@ -88,6 +100,7 @@ impl MerchantShop {
             Self::Clothing => "clothing",
             Self::Herbalist => "herbalist",
             Self::Inn => "inn",
+            Self::Books => "books",
         }
     }
 
@@ -99,6 +112,7 @@ impl MerchantShop {
             Self::Clothing => "Tailor",
             Self::Herbalist => "Herbalist",
             Self::Inn => "The Inn",
+            Self::Books => "Bookstore",
         }
     }
 
@@ -128,6 +142,8 @@ impl MerchantShop {
                         "cooking_pan" | "cooking_pot" | "portable_oven"
                     )
             }
+            Self::Books => adventuresim_core::item_catalog::definition(&item.id)
+                .is_some_and(|definition| definition.capabilities.book.is_some()),
         }
     }
 

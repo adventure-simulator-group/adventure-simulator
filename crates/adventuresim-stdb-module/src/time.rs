@@ -67,6 +67,7 @@ pub struct CharacterTime {
 /// One 24-hour daily budget. Leisure is always the unallocated remainder.
 #[derive(Clone, Debug, Default, SpacetimeType)]
 pub struct ScheduleAllocation {
+    pub reading_minutes: u16,
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
     pub apprenticeship_minutes: u16,
@@ -85,6 +86,7 @@ pub struct ScheduleAllocation {
 /// small, stable discriminator in generated clients.
 #[derive(Clone, Copy, Debug, SpacetimeType)]
 pub enum ImmediateActivity {
+    Reading,
     Prayer,
     CombatTraining,
     Carousing,
@@ -118,6 +120,7 @@ impl ScheduleAllocation {
             self.carousing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
+            self.reading_minutes,
         ])
     }
 
@@ -131,6 +134,7 @@ impl ScheduleAllocation {
             self.carousing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
+            self.reading_minutes,
         ];
         values.into_iter().all(|minutes| minutes % 15 == 0)
     }
@@ -781,6 +785,18 @@ fn apply_training(
                 activities,
                 &attributes,
             );
+            for entry in &definition.activity.training {
+                if let adventuresim_core::organization::TrainingTarget::Written { language } =
+                    &entry.target
+                {
+                    excess += adventuresim_core::skill::apply_language_training(
+                        skills.written_languages.direct_mut(*language),
+                        work_hours * entry.weight,
+                        attributes.intelligence,
+                    )
+                    .excess_effective_hours;
+                }
+            }
         }
     }
     skills.polearm_hours = hours.polearm;
@@ -815,11 +831,311 @@ fn apply_training(
     skills.terrain_snow_hours = hours.terrain_snow;
     skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
+    if schedule.reading_minutes > 0 {
+        let reading_hours =
+            elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(schedule.reading_minutes) / 60.0;
+        excess += apply_reading_training(ctx, character_id, skills, reading_hours, &attributes);
+    }
+    excess
+}
+
+fn terrain_book_skill(terrain: &str) -> Option<Skill> {
+    Some(match terrain {
+        "plains" => Skill::TerrainPlains,
+        "forest" => Skill::TerrainForest,
+        "hills" => Skill::TerrainHills,
+        "wetlands" => Skill::TerrainWetlands,
+        "urban" => Skill::TerrainUrban,
+        "snow" => Skill::TerrainSnow,
+        _ => return None,
+    })
+}
+
+fn direct_skill_hours_mut(skills: &mut CharacterSkills, skill: Skill) -> &mut f32 {
+    match skill {
+        Skill::Polearm => &mut skills.polearm_hours,
+        Skill::Axe => &mut skills.axe_hours,
+        Skill::Bludgeon => &mut skills.bludgeon_hours,
+        Skill::Sword => &mut skills.sword_hours,
+        Skill::Knife => &mut skills.knife_hours,
+        Skill::Dodge => &mut skills.dodge_hours,
+        Skill::Block => &mut skills.block_hours,
+        Skill::Bow => &mut skills.bow_hours,
+        Skill::Crossbow => &mut skills.crossbow_hours,
+        Skill::Firearm => &mut skills.firearm_hours,
+        Skill::Throw => &mut skills.throw_hours,
+        Skill::Will => &mut skills.will_hours,
+        Skill::Insight => &mut skills.insight_hours,
+        Skill::Charm => &mut skills.charm_hours,
+        Skill::Command => &mut skills.command_hours,
+        Skill::Deception => &mut skills.deception_hours,
+        Skill::Physiology => &mut skills.physiology_hours,
+        Skill::Cooking => &mut skills.cooking_hours,
+        Skill::Herbalism => &mut skills.herbalism_hours,
+        Skill::Stealth => &mut skills.stealth_hours,
+        Skill::Balance => &mut skills.balance_hours,
+        Skill::Surgery => &mut skills.surgery_hours,
+        Skill::TerrainPlains => &mut skills.terrain_plains_hours,
+        Skill::TerrainForest => &mut skills.terrain_forest_hours,
+        Skill::TerrainHills => &mut skills.terrain_hills_hours,
+        Skill::TerrainWetlands => &mut skills.terrain_wetlands_hours,
+        Skill::TerrainUrban => &mut skills.terrain_urban_hours,
+        Skill::TerrainSnow => &mut skills.terrain_snow_hours,
+        Skill::Tailoring => &mut skills.tailoring_hours,
+        Skill::Smithing => &mut skills.smithing_hours,
+        Skill::Religion | Skill::Bestiary => unreachable!("family leaves have separate storage"),
+    }
+}
+
+fn target_snapshot(
+    skills: &CharacterSkills,
+    target: &adventuresim_core::item_catalog_schema::BookTarget,
+    attributes: &CharacterAttributes,
+) -> Option<(f32, f32)> {
+    use adventuresim_core::item_catalog_schema::BookTarget;
+    match target {
+        BookTarget::Written { language } => Some((
+            adventuresim_core::book::written_rank(
+                skills.written_languages.effective(*language),
+                attributes.intelligence,
+            ),
+            attributes.intelligence,
+        )),
+        BookTarget::Religion { religion } => Some((
+            Skill::Religion
+                .capped_training_rank(skills.religion_hours.effective(*religion), attributes),
+            Skill::Religion.governing_aptitude(attributes),
+        )),
+        BookTarget::Bestiary { category } => Some((
+            Skill::Bestiary
+                .capped_training_rank(skills.bestiary_hours.effective(*category), attributes),
+            Skill::Bestiary.governing_aptitude(attributes),
+        )),
+        BookTarget::Terrain { terrain } => {
+            let skill = terrain_book_skill(terrain)?;
+            Some((
+                skill.capped_training_rank(skills.effective_skill_hours(skill), attributes),
+                skill.governing_aptitude(attributes),
+            ))
+        }
+        BookTarget::Skill { .. } => {
+            let skill = adventuresim_core::book::ordinary_skill(target)?;
+            Some((
+                skill.capped_training_rank(skills.effective_skill_hours(skill), attributes),
+                skill.governing_aptitude(attributes),
+            ))
+        }
+    }
+}
+
+fn apply_selected_book(
+    skills: &mut CharacterSkills,
+    book: &adventuresim_core::item_catalog_schema::Book,
+    real_hours: f32,
+    attributes: &CharacterAttributes,
+) -> adventuresim_core::book::BoundedBookGain {
+    use adventuresim_core::item_catalog_schema::BookTarget;
+    let medium_rank = adventuresim_core::book::written_rank(
+        skills.written_languages.effective(book.medium),
+        attributes.intelligence,
+    );
+    let Some((rank, aptitude)) = target_snapshot(skills, &book.target, attributes) else {
+        return Default::default();
+    };
+    let lower = book.lower_rank;
+    let upper = book.upper_rank;
+    match &book.target {
+        BookTarget::Written { language } => adventuresim_core::book::apply_written_book_training(
+            &mut skills.written_languages,
+            book.medium,
+            *language,
+            rank,
+            attributes.intelligence,
+            lower,
+            upper,
+            real_hours,
+        ),
+        BookTarget::Religion { religion } => {
+            let baseline = skills.religion_hours;
+            let direct = skills.religion_hours.direct_mut(*religion);
+            adventuresim_core::book::apply_bounded_book_training(
+                direct,
+                rank,
+                aptitude,
+                lower,
+                upper,
+                real_hours,
+                medium_rank,
+                |rank| Skill::Religion.hours_for_rank(rank),
+                |candidate| {
+                    let mut projected = baseline;
+                    *projected.direct_mut(*religion) = candidate;
+                    projected.effective(*religion)
+                },
+            )
+        }
+        BookTarget::Bestiary { category } => {
+            let baseline = skills.bestiary_hours;
+            let direct = skills.bestiary_hours.direct_mut(*category);
+            adventuresim_core::book::apply_bounded_book_training(
+                direct,
+                rank,
+                aptitude,
+                lower,
+                upper,
+                real_hours,
+                medium_rank,
+                |rank| Skill::Bestiary.hours_for_rank(rank),
+                |candidate| {
+                    let mut projected = baseline;
+                    *projected.direct_mut(*category) = candidate;
+                    projected.effective(*category)
+                },
+            )
+        }
+        BookTarget::Terrain { terrain } => {
+            let skill = terrain_book_skill(terrain).expect("validated terrain book");
+            let transferred = skill
+                .ordinary_correlations()
+                .iter()
+                .map(|(source, coefficient)| {
+                    skills.skill_hours_trained(*source).max(0.0) * coefficient
+                })
+                .sum::<f32>()
+                .max(0.0);
+            adventuresim_core::book::apply_bounded_book_training(
+                direct_skill_hours_mut(skills, skill),
+                rank,
+                aptitude,
+                lower,
+                upper,
+                real_hours,
+                medium_rank,
+                |rank| skill.hours_for_rank(rank),
+                |candidate| candidate.max(0.0) + transferred,
+            )
+        }
+        BookTarget::Skill { .. } => {
+            let skill = adventuresim_core::book::ordinary_skill(&book.target)
+                .expect("validated ordinary book target");
+            let transferred = skill
+                .ordinary_correlations()
+                .iter()
+                .map(|(source, coefficient)| {
+                    skills.skill_hours_trained(*source).max(0.0) * coefficient
+                })
+                .sum::<f32>()
+                .max(0.0);
+            adventuresim_core::book::apply_bounded_book_training(
+                direct_skill_hours_mut(skills, skill),
+                rank,
+                aptitude,
+                lower,
+                upper,
+                real_hours,
+                medium_rank,
+                |rank| skill.hours_for_rank(rank),
+                |candidate| {
+                    let candidate = candidate.max(0.0);
+                    if skill.is_trained() && candidate <= 0.0 {
+                        0.0
+                    } else if skill.is_trained() {
+                        candidate + transferred.min(candidate)
+                    } else {
+                        candidate + transferred
+                    }
+                },
+            )
+        }
+    }
+}
+
+fn apply_reading_training(
+    ctx: &ReducerContext,
+    character_id: u64,
+    skills: &mut CharacterSkills,
+    mut real_hours: f32,
+    attributes: &CharacterAttributes,
+) -> f32 {
+    use crate::item::inventory_item;
+    use adventuresim_core::book::{BookCandidate, select_candidate};
+    let Some(character) = ctx.db.character().id().find(character_id) else {
+        return 0.0;
+    };
+    let personal = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .filter(|row| row.quantity > 0)
+        .map(|row| row.item_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let bookstore = character
+        .current_settlement_id
+        .as_ref()
+        .and_then(|id| ctx.db.settlement().id().find(id))
+        .filter(|settlement| {
+            settlement
+                .economy
+                .has_service(adventuresim_world_schema::SettlementService::Bookstore)
+        });
+    let mut excess = 0.0;
+    let mut unusable = std::collections::BTreeSet::new();
+    // A bounded title can finish mid-interval; immediately continue with the
+    // next eligible title. The catalog and item IDs give a stable order.
+    while real_hours > 0.000_01 {
+        let candidates = adventuresim_core::item_catalog::catalog()
+            .iter()
+            .filter_map(|item| {
+                if unusable.contains(&item.id) {
+                    return None;
+                }
+                let book = item.capabilities.book.as_ref()?;
+                let owned = personal.contains(&item.id);
+                let on_site = bookstore.as_ref().is_some_and(|settlement| {
+                    book.settlement_allowlist.is_empty()
+                        || book
+                            .settlement_allowlist
+                            .iter()
+                            .any(|id| id == &settlement.id)
+                });
+                (owned || on_site).then_some(BookCandidate {
+                    item_id: &item.id,
+                    book,
+                    personal: owned,
+                })
+            });
+        let Some(selected) = select_candidate(candidates, |book| {
+            let medium_rank = adventuresim_core::book::written_rank(
+                skills.written_languages.effective(book.medium),
+                attributes.intelligence,
+            );
+            target_snapshot(skills, &book.target, attributes).is_some_and(|(rank, aptitude)| {
+                medium_rank >= adventuresim_core::book::READABLE_WRITTEN_RANK
+                    && rank + 0.000_01 >= f32::from(book.lower_rank)
+                    && rank < f32::from(book.upper_rank).min(aptitude)
+                    && aptitude > f32::from(book.lower_rank)
+            })
+        }) else {
+            break;
+        };
+        let gain = apply_selected_book(skills, selected.book, real_hours, attributes);
+        if gain.accepted_effective_hours <= 0.0 {
+            unusable.insert(selected.item_id.to_owned());
+            continue;
+        }
+        excess += 0.0;
+        if gain.unused_real_hours >= real_hours - 0.000_01 {
+            break;
+        }
+        real_hours = gain.unused_real_hours;
+    }
     excess
 }
 
 pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
+        reading_minutes: schedule.reading_minutes,
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
         apprenticeship_minutes: schedule.apprenticeship_minutes,
@@ -936,6 +1252,10 @@ fn apply_organization_training(
                         award_direct(skill, target, award * weight / total);
                     }
                 }
+            }
+            TrainingTarget::Written { .. } => {
+                // Written leaves live beside the ordinary SkillHours structure
+                // and are applied by the caller.
             }
         }
     }
@@ -1129,6 +1449,7 @@ fn immediate_activity_schedule(
     let mut schedule = ScheduleAllocation::default();
     match activity {
         ImmediateActivity::Prayer => schedule.prayer_minutes = minutes,
+        ImmediateActivity::Reading => schedule.reading_minutes = minutes,
         ImmediateActivity::CombatTraining => schedule.combat_training_minutes = minutes,
         ImmediateActivity::Carousing => schedule.carousing_minutes = minutes,
         ImmediateActivity::Apprenticeship => {
@@ -1913,6 +2234,7 @@ pub(crate) fn synchronize_party_departure_time(
 
 pub(crate) fn allowed_camp_schedule(schedule: &ScheduleAllocation) -> ScheduleAllocation {
     let mut allowed = schedule.clone();
+    allowed.reading_minutes = 0;
     allowed.apprenticeship_minutes = 0;
     allowed.apprenticeship_organization_id = None;
     allowed.profession_practice_minutes = 0;

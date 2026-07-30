@@ -115,6 +115,8 @@ impl SkillHours {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DailySchedule {
+    /// Quiet study from a personally carried book or an on-site bookstore.
+    pub reading_minutes: u16,
     /// Structured combat practice, including weapon drills, will, and balance.
     pub combat_training_minutes: u16,
     /// Social recreation which trains Charm at the activity rate.
@@ -140,6 +142,7 @@ impl DailySchedule {
             self.carousing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
+            self.reading_minutes,
         ]
         .into_iter()
         .map(u64::from)

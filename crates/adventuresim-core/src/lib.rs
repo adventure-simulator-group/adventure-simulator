@@ -5,6 +5,7 @@ pub mod autoresolve;
 pub mod battle_rewards;
 pub mod bestiary;
 pub mod body;
+pub mod book;
 pub mod capability;
 pub mod case;
 pub mod combat;

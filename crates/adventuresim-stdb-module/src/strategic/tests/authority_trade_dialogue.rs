@@ -517,6 +517,7 @@
             "npc_is_present(&provider_presence, problem_minute)",
             "default_merchant_provider(ctx, &settlement_id, &service_id, location_id)?",
             "storefront_stocks(",
+            "settlement_allowlist",
             "inventory_food_definition(Some(item.kind), item_id)?",
             "add_to_party_inventory_checked(",
             "add_inventory_item_checked(",

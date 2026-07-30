@@ -2,6 +2,13 @@ Time between players is kept *somewhat* in-sync. The idea is that generally, tim
 
 ## Current implementation
 
+Reading is a saved settlement allocation and immediate activity. It selects
+useful personal books first, deduplicated by stable item ID. If none can teach
+the character, a City or Capital bookstore supplies free on-site study. The
+lowest applicable band and then stable item ID determine selection; finishing a
+band during a long interval cascades into the next eligible title. Reading is
+allocated time rather than Leisure, and is disabled during travel and camp.
+
 Disease is evaluated in the patient's personal character time. Travel, camp
 rest, settlement rest, and lazy catch-up check every disease boundary crossed
 by the interval. If terminal physiological failure occurs, the clock and all

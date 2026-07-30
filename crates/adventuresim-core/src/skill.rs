@@ -198,6 +198,10 @@ mod tests {
             Skill::Physiology.governing_aptitude_kind().label(),
             "Intelligence"
         );
+        assert_eq!(
+            Skill::TerrainForest.governing_aptitude_kind().label(),
+            "Instinct"
+        );
         assert_eq!(Skill::Knife.governing_aptitude_kind().label(), "Agility");
     }
 
@@ -593,21 +597,23 @@ impl Skill {
 
     pub const fn governing_aptitude_kind(self) -> GoverningAptitude {
         match self {
-            Self::Will | Self::Insight | Self::Charm | Self::Command | Self::Deception => {
-                GoverningAptitude::Instinct
-            }
-            Self::Physiology
-            | Self::Surgery
-            | Self::Cooking
-            | Self::Herbalism
-            | Self::Religion
-            | Self::Bestiary
+            Self::Will
+            | Self::Insight
+            | Self::Charm
+            | Self::Command
+            | Self::Deception
             | Self::TerrainPlains
             | Self::TerrainForest
             | Self::TerrainHills
             | Self::TerrainWetlands
             | Self::TerrainUrban
-            | Self::TerrainSnow => GoverningAptitude::Intelligence,
+            | Self::TerrainSnow => GoverningAptitude::Instinct,
+            Self::Physiology
+            | Self::Surgery
+            | Self::Cooking
+            | Self::Herbalism
+            | Self::Religion
+            | Self::Bestiary => GoverningAptitude::Intelligence,
             Self::Dodge | Self::Balance => GoverningAptitude::Agility(LimbWeights::both_legs()),
             Self::Stealth => GoverningAptitude::Agility(LimbWeights::all_equal()),
             Self::Polearm

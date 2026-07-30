@@ -215,6 +215,12 @@ pub(super) async fn render_party_personal(
         &apprenticeships,
         &location.id,
         character_minute,
+    )
+    .with_reading(
+        attributes.first(),
+        skills.first(),
+        settlement.as_ref(),
+        active_inventory.iter().filter(|item| item.qty > 0).map(|item| item.item_id.as_str()),
     );
     let activity_location = match location.kind {
         LocationKind::Settlement => adventuresim_core::activity::ActivityLocation::Settlement {

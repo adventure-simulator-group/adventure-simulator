@@ -1,6 +1,7 @@
 #[derive(Default, Deserialize)]
 #[serde(default)]
 pub(super) struct TrainingScheduleForm {
+    reading_minutes: u16,
     combat_training_minutes: u16,
     carousing_minutes: u16,
     apprenticeship_minutes: u16,
@@ -60,6 +61,7 @@ pub(super) async fn update_training_schedule(
             .into_response();
     }
     let downtime = ScheduleAllocation {
+        reading_minutes: form.reading_minutes,
         combat_training_minutes: form.combat_training_minutes,
         carousing_minutes: form.carousing_minutes,
         apprenticeship_minutes: form.apprenticeship_minutes,
@@ -104,6 +106,7 @@ pub(super) struct ImmediateActivityForm {
 
 pub(super) fn immediate_activity_arg(activity: &str) -> Option<serde_json::Value> {
     let tag = match activity {
+        "reading" => "reading",
         "prayer" => "prayer",
         "combat_training" => "combatTraining",
         "carousing" => "carousing",

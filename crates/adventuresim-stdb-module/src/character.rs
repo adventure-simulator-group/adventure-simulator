@@ -1265,13 +1265,15 @@ pub(crate) fn set_character_languages_for_settlement(
         .character_id()
         .find(character_id)
         .ok_or_else(|| format!("Character {character_id} has no skills"))?;
-    let (oral, written) = adventuresim_world_schema::initial_character_languages(
+    let (oral, _) = adventuresim_world_schema::initial_character_languages(
         settlement.languages,
         character_id,
         npc,
     );
     skills.oral_languages = oral;
-    skills.written_languages = written;
+    // Relocating a character can replace their authored vernacular identity
+    // during bootstrap, but literacy comes from estate and institutional
+    // training and must not be erased by a change of settlement.
     ctx.db.character_skills().character_id().update(skills);
     Ok(())
 }
@@ -1391,9 +1393,25 @@ fn insert_character_with_origin(
         calories_used: 0.0,
         focus: 1.0,
     });
-    let (oral_languages, written_languages) =
+    let (oral_languages, mut written_languages) =
         adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
     let generated_skills = starting.map(|spec| &spec.skills);
+    if let Some(generated) = generated_skills {
+        written_languages = generated.written;
+    }
+    if !temporary
+        && crate::social_estate::character_estate(ctx, id)
+            .is_ok_and(|estate| estate == adventuresim_core::organization::Estate::Noble)
+    {
+        let local = if start_settlement.languages.dominant_german()
+            == adventuresim_world_schema::OralLanguage::Low
+        {
+            adventuresim_world_schema::WrittenLanguage::Low
+        } else {
+            adventuresim_world_schema::WrittenLanguage::German
+        };
+        *written_languages.direct_mut(local) = written_languages.direct(local).max(1_000.0);
+    }
     let _character_skills = ctx.db.character_skills().insert(CharacterSkills {
         character_id: id,
         polearm_hours: generated_skills.map_or(2000.0, |s| s.polearm),

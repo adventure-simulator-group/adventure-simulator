@@ -368,6 +368,7 @@ pub fn routes() -> Router<AppState> {
             post(retrieve_repairs),
         )
         .route("/settlements/{id}/clothing", get(clothing))
+        .route("/settlements/{id}/books", get(bookstore))
         .route("/settlements/{id}/herbalist", get(herbalist))
         .route(
             "/settlements/{id}/herbalist/purchase",

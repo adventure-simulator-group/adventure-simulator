@@ -5,6 +5,7 @@ pub(super) fn merchant_service_location(service_id: &str) -> Option<&'static str
         "armor" => Some("armoury"),
         "clothing" => Some("tailor"),
         "inn" => Some("inn"),
+        "books" => Some("bookstore"),
         _ => None,
     }
 }

@@ -194,7 +194,7 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
             dwarfish: 0.0,
         },
         written_languages: adventuresim_stdb_client::WrittenLanguageHours {
-            german: 1_000.0,
+            german: 0.0,
             low: 0.0,
             latin: 0.0,
             hebrew: 0.0,
@@ -236,6 +236,7 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
     // leave the remainder as leisure instead of failing after medical rest.
     let quarter_hour = |minutes: u16| minutes / 15 * 15;
     reallocate_disabled_crime_to_labor(ScheduleAllocation {
+        reading_minutes: 0,
         combat_training_minutes: quarter_hour(s.combat_training_minutes),
         carousing_minutes: quarter_hour(s.carousing_minutes),
         // Simulation profiles may express future profession preferences that
@@ -266,6 +267,7 @@ fn schedule_allocated_minutes(schedule: &ScheduleAllocation) -> u16 {
         schedule.prayer_minutes,
         schedule.thievery_minutes,
         schedule.raiding_minutes,
+        schedule.reading_minutes,
     ]
     .into_iter()
     .sum()
@@ -318,6 +320,7 @@ fn activity_schedule_plan(
 
 fn medical_rest_schedule() -> ScheduleAllocation {
     ScheduleAllocation {
+        reading_minutes: 0,
         combat_training_minutes: 0,
         carousing_minutes: 0,
         apprenticeship_minutes: 0,

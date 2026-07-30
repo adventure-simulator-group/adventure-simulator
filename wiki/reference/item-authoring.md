@@ -37,6 +37,14 @@ custody, condition, and market state do not belong in definitions.
 
 ## Shape
 
+Books remain ordinary `kind: simple` items and add `capabilities.book`. The
+capability authors a `medium` Written language, exactly one typed leaf target,
+adjacent `lower_rank`/`upper_rank` integers, and an optional
+`settlement_allowlist` for culturally rare stock. Validation rejects aggregate
+or unknown targets, non-adjacent bands, and bands beyond the target-family
+limit. Runtime resolves embedded metadata by stable item ID rather than
+widening the persisted item table.
+
 Every item requires `id`, `display_name`, `weight_kg`, `base_value`, `tags`,
 `presentation.icon`, and a tagged `kind`. Physical units are part of field
 names. Kinds are `simple`, `currency`, `ingredient`, `medication`, `clothing`,

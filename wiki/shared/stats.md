@@ -126,6 +126,23 @@ not add to their final checks.
 5. Blind monk
 
 # Skills
+
+## Book study
+
+Written language, Religion, and Bestiary leaves can be studied from books
+through rank 5. Physiology and Herbalism books stop at rank 4. Terrain,
+Surgery, Cooking, Tailoring, Smithing, Command, and Charm books stop at rank 2.
+Melee, ranged, Defense, and Stealth manuals only provide the 0→1 introduction.
+Advancement above the bounded practical and embodied bands is reserved for
+metis rather than book study.
+
+Each title teaches one adjacent integer band. Its lower rank is a hard
+prerequisite and progress clips at its upper rank. A readable medium requires
+rank 1 in that Written language. Reading converts real hours to effective
+target hours at `written rank / 5`, without applying the target aptitude's
+learning-speed multiplier again. Aptitude still caps the effective target
+rank. Terrain is governed by Instinct; its correlations and exposure sources
+are unchanged.
 Every skill has exactly one governing aptitude: Intelligence, Instinct, or
 Agility. Aptitude controls training speed and the effective-rank limit; trained
 skill rank supplies the check itself.
