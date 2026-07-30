@@ -2786,6 +2786,33 @@ mod tests {
     }
 
     #[test]
+    fn surgery_row_uses_the_new_name_and_lists_zero_hour_correlations() {
+        let skills = CharacterSkills {
+            surgery_hours: 1_000.0,
+            knife_hours: 0.0,
+            tailoring_hours: 0.0,
+            ..Default::default()
+        };
+        let rendered = party_skill_row(
+            &skills,
+            "Surgery",
+            "surgeon",
+            Skill::Surgery,
+            5.0,
+            1.0,
+            false,
+            None,
+        )
+        .into_string();
+
+        assert!(rendered.contains("&quot;name&quot;:&quot;Surgery&quot;"));
+        assert!(!rendered.contains("Anatomy"));
+        assert!(rendered.contains("0.0 hours from correlated skills:"));
+        assert!(rendered.contains("Knife | 15%"));
+        assert!(rendered.contains("Tailoring | 15%"));
+    }
+
+    #[test]
     fn terrain_rows_render_intuitive_cross_habitat_projection() {
         let skills = CharacterSkills {
             terrain_forest_hours: 1_000.0,
