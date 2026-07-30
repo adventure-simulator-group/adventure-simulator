@@ -365,6 +365,18 @@ pub struct AcquisitionAttempt {
     pub exposure: Option<f32>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnvironmentalExposureSource {
+    pub character_id: u64,
+    pub disease_id: DiseaseId,
+    pub exposure_id: String,
+    pub start: u64,
+    pub end: u64,
+    pub intensity: f32,
+    pub base_acquisition: f32,
+    pub vector: TransmissionVector,
+}
+
 impl AcquisitionAttempt {
     pub fn guaranteed(episode: InfectionEpisode) -> Self {
         Self {
@@ -416,6 +428,7 @@ pub fn resolve_acquisition_timeline(
     target_ids: &std::collections::BTreeSet<u64>,
     initial: &std::collections::BTreeMap<u64, Vec<InfectionEpisode>>,
     scheduled: impl IntoIterator<Item = AcquisitionAttempt>,
+    environmental: &[EnvironmentalExposureSource],
     windows: &[ContactWindow],
     immunity: &std::collections::BTreeMap<u64, f32>,
     from: u64,
@@ -456,6 +469,14 @@ pub fn resolve_acquisition_timeline(
         ..Default::default()
     };
     let first_scheduled = scheduled_by_minute.keys().next().copied();
+    let first_environmental = environmental
+        .iter()
+        .filter_map(|source| {
+            let start = source.start.max(from.saturating_add(1));
+            (target_ids.contains(&source.character_id) && start <= source.end && start <= to)
+                .then_some(start)
+        })
+        .min();
     let first_contact = windows
         .iter()
         .filter_map(|window| {
@@ -463,7 +484,12 @@ pub fn resolve_acquisition_timeline(
             (start <= window.end && start <= to).then_some(start)
         })
         .min();
-    let Some(mut minute) = first_scheduled.into_iter().chain(first_contact).min() else {
+    let Some(mut minute) = first_scheduled
+        .into_iter()
+        .chain(first_environmental)
+        .chain(first_contact)
+        .min()
+    else {
         return Ok(result);
     };
     while minute <= to {
@@ -509,6 +535,49 @@ pub fn resolve_acquisition_timeline(
                 .then_some(candidate)
             })
             .collect::<Vec<_>>();
+        for source in environmental {
+            if !target_ids.contains(&source.character_id)
+                || minute < source.start
+                || minute > source.end
+                || minute > to
+            {
+                continue;
+            }
+            result.work_units = result.work_units.saturating_add(1);
+            if result.work_units > max_work {
+                return Err("Disease interval exceeds bounded exposure work");
+            }
+            let target_immunity = immunity.get(&source.character_id).copied().unwrap_or(3.0);
+            let target_episodes = state
+                .get(&source.character_id)
+                .map_or(&[][..], Vec::as_slice);
+            if has_unresolved_disease(target_episodes, source.disease_id, minute, target_immunity) {
+                continue;
+            }
+            let id = outbreak_exposure_seed(
+                source.character_id,
+                &format!("{}:{minute}", source.exposure_id),
+            );
+            let prior =
+                acquired_immunity(target_episodes, source.disease_id, minute, target_immunity);
+            let mut source_definition = *definition(source.disease_id);
+            source_definition.base_acquisition = source.base_acquisition / 1_440.0;
+            let exposure = residual_exposure(
+                source.intensity,
+                source.vector,
+                physiology_check_at(source.character_id, minute),
+            );
+            if acquisition_succeeds(id, &source_definition, target_immunity, prior, exposure) {
+                candidates.push(InfectionEpisode {
+                    id,
+                    character_id: source.character_id,
+                    disease_id: source.disease_id,
+                    contracted_at: minute,
+                    ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+                    phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+                });
+            }
+        }
         for window in windows {
             result.work_units = result.work_units.saturating_add(1);
             if result.work_units > max_work {
@@ -604,6 +673,43 @@ pub fn resolve_acquisition_timeline(
             .range(minute.saturating_add(1)..)
             .next()
             .map(|(next, _)| *next);
+        let next_environmental = environmental
+            .iter()
+            .filter_map(|source| {
+                if !target_ids.contains(&source.character_id) {
+                    return None;
+                }
+                let mut next = minute.saturating_add(1).max(source.start);
+                if next > source.end || next > to {
+                    return None;
+                }
+                let target_immunity = immunity.get(&source.character_id).copied().unwrap_or(3.0);
+                if let Some(resolution) = state
+                    .get(&source.character_id)
+                    .into_iter()
+                    .flatten()
+                    .filter(|episode| {
+                        episode.disease_id == source.disease_id
+                            && episode.contracted_at <= next
+                            && evaluate(**episode, next, target_immunity).stage
+                                != DiseaseStage::Resolved
+                    })
+                    .map(|episode| {
+                        let definition = definition(episode.disease_id);
+                        episode.contracted_at.saturating_add(
+                            definition.incubation_minutes
+                                + definition.rise_minutes
+                                + definition.peak_minutes
+                                + definition.recovery_minutes,
+                        )
+                    })
+                    .max()
+                {
+                    next = next.max(resolution);
+                }
+                (next <= source.end && next <= to).then_some(next)
+            })
+            .min();
         let next_contact = windows
             .iter()
             .filter_map(|window| {
@@ -611,7 +717,12 @@ pub fn resolve_acquisition_timeline(
                 (next <= window.end && next <= to).then_some(next)
             })
             .min();
-        let Some(next) = next_scheduled.into_iter().chain(next_contact).min() else {
+        let Some(next) = next_scheduled
+            .into_iter()
+            .chain(next_environmental)
+            .chain(next_contact)
+            .min()
+        else {
             break;
         };
         if next <= minute {
@@ -1081,7 +1192,7 @@ pub fn first_eligible_protected_presence_exposure_minute(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn protected_presence_exposure_attempts(
+pub fn protected_presence_exposure_source(
     disease_id: DiseaseId,
     character_id: u64,
     exposure_id: &str,
@@ -1090,33 +1201,20 @@ pub fn protected_presence_exposure_attempts(
     intensity: f32,
     base_acquisition: f32,
     vector: TransmissionVector,
-    max_attempts: usize,
-    physiology_check_at: impl Fn(u64) -> f32,
-) -> Result<Vec<AcquisitionAttempt>, &'static str> {
+) -> Option<EnvironmentalExposureSource> {
     if to <= from || intensity <= 0.0 {
-        return Ok(Vec::new());
+        return None;
     }
-    let attempt_count = to.saturating_sub(from);
-    if attempt_count > max_attempts as u64 {
-        return Err("Disease interval exceeds bounded acquisition candidates");
-    }
-    Ok(((from + 1)..=to)
-        .map(|minute| {
-            let id = outbreak_exposure_seed(character_id, &format!("{exposure_id}:{minute}"));
-            AcquisitionAttempt::exposure(
-                InfectionEpisode {
-                    id,
-                    character_id,
-                    disease_id,
-                    contracted_at: minute,
-                    ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
-                    phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
-                },
-                base_acquisition / 1_440.0,
-                residual_exposure(intensity, vector, physiology_check_at(minute)),
-            )
-        })
-        .collect())
+    Some(EnvironmentalExposureSource {
+        character_id,
+        disease_id,
+        exposure_id: exposure_id.to_string(),
+        start: from.saturating_add(1),
+        end: to,
+        intensity,
+        base_acquisition,
+        vector,
+    })
 }
 
 pub fn severity(e: InfectionEpisode, immunity: f32) -> f32 {
@@ -2120,6 +2218,7 @@ mod tests {
             &targets,
             &initial,
             [],
+            &[],
             &windows,
             &immunity,
             0,
@@ -2140,6 +2239,7 @@ mod tests {
             &targets,
             &initial,
             [],
+            &[],
             &[windows[1], windows[0]],
             &immunity,
             0,
@@ -2155,6 +2255,7 @@ mod tests {
             &targets,
             &initial,
             [],
+            &[],
             &windows,
             &immunity,
             0,
@@ -2172,6 +2273,7 @@ mod tests {
             &targets,
             &split_initial,
             [],
+            &[],
             &windows,
             &immunity,
             b_at,
@@ -2197,6 +2299,7 @@ mod tests {
             &targets,
             &Default::default(),
             [AcquisitionAttempt::guaranteed(blood)],
+            &[],
             &[ContactWindow {
                 low_id: 2,
                 high_id: 3,
@@ -2232,6 +2335,7 @@ mod tests {
             &targets,
             &initial,
             [],
+            &[],
             &window,
             &immunity,
             0,
@@ -2245,6 +2349,7 @@ mod tests {
             &targets,
             &initial,
             [],
+            &[],
             &window,
             &immunity,
             0,
@@ -2270,6 +2375,7 @@ mod tests {
             &Default::default(),
             [AcquisitionAttempt::guaranteed(scheduled_after_death_clip)],
             &[],
+            &[],
             &immunity,
             0,
             500,
@@ -2284,6 +2390,7 @@ mod tests {
                 &targets,
                 &initial,
                 [],
+                &[],
                 &window,
                 &immunity,
                 0,
@@ -2327,6 +2434,7 @@ mod tests {
             &targets,
             &initial,
             [],
+            &[],
             &[ContactWindow {
                 low_id: 1,
                 high_id: 2,
@@ -2408,6 +2516,7 @@ mod tests {
             &initial,
             scheduled(0, to),
             &[],
+            &[],
             &immunity,
             0,
             to,
@@ -2435,6 +2544,7 @@ mod tests {
             &initial,
             scheduled(0, split_at),
             &[],
+            &[],
             &immunity,
             0,
             split_at,
@@ -2452,11 +2562,90 @@ mod tests {
             &split_initial,
             scheduled(split_at, to),
             &[],
+            &[],
             &immunity,
             split_at,
             to,
             first.work_units,
             1_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        let mut split = first.proposals;
+        for (id, episodes) in second.proposals {
+            split.entry(id).or_default().extend(episodes);
+        }
+        assert_eq!(whole.proposals, split);
+    }
+
+    #[test]
+    fn one_year_environmental_source_stays_compact_and_chunk_invariant() {
+        let targets = [7].into_iter().collect();
+        let immunity = [(7, 0.0)].into_iter().collect();
+        let initial = std::collections::BTreeMap::new();
+        let through = 365 * DAY;
+        let source = protected_presence_exposure_source(
+            DiseaseId::Influenza,
+            7,
+            "year-long-outbreak",
+            0,
+            through,
+            1_000_000.0,
+            definition(DiseaseId::Influenza).base_acquisition,
+            TransmissionVector::CloseContact,
+        )
+        .unwrap();
+        assert!(std::mem::size_of_val(&source) < 128);
+        let whole = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            [],
+            std::slice::from_ref(&source),
+            &[],
+            &immunity,
+            0,
+            through,
+            0,
+            10_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        assert!(whole.proposals[&7].len() > 20);
+        assert!(
+            whole.work_units < 1_000,
+            "resolved intervals should be skipped instead of evaluated minute by minute"
+        );
+
+        let split_at = through / 2;
+        let first = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            [],
+            std::slice::from_ref(&source),
+            &[],
+            &immunity,
+            0,
+            split_at,
+            0,
+            10_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        let mut split_initial = initial;
+        for (id, episodes) in &first.proposals {
+            split_initial.entry(*id).or_default().extend(episodes);
+        }
+        let second = resolve_acquisition_timeline(
+            &targets,
+            &split_initial,
+            [],
+            std::slice::from_ref(&source),
+            &[],
+            &immunity,
+            split_at,
+            through,
+            first.work_units,
+            10_000,
             |_, _| 0.0,
         )
         .unwrap();

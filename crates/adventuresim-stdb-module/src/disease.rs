@@ -11,7 +11,9 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 use crate::capability::{character_capability, character_capability__view};
 use crate::character::{character as _, character__view, character_attributes__view};
 use crate::local_problem::local_problem_authority;
-use crate::social::{physiology_presence_span, physiology_presence_span__view};
+use crate::social::{
+    PhysiologyPresenceSpan, physiology_presence_span, physiology_presence_span__view,
+};
 use crate::time::character_time__view;
 use crate::{
     character_attributes, character_skills, character_time,
@@ -799,11 +801,54 @@ pub fn character_episodes(
 /// spans pin capability bands when they open and split whenever a band changes,
 /// so later training cannot rewrite earlier prevention. Open spans are clamped
 /// to both characters' clocks.
+fn bounded_physiology_spans(
+    ctx: &ReducerContext,
+    ids: &[u64],
+) -> Result<Vec<PhysiologyPresenceSpan>, String> {
+    let mut spans_by_id = BTreeMap::new();
+    let mut raw_rows = 0usize;
+    for id in ids {
+        for span in ctx
+            .db
+            .physiology_presence_span()
+            .presence_low_id()
+            .filter(*id)
+            .chain(
+                ctx.db
+                    .physiology_presence_span()
+                    .presence_high_id()
+                    .filter(*id),
+            )
+        {
+            raw_rows = raw_rows.saturating_add(1);
+            if raw_rows > MAX_PARTY_INTERVAL_SPANS.saturating_mul(2) {
+                return Err("Disease interval has too many raw presence spans".into());
+            }
+            disease::insert_unique_bounded(
+                &mut spans_by_id,
+                span.id,
+                span,
+                MAX_PARTY_INTERVAL_SPANS,
+            )
+            .map_err(str::to_string)?;
+        }
+    }
+    Ok(spans_by_id.into_values().collect())
+}
+
 pub(crate) fn party_physiology_check_at(
     ctx: &ReducerContext,
     character_id: u64,
     minute: u64,
 ) -> f32 {
+    try_party_physiology_check_at(ctx, character_id, minute).unwrap_or(0.0)
+}
+
+fn try_party_physiology_check_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Result<f32, String> {
     let clock = |id| {
         ctx.db
             .character_time()
@@ -812,12 +857,7 @@ pub(crate) fn party_physiology_check_at(
             .map_or(0, |row| row.minutes)
     };
     let mut coverage = Vec::new();
-    for span in ctx
-        .db
-        .physiology_presence_span()
-        .iter()
-        .filter(|span| span.low_id == character_id || span.high_id == character_id)
-    {
+    for span in bounded_physiology_spans(ctx, &[character_id])? {
         let joint_now = clock(span.low_id).min(clock(span.high_id));
         let end = span.ended_at.unwrap_or(joint_now).min(joint_now);
         coverage.push((
@@ -833,7 +873,7 @@ pub(crate) fn party_physiology_check_at(
             f32::from(span.high_observer_band),
         ));
     }
-    disease::historical_physiology_check_at(coverage, minute)
+    Ok(disease::historical_physiology_check_at(coverage, minute))
 }
 
 #[cfg(test)]
@@ -861,7 +901,7 @@ pub(crate) fn protected_point_exposure(
     vector: TransmissionVector,
     exposure: f32,
 ) -> Result<f32, String> {
-    let historical = party_physiology_check_at(ctx, character_id, minute);
+    let historical = try_party_physiology_check_at(ctx, character_id, minute)?;
     let check = if historical > 0.0 {
         historical
     } else {
@@ -871,8 +911,8 @@ pub(crate) fn protected_point_exposure(
 }
 
 const MAX_PARTY_INTERVAL_SPANS: usize = 4_096;
-const MAX_PARTY_INTERVAL_WORK: u64 = 50_000_000;
-const MAX_PARTY_INTERVAL_CANDIDATES: usize = 1_000_000;
+const MAX_PARTY_INTERVAL_WORK: u64 = 2_000_000;
+const MAX_PARTY_INTERVAL_CANDIDATES: usize = 100_000;
 
 fn blood_interval_work_budget(minutes: u64) -> u64 {
     let routes = disease::STARTER_DISEASES
@@ -970,29 +1010,10 @@ pub fn plan_party_disease_interval(
     let mut coverage = BTreeMap::<u64, Vec<CachedCoverage>>::new();
     let mut pairs = Vec::new();
     let id_set = ids.iter().copied().collect::<BTreeSet<_>>();
-    let mut spans_by_id = BTreeMap::new();
-    for id in &ids {
-        for span in ctx
-            .db
-            .physiology_presence_span()
-            .presence_low_id()
-            .filter(*id)
-            .chain(
-                ctx.db
-                    .physiology_presence_span()
-                    .presence_high_id()
-                    .filter(*id),
-            )
-        {
-            disease::insert_unique_bounded(
-                &mut spans_by_id,
-                span.id,
-                span,
-                MAX_PARTY_INTERVAL_SPANS,
-            )
-            .map_err(str::to_string)?;
-        }
-    }
+    let spans_by_id = bounded_physiology_spans(ctx, &ids)?
+        .into_iter()
+        .map(|span| (span.id, span))
+        .collect::<BTreeMap<_, _>>();
     let peer_ids = spans_by_id
         .values()
         .flat_map(|span| [span.low_id, span.high_id])
@@ -1096,10 +1117,7 @@ pub fn plan_party_disease_interval(
             (character_id, segments)
         })
         .collect();
-    let base_work = requested
-        .saturating_mul(ids.len() as u64)
-        .saturating_mul(2)
-        .saturating_mul(blood_interval_work_budget(1));
+    let base_work = ids.len() as u64;
     if base_work > MAX_PARTY_INTERVAL_WORK {
         return Err("Party disease interval exceeds bounded exposure work".into());
     }
@@ -1131,6 +1149,7 @@ pub fn plan_party_disease_interval(
         })
         .collect::<BTreeMap<_, _>>();
     let mut scheduled = Vec::new();
+    let mut environmental = Vec::new();
     for id in &ids {
         let start = starts[id];
         let end = horizons[id];
@@ -1184,14 +1203,8 @@ pub fn plan_party_disease_interval(
                 let disease_id = parse_id(&disease_key)?;
                 let from = start.max(source_start);
                 let to = end.min(source_end);
-                plan.work_units = plan.work_units.saturating_add(to.saturating_sub(from));
-                if plan.work_units > MAX_PARTY_INTERVAL_WORK {
-                    return Err("Party disease interval exceeds bounded exposure work".into());
-                }
                 let definition = disease::definition(disease_id);
-                let remaining_candidates =
-                    MAX_PARTY_INTERVAL_CANDIDATES.saturating_sub(scheduled.len());
-                let attempts = disease::protected_presence_exposure_attempts(
+                if let Some(source) = disease::protected_presence_exposure_source(
                     disease_id,
                     *id,
                     &source_id,
@@ -1200,11 +1213,16 @@ pub fn plan_party_disease_interval(
                     intensity,
                     definition.base_acquisition,
                     definition.primary_community_vector,
-                    remaining_candidates,
-                    |minute| plan.check_at(*id, minute),
-                )
-                .map_err(str::to_string)?;
-                scheduled.extend(attempts);
+                ) {
+                    if environmental.len()
+                        >= MAX_PARTY_INTERVAL_CANDIDATES.saturating_sub(scheduled.len())
+                    {
+                        return Err(
+                            "Disease interval exceeds bounded acquisition candidates".into()
+                        );
+                    }
+                    environmental.push(source);
+                }
             }
         }
         let blood_attempts = crate::filth::blood_exposure_attempts_through(
@@ -1217,7 +1235,11 @@ pub fn plan_party_disease_interval(
             Some(&plan),
             blood_interval_work_budget(end.saturating_sub(start)),
         )?;
-        if blood_attempts.len() > MAX_PARTY_INTERVAL_CANDIDATES.saturating_sub(scheduled.len()) {
+        if blood_attempts.len()
+            > MAX_PARTY_INTERVAL_CANDIDATES
+                .saturating_sub(scheduled.len())
+                .saturating_sub(environmental.len())
+        {
             return Err("Disease interval exceeds bounded acquisition candidates".into());
         }
         scheduled.extend(blood_attempts);
@@ -1258,6 +1280,7 @@ pub fn plan_party_disease_interval(
         &id_set,
         &initial,
         scheduled,
+        &environmental,
         &windows,
         &immunities,
         from,
@@ -2697,17 +2720,27 @@ mod herbalist_purchase_source_tests {
     #[test]
     fn interval_plan_prefetches_private_presence_through_both_indexes() {
         let source = include_str!("disease.rs");
-        let plan = source
-            .split("pub fn plan_party_disease_interval")
+        let helper = source
+            .split("fn bounded_physiology_spans")
             .nth(1)
             .unwrap()
-            .split("fn party_contact_episodes_through")
+            .split("pub(crate) fn party_physiology_check_at")
             .next()
             .unwrap();
-        assert!(plan.contains("presence_low_id()"));
-        assert!(plan.contains("presence_high_id()"));
-        assert!(plan.contains("spans_by_id.entry(span.id).or_insert(span)"));
-        assert!(!plan.contains("physiology_presence_span()\n        .iter()"));
+        assert!(helper.contains("presence_low_id()"));
+        assert!(helper.contains("presence_high_id()"));
+        assert!(helper.contains("insert_unique_bounded"));
+        assert!(helper.contains("raw_rows > MAX_PARTY_INTERVAL_SPANS.saturating_mul(2)"));
+        assert!(!helper.contains("physiology_presence_span().iter()"));
+
+        let point = source
+            .split("fn try_party_physiology_check_at")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(point.contains("bounded_physiology_spans(ctx, &[character_id])?"));
     }
 
     #[test]
