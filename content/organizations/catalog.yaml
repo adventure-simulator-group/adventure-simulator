@@ -852,7 +852,14 @@
     {
         "id":  "roman_catholic_learned_chapter",
         "kind":  "religious_organization",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Confraternity of Christian Doctrine",
         "description":  "A learned Roman Catholic confraternity recognized across settlements.",
         "service_id":  "religion",
@@ -943,7 +950,14 @@
     {
         "id":  "reformed_learned_chapter",
         "kind":  "religious_organization",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Company of Reformed Readers",
         "description":  "A learned Reformed fellowship recognized across settlements.",
         "service_id":  "religion",
@@ -1022,7 +1036,14 @@
     {
         "id":  "orthodox_learned_brotherhood",
         "kind":  "religious_organization",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Brotherhood of Orthodox Readers",
         "description":  "A learned Eastern Orthodox brotherhood recognized across settlements.",
         "service_id":  "religion",
@@ -1101,7 +1122,14 @@
     {
         "id":  "lutheran_learned_visitation",
         "kind":  "religious_organization",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Lutheran Visitation of Readers",
         "description":  "A learned Lutheran visitation represented at Goslar and GÃƒÂ¶ttingen.",
         "service_id":  "religion",
@@ -1190,7 +1218,14 @@
     {
         "id":  "anglican_learned_fellowship",
         "kind":  "religious_organization",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Royal Fellowship of Readers",
         "description":  "A learned Anglican fellowship; no researched Viabundus chapter is currently assigned.",
         "service_id":  "religion",
@@ -1239,7 +1274,14 @@
     {
         "id":  "islamic_learned_fellowship",
         "kind":  "religious_organization",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Fellowship of Learned Readers",
         "description":  "A universal-recognition Islamic learned fellowship; no researched Viabundus chapter is currently assigned.",
         "historical_fantasy_note":  "A generic gameplay institution pending settlement-specific historical research.",
@@ -1289,7 +1331,14 @@
     {
         "id":  "jewish_learned_fellowship",
         "kind":  "religious_organization",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "learned_religious_practitioner",
+                          "name":  "Learned religious practitioner",
+                          "purpose":  "profession",
+                          "profession":  "learned_religious_practitioner"
+                      }
+                  ],
         "name":  "Fellowship of Learned Readers",
         "description":  "A universal-recognition Jewish learned fellowship; no researched Viabundus chapter is currently assigned.",
         "historical_fantasy_note":  "A generic gameplay institution pending settlement-specific historical research.",

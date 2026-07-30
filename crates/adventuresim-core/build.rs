@@ -247,6 +247,7 @@ fn collect_dialogue_variant_sources(
 }
 
 fn compile_organizations(root: &Path) {
+    // Organization roles and kinds are validated here before embedding.
     let content = root.join("content/organizations");
     let policies_path = root.join("content/settlement-policies.yaml");
     println!("cargo:rerun-if-changed={}", content.display());

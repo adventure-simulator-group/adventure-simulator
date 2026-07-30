@@ -324,6 +324,10 @@ fn discard_placeholder_settlement_data(ctx: &ReducerContext) -> Result<(), Strin
                 .delete(&npc.id);
             ctx.db.settlement_npc().id().delete(&npc.id);
         }
+        crate::social_estate::delete_unreferenced_settlement_social_organizations(
+            ctx,
+            settlement_id,
+        );
         let settlement_id = settlement_id.to_string();
         ctx.db
             .settlement_smith()

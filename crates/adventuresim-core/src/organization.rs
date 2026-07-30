@@ -107,16 +107,21 @@ pub struct InitialSocialRole {
 /// actor-domain key so durable Characters and settlement NPCs cannot share an
 /// entropy stream. The persistence-contract stable hash is used deliberately;
 /// reducers must not consume RNG for this assignment.
-pub fn initial_social_role(actor_domain_key: &str, urban: bool) -> InitialSocialRole {
-    let draw =
-        crate::settlement_population::stable_hash(&format!("social-estate:v1:{actor_domain_key}"))
-            % 4;
+pub fn initial_social_role(
+    actor_domain_key: &str,
+    settlement_id: &str,
+    urban: bool,
+) -> InitialSocialRole {
+    let draw = crate::settlement_population::stable_hash(&format!(
+        "social-estate:v2:{}:{settlement_id}:{actor_domain_key}",
+        settlement_id.len()
+    )) % 4;
     match draw {
         0 => InitialSocialRole {
             estate: Estate::Serf,
-            definition_id: "habsburg_crown_lordships",
+            definition_id: "local_lordship",
             role_id: "serf",
-            settlement_scoped: false,
+            settlement_scoped: true,
         },
         1 => InitialSocialRole {
             estate: Estate::Freeman,
@@ -138,9 +143,9 @@ pub fn initial_social_role(actor_domain_key: &str, urban: bool) -> InitialSocial
         },
         _ => InitialSocialRole {
             estate: Estate::Noble,
-            definition_id: "house_habsburg",
+            definition_id: "local_noble_house",
             role_id: "house_member",
-            settlement_scoped: false,
+            settlement_scoped: true,
         },
     }
 }
@@ -664,14 +669,14 @@ mod tests {
                 estate: Estate::Noble
             }
         );
-        let priest = organization("roman_catholic_church")
+        let priest = organization("lutheran_learned_visitation")
             .unwrap()
-            .role("priest")
+            .role("learned_religious_practitioner")
             .unwrap();
         assert_eq!(
             priest.purpose,
             OrganizationRolePurpose::Profession {
-                profession: "priest".into()
+                profession: "learned_religious_practitioner".into()
             }
         );
         // The two independent assignments form a noble priest without a
@@ -679,6 +684,47 @@ mod tests {
         assert_ne!(
             std::mem::discriminant(&prince.purpose),
             std::mem::discriminant(&priest.purpose)
+        );
+    }
+
+    #[test]
+    fn every_denomination_has_an_honest_clerical_profession_role() {
+        for id in [
+            "roman_catholic_learned_chapter",
+            "lutheran_learned_visitation",
+            "reformed_learned_chapter",
+            "anglican_learned_fellowship",
+            "orthodox_learned_brotherhood",
+            "islamic_learned_fellowship",
+            "jewish_learned_fellowship",
+        ] {
+            assert_eq!(
+                organization(id)
+                    .unwrap()
+                    .role("learned_religious_practitioner")
+                    .unwrap()
+                    .purpose,
+                OrganizationRolePurpose::Profession {
+                    profession: "learned_religious_practitioner".into()
+                },
+                "{id}"
+            );
+        }
+        let noble_id = (0..10_000)
+            .find(|id| {
+                initial_social_role(&format!("character:{id}"), "settlement-a", true).estate
+                    == Estate::Noble
+            })
+            .unwrap();
+        assert_eq!(
+            initial_social_role(&format!("character:{noble_id}"), "settlement-a", true).estate,
+            Estate::Noble
+        );
+        assert!(
+            organization("reformed_learned_chapter")
+                .unwrap()
+                .role("learned_religious_practitioner")
+                .is_some()
         );
     }
 
@@ -694,13 +740,33 @@ mod tests {
                 OrganizationRolePurpose::Estate { estate }
             );
         }
+        assert_eq!(
+            organization("local_noble_house")
+                .unwrap()
+                .role("house_member")
+                .unwrap()
+                .purpose,
+            OrganizationRolePurpose::Estate {
+                estate: Estate::Noble
+            }
+        );
+        assert_eq!(
+            organization("local_lordship")
+                .unwrap()
+                .role("serf")
+                .unwrap()
+                .purpose,
+            OrganizationRolePurpose::Estate {
+                estate: Estate::Serf
+            }
+        );
     }
 
     #[test]
     fn deterministic_social_assignment_covers_all_estates_without_implicit_freemen() {
         let mut found = std::collections::BTreeMap::new();
         for id in 0..10_000 {
-            let role = initial_social_role(&format!("character:{id}"), true);
+            let role = initial_social_role(&format!("character:{id}"), "settlement-a", true);
             found.entry(role.estate.id()).or_insert((id, role));
             if found.len() == 4 {
                 break;
@@ -710,28 +776,42 @@ mod tests {
             found.keys().copied().collect::<Vec<_>>(),
             ["burgher", "freeman", "noble", "serf"]
         );
+        assert_eq!(found["noble"].1.definition_id, "local_noble_house");
+        assert_eq!(found["serf"].1.definition_id, "local_lordship");
+        assert!(found["noble"].1.settlement_scoped);
+        assert!(found["serf"].1.settlement_scoped);
         for (id, expected) in found.values() {
             assert_eq!(
-                initial_social_role(&format!("character:{id}"), true),
+                initial_social_role(&format!("character:{id}"), "settlement-a", true),
                 *expected
             );
             assert_ne!(
                 crate::settlement_population::stable_hash(&format!(
-                    "social-estate:v1:character:{id}"
+                    "social-estate:v2:12:settlement-a:character:{id}"
                 )),
                 crate::settlement_population::stable_hash(&format!(
-                    "social-estate:v1:settlement-npc:{id}"
+                    "social-estate:v2:12:settlement-a:settlement-npc:{id}"
                 ))
             );
         }
         let urban_burgher = (0..10_000)
             .find(|id| {
-                initial_social_role(&format!("character:{id}"), true).estate == Estate::Burgher
+                initial_social_role(&format!("character:{id}"), "settlement-a", true).estate
+                    == Estate::Burgher
             })
             .unwrap();
-        let rural = initial_social_role(&format!("character:{urban_burgher}"), false);
+        let rural =
+            initial_social_role(&format!("character:{urban_burgher}"), "settlement-a", false);
         assert_eq!(rural.estate, Estate::Freeman);
         assert_eq!(rural.role_id, "free_resident");
+        assert_ne!(
+            crate::settlement_population::stable_hash(
+                "social-estate:v2:12:settlement-a:character:7"
+            ),
+            crate::settlement_population::stable_hash(
+                "social-estate:v2:12:settlement-b:character:7"
+            )
+        );
     }
 
     #[test]
@@ -754,10 +834,21 @@ mod tests {
         assert!(social.contains("#[table(accessor = settlement_npc_estate_basis)]"));
         assert!(social.contains("#[primary_key]\n    pub npc_id: String"));
         assert!(!social.contains("ctx.random"));
+        assert!(social.contains("Estate roles require the exclusive estate-assignment path"));
+        assert!(social.contains("already has an estate-bearing role"));
+        assert!(social.contains("\"lutheran\" => \"lutheran_learned_visitation\""));
+        assert!(social.contains("\"reformed\" => \"reformed_learned_chapter\""));
         assert!(character.contains("ensure_character_social_roles("));
+        assert!(character.contains("ensure_character_professional_role("));
         assert!(character.contains("delete_character_social_roles(ctx, character.id)"));
         assert!(population.contains("ensure_settlement_npc_social_roles("));
+        assert!(population.contains("ensure_settlement_social_organizations(ctx, settlement_id)"));
         assert!(world_import.contains("delete_settlement_npc_social_roles(ctx, &npc.id)"));
+        assert!(world_import.contains("delete_unreferenced_settlement_social_organizations("));
+        let mission =
+            include_str!("../../adventuresim-stdb-module/src/strategic/mission_bootstrap.rs")
+                .replace('\r', "");
+        assert!(mission.contains("copy_settlement_npc_social_roles_to_character("));
         assert!(dialogue.matches("FactKey::ParticipantEstate").count() >= 2);
         assert!(dialogue.contains("character_estate(ctx, id)?"));
         assert!(dialogue.contains("settlement_npc_estate(ctx, &npc.id)?"));

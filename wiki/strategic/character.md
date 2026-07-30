@@ -91,7 +91,10 @@ urban civic citizen (Burgher), or noble-house member. The deterministic,
 domain-separated assignment does not alter candidate IDs, previews,
 professional membership, rank, equipment, dues, or presentation. Multiple
 orthogonal roles are supported (for example, a noble-house member who is also
-a priest), but estate-dependent gameplay rules are intentionally deferred.
+a learned religious practitioner), but estate-dependent gameplay rules are
+intentionally deferred. Denomination-specific starting organizations supply
+the professional role without changing their existing membership or
+presentation behavior.
 
 Players may create multiple characters in the same browser. The strategic
 header's portrait menu lists the browser's remembered non-temporary characters,

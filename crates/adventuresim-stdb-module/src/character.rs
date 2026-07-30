@@ -1641,6 +1641,11 @@ fn insert_character_with_origin(
                 character_id: character.id,
                 organization_id: starting_organization.organization_id.clone(),
             });
+        crate::social_estate::ensure_character_professional_role(
+            ctx,
+            character.id,
+            &starting_organization.organization_id,
+        )?;
     }
     crate::capability::refresh_character_capability(ctx, character.id)?;
     crate::condition::initialize_character_condition(ctx, character.id)?;

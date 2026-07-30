@@ -152,7 +152,8 @@ It supports both durable Characters and persistent settlement NPCs without
 enumerating house IDs in authored dialogue. Because role-keyed scalar facts
 would otherwise overwrite each other, the compiler rejects
 `participant_estate` for any authored dialogue role whose maximum cardinality
-is greater than one. `participant_profession` retains its existing meaning;
+is greater than one. Its comparison value must be textual `serf`, `freeman`,
+`burgher`, or `noble`. `participant_profession` retains its existing meaning;
 the broader multi-profession predicate is intentionally deferred until all
 professional assignment sources can populate it faithfully.
 

@@ -955,6 +955,9 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
             leader_id = leader_id.wrapping_add(1) | (1_u64 << 63);
         }
         crate::character::insert_new_npc_character(ctx, leader_name.clone(), leader_id, true)?;
+        crate::social_estate::copy_settlement_npc_social_roles_to_character(
+            ctx, &npc.id, leader_id,
+        )?;
         let mut leader = ctx.db.character().id().find(leader_id).unwrap();
         leader.current_settlement_id = Some(settlement_id.to_string());
         ctx.db.character().id().update(leader.clone());

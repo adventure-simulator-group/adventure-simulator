@@ -11,7 +11,7 @@ use spacetimedb::{ReducerContext, Table, table};
 
 use crate::{character::character, settlement_population::settlement_npc};
 
-pub const CHURCH_DEFINITION_ID: &str = "roman_catholic_church";
+const RELIGIOUS_ROLE_ID: &str = "learned_religious_practitioner";
 
 #[derive(Clone, Debug)]
 #[table(accessor = social_organization_instance)]
@@ -62,8 +62,14 @@ pub struct SettlementNpcEstateBasis {
     pub assignment_id: String,
 }
 
-pub fn civic_organization_instance_id(settlement_id: &str) -> String {
-    format!("civic:{settlement_id}")
+fn settlement_organization_instance_id(definition_id: &str, settlement_id: &str) -> Option<String> {
+    let prefix = match definition_id {
+        "settlement_civic_community" => "civic",
+        "local_noble_house" => "noble-house",
+        "local_lordship" => "lordship",
+        _ => return None,
+    };
+    Some(format!("{prefix}:{settlement_id}"))
 }
 
 fn ensure_instance(
@@ -73,12 +79,21 @@ fn ensure_instance(
 ) -> Result<String, String> {
     let definition =
         organization::organization(definition_id).ok_or("Unknown organization definition")?;
-    let id = if definition.kind == OrganizationKind::CivicCommunity {
-        let settlement_id = settlement_id.ok_or("Civic organizations require a settlement")?;
-        civic_organization_instance_id(settlement_id)
+    let id = if let Some(settlement_id) = settlement_id {
+        if !matches!(
+            definition.kind,
+            OrganizationKind::CivicCommunity
+                | OrganizationKind::NobleHouse
+                | OrganizationKind::Lordship
+        ) {
+            return Err("This organization kind cannot be settlement-scoped".into());
+        }
+        let id = settlement_organization_instance_id(definition_id, settlement_id)
+            .ok_or("Only local social templates may be settlement-scoped")?;
+        id
     } else {
-        if settlement_id.is_some() {
-            return Err("Only civic organizations may be settlement-scoped".into());
+        if settlement_organization_instance_id(definition_id, "").is_some() {
+            return Err("Local social templates require a settlement".into());
         }
         definition_id.to_owned()
     };
@@ -97,6 +112,20 @@ fn ensure_instance(
         ctx.db.social_organization_instance().insert(expected);
     }
     Ok(id)
+}
+
+pub fn ensure_settlement_social_organizations(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Result<(), String> {
+    for definition_id in [
+        "settlement_civic_community",
+        "local_noble_house",
+        "local_lordship",
+    ] {
+        ensure_instance(ctx, definition_id, Some(settlement_id))?;
+    }
+    Ok(())
 }
 
 fn assigned_role(
@@ -144,7 +173,10 @@ fn insert_character_role(
     if ctx.db.character().id().find(character_id).is_none() {
         return Err("Role assignment references an unknown character".into());
     }
-    assigned_role(ctx, instance_id, role_id)?;
+    let role = assigned_role(ctx, instance_id, role_id)?;
+    if matches!(role.purpose, OrganizationRolePurpose::Estate { .. }) {
+        return Err("Estate roles require the exclusive estate-assignment path".into());
+    }
     let id = character_assignment_id(character_id, instance_id, role_id);
     if let Some(existing) = ctx.db.character_organization_role().id().find(&id) {
         return Ok(existing);
@@ -184,7 +216,10 @@ fn insert_npc_role(
     {
         return Err("Role assignment references an unknown settlement NPC".into());
     }
-    assigned_role(ctx, instance_id, role_id)?;
+    let role = assigned_role(ctx, instance_id, role_id)?;
+    if matches!(role.purpose, OrganizationRolePurpose::Estate { .. }) {
+        return Err("Estate roles require the exclusive estate-assignment path".into());
+    }
     let id = npc_assignment_id(npc_id, instance_id, role_id);
     if let Some(existing) = ctx.db.settlement_npc_organization_role().id().find(&id) {
         return Ok(existing);
@@ -197,6 +232,94 @@ fn insert_npc_role(
         .any(|row| row.organization_instance_id == instance_id && row.role_id == role_id)
     {
         return Err("Duplicate settlement NPC organization role".into());
+    }
+    Ok(ctx
+        .db
+        .settlement_npc_organization_role()
+        .insert(SettlementNpcOrganizationRole {
+            id,
+            npc_id: npc_id.to_owned(),
+            organization_instance_id: instance_id.to_owned(),
+            role_id: role_id.to_owned(),
+        }))
+}
+
+fn insert_character_estate_role(
+    ctx: &ReducerContext,
+    character_id: u64,
+    instance_id: &str,
+    role_id: &str,
+) -> Result<CharacterOrganizationRole, String> {
+    if ctx.db.character().id().find(character_id).is_none() {
+        return Err("Estate assignment references an unknown character".into());
+    }
+    role_estate(assigned_role(ctx, instance_id, role_id)?)?;
+    let id = character_assignment_id(character_id, instance_id, role_id);
+    for existing in ctx
+        .db
+        .character_organization_role()
+        .character_id()
+        .filter(character_id)
+    {
+        let existing_role =
+            assigned_role(ctx, &existing.organization_instance_id, &existing.role_id)?;
+        if matches!(
+            existing_role.purpose,
+            OrganizationRolePurpose::Estate { .. }
+        ) {
+            return if existing.id == id {
+                Ok(existing)
+            } else {
+                Err("Character already has an estate-bearing role".into())
+            };
+        }
+    }
+    Ok(ctx
+        .db
+        .character_organization_role()
+        .insert(CharacterOrganizationRole {
+            id,
+            character_id,
+            organization_instance_id: instance_id.to_owned(),
+            role_id: role_id.to_owned(),
+        }))
+}
+
+fn insert_npc_estate_role(
+    ctx: &ReducerContext,
+    npc_id: &str,
+    instance_id: &str,
+    role_id: &str,
+) -> Result<SettlementNpcOrganizationRole, String> {
+    if ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&npc_id.to_owned())
+        .is_none()
+    {
+        return Err("Estate assignment references an unknown settlement NPC".into());
+    }
+    role_estate(assigned_role(ctx, instance_id, role_id)?)?;
+    let id = npc_assignment_id(npc_id, instance_id, role_id);
+    for existing in ctx
+        .db
+        .settlement_npc_organization_role()
+        .npc_id()
+        .filter(&npc_id.to_owned())
+    {
+        let existing_role =
+            assigned_role(ctx, &existing.organization_instance_id, &existing.role_id)?;
+        if matches!(
+            existing_role.purpose,
+            OrganizationRolePurpose::Estate { .. }
+        ) {
+            return if existing.id == id {
+                Ok(existing)
+            } else {
+                Err("Settlement NPC already has an estate-bearing role".into())
+            };
+        }
     }
     Ok(ctx
         .db
@@ -224,13 +347,14 @@ pub fn ensure_character_social_roles(
         character_estate_from_basis(ctx, &existing)?;
         return Ok(());
     }
-    let selected = initial_social_role(&format!("character:{character_id}"), urban);
+    let selected = initial_social_role(&format!("character:{character_id}"), settlement_id, urban);
     let instance_id = ensure_instance(
         ctx,
         selected.definition_id,
         selected.settlement_scoped.then_some(settlement_id),
     )?;
-    let assignment = insert_character_role(ctx, character_id, &instance_id, selected.role_id)?;
+    let assignment =
+        insert_character_estate_role(ctx, character_id, &instance_id, selected.role_id)?;
     if role_estate(assigned_role(ctx, &instance_id, selected.role_id)?)? != selected.estate {
         return Err("Selected role does not derive its expected estate".into());
     }
@@ -249,6 +373,7 @@ pub fn ensure_settlement_npc_social_roles(
     settlement_id: &str,
     urban: bool,
     profession: &str,
+    religion_id: &str,
 ) -> Result<(), String> {
     if ctx
         .db
@@ -257,13 +382,14 @@ pub fn ensure_settlement_npc_social_roles(
         .find(&npc_id.to_owned())
         .is_none()
     {
-        let selected = initial_social_role(&format!("settlement-npc:{npc_id}"), urban);
+        let selected =
+            initial_social_role(&format!("settlement-npc:{npc_id}"), settlement_id, urban);
         let instance_id = ensure_instance(
             ctx,
             selected.definition_id,
             selected.settlement_scoped.then_some(settlement_id),
         )?;
-        let assignment = insert_npc_role(ctx, npc_id, &instance_id, selected.role_id)?;
+        let assignment = insert_npc_estate_role(ctx, npc_id, &instance_id, selected.role_id)?;
         if role_estate(assigned_role(ctx, &instance_id, selected.role_id)?)? != selected.estate {
             return Err("Selected role does not derive its expected estate".into());
         }
@@ -278,9 +404,107 @@ pub fn ensure_settlement_npc_social_roles(
     }
 
     if profession == "cleric" {
-        let church = ensure_instance(ctx, CHURCH_DEFINITION_ID, None)?;
-        insert_npc_role(ctx, npc_id, &church, "priest")?;
+        let organization_id = religious_organization_for(religion_id)
+            .ok_or("Settlement cleric has an unknown denomination")?;
+        let organization = ensure_instance(ctx, organization_id, None)?;
+        insert_npc_role(ctx, npc_id, &organization, RELIGIOUS_ROLE_ID)?;
     }
+    Ok(())
+}
+
+fn religious_organization_for(religion_id: &str) -> Option<&'static str> {
+    Some(match religion_id {
+        "roman_catholic" => "roman_catholic_learned_chapter",
+        "lutheran" => "lutheran_learned_visitation",
+        "reformed" => "reformed_learned_chapter",
+        "anglican" => "anglican_learned_fellowship",
+        "eastern_orthodox" => "orthodox_learned_brotherhood",
+        "islamic" => "islamic_learned_fellowship",
+        "judaism" => "jewish_learned_fellowship",
+        _ => return None,
+    })
+}
+
+pub fn ensure_character_professional_role(
+    ctx: &ReducerContext,
+    character_id: u64,
+    organization_id: &str,
+) -> Result<(), String> {
+    let Some(definition) = organization::organization(organization_id) else {
+        return Err("Unknown professional organization".into());
+    };
+    if definition.role(RELIGIOUS_ROLE_ID).is_none() {
+        return Ok(());
+    }
+    let instance = ensure_instance(ctx, organization_id, None)?;
+    insert_character_role(ctx, character_id, &instance, RELIGIOUS_ROLE_ID)?;
+    Ok(())
+}
+
+/// Recruiting-company leaders are temporary only for lifecycle cleanup. Their
+/// social identity is copied from the persistent source NPC so the two actor
+/// representations cannot disagree.
+pub fn copy_settlement_npc_social_roles_to_character(
+    ctx: &ReducerContext,
+    npc_id: &str,
+    character_id: u64,
+) -> Result<(), String> {
+    if ctx
+        .db
+        .character_estate_basis()
+        .character_id()
+        .find(character_id)
+        .is_some()
+        || ctx
+            .db
+            .character_organization_role()
+            .character_id()
+            .filter(character_id)
+            .next()
+            .is_some()
+    {
+        return Err("Recruiting character already has social roles".into());
+    }
+    let source_basis = ctx
+        .db
+        .settlement_npc_estate_basis()
+        .npc_id()
+        .find(&npc_id.to_owned())
+        .ok_or("Recruiting source NPC has no estate basis")?;
+    let mut copied_basis = None;
+    for source in ctx
+        .db
+        .settlement_npc_organization_role()
+        .npc_id()
+        .filter(&npc_id.to_owned())
+    {
+        let role = assigned_role(ctx, &source.organization_instance_id, &source.role_id)?;
+        let copied = if matches!(role.purpose, OrganizationRolePurpose::Estate { .. }) {
+            insert_character_estate_role(
+                ctx,
+                character_id,
+                &source.organization_instance_id,
+                &source.role_id,
+            )?
+        } else {
+            insert_character_role(
+                ctx,
+                character_id,
+                &source.organization_instance_id,
+                &source.role_id,
+            )?
+        };
+        if source.id == source_basis.assignment_id {
+            copied_basis = Some(copied.id);
+        }
+    }
+    ctx.db
+        .character_estate_basis()
+        .insert(CharacterEstateBasis {
+            character_id,
+            assignment_id: copied_basis
+                .ok_or("Recruiting source basis does not reference a copied role")?,
+        });
     Ok(())
 }
 
@@ -350,14 +574,21 @@ pub fn delete_character_social_roles(ctx: &ReducerContext, character_id: u64) {
             .character_id()
             .delete(character_id);
     }
-    for role in ctx
+    let roles = ctx
         .db
         .character_organization_role()
         .character_id()
         .filter(character_id)
-        .collect::<Vec<_>>()
-    {
+        .collect::<Vec<_>>();
+    let instance_ids = roles
+        .iter()
+        .map(|role| role.organization_instance_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for role in roles {
         ctx.db.character_organization_role().id().delete(&role.id);
+    }
+    for instance_id in instance_ids {
+        delete_organization_instance_if_unreferenced(ctx, &instance_id);
     }
 }
 
@@ -375,16 +606,66 @@ pub fn delete_settlement_npc_social_roles(ctx: &ReducerContext, npc_id: &str) {
             .npc_id()
             .delete(&npc_id);
     }
-    for role in ctx
+    let roles = ctx
         .db
         .settlement_npc_organization_role()
         .npc_id()
         .filter(&npc_id)
-        .collect::<Vec<_>>()
-    {
+        .collect::<Vec<_>>();
+    let instance_ids = roles
+        .iter()
+        .map(|role| role.organization_instance_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for role in roles {
         ctx.db
             .settlement_npc_organization_role()
             .id()
             .delete(&role.id);
+    }
+    for instance_id in instance_ids {
+        delete_organization_instance_if_unreferenced(ctx, &instance_id);
+    }
+}
+
+fn delete_organization_instance_if_unreferenced(ctx: &ReducerContext, instance_id: &str) {
+    let referenced_by_character = ctx
+        .db
+        .character_organization_role()
+        .iter()
+        .any(|role| role.organization_instance_id == instance_id);
+    let referenced_by_npc = ctx
+        .db
+        .settlement_npc_organization_role()
+        .iter()
+        .any(|role| role.organization_instance_id == instance_id);
+    let instance_id = instance_id.to_owned();
+    if !referenced_by_character
+        && !referenced_by_npc
+        && ctx
+            .db
+            .social_organization_instance()
+            .id()
+            .find(&instance_id)
+            .is_some()
+    {
+        ctx.db
+            .social_organization_instance()
+            .id()
+            .delete(&instance_id);
+    }
+}
+
+pub fn delete_unreferenced_settlement_social_organizations(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) {
+    for definition_id in [
+        "settlement_civic_community",
+        "local_noble_house",
+        "local_lordship",
+    ] {
+        let instance_id = settlement_organization_instance_id(definition_id, settlement_id)
+            .expect("listed definitions are settlement-scoped templates");
+        delete_organization_instance_if_unreferenced(ctx, &instance_id);
     }
 }

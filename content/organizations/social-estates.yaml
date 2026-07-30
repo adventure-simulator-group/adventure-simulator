@@ -80,12 +80,12 @@
     "privileges": []
   },
   {
-    "id": "roman_catholic_church",
-    "name": "Roman Catholic Church",
-    "description": "A chapterless institutional identity for clerical professional roles.",
-    "kind": "religious_organization",
+    "id": "local_noble_house",
+    "name": "Local noble house",
+    "description": "A chapterless template instantiated for each settlement's local nobility.",
+    "kind": "noble_house",
     "roles": [
-      {"id": "priest", "name": "Priest", "purpose": "profession", "profession": "priest"}
+      {"id": "house_member", "name": "Member of the local house", "purpose": "estate", "estate": "noble"}
     ],
     "public_threat_referrals": false,
     "chapters": [],
@@ -94,8 +94,34 @@
     "ranks": [
       {
         "id": "member",
-        "name": "Cleric",
-        "description": "A catalog placeholder; professional roles remain orthogonal to estate.",
+        "name": "Member",
+        "description": "A catalog placeholder; social roles, not ranks, carry estate.",
+        "requirements": [],
+        "practice_allowed": false,
+        "practice_reward_interval_minutes": 0,
+        "privileges": []
+      }
+    ],
+    "activity": {"training": [], "reward": "fame"},
+    "privileges": []
+  },
+  {
+    "id": "local_lordship",
+    "name": "Local lordship",
+    "description": "A chapterless template instantiated for each settlement's local dependants.",
+    "kind": "lordship",
+    "roles": [
+      {"id": "serf", "name": "Bound tenant", "purpose": "estate", "estate": "serf"}
+    ],
+    "public_threat_referrals": false,
+    "chapters": [],
+    "recognition": {"kind": "universal"},
+    "admission": {"joining_fee": 0, "requirements": []},
+    "ranks": [
+      {
+        "id": "member",
+        "name": "Subject",
+        "description": "A catalog placeholder; social roles, not ranks, carry estate.",
         "requirements": [],
         "practice_allowed": false,
         "practice_reward_interval_minutes": 0,

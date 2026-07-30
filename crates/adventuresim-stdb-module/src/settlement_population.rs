@@ -272,25 +272,25 @@ fn insert_npc(
 ) -> Result<(), String> {
     let id = format!("npc:{settlement_id}:{location}:{ordinal}");
     if let Some(existing) = ctx.db.settlement_npc().id().find(&id) {
-        let urban = ctx
+        let settlement = ctx
             .db
             .settlement()
             .id()
             .find(&settlement_id.to_owned())
-            .is_some_and(|settlement| {
-                matches!(
-                    settlement.category,
-                    crate::strategic::SettlementCategory::Town
-                        | crate::strategic::SettlementCategory::City
-                        | crate::strategic::SettlementCategory::Capital
-                )
-            });
+            .ok_or("Settlement population references an unknown settlement")?;
+        let urban = matches!(
+            settlement.category,
+            crate::strategic::SettlementCategory::Town
+                | crate::strategic::SettlementCategory::City
+                | crate::strategic::SettlementCategory::Capital
+        );
         crate::social_estate::ensure_settlement_npc_social_roles(
             ctx,
             &id,
             settlement_id,
             urban,
             &existing.profession,
+            &settlement.religion_id,
         )?;
         return Ok(());
     }
@@ -378,25 +378,25 @@ fn insert_npc(
             "service-professions".into()
         },
     });
-    let urban = ctx
+    let settlement = ctx
         .db
         .settlement()
         .id()
         .find(&settlement_id.to_owned())
-        .is_some_and(|settlement| {
-            matches!(
-                settlement.category,
-                crate::strategic::SettlementCategory::Town
-                    | crate::strategic::SettlementCategory::City
-                    | crate::strategic::SettlementCategory::Capital
-            )
-        });
+        .ok_or("Settlement population references an unknown settlement")?;
+    let urban = matches!(
+        settlement.category,
+        crate::strategic::SettlementCategory::Town
+            | crate::strategic::SettlementCategory::City
+            | crate::strategic::SettlementCategory::Capital
+    );
     crate::social_estate::ensure_settlement_npc_social_roles(
         ctx,
         &npc.id,
         settlement_id,
         urban,
         &npc.profession,
+        &settlement.religion_id,
     )?;
     let (start_minute, end_minute) = match profile.schedule {
         Schedule::Day => (360, 1200),
@@ -431,6 +431,7 @@ pub fn ensure_settlement_population(
     ctx: &ReducerContext,
     settlement_id: &str,
 ) -> Result<(), String> {
+    crate::social_estate::ensure_settlement_social_organizations(ctx, settlement_id)?;
     for (service, location, profession, role) in SERVICES {
         insert_npc(
             ctx,
