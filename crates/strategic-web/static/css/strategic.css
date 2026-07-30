@@ -5968,6 +5968,26 @@ body.chat-resizing {
   padding-block-start: 2.4rem;
 }
 
+.equipment-slot-preview {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  pointer-events: none;
+  background: transparent;
+}
+
+.equipment-slot-preview .equipment-slot-keyboard {
+  inline-size: min(38rem, calc(100vw - 2rem));
+}
+
+.equipment-slot-preview .equipment-slot-choice {
+  background: rgb(48 41 31 / 82%);
+  box-shadow: 0 0.2rem 0.55rem rgb(0 0 0 / 35%);
+}
+
 .equipment-slot-close {
   position: absolute;
   inset-block-start: 0.45rem;

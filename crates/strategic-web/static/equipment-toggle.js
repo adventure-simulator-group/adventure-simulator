@@ -103,30 +103,14 @@
     if (event.key.length === 1) return event.key.toLowerCase();
     return '';
   };
-  const chooseSlot = (control) => new Promise((resolve) => {
+  const choicesForControl = (control) => {
     const placements = parsePlacementOptions(control.dataset.equipmentPlacementOptions);
-    const inputs = parseInputMap(control.dataset.equipmentInputMap);
-    const choices = inputs.map((input) => ({
+    return parseInputMap(control.dataset.equipmentInputMap).map((input) => ({
       ...input,
       selection: selectionForInput(placements, input.input),
     }));
-
-    const dialog = document.createElement('dialog');
-    dialog.className = 'equipment-placement-modal equipment-slot-modal';
-    dialog.setAttribute(
-      'aria-label',
-      control.getAttribute('aria-label') || 'Choose equipment slot',
-    );
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'equipment-slot-close';
-    close.setAttribute('aria-label', 'Close equipment slot picker');
-    close.title = 'Close';
-    close.textContent = '×';
-    close.addEventListener('click', () => {
-      dialog.returnValue = '';
-      dialog.close();
-    });
+  };
+  const createSlotKeyboard = (choices, onChoose = null) => {
     const keyboard = document.createElement('div');
     keyboard.className = 'equipment-slot-keyboard';
     keyboard.setAttribute('role', 'group');
@@ -144,6 +128,7 @@
         'aria-label',
         `${choice.label}, ${(choice.locations || []).join(', ')}${button.disabled ? ', unavailable' : ''}`,
       );
+      if (onChoose === null) button.tabIndex = -1;
       const key = document.createElement('kbd');
       key.textContent = choice.label;
       const icon = document.createElement('span');
@@ -163,11 +148,45 @@
       locations.className = 'equipment-slot-choice-label';
       locations.textContent = (choice.locations || []).join(' / ');
       button.append(key, icon, locations);
-      button.addEventListener('click', () => {
-        dialog.returnValue = choice.input;
-        dialog.close();
-      });
+      if (onChoose !== null) {
+        button.addEventListener('click', () => onChoose(choice));
+      }
       keyboard.append(button);
+    });
+    return keyboard;
+  };
+  const flashInvalidChoice = (keyboard, input, clearPreviousTimer = null) => {
+    const unavailable = keyboard.querySelector(`[data-equipment-input="${input}"]`);
+    unavailable?.classList.remove('is-invalid-input');
+    void unavailable?.offsetWidth;
+    unavailable?.classList.add('is-invalid-input');
+    clearTimeout(clearPreviousTimer);
+    return setTimeout(() => {
+      unavailable?.classList.remove('is-invalid-input');
+    }, 420);
+  };
+  const chooseSlot = (control) => new Promise((resolve) => {
+    const choices = choicesForControl(control);
+
+    const dialog = document.createElement('dialog');
+    dialog.className = 'equipment-placement-modal equipment-slot-modal';
+    dialog.setAttribute(
+      'aria-label',
+      control.getAttribute('aria-label') || 'Choose equipment slot',
+    );
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'equipment-slot-close';
+    close.setAttribute('aria-label', 'Close equipment slot picker');
+    close.title = 'Close';
+    close.textContent = '×';
+    close.addEventListener('click', () => {
+      dialog.returnValue = '';
+      dialog.close();
+    });
+    const keyboard = createSlotKeyboard(choices, (choice) => {
+      dialog.returnValue = choice.input;
+      dialog.close();
     });
     dialog.append(close, keyboard);
     document.body.append(dialog);
@@ -180,16 +199,11 @@
       if (!choice) return;
       event.preventDefault();
       if (choice.selection === null) {
-        const unavailable = keyboard.querySelector(
-          `[data-equipment-input="${choice.input}"]`,
+        invalidFeedbackTimer = flashInvalidChoice(
+          keyboard,
+          choice.input,
+          invalidFeedbackTimer,
         );
-        unavailable?.classList.remove('is-invalid-input');
-        void unavailable?.offsetWidth;
-        unavailable?.classList.add('is-invalid-input');
-        clearTimeout(invalidFeedbackTimer);
-        invalidFeedbackTimer = setTimeout(() => {
-          unavailable?.classList.remove('is-invalid-input');
-        }, 420);
         return;
       }
       dialog.returnValue = choice.input;
@@ -207,6 +221,44 @@
     dialog.showModal();
     keyboard.querySelector('button:not([disabled])')?.focus();
   });
+  let previewControl = null;
+  let hoveredEquipmentControl = null;
+  let previewChoices = [];
+  let previewKeyboard = null;
+  let previewInvalidFeedbackTimer = null;
+  const hideSlotPreview = (control = null) => {
+    if (control !== null && previewControl !== control) return;
+    document.querySelector('.equipment-slot-preview')?.remove();
+    clearTimeout(previewInvalidFeedbackTimer);
+    previewInvalidFeedbackTimer = null;
+    previewControl = null;
+    previewChoices = [];
+    previewKeyboard = null;
+  };
+  const showSlotPreview = (control) => {
+    if (
+      !control
+      || control.disabled
+      || control.dataset.equipmentEquipped === 'true'
+      || !control.matches('[data-equipment-toggle]:not([data-equipment-medication])')
+    ) {
+      hideSlotPreview();
+      return null;
+    }
+    if (previewControl === control && document.querySelector('.equipment-slot-preview')) {
+      return document.querySelector('.equipment-slot-preview');
+    }
+    hideSlotPreview();
+    previewControl = control;
+    previewChoices = choicesForControl(control);
+    const preview = document.createElement('div');
+    preview.className = 'equipment-slot-preview';
+    preview.setAttribute('aria-hidden', 'true');
+    previewKeyboard = createSlotKeyboard(previewChoices);
+    preview.append(previewKeyboard);
+    document.body.append(preview);
+    return preview;
+  };
   const equipmentMutation = async (control, equipped, selection = null) =>
     window.strategicSubmitMutation('/api/equipment', {
       body: new URLSearchParams({
@@ -247,9 +299,70 @@
       parsePlacementOptions,
       selectionForInput,
       chooseSlot,
+      showSlotPreview,
+      hideSlotPreview,
     };
   }
   if (typeof document === 'undefined') return;
+
+  const equipmentControlSelector =
+    '[data-equipment-toggle]:not([data-equipment-medication])';
+  const refreshSlotPreview = () => {
+    const focused = document.activeElement?.closest?.(equipmentControlSelector);
+    showSlotPreview(hoveredEquipmentControl || focused);
+  };
+
+  document.addEventListener('mouseover', (event) => {
+    const control = event.target.closest?.(equipmentControlSelector);
+    if (!control || control.contains(event.relatedTarget)) return;
+    hoveredEquipmentControl = control;
+    refreshSlotPreview();
+  });
+
+  document.addEventListener('mouseout', (event) => {
+    const control = event.target.closest?.(equipmentControlSelector);
+    if (!control || control.contains(event.relatedTarget)) return;
+    if (hoveredEquipmentControl === control) hoveredEquipmentControl = null;
+    refreshSlotPreview();
+  });
+
+  document.addEventListener('focusin', (event) => {
+    if (!event.target.closest?.(equipmentControlSelector)) return;
+    refreshSlotPreview();
+  });
+
+  document.addEventListener('focusout', (event) => {
+    if (!event.target.closest?.(equipmentControlSelector)) return;
+    setTimeout(refreshSlotPreview);
+  });
+
+  document.addEventListener('keydown', async (event) => {
+    const control = hoveredEquipmentControl;
+    if (!control || control.disabled || control.dataset.equipmentEquipped === 'true') return;
+    if (document.activeElement === control) return;
+    if (event.target.matches?.('input, textarea, select, [contenteditable="true"]')) return;
+    const input = normalizedEquipmentInput(event);
+    const choice = previewChoices.find((candidate) => candidate.input === input);
+    if (!choice) return;
+    event.preventDefault();
+    if (choice.selection === null) {
+      previewInvalidFeedbackTimer = flashInvalidChoice(
+        previewKeyboard,
+        choice.input,
+        previewInvalidFeedbackTimer,
+      );
+      return;
+    }
+    const status = statusFor(control);
+    clearStatus(status);
+    hideSlotPreview();
+    control.disabled = true;
+    try {
+      await equipmentMutation(control, true, choice.selection);
+    } catch (error) {
+      reportEquipmentError(control, status, error);
+    }
+  });
 
   document.addEventListener('change', async (event) => {
     const checkbox = event.target.closest?.('[data-equipment-medication]');
@@ -271,6 +384,7 @@
       '[data-equipment-toggle]:not([data-equipment-medication])',
     );
     if (!control || control.disabled) return;
+    hideSlotPreview();
     const equipped = control.dataset.equipmentEquipped === 'true';
     const status = statusFor(control);
     clearStatus(status);

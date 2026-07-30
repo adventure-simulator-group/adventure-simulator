@@ -14,6 +14,8 @@ const {
   parsePlacementOptions,
   parsePlacements,
   selectionForInput,
+  showSlotPreview,
+  hideSlotPreview,
 } = require('../static/equipment-toggle.js');
 
 test('equipment errors preserve the exact reducer response', async () => {
@@ -292,6 +294,37 @@ test('slot chooser uses an icon cell, an X close control, and red invalid-key fe
 
   dialog.querySelector('.equipment-slot-close').click();
   assert.equal(await result, null);
+  delete global.document;
+  delete global.window;
+});
+
+test('slot preview mirrors the keyboard map without creating a modal', () => {
+  const { window, document } = parseHTML('<html><body><button id="equip"></button></body></html>');
+  global.window = window;
+  global.document = document;
+  const control = document.querySelector('#equip');
+  control.dataset.equipmentToggle = '';
+  control.dataset.equipmentEquipped = 'false';
+  control.dataset.equipmentInputMap = JSON.stringify([
+    { input: 'q', label: 'Q', row: 0, column: 0, locations: ['Left belt'] },
+    { input: 'g', label: 'G', row: 1, column: 1, locations: ['Chest'] },
+  ]);
+  control.dataset.equipmentPlacementOptions = JSON.stringify([{
+    placementIndex: 0,
+    inputRanks: { g: 20000 },
+    inputOccupants: {},
+    requirements: [],
+  }]);
+
+  const preview = showSlotPreview(control);
+  assert.equal(preview.getAttribute('aria-hidden'), 'true');
+  assert.equal(preview.querySelectorAll('.equipment-slot-choice').length, 2);
+  assert.equal(preview.querySelector('[data-equipment-input="q"]').disabled, true);
+  assert.equal(preview.querySelector('[data-equipment-input="g"]').disabled, false);
+  assert.equal(document.querySelector('.equipment-slot-modal'), null);
+
+  hideSlotPreview();
+  assert.equal(document.querySelector('.equipment-slot-preview'), null);
   delete global.document;
   delete global.window;
 });

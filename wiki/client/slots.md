@@ -89,7 +89,12 @@ dimmed and flash red when pressed. Eligible occupied slots show their current
 item icon and swap that occupant out when selected; eligible empty slots keep
 the icon area as empty negative space. A valid key can be clicked or pressed,
 and selects the outermost compatible placement or attachment target reachable
-through that slot.
+through that slot. Hovering over an unequipped row control previews the map
+without a modal backdrop and accepts a slot key immediately. Reaching the
+control with keyboard Tab navigation shows the same preview while leaving Tab
+navigation active; press Space to open the modal, then choose a slot key or
+press Escape to close it.
+
 ## Bags
 Your entire inventory won't necessarily fit into the slot system, which is fine. The slot system is intended not to replace "standard inventory management" altogether but to make a *significant subset* of your inventory more manageable, that being the subset of items that you need readily accessible. If you don't need a given item readily accessible, you can put it in a bag.
 
