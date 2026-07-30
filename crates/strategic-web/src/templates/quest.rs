@@ -189,11 +189,12 @@ fn quest_location_center(
             @if !corpses.is_empty() {
                 nav class="settlement-npc-strip corpse-strip" aria-label="Counterparty corpses" {
                     @for corpse in corpses {
+                        @let corpse_label = if corpse.location == "interred" { "Buried body" } else { &corpse.display_name };
                         a class="npc-portrait corpse-portrait"
                             href=(format!("/locations/case-site/{}/enemy?corpse={}&medical=physiology", site.case_site_id, corpse.corpse_id))
-                            aria-label=(format!("Examine {} with Physiology", corpse.display_name)) {
+                            aria-label=(format!("Examine {corpse_label} with Physiology")) {
                             span class="npc-portrait-image" aria-hidden="true" { "☠" }
-                            span class="npc-portrait-name" { (&corpse.display_name) }
+                            span class="npc-portrait-name" { (corpse_label) }
                         }
                     }
                 }

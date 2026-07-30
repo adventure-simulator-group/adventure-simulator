@@ -108,11 +108,12 @@ pub fn settlement_overview_page(
             @if !corpses.is_empty() {
                 nav class="settlement-npc-strip corpse-strip" aria-label="Bodies held in the settlement" {
                     @for corpse in corpses {
+                        @let corpse_label = if corpse.location == "interred" { "Buried body" } else { &corpse.display_name };
                         a class="npc-portrait corpse-portrait"
                             href=(format!("/locations/settlement/{}?corpse={}&medical=physiology", settlement.id, corpse.corpse_id))
-                            aria-label=(format!("Examine {} with Physiology", corpse.display_name)) {
+                            aria-label=(format!("Examine {corpse_label} with Physiology")) {
                             span class="npc-portrait-image" aria-hidden="true" { "☠" }
-                            span class="npc-portrait-name" { (&corpse.display_name) }
+                            span class="npc-portrait-name" { (corpse_label) }
                         }
                     }
                 }
@@ -727,6 +728,7 @@ mod tests {
             opened: false,
             permission: "none".into(),
             exhumation_permission: false,
+            penalty_free_burning: false,
             revision: 0,
             findings: Vec::new(),
         };

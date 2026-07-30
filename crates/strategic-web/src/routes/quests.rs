@@ -585,6 +585,35 @@ async fn perform_corpse_action(
                 )
                 .await
         }
+        "bury" => {
+            state
+                .db
+                .call(
+                    "bury_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                    ],
+                )
+                .await
+        }
+        "burn" => {
+            state
+                .db
+                .call(
+                    "burn_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                        json!(form.confirm_unauthorized),
+                    ],
+                )
+                .await
+        }
         _ => {
             state
                 .db

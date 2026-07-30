@@ -47,9 +47,17 @@ pub struct PostCombatBody {
     pub injuries: Vec<BodyInjury>,
 }
 
-pub fn corpse_location(discovered_minute: u64, now_minute: u64, exhumed: bool) -> CorpseLocation {
+pub fn corpse_location(
+    discovered_minute: u64,
+    now_minute: u64,
+    buried: bool,
+    exhumed: bool,
+) -> CorpseLocation {
     if exhumed {
         return CorpseLocation::Exhumed;
+    }
+    if buried {
+        return CorpseLocation::Interred;
     }
     match now_minute.saturating_sub(discovered_minute) {
         0..SCENE_MINUTES => CorpseLocation::Scene,
@@ -332,13 +340,26 @@ mod tests {
 
     #[test]
     fn custody_is_dynamic_from_discovery_while_decomposition_uses_death() {
-        assert_eq!(corpse_location(100, 150, false), CorpseLocation::Scene);
         assert_eq!(
-            corpse_location(100, 300, false),
+            corpse_location(100, 150, false, false),
+            CorpseLocation::Scene
+        );
+        assert_eq!(
+            corpse_location(100, 300, false, false),
             CorpseLocation::LocalCustody
         );
-        assert_eq!(corpse_location(100, 2_000, false), CorpseLocation::Interred);
-        assert_eq!(corpse_location(100, 2_000, true), CorpseLocation::Exhumed);
+        assert_eq!(
+            corpse_location(100, 2_000, false, false),
+            CorpseLocation::Interred
+        );
+        assert_eq!(
+            corpse_location(100, 150, true, false),
+            CorpseLocation::Interred
+        );
+        assert_eq!(
+            corpse_location(100, 2_000, true, true),
+            CorpseLocation::Exhumed
+        );
         assert_eq!(decomposition_band(0, 1_000, 0), DecompositionBand::Early);
     }
 

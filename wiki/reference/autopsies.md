@@ -15,6 +15,13 @@ derived dynamically from elapsed time after discovery:
 2. in local custody (for example, a church or residence) until 24 hours;
 3. interred thereafter, unless it has been exhumed.
 
+The party may also bury an accessible body early or rebury an exhumed body.
+Burial and exhumation are symmetric handling actions. While a body is interred,
+the observer projection conceals its identity, creature kind, source,
+decomposition, opened state, and all recorded findings. Only the opaque body
+reference, settlement custody, revision, and information needed to attempt
+exhumation remain available.
+
 Decomposition is calculated independently from time since death and accumulated
 handling damage. Prompt scene examination retains both scene context and
 better-preserved anatomy, while a promptly discovered but badly handled body can
@@ -59,6 +66,15 @@ bypassing bound family causes a modest family morale and affinity loss.
 Proceeding without any permission remains possible after a qualitative warning
 and causes a much larger family penalty plus settlement infamy. Receipts make
 all actions and consequences retry-safe.
+
+Burning is an irreversible alternative beside burial whenever a body is
+accessible. It destroys the body and all remaining evidence and cannot be
+authorized by family, clergy, or secular authority. Burning a victim causes
+severe settlement infamy and severe affinity loss with every explicitly bound
+family member. A corpse produced from an enemy killed by the party in strategic
+autoresolve is exempt from those social and reputation penalties, though the
+irreversible evidence-loss warning still applies. A buried body must first be
+exhumed before it can be burned.
 
 Kinship comes only from explicit family bindings. Generated household labels are
 never treated as proof of relation. The current generic character-death producer

@@ -195,6 +195,7 @@ pub struct BackendCorpse {
     pub opened: bool,
     pub permission: String,
     pub exhumation_permission: bool,
+    pub penalty_free_burning: bool,
     pub revision: u32,
     pub findings: Vec<String>,
 }

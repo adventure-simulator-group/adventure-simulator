@@ -109,6 +109,8 @@ pub mod bestiary_hours_type;
 pub mod blood_exposure_checkpoint_type;
 pub mod bootstrap_development_world_reducer;
 pub mod built_settlement_cover_type;
+pub mod burn_corpse_reducer;
+pub mod bury_corpse_reducer;
 pub mod camp_duration_mode_type;
 pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
@@ -810,6 +812,8 @@ pub use bestiary_hours_type::BestiaryHours;
 pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use built_settlement_cover_type::BuiltSettlementCover;
+pub use burn_corpse_reducer::burn_corpse;
+pub use bury_corpse_reducer::bury_corpse;
 pub use camp_duration_mode_type::CampDurationMode;
 pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
@@ -1493,6 +1497,19 @@ pub enum Reducer {
         bootstrap_token: String,
         include_visual_demos: bool,
     },
+    BurnCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        action_id: String,
+        expected_revision: u32,
+        confirm_destruction: bool,
+    },
+    BuryCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        action_id: String,
+        expected_revision: u32,
+    },
     CancelMissionRequest {
         character_id: u64,
         mission_id: String,
@@ -2127,6 +2144,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
             Reducer::BootstrapDevelopmentWorld { .. } => "bootstrap_development_world",
+            Reducer::BurnCorpse { .. } => "burn_corpse",
+            Reducer::BuryCorpse { .. } => "bury_corpse",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::ChatWithPartyMember { .. } => "chat_with_party_member",
@@ -2393,6 +2412,30 @@ Reducer::BeginWorldDataImport{
 }             => __sats::bsatn::to_vec(&bootstrap_development_world_reducer::BootstrapDevelopmentWorldArgs {
                 bootstrap_token: bootstrap_token.clone(),
                 include_visual_demos: include_visual_demos.clone(),
+}),
+            Reducer::BurnCorpse{
+                actor_id,
+                corpse_id,
+                action_id,
+                expected_revision,
+                confirm_destruction,
+}             => __sats::bsatn::to_vec(&burn_corpse_reducer::BurnCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                confirm_destruction: confirm_destruction.clone(),
+}),
+            Reducer::BuryCorpse{
+                actor_id,
+                corpse_id,
+                action_id,
+                expected_revision,
+}             => __sats::bsatn::to_vec(&bury_corpse_reducer::BuryCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
 }),
             Reducer::CancelMissionRequest{
                 character_id,

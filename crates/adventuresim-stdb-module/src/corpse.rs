@@ -29,6 +29,10 @@ const EXTERNAL_EXAMINATION_MINUTES: u64 = 20;
 const INTERNAL_EXAMINATION_MINUTES: u64 = 45;
 const OPEN_BODY_MINUTES: u64 = 60;
 const EXHUMATION_MINUTES: u64 = 120;
+const BURIAL_MINUTES: u64 = 120;
+const CREMATION_MINUTES: u64 = 240;
+const CREMATION_INFAMY: i32 = 5_000;
+const CREMATION_FAMILY_AFFINITY_DELTA: f32 = -40.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum CorpsePermissionKind {
@@ -59,7 +63,10 @@ pub struct StrategicCorpse {
     pub case_site_id: String,
     pub death_minute: u64,
     pub discovered_minute: u64,
+    pub buried: bool,
     pub exhumed: bool,
+    pub burned: bool,
+    pub party_killed_enemy: bool,
     pub handling_damage_bps: u16,
     pub opened: bool,
     pub opening_quality_bps: u16,
@@ -162,6 +169,7 @@ pub struct BackendCorpse {
     pub opened: bool,
     pub permission: String,
     pub exhumation_permission: bool,
+    pub penalty_free_burning: bool,
     pub revision: u32,
     pub findings: Vec<String>,
 }
@@ -246,7 +254,15 @@ fn require_corpse_access(
         .find(actor_id)
         .ok_or("Character not found")?;
     let minute = now(ctx, actor_id)?;
-    let location = corpse_location(corpse.discovered_minute, minute, corpse.exhumed);
+    if corpse.burned {
+        return Err("The corpse has been destroyed by fire".into());
+    }
+    let location = corpse_location(
+        corpse.discovered_minute,
+        minute,
+        corpse.buried,
+        corpse.exhumed,
+    );
     let actor_site = ctx
         .db
         .character_case_site_occupancy()
@@ -328,6 +344,10 @@ fn action_receipt_id(
     revision: u32,
 ) -> String {
     format!("autopsy:{actor_id}:{corpse_id}:{action_kind}:{discipline}:{stage}:revision:{revision}")
+}
+
+fn burning_social_penalty(party_killed_enemy: bool) -> Option<(i32, f32)> {
+    (!party_killed_enemy).then_some((CREMATION_INFAMY, CREMATION_FAMILY_AFFINITY_DELTA))
 }
 
 fn skill_check(ctx: &ReducerContext, actor_id: u64, discipline: &str) -> Result<f32, String> {
@@ -427,7 +447,12 @@ fn realized_finding(
                 }
             })
         });
-    let location = corpse_location(corpse.discovered_minute, minute, corpse.exhumed);
+    let location = corpse_location(
+        corpse.discovered_minute,
+        minute,
+        corpse.buried,
+        corpse.exhumed,
+    );
     let context = AutopsyEvidenceContext {
         decomposition: decomposition_band(corpse.death_minute, minute, corpse.handling_damage_bps),
         at_scene: location == CorpseLocation::Scene,
@@ -488,7 +513,15 @@ pub fn backend_corpses(ctx: &ViewContext) -> Vec<BackendCorpse> {
             .strategic_corpse()
             .discovering_party_id()
             .filter(party_id)
+            .filter(|corpse| !corpse.burned)
         {
+            let location = corpse_location(
+                corpse.discovered_minute,
+                minute,
+                corpse.buried,
+                corpse.exhumed,
+            );
+            let buried = location == CorpseLocation::Interred;
             let permissions = ctx
                 .db
                 .corpse_permission()
@@ -509,39 +542,62 @@ pub fn backend_corpses(ctx: &ViewContext) -> Vec<BackendCorpse> {
                     CorpsePermissionKind::Priest => "priest",
                     CorpsePermissionKind::SecularAuthority => "authority",
                 });
-            let findings = ctx
-                .db
-                .autopsy_action_receipt()
-                .observer_id()
-                .filter(actor.id)
-                .filter(|row| row.corpse_id == corpse.id)
-                .map(|row| row.finding)
-                .collect();
+            let findings = if buried {
+                Vec::new()
+            } else {
+                ctx.db
+                    .autopsy_action_receipt()
+                    .observer_id()
+                    .filter(actor.id)
+                    .filter(|row| row.corpse_id == corpse.id)
+                    .map(|row| row.finding)
+                    .collect()
+            };
             rows.push(BackendCorpse {
                 owner_character_id: actor.id,
                 corpse_id: corpse.id.clone(),
-                display_name: corpse.display_name.clone(),
-                creature_kind: corpse.creature_kind.clone(),
-                source_id: corpse.source_id.clone(),
-                location: location_label(corpse_location(
-                    corpse.discovered_minute,
-                    minute,
-                    corpse.exhumed,
-                ))
-                .into(),
-                decomposition: decomposition_label(decomposition_band(
-                    corpse.death_minute,
-                    minute,
-                    corpse.handling_damage_bps,
-                ))
-                .into(),
-                case_site_id: corpse.case_site_id.clone(),
+                display_name: if buried {
+                    "Buried body".into()
+                } else {
+                    corpse.display_name.clone()
+                },
+                creature_kind: if buried {
+                    String::new()
+                } else {
+                    corpse.creature_kind.clone()
+                },
+                source_id: if buried {
+                    String::new()
+                } else {
+                    corpse.source_id.clone()
+                },
+                location: location_label(location).into(),
+                decomposition: if buried {
+                    String::new()
+                } else {
+                    decomposition_label(decomposition_band(
+                        corpse.death_minute,
+                        minute,
+                        corpse.handling_damage_bps,
+                    ))
+                    .into()
+                },
+                case_site_id: if buried {
+                    String::new()
+                } else {
+                    corpse.case_site_id.clone()
+                },
                 settlement_id: corpse.settlement_id.clone(),
-                opened: corpse.opened,
-                permission: permission.into(),
+                opened: !buried && corpse.opened,
+                permission: if buried {
+                    "none".into()
+                } else {
+                    permission.into()
+                },
                 exhumation_permission: permissions
                     .iter()
                     .any(|row| row.scope == CorpsePermissionScope::Exhumation),
+                penalty_free_burning: !buried && corpse.party_killed_enemy,
                 revision: corpse.revision,
                 findings,
             });
@@ -588,7 +644,10 @@ pub(crate) fn persist_autoresolve_enemy_corpses(
                 case_site_id: case_site_id.into(),
                 death_minute: minute,
                 discovered_minute: minute,
+                buried: false,
                 exhumed: false,
+                burned: false,
+                party_killed_enemy: true,
                 handling_damage_bps: 0,
                 opened: false,
                 opening_quality_bps: 0,
@@ -704,7 +763,10 @@ pub(crate) fn persist_character_death_corpse(
         case_site_id,
         death_minute,
         discovered_minute: death_minute,
+        buried: false,
         exhumed: false,
+        burned: false,
+        party_killed_enemy: false,
         handling_damage_bps: 0,
         opened: false,
         opening_quality_bps: 0,
@@ -807,7 +869,12 @@ pub fn examine_corpse(
         return Ok(());
     }
     let (corpse, party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
-    if corpse_location(corpse.discovered_minute, minute, corpse.exhumed) == CorpseLocation::Interred
+    if corpse_location(
+        corpse.discovered_minute,
+        minute,
+        corpse.buried,
+        corpse.exhumed,
+    ) == CorpseLocation::Interred
     {
         return Err("The body must be exhumed before it can be examined".into());
     }
@@ -900,7 +967,12 @@ pub fn open_corpse(
         return Ok(());
     }
     let (mut corpse, party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
-    if corpse_location(corpse.discovered_minute, minute, corpse.exhumed) == CorpseLocation::Interred
+    if corpse_location(
+        corpse.discovered_minute,
+        minute,
+        corpse.buried,
+        corpse.exhumed,
+    ) == CorpseLocation::Interred
     {
         return Err("The body must be exhumed before it can be opened".into());
     }
@@ -1002,7 +1074,12 @@ pub fn exhume_corpse(
         return Ok(());
     }
     let (mut corpse, party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
-    if corpse_location(corpse.discovered_minute, minute, corpse.exhumed) != CorpseLocation::Interred
+    if corpse_location(
+        corpse.discovered_minute,
+        minute,
+        corpse.buried,
+        corpse.exhumed,
+    ) != CorpseLocation::Interred
     {
         return Err("Only an interred corpse can be exhumed".into());
     }
@@ -1048,6 +1125,169 @@ pub fn exhume_corpse(
             stage: "handling".into(),
             finding: "The body has been exhumed; handling and elapsed time reduced the evidence."
                 .into(),
+            performed_minute: completed_minute,
+        });
+    Ok(())
+}
+
+#[reducer]
+pub fn bury_corpse(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    corpse_id: String,
+    action_id: String,
+    expected_revision: u32,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    validate_client_action_id(&action_id)?;
+    let receipt_id = action_receipt_id(
+        actor_id,
+        &corpse_id,
+        "bury",
+        "surgery",
+        "handling",
+        expected_revision,
+    );
+    if ctx
+        .db
+        .autopsy_action_receipt()
+        .id()
+        .find(&receipt_id)
+        .is_some()
+    {
+        return Ok(());
+    }
+    let (mut corpse, _party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
+    if corpse_location(
+        corpse.discovered_minute,
+        minute,
+        corpse.buried,
+        corpse.exhumed,
+    ) == CorpseLocation::Interred
+    {
+        return Err("The corpse is already buried".into());
+    }
+    if corpse.revision != expected_revision {
+        return Err("Corpse state changed; refresh before burying it".into());
+    }
+    if !advance_character_wait_time(ctx, actor_id, BURIAL_MINUTES)? {
+        return Ok(());
+    }
+    let completed_minute = now(ctx, actor_id)?;
+    corpse.buried = true;
+    corpse.exhumed = false;
+    corpse.handling_damage_bps = corpse.handling_damage_bps.saturating_add(200);
+    corpse.revision = corpse.revision.saturating_add(1);
+    ctx.db.strategic_corpse().id().update(corpse);
+    ctx.db
+        .autopsy_action_receipt()
+        .insert(AutopsyActionReceipt {
+            id: receipt_id,
+            corpse_id,
+            observer_id: actor_id,
+            action_kind: "bury".into(),
+            stage: "handling".into(),
+            finding: "The body has been buried. Its identity and physical evidence are concealed until it is exhumed.".into(),
+            performed_minute: completed_minute,
+        });
+    Ok(())
+}
+
+#[reducer]
+pub fn burn_corpse(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    corpse_id: String,
+    action_id: String,
+    expected_revision: u32,
+    confirm_destruction: bool,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    validate_client_action_id(&action_id)?;
+    let receipt_id = action_receipt_id(
+        actor_id,
+        &corpse_id,
+        "burn",
+        "surgery",
+        "handling",
+        expected_revision,
+    );
+    if ctx
+        .db
+        .autopsy_action_receipt()
+        .id()
+        .find(&receipt_id)
+        .is_some()
+    {
+        return Ok(());
+    }
+    let (mut corpse, _party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
+    if corpse_location(
+        corpse.discovered_minute,
+        minute,
+        corpse.buried,
+        corpse.exhumed,
+    ) == CorpseLocation::Interred
+    {
+        return Err("The body must be exhumed before it can be burned".into());
+    }
+    if corpse.revision != expected_revision {
+        return Err("Corpse state changed; refresh before burning it".into());
+    }
+    if !corpse.party_killed_enemy && !confirm_destruction {
+        return Err(
+            "Burning a victim cannot be authorized and will cause severe family affinity loss and settlement infamy; confirm the irreversible destruction".into(),
+        );
+    }
+    if !advance_character_wait_time(ctx, actor_id, CREMATION_MINUTES)? {
+        return Ok(());
+    }
+    let completed_minute = now(ctx, actor_id)?;
+    if let Some((infamy, family_affinity_delta)) = burning_social_penalty(corpse.party_killed_enemy)
+    {
+        if !corpse.settlement_id.is_empty() {
+            crate::reputation::record_event(
+                ctx,
+                format!("corpse-burning:{receipt_id}"),
+                actor_id,
+                &corpse.settlement_id,
+                "corpse_burning",
+                &corpse.id,
+                0,
+                infamy,
+                completed_minute,
+            )?;
+        }
+        for family in ctx
+            .db
+            .corpse_family_binding()
+            .corpse_id()
+            .filter(&corpse.id)
+        {
+            crate::social::apply_corpse_family_offense(
+                ctx,
+                actor_id,
+                &family.npc_id,
+                &format!("corpse-burning:{receipt_id}:{}", family.npc_id),
+                0.0,
+                family_affinity_delta,
+            )?;
+        }
+    }
+    corpse.burned = true;
+    corpse.revision = corpse.revision.saturating_add(1);
+    ctx.db.strategic_corpse().id().update(corpse);
+    ctx.db
+        .autopsy_action_receipt()
+        .insert(AutopsyActionReceipt {
+            id: receipt_id,
+            corpse_id,
+            observer_id: actor_id,
+            action_kind: "burn".into(),
+            stage: "handling".into(),
+            finding:
+                "The body and all remaining physical evidence were irreversibly destroyed by fire."
+                    .into(),
             performed_minute: completed_minute,
         });
     Ok(())
@@ -1209,6 +1449,7 @@ pub(crate) fn permission_topics_for_npc(
         .strategic_corpse()
         .discovering_party_id()
         .filter(&party_id)
+        .filter(|corpse| !corpse.burned)
         .flat_map(|corpse| {
             if permission_kind_for_npc(ctx, &corpse, &npc).is_none() {
                 return Vec::new();
@@ -1219,9 +1460,17 @@ pub(crate) fn permission_topics_for_npc(
                 CorpsePermissionScope::Exhumation,
             ] {
                 let is_exhumation = scope == CorpsePermissionScope::Exhumation;
-                let eligible_location = !is_exhumation
-                    || corpse_location(corpse.discovered_minute, minute, corpse.exhumed)
-                        == CorpseLocation::Interred;
+                let location = corpse_location(
+                    corpse.discovered_minute,
+                    minute,
+                    corpse.buried,
+                    corpse.exhumed,
+                );
+                let eligible_location = if is_exhumation {
+                    location == CorpseLocation::Interred
+                } else {
+                    location != CorpseLocation::Interred
+                };
                 let attempted = ctx
                     .db
                     .corpse_permission_attempt()
@@ -1245,7 +1494,7 @@ pub(crate) fn permission_topics_for_npc(
                             corpse.id
                         ),
                         if is_exhumation {
-                            format!("Ask permission to exhume {}", corpse.display_name)
+                            "Ask permission to exhume a buried body".into()
                         } else {
                             format!("Ask permission to examine {}", corpse.display_name)
                         },
@@ -1344,6 +1593,18 @@ mod tests {
                     > permission_difficulty(kind, CorpsePermissionScope::Examination)
             );
         }
+    }
+
+    #[test]
+    fn burning_penalties_apply_to_victims_but_not_party_slain_enemies() {
+        assert_eq!(
+            burning_social_penalty(false),
+            Some((CREMATION_INFAMY, CREMATION_FAMILY_AFFINITY_DELTA))
+        );
+        assert_eq!(burning_social_penalty(true), None);
+        let source = include_str!("corpse.rs");
+        assert!(source.contains("Ask permission to exhume a buried body"));
+        assert!(!source.contains("Ask permission to exhume {}"));
     }
 
     #[test]
