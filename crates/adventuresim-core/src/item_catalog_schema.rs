@@ -18,10 +18,191 @@ pub struct ItemDefinition {
     #[serde(default)]
     pub tags: Vec<String>,
     pub presentation: Presentation,
+    /// Content-authored equipment topology. This is independent of item kind:
+    /// armor, weapons, containers, and simple accessories may all participate.
+    #[serde(default)]
+    pub equipment: Option<EquipmentDefinition>,
     #[serde(flatten)]
     pub kind: ItemKind,
     #[serde(default)]
     pub capabilities: Capabilities,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EquipmentDefinition {
+    /// Tags used by parent attachment points to accept this item. An empty
+    /// list is never inferred from ItemKind.
+    #[serde(default)]
+    pub attachment_tags: Vec<String>,
+    pub placements: Vec<EquipmentPlacement>,
+    /// Shared projection stats for non-armor equipment such as protective
+    /// clothing. Armor may continue to source these physical values from its
+    /// kind payload; placement protection targets are always explicit.
+    #[serde(default)]
+    pub protection: Option<EquipmentProtection>,
+    #[serde(default)]
+    pub attachment_points: Vec<AttachmentPointDefinition>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EquipmentPlacement {
+    /// Stable within the item definition; persisted instead of an array index.
+    pub id: String,
+    /// A placement may combine physical character anchors with any number of
+    /// required item attachment points. The selected targets are runtime
+    /// graph edges and are not inferred from item kind.
+    #[serde(default)]
+    pub occupancy: Vec<OccupancyRequirement>,
+    #[serde(default)]
+    pub parents: Vec<ParentRequirement>,
+    /// Explicit many-to-many combat projection. Locations never imply
+    /// protection.
+    #[serde(default)]
+    pub protection: Vec<EquipmentBodyPart>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipmentChannel {
+    Held,
+    BaseClothing,
+    Padding,
+    FlexibleArmor,
+    RigidArmor,
+    Outerwear,
+    Accessory,
+    Mount,
+    Containment,
+}
+
+impl EquipmentChannel {
+    #[allow(dead_code)] // The build-script schema does not aggregate layers.
+    pub const fn order(self) -> u8 {
+        match self {
+            Self::Held => 0,
+            Self::BaseClothing => 10,
+            Self::Padding => 20,
+            Self::FlexibleArmor => 30,
+            Self::RigidArmor => 40,
+            Self::Outerwear => 50,
+            Self::Accessory => 60,
+            Self::Mount => 70,
+            Self::Containment => 80,
+        }
+    }
+
+    #[allow(dead_code)] // The build-script schema validates this from raw authored values.
+    pub const fn singleton_per_location(self) -> bool {
+        matches!(
+            self,
+            Self::Held
+                | Self::BaseClothing
+                | Self::Padding
+                | Self::FlexibleArmor
+                | Self::RigidArmor
+                | Self::Outerwear
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OccupancyRequirement {
+    pub location: EquipmentLocation,
+    pub channel: EquipmentChannel,
+    /// Ordering within a channel supports repeated deeper selection without
+    /// making occupancy compatibility depend on enum declaration order.
+    #[serde(default)]
+    pub order: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParentRequirement {
+    pub channel: EquipmentChannel,
+    #[serde(default)]
+    pub order: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttachmentPointDefinition {
+    pub id: String,
+    pub channel: EquipmentChannel,
+    pub capacity: u16,
+    #[serde(default)]
+    pub order: u16,
+    /// Empty accepts any equipment-authored child; otherwise at least one
+    /// child's attachment tag must match.
+    #[serde(default)]
+    pub accepts_tags: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EquipmentProtection {
+    pub coverage: f32,
+    #[serde(default)]
+    pub padding: f32,
+    #[serde(default)]
+    pub resistance: f32,
+    #[serde(default = "default_equipment_flexibility")]
+    pub flexibility: f32,
+    #[serde(default = "default_equipment_range_of_motion")]
+    pub range_of_motion: f32,
+}
+
+fn default_equipment_flexibility() -> f32 {
+    1.0
+}
+
+fn default_equipment_range_of_motion() -> f32 {
+    1.0
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipmentBodyPart {
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Chest,
+    Stomach,
+    Head,
+}
+
+/// Fine-grained equipment topology. This is intentionally separate from the
+/// seven-part combat/health `BodyPart` ABI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipmentLocation {
+    Head,
+    Face,
+    Neck,
+    Chest,
+    Stomach,
+    Back,
+    LeftShoulder,
+    RightShoulder,
+    LeftArm,
+    RightArm,
+    LeftHand,
+    RightHand,
+    LeftLeg,
+    RightLeg,
+    LeftFoot,
+    RightFoot,
+    LeftBelt,
+    RightBelt,
+    FrontBelt,
+    BackBelt,
+    LeftPocket,
+    RightPocket,
+    BackLeftPocket,
+    BackRightPocket,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

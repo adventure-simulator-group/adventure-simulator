@@ -21,6 +21,7 @@ pub mod answer_dialogue_prompt_reducer;
 pub mod approach_dialogue_witness_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
+pub mod attach_item_at_placement_reducer;
 pub mod authority_arrest_charge_type;
 pub mod authorize_tactical_server_claim_reducer;
 pub mod automatic_social_chat_type;
@@ -133,8 +134,8 @@ pub mod character_condition_table;
 pub mod character_condition_type;
 pub mod character_death_table;
 pub mod character_death_type;
-pub mod character_equip_table;
-pub mod character_equip_type;
+pub mod character_equipped_item_table;
+pub mod character_equipped_item_type;
 pub mod character_estate_basis_type;
 pub mod character_familiarity_type;
 pub mod character_filth_table;
@@ -171,6 +172,7 @@ pub mod claim_simulation_run_reducer;
 pub mod clear_organization_presentation_reducer;
 pub mod committed_cut_type;
 pub mod configure_simulation_character_reducer;
+pub mod connected_equipment_occupancy_type;
 pub mod connected_player_item_type;
 pub mod connected_player_type;
 pub mod connected_players_table;
@@ -238,7 +240,19 @@ pub mod elevation_meters_type;
 pub mod end_tactical_server_reducer;
 pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
+pub mod equip_item_at_placement_reducer;
 pub mod equip_item_reducer;
+pub mod equipment_anchor_kind_type;
+pub mod equipment_attachment_point_type;
+pub mod equipment_attachment_target_selection_type;
+pub mod equipment_body_part_type;
+pub mod equipment_channel_type;
+pub mod equipment_location_type;
+pub mod equipment_occupancy_requirement_type;
+pub mod equipment_occupancy_table;
+pub mod equipment_occupancy_type;
+pub mod equipment_parent_requirement_type;
+pub mod equipment_placement_type;
 pub mod evidence_presentation_kind_type;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
@@ -493,6 +507,7 @@ pub mod remove_party_member_reducer;
 pub mod rename_saved_recruitment_role_reducer;
 pub mod repair_order_table;
 pub mod repair_order_type;
+pub mod replace_item_at_placement_reducer;
 pub mod report_contract_reducer;
 pub mod reputation_event_type;
 pub mod request_general_party_join_reducer;
@@ -693,6 +708,7 @@ pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
 pub use approach_dialogue_witness_reducer::approach_dialogue_witness;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
+pub use attach_item_at_placement_reducer::attach_item_at_placement;
 pub use authority_arrest_charge_type::AuthorityArrestCharge;
 pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
 pub use automatic_social_chat_type::AutomaticSocialChat;
@@ -805,8 +821,8 @@ pub use character_condition_table::*;
 pub use character_condition_type::CharacterCondition;
 pub use character_death_table::*;
 pub use character_death_type::CharacterDeath;
-pub use character_equip_table::*;
-pub use character_equip_type::CharacterEquip;
+pub use character_equipped_item_table::*;
+pub use character_equipped_item_type::CharacterEquippedItem;
 pub use character_estate_basis_type::CharacterEstateBasis;
 pub use character_familiarity_type::CharacterFamiliarity;
 pub use character_filth_table::*;
@@ -843,6 +859,7 @@ pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use clear_organization_presentation_reducer::clear_organization_presentation;
 pub use committed_cut_type::CommittedCut;
 pub use configure_simulation_character_reducer::configure_simulation_character;
+pub use connected_equipment_occupancy_type::ConnectedEquipmentOccupancy;
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
 pub use connected_players_table::*;
@@ -910,7 +927,19 @@ pub use elevation_meters_type::ElevationMeters;
 pub use end_tactical_server_reducer::end_tactical_server;
 pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
+pub use equip_item_at_placement_reducer::equip_item_at_placement;
 pub use equip_item_reducer::equip_item;
+pub use equipment_anchor_kind_type::EquipmentAnchorKind;
+pub use equipment_attachment_point_type::EquipmentAttachmentPoint;
+pub use equipment_attachment_target_selection_type::EquipmentAttachmentTargetSelection;
+pub use equipment_body_part_type::EquipmentBodyPart;
+pub use equipment_channel_type::EquipmentChannel;
+pub use equipment_location_type::EquipmentLocation;
+pub use equipment_occupancy_requirement_type::EquipmentOccupancyRequirement;
+pub use equipment_occupancy_table::*;
+pub use equipment_occupancy_type::EquipmentOccupancy;
+pub use equipment_parent_requirement_type::EquipmentParentRequirement;
+pub use equipment_placement_type::EquipmentPlacement;
 pub use evidence_presentation_kind_type::EvidencePresentationKind;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
@@ -1165,6 +1194,7 @@ pub use remove_party_member_reducer::remove_party_member;
 pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
 pub use repair_order_table::*;
 pub use repair_order_type::RepairOrder;
+pub use replace_item_at_placement_reducer::replace_item_at_placement;
 pub use report_contract_reducer::report_contract;
 pub use reputation_event_type::ReputationEvent;
 pub use request_general_party_join_reducer::request_general_party_join;
@@ -1408,6 +1438,12 @@ pub enum Reducer {
         request_id: u64,
         route: JourneyRoutePlan,
     },
+    AttachItemAtPlacement {
+        character_id: u64,
+        inventory_item_id: u64,
+        placement_index: u16,
+        targets: Vec<EquipmentAttachmentTargetSelection>,
+    },
     AuthorizeTacticalServerClaim {
         mission_id: String,
         claim_hash: Vec<u8>,
@@ -1562,6 +1598,11 @@ pub enum Reducer {
         character_id: u64,
         inventory_item_id: u64,
         destination: ItemSlot,
+    },
+    EquipItemAtPlacement {
+        character_id: u64,
+        inventory_item_id: u64,
+        placement_index: u16,
     },
     FinalizeMerchantTrade {
         character_id: u64,
@@ -1721,6 +1762,12 @@ pub enum Reducer {
         owner_id: u64,
         role_id: u64,
         name: String,
+    },
+    ReplaceItemAtPlacement {
+        character_id: u64,
+        inventory_item_id: u64,
+        placement_index: u16,
+        targets: Vec<EquipmentAttachmentTargetSelection>,
     },
     ReportContract {
         character_id: u64,
@@ -2017,6 +2064,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
                 "approve_party_action_request_planned"
             }
+            Reducer::AttachItemAtPlacement { .. } => "attach_item_at_placement",
             Reducer::AuthorizeTacticalServerClaim { .. } => "authorize_tactical_server_claim",
             Reducer::AutoresolveMission { .. } => "autoresolve_mission",
             Reducer::BackfillCharacterDeathsAndLeadership => {
@@ -2056,6 +2104,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
+            Reducer::EquipItemAtPlacement { .. } => "equip_item_at_placement",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
@@ -2089,6 +2138,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RemovePartyMember { .. } => "remove_party_member",
             Reducer::RenameSavedRecruitmentRole { .. } => "rename_saved_recruitment_role",
+            Reducer::ReplaceItemAtPlacement { .. } => "replace_item_at_placement",
             Reducer::ReportContract { .. } => "report_contract",
             Reducer::RequestGeneralPartyJoin { .. } => "request_general_party_join",
             Reducer::RequestPartyAction { .. } => "request_party_action",
@@ -2240,6 +2290,17 @@ impl __sdk::Reducer for Reducer {
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
                 route: route.clone(),
+}),
+            Reducer::AttachItemAtPlacement{
+                character_id,
+                inventory_item_id,
+                placement_index,
+                targets,
+}             => __sats::bsatn::to_vec(&attach_item_at_placement_reducer::AttachItemAtPlacementArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+                placement_index: placement_index.clone(),
+                targets: targets.clone(),
 }),
             Reducer::AuthorizeTacticalServerClaim{
                 mission_id,
@@ -2518,6 +2579,15 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 destination: destination.clone(),
+}),
+            Reducer::EquipItemAtPlacement{
+                character_id,
+                inventory_item_id,
+                placement_index,
+}             => __sats::bsatn::to_vec(&equip_item_at_placement_reducer::EquipItemAtPlacementArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+                placement_index: placement_index.clone(),
 }),
             Reducer::FinalizeMerchantTrade{
                 character_id,
@@ -2803,6 +2873,17 @@ Reducer::BeginWorldDataImport{
                 owner_id: owner_id.clone(),
                 role_id: role_id.clone(),
                 name: name.clone(),
+}),
+            Reducer::ReplaceItemAtPlacement{
+                character_id,
+                inventory_item_id,
+                placement_index,
+                targets,
+}             => __sats::bsatn::to_vec(&replace_item_at_placement_reducer::ReplaceItemAtPlacementArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+                placement_index: placement_index.clone(),
+                targets: targets.clone(),
 }),
             Reducer::ReportContract{
                 character_id,
@@ -3355,7 +3436,7 @@ pub struct DbUpdate {
     character_capability: __sdk::TableUpdate<CharacterCapability>,
     character_condition: __sdk::TableUpdate<CharacterCondition>,
     character_death: __sdk::TableUpdate<CharacterDeath>,
-    character_equip: __sdk::TableUpdate<CharacterEquip>,
+    character_equipped_item: __sdk::TableUpdate<CharacterEquippedItem>,
     character_filth: __sdk::TableUpdate<CharacterFilth>,
     character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
@@ -3368,6 +3449,7 @@ pub struct DbUpdate {
     character_time: __sdk::TableUpdate<CharacterTime>,
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
+    equipment_occupancy: __sdk::TableUpdate<EquipmentOccupancy>,
     food_lot: __sdk::TableUpdate<FoodLot>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_item_amount: __sdk::TableUpdate<InventoryItemAmount>,
@@ -3587,9 +3669,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_death" => db_update
                     .character_death
                     .append(character_death_table::parse_table_update(table_update)?),
-                "character_equip" => db_update
-                    .character_equip
-                    .append(character_equip_table::parse_table_update(table_update)?),
+                "character_equipped_item" => db_update.character_equipped_item.append(
+                    character_equipped_item_table::parse_table_update(table_update)?,
+                ),
                 "character_filth" => db_update
                     .character_filth
                     .append(character_filth_table::parse_table_update(table_update)?),
@@ -3628,6 +3710,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
+                "equipment_occupancy" => db_update
+                    .equipment_occupancy
+                    .append(equipment_occupancy_table::parse_table_update(table_update)?),
                 "food_lot" => db_update
                     .food_lot
                     .append(food_lot_table::parse_table_update(table_update)?),
@@ -3843,9 +3928,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character_death = cache
             .apply_diff_to_table::<CharacterDeath>("character_death", &self.character_death)
             .with_updates_by_pk(|row| &row.character_id);
-        diff.character_equip = cache
-            .apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip)
-            .with_updates_by_pk(|row| &row.character_id);
+        diff.character_equipped_item = cache
+            .apply_diff_to_table::<CharacterEquippedItem>(
+                "character_equipped_item",
+                &self.character_equipped_item,
+            )
+            .with_updates_by_pk(|row| &row.inventory_item_id);
         diff.character_filth = cache
             .apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth)
             .with_updates_by_pk(|row| &row.id);
@@ -3894,6 +3982,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_training_schedule,
             )
             .with_updates_by_pk(|row| &row.character_id);
+        diff.equipment_occupancy = cache
+            .apply_diff_to_table::<EquipmentOccupancy>(
+                "equipment_occupancy",
+                &self.equipment_occupancy,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.food_lot = cache
             .apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot)
             .with_updates_by_pk(|row| &row.id);
@@ -4378,8 +4472,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_death" => db_update
                     .character_death
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_equip" => db_update
-                    .character_equip
+                "character_equipped_item" => db_update
+                    .character_equipped_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
@@ -4416,6 +4510,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "equipment_occupancy" => db_update
+                    .equipment_occupancy
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "food_lot" => db_update
                     .food_lot
@@ -4703,8 +4800,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_death" => db_update
                     .character_death
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_equip" => db_update
-                    .character_equip
+                "character_equipped_item" => db_update
+                    .character_equipped_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
@@ -4741,6 +4838,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "equipment_occupancy" => db_update
+                    .equipment_occupancy
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "food_lot" => db_update
                     .food_lot
@@ -4948,7 +5048,7 @@ pub struct AppliedDiff<'r> {
     character_capability: __sdk::TableAppliedDiff<'r, CharacterCapability>,
     character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
     character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
-    character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
+    character_equipped_item: __sdk::TableAppliedDiff<'r, CharacterEquippedItem>,
     character_filth: __sdk::TableAppliedDiff<'r, CharacterFilth>,
     character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
@@ -4961,6 +5061,7 @@ pub struct AppliedDiff<'r> {
     character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
+    equipment_occupancy: __sdk::TableAppliedDiff<'r, EquipmentOccupancy>,
     food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_item_amount: __sdk::TableAppliedDiff<'r, InventoryItemAmount>,
@@ -5237,9 +5338,9 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.character_death,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<CharacterEquip>(
-            "character_equip",
-            &self.character_equip,
+        callbacks.invoke_table_row_callbacks::<CharacterEquippedItem>(
+            "character_equipped_item",
+            &self.character_equipped_item,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterFilth>(
@@ -5300,6 +5401,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
             "connected_players",
             &self.connected_players,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<EquipmentOccupancy>(
+            "equipment_occupancy",
+            &self.equipment_occupancy,
             event,
         );
         callbacks.invoke_table_row_callbacks::<FoodLot>("food_lot", &self.food_lot, event);
@@ -6205,7 +6311,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_capability_table::register_table(client_cache);
         character_condition_table::register_table(client_cache);
         character_death_table::register_table(client_cache);
-        character_equip_table::register_table(client_cache);
+        character_equipped_item_table::register_table(client_cache);
         character_filth_table::register_table(client_cache);
         character_illness_status_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
@@ -6218,6 +6324,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_time_table::register_table(client_cache);
         character_training_schedule_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
+        equipment_occupancy_table::register_table(client_cache);
         food_lot_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_item_amount_table::register_table(client_cache);
@@ -6311,7 +6418,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_capability",
         "character_condition",
         "character_death",
-        "character_equip",
+        "character_equipped_item",
         "character_filth",
         "character_illness_status",
         "character_limbs",
@@ -6324,6 +6431,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_time",
         "character_training_schedule",
         "connected_players",
+        "equipment_occupancy",
         "food_lot",
         "inventory_item",
         "inventory_item_amount",

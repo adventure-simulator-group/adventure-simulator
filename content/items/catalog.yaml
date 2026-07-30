@@ -178,6 +178,13 @@
       },
       "kind": "armor",
       "slot": "head",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "head", "channel": "padding"}],
+          "protection": ["head"]
+        }]
+      },
       "coverage": 0.15,
       "resistance": 20,
       "padding": 35,
@@ -208,6 +215,13 @@
       },
       "kind": "armor",
       "slot": "chest",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "chest", "channel": "padding"}],
+          "protection": ["chest"]
+        }]
+      },
       "coverage": 0.6,
       "resistance": 60,
       "padding": 45,
@@ -238,6 +252,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.5,
       "reach_m": 0.95,
       "penetration": 1,
@@ -305,6 +320,17 @@
       },
       "kind": "armor",
       "slot": "head",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "head", "channel": "rigid_armor"},
+            {"location": "face", "channel": "rigid_armor"},
+            {"location": "neck", "channel": "rigid_armor"}
+          ],
+          "protection": ["head"]
+        }]
+      },
       "coverage": 0.75,
       "resistance": 95,
       "padding": 30,
@@ -335,6 +361,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.5,
       "reach_m": 0.4,
       "penetration": 1,
@@ -375,6 +402,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.2,
       "reach_m": 0.65,
       "penetration": 1,
@@ -428,6 +456,13 @@
       },
       "kind": "armor",
       "slot": "chest",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "chest", "channel": "rigid_armor"}],
+          "protection": ["chest"]
+        }]
+      },
       "coverage": 0.85,
       "resistance": 120,
       "padding": 45,
@@ -458,6 +493,13 @@
       },
       "kind": "armor",
       "slot": "chest",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "chest", "channel": "rigid_armor"}],
+          "protection": ["chest"]
+        }]
+      },
       "coverage": 0.8,
       "resistance": 100,
       "padding": 40,
@@ -488,6 +530,7 @@
       },
       "kind": "shield",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["shield"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
       "block": 1.5,
       "capabilities": {
         "durability": {
@@ -514,6 +557,16 @@
       },
       "kind": "armor",
       "slot": "head",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "head", "channel": "rigid_armor"},
+            {"location": "neck", "channel": "rigid_armor"}
+          ],
+          "protection": ["head"]
+        }]
+      },
       "coverage": 0.75,
       "resistance": 100,
       "padding": 30,
@@ -589,6 +642,17 @@
       },
       "kind": "armor",
       "slot": "head",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "head", "channel": "rigid_armor"},
+            {"location": "face", "channel": "rigid_armor"},
+            {"location": "neck", "channel": "rigid_armor"}
+          ],
+          "protection": ["head"]
+        }]
+      },
       "coverage": 0.9,
       "resistance": 110,
       "padding": 35,
@@ -619,6 +683,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.5,
       "reach_m": 0.7,
       "penetration": 0.1,
@@ -740,6 +805,13 @@
       },
       "kind": "armor",
       "slot": "chest",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "chest", "channel": "rigid_armor"}],
+          "protection": ["chest"]
+        }]
+      },
       "coverage": 0.9,
       "resistance": 120,
       "padding": 50,
@@ -796,6 +868,13 @@
       },
       "kind": "armor",
       "slot": "stomach",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "stomach", "channel": "rigid_armor"}],
+          "protection": ["stomach"]
+        }]
+      },
       "coverage": 0.7,
       "resistance": 95,
       "padding": 35,
@@ -826,6 +905,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.7,
       "reach_m": 0.75,
       "penetration": 0.5,
@@ -897,6 +977,20 @@
       },
       "kind": "armor",
       "slot": "any_leg",
+      "equipment": {
+        "placements": [
+          {
+            "id": "left",
+            "occupancy": [{"location": "left_leg", "channel": "rigid_armor"}],
+            "protection": ["left_leg"]
+          },
+          {
+            "id": "right",
+            "occupancy": [{"location": "right_leg", "channel": "rigid_armor"}],
+            "protection": ["right_leg"]
+          }
+        ]
+      },
       "coverage": 0.65,
       "resistance": 95,
       "padding": 25,
@@ -927,6 +1021,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.1,
       "reach_m": 2,
       "penetration": 2,
@@ -982,6 +1077,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1,
       "reach_m": 0.7,
       "penetration": 1,
@@ -1052,6 +1148,7 @@
       },
       "kind": "shield",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["shield"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
       "block": 3.5,
       "capabilities": {
         "durability": {
@@ -1078,6 +1175,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 2,
       "reach_m": 110,
       "penetration": 4,
@@ -1162,6 +1260,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.2,
       "reach_m": 130,
       "penetration": 1,
@@ -1232,6 +1331,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.5,
       "reach_m": 2.2,
       "penetration": 2,
@@ -1270,6 +1370,13 @@
       },
       "kind": "armor",
       "slot": "chest",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "chest", "channel": "rigid_armor"}],
+          "protection": ["chest"]
+        }]
+      },
       "coverage": 0.7,
       "resistance": 85,
       "padding": 35,
@@ -1300,6 +1407,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.5,
       "reach_m": 0.8,
       "penetration": 1,
@@ -1340,6 +1448,13 @@
       },
       "kind": "armor",
       "slot": "head",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "head", "channel": "rigid_armor"}],
+          "protection": ["head"]
+        }]
+      },
       "coverage": 0.6,
       "resistance": 90,
       "padding": 25,
@@ -1370,6 +1485,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1,
       "reach_m": 1.25,
       "penetration": 1,
@@ -1441,6 +1557,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 2,
       "reach_m": 80,
       "penetration": 4,
@@ -1478,6 +1595,25 @@
         "icon": "shirt"
       },
       "kind": "clothing",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "chest", "channel": "base_clothing"},
+            {"location": "stomach", "channel": "base_clothing"},
+            {"location": "left_arm", "channel": "base_clothing"},
+            {"location": "right_arm", "channel": "base_clothing"}
+          ],
+          "protection": ["chest", "stomach", "left_arm", "right_arm"]
+        }],
+        "protection": {
+          "coverage": 0.9,
+          "resistance": 2,
+          "padding": 4,
+          "flexibility": 1,
+          "range_of_motion": 0.98
+        }
+      },
       "capabilities": {
         "durability": {
           "quality": 1,
@@ -1503,6 +1639,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.8,
       "reach_m": 120,
       "penetration": 2,
@@ -1541,6 +1678,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.5,
       "reach_m": 1.25,
       "penetration": 1,
@@ -1593,6 +1731,20 @@
       },
       "kind": "armor",
       "slot": "any_leg",
+      "equipment": {
+        "placements": [
+          {
+            "id": "left",
+            "occupancy": [{"location": "left_leg", "channel": "flexible_armor"}],
+            "protection": ["left_leg"]
+          },
+          {
+            "id": "right",
+            "occupancy": [{"location": "right_leg", "channel": "flexible_armor"}],
+            "protection": ["right_leg"]
+          }
+        ]
+      },
       "coverage": 0.65,
       "resistance": 70,
       "padding": 30,
@@ -1623,6 +1775,16 @@
       },
       "kind": "armor",
       "slot": "head",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "head", "channel": "flexible_armor"},
+            {"location": "neck", "channel": "flexible_armor"}
+          ],
+          "protection": ["head"]
+        }]
+      },
       "coverage": 0.65,
       "resistance": 70,
       "padding": 30,
@@ -1653,6 +1815,13 @@
       },
       "kind": "armor",
       "slot": "chest",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "chest", "channel": "flexible_armor"}],
+          "protection": ["chest"]
+        }]
+      },
       "coverage": 0.75,
       "resistance": 70,
       "padding": 35,
@@ -1683,6 +1852,13 @@
       },
       "kind": "armor",
       "slot": "stomach",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "stomach", "channel": "flexible_armor"}],
+          "protection": ["stomach"]
+        }]
+      },
       "coverage": 0.65,
       "resistance": 70,
       "padding": 30,
@@ -1713,6 +1889,20 @@
       },
       "kind": "armor",
       "slot": "any_arm",
+      "equipment": {
+        "placements": [
+          {
+            "id": "left",
+            "occupancy": [{"location": "left_arm", "channel": "flexible_armor"}],
+            "protection": ["left_arm"]
+          },
+          {
+            "id": "right",
+            "occupancy": [{"location": "right_arm", "channel": "flexible_armor"}],
+            "protection": ["right_arm"]
+          }
+        ]
+      },
       "coverage": 0.65,
       "resistance": 70,
       "padding": 30,
@@ -1743,6 +1933,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.5,
       "reach_m": 90,
       "penetration": 1,
@@ -1781,6 +1972,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.2,
       "reach_m": 1,
       "penetration": 1,
@@ -1820,6 +2012,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.3,
       "reach_m": 4.2,
       "penetration": 2,
@@ -1858,6 +2051,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 2,
       "reach_m": 0.4,
       "penetration": 4,
@@ -1987,6 +2181,20 @@
       },
       "kind": "armor",
       "slot": "any_leg",
+      "equipment": {
+        "placements": [
+          {
+            "id": "left",
+            "occupancy": [{"location": "left_leg", "channel": "padding"}],
+            "protection": ["left_leg"]
+          },
+          {
+            "id": "right",
+            "occupancy": [{"location": "right_leg", "channel": "padding"}],
+            "protection": ["right_leg"]
+          }
+        ]
+      },
       "coverage": 0.45,
       "resistance": 50,
       "padding": 40,
@@ -2017,6 +2225,13 @@
       },
       "kind": "armor",
       "slot": "stomach",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "stomach", "channel": "padding"}],
+          "protection": ["stomach"]
+        }]
+      },
       "coverage": 0.45,
       "resistance": 50,
       "padding": 40,
@@ -2047,6 +2262,7 @@
       },
       "kind": "shield",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["shield"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
       "block": 5,
       "capabilities": {
         "durability": {
@@ -2098,6 +2314,20 @@
       },
       "kind": "armor",
       "slot": "any_arm",
+      "equipment": {
+        "placements": [
+          {
+            "id": "left",
+            "occupancy": [{"location": "left_arm", "channel": "padding"}],
+            "protection": ["left_arm"]
+          },
+          {
+            "id": "right",
+            "occupancy": [{"location": "right_arm", "channel": "padding"}],
+            "protection": ["right_arm"]
+          }
+        ]
+      },
       "coverage": 0.45,
       "resistance": 50,
       "padding": 40,
@@ -2128,6 +2358,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 2,
       "reach_m": 1.05,
       "penetration": 4,
@@ -2307,6 +2538,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 2,
       "reach_m": 0.4,
       "penetration": 4,
@@ -2390,6 +2622,7 @@
       },
       "kind": "shield",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["shield"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
       "block": 3,
       "capabilities": {
         "durability": {
@@ -2483,6 +2716,16 @@
       },
       "kind": "armor",
       "slot": "head",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "head", "channel": "rigid_armor"},
+            {"location": "neck", "channel": "rigid_armor"}
+          ],
+          "protection": ["head"]
+        }]
+      },
       "coverage": 0.8,
       "resistance": 100,
       "padding": 30,
@@ -2589,6 +2832,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.5,
       "reach_m": 60,
       "penetration": 2,
@@ -2749,6 +2993,7 @@
       },
       "kind": "shield",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["shield"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}]},
       "block": 2.5,
       "capabilities": {
         "durability": {
@@ -2775,6 +3020,13 @@
       },
       "kind": "armor",
       "slot": "stomach",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [{"location": "stomach", "channel": "rigid_armor"}],
+          "protection": ["stomach"]
+        }]
+      },
       "coverage": 0.75,
       "resistance": 100,
       "padding": 35,
@@ -2849,6 +3101,23 @@
       "presentation": {
         "icon": "plain-dagger"
       },
+      "equipment": {
+        "attachment_tags": ["weapon"],
+        "placements": [
+          {
+            "id": "left_hand",
+            "occupancy": [{"location": "left_hand", "channel": "held"}]
+          },
+          {
+            "id": "right_hand",
+            "occupancy": [{"location": "right_hand", "channel": "held"}]
+          },
+          {
+            "id": "attached",
+            "parents": [{"channel": "containment"}]
+          }
+        ]
+      },
       "kind": "weapon",
       "slot": "any_holding",
       "accuracy": 1.5,
@@ -2891,6 +3160,20 @@
       },
       "kind": "armor",
       "slot": "any_arm",
+      "equipment": {
+        "placements": [
+          {
+            "id": "left",
+            "occupancy": [{"location": "left_arm", "channel": "rigid_armor"}],
+            "protection": ["left_arm"]
+          },
+          {
+            "id": "right",
+            "occupancy": [{"location": "right_arm", "channel": "rigid_armor"}],
+            "protection": ["right_arm"]
+          }
+        ]
+      },
       "coverage": 0.65,
       "resistance": 95,
       "padding": 25,
@@ -2954,6 +3237,17 @@
       },
       "kind": "armor",
       "slot": "head",
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "head", "channel": "rigid_armor"},
+            {"location": "face", "channel": "rigid_armor"},
+            {"location": "neck", "channel": "rigid_armor"}
+          ],
+          "protection": ["head"]
+        }]
+      },
       "coverage": 0.9,
       "resistance": 105,
       "padding": 35,
@@ -2984,6 +3278,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.8,
       "reach_m": 1.8,
       "penetration": 0.1,
@@ -3022,6 +3317,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.7,
       "reach_m": 0.8,
       "penetration": 0.5,
@@ -3183,6 +3479,7 @@
       "presentation": {"icon": "broadsword"},
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.2,
       "reach_m": 0.85,
       "penetration": 0.8,
@@ -3203,6 +3500,7 @@
       "presentation": {"icon": "plain-dagger"},
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.5,
       "reach_m": 0.3,
       "penetration": 0.8,
@@ -3223,6 +3521,7 @@
       "presentation": {"icon": "spears"},
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 1.1,
       "reach_m": 2.0,
       "penetration": 1.4,
@@ -3247,6 +3546,7 @@
       },
       "kind": "weapon",
       "slot": "any_holding",
+      "equipment": {"attachment_tags": ["weapon"], "placements": [{"id": "left_hand", "occupancy": [{"location": "left_hand", "channel": "held"}]}, {"id": "right_hand", "occupancy": [{"location": "right_hand", "channel": "held"}]}, {"id": "contained", "parents": [{"channel": "containment"}]}]},
       "accuracy": 0.7,
       "reach_m": 1.8,
       "penetration": 1,
@@ -3392,6 +3692,123 @@
       "weight_kg": 0.3, "base_value": 27, "tags": ["book"],
       "presentation": {"icon": "hood"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "stealth"}, "quality": 1}}
+    },
+    {
+      "id": "leather_belt",
+      "display_name": "Leather belt",
+      "weight_kg": 0.35,
+      "base_value": 4,
+      "tags": ["clothing"],
+      "presentation": {"icon": "belt-armor"},
+      "equipment": {
+        "placements": [{
+          "id": "worn",
+          "occupancy": [
+            {"location": "left_belt", "channel": "accessory"},
+            {"location": "right_belt", "channel": "accessory"},
+            {"location": "front_belt", "channel": "accessory"},
+            {"location": "back_belt", "channel": "accessory"}
+          ]
+        }],
+        "attachment_points": [
+          {"id": "left", "channel": "mount", "capacity": 1, "order": 0, "accepts_tags": ["sheath", "bag"]},
+          {"id": "right", "channel": "mount", "capacity": 1, "order": 1, "accepts_tags": ["sheath", "bag"]},
+          {"id": "front", "channel": "mount", "capacity": 1, "order": 2, "accepts_tags": ["bag"]},
+          {"id": "back", "channel": "mount", "capacity": 1, "order": 3, "accepts_tags": ["bag"]}
+        ]
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "sword_sheath",
+      "display_name": "Sword sheath",
+      "weight_kg": 0.3,
+      "base_value": 5,
+      "tags": ["container"],
+      "presentation": {"icon": "sword-hilt"},
+      "equipment": {
+        "attachment_tags": ["sheath"],
+        "placements": [{
+          "id": "attached",
+          "parents": [
+            {"channel": "mount", "order": 0},
+            {"channel": "mount", "order": 1}
+          ]
+        }],
+        "attachment_points": [
+          {"id": "blade", "channel": "containment", "capacity": 1, "accepts_tags": ["weapon"]}
+        ]
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "leather_satchel",
+      "display_name": "Leather satchel",
+      "weight_kg": 0.7,
+      "base_value": 8,
+      "tags": ["container"],
+      "presentation": {"icon": "knapsack"},
+      "equipment": {
+        "attachment_tags": ["bag"],
+        "placements": [
+          {"id": "belt_left", "parents": [{"channel": "mount", "order": 0}]},
+          {"id": "belt_right", "parents": [{"channel": "mount", "order": 1}]},
+          {"id": "belt_front", "parents": [{"channel": "mount", "order": 2}]},
+          {"id": "belt_back", "parents": [{"channel": "mount", "order": 3}]},
+          {
+            "id": "left_shoulder",
+            "occupancy": [
+              {"location": "left_shoulder", "channel": "accessory", "order": 0}
+            ]
+          },
+          {
+            "id": "right_shoulder",
+            "occupancy": [
+              {"location": "right_shoulder", "channel": "accessory", "order": 0}
+            ]
+          }
+        ],
+        "attachment_points": [
+          {"id": "contents", "channel": "containment", "capacity": 20}
+        ]
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "forearm_holster",
+      "display_name": "Forearm holster",
+      "weight_kg": 0.25,
+      "base_value": 5,
+      "tags": ["container"],
+      "presentation": {"icon": "bracer"},
+      "equipment": {
+        "placements": [
+          {"id": "left", "occupancy": [{"location": "left_arm", "channel": "mount"}]},
+          {"id": "right", "occupancy": [{"location": "right_arm", "channel": "mount"}]}
+        ],
+        "attachment_points": [
+          {"id": "weapon", "channel": "containment", "capacity": 1, "accepts_tags": ["weapon"]}
+        ]
+      },
+      "kind": "simple"
+    },
+    {
+      "id": "boot_sheath",
+      "display_name": "Boot sheath",
+      "weight_kg": 0.2,
+      "base_value": 4,
+      "tags": ["container"],
+      "presentation": {"icon": "greaves"},
+      "equipment": {
+        "placements": [
+          {"id": "left", "occupancy": [{"location": "left_foot", "channel": "mount"}]},
+          {"id": "right", "occupancy": [{"location": "right_foot", "channel": "mount"}]}
+        ],
+        "attachment_points": [
+          {"id": "weapon", "channel": "containment", "capacity": 1, "accepts_tags": ["weapon"]}
+        ]
+      },
+      "kind": "simple"
     }
   ]
 }

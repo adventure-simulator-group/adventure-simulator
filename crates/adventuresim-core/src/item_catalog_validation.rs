@@ -248,6 +248,7 @@ fn validate_item(
             "base_value",
             "tags",
             "presentation",
+            "equipment",
             "kind",
             "slot",
             "block",
@@ -419,6 +420,13 @@ fn validate_item(
             finite_in(item, field, 0.0, 1_000_000.0, file, &path, errors);
         }
     }
+    match item.get("equipment") {
+        Some(value) => validate_equipment(value, file, &path, kind, errors),
+        None if matches!(kind, "armor" | "clothing") => errors.push(format!(
+            "{file}: {path}.equipment: armor and clothing require explicit placement and protection mappings"
+        )),
+        None => {}
+    }
     if !matches!(kind, "weapon" | "armor" | "shield" | "container") && item.contains_key("slot") {
         errors.push(format!("{file}: {path}.slot: kind does not accept a slot"));
     }
@@ -427,6 +435,357 @@ fn validate_item(
             validate_capabilities(capabilities, file, &path, kind, errors);
         } else {
             errors.push(format!("{file}: {path}.capabilities: must be an object"));
+        }
+    }
+}
+
+fn validate_equipment(
+    value: &Value,
+    file: &str,
+    item_path: &str,
+    item_kind: &str,
+    errors: &mut Vec<String>,
+) {
+    let path = format!("{item_path}.equipment");
+    let Some(equipment) = value.as_object() else {
+        errors.push(format!("{file}: {path}: must be an object"));
+        return;
+    };
+    reject_unknown(
+        equipment,
+        &[
+            "attachment_tags",
+            "placements",
+            "protection",
+            "attachment_points",
+        ],
+        file,
+        &path,
+        errors,
+    );
+    let valid_locations: BTreeSet<_> = [
+        "head",
+        "face",
+        "neck",
+        "chest",
+        "stomach",
+        "back",
+        "left_shoulder",
+        "right_shoulder",
+        "left_arm",
+        "right_arm",
+        "left_hand",
+        "right_hand",
+        "left_leg",
+        "right_leg",
+        "left_foot",
+        "right_foot",
+        "left_belt",
+        "right_belt",
+        "front_belt",
+        "back_belt",
+        "left_pocket",
+        "right_pocket",
+        "back_left_pocket",
+        "back_right_pocket",
+    ]
+    .into_iter()
+    .collect();
+    let valid_channels: BTreeSet<_> = [
+        "held",
+        "base_clothing",
+        "padding",
+        "flexible_armor",
+        "rigid_armor",
+        "outerwear",
+        "accessory",
+        "mount",
+        "containment",
+    ]
+    .into_iter()
+    .collect();
+    match equipment.get("placements").and_then(Value::as_array) {
+        Some(placements) if !placements.is_empty() => {
+            let mut placement_ids = BTreeSet::new();
+            for (index, placement) in placements.iter().enumerate() {
+                let Some(placement) = placement.as_object() else {
+                    errors.push(format!(
+                        "{file}: {path}.placements.{index}: must be an object"
+                    ));
+                    continue;
+                };
+                let placement_path = format!("{path}.placements.{index}");
+                reject_unknown(
+                    placement,
+                    &["id", "occupancy", "parents", "protection"],
+                    file,
+                    &placement_path,
+                    errors,
+                );
+                let id = placement.get("id").and_then(Value::as_str).unwrap_or("");
+                if !valid_id(id) || !placement_ids.insert(id) {
+                    errors.push(format!(
+                        "{file}: {placement_path}.id: must be a unique stable ID"
+                    ));
+                }
+                let parents = placement
+                    .get("parents")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                let occupancy = placement
+                    .get("occupancy")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                if occupancy.is_empty() && parents.is_empty() {
+                    errors.push(format!(
+                        "{file}: {placement_path}: must have at least one physical occupancy or parent requirement"
+                    ));
+                }
+                let mut occupied = BTreeSet::new();
+                for (occupancy_index, requirement) in occupancy.iter().enumerate() {
+                    let Some(requirement) = requirement.as_object() else {
+                        errors.push(format!(
+                            "{file}: {placement_path}.occupancy.{occupancy_index}: must be an object"
+                        ));
+                        continue;
+                    };
+                    reject_unknown(
+                        requirement,
+                        &["location", "channel", "order"],
+                        file,
+                        &format!("{placement_path}.occupancy.{occupancy_index}"),
+                        errors,
+                    );
+                    let location = requirement
+                        .get("location")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let channel = requirement
+                        .get("channel")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if !valid_locations.contains(location) {
+                        errors.push(format!(
+                            "{file}: {placement_path}.occupancy.{occupancy_index}.location: invalid location"
+                        ));
+                    }
+                    if !valid_channels.contains(channel) {
+                        errors.push(format!(
+                            "{file}: {placement_path}.occupancy.{occupancy_index}.channel: invalid channel"
+                        ));
+                    }
+                    let order = requirement
+                        .get("order")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                    if matches!(
+                        channel,
+                        "held"
+                            | "base_clothing"
+                            | "padding"
+                            | "flexible_armor"
+                            | "rigid_armor"
+                            | "outerwear"
+                    ) && order != 0
+                    {
+                        errors.push(format!(
+                            "{file}: {placement_path}.occupancy.{occupancy_index}.order: singleton channel requires order 0"
+                        ));
+                    }
+                    if order > u16::MAX.into() || !occupied.insert((location, channel, order)) {
+                        errors.push(format!(
+                            "{file}: {placement_path}.occupancy.{occupancy_index}: duplicate or invalid ordered occupancy"
+                        ));
+                    }
+                }
+                for (parent_index, parent) in parents.iter().enumerate() {
+                    let Some(parent) = parent.as_object() else {
+                        errors.push(format!(
+                            "{file}: {placement_path}.parents.{parent_index}: must be an object"
+                        ));
+                        continue;
+                    };
+                    reject_unknown(
+                        parent,
+                        &["channel", "order"],
+                        file,
+                        &format!("{placement_path}.parents.{parent_index}"),
+                        errors,
+                    );
+                    if !parent
+                        .get("channel")
+                        .and_then(Value::as_str)
+                        .is_some_and(|channel| valid_channels.contains(channel))
+                    {
+                        errors.push(format!(
+                            "{file}: {placement_path}.parents.{parent_index}.channel: invalid channel"
+                        ));
+                    }
+                }
+                let mut protected = BTreeSet::new();
+                for body_part in placement
+                    .get("protection")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    match body_part.as_str() {
+                        Some(part)
+                            if matches!(
+                                part,
+                                "left_arm"
+                                    | "right_arm"
+                                    | "left_leg"
+                                    | "right_leg"
+                                    | "chest"
+                                    | "stomach"
+                                    | "head"
+                            ) && protected.insert(part) => {}
+                        Some(part) => errors.push(format!(
+                            "{file}: {placement_path}.protection: duplicate or invalid body part {part:?}"
+                        )),
+                        None => errors.push(format!(
+                            "{file}: {placement_path}.protection: body parts must be strings"
+                        )),
+                    }
+                }
+                if matches!(item_kind, "armor" | "clothing") && protected.is_empty() {
+                    errors.push(format!(
+                        "{file}: {placement_path}.protection: armor and clothing require at least one explicit body part"
+                    ));
+                }
+                if !protected.is_empty()
+                    && item_kind != "armor"
+                    && equipment.get("protection").is_none()
+                {
+                    errors.push(format!(
+                        "{file}: {placement_path}.protection: non-armor protection requires equipment.protection stats"
+                    ));
+                }
+            }
+        }
+        _ => errors.push(format!(
+            "{file}: {path}.placements: required non-empty array"
+        )),
+    }
+    for field in ["attachment_tags"] {
+        if let Some(tags) = equipment.get(field).and_then(Value::as_array) {
+            for tag in tags {
+                if !tag.as_str().is_some_and(valid_id) {
+                    errors.push(format!("{file}: {path}.{field}: invalid attachment tag"));
+                }
+            }
+        }
+    }
+    if let Some(protection) = equipment.get("protection").and_then(Value::as_object) {
+        if item_kind == "armor" {
+            errors.push(format!(
+                "{file}: {path}.protection: armor stats belong only in the armor kind payload"
+            ));
+        }
+        reject_unknown(
+            protection,
+            &[
+                "coverage",
+                "resistance",
+                "padding",
+                "flexibility",
+                "range_of_motion",
+            ],
+            file,
+            &format!("{path}.protection"),
+            errors,
+        );
+        finite_in(
+            protection,
+            "coverage",
+            0.0,
+            1.0,
+            file,
+            &format!("{path}.protection"),
+            errors,
+        );
+        for field in ["flexibility", "range_of_motion"] {
+            if !protection.contains_key(field) {
+                continue;
+            }
+            finite_in(
+                protection,
+                field,
+                0.0,
+                1.0,
+                file,
+                &format!("{path}.protection"),
+                errors,
+            );
+        }
+        for field in ["resistance", "padding"] {
+            if !protection.contains_key(field) {
+                continue;
+            }
+            finite_in(
+                protection,
+                field,
+                0.0,
+                1_000_000.0,
+                file,
+                &format!("{path}.protection"),
+                errors,
+            );
+        }
+    }
+    if let Some(points) = equipment.get("attachment_points").and_then(Value::as_array) {
+        let mut ids = BTreeSet::new();
+        for (index, point) in points.iter().enumerate() {
+            let Some(point) = point.as_object() else {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}: must be an object"
+                ));
+                continue;
+            };
+            reject_unknown(
+                point,
+                &["id", "channel", "capacity", "order", "accepts_tags"],
+                file,
+                &format!("{path}.attachment_points.{index}"),
+                errors,
+            );
+            let id = point.get("id").and_then(Value::as_str).unwrap_or("");
+            if !valid_id(id) || !ids.insert(id) {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}.id: invalid or duplicate"
+                ));
+            }
+            if !point
+                .get("channel")
+                .and_then(Value::as_str)
+                .is_some_and(|channel| valid_channels.contains(channel))
+            {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}.channel: invalid"
+                ));
+            }
+            if point
+                .get("capacity")
+                .and_then(Value::as_u64)
+                .is_none_or(|capacity| capacity == 0 || capacity > u16::MAX.into())
+            {
+                errors.push(format!(
+                    "{file}: {path}.attachment_points.{index}.capacity: expected 1..={}",
+                    u16::MAX
+                ));
+            }
+            if let Some(tags) = point.get("accepts_tags").and_then(Value::as_array) {
+                for tag in tags {
+                    if !tag.as_str().is_some_and(valid_id) {
+                        errors.push(format!(
+                            "{file}: {path}.attachment_points.{index}.accepts_tags: invalid tag"
+                        ));
+                    }
+                }
+            }
         }
     }
 }
@@ -1020,5 +1379,113 @@ mod tests {
             &mut errors,
         );
         assert!(errors.iter().any(|error| error.contains("legal quality")));
+    }
+
+    #[test]
+    fn equipment_placements_allow_mixed_anchors_and_reject_unknown_locations() {
+        let mut item = valid_item("bad_sleeve");
+        item.as_object_mut().unwrap().extend([
+            ("kind".into(), json!("clothing")),
+            (
+                "equipment".into(),
+                json!({
+                    "placements": [
+                        {
+                            "id": "bad",
+                            "occupancy": [{"location": "dragon_wing", "channel": "padding"}],
+                            "parents": [{"channel": "mount"}]
+                        }
+                    ]
+                }),
+            ),
+        ]);
+        let error =
+            validate_documents(&[document(vec![item])], &["equipment.yaml".into()]).unwrap_err();
+        assert!(!error.contains("at least one physical occupancy or parent requirement"));
+        assert!(error.contains("invalid location"));
+    }
+
+    #[test]
+    fn explicit_sided_placement_deserializes_as_two_atomic_alternatives() {
+        let mut item = valid_item("good_sleeve");
+        item.as_object_mut().unwrap().extend([
+            ("kind".into(), json!("clothing")),
+            (
+                "equipment".into(),
+                json!({
+                    "placements": [
+                        {
+                            "id": "left",
+                            "occupancy": [{"location": "left_arm", "channel": "base_clothing"}],
+                            "protection": ["left_arm"]
+                        },
+                        {
+                            "id": "right",
+                            "occupancy": [{"location": "right_arm", "channel": "base_clothing"}],
+                            "protection": ["right_arm"]
+                        }
+                    ],
+                    "protection": {"coverage": 0.8, "padding": 2.0, "resistance": 1.0}
+                }),
+            ),
+        ]);
+        let documents = [document(vec![item])];
+        let equipment_value = documents[0]["items"][0]["equipment"].clone();
+        let mut errors = Vec::new();
+        validate_equipment(
+            &equipment_value,
+            "equipment.yaml",
+            "items.0",
+            "clothing",
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "{errors:#?}");
+        let compiled: crate::item_catalog_schema::ItemCatalogDocument =
+            serde_json::from_value(documents[0].clone()).expect("typed catalog");
+        let equipment = compiled.items[0].equipment.as_ref().expect("equipment");
+        assert_eq!(equipment.placements.len(), 2);
+        assert_eq!(
+            equipment.placements[0].occupancy[0].location,
+            crate::item_catalog_schema::EquipmentLocation::LeftArm
+        );
+    }
+
+    #[test]
+    fn protection_defaults_are_safe_and_singleton_channels_reject_nonzero_order() {
+        let mut item = valid_item("defaulted_clothing");
+        item.as_object_mut().unwrap().extend([
+            ("kind".into(), json!("clothing")),
+            (
+                "equipment".into(),
+                json!({
+                    "placements": [{
+                        "id": "worn",
+                        "occupancy": [{
+                            "location": "chest",
+                            "channel": "base_clothing"
+                        }],
+                        "protection": ["chest"]
+                    }],
+                    "protection": {"coverage": 0.5}
+                }),
+            ),
+        ]);
+        let documents = [document(vec![item.clone()])];
+        let compiled: crate::item_catalog_schema::ItemCatalogDocument =
+            serde_json::from_value(documents[0].clone()).expect("typed catalog");
+        let protection = compiled.items[0]
+            .equipment
+            .as_ref()
+            .and_then(|equipment| equipment.protection)
+            .expect("protection");
+        assert_eq!(protection.padding, 0.0);
+        assert_eq!(protection.resistance, 0.0);
+        assert_eq!(protection.flexibility, 1.0);
+        assert_eq!(protection.range_of_motion, 1.0);
+
+        item["equipment"]["placements"][0]["occupancy"][0]["order"] = json!(1);
+        let error =
+            validate_documents(&[document(vec![item])], &["equipment.yaml".into()]).unwrap_err();
+        assert!(error.contains("singleton channel requires order 0"));
     }
 }

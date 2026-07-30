@@ -1,6 +1,7 @@
 use adventuresim_core::{
-    equipment::EncumbranceSummary,
+    equipment::{EncumbranceSummary, INPUT_ADDRESS_MAPPINGS, InputAddressMapping},
     herbalism::{CraftOutcome, PreparationMethod},
+    item_catalog_schema::EquipmentLocation as CoreEquipmentLocation,
     skill::Skill,
 };
 use maud::{Markup, html};
@@ -18,14 +19,15 @@ use super::{
     },
 };
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCondition, CharacterEquip, CharacterLimbs,
-    CharacterSkills, CharacterStats, FoodLot, InventoryItem, InventoryItemAmount,
-    InventoryQuantityTarget, ItemDefinition, ItemSlot, PartyInventoryItem, Settlement,
+    Character, CharacterAttributes, CharacterCondition, CharacterEquipmentGraph, CharacterLimbs,
+    CharacterSkills, CharacterStats, EquipmentBodyPart, EquipmentChannel, EquipmentLocation,
+    FoodLot, InventoryItem, InventoryItemAmount, InventoryQuantityTarget, ItemDefinition,
+    PartyInventoryItem, Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
-    empty_state, game_icon, item_display_name, item_source_edit_url, item_type_header,
-    item_type_icon, settlement_layout_with_session, sidebar_section,
+    empty_state, game_icon, item_display_name, item_icon_name, item_source_edit_url,
+    item_type_header, item_type_icon, settlement_layout_with_session, sidebar_section,
 };
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -228,8 +230,8 @@ pub fn party_inventory_page(
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
     party_members: &[Character],
-    selected_equip: Option<&CharacterEquip>,
-    active_equip: Option<&CharacterEquip>,
+    selected_equip: Option<&CharacterEquipmentGraph>,
+    active_equip: Option<&CharacterEquipmentGraph>,
     selected_targets: &[InventoryQuantityTarget],
     active_targets: &[InventoryQuantityTarget],
     selected_encumbrance: EncumbranceSummary,
@@ -265,7 +267,7 @@ pub fn party_discard_page(
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
     party_members: &[Character],
-    equip: Option<&CharacterEquip>,
+    equip: Option<&CharacterEquipmentGraph>,
     encumbrance: EncumbranceSummary,
 ) -> Markup {
     let content = html! {
@@ -791,7 +793,7 @@ fn party_trade_inventory_rail(
     food_lots: &[FoodLot],
     recipient_id: u64,
     direction: &str,
-    equip: Option<&CharacterEquip>,
+    equip: Option<&CharacterEquipmentGraph>,
     recipient_targets: &[InventoryQuantityTarget],
     encumbrance: EncumbranceSummary,
     medication_is_self: bool,
@@ -805,7 +807,7 @@ fn party_trade_inventory_rail(
                 } @else {
                     (trade_inventory_table(if direction == "left" { "party-transfer-right" } else { "party-transfer-left" }, InventoryColumnSet::All, true, true, false, html! {
                         @for item in inventory {
-                            @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                            @let is_equipped = equip.is_some_and(|equip| equip.contains(item.id));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                             @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
@@ -824,7 +826,7 @@ fn party_trade_inventory_rail(
                                         }
                                     }
                                     td class="inventory-count" { (item.qty) }
-                                    td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped, medication_is_self)) }
+                                    td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, medication_is_self, equip)) }
                                     td class="inventory-weight" { (item_weight(definition)) }
                                     td class="inventory-gold" { (item_value(definition)) }
                                 }
@@ -841,7 +843,7 @@ fn discard_inventory_rail(
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
-    equip: Option<&CharacterEquip>,
+    equip: Option<&CharacterEquipmentGraph>,
     encumbrance: EncumbranceSummary,
 ) -> Markup {
     let title = format!("{}'s inventory", character.name);
@@ -853,7 +855,7 @@ fn discard_inventory_rail(
                 } @else {
                     (trade_inventory_table("discard-right", InventoryColumnSet::All, true, true, false, html! {
                         @for item in inventory {
-                            @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                            @let is_equipped = equip.is_some_and(|equip| equip.contains(item.id));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                             @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
@@ -878,7 +880,7 @@ fn discard_inventory_rail(
                                     }
                                 }
                                 td class="inventory-count" { (item.qty) }
-                                td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped, true)) }
+                                td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, true, equip)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
                             }
@@ -897,7 +899,7 @@ pub fn live_merchant_shop_page(
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
     party_members: &[Character],
-    equip: Option<&CharacterEquip>,
+    equip: Option<&CharacterEquipmentGraph>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
     pooled: &[PartyInventoryItem],
@@ -1009,7 +1011,7 @@ pub fn live_merchant_shop_page(
                         @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                         @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
-                        @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                        @let is_equipped = equip.is_some_and(|equip| equip.contains(item.id));
                         @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language), -problem_sell_penalty_bps);
                         @let target = target_quantity(personal_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
@@ -1020,7 +1022,7 @@ pub fn live_merchant_shop_page(
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                         td class="inventory-item-name" { (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
-                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped, true)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
+                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_control(item, definition, is_equipped, true, equip)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
@@ -1028,7 +1030,12 @@ pub fn live_merchant_shop_page(
                             td class="inventory-item-type" { (item_type_icon(&target.item_id)) }
                             td class="inventory-item-name" { (item_name_with_quality(&target.item_id, definition)) }
                             td class="inventory-count" { (quantity_target_control(0, target.quantity, &target.item_id, false)) }
-                            td class="inventory-equipped" { input type="checkbox" disabled; }
+                            td class="inventory-equipped" {
+                                button type="button" class="equipment-slot-control" disabled
+                                    aria-label="No equipment in this row" {
+                                    span class="equipment-slot-empty" aria-hidden="true" { "—" }
+                                }
+                            }
                             td class="inventory-durability" { "—" }
                             td class="inventory-weight" { (item_weight(definition)) }
                             td class="inventory-gold" { (item_value(definition)) }
@@ -1110,7 +1117,7 @@ pub fn party_pool_page(
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
     party_members: &[Character],
-    equip: Option<&CharacterEquip>,
+    equip: Option<&CharacterEquipmentGraph>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
     party_encumbrance: EncumbranceSummary,
@@ -1163,7 +1170,7 @@ pub fn party_pool_page(
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                             @let food_display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
-                            @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
+                            @let equipped = equip.is_some_and(|equip| equip.contains(item.id));
                             @let target = target_quantity(party_targets, &item.item_id);
                             @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
                             @let item_name = item_display_name(&item.item_id);
@@ -1180,7 +1187,7 @@ pub fn party_pool_page(
                                     }
                                 }
                                 td class="inventory-count" { (quantity_target_control(item.qty, target_quantity(personal_targets, &item.item_id), &item.item_id, false)) }
-                                td class="inventory-equipped" { (equipment_checkbox(item, definition, equipped, true)) }
+                                td class="inventory-equipped" { (equipment_control(item, definition, equipped, true, equip)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
                                 td class="inventory-gold" { (item_value(definition)) }
                             }
@@ -1272,19 +1279,619 @@ fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
     }
 }
 
-fn equipment_checkbox(
+fn equipment_target_is_self_or_descendant(
+    equip: &CharacterEquipmentGraph,
+    moving_inventory_item_id: u64,
+    candidate_parent_id: u64,
+) -> bool {
+    let mut ancestors = vec![candidate_parent_id];
+    let mut visited = std::collections::BTreeSet::new();
+    while let Some(item_id) = ancestors.pop() {
+        if item_id == moving_inventory_item_id {
+            return true;
+        }
+        if visited.insert(item_id) {
+            ancestors.extend(
+                equip
+                    .equipment_occupancies
+                    .iter()
+                    .filter(|row| row.inventory_item_id == item_id)
+                    .filter_map(|row| row.parent_inventory_item_id),
+            );
+        }
+    }
+    false
+}
+
+fn web_equipment_location(location: CoreEquipmentLocation) -> EquipmentLocation {
+    match location {
+        CoreEquipmentLocation::Head => EquipmentLocation::Head,
+        CoreEquipmentLocation::Face => EquipmentLocation::Face,
+        CoreEquipmentLocation::Neck => EquipmentLocation::Neck,
+        CoreEquipmentLocation::Chest => EquipmentLocation::Chest,
+        CoreEquipmentLocation::Stomach => EquipmentLocation::Stomach,
+        CoreEquipmentLocation::Back => EquipmentLocation::Back,
+        CoreEquipmentLocation::LeftShoulder => EquipmentLocation::LeftShoulder,
+        CoreEquipmentLocation::RightShoulder => EquipmentLocation::RightShoulder,
+        CoreEquipmentLocation::LeftArm => EquipmentLocation::LeftArm,
+        CoreEquipmentLocation::RightArm => EquipmentLocation::RightArm,
+        CoreEquipmentLocation::LeftHand => EquipmentLocation::LeftHand,
+        CoreEquipmentLocation::RightHand => EquipmentLocation::RightHand,
+        CoreEquipmentLocation::LeftLeg => EquipmentLocation::LeftLeg,
+        CoreEquipmentLocation::RightLeg => EquipmentLocation::RightLeg,
+        CoreEquipmentLocation::LeftFoot => EquipmentLocation::LeftFoot,
+        CoreEquipmentLocation::RightFoot => EquipmentLocation::RightFoot,
+        CoreEquipmentLocation::LeftBelt => EquipmentLocation::LeftBelt,
+        CoreEquipmentLocation::RightBelt => EquipmentLocation::RightBelt,
+        CoreEquipmentLocation::FrontBelt => EquipmentLocation::FrontBelt,
+        CoreEquipmentLocation::BackBelt => EquipmentLocation::BackBelt,
+        CoreEquipmentLocation::LeftPocket => EquipmentLocation::LeftPocket,
+        CoreEquipmentLocation::RightPocket => EquipmentLocation::RightPocket,
+        CoreEquipmentLocation::BackLeftPocket => EquipmentLocation::BackLeftPocket,
+        CoreEquipmentLocation::BackRightPocket => EquipmentLocation::BackRightPocket,
+    }
+}
+
+fn equipment_input_display(input: &str) -> String {
+    if input == "tab" {
+        "Tab".to_owned()
+    } else {
+        input.to_ascii_uppercase()
+    }
+}
+
+fn equipment_location_display(location: CoreEquipmentLocation) -> &'static str {
+    match location {
+        CoreEquipmentLocation::Head => "Head",
+        CoreEquipmentLocation::Face => "Face",
+        CoreEquipmentLocation::Neck => "Neck",
+        CoreEquipmentLocation::Chest => "Chest",
+        CoreEquipmentLocation::Stomach => "Stomach",
+        CoreEquipmentLocation::Back => "Back",
+        CoreEquipmentLocation::LeftShoulder => "Left shoulder",
+        CoreEquipmentLocation::RightShoulder => "Right shoulder",
+        CoreEquipmentLocation::LeftArm => "Left arm",
+        CoreEquipmentLocation::RightArm => "Right arm",
+        CoreEquipmentLocation::LeftHand => "Left hand",
+        CoreEquipmentLocation::RightHand => "Right hand",
+        CoreEquipmentLocation::LeftLeg => "Left leg",
+        CoreEquipmentLocation::RightLeg => "Right leg",
+        CoreEquipmentLocation::LeftFoot => "Left foot",
+        CoreEquipmentLocation::RightFoot => "Right foot",
+        CoreEquipmentLocation::LeftBelt => "Left belt",
+        CoreEquipmentLocation::RightBelt => "Right belt",
+        CoreEquipmentLocation::FrontBelt => "Front belt",
+        CoreEquipmentLocation::BackBelt => "Back belt",
+        CoreEquipmentLocation::LeftPocket => "Left pocket",
+        CoreEquipmentLocation::RightPocket => "Right pocket",
+        CoreEquipmentLocation::BackLeftPocket => "Back-left pocket",
+        CoreEquipmentLocation::BackRightPocket => "Back-right pocket",
+    }
+}
+
+fn equipped_location_display(location: EquipmentLocation) -> &'static str {
+    match location {
+        EquipmentLocation::Head => "Head",
+        EquipmentLocation::Face => "Face",
+        EquipmentLocation::Neck => "Neck",
+        EquipmentLocation::Chest => "Chest",
+        EquipmentLocation::Stomach => "Stomach",
+        EquipmentLocation::Back => "Back",
+        EquipmentLocation::LeftShoulder => "Left shoulder",
+        EquipmentLocation::RightShoulder => "Right shoulder",
+        EquipmentLocation::LeftArm => "Left arm",
+        EquipmentLocation::RightArm => "Right arm",
+        EquipmentLocation::LeftHand => "Left hand",
+        EquipmentLocation::RightHand => "Right hand",
+        EquipmentLocation::LeftLeg => "Left leg",
+        EquipmentLocation::RightLeg => "Right leg",
+        EquipmentLocation::LeftFoot => "Left foot",
+        EquipmentLocation::RightFoot => "Right foot",
+        EquipmentLocation::LeftBelt => "Left belt",
+        EquipmentLocation::RightBelt => "Right belt",
+        EquipmentLocation::FrontBelt => "Front belt",
+        EquipmentLocation::BackBelt => "Back belt",
+        EquipmentLocation::LeftPocket => "Left pocket",
+        EquipmentLocation::RightPocket => "Right pocket",
+        EquipmentLocation::BackLeftPocket => "Back-left pocket",
+        EquipmentLocation::BackRightPocket => "Back-right pocket",
+    }
+}
+
+fn equipment_body_part_display(part: EquipmentBodyPart) -> &'static str {
+    match part {
+        EquipmentBodyPart::LeftArm => "Left Arm",
+        EquipmentBodyPart::RightArm => "Right Arm",
+        EquipmentBodyPart::LeftLeg => "Left Leg",
+        EquipmentBodyPart::RightLeg => "Right Leg",
+        EquipmentBodyPart::Chest => "Chest",
+        EquipmentBodyPart::Stomach => "Stomach",
+        EquipmentBodyPart::Head => "Head",
+    }
+}
+
+fn equipment_channel_rank(channel: EquipmentChannel) -> u64 {
+    match channel {
+        EquipmentChannel::Held => 0,
+        EquipmentChannel::BaseClothing => 10,
+        EquipmentChannel::Padding => 20,
+        EquipmentChannel::FlexibleArmor => 30,
+        EquipmentChannel::RigidArmor => 40,
+        EquipmentChannel::Outerwear => 50,
+        EquipmentChannel::Accessory => 60,
+        EquipmentChannel::Mount => 70,
+        EquipmentChannel::Containment => 80,
+    }
+}
+
+fn equipment_binding_contains(binding: &InputAddressMapping, location: EquipmentLocation) -> bool {
+    binding
+        .locations
+        .iter()
+        .copied()
+        .map(web_equipment_location)
+        .any(|candidate| candidate == location)
+}
+
+fn equipment_item_roots(
+    equip: &CharacterEquipmentGraph,
+    inventory_item_id: u64,
+) -> Vec<(EquipmentLocation, EquipmentChannel, u16, usize)> {
+    fn visit(
+        equip: &CharacterEquipmentGraph,
+        inventory_item_id: u64,
+        attachment_depth: usize,
+        path: &mut std::collections::BTreeSet<u64>,
+        roots: &mut Vec<(EquipmentLocation, EquipmentChannel, u16, usize)>,
+    ) {
+        if !path.insert(inventory_item_id) {
+            return;
+        }
+        for row in equip
+            .equipment_occupancies
+            .iter()
+            .filter(|row| row.inventory_item_id == inventory_item_id)
+        {
+            if let Some(location) = row.location {
+                roots.push((location, row.channel, row.order, attachment_depth));
+            } else if let Some(parent_id) = row.parent_inventory_item_id {
+                visit(equip, parent_id, attachment_depth + 1, path, roots);
+            }
+        }
+        path.remove(&inventory_item_id);
+    }
+
+    let mut roots = Vec::new();
+    visit(
+        equip,
+        inventory_item_id,
+        0,
+        &mut std::collections::BTreeSet::new(),
+        &mut roots,
+    );
+    roots
+}
+
+fn equipment_binding_rank(
+    binding: &InputAddressMapping,
+    roots: &[(EquipmentLocation, EquipmentChannel, u16, usize)],
+) -> Option<u64> {
+    roots
+        .iter()
+        .filter(|(location, _, _, _)| equipment_binding_contains(binding, *location))
+        .map(|(_, channel, order, attachment_depth)| {
+            (*attachment_depth as u64 * 100_000)
+                + (equipment_channel_rank(*channel) * 1_000)
+                + u64::from(*order)
+        })
+        .max()
+}
+
+fn equipment_input_ranks_for_item(
+    equip: &CharacterEquipmentGraph,
+    inventory_item_id: u64,
+) -> serde_json::Value {
+    let roots = equipment_item_roots(equip, inventory_item_id);
+    serde_json::Value::Object(
+        INPUT_ADDRESS_MAPPINGS
+            .iter()
+            .filter_map(|binding| {
+                equipment_binding_rank(binding, &roots)
+                    .map(|rank| (binding.input.to_owned(), serde_json::json!(rank)))
+            })
+            .collect(),
+    )
+}
+
+fn equipment_input_map_json() -> String {
+    let inputs = INPUT_ADDRESS_MAPPINGS
+        .iter()
+        .map(|binding| {
+            serde_json::json!({
+                "input": binding.input,
+                "label": equipment_input_display(binding.input),
+                "row": binding.keyboard_row,
+                "column": binding.keyboard_column,
+                "locations": binding.locations
+                    .iter()
+                    .copied()
+                    .map(equipment_location_display)
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_string(&inputs).unwrap_or_else(|_| "[]".to_owned())
+}
+
+fn equipment_occupant_json(
+    equip: &CharacterEquipmentGraph,
+    inventory_item_id: u64,
+) -> serde_json::Value {
+    let item_id = equip
+        .equipment_nodes
+        .iter()
+        .find(|node| node.inventory_item_id == inventory_item_id)
+        .map(|node| node.item_name.as_str())
+        .unwrap_or("unknown_item");
+    serde_json::json!({
+        "inventoryItemId": inventory_item_id,
+        "itemName": item_display_name(item_id),
+        "icon": format!("/static/icons/game/{}.svg", item_icon_name(item_id))
+    })
+}
+
+fn equipped_input_badges(
+    equip: Option<&CharacterEquipmentGraph>,
+    inventory_item_id: u64,
+) -> Vec<(String, usize)> {
+    let Some(equip) = equip else {
+        return Vec::new();
+    };
+    INPUT_ADDRESS_MAPPINGS
+        .iter()
+        .filter_map(|binding| {
+            let roots = equipment_item_roots(equip, inventory_item_id);
+            equipment_binding_rank(binding, &roots)?;
+            let mut stack = equip
+                .equipment_nodes
+                .iter()
+                .filter_map(|node| {
+                    let roots = equipment_item_roots(equip, node.inventory_item_id);
+                    equipment_binding_rank(binding, &roots)
+                        .map(|rank| (std::cmp::Reverse(rank), node.inventory_item_id))
+                })
+                .collect::<Vec<_>>();
+            stack.sort_unstable();
+            let depth = stack
+                .iter()
+                .position(|(_, item_id)| *item_id == inventory_item_id)
+                .unwrap_or_default();
+            Some((equipment_input_display(binding.input), depth))
+        })
+        .collect()
+}
+
+fn equipment_control(
     inventory: &InventoryItem,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
     equipped: bool,
     medication_is_self: bool,
+    equip: Option<&CharacterEquipmentGraph>,
 ) -> Markup {
     let medication = definition
         .is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Medication);
     let equippable = definition.is_some_and(|definition| {
-        definition.slot != ItemSlot::None || (medication && medication_is_self)
+        !definition.equipment_placements.is_empty() || (medication && medication_is_self)
     });
+    let placement_labels = definition
+        .map(|definition| {
+            definition
+                .equipment_placements
+                .iter()
+                .map(|placement| {
+                    let anchors = placement
+                        .occupancy
+                        .iter()
+                        .map(|requirement| {
+                            format!(
+                                "{:?} · {} · depth {}",
+                                requirement.location,
+                                requirement.channel.label(),
+                                requirement.order
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let parent = placement
+                        .parents
+                        .iter()
+                        .map(|parent| {
+                            format!(
+                                "attached via {} · depth {}",
+                                parent.channel.label(),
+                                parent.order
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let protection = placement
+                        .protection
+                        .iter()
+                        .copied()
+                        .map(equipment_body_part_display)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let conflicts = equip
+                        .into_iter()
+                        .flat_map(|equip| equip.equipment_occupancies.iter())
+                        .filter(|occupied| occupied.inventory_item_id != inventory.id)
+                        .filter(|occupied| {
+                            placement.occupancy.iter().any(|requirement| {
+                                occupied.location == Some(requirement.location)
+                                    && occupied.channel == requirement.channel
+                                    && occupied.order == requirement.order
+                            })
+                        })
+                        .map(|occupied| format!("#{}", occupied.inventory_item_id))
+                        .collect::<Vec<_>>();
+                    let anchor_or_parent = if parent.is_empty() { anchors } else { parent };
+                    format!(
+                        "{}: {}{}{}",
+                        placement.id,
+                        anchor_or_parent,
+                        (!protection.is_empty())
+                            .then(|| {
+                                format!(
+                                    "; protects {protection} ({:.0}% coverage)",
+                                    definition.coverage * 100.0
+                                )
+                            })
+                            .unwrap_or_default(),
+                        (!conflicts.is_empty())
+                            .then(|| format!("; conflict with {}", conflicts.join(", ")))
+                            .unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("|")
+        })
+        .unwrap_or_default();
+    let wear_layer = definition
+        .and_then(|definition| {
+            definition
+                .equipment_placements
+                .iter()
+                .flat_map(|placement| placement.occupancy.iter())
+                .map(|requirement| requirement.channel)
+                .max()
+        })
+        .map(|channel| channel.label())
+        .unwrap_or("Attachment");
+    let placement_options = definition
+        .map(|definition| {
+            definition
+                .equipment_placements
+                .iter()
+                .enumerate()
+                .map(|(placement_index, placement)| {
+                    let requirements = placement
+                        .parents
+                        .iter()
+                        .enumerate()
+                        .map(|(requirement_index, requirement)| {
+                            let targets = equip
+                                .into_iter()
+                                .flat_map(|equip| {
+                                    equip.attachment_targets.iter().filter(move |target| {
+                                        target.channel == requirement.channel
+                                            && target.order == requirement.order
+                                            && (target.accepts_tags.is_empty()
+                                                || definition
+                                                    .attachment_tags
+                                                    .iter()
+                                                    .any(|tag| target.accepts_tags.contains(tag)))
+                                            && !equipment_target_is_self_or_descendant(
+                                                equip,
+                                                inventory.id,
+                                                target.parent_inventory_item_id,
+                                            )
+                                    })
+                                })
+                                .map(|target| {
+                                    let mut occupants = equip
+                                        .into_iter()
+                                        .flat_map(|equip| equip.equipment_occupancies.iter())
+                                        .filter(|row| {
+                                            row.parent_inventory_item_id
+                                                == Some(target.parent_inventory_item_id)
+                                                && row.attachment_point_id.as_deref()
+                                                    == Some(target.attachment_point_id.as_str())
+                                        })
+                                        .collect::<Vec<_>>();
+                                    occupants.sort_by_key(|row| row.capacity_index);
+                                    serde_json::json!({
+                                        "parentInventoryItemId": target.parent_inventory_item_id,
+                                        "attachmentPointId": target.attachment_point_id,
+                                        "freeCapacity": target.free_capacity,
+                                        "occupants": occupants
+                                            .into_iter()
+                                            .filter_map(|row| equip.map(|equip| {
+                                                equipment_occupant_json(equip, row.inventory_item_id)
+                                            }))
+                                            .collect::<Vec<_>>(),
+                                        "inputRanks": equip
+                                            .map(|equip| equipment_input_ranks_for_item(
+                                                equip,
+                                                target.parent_inventory_item_id,
+                                            ))
+                                            .unwrap_or_else(|| serde_json::json!({})),
+                                        "label": format!(
+                                            "{} / {} ({} free)",
+                                            item_display_name(&target.parent_item_name),
+                                            target.attachment_point_id,
+                                            target.free_capacity
+                                        )
+                                    })
+                                })
+                                .collect::<Vec<_>>();
+                            serde_json::json!({
+                                "requirementIndex": requirement_index,
+                                "channel": requirement.channel.label(),
+                                "targets": targets
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    let input_ranks = serde_json::Value::Object(
+                        INPUT_ADDRESS_MAPPINGS
+                            .iter()
+                            .filter_map(|binding| {
+                                placement
+                                    .occupancy
+                                    .iter()
+                                    .filter(|requirement| {
+                                        equipment_binding_contains(binding, requirement.location)
+                                    })
+                                    .map(|requirement| {
+                                        (equipment_channel_rank(requirement.channel) * 1_000)
+                                            + u64::from(requirement.order)
+                                    })
+                                    .max()
+                                    .map(|rank| (binding.input.to_owned(), serde_json::json!(rank)))
+                            })
+                            .collect(),
+                    );
+                    let input_occupants = serde_json::Value::Object(
+                        INPUT_ADDRESS_MAPPINGS
+                            .iter()
+                            .filter_map(|binding| {
+                                let occupant = placement
+                                    .occupancy
+                                    .iter()
+                                    .filter(|requirement| {
+                                        equipment_binding_contains(binding, requirement.location)
+                                    })
+                                    .filter_map(|requirement| {
+                                        equip
+                                            .into_iter()
+                                            .flat_map(|equip| {
+                                                equip.equipment_occupancies.iter().map(move |row| {
+                                                    (equip, row)
+                                                })
+                                            })
+                                            .find(|(_, occupied)| {
+                                                occupied.location == Some(requirement.location)
+                                                    && occupied.channel == requirement.channel
+                                                    && occupied.order == requirement.order
+                                            })
+                                    })
+                                    .max_by_key(|(_, occupied)| {
+                                        (
+                                            equipment_channel_rank(occupied.channel),
+                                            occupied.order,
+                                            occupied.inventory_item_id,
+                                        )
+                                    });
+                                occupant.map(|(equip, occupied)| {
+                                    (
+                                        binding.input.to_owned(),
+                                        equipment_occupant_json(
+                                            equip,
+                                            occupied.inventory_item_id,
+                                        ),
+                                    )
+                                })
+                            })
+                            .collect(),
+                    );
+                    serde_json::json!({
+                        "placementIndex": placement_index,
+                        "label": placement_labels
+                            .split('|')
+                            .nth(placement_index)
+                            .unwrap_or(&placement.id),
+                        "hasBody": !placement.occupancy.is_empty(),
+                        "inputRanks": input_ranks,
+                        "inputOccupants": input_occupants,
+                        "requirements": requirements
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let placement_options_json =
+        serde_json::to_string(&placement_options).unwrap_or_else(|_| "[]".to_owned());
+    let input_map_json = equipment_input_map_json();
+    let input_badges = equipped_input_badges(equip, inventory.id);
+    let equipped_node = equip.and_then(|equip| {
+        equip
+            .equipment_nodes
+            .iter()
+            .find(|node| node.inventory_item_id == inventory.id)
+    });
+    let attachment_summary = equip.and_then(|equip| {
+        let parents = equip
+            .equipment_occupancies
+            .iter()
+            .filter(|row| row.inventory_item_id == inventory.id)
+            .filter_map(|row| {
+                let parent_id = row.parent_inventory_item_id?;
+                let parent_name = equip
+                    .equipment_nodes
+                    .iter()
+                    .find(|parent| parent.inventory_item_id == parent_id)
+                    .map(|parent| item_display_name(&parent.item_name))
+                    .unwrap_or_else(|| format!("#{parent_id}"));
+                Some(format!(
+                    "{parent_name} / {}",
+                    row.attachment_point_id.as_deref()?
+                ))
+            })
+            .collect::<Vec<_>>();
+        (!parents.is_empty()).then(|| format!("Attached: {}", parents.join(" + ")))
+    });
+    let mut equipped_context = Vec::new();
+    if let Some(equip) = equip.filter(|_| equipped) {
+        let mut locations = Vec::new();
+        for (location, _, _, _) in equipment_item_roots(equip, inventory.id) {
+            let location = equipped_location_display(location);
+            if !locations.contains(&location) {
+                locations.push(location);
+            }
+        }
+        if !locations.is_empty() {
+            equipped_context.push(format!("Slots: {}", locations.join(", ")));
+        }
+    }
+    if let Some(protection) = definition
+        .zip(equipped_node)
+        .and_then(|(definition, node)| {
+            definition
+                .equipment_placements
+                .iter()
+                .find(|placement| placement.id == node.placement_id)
+                .filter(|placement| !placement.protection.is_empty())
+                .map(|placement| {
+                    format!(
+                        "Protects {} ({:.0}% coverage)",
+                        placement
+                            .protection
+                            .iter()
+                            .copied()
+                            .map(equipment_body_part_display)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        definition.coverage * 100.0
+                    )
+                })
+        })
+    {
+        equipped_context.push(protection);
+    }
+    if let Some(attachment) = &attachment_summary {
+        equipped_context.push(attachment.clone());
+    }
     let item_name = item_display_name(&inventory.item_id);
-    let label = if medication && medication_is_self {
+    let base_label = if medication && medication_is_self {
         format!("Administer {item_name}")
     } else if medication {
         format!("Only {item_name}'s owner can administer it")
@@ -1293,30 +1900,82 @@ fn equipment_checkbox(
     } else {
         format!("Equip {item_name}")
     };
-    let title = if medication && medication_is_self {
+    let base_title = if medication && medication_is_self {
         "Administer one standard course of this preparation"
     } else if medication {
         "Select this character to administer their preparation"
+    } else if equipped {
+        "Click to unassign this item from all equipped slots"
     } else if equippable {
-        "Equip or unequip this item"
+        "Click to choose an available keyboard slot"
     } else {
         "This item cannot be equipped"
     };
+    let label = if equipped_context.is_empty() {
+        base_label
+    } else {
+        format!("{base_label}. {}", equipped_context.join(". "))
+    };
+    let title = if equipped_context.is_empty() {
+        base_title.to_owned()
+    } else {
+        format!("{base_title}. {}", equipped_context.join(". "))
+    };
     html! {
-        input type="checkbox"
-            checked[equipped]
-            disabled[!equippable]
-            data-equipment-toggle
-            data-inventory-item-id=(inventory.id)
-            aria-describedby=(format!("equipment-status-{}", inventory.id))
-            aria-label=(label)
-            title=(title);
+        @if medication {
+            input type="checkbox"
+                checked[equipped]
+                disabled[!equippable]
+                data-equipment-toggle
+                data-equipment-medication
+                data-inventory-item-id=(inventory.id)
+                aria-describedby=(format!("equipment-status-{}", inventory.id))
+                aria-label=(label)
+                title=(title);
+        } @else {
+            button type="button"
+                class="equipment-slot-control"
+                disabled[!equippable]
+                data-equipment-toggle
+                data-equipment-equipped=(equipped)
+                data-inventory-item-id=(inventory.id)
+                data-wear-layer=(wear_layer)
+                data-wear-placements=(placement_labels)
+                data-equipment-input-map=(input_map_json)
+                data-equipment-placement-options=(placement_options_json)
+                aria-haspopup=[equippable.then_some("dialog")]
+                aria-describedby=(format!("equipment-status-{}", inventory.id))
+                aria-label=(label)
+                title=(title) {
+                @if equipped {
+                    @if input_badges.is_empty() {
+                        kbd class="equipment-slot-key" { "?" }
+                    } @else {
+                        @for (input, depth) in &input_badges {
+                            @let lightness = 88usize.saturating_sub((*depth).min(5) * 9);
+                            kbd class="equipment-slot-key"
+                                data-equipment-layer-depth=(depth)
+                                style=(format!("--equipment-layer-lightness: {lightness}%")) {
+                                (input)
+                            }
+                        }
+                    }
+                } @else if equippable {
+                    span class="equipment-slot-empty" aria-hidden="true" { "+" }
+                } @else {
+                    span class="equipment-slot-empty" aria-hidden="true" { "—" }
+                }
+            }
+        }
         span id=(format!("equipment-status-{}", inventory.id))
             class="equipment-toggle-status"
             data-equipment-status
             role="status"
             aria-live="polite"
             hidden {}
+        @if let Some(attachment_summary) = attachment_summary {
+            span class="equipment-graph-summary" { (attachment_summary) }
+        }
     }
 }
 
@@ -1770,6 +2429,7 @@ pub(super) fn trade_inventory_table_header(
 mod tests {
     use super::*;
     use crate::spacetimedb::*;
+    use crate::spacetimedb::{EquipmentAnchorKind, EquipmentLocation};
     use crate::templates::settlement::test_support::*;
     use adventuresim_core::equipment::EncumbranceSummary;
 
@@ -1935,6 +2595,20 @@ mod tests {
         assert!(css.contains("linear-gradient(90deg, #238b45 0%, #f4d03f 50%, #c62828 100%)"));
         assert!(css.contains(".encumbrance-marker"));
         assert!(css.contains("background: #fff"));
+    }
+
+    #[test]
+    fn equipment_slot_dialog_is_centered_in_the_viewport() {
+        let css = include_str!("../../../static/css/strategic.css");
+        let rule = css
+            .split(".equipment-placement-modal {")
+            .nth(1)
+            .and_then(|tail| tail.split('}').next())
+            .expect("equipment placement dialog rule");
+        assert!(rule.contains("position: fixed"));
+        assert!(rule.contains("inset: 0"));
+        assert!(rule.contains("margin: auto"));
+        assert!(rule.contains("max-block-size: calc(100dvh - 2rem)"));
     }
 
     #[test]
@@ -2325,7 +2999,7 @@ mod tests {
     }
 
     #[test]
-    fn equipment_checkbox_is_enabled_only_for_equippable_items() {
+    fn equipment_slot_control_is_enabled_only_for_authored_placements() {
         let inventory = InventoryItem {
             id: 7,
             character_id: 9,
@@ -2347,14 +3021,223 @@ mod tests {
             durability_failure_share: 0.0,
             edge_sensitivity: 0.0,
             handling_sensitivity: 0.0,
+            equipment_placements: vec![EquipmentPlacement {
+                id: "left_hand".into(),
+                occupancy: vec![EquipmentOccupancyRequirement {
+                    location: EquipmentLocation::LeftHand,
+                    channel: EquipmentChannel::Held,
+                    order: 0,
+                }],
+                parents: Vec::new(),
+                protection: Vec::new(),
+            }],
             ..Default::default()
         };
-        let enabled = equipment_checkbox(&inventory, Some(&definition), false, true).into_string();
+        let enabled =
+            equipment_control(&inventory, Some(&definition), false, true, None).into_string();
         assert!(enabled.contains("data-equipment-toggle"));
+        assert!(enabled.contains("equipment-slot-control"));
+        assert!(enabled.contains("data-equipment-input-map"));
         assert!(!enabled.contains(" disabled"));
-        definition.slot = ItemSlot::None;
-        let disabled = equipment_checkbox(&inventory, Some(&definition), false, true).into_string();
+        definition.equipment_placements.clear();
+        let disabled =
+            equipment_control(&inventory, Some(&definition), false, true, None).into_string();
         assert!(disabled.contains(" disabled"));
+    }
+
+    #[test]
+    fn equipped_slot_control_lists_all_keys_and_darkens_inner_layers() {
+        let outer = InventoryItem {
+            id: 7,
+            character_id: 9,
+            item_id: "cloak".into(),
+            qty: 1,
+        };
+        let inner = InventoryItem {
+            id: 8,
+            character_id: 9,
+            item_id: "tunic".into(),
+            qty: 1,
+        };
+        let placement = |id: &str, channel| EquipmentPlacement {
+            id: id.into(),
+            occupancy: vec![
+                EquipmentOccupancyRequirement {
+                    location: EquipmentLocation::Chest,
+                    channel,
+                    order: 0,
+                },
+                EquipmentOccupancyRequirement {
+                    location: EquipmentLocation::Stomach,
+                    channel,
+                    order: 0,
+                },
+            ],
+            parents: Vec::new(),
+            protection: vec![EquipmentBodyPart::Chest],
+        };
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: outer.item_id.clone(),
+            kind: crate::spacetimedb::ItemKind::Clothing,
+            coverage: 0.8,
+            equipment_placements: vec![placement("worn", EquipmentChannel::Outerwear)],
+            ..Default::default()
+        };
+        let occupancy = |inventory_item_id, location, channel| EquipmentOccupancy {
+            id: format!("{inventory_item_id}:{location:?}"),
+            character_id: 9,
+            inventory_item_id,
+            anchor_kind: EquipmentAnchorKind::CharacterLocation,
+            location: Some(location),
+            parent_inventory_item_id: None,
+            attachment_point_id: None,
+            channel,
+            order: 0,
+            requirement_index: 0,
+            capacity_index: 0,
+        };
+        let graph = CharacterEquipmentGraph {
+            _character_id: 9,
+            worn_item_ids: vec![outer.id, inner.id],
+            equipment_nodes: vec![
+                CharacterEquippedItem {
+                    inventory_item_id: outer.id,
+                    character_id: 9,
+                    placement_id: "worn".into(),
+                    item_name: outer.item_id.clone(),
+                },
+                CharacterEquippedItem {
+                    inventory_item_id: inner.id,
+                    character_id: 9,
+                    placement_id: "worn".into(),
+                    item_name: inner.item_id.clone(),
+                },
+            ],
+            equipment_occupancies: vec![
+                occupancy(
+                    outer.id,
+                    EquipmentLocation::Chest,
+                    EquipmentChannel::Outerwear,
+                ),
+                occupancy(
+                    outer.id,
+                    EquipmentLocation::Stomach,
+                    EquipmentChannel::Outerwear,
+                ),
+                occupancy(
+                    inner.id,
+                    EquipmentLocation::Chest,
+                    EquipmentChannel::BaseClothing,
+                ),
+            ],
+            attachment_targets: Vec::new(),
+        };
+
+        let outer_control =
+            equipment_control(&outer, Some(&definition), true, true, Some(&graph)).into_string();
+        assert!(outer_control.contains(">G</kbd>"));
+        assert!(outer_control.contains(">Y</kbd>"));
+        assert!(outer_control.contains("--equipment-layer-lightness: 88%"));
+        assert!(outer_control.contains(
+            "aria-label=\"Unequip Cloak. Slots: Chest, Stomach. Protects Chest (80% coverage)\""
+        ));
+        assert!(outer_control.contains("protects Chest (80% coverage)"));
+
+        let inner_definition = crate::spacetimedb::ItemDefinition {
+            id: inner.item_id.clone(),
+            kind: crate::spacetimedb::ItemKind::Clothing,
+            equipment_placements: vec![placement("worn", EquipmentChannel::BaseClothing)],
+            ..Default::default()
+        };
+        let inner_control =
+            equipment_control(&inner, Some(&inner_definition), true, true, Some(&graph))
+                .into_string();
+        assert!(inner_control.contains(">G</kbd>"));
+        assert!(inner_control.contains("--equipment-layer-lightness: 79%"));
+    }
+
+    #[test]
+    fn attached_item_names_its_parent_on_the_inventory_row() {
+        let parent = InventoryItem {
+            id: 7,
+            character_id: 9,
+            item_id: "belt".into(),
+            qty: 1,
+        };
+        let child = InventoryItem {
+            id: 8,
+            character_id: 9,
+            item_id: "pouch".into(),
+            qty: 1,
+        };
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: child.item_id.clone(),
+            kind: crate::spacetimedb::ItemKind::Container,
+            equipment_placements: vec![EquipmentPlacement {
+                id: "hung".into(),
+                occupancy: Vec::new(),
+                parents: Vec::new(),
+                protection: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let graph = CharacterEquipmentGraph {
+            _character_id: 9,
+            worn_item_ids: vec![parent.id, child.id],
+            equipment_nodes: vec![
+                CharacterEquippedItem {
+                    inventory_item_id: parent.id,
+                    character_id: 9,
+                    placement_id: "worn".into(),
+                    item_name: parent.item_id.clone(),
+                },
+                CharacterEquippedItem {
+                    inventory_item_id: child.id,
+                    character_id: 9,
+                    placement_id: "hung".into(),
+                    item_name: child.item_id.clone(),
+                },
+            ],
+            equipment_occupancies: vec![
+                EquipmentOccupancy {
+                    id: "belt:front".into(),
+                    character_id: 9,
+                    inventory_item_id: parent.id,
+                    anchor_kind: EquipmentAnchorKind::CharacterLocation,
+                    location: Some(EquipmentLocation::FrontBelt),
+                    parent_inventory_item_id: None,
+                    attachment_point_id: None,
+                    channel: EquipmentChannel::Mount,
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                },
+                EquipmentOccupancy {
+                    id: "pouch:belt".into(),
+                    character_id: 9,
+                    inventory_item_id: child.id,
+                    anchor_kind: EquipmentAnchorKind::ItemAttachment,
+                    location: None,
+                    parent_inventory_item_id: Some(parent.id),
+                    attachment_point_id: Some("front-loop".into()),
+                    channel: EquipmentChannel::Containment,
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                },
+            ],
+            attachment_targets: Vec::new(),
+        };
+
+        let rendered =
+            equipment_control(&child, Some(&definition), true, true, Some(&graph)).into_string();
+        assert!(rendered.contains(">F</kbd>"));
+        assert!(rendered.contains(
+            "aria-label=\"Unequip Pouch. Slots: Front belt. Attached: Belt / front-loop\""
+        ));
+        assert!(rendered.contains(
+            "<span class=\"equipment-graph-summary\">Attached: Belt / front-loop</span>"
+        ));
     }
 
     #[test]
@@ -2371,8 +3254,11 @@ mod tests {
             kind: crate::spacetimedb::ItemKind::Medication,
             ..Default::default()
         };
-        let rendered = equipment_checkbox(&inventory, Some(&definition), false, true).into_string();
+        let rendered =
+            equipment_control(&inventory, Some(&definition), false, true, None).into_string();
         assert!(!rendered.contains(" disabled"));
+        assert!(rendered.contains("data-equipment-medication"));
+        assert!(rendered.contains("type=\"checkbox\""));
         assert!(rendered.contains("aria-label=\"Administer Oral rehydration draught\""));
         assert!(rendered.contains("title=\"Administer one standard course of this preparation\""));
         assert!(!rendered.contains("Equip Oral rehydration draught"));
@@ -2393,7 +3279,7 @@ mod tests {
             ..Default::default()
         };
         let rendered =
-            equipment_checkbox(&inventory, Some(&definition), false, false).into_string();
+            equipment_control(&inventory, Some(&definition), false, false, None).into_string();
         assert!(rendered.contains(" disabled"));
         assert!(
             rendered
@@ -2465,6 +3351,8 @@ mod tests {
                 submitted_at_minutes: 0,
                 ready_at_minutes: 10,
                 target_condition: 1.0,
+                equipped_placement_id: None,
+                attachment_targets: Vec::new(),
                 quoted_cost: 12,
             },
             crate::spacetimedb::RepairOrder {
@@ -2477,6 +3365,8 @@ mod tests {
                 submitted_at_minutes: 0,
                 ready_at_minutes: 10,
                 target_condition: 1.0,
+                equipped_placement_id: None,
+                attachment_targets: Vec::new(),
                 quoted_cost: 24,
             },
         ];
@@ -2558,5 +3448,32 @@ mod tests {
         assert!(!weapons.contains("Target "));
         assert!(armor.contains("cuirass"));
         assert!(!armor.contains("sword"));
+    }
+
+    #[test]
+    fn attachment_target_filter_rejects_self_and_descendants() {
+        let edge = |child, parent| EquipmentOccupancy {
+            id: format!("{parent}->{child}"),
+            character_id: 1,
+            inventory_item_id: child,
+            anchor_kind: EquipmentAnchorKind::ItemAttachment,
+            location: None,
+            parent_inventory_item_id: Some(parent),
+            attachment_point_id: Some("point".into()),
+            channel: EquipmentChannel::Mount,
+            order: 0,
+            requirement_index: 0,
+            capacity_index: 0,
+        };
+        let equip = CharacterEquipmentGraph {
+            _character_id: 1,
+            worn_item_ids: vec![10, 20, 30],
+            equipment_nodes: Vec::new(),
+            equipment_occupancies: vec![edge(20, 10), edge(30, 20)],
+            attachment_targets: Vec::new(),
+        };
+        assert!(equipment_target_is_self_or_descendant(&equip, 10, 10));
+        assert!(equipment_target_is_self_or_descendant(&equip, 10, 30));
+        assert!(!equipment_target_is_self_or_descendant(&equip, 30, 10));
     }
 }

@@ -5895,3 +5895,232 @@ body.chat-resizing {
   .physiology-region-chart svg { height: 24rem; min-height: 24rem; }
   .physiology-reading-tooltip { width: calc(100% - .6rem); }
 }
+.equipment-placement-modal {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  max-inline-size: min(32rem, calc(100vw - 2rem));
+  max-block-size: calc(100dvh - 2rem);
+  overflow: auto;
+  color: var(--text-color, #f4ead5);
+  background: #211b17;
+  border: 2px solid #bda77f;
+  padding: 1rem;
+}
+
+.equipment-placement-modal::backdrop {
+  background: rgb(0 0 0 / 65%);
+}
+
+.equipment-placement-modal form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.equipment-placement-modal label {
+  display: block;
+}
+
+.equipment-slot-control {
+  display: inline-flex;
+  min-inline-size: 1.7rem;
+  min-block-size: 1.55rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12rem;
+  padding: 0.12rem 0.22rem;
+  color: var(--text-color);
+  background: #181511;
+  border: 1px solid #8c7c62;
+  border-radius: 0.2rem;
+  cursor: pointer;
+}
+
+.equipment-slot-control:hover:not(:disabled),
+.equipment-slot-control:focus-visible {
+  border-color: #e4c98f;
+  box-shadow: 0 0 0 1px rgb(228 201 143 / 35%);
+}
+
+.equipment-slot-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.equipment-slot-key,
+.equipment-slot-choice kbd {
+  padding: 0;
+  color: hsl(40 50% var(--equipment-layer-lightness, 88%));
+  font: 700 0.78rem/1.1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.equipment-slot-empty {
+  color: #b9aa8d;
+  font-weight: 700;
+}
+
+.equipment-slot-modal {
+  position: fixed;
+  inline-size: min(38rem, calc(100vw - 2rem));
+  padding-block-start: 2.4rem;
+}
+
+.equipment-slot-preview {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  pointer-events: none;
+  background: transparent;
+}
+
+.equipment-slot-preview .equipment-slot-keyboard {
+  inline-size: min(38rem, calc(100vw - 2rem));
+}
+
+.equipment-slot-preview .equipment-slot-choice {
+  background: rgb(48 41 31 / 82%);
+  box-shadow: 0 0.2rem 0.55rem rgb(0 0 0 / 35%);
+}
+
+.equipment-slot-close {
+  position: absolute;
+  inset-block-start: 0.45rem;
+  inset-inline-end: 0.55rem;
+  display: grid;
+  inline-size: 1.8rem;
+  block-size: 1.8rem;
+  place-items: center;
+  padding: 0;
+  color: #dfcfb1;
+  font: 700 1.45rem/1 sans-serif;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.2rem;
+  cursor: pointer;
+}
+
+.equipment-slot-close:hover,
+.equipment-slot-close:focus-visible {
+  color: #fff4d8;
+  background: #4a3e2d;
+  border-color: #f0cf91;
+}
+
+.equipment-slot-keyboard {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(3.1rem, 1fr));
+  grid-template-rows: repeat(4, minmax(3.2rem, auto));
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.equipment-slot-choice {
+  grid-row: var(--equipment-key-row);
+  grid-column: var(--equipment-key-column);
+  display: grid;
+  place-items: center;
+  gap: 0.18rem;
+  min-inline-size: 0;
+  padding: 0.35rem 0.2rem;
+  color: #ead9b7;
+  background: #30291f;
+  border: 1px solid #a38d68;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.equipment-slot-choice kbd {
+  color: #fff4d8;
+  font-size: 0.95rem;
+}
+
+.equipment-slot-choice-label {
+  overflow-wrap: anywhere;
+  font-size: 0.58rem;
+  line-height: 1.05;
+}
+
+.equipment-slot-choice-icon {
+  display: block;
+  inline-size: 1.3rem;
+  block-size: 1.3rem;
+  color: #fff4d8;
+  background: currentcolor;
+  opacity: 0;
+  -webkit-mask: var(--equipment-slot-icon) center / contain no-repeat;
+  mask: var(--equipment-slot-icon) center / contain no-repeat;
+}
+
+.equipment-slot-choice-icon[role="img"] {
+  opacity: 1;
+}
+
+.equipment-slot-choice.is-current-placement {
+  color: #fff4d8;
+  background: #5a472b;
+  border-color: #f0cf91;
+  box-shadow:
+    0 0 0 2px rgb(240 207 145 / 32%),
+    inset 0 0 0 1px rgb(255 244 216 / 18%);
+}
+
+.equipment-slot-choice.is-current-placement .equipment-slot-choice-icon {
+  color: #ffe3a3;
+}
+
+.equipment-slot-choice:hover:not(:disabled),
+.equipment-slot-choice:focus-visible {
+  background: #4a3e2d;
+  border-color: #f0cf91;
+}
+
+.equipment-slot-choice:disabled {
+  color: #756d61;
+  background: #1b1814;
+  border-color: #403a31;
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.equipment-slot-choice:disabled kbd {
+  color: #756d61;
+}
+
+.equipment-slot-choice.is-invalid-input,
+.equipment-slot-choice.is-invalid-input kbd {
+  color: #ffaaa2;
+  background-color: #4b1715;
+  border-color: #f04f46;
+  opacity: 1;
+  animation: equipment-slot-invalid 420ms ease-out;
+}
+
+@keyframes equipment-slot-invalid {
+  0%, 100% { box-shadow: none; }
+  35% { box-shadow: 0 0 0 3px rgb(240 79 70 / 35%); }
+}
+
+@media (max-width: 620px) {
+  .equipment-slot-keyboard {
+    grid-template-columns: repeat(7, minmax(2.25rem, 1fr));
+    gap: 0.2rem;
+  }
+  .equipment-slot-choice-label { display: none; }
+}
+
+.equipment-graph-summary {
+  display: block;
+  margin-block-start: 0.15rem;
+  max-inline-size: 8rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 0.66rem;
+  line-height: 1.1;
+  color: #b9cfb1;
+}

@@ -5,7 +5,7 @@ use spacetimedb::ReducerContext;
 
 use crate::{
     ItemKind,
-    character::{character, character_equip},
+    character::character,
     item::{inventory_item, item},
 };
 
@@ -63,33 +63,17 @@ pub fn enforce_equipment_compliance(
     ctx: &ReducerContext,
     character_id: u64,
 ) -> Result<Vec<u64>, String> {
-    let Some(mut equip) = ctx.db.character_equip().character_id().find(character_id) else {
-        return Ok(Vec::new());
-    };
-    let equipped = [
-        equip.left_hand_item_id,
-        equip.right_hand_item_id,
-        equip.left_arm_armor_id,
-        equip.right_arm_armor_id,
-        equip.left_leg_armor_id,
-        equip.right_leg_armor_id,
-        equip.head_armor_id,
-        equip.chest_armor_id,
-        equip.stomach_armor_id,
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    let equipped = crate::character::equipped_wearable_ids(ctx, character_id);
     let mut removed = Vec::new();
     for inventory_item_id in equipped {
         if require_item_legal(ctx, character_id, inventory_item_id).is_err() {
-            crate::repair::unequip(&mut equip, inventory_item_id);
+            crate::character::unequip_wearable(ctx, inventory_item_id);
             removed.push(inventory_item_id);
         }
     }
     if !removed.is_empty() {
-        ctx.db.character_equip().character_id().update(equip);
         crate::capability::refresh_character_capability(ctx, character_id)?;
+        crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     }
     Ok(removed)
 }

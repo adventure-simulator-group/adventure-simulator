@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::equipment_attachment_target_selection_type::EquipmentAttachmentTargetSelection;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct RepairOrder {
@@ -16,6 +18,8 @@ pub struct RepairOrder {
     pub submitted_at_minutes: u64,
     pub ready_at_minutes: u64,
     pub target_condition: f32,
+    pub equipped_placement_id: Option<String>,
+    pub attachment_targets: Vec<EquipmentAttachmentTargetSelection>,
     pub quoted_cost: u32,
 }
 
@@ -36,6 +40,9 @@ pub struct RepairOrderCols {
     pub submitted_at_minutes: __sdk::__query_builder::Col<RepairOrder, u64>,
     pub ready_at_minutes: __sdk::__query_builder::Col<RepairOrder, u64>,
     pub target_condition: __sdk::__query_builder::Col<RepairOrder, f32>,
+    pub equipped_placement_id: __sdk::__query_builder::Col<RepairOrder, Option<String>>,
+    pub attachment_targets:
+        __sdk::__query_builder::Col<RepairOrder, Vec<EquipmentAttachmentTargetSelection>>,
     pub quoted_cost: __sdk::__query_builder::Col<RepairOrder, u32>,
 }
 
@@ -55,6 +62,11 @@ impl __sdk::__query_builder::HasCols for RepairOrder {
             ),
             ready_at_minutes: __sdk::__query_builder::Col::new(table_name, "ready_at_minutes"),
             target_condition: __sdk::__query_builder::Col::new(table_name, "target_condition"),
+            equipped_placement_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "equipped_placement_id",
+            ),
+            attachment_targets: __sdk::__query_builder::Col::new(table_name, "attachment_targets"),
             quoted_cost: __sdk::__query_builder::Col::new(table_name, "quoted_cost"),
         }
     }

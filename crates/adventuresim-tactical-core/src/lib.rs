@@ -18,8 +18,8 @@ pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::combat::Attack;
     pub use crate::inventory::{
-        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, InventoryItems, ItemOf, ItemProperties,
-        ItemQuantity, ShieldItem, WeaponItem,
+        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentTopology, EquipmentTopologyOccupancy,
+        InventoryItems, ItemOf, ItemProperties, ItemQuantity, ShieldItem, WeaponItem,
     };
     pub use crate::player::{
         Attributes, BestiaryCategories, ControlledPlayer, Limbs, Player, PlayerId, Skills, Stats,

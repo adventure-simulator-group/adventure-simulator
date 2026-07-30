@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::equipment_attachment_point_type::EquipmentAttachmentPoint;
+use super::equipment_placement_type::EquipmentPlacement;
 use super::item_kind_type::ItemKind;
 use super::item_slot_type::ItemSlot;
 use super::weapon_skill_distribution_type::WeaponSkillDistribution;
@@ -15,6 +17,9 @@ pub struct Item {
     pub weight: f32,
     pub slot: ItemSlot,
     pub kind: ItemKind,
+    pub equipment_placements: Vec<EquipmentPlacement>,
+    pub attachment_tags: Vec<String>,
+    pub attachment_points: Vec<EquipmentAttachmentPoint>,
     pub repairable: bool,
     pub accuracy: f32,
     pub reach: f32,
@@ -63,6 +68,9 @@ pub struct ItemCols {
     pub weight: __sdk::__query_builder::Col<Item, f32>,
     pub slot: __sdk::__query_builder::Col<Item, ItemSlot>,
     pub kind: __sdk::__query_builder::Col<Item, ItemKind>,
+    pub equipment_placements: __sdk::__query_builder::Col<Item, Vec<EquipmentPlacement>>,
+    pub attachment_tags: __sdk::__query_builder::Col<Item, Vec<String>>,
+    pub attachment_points: __sdk::__query_builder::Col<Item, Vec<EquipmentAttachmentPoint>>,
     pub repairable: __sdk::__query_builder::Col<Item, bool>,
     pub accuracy: __sdk::__query_builder::Col<Item, f32>,
     pub reach: __sdk::__query_builder::Col<Item, f32>,
@@ -107,6 +115,12 @@ impl __sdk::__query_builder::HasCols for Item {
             weight: __sdk::__query_builder::Col::new(table_name, "weight"),
             slot: __sdk::__query_builder::Col::new(table_name, "slot"),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            equipment_placements: __sdk::__query_builder::Col::new(
+                table_name,
+                "equipment_placements",
+            ),
+            attachment_tags: __sdk::__query_builder::Col::new(table_name, "attachment_tags"),
+            attachment_points: __sdk::__query_builder::Col::new(table_name, "attachment_points"),
             repairable: __sdk::__query_builder::Col::new(table_name, "repairable"),
             accuracy: __sdk::__query_builder::Col::new(table_name, "accuracy"),
             reach: __sdk::__query_builder::Col::new(table_name, "reach"),

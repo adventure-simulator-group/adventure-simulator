@@ -4,14 +4,14 @@ use adventuresim_core::durability::DamageBins;
 use adventuresim_core::durability::{DurabilityProfile, damage_from_impact};
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
-use crate::character::{character, character_equip};
+use crate::character::{character, character_equipped_item, equipment_occupancy};
 use crate::item::{inventory_item, item};
 use crate::simulation::simulation_character;
 use crate::strategic::{
     PartyInventoryItem, PartyItemCondition, party_inventory_item, party_item_condition, settlement,
 };
 use crate::time::character_time;
-use crate::{CharacterEquip, InventoryItem, ItemKind};
+use crate::{InventoryItem, ItemKind};
 
 pub const REPAIR_MINUTES_PER_FULL_ITEM: u64 = 2 * 1_440;
 
@@ -78,6 +78,8 @@ pub struct RepairOrder {
     pub submitted_at_minutes: u64,
     pub ready_at_minutes: u64,
     pub target_condition: f32,
+    pub equipped_placement_id: Option<String>,
+    pub attachment_targets: Vec<crate::character::EquipmentAttachmentTargetSelection>,
     /// Stable quote charged when the completed job is retrieved.
     #[default(0)]
     pub quoted_cost: u32,
@@ -192,17 +194,12 @@ pub fn backfill_equipment_condition_and_smiths(ctx: &ReducerContext) {
         if durable
             && adventuresim_core::durability::legacy_durable_row_is_invalid(inventory.quantity)
         {
-            if let Some(mut equip) = ctx
-                .db
-                .character_equip()
-                .character_id()
-                .find(inventory.character_id)
-            {
-                unequip(&mut equip, inventory.id);
-                ctx.db.character_equip().character_id().update(equip);
-                let _ =
-                    crate::capability::refresh_character_capability(ctx, inventory.character_id);
-            }
+            crate::character::unequip_wearable(ctx, inventory.id);
+            let _ = crate::capability::refresh_character_capability(ctx, inventory.character_id);
+            let _ = crate::condition::refresh_character_strategic_condition(
+                ctx,
+                inventory.character_id,
+            );
             ctx.db
                 .item_condition()
                 .inventory_item_id()
@@ -216,7 +213,7 @@ pub fn backfill_equipment_condition_and_smiths(ctx: &ReducerContext) {
             0
         };
         if additional > 0 {
-            // Keep this ID so any CharacterEquip reference remains valid.
+            // Keep this stable inventory-instance ID.
             inventory.quantity = 1;
             ctx.db.inventory_item().id().update(inventory.clone());
             for _ in 0..additional {
@@ -293,48 +290,6 @@ fn service_skill(ctx: &ReducerContext, settlement_id: &str, kind: ItemKind) -> R
     }
 }
 
-pub(crate) fn is_equipped(equip: &CharacterEquip, id: u64) -> bool {
-    equip.left_hand_item_id == Some(id)
-        || equip.right_hand_item_id == Some(id)
-        || equip.left_arm_armor_id == Some(id)
-        || equip.right_arm_armor_id == Some(id)
-        || equip.left_leg_armor_id == Some(id)
-        || equip.right_leg_armor_id == Some(id)
-        || equip.head_armor_id == Some(id)
-        || equip.chest_armor_id == Some(id)
-        || equip.stomach_armor_id == Some(id)
-}
-
-pub(crate) fn unequip(equip: &mut CharacterEquip, id: u64) {
-    if equip.left_hand_item_id == Some(id) {
-        equip.left_hand_item_id = None;
-    }
-    if equip.right_hand_item_id == Some(id) {
-        equip.right_hand_item_id = None;
-    }
-    if equip.left_arm_armor_id == Some(id) {
-        equip.left_arm_armor_id = None;
-    }
-    if equip.right_arm_armor_id == Some(id) {
-        equip.right_arm_armor_id = None;
-    }
-    if equip.left_leg_armor_id == Some(id) {
-        equip.left_leg_armor_id = None;
-    }
-    if equip.right_leg_armor_id == Some(id) {
-        equip.right_leg_armor_id = None;
-    }
-    if equip.head_armor_id == Some(id) {
-        equip.head_armor_id = None;
-    }
-    if equip.chest_armor_id == Some(id) {
-        equip.chest_armor_id = None;
-    }
-    if equip.stomach_armor_id == Some(id) {
-        equip.stomach_armor_id = None;
-    }
-}
-
 fn submit(
     ctx: &ReducerContext,
     character_id: u64,
@@ -405,10 +360,23 @@ fn submit(
     let minutes = (repairable * REPAIR_MINUTES_PER_FULL_ITEM as f32).ceil() as u64;
     let quoted_cost =
         adventuresim_core::durability::repair_quote(definition.base_value.unwrap_or(1), repairable);
-    if let Some(mut equip) = ctx.db.character_equip().character_id().find(character_id) {
-        unequip(&mut equip, inventory_item_id);
-        ctx.db.character_equip().character_id().update(equip);
-    }
+    let equipped = ctx
+        .db
+        .character_equipped_item()
+        .inventory_item_id()
+        .find(inventory_item_id);
+    let attachment_targets = if equipped.is_some() {
+        crate::character::require_no_equipped_children(ctx, inventory_item_id)?;
+        saved_attachment_targets(
+            ctx.db
+                .equipment_occupancy()
+                .inventory_item_id()
+                .filter(inventory_item_id),
+        )
+    } else {
+        Vec::new()
+    };
+    crate::character::unequip_wearable(ctx, inventory_item_id);
     // Zero is reserved for smith custody and is excluded by every owner-scoped inventory path.
     inventory.character_id = 0;
     ctx.db.inventory_item().id().update(inventory.clone());
@@ -423,10 +391,30 @@ fn submit(
         submitted_at_minutes: now,
         ready_at_minutes: now.saturating_add(minutes.max(1)),
         target_condition,
+        equipped_placement_id: equipped.map(|row| row.placement_id),
+        attachment_targets,
         quoted_cost,
     });
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(order.id)
+}
+
+fn saved_attachment_targets(
+    rows: impl IntoIterator<Item = crate::character::EquipmentOccupancy>,
+) -> Vec<crate::character::EquipmentAttachmentTargetSelection> {
+    let mut targets = rows
+        .into_iter()
+        .filter_map(|row| {
+            Some(crate::character::EquipmentAttachmentTargetSelection {
+                requirement_index: row.requirement_index,
+                parent_inventory_item_id: row.parent_inventory_item_id?,
+                attachment_point_id: row.attachment_point_id?,
+            })
+        })
+        .collect::<Vec<_>>();
+    targets.sort_by_key(|target| target.requirement_index);
+    targets
 }
 
 #[reducer]
@@ -545,8 +533,21 @@ fn retrieve(ctx: &ReducerContext, character_id: u64, order_id: u64) -> Result<()
         .update(condition);
     inventory.character_id = character_id;
     ctx.db.inventory_item().id().update(inventory);
+    if let Some(placement_id) = order.equipped_placement_id.as_deref() {
+        crate::character::restore_equipment_placement(
+            ctx,
+            character_id,
+            order.inventory_item_id,
+            placement_id,
+            order.attachment_targets.clone(),
+        )
+        .map_err(|error| {
+            format!("Repair is complete, but its saved equipment graph cannot be restored: {error}")
+        })?;
+    }
     ctx.db.repair_order().id().delete(order_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())
 }
 
@@ -753,6 +754,7 @@ pub fn seed_simulation_equipment_damage(
         .inventory_item_id()
         .update(condition);
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())
 }
 
@@ -781,5 +783,40 @@ mod tests {
         assert!(service_matches(clothing, ItemKind::Clothing));
         assert!(!service_matches(clothing, ItemKind::Weapon));
         assert!(repair_service("smith").is_err());
+    }
+
+    #[test]
+    fn repair_snapshot_preserves_every_parent_requirement_in_order() {
+        let occupancy =
+            |requirement_index, parent, point: &str| crate::character::EquipmentOccupancy {
+                id: format!("{parent}:{point}"),
+                character_id: 1,
+                inventory_item_id: 99,
+                anchor_kind: crate::character::EquipmentAnchorKind::ItemAttachment,
+                location: None,
+                parent_inventory_item_id: Some(parent),
+                attachment_point_id: Some(point.into()),
+                channel: crate::item::EquipmentChannel::Mount,
+                order: requirement_index,
+                requirement_index,
+                capacity_index: 0,
+            };
+        let targets =
+            saved_attachment_targets([occupancy(1, 11, "right"), occupancy(0, 10, "left")]);
+        assert_eq!(
+            targets,
+            vec![
+                crate::character::EquipmentAttachmentTargetSelection {
+                    requirement_index: 0,
+                    parent_inventory_item_id: 10,
+                    attachment_point_id: "left".into(),
+                },
+                crate::character::EquipmentAttachmentTargetSelection {
+                    requirement_index: 1,
+                    parent_inventory_item_id: 11,
+                    attachment_point_id: "right".into(),
+                },
+            ]
+        );
     }
 }

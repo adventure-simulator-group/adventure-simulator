@@ -32,7 +32,7 @@ use adventuresim_stdb_client::{
     character_attributes_table::CharacterAttributesTableAccess,
     character_capability_table::CharacterCapabilityTableAccess,
     character_condition_table::CharacterConditionTableAccess,
-    character_equip_table::CharacterEquipTableAccess,
+    character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_filth_table::CharacterFilthTableAccess,
     character_limbs_table::CharacterLimbsTableAccess,
     character_morale_source_table::CharacterMoraleSourceTableAccess,
@@ -43,7 +43,7 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
-    food_lot_table::FoodLotTableAccess,
+    equipment_occupancy_table::EquipmentOccupancyTableAccess, food_lot_table::FoodLotTableAccess,
     inventory_item_amount_table::InventoryItemAmountTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
@@ -131,7 +131,8 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "party_item_amount",
     "party_inventory_state",
     "party_stake",
-    "character_equip",
+    "character_equipped_item",
+    "equipment_occupancy",
     "character_filth",
     "character_capability",
     "character_condition",
@@ -306,7 +307,8 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_item_amount());
         invalidate_on_changes!(state.0._connection.db.party_inventory_state());
         invalidate_on_changes!(state.0._connection.db.party_stake());
-        invalidate_on_changes!(state.0._connection.db.character_equip());
+        invalidate_on_changes!(state.0._connection.db.character_equipped_item());
+        invalidate_on_changes!(state.0._connection.db.equipment_occupancy());
         invalidate_on_changes!(state.0._connection.db.character_filth());
         invalidate_on_changes!(state.0._connection.db.character_capability());
         invalidate_on_changes!(state.0._connection.db.character_condition());
@@ -375,7 +377,8 @@ impl LiveState {
             .add_query(|query| query.from.character_attributes())
             .add_query(|query| query.from.character_capability())
             .add_query(|query| query.from.character_condition())
-            .add_query(|query| query.from.character_equip())
+            .add_query(|query| query.from.character_equipped_item())
+            .add_query(|query| query.from.equipment_occupancy())
             .add_query(|query| query.from.character_filth())
             .add_query(|query| query.from.character_limbs())
             .add_query(|query| query.from.limb_injury())

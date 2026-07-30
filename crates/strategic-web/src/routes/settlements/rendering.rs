@@ -59,10 +59,6 @@ pub(super) async fn merchant_shop(
             .into_string(),
         );
     };
-    let equip_sql = format!(
-        "SELECT * FROM character_equip WHERE character_id = {}",
-        character.id
-    );
     let condition_sql = format!("SELECT * FROM item_condition");
     let smith_sql =
         format!("SELECT * FROM settlement_smith WHERE settlement_id = {settlement_literal}");
@@ -93,7 +89,7 @@ pub(super) async fn merchant_shop(
         get_active_party_members(&state, Some(character)),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
         state.db.query::<FoodLot>("SELECT * FROM food_lot"),
-        state.db.query::<CharacterEquip>(&equip_sql),
+        party::character_equipment_graph(&state, character.id),
         inventory_trade_context(&state, character),
         state.db.query::<ItemCondition>(&condition_sql),
         state.db.query::<SettlementSmith>(&smith_sql),
@@ -104,7 +100,7 @@ pub(super) async fn merchant_shop(
             .query::<BackendLocalProblemTradeEffect>(&consequence_sql),
     );
     let items = items.unwrap_or_default();
-    let equip = equip.unwrap_or_default();
+    let equip = equip;
     let (personal_targets, party_targets, pooled) = trade_context;
     let encumbrance = inventory_encumbrance_summaries(
         &state,

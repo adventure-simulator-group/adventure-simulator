@@ -258,24 +258,11 @@ pub(super) async fn party_member(
             .unwrap_or_default()
     };
 
-    let selected_equip: Vec<CharacterEquip> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_equip WHERE character_id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default();
-    let active_equip: Vec<CharacterEquip> = if character_id == active_character.id {
+    let selected_equip = character_equipment_graph(&state, character_id).await;
+    let active_equip: Vec<CharacterEquipmentGraph> = if character_id == active_character.id {
         selected_equip.clone()
     } else {
-        state
-            .db
-            .query(&format!(
-                "SELECT * FROM character_equip WHERE character_id = {}",
-                active_character.id
-            ))
-            .await
-            .unwrap_or_default()
+        character_equipment_graph(&state, active_character.id).await
     };
     let items: Vec<ItemDefinition> = state
         .db
@@ -394,14 +381,7 @@ pub(super) async fn party_pool_inventory(
         .query("SELECT * FROM item")
         .await
         .unwrap_or_default();
-    let equip: Vec<CharacterEquip> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM character_equip WHERE character_id = {}",
-            character.id
-        ))
-        .await
-        .unwrap_or_default();
+    let equip = character_equipment_graph(&state, character.id).await;
     let members = get_active_party_members(&state, Some(&character)).await;
     let encumbrance = inventory_encumbrance_summaries(
         &state, &character, &inventory, &members, &pooled, &items, true,

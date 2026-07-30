@@ -545,22 +545,28 @@ fn dialogue_fact_context(
                     );
                 }
             }
-            if let Some(equipment) = ctx.db.character_equip().character_id().find(id) {
-                let equipped = [
-                    equipment.left_hand_item_id,
-                    equipment.right_hand_item_id,
-                    equipment.left_arm_armor_id,
-                    equipment.right_arm_armor_id,
-                    equipment.left_leg_armor_id,
-                    equipment.right_leg_armor_id,
-                    equipment.head_armor_id,
-                    equipment.chest_armor_id,
-                    equipment.stomach_armor_id,
-                ];
+            {
+                let mut equipped = ctx
+                    .db
+                    .character_equipped_item()
+                    .character_id()
+                    .filter(id)
+                    .collect::<Vec<_>>();
+                equipped.sort_by_key(|row| {
+                    let outer = ctx
+                        .db
+                        .equipment_occupancy()
+                        .inventory_item_id()
+                        .filter(row.inventory_item_id)
+                        .max_by_key(|occupancy| (occupancy.channel.order(), occupancy.order))
+                        .map_or((0, 0), |occupancy| {
+                            (occupancy.channel.order(), occupancy.order)
+                        });
+                    (std::cmp::Reverse(outer), row.inventory_item_id)
+                });
                 let clothing = equipped
                     .into_iter()
-                    .flatten()
-                    .filter_map(|inventory_id| ctx.db.inventory_item().id().find(inventory_id))
+                    .filter_map(|row| ctx.db.inventory_item().id().find(row.inventory_item_id))
                     .filter_map(|inventory| ctx.db.item().id().find(&inventory.item_id))
                     .find(|item| item.kind == crate::item::ItemKind::Clothing);
                 if let Some(item) = clothing {

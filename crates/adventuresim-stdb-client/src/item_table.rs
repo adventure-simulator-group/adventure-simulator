@@ -2,6 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::equipment_attachment_point_type::EquipmentAttachmentPoint;
+use super::equipment_placement_type::EquipmentPlacement;
 use super::item_kind_type::ItemKind;
 use super::item_slot_type::ItemSlot;
 use super::item_type::Item;

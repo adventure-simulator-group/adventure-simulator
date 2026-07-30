@@ -23,7 +23,7 @@ use futures_util::{
 use maud::Markup;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const BUILDINGS: &[&str] = &[
     "public-square",
@@ -178,17 +178,19 @@ use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendLocalProblemTradeEffect,
     BackendPhysiologyAdministration, BackendPhysiologyChart, Character, CharacterAffinity,
-    CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
-    CharacterPersonality, CharacterSettlementReputation, CharacterSkills, CharacterStats,
-    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
-    ContractPresentationStatus, FoodLot, InventoryItem, InventoryItemAmount,
-    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
-    LimbRegion, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
-    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, RecruitmentOffer,
-    RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
-    SettlementSmith, SocialAddress, SocialBelief, StrategicEncounter, TravelEdge,
+    CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquipmentGraph,
+    CharacterEquippedItem, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
+    CharacterMoraleSource, CharacterNeeds, CharacterPersonality, CharacterSettlementReputation,
+    CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
+    CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
+    EquipmentAnchorKind, EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
+    InventoryItemAmount, InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind,
+    ItemSlot, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
+    PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake,
+    RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand,
+    RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
+    SettlementDescription, SettlementSmith, SocialAddress, SocialBelief, StrategicEncounter,
+    TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
