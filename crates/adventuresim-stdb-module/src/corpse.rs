@@ -806,7 +806,11 @@ pub fn examine_corpse(
     {
         return Ok(());
     }
-    let (corpse, party_id, _minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
+    let (corpse, party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
+    if corpse_location(corpse.discovered_minute, minute, corpse.exhumed) == CorpseLocation::Interred
+    {
+        return Err("The body must be exhumed before it can be examined".into());
+    }
     if corpse.revision != expected_revision {
         return Err("Corpse state changed; refresh before examining it".into());
     }
@@ -895,7 +899,11 @@ pub fn open_corpse(
     {
         return Ok(());
     }
-    let (mut corpse, party_id, _minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
+    let (mut corpse, party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
+    if corpse_location(corpse.discovered_minute, minute, corpse.exhumed) == CorpseLocation::Interred
+    {
+        return Err("The body must be exhumed before it can be opened".into());
+    }
     if corpse.opened {
         return Ok(());
     }

@@ -370,23 +370,24 @@ pub fn corpse_medical_dialog(corpse: &BackendCorpse, location_base: &str, window
                 div class="surgery-procedures" {
                     @if corpse.location == "interred" {
                         (corpse_action_form(corpse, location_base, window, "exhume", "surgery", "handling", "Exhume the body", None))
+                    } @else {
+                        (corpse_action_form(corpse, location_base, window, "examine", window, "external", "External examination", None))
+                        (corpse_action_form(corpse, location_base, window, "examine", "bestiary", "external", "Interpret external creature signs", None))
+                        @if window == "surgery" {
+                            (corpse_action_form(
+                                corpse,
+                                location_base,
+                                window,
+                                "open",
+                                "surgery",
+                                "opening",
+                                "Open the body",
+                                corpse.opened.then_some("The body is already open"),
+                            ))
+                        }
+                        (corpse_action_form(corpse, location_base, window, "examine", window, "internal", "Internal examination", internal_disabled))
+                        (corpse_action_form(corpse, location_base, window, "examine", "bestiary", "internal", "Interpret internal creature signs", internal_disabled))
                     }
-                    (corpse_action_form(corpse, location_base, window, "examine", window, "external", "External examination", None))
-                    (corpse_action_form(corpse, location_base, window, "examine", "bestiary", "external", "Interpret external creature signs", None))
-                    @if window == "surgery" {
-                        (corpse_action_form(
-                            corpse,
-                            location_base,
-                            window,
-                            "open",
-                            "surgery",
-                            "opening",
-                            "Open the body",
-                            corpse.opened.then_some("The body is already open"),
-                        ))
-                    }
-                    (corpse_action_form(corpse, location_base, window, "examine", window, "internal", "Internal examination", internal_disabled))
-                    (corpse_action_form(corpse, location_base, window, "examine", "bestiary", "internal", "Interpret internal creature signs", internal_disabled))
                 }
                 @if !corpse.findings.is_empty() {
                     section class="physiology-chart-readings" aria-label="Recorded autopsy findings" {
@@ -1645,6 +1646,21 @@ mod tests {
         assert!(surgery.contains("surgery-dialog"));
         assert!(surgery.contains("Open the body"));
         assert!(!surgery.contains("btn btn-danger"));
+    }
+
+    #[test]
+    fn interred_corpse_requires_exhumation_before_medical_actions() {
+        let mut corpse = corpse_fixture("family", false);
+        corpse.location = "interred".into();
+        corpse.exhumation_permission = false;
+
+        let markup =
+            corpse_medical_dialog(&corpse, "/locations/settlement/town", "surgery").into_string();
+
+        assert!(markup.contains("Exhume the body"));
+        assert!(!markup.contains("External examination"));
+        assert!(!markup.contains("Open the body"));
+        assert!(!markup.contains("Internal examination"));
     }
 
     #[test]
