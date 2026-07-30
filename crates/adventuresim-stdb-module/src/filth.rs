@@ -143,7 +143,7 @@ fn predicted_wound_routes(
         .collect())
 }
 
-pub fn blood_episodes_through(
+pub fn blood_exposure_attempts_through(
     ctx: &ReducerContext,
     character_id: u64,
     from: u64,
@@ -152,7 +152,7 @@ pub fn blood_episodes_through(
     allow_healing: bool,
     plan: Option<&crate::disease::PartyDiseaseIntervalPlan>,
     max_work: u64,
-) -> Result<Vec<adventuresim_core::disease::InfectionEpisode>, String> {
+) -> Result<Vec<adventuresim_core::disease::AcquisitionAttempt>, String> {
     if to <= from {
         return Ok(Vec::new());
     }
@@ -168,15 +168,8 @@ pub fn blood_episodes_through(
     if !has_active_compatible_foreign_blood {
         return Ok(Vec::new());
     }
-    let immunity = ctx
-        .db
-        .character_attributes()
-        .character_id()
-        .find(character_id)
-        .map_or(3.0, |attributes| attributes.immunity);
     let routes = predicted_wound_routes(ctx, character_id, allow_healing)?;
-    let mut episodes = crate::disease::character_episodes(ctx, character_id)?;
-    let original_len = episodes.len();
+    let mut attempts = Vec::new();
     let mut work = 0;
     for disease_id in adventuresim_core::disease::STARTER_DISEASES
         .iter()
@@ -211,11 +204,6 @@ pub fn blood_episodes_through(
         {
             adventuresim_core::disease::add_bounded_work(&mut work, 1, max_work)
                 .map_err(str::to_string)?;
-            if adventuresim_core::disease::has_unresolved_disease(
-                &episodes, disease_id, minute, immunity,
-            ) {
-                continue;
-            }
             let route = filth::timed_cut_exposure(&routes, minute.saturating_sub(from));
             let check = plan.map_or_else(
                 || crate::disease::party_physiology_check_at(ctx, character_id, minute),
@@ -235,30 +223,22 @@ pub fn blood_episodes_through(
             if exposure <= 0.0 {
                 continue;
             }
-            let prior = adventuresim_core::disease::acquired_immunity(
-                &episodes, disease_id, minute, immunity,
-            );
             let seed = adventuresim_core::disease::outbreak_exposure_seed(
                 character_id,
                 &format!("blood:{}:{minute}", crate::disease::disease_key(disease_id)),
             );
-            if adventuresim_core::disease::acquisition_succeeds(
-                seed,
-                adventuresim_core::disease::definition(disease_id),
-                immunity,
-                prior,
-                exposure,
-            ) {
-                episodes.push(adventuresim_core::disease::InfectionEpisode {
+            attempts.push(adventuresim_core::disease::AcquisitionAttempt::exposure(
+                adventuresim_core::disease::InfectionEpisode {
                     id: seed,
                     character_id,
                     disease_id,
                     contracted_at: minute,
                     ruleset_version: adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
                     phenotype_key_version: adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
-                });
-                break;
-            }
+                },
+                adventuresim_core::disease::definition(disease_id).base_acquisition,
+                exposure,
+            ));
         }
         if persist_checkpoint {
             let row = BloodExposureCheckpoint {
@@ -274,7 +254,7 @@ pub fn blood_episodes_through(
             }
         }
     }
-    Ok(episodes.split_off(original_len))
+    Ok(attempts)
 }
 
 pub fn next_travel_dirt_boundary(ctx: &ReducerContext, character_id: u64) -> u64 {
@@ -893,7 +873,7 @@ mod source_tests {
     fn blood_route_receives_partial_physician_protection_after_physical_controls() {
         let source = include_str!("filth.rs");
         let exposure = source
-            .split("pub fn blood_episodes_through")
+            .split("pub fn blood_exposure_attempts_through")
             .nth(1)
             .and_then(|tail| tail.split("/// Reusable strategic boundary").next())
             .expect("blood exposure source");

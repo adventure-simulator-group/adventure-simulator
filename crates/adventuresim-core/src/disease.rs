@@ -355,6 +355,34 @@ pub struct AcquisitionTimeline {
     pub work_units: u64,
 }
 
+/// A route-specific exposure that must be evaluated against the target's
+/// episode history at its absolute minute. `exposure == None` is reserved for
+/// acquisitions that were authoritatively decided outside this timeline.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AcquisitionAttempt {
+    pub episode: InfectionEpisode,
+    pub base_acquisition: f32,
+    pub exposure: Option<f32>,
+}
+
+impl AcquisitionAttempt {
+    pub fn guaranteed(episode: InfectionEpisode) -> Self {
+        Self {
+            episode,
+            base_acquisition: 0.0,
+            exposure: None,
+        }
+    }
+
+    pub fn exposure(episode: InfectionEpisode, base_acquisition: f32, exposure: f32) -> Self {
+        Self {
+            episode,
+            base_acquisition,
+            exposure: Some(exposure),
+        }
+    }
+}
+
 pub fn insert_unique_bounded<K: Ord, V>(
     values: &mut std::collections::BTreeMap<K, V>,
     key: K,
@@ -381,13 +409,13 @@ pub fn add_bounded_work(work: &mut u64, amount: u64, max: u64) -> Result<(), &'s
         .ok_or("Disease interval exceeds bounded exposure work")
 }
 
-/// Resolve already-assembled route candidates and contact transmission in one
-/// absolute-minute timeline. Acquisitions at a minute are simultaneous and
-/// become eligible contact sources only on the following minute.
+/// Resolve route exposure attempts and contact transmission in one absolute-
+/// minute timeline. Acquisitions at a minute are simultaneous and become
+/// eligible contact sources only on the following minute.
 pub fn resolve_acquisition_timeline(
     target_ids: &std::collections::BTreeSet<u64>,
     initial: &std::collections::BTreeMap<u64, Vec<InfectionEpisode>>,
-    scheduled: impl IntoIterator<Item = InfectionEpisode>,
+    scheduled: impl IntoIterator<Item = AcquisitionAttempt>,
     windows: &[ContactWindow],
     immunity: &std::collections::BTreeMap<u64, f32>,
     from: u64,
@@ -404,9 +432,10 @@ pub fn resolve_acquisition_timeline(
             })
             .ok_or("Disease interval exceeds bounded exposure work");
     }
-    let mut scheduled_by_minute = std::collections::BTreeMap::<u64, Vec<InfectionEpisode>>::new();
+    let mut scheduled_by_minute = std::collections::BTreeMap::<u64, Vec<AcquisitionAttempt>>::new();
     let mut work_units = initial_work;
-    for episode in scheduled {
+    for attempt in scheduled {
+        let episode = attempt.episode;
         if target_ids.contains(&episode.character_id)
             && episode.contracted_at > from
             && episode.contracted_at <= to
@@ -418,7 +447,7 @@ pub fn resolve_acquisition_timeline(
             scheduled_by_minute
                 .entry(episode.contracted_at)
                 .or_default()
-                .push(episode);
+                .push(attempt);
         }
     }
     let mut state = initial.clone();
@@ -438,7 +467,48 @@ pub fn resolve_acquisition_timeline(
         return Ok(result);
     };
     while minute <= to {
-        let mut candidates = scheduled_by_minute.remove(&minute).unwrap_or_default();
+        let mut candidates = scheduled_by_minute
+            .remove(&minute)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|attempt| {
+                let candidate = attempt.episode;
+                let target_immunity = immunity
+                    .get(&candidate.character_id)
+                    .copied()
+                    .unwrap_or(3.0);
+                let target_episodes = state
+                    .get(&candidate.character_id)
+                    .map_or(&[][..], Vec::as_slice);
+                if has_unresolved_disease(
+                    target_episodes,
+                    candidate.disease_id,
+                    minute,
+                    target_immunity,
+                ) {
+                    return None;
+                }
+                let Some(exposure) = attempt.exposure else {
+                    return Some(candidate);
+                };
+                let prior = acquired_immunity(
+                    target_episodes,
+                    candidate.disease_id,
+                    minute,
+                    target_immunity,
+                );
+                let mut attempt_definition = *definition(candidate.disease_id);
+                attempt_definition.base_acquisition = attempt.base_acquisition;
+                acquisition_succeeds(
+                    candidate.id,
+                    &attempt_definition,
+                    target_immunity,
+                    prior,
+                    exposure,
+                )
+                .then_some(candidate)
+            })
+            .collect::<Vec<_>>();
         for window in windows {
             result.work_units = result.work_units.saturating_add(1);
             if result.work_units > max_work {
@@ -1011,8 +1081,7 @@ pub fn first_eligible_protected_presence_exposure_minute(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn eligible_protected_presence_exposure_attempt_minutes(
-    episodes: &[InfectionEpisode],
+pub fn protected_presence_exposure_attempts(
     disease_id: DiseaseId,
     character_id: u64,
     exposure_id: &str,
@@ -1020,38 +1089,34 @@ pub fn eligible_protected_presence_exposure_attempt_minutes(
     to: u64,
     intensity: f32,
     base_acquisition: f32,
-    immunity: f32,
     vector: TransmissionVector,
     max_attempts: usize,
     physiology_check_at: impl Fn(u64) -> f32,
-) -> Result<Vec<u64>, &'static str> {
+) -> Result<Vec<AcquisitionAttempt>, &'static str> {
     if to <= from || intensity <= 0.0 {
         return Ok(Vec::new());
     }
-    let mut attempts = Vec::new();
-    for minute in (from + 1)..=to {
-        if has_unresolved_disease(episodes, disease_id, minute, immunity) {
-            continue;
-        }
-        let prior_immunity = acquired_immunity(episodes, disease_id, minute, immunity);
-        let key = format!("{exposure_id}:{minute}");
-        if acquisition_succeeds(
-            outbreak_exposure_seed(character_id, &key),
-            &DiseaseDefinition {
-                base_acquisition: base_acquisition / 1_440.0,
-                ..*definition(disease_id)
-            },
-            immunity,
-            prior_immunity,
-            residual_exposure(intensity, vector, physiology_check_at(minute)),
-        ) {
-            if attempts.len() >= max_attempts {
-                return Err("Disease interval exceeds bounded acquisition candidates");
-            }
-            attempts.push(minute);
-        }
+    let attempt_count = to.saturating_sub(from);
+    if attempt_count > max_attempts as u64 {
+        return Err("Disease interval exceeds bounded acquisition candidates");
     }
-    Ok(attempts)
+    Ok(((from + 1)..=to)
+        .map(|minute| {
+            let id = outbreak_exposure_seed(character_id, &format!("{exposure_id}:{minute}"));
+            AcquisitionAttempt::exposure(
+                InfectionEpisode {
+                    id,
+                    character_id,
+                    disease_id,
+                    contracted_at: minute,
+                    ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+                    phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+                },
+                base_acquisition / 1_440.0,
+                residual_exposure(intensity, vector, physiology_check_at(minute)),
+            )
+        })
+        .collect())
 }
 
 pub fn severity(e: InfectionEpisode, immunity: f32) -> f32 {
@@ -2131,7 +2196,7 @@ mod tests {
         let result = resolve_acquisition_timeline(
             &targets,
             &Default::default(),
-            [blood],
+            [AcquisitionAttempt::guaranteed(blood)],
             &[ContactWindow {
                 low_id: 2,
                 high_id: 3,
@@ -2203,7 +2268,7 @@ mod tests {
         let clipped = resolve_acquisition_timeline(
             &targets,
             &Default::default(),
-            [scheduled_after_death_clip],
+            [AcquisitionAttempt::guaranteed(scheduled_after_death_clip)],
             &[],
             &immunity,
             0,
@@ -2280,40 +2345,61 @@ mod tests {
     }
 
     #[test]
-    fn long_environmental_source_reattempts_after_resolution_whole_or_split() {
-        let initial_episode = timeline_episode(51, 7, 0);
-        let initial = [(7, vec![initial_episode])].into_iter().collect();
+    fn environmental_immunity_evolves_across_multiple_cycles_whole_or_split() {
+        let initial = std::collections::BTreeMap::new();
         let immunity = [(7, 0.0)].into_iter().collect();
         let targets = [7].into_iter().collect();
-        let resolution = (1..60 * DAY)
-            .find(|minute| evaluate(initial_episode, *minute, 0.0).stage == DiseaseStage::Resolved)
-            .unwrap();
-        let split_at = resolution.saturating_sub(1);
-        let to = resolution + 30 * DAY;
-        let scheduled = |from, to| {
-            eligible_protected_presence_exposure_attempt_minutes(
-                &[initial_episode],
-                DiseaseId::Influenza,
-                7,
-                "long-running-outbreak",
-                from,
-                to,
-                1_000.0,
-                definition(DiseaseId::Influenza).base_acquisition,
-                0.0,
-                TransmissionVector::CloseContact,
-                100_000,
-                |_| 0.0,
-            )
-            .unwrap()
+        let duration = {
+            let episode = timeline_episode(1, 7, 1);
+            (2..60 * DAY)
+                .find(|minute| evaluate(episode, *minute, 0.0).stage == DiseaseStage::Resolved)
+                .unwrap()
+                - episode.contracted_at
+        };
+        let first_at = 1;
+        let split_at = first_at + duration;
+        let threshold_at = split_at + 1;
+        let second_at = threshold_at + 1;
+        let third_at = second_at + duration + 1;
+        let to = third_at;
+        let definition = definition(DiseaseId::Influenza);
+        let threshold_seed = ((0.55_f64 * (1_u64 << 53) as f64) as u64) << 11;
+        assert!(acquisition_succeeds(
+            threshold_seed,
+            definition,
+            0.0,
+            0.0,
+            1.0
+        ));
+        assert!(!acquisition_succeeds(
+            threshold_seed,
+            definition,
+            0.0,
+            definition.acquired_immunity,
+            1.0
+        ));
+        let episode = |id, at| InfectionEpisode {
+            id,
+            character_id: 7,
+            disease_id: DiseaseId::Influenza,
+            contracted_at: at,
+            ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+            phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+        };
+        let scheduled = |from, through| {
+            [
+                AcquisitionAttempt::exposure(episode(61, first_at), 0.65, 1_000.0),
+                AcquisitionAttempt::exposure(
+                    episode(threshold_seed, threshold_at),
+                    definition.base_acquisition,
+                    1.0,
+                ),
+                AcquisitionAttempt::exposure(episode(62, second_at), 0.65, 1_000.0),
+                AcquisitionAttempt::exposure(episode(63, third_at), 0.65, 1_000.0),
+            ]
             .into_iter()
-            .map(|at| InfectionEpisode {
-                id: outbreak_exposure_seed(7, &format!("long-running-outbreak:{at}")),
-                character_id: 7,
-                disease_id: DiseaseId::Influenza,
-                contracted_at: at,
-                ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
-                phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+            .filter(|attempt| {
+                attempt.episode.contracted_at > from && attempt.episode.contracted_at <= through
             })
             .collect::<Vec<_>>()
         };
@@ -2330,7 +2416,19 @@ mod tests {
             |_, _| 0.0,
         )
         .unwrap();
-        assert!(whole.proposals[&7][0].contracted_at >= resolution);
+        assert_eq!(
+            whole.proposals[&7]
+                .iter()
+                .map(|episode| episode.contracted_at)
+                .collect::<Vec<_>>(),
+            vec![first_at, second_at, third_at]
+        );
+        assert!(
+            !whole.proposals[&7]
+                .iter()
+                .any(|episode| episode.id == threshold_seed),
+            "the threshold-sensitive roll must be rejected by immunity acquired during this run"
+        );
 
         let first = resolve_acquisition_timeline(
             &targets,

@@ -1134,8 +1134,6 @@ pub fn plan_party_disease_interval(
     for id in &ids {
         let start = starts[id];
         let end = horizons[id];
-        let episodes = &initial[id];
-        let immunity = immunities[id];
         let Some(character) = ctx.db.character().id().find(*id) else {
             continue;
         };
@@ -1193,8 +1191,7 @@ pub fn plan_party_disease_interval(
                 let definition = disease::definition(disease_id);
                 let remaining_candidates =
                     MAX_PARTY_INTERVAL_CANDIDATES.saturating_sub(scheduled.len());
-                let attempts = disease::eligible_protected_presence_exposure_attempt_minutes(
-                    &episodes,
+                let attempts = disease::protected_presence_exposure_attempts(
                     disease_id,
                     *id,
                     &source_id,
@@ -1202,25 +1199,15 @@ pub fn plan_party_disease_interval(
                     to,
                     intensity,
                     definition.base_acquisition,
-                    immunity,
                     definition.primary_community_vector,
                     remaining_candidates,
                     |minute| plan.check_at(*id, minute),
                 )
                 .map_err(str::to_string)?;
-                for at in attempts {
-                    scheduled.push(InfectionEpisode {
-                        id: disease::outbreak_exposure_seed(*id, &format!("{source_id}:{at}")),
-                        character_id: *id,
-                        disease_id,
-                        contracted_at: at,
-                        ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
-                        phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
-                    });
-                }
+                scheduled.extend(attempts);
             }
         }
-        scheduled.extend(crate::filth::blood_episodes_through(
+        let blood_attempts = crate::filth::blood_exposure_attempts_through(
             ctx,
             *id,
             start,
@@ -1229,7 +1216,11 @@ pub fn plan_party_disease_interval(
             allow_healing,
             Some(&plan),
             blood_interval_work_budget(end.saturating_sub(start)),
-        )?);
+        )?;
+        if blood_attempts.len() > MAX_PARTY_INTERVAL_CANDIDATES.saturating_sub(scheduled.len()) {
+            return Err("Disease interval exceeds bounded acquisition candidates".into());
+        }
+        scheduled.extend(blood_attempts);
     }
     let windows = pairs
         .into_iter()
@@ -1842,7 +1833,7 @@ fn clip_elapsed_for_disease_planned(
     )?;
     // Re-evaluate only the committed prefix and advance the private cursor.
     // Absolute-minute seeds guarantee the same proposal as preview/full evaluation.
-    let _ = crate::filth::blood_episodes_through(
+    let _ = crate::filth::blood_exposure_attempts_through(
         ctx,
         character_id,
         now,
@@ -2691,7 +2682,7 @@ mod herbalist_purchase_source_tests {
             .unwrap();
         assert!(plan.contains("settlement_outbreak"));
         assert!(plan.contains("local_problem_authority"));
-        assert!(plan.contains("blood_episodes_through"));
+        assert!(plan.contains("blood_exposure_attempts_through"));
         assert!(plan.contains("resolve_acquisition_timeline"));
         let clip = source
             .split("fn clip_elapsed_for_disease_planned")
