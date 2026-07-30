@@ -150,6 +150,7 @@ pub fn blood_episodes_through(
     to: u64,
     persist_checkpoint: bool,
     allow_healing: bool,
+    plan: Option<&crate::disease::PartyDiseaseIntervalPlan>,
 ) -> Result<Vec<adventuresim_core::disease::InfectionEpisode>, String> {
     if to <= from {
         return Ok(Vec::new());
@@ -212,12 +213,20 @@ pub fn blood_episodes_through(
                 continue;
             }
             let route = filth::timed_cut_exposure(&routes, minute.saturating_sub(from));
-            let exposure = crate::disease::protected_exposure_at(
-                ctx,
-                character_id,
-                minute,
-                adventuresim_core::disease::TransmissionVector::Blood,
+            let check = plan.map_or_else(
+                || crate::disease::party_physiology_check_at(ctx, character_id, minute),
+                |plan| plan.check_at(character_id, minute),
+            );
+            // Any infectious deposit still present here survived or preceded
+            // explicit washing, so clean handling is not available for this
+            // dose. Bandaging/stitching still raises the physical affordance
+            // through the predicted cut-route state.
+            let affordance = adventuresim_core::disease::blood_caregiving_affordance(false, route);
+            let exposure = adventuresim_core::disease::residual_exposure_with_affordance(
                 filth::blood_exposure(&relevant, disease_id, minute, route) / 1_440.0,
+                adventuresim_core::disease::TransmissionVector::Blood,
+                check,
+                affordance,
             );
             if exposure <= 0.0 {
                 continue;
@@ -884,10 +893,11 @@ mod source_tests {
             .nth(1)
             .and_then(|tail| tail.split("/// Reusable strategic boundary").next())
             .expect("blood exposure source");
-        let prevention = exposure.find("protected_exposure_at").unwrap();
+        let prevention = exposure.find("residual_exposure").unwrap();
         let physical = exposure.find("filth::blood_exposure").unwrap();
         assert!(prevention < physical);
         assert!(exposure.contains("TransmissionVector::Blood"));
         assert!(exposure.contains("timed_cut_exposure"));
+        assert!(exposure.contains("blood_caregiving_affordance(false, route)"));
     }
 }

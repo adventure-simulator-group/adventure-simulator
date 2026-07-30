@@ -52,6 +52,12 @@ current party, character, location, time, custody, and source identity before
 changing state. Shared-core functions perform deterministic calculations, but
 do not grant authority by themselves.
 
+Multi-character strategic time actions snapshot disease exposure before the
+first participant clock mutates. The reducer-local plan projects only the
+explicit co-advancing set, prefetches bounded pair-presence coverage, and gives
+preview and commit the same deterministic acquisition proposals. Solo
+catch-up reads recorded history instead of projecting absent companions.
+
 The largest strategic implementations are organized behind their established
 Rust module paths. `strategic` and `investigation` retain ordered same-scope
 source fragments because SpacetimeDB table, reducer, view, and generated

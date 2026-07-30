@@ -54,6 +54,19 @@ disinfectant. Those physical controls retain their stronger modeled effects.
 Infections capable of close-contact spread can pass between party members,
 including before symptoms make the source publicly identifiable.
 
+The exposure calculation keeps the preventable behavior dose separate from
+unavoidable environmental dose. Existing physical state also caps the
+preventable share where relevant: soap-backed washing removes blood first,
+while an unprotected wound and unavailable clean handling sharply limit what
+knowledge alone can prevent.
+
+Shared sleep is the overnight form of close-contact co-presence. Sleep, travel,
+and treatment evaluate all co-advancing party members
+from one pre-action snapshot. This makes prevention and close-contact
+transmission independent of character ID or reducer iteration order. Solo
+catch-up uses recorded co-presence only; it cannot borrow future protection
+from a physician who is not advancing with the patient.
+
 Prepared interventions act on the patient's condition rather than naming a
 disease they magically cure. Treatment may improve or worsen the evidence
 available to an observer, but never reveals hidden truth directly.

@@ -537,9 +537,16 @@ fn advance_party_movement(
     traveler_ids: &[u64],
     requested_minutes: u64,
 ) -> Result<(u64, bool), String> {
+    let disease_plan =
+        crate::disease::plan_party_disease_interval(ctx, traveler_ids, requested_minutes)?;
     let mut safe_prefixes = Vec::with_capacity(traveler_ids.len());
     for member_id in traveler_ids {
-        safe_prefixes.push(preview_travel_time(ctx, *member_id, requested_minutes)?);
+        safe_prefixes.push(crate::time::preview_travel_time_in_plan(
+            ctx,
+            *member_id,
+            requested_minutes,
+            &disease_plan,
+        )?);
     }
     let actual_minutes = common_movement_prefix(requested_minutes, safe_prefixes.iter().copied());
     if actual_minutes == 0 {
@@ -553,7 +560,12 @@ fn advance_party_movement(
     }
     let mut all_survived = true;
     for member_id in traveler_ids.iter().copied() {
-        all_survived &= advance_travel_time(ctx, member_id, actual_minutes)?;
+        all_survived &= crate::time::advance_travel_time_in_plan(
+            ctx,
+            member_id,
+            actual_minutes,
+            &disease_plan,
+        )?;
     }
     // Training is committed only after every participant's authoritative
     // clock has committed the same safe movement prefix.

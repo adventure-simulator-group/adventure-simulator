@@ -206,9 +206,60 @@ pub fn maximum_preventable_fraction(vector: TransmissionVector) -> f32 {
     }
 }
 
-pub fn residual_exposure(exposure: f32, vector: TransmissionVector, physiology_check: f32) -> f32 {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExposureComponents {
+    pub unavoidable: f32,
+    pub preventable: f32,
+}
+
+/// Split a route's total dose into unavoidable/environmental exposure and the
+/// party-behavior share that Physiology can mitigate. `affordance` represents
+/// how much of the route's ordinary preventive behavior is physically
+/// possible with the current space, sanitation, and supplies.
+pub fn exposure_components(
+    exposure: f32,
+    vector: TransmissionVector,
+    affordance: f32,
+) -> ExposureComponents {
+    let exposure = exposure.max(0.0);
+    let preventable = exposure * maximum_preventable_fraction(vector) * affordance.clamp(0.0, 1.0);
+    ExposureComponents {
+        unavoidable: exposure - preventable,
+        preventable,
+    }
+}
+
+pub fn residual_exposure_with_affordance(
+    exposure: f32,
+    vector: TransmissionVector,
+    physiology_check: f32,
+    affordance: f32,
+) -> f32 {
+    let components = exposure_components(exposure, vector, affordance);
     let competence = (physiology_check.clamp(0.0, 5.0) / 5.0).powf(1.25);
-    exposure.max(0.0) * (1.0 - maximum_preventable_fraction(vector) * competence)
+    components.unavoidable + components.preventable * (1.0 - competence)
+}
+
+pub const BLOOD_BASIC_HANDLING_AFFORDANCE: f32 = 0.25;
+pub const BLOOD_CLEAN_HANDLING_BONUS: f32 = 0.45;
+pub const BLOOD_CLOSED_WOUND_BONUS: f32 = 0.30;
+
+/// Circumstance cap for blood/caregiving prevention. Basic avoidance remains
+/// possible without supplies, but clean handling and a protected wound must
+/// come from real sanitation and wound-care state.
+pub fn blood_caregiving_affordance(clean_handling: bool, cut_route: f32) -> f32 {
+    (BLOOD_BASIC_HANDLING_AFFORDANCE
+        + if clean_handling {
+            BLOOD_CLEAN_HANDLING_BONUS
+        } else {
+            0.0
+        }
+        + BLOOD_CLOSED_WOUND_BONUS * (1.0 - cut_route.clamp(0.0, 1.0)))
+    .clamp(0.0, 1.0)
+}
+
+pub fn residual_exposure(exposure: f32, vector: TransmissionVector, physiology_check: f32) -> f32 {
+    residual_exposure_with_affordance(exposure, vector, physiology_check, 1.0)
 }
 
 /// Aggregate distinct practitioners whose pinned capability covers `minute`.
@@ -1467,6 +1518,95 @@ mod tests {
             residual_exposure(exposure, TransmissionVector::Wound, 5.0),
             exposure
         );
+    }
+
+    #[test]
+    fn prevention_separates_unavoidable_dose_and_caps_missing_affordances() {
+        let fully_possible = exposure_components(1.0, TransmissionVector::FoodWater, 1.0);
+        let impossible = exposure_components(1.0, TransmissionVector::FoodWater, 0.0);
+        assert!(fully_possible.preventable > fully_possible.unavoidable);
+        assert_eq!(impossible.preventable, 0.0);
+        assert_eq!(impossible.unavoidable, 1.0);
+
+        let missing_supplies_open_wound = blood_caregiving_affordance(false, 1.0);
+        let clean_handling_protected_wound = blood_caregiving_affordance(true, 0.18);
+        assert_eq!(missing_supplies_open_wound, BLOOD_BASIC_HANDLING_AFFORDANCE);
+        assert!(clean_handling_protected_wound > missing_supplies_open_wound);
+        assert!(
+            residual_exposure_with_affordance(
+                1.0,
+                TransmissionVector::Blood,
+                5.0,
+                missing_supplies_open_wound,
+            ) > residual_exposure_with_affordance(
+                1.0,
+                TransmissionVector::Blood,
+                5.0,
+                clean_handling_protected_wound,
+            )
+        );
+        assert_eq!(
+            residual_exposure_with_affordance(
+                0.0,
+                TransmissionVector::Blood,
+                5.0,
+                clean_handling_protected_wound,
+            ),
+            0.0,
+            "successful physical cleaning removes the dose before Physiology"
+        );
+    }
+
+    #[test]
+    fn strategic_prevention_fixture_reduces_contraction_and_secondary_attack_by_level() {
+        let simulated_rate = |vector, physiology_check| {
+            let definition = match vector {
+                TransmissionVector::FoodWater => definition(DiseaseId::Dysentery),
+                TransmissionVector::CloseContact => definition(DiseaseId::Influenza),
+                _ => unreachable!("fixture covers authored high-preventability routes"),
+            };
+            let exposure = residual_exposure(0.20, vector, physiology_check);
+            (0..20_000_u64)
+                .map(|character_id| outbreak_exposure_seed(character_id, "prevention-fixture"))
+                .filter(|seed| acquisition_succeeds(*seed, definition, 2.5, 0.0, exposure))
+                .count()
+        };
+        for vector in [
+            TransmissionVector::FoodWater,
+            TransmissionVector::CloseContact,
+        ] {
+            let rates = [0.0, 1.0, 3.0, 5.0].map(|level| simulated_rate(vector, level));
+            assert!(rates.windows(2).all(|pair| pair[1] < pair[0]), "{rates:?}");
+            assert!(rates[3] * 2 < rates[0], "{rates:?}");
+            assert!(rates[3] > 0, "mastery must retain residual risk");
+        }
+    }
+
+    #[test]
+    fn shared_sleep_is_close_contact_presence_and_is_chunk_invariant() {
+        let overnight_start = 18 * 60;
+        let overnight_end = overnight_start + 12 * 60;
+        let physician_span = [(9, overnight_start + 1, overnight_end, 5.0)];
+        let evaluate = |from, to| {
+            first_eligible_protected_presence_exposure_minute(
+                &[],
+                DiseaseId::Influenza,
+                7,
+                "shared-sleep:source-8",
+                from,
+                to,
+                10_000.0,
+                definition(DiseaseId::Influenza).base_acquisition,
+                2.5,
+                TransmissionVector::CloseContact,
+                |minute| historical_physiology_check_at(physician_span, minute),
+            )
+        };
+        let whole = evaluate(overnight_start, overnight_end);
+        let chunked = (overnight_start..overnight_end)
+            .step_by(60)
+            .find_map(|from| evaluate(from, (from + 60).min(overnight_end)));
+        assert_eq!(whole, chunked);
     }
 
     #[test]

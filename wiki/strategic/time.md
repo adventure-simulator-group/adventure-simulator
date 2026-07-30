@@ -10,13 +10,21 @@ fatal peak into apparent recovery.
 
 The same centralized interval evaluation assembles settlement exposure,
 within-party close-contact transmission, and infected-blood exposure before
-acquisition. Preventive Physiology uses private, capability-pinned pair-presence
-spans at each absolute minute and clamps open spans to both characters' clocks.
-It therefore cannot grant protection or transmission for time a companion has
-not yet elapsed, and splitting an otherwise identical interval does not reroll
-exposure. A solo character has no retroactive interval fallback to their current
-Physiology rank; point actions can use the current rank without changing elapsed
-time semantics.
+acquisition. Party travel, camp rest, and treatment first construct one
+immutable interval plan for the characters explicitly advancing together.
+That plan projects only those characters' open pair-presence spans through
+their shared horizon, then supplies the same acquisition proposals to every
+preview and commit. Participant iteration order therefore cannot change who
+was protected or infected. Existing closed spans and companions who are not
+co-advancing remain clamped to their recorded clocks. Splitting an otherwise
+identical interval does not reroll exposure.
+
+Lazy catch-up and other solo elapsed-time actions do not project an absent
+companion forward and do not retroactively substitute the character's current
+Physiology rank. They use only recorded pair-presence history. Point actions
+can use the current rank without changing elapsed-time semantics. Planning
+prefetches and caps relevant presence spans and exposure work, so long rests
+remain bounded instead of rescanning all historical spans for every minute.
 
 The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A newly initialized world begins on August 20 at 00:00. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
 

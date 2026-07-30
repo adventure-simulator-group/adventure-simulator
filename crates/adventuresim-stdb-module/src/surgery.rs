@@ -836,14 +836,26 @@ fn align_and_advance(
     } else {
         vec![actor_id, patient_id]
     };
+    let disease_plan = crate::disease::plan_party_disease_interval(ctx, &participants, duration)?;
     let safe_duration = participants.iter().try_fold(duration, |limit, id| {
-        let disease = crate::disease::preview_elapsed_for_disease(ctx, *id, limit, true)?;
+        let disease = crate::disease::preview_elapsed_for_disease_in_plan(
+            ctx,
+            *id,
+            limit,
+            true,
+            &disease_plan,
+        )?;
         let injury = preview_elapsed_for_injuries(ctx, *id, limit, true)?;
         Ok::<u64, String>(limit.min(disease).min(injury))
     })?;
     let mut completed = safe_duration == duration;
     for id in participants {
-        completed &= crate::time::advance_character_wait_time(ctx, id, safe_duration)?;
+        completed &= crate::time::advance_character_wait_time_in_plan(
+            ctx,
+            id,
+            safe_duration,
+            &disease_plan,
+        )?;
     }
     Ok(completed)
 }

@@ -869,6 +869,409 @@ pub(crate) fn protected_point_exposure(
     Ok(disease::residual_exposure(exposure, vector, check))
 }
 
+const MAX_PARTY_INTERVAL_SPANS: usize = 4_096;
+const MAX_PARTY_INTERVAL_WORK: u64 = 50_000_000;
+
+#[derive(Clone, Debug)]
+struct CachedCoverage {
+    contributor_id: u64,
+    start: u64,
+    end: u64,
+    check: f32,
+}
+
+#[derive(Clone, Debug)]
+struct CachedCheckSegment {
+    start: u64,
+    end: u64,
+    check: f32,
+}
+
+#[derive(Clone, Debug)]
+struct CachedPairPresence {
+    low_id: u64,
+    high_id: u64,
+    start: u64,
+    end: u64,
+}
+
+/// Reducer-local immutable acquisition snapshot for members explicitly known
+/// to co-advance. Preview and commit consume the same proposals, so database
+/// mutation and member iteration order cannot alter the interval.
+#[derive(Clone, Debug, Default)]
+pub struct PartyDiseaseIntervalPlan {
+    proposals: BTreeMap<u64, Vec<InfectionEpisode>>,
+    coverage: BTreeMap<u64, Vec<CachedCheckSegment>>,
+    work_units: u64,
+}
+
+impl PartyDiseaseIntervalPlan {
+    pub(crate) fn check_at(&self, character_id: u64, minute: u64) -> f32 {
+        let Some(segments) = self.coverage.get(&character_id) else {
+            return 0.0;
+        };
+        let index = segments.partition_point(|segment| segment.end < minute);
+        segments
+            .get(index)
+            .filter(|segment| segment.start <= minute)
+            .map_or(0.0, |segment| segment.check)
+    }
+
+    fn proposals_for(&self, character_id: u64, from: u64, to: u64) -> Vec<InfectionEpisode> {
+        self.proposals
+            .get(&character_id)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|episode| episode.contracted_at > from && episode.contracted_at <= to)
+            .collect()
+    }
+
+    pub fn work_units(&self) -> u64 {
+        self.work_units
+    }
+}
+
+pub fn plan_party_disease_interval(
+    ctx: &ReducerContext,
+    member_ids: &[u64],
+    requested: u64,
+) -> Result<PartyDiseaseIntervalPlan, String> {
+    let mut ids = member_ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    let starts = ids
+        .iter()
+        .map(|id| {
+            ctx.db
+                .character_time()
+                .character_id()
+                .find(*id)
+                .map(|row| (*id, row.minutes))
+                .ok_or_else(|| "Party member has no strategic clock".to_string())
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let horizons = starts
+        .iter()
+        .map(|(id, start)| (*id, start.saturating_add(requested)))
+        .collect::<BTreeMap<_, _>>();
+    let mut coverage = BTreeMap::<u64, Vec<CachedCoverage>>::new();
+    let mut pairs = Vec::new();
+    let id_set = ids.iter().copied().collect::<BTreeSet<_>>();
+    for span in ctx
+        .db
+        .physiology_presence_span()
+        .iter()
+        .filter(|span| id_set.contains(&span.low_id) || id_set.contains(&span.high_id))
+    {
+        let current_joint = starts
+            .get(&span.low_id)
+            .copied()
+            .unwrap_or_else(|| {
+                ctx.db
+                    .character_time()
+                    .character_id()
+                    .find(span.low_id)
+                    .map_or(0, |row| row.minutes)
+            })
+            .min(starts.get(&span.high_id).copied().unwrap_or_else(|| {
+                ctx.db
+                    .character_time()
+                    .character_id()
+                    .find(span.high_id)
+                    .map_or(0, |row| row.minutes)
+            }));
+        let projected_joint = match (
+            horizons.get(&span.low_id).copied(),
+            horizons.get(&span.high_id).copied(),
+        ) {
+            (Some(low), Some(high)) if span.ended_at.is_none() => low.min(high),
+            _ => current_joint,
+        };
+        let end = span
+            .ended_at
+            .unwrap_or(projected_joint)
+            .min(projected_joint);
+        if end < span.started_at {
+            continue;
+        }
+        if id_set.contains(&span.low_id) {
+            coverage.entry(span.low_id).or_default().extend([
+                CachedCoverage {
+                    contributor_id: span.low_id,
+                    start: span.started_at,
+                    end,
+                    check: f32::from(span.low_observer_band),
+                },
+                CachedCoverage {
+                    contributor_id: span.high_id,
+                    start: span.started_at,
+                    end,
+                    check: f32::from(span.high_observer_band),
+                },
+            ]);
+        }
+        if id_set.contains(&span.high_id) {
+            coverage.entry(span.high_id).or_default().extend([
+                CachedCoverage {
+                    contributor_id: span.low_id,
+                    start: span.started_at,
+                    end,
+                    check: f32::from(span.low_observer_band),
+                },
+                CachedCoverage {
+                    contributor_id: span.high_id,
+                    start: span.started_at,
+                    end,
+                    check: f32::from(span.high_observer_band),
+                },
+            ]);
+        }
+        if id_set.contains(&span.low_id) && id_set.contains(&span.high_id) {
+            pairs.push(CachedPairPresence {
+                low_id: span.low_id,
+                high_id: span.high_id,
+                start: span.started_at,
+                end,
+            });
+        }
+    }
+    let span_count = coverage.values().map(Vec::len).sum::<usize>() + pairs.len();
+    if span_count > MAX_PARTY_INTERVAL_SPANS {
+        return Err("Party disease interval has too many relevant presence spans".into());
+    }
+    let coverage = coverage
+        .into_iter()
+        .map(|(character_id, spans)| {
+            let mut boundaries = spans
+                .iter()
+                .flat_map(|span| [span.start, span.end.saturating_add(1)])
+                .collect::<Vec<_>>();
+            boundaries.sort_unstable();
+            boundaries.dedup();
+            let segments = boundaries
+                .windows(2)
+                .filter_map(|window| {
+                    let start = window[0];
+                    let end = window[1].saturating_sub(1);
+                    let check = disease::historical_physiology_check_at(
+                        spans
+                            .iter()
+                            .map(|span| (span.contributor_id, span.start, span.end, span.check)),
+                        start,
+                    );
+                    (check > 0.0).then_some(CachedCheckSegment { start, end, check })
+                })
+                .collect::<Vec<_>>();
+            (character_id, segments)
+        })
+        .collect();
+    let base_work = requested.saturating_mul(ids.len() as u64);
+    if base_work > MAX_PARTY_INTERVAL_WORK {
+        return Err("Party disease interval exceeds bounded exposure work".into());
+    }
+    let mut plan = PartyDiseaseIntervalPlan {
+        coverage,
+        work_units: base_work,
+        ..Default::default()
+    };
+    let mut source_episodes = BTreeMap::<u64, Vec<InfectionEpisode>>::new();
+    for id in &ids {
+        let start = starts[id];
+        let end = horizons[id];
+        let mut episodes = character_episodes(ctx, *id)?;
+        let immunity = ctx
+            .db
+            .character_attributes()
+            .character_id()
+            .find(*id)
+            .map_or(3.0, |row| row.immunity);
+        let Some(character) = ctx.db.character().id().find(*id) else {
+            continue;
+        };
+        if let Some(settlement_id) = character.current_settlement_id {
+            let mut outbreaks = ctx
+                .db
+                .settlement_outbreak()
+                .settlement_id()
+                .filter(&settlement_id)
+                .map(|row| {
+                    (
+                        row.id,
+                        row.disease_id,
+                        row.start_minute,
+                        row.end_minute,
+                        row.intensity,
+                    )
+                })
+                .collect::<Vec<_>>();
+            outbreaks
+                .sort_by(|left, right| (left.2, left.0.as_str()).cmp(&(right.2, right.0.as_str())));
+            let scope_key = format!("settlement:{settlement_id}");
+            let mut problems = ctx
+                .db
+                .local_problem_authority()
+                .scope_key()
+                .filter(&scope_key)
+                .filter(|row| {
+                    !row.disease_id.is_empty()
+                        && row.disease_intensity > 0
+                        && row.mitigation_bps < 10_000
+                })
+                .collect::<Vec<_>>();
+            problems.sort_by(|left, right| left.id.cmp(&right.id));
+            problems.truncate(adventuresim_core::local_problem::MAX_ACTIVE_PER_SCOPE);
+            let sources = outbreaks.into_iter().chain(problems.into_iter().map(|row| {
+                (
+                    row.id,
+                    row.disease_id,
+                    row.starts_at,
+                    row.ends_at.min(row.resolved_at.unwrap_or(u64::MAX)),
+                    f32::from(row.disease_intensity)
+                        * f32::from(10_000_u16.saturating_sub(row.mitigation_bps))
+                        / 10_000_000.0,
+                )
+            }));
+            for (source_id, disease_key, source_start, source_end, intensity) in sources {
+                let disease_id = parse_id(&disease_key)?;
+                let from = start.max(source_start);
+                let to = end.min(source_end);
+                plan.work_units = plan.work_units.saturating_add(to.saturating_sub(from));
+                if plan.work_units > MAX_PARTY_INTERVAL_WORK {
+                    return Err("Party disease interval exceeds bounded exposure work".into());
+                }
+                let definition = disease::definition(disease_id);
+                if let Some(at) = disease::first_eligible_protected_presence_exposure_minute(
+                    &episodes,
+                    disease_id,
+                    *id,
+                    &source_id,
+                    from,
+                    to,
+                    intensity,
+                    definition.base_acquisition,
+                    immunity,
+                    definition.primary_community_vector,
+                    |minute| plan.check_at(*id, minute),
+                ) {
+                    episodes.push(InfectionEpisode {
+                        id: disease::outbreak_exposure_seed(*id, &format!("{source_id}:{at}")),
+                        character_id: *id,
+                        disease_id,
+                        contracted_at: at,
+                        ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+                        phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+                    });
+                }
+            }
+        }
+        source_episodes.insert(*id, episodes);
+    }
+    let initial = ids
+        .iter()
+        .map(|id| character_episodes(ctx, *id).map(|episodes| (*id, episodes)))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let mut contact_proposals = Vec::new();
+    for target_id in &ids {
+        let immunity = ctx
+            .db
+            .character_attributes()
+            .character_id()
+            .find(*target_id)
+            .map_or(3.0, |row| row.immunity);
+        for source_id in ids.iter().filter(|source_id| *source_id != target_id) {
+            let windows = pairs
+                .iter()
+                .filter(|pair| {
+                    (pair.low_id == *target_id && pair.high_id == *source_id)
+                        || (pair.high_id == *target_id && pair.low_id == *source_id)
+                })
+                .map(|pair| {
+                    (
+                        pair.start.max(starts[target_id].saturating_add(1)),
+                        pair.end.min(horizons[target_id]),
+                    )
+                })
+                .filter(|(start, end)| start <= end)
+                .collect::<Vec<_>>();
+            for source_episode in &source_episodes[source_id] {
+                let definition = disease::definition(source_episode.disease_id);
+                if !definition.supports(TransmissionVector::CloseContact) {
+                    continue;
+                }
+                'window: for (start, end) in &windows {
+                    plan.work_units = plan
+                        .work_units
+                        .saturating_add(end.saturating_sub(*start).saturating_add(1));
+                    if plan.work_units > MAX_PARTY_INTERVAL_WORK {
+                        return Err("Party disease interval exceeds bounded exposure work".into());
+                    }
+                    for minute in *start..=*end {
+                        if disease::has_unresolved_disease(
+                            &initial[target_id],
+                            source_episode.disease_id,
+                            minute,
+                            immunity,
+                        ) {
+                            continue;
+                        }
+                        let infectiousness =
+                            disease::close_contact_infectiousness(*source_episode, minute);
+                        let exposure = disease::residual_exposure(
+                            infectiousness / 1_440.0,
+                            TransmissionVector::CloseContact,
+                            plan.check_at(*target_id, minute),
+                        );
+                        let prior = disease::acquired_immunity(
+                            &initial[target_id],
+                            source_episode.disease_id,
+                            minute,
+                            immunity,
+                        );
+                        let seed = disease::outbreak_exposure_seed(
+                            *target_id,
+                            &format!("party:{source_id}:{}:{minute}", source_episode.id),
+                        );
+                        if disease::acquisition_succeeds(
+                            seed, definition, immunity, prior, exposure,
+                        ) {
+                            contact_proposals.push(InfectionEpisode {
+                                id: seed,
+                                character_id: *target_id,
+                                disease_id: source_episode.disease_id,
+                                contracted_at: minute,
+                                ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+                                phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+                            });
+                            break 'window;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for id in ids {
+        let environmental = source_episodes
+            .remove(&id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|episode| {
+                !initial[&id]
+                    .iter()
+                    .any(|existing| existing.id == episode.id)
+            });
+        let contacts = contact_proposals
+            .iter()
+            .copied()
+            .filter(|episode| episode.character_id == id);
+        plan.proposals.insert(
+            id,
+            merge_acquisition_proposals(Vec::new(), environmental.chain(contacts)),
+        );
+    }
+    Ok(plan)
+}
+
 fn party_contact_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1363,11 +1766,12 @@ fn first_private_terminal(
 
 /// Returns the safe prefix of an interval and a terminal mechanism, if any.
 /// All boundary events at the earliest minute are considered together.
-pub fn clip_elapsed_for_disease(
+fn clip_elapsed_for_disease_planned(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
     allow_healing: bool,
+    plan: Option<&PartyDiseaseIntervalPlan>,
 ) -> Result<(u64, Option<TerminalFailure>), String> {
     if requested == 0 {
         return Ok((0, None));
@@ -1386,11 +1790,16 @@ pub fn clip_elapsed_for_disease(
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
     let interval_end = now.saturating_add(requested);
-    let proposed = merge_acquisition_proposals(
+    let community_and_contact = if let Some(plan) = plan {
+        plan.proposals_for(character_id, now, interval_end)
+    } else {
         merge_acquisition_proposals(
             outbreak_episodes_through(ctx, character_id, now, interval_end)?,
             party_contact_episodes_through(ctx, character_id, now, interval_end)?,
-        ),
+        )
+    };
+    let proposed = merge_acquisition_proposals(
+        community_and_contact,
         crate::filth::blood_episodes_through(
             ctx,
             character_id,
@@ -1398,6 +1807,7 @@ pub fn clip_elapsed_for_disease(
             interval_end,
             false,
             allow_healing,
+            plan,
         )?,
     );
     episodes.extend(proposed.iter().copied());
@@ -1429,8 +1839,15 @@ pub fn clip_elapsed_for_disease(
     )?;
     // Re-evaluate only the committed prefix and advance the private cursor.
     // Absolute-minute seeds guarantee the same proposal as preview/full evaluation.
-    let _ =
-        crate::filth::blood_episodes_through(ctx, character_id, now, through, true, allow_healing)?;
+    let _ = crate::filth::blood_episodes_through(
+        ctx,
+        character_id,
+        now,
+        through,
+        true,
+        allow_healing,
+        plan,
+    )?;
     for event in events.iter().filter(|event| event.minute <= through) {
         match event.kind {
             DiseaseEventKind::SymptomOnset => notice(
@@ -1477,13 +1894,33 @@ pub fn clip_elapsed_for_disease(
     ))
 }
 
-/// Side-effect-free party preflight. Acquisition and notice delivery happen
-/// only in the subsequent committed interval.
-pub fn preview_elapsed_for_disease(
+pub fn clip_elapsed_for_disease(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
     allow_healing: bool,
+) -> Result<(u64, Option<TerminalFailure>), String> {
+    clip_elapsed_for_disease_planned(ctx, character_id, requested, allow_healing, None)
+}
+
+pub fn clip_elapsed_for_disease_in_plan(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    allow_healing: bool,
+    plan: &PartyDiseaseIntervalPlan,
+) -> Result<(u64, Option<TerminalFailure>), String> {
+    clip_elapsed_for_disease_planned(ctx, character_id, requested, allow_healing, Some(plan))
+}
+
+/// Side-effect-free party preflight. Acquisition and notice delivery happen
+/// only in the subsequent committed interval.
+fn preview_elapsed_for_disease_planned(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    allow_healing: bool,
+    plan: Option<&PartyDiseaseIntervalPlan>,
 ) -> Result<u64, String> {
     let now = ctx
         .db
@@ -1498,11 +1935,16 @@ pub fn preview_elapsed_for_disease(
         .find(character_id)
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
-    episodes.extend(merge_acquisition_proposals(
+    let community_and_contact = if let Some(plan) = plan {
+        plan.proposals_for(character_id, now, now.saturating_add(requested))
+    } else {
         merge_acquisition_proposals(
             outbreak_episodes_through(ctx, character_id, now, now.saturating_add(requested))?,
             party_contact_episodes_through(ctx, character_id, now, now.saturating_add(requested))?,
-        ),
+        )
+    };
+    episodes.extend(merge_acquisition_proposals(
+        community_and_contact,
         crate::filth::blood_episodes_through(
             ctx,
             character_id,
@@ -1510,6 +1952,7 @@ pub fn preview_elapsed_for_disease(
             now.saturating_add(requested),
             false,
             allow_healing,
+            plan,
         )?,
     ));
     Ok(first_private_terminal(
@@ -1521,6 +1964,25 @@ pub fn preview_elapsed_for_disease(
         immunity,
     )?
     .map_or(requested, |(minute, _)| minute.saturating_sub(now)))
+}
+
+pub fn preview_elapsed_for_disease(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    allow_healing: bool,
+) -> Result<u64, String> {
+    preview_elapsed_for_disease_planned(ctx, character_id, requested, allow_healing, None)
+}
+
+pub fn preview_elapsed_for_disease_in_plan(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    allow_healing: bool,
+    plan: &PartyDiseaseIntervalPlan,
+) -> Result<u64, String> {
+    preview_elapsed_for_disease_planned(ctx, character_id, requested, allow_healing, Some(plan))
 }
 
 pub fn finish_disease_interval(
@@ -2229,10 +2691,10 @@ mod herbalist_purchase_source_tests {
     fn interval_authority_assembles_community_contact_and_blood_exposure() {
         let source = include_str!("disease.rs");
         let clip = source
-            .split("pub fn clip_elapsed_for_disease")
+            .split("fn clip_elapsed_for_disease_planned")
             .nth(1)
             .unwrap()
-            .split("pub fn preview_elapsed_for_disease")
+            .split("pub fn clip_elapsed_for_disease")
             .next()
             .unwrap();
         for assembler in [
@@ -2261,5 +2723,41 @@ mod herbalist_purchase_source_tests {
         assert!(contact.contains("protected_exposure_at"));
         assert!(contact.contains("merge_acquisition_proposals(Vec::new(), proposals)"));
         assert!(!contact.contains("character_illness_status"));
+    }
+
+    #[test]
+    fn shared_interval_plan_is_bounded_order_stable_and_used_by_all_party_time_paths() {
+        let disease = include_str!("disease.rs");
+        let plan = disease
+            .split("pub fn plan_party_disease_interval")
+            .nth(1)
+            .unwrap()
+            .split("fn party_contact_episodes_through")
+            .next()
+            .unwrap();
+        assert!(plan.contains("ids.sort_unstable()"));
+        assert!(plan.contains("ids.dedup()"));
+        assert!(plan.contains("MAX_PARTY_INTERVAL_SPANS"));
+        assert!(plan.contains("MAX_PARTY_INTERVAL_WORK"));
+        assert!(plan.contains("horizons"));
+        assert!(plan.contains("source_episodes"));
+
+        let time = include_str!("time.rs");
+        let rest = time.split("pub fn rest_at_camp").nth(1).unwrap();
+        assert!(rest.contains("plan_party_disease_interval"));
+        assert!(rest.contains("preview_elapsed_for_disease_in_plan"));
+        assert!(rest.contains("clip_elapsed_for_disease_in_plan"));
+
+        let journey = include_str!("strategic/journey_camp.rs");
+        let movement = journey.split("fn advance_party_movement").nth(1).unwrap();
+        assert!(movement.contains("plan_party_disease_interval"));
+        assert!(movement.contains("preview_travel_time_in_plan"));
+        assert!(movement.contains("advance_travel_time_in_plan"));
+
+        let surgery = include_str!("surgery.rs");
+        let treatment = surgery.split("fn align_and_advance").nth(1).unwrap();
+        assert!(treatment.contains("plan_party_disease_interval"));
+        assert!(treatment.contains("preview_elapsed_for_disease_in_plan"));
+        assert!(treatment.contains("advance_character_wait_time_in_plan"));
     }
 }

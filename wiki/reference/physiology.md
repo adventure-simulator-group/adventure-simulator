@@ -77,6 +77,21 @@ that route. Every route retains residual risk, and available washing supplies,
 wound closure, and other physical affordances continue to determine their own
 stronger effects.
 
+Each route splits its dose into an unavoidable/environmental component and a
+preventable party-behavior component. Physiology reduces only the latter.
+Route preventability and the current physical-affordance multiplier are named
+inputs to that split. Infected blood illustrates the distinction: automatic
+washing with actual soap removes blood before exposure, while bandaging or
+stitching lowers the real cut route; if infectious blood remains, missing clean
+handling and an open wound cap how much additional Physiology judgment can do.
+
+Shared travel, camp rest, and treatment snapshot the explicitly co-advancing
+participants and their capability-pinned Physiology coverage before changing
+any clock. Every participant is previewed and committed against that immutable
+plan, so character ID and reducer iteration order cannot change prevention or
+transmission. Solo catch-up uses recorded co-presence only and never projects
+an absent physician into the interval.
+
 The authoritative database initializes private key material from runtime
 randomness and persists one private key for the lifetime of the database.
 Changing its version requires recreating the disposable pre-launch database;
