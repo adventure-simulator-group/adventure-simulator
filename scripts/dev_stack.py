@@ -700,7 +700,7 @@ def run_profile(
     base_port: int,
     mode: ProfileMode = ProfileMode.STRATEGIC,
     verify_http: bool = False,
-    mission_id: str = "test-mission",
+    mission_id: str = "mission:test-mission",
     scene_key: str = "hills",
     character_id: int = 0,
     enemy_count: int = 3,
@@ -890,7 +890,7 @@ def create_parser() -> argparse.ArgumentParser:
     sub.add_parser("verify-bindings")
     runner = sub.add_parser("run-profile")
     runner.add_argument("--mode", choices=[m.value for m in ProfileMode], default=ProfileMode.STRATEGIC.value)
-    runner.add_argument("--mission-id", default="test-mission")
+    runner.add_argument("--mission-id", default="mission:test-mission")
     runner.add_argument("--scene-key", default="hills")
     runner.add_argument("--character-id", type=int, default=0)
     runner.add_argument("--enemy-count", type=int, default=3)
