@@ -46,10 +46,7 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/case-site/{id}", get(quest_location_base))
         .route("/locations/case-site/{id}/map", get(quest_location_map))
         .route("/locations/case-site/{id}/enemy", get(quest_location_enemy))
-        .route(
-            "/locations/case-site/{id}/corpses/{corpse_id}/action",
-            post(perform_corpse_action),
-        )
+        .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
         .route(
             "/locations/case-site/{id}/loot",
             get(quest_location_legacy_loot),
@@ -545,11 +542,12 @@ struct CorpseActionForm {
     expected_revision: u32,
     #[serde(default)]
     confirm_unauthorized: bool,
+    return_to: String,
 }
 
 async fn perform_corpse_action(
     State(state): State<AppState>,
-    Path((id, corpse_id)): Path<(String, String)>,
+    Path(corpse_id): Path<String>,
     session: Session,
     Form(form): Form<CorpseActionForm>,
 ) -> Redirect {
@@ -608,14 +606,7 @@ async fn perform_corpse_action(
     if let Err(error) = result {
         tracing::warn!(%error, actor_id, %corpse_id, "corpse medical action failed");
     }
-    let window = if form.discipline == "surgery" || form.action_kind == "open" {
-        "surgery"
-    } else {
-        "physiology"
-    };
-    Redirect::to(&format!(
-        "/locations/case-site/{id}/enemy?corpse={corpse_id}&medical={window}"
-    ))
+    super::redirect_to_local(&form.return_to, "/")
 }
 
 async fn quest_location_legacy_loot(Path(id): Path<String>) -> Redirect {
@@ -1057,7 +1048,7 @@ async fn render_quest_location(
         .await
         .unwrap_or_default()
         .into_iter()
-        .filter(|corpse| corpse.case_site_id == site.case_site_id)
+        .filter(|corpse| corpse.case_site_id == site.case_site_id && corpse.location == "scene")
         .collect::<Vec<_>>();
     let selected_corpse_coordinate = match &tab {
         QuestLocationTab::Enemy(query) => query.corpse.as_deref().and_then(|corpse_id| {

@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::corpse_permission_kind_type::CorpsePermissionKind;
+use super::corpse_permission_scope_type::CorpsePermissionScope;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,6 +15,7 @@ pub struct CorpsePermission {
     pub party_id: String,
     pub granted_by_npc_id: String,
     pub kind: CorpsePermissionKind,
+    pub scope: CorpsePermissionScope,
     pub granted_minute: u64,
 }
 
@@ -30,6 +32,7 @@ pub struct CorpsePermissionCols {
     pub party_id: __sdk::__query_builder::Col<CorpsePermission, String>,
     pub granted_by_npc_id: __sdk::__query_builder::Col<CorpsePermission, String>,
     pub kind: __sdk::__query_builder::Col<CorpsePermission, CorpsePermissionKind>,
+    pub scope: __sdk::__query_builder::Col<CorpsePermission, CorpsePermissionScope>,
     pub granted_minute: __sdk::__query_builder::Col<CorpsePermission, u64>,
 }
 
@@ -42,6 +45,7 @@ impl __sdk::__query_builder::HasCols for CorpsePermission {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             granted_by_npc_id: __sdk::__query_builder::Col::new(table_name, "granted_by_npc_id"),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            scope: __sdk::__query_builder::Col::new(table_name, "scope"),
             granted_minute: __sdk::__query_builder::Col::new(table_name, "granted_minute"),
         }
     }

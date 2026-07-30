@@ -152,6 +152,179 @@ pub fn opening_quality_bps(surgery_check: f32, entropy_bps: u16) -> (u16, u16) {
     (skill, obscuration)
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct AutopsyEvidenceContext {
+    pub decomposition: DecompositionBand,
+    pub at_scene: bool,
+    pub opening_obscuration_bps: u16,
+}
+
+fn evidence_quality_bps(skill_check: f32, context: AutopsyEvidenceContext, internal: bool) -> u16 {
+    let skill = (skill_check.clamp(0.0, 5.0) * 2_000.0).round() as i32;
+    let decomposition_penalty = match context.decomposition {
+        DecompositionBand::Fresh => 0,
+        DecompositionBand::Early => 1_500,
+        DecompositionBand::Advanced => 4_500,
+        DecompositionBand::Skeletal => 8_000,
+    };
+    let opening_penalty = if internal {
+        i32::from(context.opening_obscuration_bps)
+    } else {
+        0
+    };
+    (skill - decomposition_penalty - opening_penalty)
+        .clamp(0, 10_000)
+        .try_into()
+        .unwrap_or(0)
+}
+
+fn region_label(region: BodyPart) -> &'static str {
+    match region {
+        BodyPart::LeftArm => "left arm",
+        BodyPart::RightArm => "right arm",
+        BodyPart::LeftLeg => "left leg",
+        BodyPart::RightLeg => "right leg",
+        BodyPart::Chest => "chest",
+        BodyPart::Stomach => "abdomen",
+        BodyPart::Head => "head",
+    }
+}
+
+fn strongest_injury(injuries: &[BodyInjury]) -> Option<&BodyInjury> {
+    injuries.iter().max_by(|left, right| {
+        (left.cut_damage + left.blunt_damage).total_cmp(&(right.cut_damage + right.blunt_damage))
+    })
+}
+
+/// Surgery reports bounded physical morphology, not its physiological effect.
+pub fn surgery_finding(
+    injuries: &[BodyInjury],
+    skill_check: f32,
+    context: AutopsyEvidenceContext,
+    internal: bool,
+) -> Option<String> {
+    let quality = evidence_quality_bps(skill_check, context, internal);
+    if quality < 1_500 {
+        return None;
+    }
+    let injury = strongest_injury(injuries)?;
+    let region = region_label(injury.region);
+    let morphology = if injury.projectile {
+        "a narrow penetrating track consistent with a hard projectile"
+    } else if injury.cut_damage > injury.blunt_damage * 1.5 {
+        if injury.contact_stress < 25.0 {
+            "a relatively narrow edged wound with little surrounding crushing"
+        } else {
+            "a deep cutting wound with substantial compressed margins"
+        }
+    } else if injury.blunt_damage > injury.cut_damage * 1.5 {
+        "broad crushing trauma from a heavy impact"
+    } else {
+        "mixed tearing and crushing trauma"
+    };
+    let depth = if internal {
+        "Internal examination follows"
+    } else {
+        "External examination finds"
+    };
+    let scene = if context.at_scene && !internal {
+        " At the undisturbed scene, blood distribution supports that the wound occurred here."
+    } else {
+        ""
+    };
+    let caveat = if quality < 5_000 {
+        " Fine wound margins remain uncertain."
+    } else {
+        ""
+    };
+    Some(format!(
+        "{depth} {morphology} at the {region}.{scene}{caveat}"
+    ))
+}
+
+/// Physiology reports bounded systemic consequences from body state and never
+/// assigns an instrument, attacker, or canonical cause of death.
+pub fn physiology_finding(
+    body: &PostCombatBody,
+    skill_check: f32,
+    context: AutopsyEvidenceContext,
+    internal: bool,
+) -> Option<String> {
+    let quality = evidence_quality_bps(skill_check, context, internal);
+    if quality < 1_500 {
+        return None;
+    }
+    let (worst_index, worst_health) = body
+        .health
+        .iter()
+        .copied()
+        .enumerate()
+        .min_by(|left, right| left.1.total_cmp(&right.1))?;
+    let region = region_label(
+        [
+            BodyPart::LeftArm,
+            BodyPart::RightArm,
+            BodyPart::LeftLeg,
+            BodyPart::RightLeg,
+            BodyPart::Chest,
+            BodyPart::Stomach,
+            BodyPart::Head,
+        ][worst_index],
+    );
+    let blood = body.blood_loss_fraction;
+    let systemic = if blood >= 0.65 {
+        "The remaining tissues show changes compatible with profound circulatory depletion"
+    } else if worst_health <= 0.2 {
+        "The regional damage is severe enough to have disrupted ordinary bodily function"
+    } else {
+        "The visible damage imposed substantial physiological stress"
+    };
+    let detail = if quality >= 5_000 {
+        format!(
+            "; the {region} retained roughly {:.0}% function and estimated blood loss is about {:.0}%",
+            worst_health * 100.0,
+            blood * 100.0
+        )
+    } else {
+        format!("; the clearest dysfunction is around the {region}")
+    };
+    Some(format!("{systemic}{detail}."))
+}
+
+/// Bestiary interprets an already-observed signature into broad candidates.
+/// It deliberately receives no subject species or attacker identity.
+pub fn bestiary_finding(
+    injuries: &[BodyInjury],
+    lore_check: f32,
+    context: AutopsyEvidenceContext,
+    internal: bool,
+) -> Option<String> {
+    let quality = evidence_quality_bps(lore_check, context, internal);
+    if quality < 2_500 {
+        return None;
+    }
+    let injury = strongest_injury(injuries)?;
+    let candidates = if injury.projectile {
+        "ranged weapon users or creatures capable of launching hard projectiles"
+    } else if injury.blunt_damage > injury.cut_damage * 1.5 {
+        "large, heavy striking threats or wielders of blunt weapons"
+    } else if injury.cut_damage > injury.blunt_damage * 1.5 {
+        "edged-weapon users or creatures with narrow sharp claws"
+    } else {
+        "threats capable of both tearing and forceful impact"
+    };
+    let support = if quality >= 7_500 {
+        "strong"
+    } else if quality >= 5_000 {
+        "moderate"
+    } else {
+        "weak"
+    };
+    Some(format!(
+        "Learned lore gives {support} support to {candidates}; the physical signs do not identify one culprit."
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +392,88 @@ mod tests {
             ammunition_used: 0,
         };
         assert!(!is_lethal_body(&casualty));
+    }
+
+    #[test]
+    fn physical_signatures_produce_contrasting_bounded_findings() {
+        let fresh = AutopsyEvidenceContext {
+            decomposition: DecompositionBand::Fresh,
+            at_scene: true,
+            opening_obscuration_bps: 0,
+        };
+        let cut = BodyInjury {
+            sequence: 0,
+            region: BodyPart::Head,
+            cut_damage: 0.5,
+            blunt_damage: 0.05,
+            projectile: false,
+            contact_stress: 10.0,
+        };
+        let projectile = BodyInjury {
+            sequence: 1,
+            region: BodyPart::Chest,
+            cut_damage: 0.2,
+            blunt_damage: 0.05,
+            projectile: true,
+            contact_stress: 80.0,
+        };
+        assert!(
+            surgery_finding(&[cut], 4.0, fresh, false)
+                .unwrap()
+                .contains("edged wound")
+        );
+        assert!(
+            surgery_finding(&[projectile], 4.0, fresh, false)
+                .unwrap()
+                .contains("projectile")
+        );
+        assert!(
+            bestiary_finding(&[cut], 4.0, fresh, false)
+                .unwrap()
+                .contains("sharp claws")
+        );
+        assert!(
+            bestiary_finding(&[projectile], 4.0, fresh, false)
+                .unwrap()
+                .contains("ranged weapon users")
+        );
+    }
+
+    #[test]
+    fn decomposition_and_bad_opening_suppress_findings_without_inventing_answers() {
+        let injury = BodyInjury {
+            sequence: 0,
+            region: BodyPart::Stomach,
+            cut_damage: 0.1,
+            blunt_damage: 0.6,
+            projectile: false,
+            contact_stress: 90.0,
+        };
+        let old = AutopsyEvidenceContext {
+            decomposition: DecompositionBand::Skeletal,
+            at_scene: false,
+            opening_obscuration_bps: 0,
+        };
+        let obscured = AutopsyEvidenceContext {
+            decomposition: DecompositionBand::Advanced,
+            at_scene: false,
+            opening_obscuration_bps: 5_000,
+        };
+        assert!(surgery_finding(&[injury], 3.0, old, false).is_none());
+        assert!(surgery_finding(&[injury], 5.0, obscured, true).is_none());
+        assert!(
+            surgery_finding(
+                &[injury],
+                5.0,
+                AutopsyEvidenceContext {
+                    decomposition: DecompositionBand::Fresh,
+                    at_scene: true,
+                    opening_obscuration_bps: 0,
+                },
+                false
+            )
+            .unwrap()
+            .contains("undisturbed scene")
+        );
     }
 }

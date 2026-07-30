@@ -503,6 +503,7 @@ pub(super) async fn settlement_npc_place(
 pub(super) async fn show_settlement_location(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
     let settlement_literal = sql_string_literal(&id);
@@ -544,6 +545,40 @@ pub(super) async fn show_settlement_location(
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
+    let mut corpses = if let Some((character, _)) = &active_character {
+        state
+            .db
+            .query::<BackendCorpse>(&format!(
+                "SELECT * FROM backend_corpses WHERE owner_character_id = {}",
+                character.id
+            ))
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, settlement_id = %id, "failed to load settlement corpses");
+                Vec::new()
+            })
+            .into_iter()
+            .filter(|corpse| corpse.settlement_id == id && corpse.location != "scene")
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    corpses.sort_by(|left, right| left.corpse_id.cmp(&right.corpse_id));
+    let selected_corpse = query.corpse.as_deref().and_then(|corpse_id| {
+        corpses
+            .iter()
+            .position(|corpse| corpse.corpse_id == corpse_id)
+            .map(|index| {
+                (
+                    index,
+                    if query.medical.as_deref() == Some("surgery") {
+                        "surgery"
+                    } else {
+                        "physiology"
+                    },
+                )
+            })
+    });
     let aliases = aliases.unwrap_or_else(|error| {
         tracing::warn!(%error, settlement_id = %id, "failed to load settlement aliases");
         Vec::new()
@@ -570,6 +605,8 @@ pub(super) async fn show_settlement_location(
             active_character.as_ref().map(|(character, _)| character),
             &party_members,
             logged_in_as.as_deref(),
+            &corpses,
+            selected_corpse.map(|(index, window)| (&corpses[index], window)),
         )
         .into_string(),
     )

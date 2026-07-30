@@ -8,7 +8,7 @@ pub const PROJECTILE_KIT_DC_THRESHOLD: f32 = 1.0;
 /// Small visible contamination transferred by a successful bloody procedure.
 pub const PROCEDURE_BLOOD_EXPOSURE_FILTH: u16 = 2;
 pub fn procedure_blood_exposure(procedure: &str, treating_other: bool) -> u16 {
-    if treating_other && matches!(procedure, "bandage" | "stitch" | "extract") {
+    if treating_other && matches!(procedure, "bandage" | "stitch" | "extract" | "open-body") {
         PROCEDURE_BLOOD_EXPOSURE_FILTH
     } else {
         0
@@ -37,6 +37,7 @@ pub fn procedure_duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
         "stitch" => 60.0,
         "splint" | "remove-splint" => 45.0,
         "extract" => 30.0 + dc.max(0.0) * 10.0,
+        "open-body" => 60.0,
         _ => 30.0,
     };
     (base - skill.max(0.0) * 5.0).max(10.0).ceil() as u64

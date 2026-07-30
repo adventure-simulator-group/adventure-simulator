@@ -301,27 +301,34 @@ pub fn surgery_dialog(
 
 fn corpse_action_form(
     corpse: &BackendCorpse,
-    case_site_id: &str,
+    location_base: &str,
+    window: &str,
     action_kind: &str,
     discipline: &str,
     stage: &str,
     label: &str,
     disabled: Option<&str>,
 ) -> Markup {
-    let unauthorized = corpse.permission == "none";
+    let unauthorized = if action_kind == "exhume" {
+        !corpse.exhumation_permission
+    } else {
+        corpse.permission == "none"
+    };
     let warning = "No permission: proceeding is likely to seriously upset the family and bring substantial settlement infamy.";
     html! {
         form method="post"
-            action=(format!("/locations/case-site/{case_site_id}/corpses/{}/action", corpse.corpse_id))
+            action=(format!("/corpses/{}/action", corpse.corpse_id))
             class=(if unauthorized { "surgery-procedure autopsy-action unauthorized-action" } else { "surgery-procedure autopsy-action" })
             data-strategic-tooltip=[unauthorized.then_some(warning)]
+            tabindex=[unauthorized.then_some("0")]
             onsubmit=[unauthorized.then_some("return confirm('You do not have permission. The family will be seriously upset and the settlement will regard this as infamous. Proceed?')")] {
             input type="hidden" name="action_kind" value=(action_kind);
             input type="hidden" name="discipline" value=(discipline);
             input type="hidden" name="stage" value=(stage);
             input type="hidden" name="expected_revision" value=(corpse.revision);
             input type="hidden" name="confirm_unauthorized" value=(if unauthorized { "true" } else { "false" });
-            input type="hidden" name="action_id" value=(format!("autopsy:{}:{action_kind}:{discipline}:{stage}:{}", corpse.corpse_id, corpse.revision));
+            input type="hidden" name="action_id" value=(format!("autopsy:{action_kind}:{discipline}:{stage}:{}", corpse.revision));
+            input type="hidden" name="return_to" value=(format!("{location_base}?corpse={}&medical={window}", corpse.corpse_id));
             (game_icon(label, if action_kind == "open" { "scalpel" } else { "magnifying-glass" }))
             div class="surgery-procedure-copy" {
                 strong { (label) }
@@ -339,8 +346,8 @@ fn corpse_action_form(
 
 /// Corpse examinations deliberately reuse the existing Physiology notebook and
 /// Surgery procedure-window idioms; there is no third autopsy dialogue.
-pub fn corpse_medical_dialog(corpse: &BackendCorpse, case_site_id: &str, window: &str) -> Markup {
-    let close_href = format!("/locations/case-site/{case_site_id}/enemy");
+pub fn corpse_medical_dialog(corpse: &BackendCorpse, location_base: &str, window: &str) -> Markup {
+    let close_href = location_base;
     let internal_disabled = (!corpse.opened).then_some("Open the body in Surgery first");
     let title = if window == "surgery" {
         "Surgery"
@@ -362,14 +369,15 @@ pub fn corpse_medical_dialog(corpse: &BackendCorpse, case_site_id: &str, window:
                 }
                 div class="surgery-procedures" {
                     @if corpse.location == "interred" {
-                        (corpse_action_form(corpse, case_site_id, "exhume", "surgery", "handling", "Exhume the body", None))
+                        (corpse_action_form(corpse, location_base, window, "exhume", "surgery", "handling", "Exhume the body", None))
                     }
-                    (corpse_action_form(corpse, case_site_id, "examine", window, "external", "External examination", None))
-                    (corpse_action_form(corpse, case_site_id, "examine", "bestiary", "external", "Interpret external creature signs", None))
+                    (corpse_action_form(corpse, location_base, window, "examine", window, "external", "External examination", None))
+                    (corpse_action_form(corpse, location_base, window, "examine", "bestiary", "external", "Interpret external creature signs", None))
                     @if window == "surgery" {
                         (corpse_action_form(
                             corpse,
-                            case_site_id,
+                            location_base,
+                            window,
                             "open",
                             "surgery",
                             "opening",
@@ -377,8 +385,8 @@ pub fn corpse_medical_dialog(corpse: &BackendCorpse, case_site_id: &str, window:
                             corpse.opened.then_some("The body is already open"),
                         ))
                     }
-                    (corpse_action_form(corpse, case_site_id, "examine", window, "internal", "Internal examination", internal_disabled))
-                    (corpse_action_form(corpse, case_site_id, "examine", "bestiary", "internal", "Interpret internal creature signs", internal_disabled))
+                    (corpse_action_form(corpse, location_base, window, "examine", window, "internal", "Internal examination", internal_disabled))
+                    (corpse_action_form(corpse, location_base, window, "examine", "bestiary", "internal", "Interpret internal creature signs", internal_disabled))
                 }
                 @if !corpse.findings.is_empty() {
                     section class="physiology-chart-readings" aria-label="Recorded autopsy findings" {
@@ -1608,6 +1616,7 @@ mod tests {
             settlement_id: "town".into(),
             opened,
             permission: permission.into(),
+            exhumation_permission: permission != "none",
             revision: u32::from(opened),
             findings: Vec::new(),
         }
@@ -1615,17 +1624,24 @@ mod tests {
 
     #[test]
     fn corpse_uses_existing_medical_windows_and_warns_before_unauthorized_actions() {
-        let physiology =
-            corpse_medical_dialog(&corpse_fixture("none", false), "site:1", "physiology")
-                .into_string();
+        let physiology = corpse_medical_dialog(
+            &corpse_fixture("none", false),
+            "/locations/case-site/site:1/enemy",
+            "physiology",
+        )
+        .into_string();
         assert!(physiology.contains("physiology-dialog"));
         assert!(physiology.contains("btn btn-danger"));
         assert!(physiology.contains("No permission"));
         assert!(physiology.contains("return confirm"));
         assert!(physiology.contains("Open the body in Surgery first"));
 
-        let surgery = corpse_medical_dialog(&corpse_fixture("family", true), "site:1", "surgery")
-            .into_string();
+        let surgery = corpse_medical_dialog(
+            &corpse_fixture("family", true),
+            "/locations/case-site/site:1/enemy",
+            "surgery",
+        )
+        .into_string();
         assert!(surgery.contains("surgery-dialog"));
         assert!(surgery.contains("Open the body"));
         assert!(!surgery.contains("btn btn-danger"));

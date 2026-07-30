@@ -2,10 +2,11 @@ use std::collections::BTreeSet;
 
 use maud::{Markup, html};
 
+use super::corpse_medical_dialog;
 use super::social::{npc_description_stage, npc_portrait_strip, settlement_npc_chat_area};
 use crate::spacetimedb::{
-    Character, Settlement, SettlementAlias, SettlementCategory, SettlementDescription,
-    SettlementDescriptionKind,
+    BackendCorpse, Character, Settlement, SettlementAlias, SettlementCategory,
+    SettlementDescription, SettlementDescriptionKind,
 };
 use crate::templates::{
     game_icon, population_description, settlement_layout_with_session, sidebar_section,
@@ -44,6 +45,8 @@ pub fn settlement_overview_page(
     active_character: Option<&Character>,
     party_members: &[Character],
     logged_in_as: Option<&str>,
+    corpses: &[BackendCorpse],
+    selected_corpse: Option<(&BackendCorpse, &str)>,
 ) -> Markup {
     let alias_labels = settlement_alias_labels(settlement, aliases);
     let historical_description = preferred_settlement_description(descriptions);
@@ -102,6 +105,24 @@ pub fn settlement_overview_page(
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
             (npc_portrait_strip(&settlement.id, "overview"))
+            @if !corpses.is_empty() {
+                nav class="settlement-npc-strip corpse-strip" aria-label="Bodies held in the settlement" {
+                    @for corpse in corpses {
+                        a class="npc-portrait corpse-portrait"
+                            href=(format!("/locations/settlement/{}?corpse={}&medical=physiology", settlement.id, corpse.corpse_id))
+                            aria-label=(format!("Examine {} with Physiology", corpse.display_name)) {
+                            span class="npc-portrait-image" aria-hidden="true" { "☠" }
+                            span class="npc-portrait-name" { (&corpse.display_name) }
+                        }
+                    }
+                }
+                @if let Some((corpse, _)) = selected_corpse {
+                    div class="quest-combat-actions corpse-medical-actions" aria-label="Corpse medical windows" {
+                        a class="btn btn-secondary" href=(format!("/locations/settlement/{}?corpse={}&medical=physiology", settlement.id, corpse.corpse_id)) { "Physiology" }
+                        a class="btn btn-secondary" href=(format!("/locations/settlement/{}?corpse={}&medical=surgery", settlement.id, corpse.corpse_id)) { "Surgery" }
+                    }
+                }
+            }
             (npc_description_stage(&settlement.name, "Select a local resident to see their visible description."))
             (settlement_npc_chat_area(&settlement.name, active_character, &settlement.id, "overview", None))
         }
@@ -115,6 +136,13 @@ pub fn settlement_overview_page(
                     }
                 }
             }))
+        }
+        @if let Some((corpse, window)) = selected_corpse {
+            (corpse_medical_dialog(
+                corpse,
+                &format!("/locations/settlement/{}", settlement.id),
+                window,
+            ))
         }
     };
     settlement_layout_with_session(
@@ -654,9 +682,17 @@ mod tests {
             body: "Burg & Markt <alt>".into(),
         }];
 
-        let markup =
-            settlement_overview_page(&settlement(), &aliases, &descriptions, None, &[], None)
-                .into_string();
+        let markup = settlement_overview_page(
+            &settlement(),
+            &aliases,
+            &descriptions,
+            None,
+            &[],
+            None,
+            &[],
+            None,
+        )
+        .into_string();
 
         assert!(markup.contains("Also known as"));
         assert!(markup.contains("Lubeke"));
@@ -669,10 +705,51 @@ mod tests {
     fn settlement_overview_treats_zero_population_as_missing_and_empty_faiths_as_unknown() {
         let mut settlement = settlement();
         settlement.population_estimate = 0;
-        let markup = settlement_overview_page(&settlement, &[], &[], None, &[], None).into_string();
+        let markup = settlement_overview_page(&settlement, &[], &[], None, &[], None, &[], None)
+            .into_string();
         assert!(markup.contains("No imported headcount is available"));
         assert!(!markup.contains("Imported estimate: 0 people"));
         assert_eq!(joined_or_dash(&[]), "—");
+    }
+
+    #[test]
+    fn settlement_overview_exposes_moved_corpses_in_existing_medical_windows() {
+        let corpse = BackendCorpse {
+            owner_character_id: 7,
+            corpse_id: "corpse:quest:1".into(),
+            display_name: "Unknown victim".into(),
+            creature_kind: "human".into(),
+            source_id: "quest:1".into(),
+            location: "local_custody".into(),
+            decomposition: "early".into(),
+            case_site_id: "site:1".into(),
+            settlement_id: "viabundus-1".into(),
+            opened: false,
+            permission: "none".into(),
+            exhumation_permission: false,
+            revision: 0,
+            findings: Vec::new(),
+        };
+        let markup = settlement_overview_page(
+            &settlement(),
+            &[],
+            &[],
+            None,
+            &[],
+            None,
+            std::slice::from_ref(&corpse),
+            Some((&corpse, "physiology")),
+        )
+        .into_string();
+
+        assert!(markup.contains("Bodies held in the settlement"));
+        assert!(markup.contains("corpse-portrait"));
+        assert!(markup.contains(
+            "/locations/settlement/viabundus-1?corpse=corpse:quest:1&amp;medical=surgery"
+        ));
+        assert!(markup.contains("physiology-dialog"));
+        assert!(markup.contains("action=\"/corpses/corpse:quest:1/action\""));
+        assert!(markup.contains("name=\"return_to\""));
     }
 
     #[test]
@@ -720,8 +797,9 @@ mod tests {
         let public_square = visible_npc_tab(&tabs, "overview").unwrap();
         assert_eq!(public_square.label, "Public square");
 
-        let overview = settlement_overview_page(&settlement, &[], &[], None, &[], Some("Visitor"))
-            .into_string();
+        let overview =
+            settlement_overview_page(&settlement, &[], &[], None, &[], Some("Visitor"), &[], None)
+                .into_string();
         assert!(overview.contains("aria-label=\"Settlement services\""));
         assert!(overview.contains("aria-label=\"Public square\""));
         assert!(overview.contains("href=\"/locations/settlement/viabundus-1\""));

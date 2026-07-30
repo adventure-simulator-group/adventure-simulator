@@ -20,6 +20,11 @@ handling damage. Prompt scene examination retains both scene context and
 better-preserved anatomy, while a promptly discovered but badly handled body can
 still lose information.
 
+Scene portraits are available only while the body is physically at the case
+site. Once local people move or inter the body, its portrait and medical windows
+move to the owning party's settlement view. Exhumation returns access there; it
+does not teleport the body back to the scene.
+
 ## Medical workflow
 
 A corpse portrait opens the existing Physiology and Surgery windows. Both
@@ -33,21 +38,33 @@ culprit.
   properties.
 - Physiology interprets systemic effects and possible physical mechanisms.
 - Bestiary checks interpret already-observed signs through learned creature
-  lore. They do not read a hidden attacker identity.
+  lore. They produce broad candidates from wound morphology and do not read a
+  hidden attacker or species identity.
 
-Findings are observer-scoped. Another character cannot obtain a private result
-merely by subscribing to corpse authority.
+Evidence quality is resolved at the action's completion time, so decomposition,
+loss of scene context, and damage from an imprecise opening can suppress or
+weaken the result. Only that observer's realized finding is persisted. Another
+character cannot obtain a private result merely by subscribing to corpse
+authority.
 
 ## Permission
 
 Permission is requested through an automatically available, corpse-specific
 topic in ordinary dialogue. Explicitly bound family members, a local priest, or
-a local secular authority may grant it. Family permission avoids social
-penalties. Priest or authority permission prevents settlement infamy, but
+a local secular authority may grant it after a Charm-based social check; refusal
+is reported in the dialogue transcript. Examination and exhumation are separate
+permissions, and exhumation is substantially harder to secure. Family permission
+avoids social penalties. Priest or authority permission prevents settlement infamy, but
 bypassing bound family causes a modest family morale and affinity loss.
 Proceeding without any permission remains possible after a qualitative warning
 and causes a much larger family penalty plus settlement infamy. Receipts make
 all actions and consequences retry-safe.
+
+Kinship comes only from explicit family bindings. Generated household labels are
+never treated as proof of relation. The current generic character-death producer
+calls the binding seam with no relatives because the simulation does not yet
+have an authoritative kinship source; future authored or generated victims can
+supply specific same-settlement NPC IDs.
 
 ## Autoresolve dogfooding
 

@@ -18,6 +18,7 @@ pub struct BackendCorpse {
     pub settlement_id: String,
     pub opened: bool,
     pub permission: String,
+    pub exhumation_permission: bool,
     pub revision: u32,
     pub findings: Vec<String>,
 }
@@ -41,6 +42,7 @@ pub struct BackendCorpseCols {
     pub settlement_id: __sdk::__query_builder::Col<BackendCorpse, String>,
     pub opened: __sdk::__query_builder::Col<BackendCorpse, bool>,
     pub permission: __sdk::__query_builder::Col<BackendCorpse, String>,
+    pub exhumation_permission: __sdk::__query_builder::Col<BackendCorpse, bool>,
     pub revision: __sdk::__query_builder::Col<BackendCorpse, u32>,
     pub findings: __sdk::__query_builder::Col<BackendCorpse, Vec<String>>,
 }
@@ -60,6 +62,10 @@ impl __sdk::__query_builder::HasCols for BackendCorpse {
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             opened: __sdk::__query_builder::Col::new(table_name, "opened"),
             permission: __sdk::__query_builder::Col::new(table_name, "permission"),
+            exhumation_permission: __sdk::__query_builder::Col::new(
+                table_name,
+                "exhumation_permission",
+            ),
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             findings: __sdk::__query_builder::Col::new(table_name, "findings"),
         }

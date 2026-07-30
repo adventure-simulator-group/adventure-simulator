@@ -194,6 +194,7 @@ pub struct BackendCorpse {
     pub settlement_id: String,
     pub opened: bool,
     pub permission: String,
+    pub exhumation_permission: bool,
     pub revision: u32,
     pub findings: Vec<String>,
 }

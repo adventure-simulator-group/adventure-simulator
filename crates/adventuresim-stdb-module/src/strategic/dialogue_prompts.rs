@@ -22,7 +22,15 @@ pub fn choose_dialogue_topic(
     if session.revision != expected_revision {
         return Err("Dialogue action used a stale session revision".into());
     }
-    if let Some(corpse_id) = topic_id.strip_prefix("corpse-permission:") {
+    if let Some(permission_coordinate) = topic_id.strip_prefix("corpse-permission:") {
+        let (scope, corpse_id) = permission_coordinate
+            .split_once(':')
+            .ok_or("Malformed corpse permission topic")?;
+        let scope = match scope {
+            "examination" => crate::corpse::CorpsePermissionScope::Examination,
+            "exhumation" => crate::corpse::CorpsePermissionScope::Exhumation,
+            _ => return Err("Unknown corpse permission scope".into()),
+        };
         let option_id = format!("{session_id}:{topic_id}");
         if ctx
             .db
@@ -33,27 +41,60 @@ pub fn choose_dialogue_topic(
         {
             return Err("Corpse permission topic is not currently available".into());
         }
-        let npc_id = ctx
+        let npc_participant = ctx
             .db
             .dialogue_participant()
             .session_id()
             .filter(&session_id)
             .find(|participant| participant.character_id.is_none())
-            .map(|participant| participant.actor_id)
             .ok_or("Dialogue has no NPC participant")?;
-        crate::corpse::grant_permission_from_dialogue(
+        let granted = crate::corpse::grant_permission_from_dialogue(
             ctx,
             character_id,
             corpse_id,
-            &npc_id,
+            &npc_participant.actor_id,
+            scope,
         )?;
+        let scope_label = if scope == crate::corpse::CorpsePermissionScope::Exhumation {
+            "exhume the body"
+        } else {
+            "examine the body"
+        };
+        let outcome = if granted {
+            format!("You have my permission to {scope_label}.")
+        } else {
+            format!("No. I will not permit you to {scope_label}.")
+        };
+        let sequence = ctx
+            .db
+            .dialogue_event()
+            .session_id()
+            .filter(&session_id)
+            .count() as u32;
+        let fragments = vec![adventuresim_dialogue::ResolvedFragment::Text { value: outcome }];
+        ctx.db.dialogue_event().insert(DialogueEvent {
+            id: format!("{session_id}:event:{sequence}"),
+            gateway_bucket: 0,
+            session_id: session_id.clone(),
+            sequence,
+            response_id: format!("corpse-permission-{}", if granted { "granted" } else { "refused" }),
+            speaker_role: npc_participant.role,
+            fragments_json: serde_json::to_string(&fragments)
+                .map_err(|_| "Could not encode corpse permission response")?,
+            source_refs_json: serde_json::to_string(&vec![
+                Option::<adventuresim_dialogue::SourceRef>::None;
+                fragments.len()
+            ])
+            .map_err(|_| "Could not encode corpse permission response sources")?,
+            created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+        });
         session.revision = session.revision.saturating_add(1);
         ctx.db.dialogue_session().id().update(session.clone());
         ctx.db.dialogue_action().insert(DialogueAction {
             id: action_row_id,
             session_id,
             action_id,
-            action_kind: format!("corpse-permission:{corpse_id}"),
+            action_kind: format!("corpse-permission:{permission_coordinate}"),
             resulting_revision: session.revision,
         });
         refresh_dialogue_topic_options(ctx, &session, character_id)?;

@@ -315,7 +315,9 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/corpse_body_state_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_family_binding_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_injury_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/corpse_permission_attempt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_permission_kind_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/corpse_permission_scope_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_permission_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/courtship_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/create_character_reducer.rs` — Generated SpacetimeDB reducer interface.

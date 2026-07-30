@@ -18,8 +18,9 @@ use crate::{
     character::{character, character__view, character_limbs, character_skills},
     condition::character_condition,
     investigation::character_case_site_occupancy,
-    settlement_population::settlement_npc,
-    strategic::strategic_gateway_authority__view,
+    settlement_population::{SettlementNpc, settlement_npc},
+    social::settlement_npc_relationship,
+    strategic::{strategic_encounter, strategic_gateway_authority__view},
     surgery::{limb_injury, retained_projectile},
     time::{advance_character_wait_time, character_time, character_time__view},
 };
@@ -34,6 +35,12 @@ pub enum CorpsePermissionKind {
     Family,
     Priest,
     SecularAuthority,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum CorpsePermissionScope {
+    Examination,
+    Exhumation,
 }
 
 #[derive(Clone, Debug)]
@@ -107,7 +114,23 @@ pub struct CorpsePermission {
     pub party_id: String,
     pub granted_by_npc_id: String,
     pub kind: CorpsePermissionKind,
+    pub scope: CorpsePermissionScope,
     pub granted_minute: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = corpse_permission_attempt)]
+pub struct CorpsePermissionAttempt {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub corpse_id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub npc_id: String,
+    pub scope: CorpsePermissionScope,
+    pub granted: bool,
+    pub attempted_minute: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -138,6 +161,7 @@ pub struct BackendCorpse {
     pub settlement_id: String,
     pub opened: bool,
     pub permission: String,
+    pub exhumation_permission: bool,
     pub revision: u32,
     pub findings: Vec<String>,
 }
@@ -178,12 +202,16 @@ fn permission_for(
     ctx: &ReducerContext,
     corpse_id: &str,
     party_id: &str,
+    required_scope: CorpsePermissionScope,
 ) -> Option<CorpsePermission> {
     ctx.db
         .corpse_permission()
         .corpse_id()
         .filter(corpse_id)
-        .find(|row| row.party_id == party_id)
+        .find(|row| {
+            row.party_id == party_id
+                && (row.scope == required_scope || row.scope == CorpsePermissionScope::Exhumation)
+        })
 }
 
 fn require_corpse_access(
@@ -199,6 +227,15 @@ fn require_corpse_access(
         .id()
         .find(&corpse_id.to_owned())
         .ok_or("Corpse not found")?;
+    if ctx
+        .db
+        .strategic_encounter()
+        .party_id()
+        .find(&party_id)
+        .is_some_and(|encounter| encounter.status != "resolved")
+    {
+        return Err("Resolve the active encounter before handling a corpse".into());
+    }
     if corpse.discovering_party_id != party_id {
         return Err("This party has not discovered the body".into());
     }
@@ -234,8 +271,9 @@ fn apply_unauthorized_consequences(
     corpse: &StrategicCorpse,
     party_id: &str,
     action_id: &str,
+    required_scope: CorpsePermissionScope,
 ) -> Result<(), String> {
-    if permission_for(ctx, &corpse.id, party_id).is_some() {
+    if permission_for(ctx, &corpse.id, party_id, required_scope).is_some() {
         return Ok(());
     }
     if !corpse.settlement_id.is_empty() {
@@ -269,8 +307,27 @@ fn apply_unauthorized_consequences(
     Ok(())
 }
 
-fn action_receipt_id(actor_id: u64, corpse_id: &str, action_id: &str) -> String {
-    format!("{actor_id}:{corpse_id}:{action_id}")
+fn validate_client_action_id(action_id: &str) -> Result<(), String> {
+    if action_id.is_empty()
+        || action_id.len() > 96
+        || !action_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':'))
+    {
+        return Err("Invalid autopsy action ID".into());
+    }
+    Ok(())
+}
+
+fn action_receipt_id(
+    actor_id: u64,
+    corpse_id: &str,
+    action_kind: &str,
+    discipline: &str,
+    stage: &str,
+    revision: u32,
+) -> String {
+    format!("autopsy:{actor_id}:{corpse_id}:{action_kind}:{discipline}:{stage}:revision:{revision}")
 }
 
 fn skill_check(ctx: &ReducerContext, actor_id: u64, discipline: &str) -> Result<f32, String> {
@@ -300,44 +357,9 @@ fn summarize_external(
     corpse: &StrategicCorpse,
     discipline: &str,
     check: f32,
+    minute: u64,
 ) -> String {
-    let injuries: Vec<_> = ctx
-        .db
-        .corpse_injury()
-        .corpse_id()
-        .filter(&corpse.id)
-        .collect();
-    match discipline {
-        "surgery" if check >= 2.0 => format!(
-            "External wound examination distinguishes {} bounded wound tracks and their tissue geometry.",
-            injuries.len()
-        ),
-        "surgery" => {
-            "External examination confirms trauma, but wound geometry is uncertain.".into()
-        }
-        "physiology" if check >= 2.0 => {
-            let blood = ctx
-                .db
-                .corpse_body_state()
-                .corpse_id()
-                .find(&corpse.id)
-                .map_or(0.0, |body| body.blood_loss_fraction);
-            format!(
-                "External signs are consistent with substantial systemic stress; estimated blood loss is roughly {:.0}%.",
-                blood * 100.0
-            )
-        }
-        "physiology" => {
-            "External signs show bodily collapse without a reliable physiological interpretation."
-                .into()
-        }
-        "bestiary" if check >= 2.0 => format!(
-            "Learned lore recognizes physical patterns compatible with {}, without identifying a culprit.",
-            corpse.creature_kind
-        ),
-        "bestiary" => "No learned creature lore securely explains the observed marks.".into(),
-        _ => unreachable!(),
-    }
+    realized_finding(ctx, corpse, discipline, check, minute, false)
 }
 
 fn summarize_internal(
@@ -345,29 +367,94 @@ fn summarize_internal(
     corpse: &StrategicCorpse,
     discipline: &str,
     check: f32,
+    minute: u64,
 ) -> String {
-    let obscured = corpse.opening_obscuration_bps;
-    match discipline {
-        "surgery" if check >= 2.0 => format!(
-            "Internal tissue damage can be separated from the incision with about {}% obscuration.",
-            obscured / 100
-        ),
-        "surgery" => "Incision damage makes several internal wound margins ambiguous.".into(),
-        "physiology" if check >= 2.0 && obscured < 7_500 => {
-            let body = ctx.db.corpse_body_state().corpse_id().find(&corpse.id);
-            let worst = body
-                .map(|body| body.health.into_iter().fold(1.0_f32, f32::min))
-                .unwrap_or(1.0);
-            format!("Internal organ condition supports severe systemic failure; the worst region retained about {:.0}% function.", worst * 100.0)
+    realized_finding(ctx, corpse, discipline, check, minute, true)
+}
+
+fn realized_finding(
+    ctx: &ReducerContext,
+    corpse: &StrategicCorpse,
+    discipline: &str,
+    check: f32,
+    minute: u64,
+    internal: bool,
+) -> String {
+    use adventuresim_core::autopsy::{
+        AutopsyEvidenceContext, BodyInjury, PostCombatBody, bestiary_finding, physiology_finding,
+        surgery_finding,
+    };
+    let injuries = ctx
+        .db
+        .corpse_injury()
+        .corpse_id()
+        .filter(&corpse.id)
+        .filter_map(|injury| {
+            let region = match injury.region.as_str() {
+                "left arm" => BodyPart::LeftArm,
+                "right arm" => BodyPart::RightArm,
+                "left leg" => BodyPart::LeftLeg,
+                "right leg" => BodyPart::RightLeg,
+                "chest" => BodyPart::Chest,
+                "stomach" | "abdomen" => BodyPart::Stomach,
+                "head" => BodyPart::Head,
+                _ => return None,
+            };
+            Some(BodyInjury {
+                sequence: injury.sequence,
+                region,
+                cut_damage: injury.cut_damage,
+                blunt_damage: injury.blunt_damage,
+                projectile: injury.projectile,
+                contact_stress: injury.contact_stress,
+            })
+        })
+        .collect::<Vec<_>>();
+    let body = ctx
+        .db
+        .corpse_body_state()
+        .corpse_id()
+        .find(&corpse.id)
+        .and_then(|body| {
+            (body.health.len() == 7).then(|| {
+                let mut health = [1.0; 7];
+                health.copy_from_slice(&body.health);
+                PostCombatBody {
+                    combatant_id: corpse.subject_character_id.unwrap_or(0),
+                    health,
+                    blood_loss_fraction: body.blood_loss_fraction,
+                    injuries: injuries.clone(),
+                }
+            })
+        });
+    let location = corpse_location(corpse.discovered_minute, minute, corpse.exhumed);
+    let context = AutopsyEvidenceContext {
+        decomposition: decomposition_band(corpse.death_minute, minute, corpse.handling_damage_bps),
+        at_scene: location == CorpseLocation::Scene,
+        opening_obscuration_bps: corpse.opening_obscuration_bps,
+    };
+    let finding = match discipline {
+        "surgery" => surgery_finding(&injuries, check, context, internal),
+        "physiology" => body
+            .as_ref()
+            .and_then(|body| physiology_finding(body, check, context, internal)),
+        "bestiary" => bestiary_finding(&injuries, check, context, internal),
+        _ => None,
+    };
+    finding.unwrap_or_else(|| match discipline {
+        "surgery" => {
+            "Decomposition, handling, or limited precision prevents a defensible wound description."
+                .into()
         }
-        "physiology" => "Internal systemic effects remain uncertain because decomposition or dissection obscured them.".into(),
-        "bestiary" if check >= 2.0 && obscured < 7_500 => format!(
-            "Learned lore finds the internal pattern compatible with {}, among other possibilities.",
-            corpse.creature_kind
-        ),
-        "bestiary" => "No creature-specific internal pattern can be defended from the visible evidence.".into(),
-        _ => unreachable!(),
-    }
+        "physiology" => {
+            "The remaining signs do not support a defensible physiological interpretation.".into()
+        }
+        "bestiary" => {
+            "Learned lore cannot narrow the observed physical signs to a useful threat candidate."
+                .into()
+        }
+        _ => "No defensible finding was recorded.".into(),
+    })
 }
 
 #[view(accessor = backend_corpses, public)]
@@ -402,12 +489,21 @@ pub fn backend_corpses(ctx: &ViewContext) -> Vec<BackendCorpse> {
             .discovering_party_id()
             .filter(party_id)
         {
-            let permission = ctx
+            let permissions = ctx
                 .db
                 .corpse_permission()
                 .corpse_id()
                 .filter(&corpse.id)
-                .find(|row| row.party_id == party_id)
+                .filter(|row| row.party_id == party_id)
+                .collect::<Vec<_>>();
+            let permission = permissions
+                .iter()
+                .find(|row| {
+                    matches!(
+                        row.scope,
+                        CorpsePermissionScope::Examination | CorpsePermissionScope::Exhumation
+                    )
+                })
                 .map_or("none", |row| match row.kind {
                     CorpsePermissionKind::Family => "family",
                     CorpsePermissionKind::Priest => "priest",
@@ -443,6 +539,9 @@ pub fn backend_corpses(ctx: &ViewContext) -> Vec<BackendCorpse> {
                 settlement_id: corpse.settlement_id.clone(),
                 opened: corpse.opened,
                 permission: permission.into(),
+                exhumation_permission: permissions
+                    .iter()
+                    .any(|row| row.scope == CorpsePermissionScope::Exhumation),
                 revision: corpse.revision,
                 findings,
             });
@@ -530,6 +629,45 @@ fn persist_body(
     Ok(())
 }
 
+const MAX_BOUND_FAMILY_MEMBERS: usize = 8;
+
+/// Materialize only explicit kin supplied by an authoritative producer. Empty
+/// input is valid when a death source has no kinship authority; household
+/// display text is deliberately never consulted.
+pub(crate) fn materialize_corpse_family_bindings(
+    ctx: &ReducerContext,
+    corpse_id: &str,
+    settlement_id: &str,
+    family_npc_ids: &[String],
+) -> Result<(), String> {
+    if family_npc_ids.len() > MAX_BOUND_FAMILY_MEMBERS {
+        return Err("Corpse family binding exceeds its bounded limit".into());
+    }
+    let mut unique = family_npc_ids.to_vec();
+    unique.sort();
+    unique.dedup();
+    for npc_id in unique {
+        let npc = ctx
+            .db
+            .settlement_npc()
+            .id()
+            .find(&npc_id)
+            .ok_or("Corpse family binding references an unknown NPC")?;
+        if npc.home_settlement_id != settlement_id {
+            return Err("Corpse family member belongs to another settlement".into());
+        }
+        let id = format!("{corpse_id}:{npc_id}");
+        if ctx.db.corpse_family_binding().id().find(&id).is_none() {
+            ctx.db.corpse_family_binding().insert(CorpseFamilyBinding {
+                id,
+                corpse_id: corpse_id.into(),
+                npc_id,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Materialize any ordinary strategic character death through the same corpse
 /// authority. Existing durable injuries are copied as physical findings; no
 /// separate cause or culprit clue is invented.
@@ -554,6 +692,7 @@ pub(crate) fn persist_character_death_corpse(
         .ok_or("Dead character anatomy not found")?;
     let case_site_id =
         crate::investigation::character_case_site_id(ctx, character_id).unwrap_or_default();
+    let settlement_id = subject.current_settlement_id.clone().unwrap_or_default();
     ctx.db.strategic_corpse().insert(StrategicCorpse {
         id: corpse_id.clone(),
         source_id: source_id.into(),
@@ -561,7 +700,7 @@ pub(crate) fn persist_character_death_corpse(
         subject_character_id: Some(character_id),
         display_name: subject.name,
         creature_kind: "human".into(),
-        settlement_id: subject.current_settlement_id.unwrap_or_default(),
+        settlement_id: settlement_id.clone(),
         case_site_id,
         death_minute,
         discovered_minute: death_minute,
@@ -572,6 +711,9 @@ pub(crate) fn persist_character_death_corpse(
         opening_obscuration_bps: 0,
         revision: 0,
     });
+    // Character currently has no authoritative kinship relation. Calling the
+    // seam with an explicit empty set prevents household text from becoming kin.
+    materialize_corpse_family_bindings(ctx, &corpse_id, &settlement_id, &[])?;
     ctx.db.corpse_body_state().insert(CorpseBodyState {
         corpse_id: corpse_id.clone(),
         health: vec![
@@ -645,7 +787,16 @@ pub fn examine_corpse(
     expected_revision: u32,
     confirm_unauthorized: bool,
 ) -> Result<(), String> {
-    let receipt_id = action_receipt_id(actor_id, &corpse_id, &action_id);
+    crate::strategic::require_strategic_gateway(ctx)?;
+    validate_client_action_id(&action_id)?;
+    let receipt_id = action_receipt_id(
+        actor_id,
+        &corpse_id,
+        "examine",
+        &discipline,
+        &stage,
+        expected_revision,
+    );
     if ctx
         .db
         .autopsy_action_receipt()
@@ -655,7 +806,7 @@ pub fn examine_corpse(
     {
         return Ok(());
     }
-    let (corpse, party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
+    let (corpse, party_id, _minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
     if corpse.revision != expected_revision {
         return Err("Corpse state changed; refresh before examining it".into());
     }
@@ -665,13 +816,20 @@ pub fn examine_corpse(
     if !matches!(stage.as_str(), "external" | "internal") {
         return Err("Unknown examination stage".into());
     }
-    if permission_for(ctx, &corpse_id, &party_id).is_none() && !confirm_unauthorized {
+    if permission_for(
+        ctx,
+        &corpse_id,
+        &party_id,
+        CorpsePermissionScope::Examination,
+    )
+    .is_none()
+        && !confirm_unauthorized
+    {
         return Err(
             "Permission is missing; confirm the likely family penalties and settlement infamy"
                 .into(),
         );
     }
-    apply_unauthorized_consequences(ctx, actor_id, &corpse, &party_id, &action_id)?;
     let duration = if stage == "external" {
         EXTERNAL_EXAMINATION_MINUTES
     } else {
@@ -680,11 +838,20 @@ pub fn examine_corpse(
     if !advance_character_wait_time(ctx, actor_id, duration)? {
         return Ok(());
     }
+    apply_unauthorized_consequences(
+        ctx,
+        actor_id,
+        &corpse,
+        &party_id,
+        &receipt_id,
+        CorpsePermissionScope::Examination,
+    )?;
+    let completed_minute = now(ctx, actor_id)?;
     let check = skill_check(ctx, actor_id, &discipline)?;
     let finding = if stage == "external" {
-        summarize_external(ctx, &corpse, &discipline, check)
+        summarize_external(ctx, &corpse, &discipline, check, completed_minute)
     } else {
-        summarize_internal(ctx, &corpse, &discipline, check)
+        summarize_internal(ctx, &corpse, &discipline, check, completed_minute)
     };
     ctx.db
         .autopsy_action_receipt()
@@ -695,7 +862,7 @@ pub fn examine_corpse(
             action_kind: discipline,
             stage,
             finding,
-            performed_minute: minute.saturating_add(duration),
+            performed_minute: completed_minute,
         });
     Ok(())
 }
@@ -709,7 +876,16 @@ pub fn open_corpse(
     expected_revision: u32,
     confirm_unauthorized: bool,
 ) -> Result<(), String> {
-    let receipt_id = action_receipt_id(actor_id, &corpse_id, &action_id);
+    crate::strategic::require_strategic_gateway(ctx)?;
+    validate_client_action_id(&action_id)?;
+    let receipt_id = action_receipt_id(
+        actor_id,
+        &corpse_id,
+        "open",
+        "surgery",
+        "opening",
+        expected_revision,
+    );
     if ctx
         .db
         .autopsy_action_receipt()
@@ -719,27 +895,43 @@ pub fn open_corpse(
     {
         return Ok(());
     }
-    let (mut corpse, party_id, minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
+    let (mut corpse, party_id, _minute) = require_corpse_access(ctx, actor_id, &corpse_id)?;
     if corpse.opened {
         return Ok(());
     }
     if corpse.revision != expected_revision {
         return Err("Corpse state changed; refresh before opening it".into());
     }
-    if permission_for(ctx, &corpse_id, &party_id).is_none() && !confirm_unauthorized {
+    if permission_for(
+        ctx,
+        &corpse_id,
+        &party_id,
+        CorpsePermissionScope::Examination,
+    )
+    .is_none()
+        && !confirm_unauthorized
+    {
         return Err(
             "Permission is missing; confirm the likely family penalties and settlement infamy"
                 .into(),
         );
     }
-    apply_unauthorized_consequences(ctx, actor_id, &corpse, &party_id, &action_id)?;
     let surgery = skill_check(ctx, actor_id, "surgery")?;
     if !advance_character_wait_time(ctx, actor_id, OPEN_BODY_MINUTES)? {
         return Ok(());
     }
+    apply_unauthorized_consequences(
+        ctx,
+        actor_id,
+        &corpse,
+        &party_id,
+        &receipt_id,
+        CorpsePermissionScope::Examination,
+    )?;
+    let completed_minute = now(ctx, actor_id)?;
     let entropy = (adventuresim_core::settlement_population::stable_hash(&format!(
-        "{}:{action_id}:opening",
-        corpse.id
+        "{}:{actor_id}:{}:opening:{}",
+        corpse.id, corpse.revision, receipt_id
     )) % 10_001) as u16;
     let (quality, obscuration) = opening_quality_bps(surgery, entropy);
     corpse.opened = true;
@@ -748,6 +940,16 @@ pub fn open_corpse(
     corpse.handling_damage_bps = corpse.handling_damage_bps.saturating_add(obscuration / 8);
     corpse.revision = corpse.revision.saturating_add(1);
     ctx.db.strategic_corpse().id().update(corpse);
+    let exposure = adventuresim_core::surgery::procedure_blood_exposure("open-body", true);
+    if exposure > 0 {
+        crate::filth::deposit_now(
+            ctx,
+            actor_id,
+            crate::filth::FilthSubstance::Blood,
+            None,
+            exposure,
+        )?;
+    }
     ctx.db.autopsy_action_receipt().insert(AutopsyActionReceipt {
         id: receipt_id,
         corpse_id,
@@ -758,7 +960,7 @@ pub fn open_corpse(
             "The body was opened with {}% dissection precision; incision damage may obscure internal evidence.",
             quality / 100
         ),
-        performed_minute: minute.saturating_add(OPEN_BODY_MINUTES),
+        performed_minute: completed_minute,
     });
     Ok(())
 }
@@ -772,7 +974,16 @@ pub fn exhume_corpse(
     expected_revision: u32,
     confirm_unauthorized: bool,
 ) -> Result<(), String> {
-    let receipt_id = action_receipt_id(actor_id, &corpse_id, &action_id);
+    crate::strategic::require_strategic_gateway(ctx)?;
+    validate_client_action_id(&action_id)?;
+    let receipt_id = action_receipt_id(
+        actor_id,
+        &corpse_id,
+        "exhume",
+        "surgery",
+        "handling",
+        expected_revision,
+    );
     if ctx
         .db
         .autopsy_action_receipt()
@@ -790,15 +1001,31 @@ pub fn exhume_corpse(
     if corpse.revision != expected_revision {
         return Err("Corpse state changed; refresh before exhuming it".into());
     }
-    if permission_for(ctx, &corpse_id, &party_id).is_none() && !confirm_unauthorized {
+    if permission_for(
+        ctx,
+        &corpse_id,
+        &party_id,
+        CorpsePermissionScope::Exhumation,
+    )
+    .is_none()
+        && !confirm_unauthorized
+    {
         return Err(
             "Permission is missing; confirm the severe family penalty and settlement infamy".into(),
         );
     }
-    apply_unauthorized_consequences(ctx, actor_id, &corpse, &party_id, &action_id)?;
     if !advance_character_wait_time(ctx, actor_id, EXHUMATION_MINUTES)? {
         return Ok(());
     }
+    apply_unauthorized_consequences(
+        ctx,
+        actor_id,
+        &corpse,
+        &party_id,
+        &receipt_id,
+        CorpsePermissionScope::Exhumation,
+    )?;
+    let completed_minute = now(ctx, actor_id)?;
     corpse.exhumed = true;
     corpse.handling_damage_bps = corpse.handling_damage_bps.saturating_add(800);
     corpse.revision = corpse.revision.saturating_add(1);
@@ -813,7 +1040,7 @@ pub fn exhume_corpse(
             stage: "handling".into(),
             finding: "The body has been exhumed; handling and elapsed time reduced the evidence."
                 .into(),
-            performed_minute: minute.saturating_add(EXHUMATION_MINUTES),
+            performed_minute: completed_minute,
         });
     Ok(())
 }
@@ -823,7 +1050,8 @@ pub(crate) fn grant_permission_from_dialogue(
     actor_id: u64,
     corpse_id: &str,
     npc_id: &str,
-) -> Result<(), String> {
+    scope: CorpsePermissionScope,
+) -> Result<bool, String> {
     let party_id = observer_party(ctx, actor_id)?;
     let corpse = ctx
         .db
@@ -840,40 +1068,48 @@ pub(crate) fn grant_permission_from_dialogue(
         .id()
         .find(&npc_id.to_owned())
         .ok_or("NPC not found")?;
-    if npc.home_settlement_id != corpse.settlement_id {
-        return Err("NPC has no local authority over this corpse".into());
+    let kind = permission_kind_for_npc(ctx, &corpse, &npc)
+        .ok_or("NPC cannot grant permission for this corpse")?;
+    let scope_label = permission_scope_label(scope);
+    let attempt_id = format!("{corpse_id}:{party_id}:{npc_id}:{scope_label}");
+    if let Some(attempt) = ctx.db.corpse_permission_attempt().id().find(&attempt_id) {
+        return Ok(attempt.granted);
     }
-    let family = ctx
+    let affinity = ctx
         .db
-        .corpse_family_binding()
-        .corpse_id()
-        .filter(corpse_id)
-        .any(|row| row.npc_id == npc_id);
-    let priest = npc.profession.contains("priest")
-        || npc.local_role.contains("priest")
-        || npc.organization_id.contains("church");
-    let authority = npc.local_role.contains("lord")
-        || npc.local_role.contains("reeve")
-        || npc.local_role.contains("authority")
-        || npc.service_id == "keep";
-    let kind = if family {
-        CorpsePermissionKind::Family
-    } else if priest {
-        CorpsePermissionKind::Priest
-    } else if authority {
-        CorpsePermissionKind::SecularAuthority
-    } else {
-        return Err("NPC cannot grant permission for this corpse".into());
-    };
-    let id = format!("{corpse_id}:{party_id}");
-    if ctx.db.corpse_permission().id().find(&id).is_none() {
+        .settlement_npc_relationship()
+        .id()
+        .find(&format!("{actor_id}:{npc_id}"))
+        .map_or(0.0, |row| row.affinity_anchor);
+    let charm = crate::condition::mental_check(ctx, actor_id, Skill::Charm)?;
+    let difficulty = permission_difficulty(kind, scope);
+    let entropy = adventuresim_core::settlement_population::stable_hash(&format!(
+        "corpse-permission:{attempt_id}"
+    ));
+    let circumstance = (entropy % 101) as f32 / 100.0 - 0.5;
+    let granted = charm + affinity.clamp(-25.0, 25.0) / 25.0 + circumstance >= difficulty;
+    let attempted_minute = now(ctx, actor_id)?;
+    ctx.db
+        .corpse_permission_attempt()
+        .insert(CorpsePermissionAttempt {
+            id: attempt_id,
+            corpse_id: corpse_id.into(),
+            party_id: party_id.clone(),
+            npc_id: npc_id.into(),
+            scope,
+            granted,
+            attempted_minute,
+        });
+    if granted {
+        let id = format!("{corpse_id}:{party_id}:{scope_label}");
         ctx.db.corpse_permission().insert(CorpsePermission {
             id,
             corpse_id: corpse_id.into(),
             party_id: party_id.clone(),
             granted_by_npc_id: npc_id.into(),
             kind,
-            granted_minute: now(ctx, actor_id)?,
+            scope,
+            granted_minute: attempted_minute,
         });
         if kind != CorpsePermissionKind::Family {
             for relative in ctx.db.corpse_family_binding().corpse_id().filter(corpse_id) {
@@ -888,7 +1124,65 @@ pub(crate) fn grant_permission_from_dialogue(
             }
         }
     }
-    Ok(())
+    Ok(granted)
+}
+
+fn permission_scope_label(scope: CorpsePermissionScope) -> &'static str {
+    match scope {
+        CorpsePermissionScope::Examination => "examination",
+        CorpsePermissionScope::Exhumation => "exhumation",
+    }
+}
+
+fn permission_difficulty(kind: CorpsePermissionKind, scope: CorpsePermissionScope) -> f32 {
+    match (kind, scope) {
+        (CorpsePermissionKind::Family, CorpsePermissionScope::Examination) => 1.0,
+        (CorpsePermissionKind::Priest, CorpsePermissionScope::Examination) => 2.0,
+        (CorpsePermissionKind::SecularAuthority, CorpsePermissionScope::Examination) => 2.5,
+        (CorpsePermissionKind::Family, CorpsePermissionScope::Exhumation) => 3.5,
+        (CorpsePermissionKind::Priest, CorpsePermissionScope::Exhumation) => 4.0,
+        (CorpsePermissionKind::SecularAuthority, CorpsePermissionScope::Exhumation) => 4.5,
+    }
+}
+
+fn titled_permission_kind(
+    same_settlement: bool,
+    family: bool,
+    profession: &str,
+    local_role: &str,
+    service_id: &str,
+) -> Option<CorpsePermissionKind> {
+    if !same_settlement {
+        None
+    } else if family {
+        Some(CorpsePermissionKind::Family)
+    } else if profession == "cleric" && local_role == "parish priest" && service_id == "religion" {
+        Some(CorpsePermissionKind::Priest)
+    } else if matches!(local_role, "reeve" | "local lord" | "magistrate") {
+        Some(CorpsePermissionKind::SecularAuthority)
+    } else {
+        None
+    }
+}
+
+fn permission_kind_for_npc(
+    ctx: &ReducerContext,
+    corpse: &StrategicCorpse,
+    npc: &SettlementNpc,
+) -> Option<CorpsePermissionKind> {
+    let family = ctx
+        .db
+        .corpse_family_binding()
+        .corpse_id()
+        .filter(&corpse.id)
+        .any(|row| row.npc_id == npc.id);
+    titled_permission_kind(
+        npc.home_settlement_id == corpse.settlement_id,
+        family,
+        &npc.profession,
+        &npc.local_role,
+        &npc.service_id,
+    )
 }
 
 pub(crate) fn permission_topics_for_npc(
@@ -902,31 +1196,55 @@ pub(crate) fn permission_topics_for_npc(
     let Some(npc) = ctx.db.settlement_npc().id().find(&npc_id.to_owned()) else {
         return Vec::new();
     };
+    let minute = now(ctx, actor_id).unwrap_or(0);
     ctx.db
         .strategic_corpse()
         .discovering_party_id()
         .filter(&party_id)
-        .filter(|corpse| {
-            permission_for(ctx, &corpse.id, &party_id).is_none()
-                && (ctx
+        .flat_map(|corpse| {
+            if permission_kind_for_npc(ctx, &corpse, &npc).is_none() {
+                return Vec::new();
+            }
+            let mut topics = Vec::new();
+            for scope in [
+                CorpsePermissionScope::Examination,
+                CorpsePermissionScope::Exhumation,
+            ] {
+                let is_exhumation = scope == CorpsePermissionScope::Exhumation;
+                let eligible_location = !is_exhumation
+                    || corpse_location(corpse.discovered_minute, minute, corpse.exhumed)
+                        == CorpseLocation::Interred;
+                let attempted = ctx
                     .db
-                    .corpse_family_binding()
-                    .corpse_id()
-                    .filter(&corpse.id)
-                    .any(|row| row.npc_id == npc_id)
-                    || npc.profession.contains("priest")
-                    || npc.local_role.contains("priest")
-                    || npc.organization_id.contains("church")
-                    || npc.local_role.contains("lord")
-                    || npc.local_role.contains("reeve")
-                    || npc.local_role.contains("authority")
-                    || npc.service_id == "keep")
-        })
-        .map(|corpse| {
-            (
-                format!("corpse-permission:{}", corpse.id),
-                format!("Ask permission to examine {}", corpse.display_name),
-            )
+                    .corpse_permission_attempt()
+                    .id()
+                    .find(&format!(
+                        "{}:{}:{}:{}",
+                        corpse.id,
+                        party_id,
+                        npc_id,
+                        permission_scope_label(scope)
+                    ))
+                    .is_some();
+                if eligible_location
+                    && permission_for(ctx, &corpse.id, &party_id, scope).is_none()
+                    && !attempted
+                {
+                    topics.push((
+                        format!(
+                            "corpse-permission:{}:{}",
+                            permission_scope_label(scope),
+                            corpse.id
+                        ),
+                        if is_exhumation {
+                            format!("Ask permission to exhume {}", corpse.display_name)
+                        } else {
+                            format!("Ask permission to examine {}", corpse.display_name)
+                        },
+                    ));
+                }
+            }
+            topics
         })
         .collect()
 }
@@ -944,6 +1262,7 @@ mod tests {
             "corpse_injury",
             "corpse_family_binding",
             "corpse_permission",
+            "corpse_permission_attempt",
             "autopsy_action_receipt",
         ] {
             assert!(source.contains(&format!("#[table(accessor = {table})]")));
@@ -957,16 +1276,73 @@ mod tests {
     #[test]
     fn reducers_encode_retry_permission_and_location_authority() {
         let source = include_str!("corpse.rs");
-        assert!(source.contains("action_receipt_id(actor_id, &corpse_id, &action_id)"));
+        assert!(source.contains("validate_client_action_id(&action_id)"));
+        assert!(source.contains(
+            "action_receipt_id(\n        actor_id,\n        &corpse_id,\n        \"examine\""
+        ));
         assert!(source.contains("confirm_unauthorized"));
         assert!(source.contains("apply_unauthorized_consequences"));
-        assert!(source.contains("permission_for(ctx, &corpse_id, &party_id)"));
+        assert!(source.contains("CorpsePermissionScope::Examination"));
+        assert!(source.contains("CorpsePermissionScope::Exhumation"));
         assert!(source.contains("actor_site.as_deref() == Some(corpse.case_site_id.as_str())"));
         assert!(source.contains(
             "actor.current_settlement_id.as_deref() == Some(corpse.settlement_id.as_str())"
         ));
+        assert!(source.contains("Resolve the active encounter before handling a corpse"));
+        assert!(source.contains("procedure_blood_exposure(\"open-body\", true)"));
         assert!(source.contains("CorpsePermissionKind::Family"));
         assert!(source.contains("CorpsePermissionKind::Priest"));
         assert!(source.contains("CorpsePermissionKind::SecularAuthority"));
+    }
+
+    #[test]
+    fn permission_authority_is_exact_and_shared() {
+        assert_eq!(
+            titled_permission_kind(true, true, "laborer", "neighbor", ""),
+            Some(CorpsePermissionKind::Family)
+        );
+        assert_eq!(
+            titled_permission_kind(true, false, "cleric", "parish priest", "religion"),
+            Some(CorpsePermissionKind::Priest)
+        );
+        assert_eq!(
+            titled_permission_kind(true, false, "retainer", "reeve", "keep"),
+            Some(CorpsePermissionKind::SecularAuthority)
+        );
+        assert_eq!(
+            titled_permission_kind(true, false, "servant", "keep servant", "keep"),
+            None
+        );
+        assert_eq!(
+            titled_permission_kind(false, true, "laborer", "neighbor", ""),
+            None
+        );
+
+        let source = include_str!("corpse.rs");
+        assert!(source.matches("permission_kind_for_npc(ctx,").count() >= 2);
+        assert!(!source.contains("service_id == \"keep\""));
+        assert!(!source.contains("local_role.contains"));
+    }
+
+    #[test]
+    fn exhumation_permission_is_harder_for_every_authority_kind() {
+        for kind in [
+            CorpsePermissionKind::Family,
+            CorpsePermissionKind::Priest,
+            CorpsePermissionKind::SecularAuthority,
+        ] {
+            assert!(
+                permission_difficulty(kind, CorpsePermissionScope::Exhumation)
+                    > permission_difficulty(kind, CorpsePermissionScope::Examination)
+            );
+        }
+    }
+
+    #[test]
+    fn corpse_family_bindings_have_an_explicit_materialization_seam() {
+        let source = include_str!("corpse.rs");
+        assert!(source.contains("materialize_corpse_family_bindings"));
+        assert!(source.contains("family_npc_ids: &[String]"));
+        assert!(!source.contains(".household"));
     }
 }

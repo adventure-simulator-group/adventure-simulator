@@ -250,7 +250,11 @@ fn quest_location_center(
             (settlement_chat_area_with_info(&presentation.title, active_character, &autoresolve_messages))
         }
         @if let Some((corpse, window)) = selected_corpse {
-            (super::settlement::corpse_medical_dialog(corpse, &site.case_site_id, window))
+            (super::settlement::corpse_medical_dialog(
+                corpse,
+                &format!("/locations/case-site/{}/enemy", site.case_site_id),
+                window,
+            ))
         }
     }
 }
@@ -578,6 +582,8 @@ mod tests {
             true,
             None,
             false,
+            &[],
+            None,
         )
         .into_string();
         assert!(!markup.contains("quest-combat-actions"));
@@ -626,6 +632,8 @@ mod tests {
             true,
             None,
             false,
+            &[],
+            None,
         )
         .into_string();
 
