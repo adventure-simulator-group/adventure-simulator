@@ -207,17 +207,40 @@ fn location_activity(activity: ImmediateActivity) -> Option<LocationActivity> {
 pub(crate) fn effective_location_schedule(
     schedule: &ScheduleAllocation,
     location: ActivityLocation,
+    redistribution_seed: u64,
 ) -> ScheduleAllocation {
     let mut effective = schedule.clone();
-    if !location.allows(LocationActivity::Carousing) {
-        effective.carousing_minutes = 0;
-    }
-    if !location.allows(LocationActivity::Thievery) {
-        effective.thievery_minutes = 0;
-    }
-    if !location.allows(LocationActivity::Raiding) {
-        effective.raiding_minutes = 0;
-    }
+    let redistributed = adventuresim_core::activity::redistribute_unavailable_segments(
+        [
+            schedule.combat_training_minutes,
+            schedule.carousing_minutes,
+            schedule.apprenticeship_minutes,
+            schedule.profession_practice_minutes,
+            schedule.labor_minutes,
+            schedule.prayer_minutes,
+            schedule.thievery_minutes,
+            schedule.raiding_minutes,
+        ],
+        [
+            true,
+            location.allows(LocationActivity::Carousing),
+            true,
+            true,
+            true,
+            true,
+            location.allows(LocationActivity::Thievery),
+            location.allows(LocationActivity::Raiding),
+        ],
+        redistribution_seed,
+    );
+    effective.combat_training_minutes = redistributed[0];
+    effective.carousing_minutes = redistributed[1];
+    effective.apprenticeship_minutes = redistributed[2];
+    effective.profession_practice_minutes = redistributed[3];
+    effective.labor_minutes = redistributed[4];
+    effective.prayer_minutes = redistributed[5];
+    effective.thievery_minutes = redistributed[6];
+    effective.raiding_minutes = redistributed[7];
     effective
 }
 
@@ -1572,6 +1595,7 @@ fn rest_for_minutes(
     let effective_schedule = effective_location_schedule(
         &effective_organization_schedule(ctx, character_id, &saved_schedule.downtime),
         activity_execution_location(ctx, character_id)?.policy,
+        character_id,
     );
     let conversation_choice = character.party_id.as_ref().and_then(|party_id| {
         let snapshot: Vec<_> = crate::strategic::living_party_member_ids(ctx, party_id)
@@ -1955,6 +1979,7 @@ fn advance_personal_camp_time(
     let allowed = effective_location_schedule(
         &allowed_camp_schedule(&schedule.downtime),
         ActivityLocation::JourneyCamp,
+        member_id,
     );
     let downtime = elapsed.saturating_sub(fatigue_rest.max(convalescing));
     if downtime > 0 {
@@ -2190,6 +2215,7 @@ pub fn rest_at_camp(
             let allowed = effective_location_schedule(
                 &allowed_camp_schedule(&schedule.downtime),
                 ActivityLocation::JourneyCamp,
+                member_id,
             );
             let mut skills = ctx
                 .db
@@ -2329,9 +2355,13 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         effective_organization_schedule(ctx, character_id, &saved_schedule.downtime);
     let effective_schedule = if execution_location.policy == ActivityLocation::JourneyCamp {
         let camp_schedule = allowed_camp_schedule(&organization_schedule);
-        effective_location_schedule(&camp_schedule, execution_location.policy)
+        effective_location_schedule(&camp_schedule, execution_location.policy, character_id)
     } else {
-        effective_location_schedule(&organization_schedule, execution_location.policy)
+        effective_location_schedule(
+            &organization_schedule,
+            execution_location.policy,
+            character_id,
+        )
     };
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
@@ -2449,7 +2479,7 @@ mod tests {
     }
 
     #[test]
-    fn effective_schedule_filters_location_activities_without_mutating_saved_plan() {
+    fn effective_schedule_redistributes_location_activities_without_mutating_saved_plan() {
         let saved = ScheduleAllocation {
             carousing_minutes: 60,
             thievery_minutes: 90,
@@ -2457,12 +2487,16 @@ mod tests {
             labor_minutes: 180,
             ..ScheduleAllocation::default()
         };
-        let settlement =
-            effective_location_schedule(&saved, ActivityLocation::Settlement { has_inn: false });
+        let settlement = effective_location_schedule(
+            &saved,
+            ActivityLocation::Settlement { has_inn: false },
+            42,
+        );
         assert_eq!(settlement.carousing_minutes, 0);
-        assert_eq!(settlement.thievery_minutes, 90);
         assert_eq!(settlement.raiding_minutes, 0);
-        assert_eq!(settlement.labor_minutes, 180);
+        assert!(settlement.thievery_minutes >= 90);
+        assert!(settlement.labor_minutes >= 180);
+        assert_eq!(settlement.allocated_minutes(), saved.allocated_minutes());
         let saved_recovery = adventuresim_core::strategic_schedule::restorative_leisure_minutes(
             core_schedule(&saved),
             0,
@@ -2473,15 +2507,34 @@ mod tests {
             0,
             MINUTES_PER_DAY,
         );
-        assert!(effective_recovery > saved_recovery);
+        assert_eq!(effective_recovery, saved_recovery);
 
-        let outdoors = effective_location_schedule(&saved, ActivityLocation::NamedOutdoorLocation);
+        let outdoors =
+            effective_location_schedule(&saved, ActivityLocation::NamedOutdoorLocation, 42);
         assert_eq!(outdoors.carousing_minutes, 0);
         assert_eq!(outdoors.thievery_minutes, 0);
-        assert_eq!(outdoors.raiding_minutes, 120);
+        assert!(outdoors.raiding_minutes >= 120);
+        assert!(outdoors.labor_minutes >= 180);
+        assert_eq!(outdoors.allocated_minutes(), saved.allocated_minutes());
         assert_eq!(saved.carousing_minutes, 60);
         assert_eq!(saved.thievery_minutes, 90);
         assert_eq!(saved.raiding_minutes, 120);
+    }
+
+    #[test]
+    fn effective_schedule_uses_leisure_when_every_planned_activity_is_unavailable() {
+        let saved = ScheduleAllocation {
+            carousing_minutes: 60,
+            raiding_minutes: 120,
+            ..ScheduleAllocation::default()
+        };
+        let effective = effective_location_schedule(
+            &saved,
+            ActivityLocation::Settlement { has_inn: false },
+            42,
+        );
+        assert_eq!(effective.allocated_minutes(), 0);
+        assert_eq!(saved.allocated_minutes(), 180);
     }
 
     #[test]

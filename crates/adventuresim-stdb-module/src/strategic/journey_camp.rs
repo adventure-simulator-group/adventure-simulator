@@ -105,6 +105,7 @@ fn party_itinerary_members(
         let allowed = crate::time::effective_location_schedule(
             &crate::time::allowed_camp_schedule(&schedule.downtime),
             adventuresim_core::activity::ActivityLocation::JourneyCamp,
+            member_id,
         );
         members.push(ItineraryMember {
             fatigue_capacity: attributes

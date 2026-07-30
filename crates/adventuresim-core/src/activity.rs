@@ -25,6 +25,64 @@ pub enum LocationActivity {
     Raiding,
 }
 
+pub const ACTIVITY_SEGMENT_MINUTES: u16 = 15;
+
+/// Replace unavailable planned activities one quarter-hour at a time.
+///
+/// Each replacement draw is weighted by the original planned minutes of the
+/// available, non-Leisure activities. The seed makes authoritative execution
+/// and client previews agree without persisting a second schedule. When no
+/// planned activity is available, the removed time remains unallocated and is
+/// therefore Leisure.
+pub fn redistribute_unavailable_segments<const N: usize>(
+    allocations: [u16; N],
+    available: [bool; N],
+    seed: u64,
+) -> [u16; N] {
+    let mut effective = allocations;
+    let mut unavailable_segments = 0_u64;
+    for index in 0..N {
+        if !available[index] {
+            unavailable_segments = unavailable_segments
+                .saturating_add(u64::from(effective[index] / ACTIVITY_SEGMENT_MINUTES));
+            effective[index] = 0;
+        }
+    }
+
+    let total_weight = allocations
+        .iter()
+        .zip(available)
+        .filter_map(|(minutes, is_available)| is_available.then_some(u64::from(*minutes)))
+        .sum::<u64>();
+    if total_weight == 0 {
+        return effective;
+    }
+
+    for segment in 0..unavailable_segments {
+        let mut draw = redistribution_roll(seed, segment) % total_weight;
+        for index in 0..N {
+            let weight = if available[index] {
+                u64::from(allocations[index])
+            } else {
+                0
+            };
+            if draw < weight {
+                effective[index] = effective[index].saturating_add(ACTIVITY_SEGMENT_MINUTES);
+                break;
+            }
+            draw = draw.saturating_sub(weight);
+        }
+    }
+    effective
+}
+
+fn redistribution_roll(seed: u64, segment: u64) -> u64 {
+    let mut value = seed ^ 0xA4C7_1D5B_93E2_F860 ^ segment.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^ (value >> 31)
+}
+
 impl ActivityLocation {
     pub const fn allows(self, activity: LocationActivity) -> bool {
         match (self, activity) {
@@ -160,6 +218,57 @@ mod tests {
         assert!(!outdoors.allows(LocationActivity::Carousing));
         assert!(!ineligible.allows(LocationActivity::Raiding));
         assert!(!camp.allows(LocationActivity::Raiding));
+    }
+
+    #[test]
+    fn unavailable_segments_are_weighted_by_existing_available_allocations() {
+        let allocations = [60, 120, 90];
+        let available = [true, true, false];
+        let mut first = 0_u64;
+        let mut second = 0_u64;
+        for seed in 0..4_000 {
+            let effective = redistribute_unavailable_segments(allocations, available, seed);
+            first += u64::from(effective[0] - allocations[0]);
+            second += u64::from(effective[1] - allocations[1]);
+            assert_eq!(
+                effective
+                    .iter()
+                    .map(|minutes| u64::from(*minutes))
+                    .sum::<u64>(),
+                270
+            );
+        }
+        let ratio = second as f64 / first as f64;
+        assert!((1.9..2.1).contains(&ratio), "observed ratio {ratio}");
+    }
+
+    #[test]
+    fn unavailable_segments_become_leisure_without_an_available_plan() {
+        assert_eq!(
+            redistribute_unavailable_segments([60, 120], [false, false], 7),
+            [0, 0]
+        );
+    }
+
+    #[test]
+    fn redistribution_is_seeded_and_uses_quarter_hour_segments() {
+        let allocations = [60, 120, 90];
+        let available = [true, true, false];
+        let first = redistribute_unavailable_segments(allocations, available, 42);
+        assert_eq!(first, [75, 195, 0]);
+        assert_eq!(
+            first,
+            redistribute_unavailable_segments(allocations, available, 42)
+        );
+        assert!(
+            first
+                .iter()
+                .all(|minutes| minutes % ACTIVITY_SEGMENT_MINUTES == 0)
+        );
+        assert_eq!(
+            first.iter().map(|minutes| u64::from(*minutes)).sum::<u64>(),
+            270
+        );
     }
 
     #[test]

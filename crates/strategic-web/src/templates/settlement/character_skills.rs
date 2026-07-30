@@ -846,7 +846,9 @@ pub(super) fn party_skills_rail(
             @if let Some(skills) = skills {
                 h3 class="sr-only" { (title) }
                 @if let (Some(schedule), Some(action)) = (schedule, schedule_action) {
-                    form class="skill-schedule" data-skill-schedule action=(action) method="post" {
+                    form class="skill-schedule" data-skill-schedule
+                        data-activity-redistribution-seed=(skills.character_id)
+                        action=(action) method="post" {
                         (skills_table(
                             title, attributes, skills, head_health, upper_health, lower_health, Some(schedule),
                             activity_preview, professes_religion, prayer_religion_check,
@@ -1013,7 +1015,11 @@ fn skills_table(
                     @if skills.smithing_hours > 0.0 { (party_skill_row(skills, "Smithing", "smithing", Skill::Smithing, arm_agility, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
                         @let preview = activity_preview.unwrap_or_default();
-                        @let effective = effective_preview_schedule(&schedule.downtime, activity_location);
+                        @let effective = effective_preview_schedule(
+                            &schedule.downtime,
+                            activity_location,
+                            skills.character_id,
+                        );
                         tr class="schedule-divider" { td colspan="9" {} }
                         tr class="schedule-section-heading" {
                             th { span class="sr-only" { "Activities" } }
@@ -1029,7 +1035,7 @@ fn skills_table(
                         (schedule_special_row(
                             if professes_religion { "Prayer" } else { "Meditate" },
                             if professes_religion { "prayer" } else { "inner-self" },
-                            "prayer_minutes", schedule.downtime.prayer_minutes, schedule.downtime.prayer_minutes, true, immediate_actions,
+                            "prayer_minutes", schedule.downtime.prayer_minutes, effective.prayer_minutes, true, immediate_actions,
                             if professes_religion { ActivityEffectRates::prayer(prayer_religion_check / 5.0) } else { ActivityEffectRates::meditation() }, None,
                             None, intelligence_training,
                             if professes_religion {
@@ -1038,22 +1044,22 @@ fn skills_table(
                                 "Meditation gives modest morale independently of party Religion knowledge and does not train Religion or create Fervor."
                             },
                         ))
-                        (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, schedule.downtime.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, combat_training, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
+                        (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, effective.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, combat_training, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
                         (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, effective.carousing_minutes, true, carousing_action, ActivityEffectRates::carousing(), None, None, instinct_training, "Drink and socialize to improve morale and train Charm at 25% speed. Ordinary carousing changes no reputation, but a disorder incident can add Infamy; Drunkards are at substantially higher risk."))
                         @let apprenticeship_id = schedule.downtime.apprenticeship_organization_id.as_deref().filter(|id| preview.profession.contains_key(*id)).or_else(|| preview.profession.keys().next().map(String::as_str));
                         @if let Some(service_id) = apprenticeship_id {
                             (schedule_organization_selection("Training organization", "apprenticeship_organization_id", service_id, preview.profession.iter().map(|(id, entry)| (id.as_str(), entry.tier_label.as_str())).collect()))
-                            (schedule_special_row(&format!("Organization training — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, schedule.downtime.apprenticeship_minutes, true, immediate_actions && preview.profession.contains_key(service_id), ActivityEffectRates::default(), None, preview.profession.get(service_id), 1.0, "Train according to this organization's YAML-defined curriculum. Any dues are assessed separately."))
+                            (schedule_special_row(&format!("Organization training — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, effective.apprenticeship_minutes, true, immediate_actions && preview.profession.contains_key(service_id), ActivityEffectRates::default(), None, preview.profession.get(service_id), 1.0, "Train according to this organization's YAML-defined curriculum. Any dues are assessed separately."))
                         }
                         @let practice_choices: Vec<(&str, &str)> = preview.profession.iter().filter(|(_, entry)| entry.practice_allowed).map(|(id, entry)| (id.as_str(), entry.tier_label.as_str())).collect();
                         @let practice_id = schedule.downtime.practice_organization_id.as_deref().filter(|id| practice_choices.iter().any(|(candidate, _)| candidate == id)).or_else(|| practice_choices.first().map(|(id, _)| *id));
                         @if let Some(service_id) = practice_id {
                             (schedule_organization_selection("Activity organization", "practice_organization_id", service_id, practice_choices))
                             @if let Some(profession) = preview.profession.get(service_id) {
-                                (schedule_special_row(&format!("Organization activity — {}", profession_label(service_id)), "shield", "profession_practice_minutes", schedule.downtime.profession_practice_minutes, schedule.downtime.profession_practice_minutes, true, immediate_actions, ActivityEffectRates::default(), None, Some(profession), 1.0, "Conduct the activity associated with the awarded rank. Training and rewards come from the organization's YAML definition."))
+                                (schedule_special_row(&format!("Organization activity — {}", profession_label(service_id)), "shield", "profession_practice_minutes", schedule.downtime.profession_practice_minutes, effective.profession_practice_minutes, true, immediate_actions, ActivityEffectRates::default(), None, Some(profession), 1.0, "Conduct the activity associated with the awarded rank. Training and rewards come from the organization's YAML definition."))
                             }
                         }
-                        (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, schedule.downtime.labor_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, None, instinct_training, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
+                        (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, effective.labor_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, None, instinct_training, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
                         (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, effective.thievery_minutes, true, thievery_action, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_reputation_per_hour, 0.0, 0.0), None, None, all_training, "Inside a settlement, thievery can earn coin and add local Infamy while risking discovery and training Stealth at 25% speed."))
                         (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, effective.raiding_minutes, true, raiding_action, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_reputation_per_hour, 0.0, 0.0), None, None, combat_training, "At a named location outside a settlement, raiding can earn coin and add substantial local Infamy while risking retaliation."))
                         @let leisure = leisure_preview(&effective, preview.current_fatigue);
@@ -1977,20 +1983,43 @@ fn leisure_preview(schedule: &ScheduleAllocation, current_fatigue: f32) -> Leisu
 fn effective_preview_schedule(
     schedule: &ScheduleAllocation,
     location: Option<adventuresim_core::activity::ActivityLocation>,
+    redistribution_seed: u64,
 ) -> ScheduleAllocation {
     use adventuresim_core::activity::LocationActivity;
 
     let mut effective = schedule.clone();
     if let Some(location) = location {
-        if !location.allows(LocationActivity::Carousing) {
-            effective.carousing_minutes = 0;
-        }
-        if !location.allows(LocationActivity::Thievery) {
-            effective.thievery_minutes = 0;
-        }
-        if !location.allows(LocationActivity::Raiding) {
-            effective.raiding_minutes = 0;
-        }
+        let redistributed = adventuresim_core::activity::redistribute_unavailable_segments(
+            [
+                schedule.combat_training_minutes,
+                schedule.carousing_minutes,
+                schedule.apprenticeship_minutes,
+                schedule.profession_practice_minutes,
+                schedule.labor_minutes,
+                schedule.prayer_minutes,
+                schedule.thievery_minutes,
+                schedule.raiding_minutes,
+            ],
+            [
+                true,
+                location.allows(LocationActivity::Carousing),
+                true,
+                true,
+                true,
+                true,
+                location.allows(LocationActivity::Thievery),
+                location.allows(LocationActivity::Raiding),
+            ],
+            redistribution_seed,
+        );
+        effective.combat_training_minutes = redistributed[0];
+        effective.carousing_minutes = redistributed[1];
+        effective.apprenticeship_minutes = redistributed[2];
+        effective.profession_practice_minutes = redistributed[3];
+        effective.labor_minutes = redistributed[4];
+        effective.prayer_minutes = redistributed[5];
+        effective.thievery_minutes = redistributed[6];
+        effective.raiding_minutes = redistributed[7];
     }
     effective
 }
@@ -3091,16 +3120,16 @@ mod tests {
         let effective = effective_preview_schedule(
             &saved,
             Some(adventuresim_core::activity::ActivityLocation::Settlement { has_inn: false }),
+            42,
         );
         assert_eq!(saved.carousing_minutes, 120);
         assert_eq!(saved.raiding_minutes, 180);
         assert_eq!(effective.carousing_minutes, 0);
         assert_eq!(effective.raiding_minutes, 0);
-        assert_eq!(effective.thievery_minutes, 60);
-        assert_eq!(
-            MINUTES_PER_DAY - preview_allocated_minutes(&effective),
-            1_140
-        );
+        assert!(effective.thievery_minutes >= 60);
+        assert!(effective.labor_minutes >= 240);
+        assert_eq!(preview_allocated_minutes(&effective), 600);
+        assert_eq!(MINUTES_PER_DAY - preview_allocated_minutes(&effective), 840);
 
         let rendered = schedule_special_row(
             "Raiding",

@@ -12,7 +12,7 @@ const {
   stepClockValue,
 } = require("../static/training-schedule.js");
 
-test("location mask preserves editable allocations while projecting unavailable time to Leisure", () => {
+test("location mask preserves editable allocations and redistributes unavailable segments", () => {
   const saved = {
     carousing_minutes: 120,
     labor_minutes: 240,
@@ -22,21 +22,70 @@ test("location mask preserves editable allocations while projecting unavailable 
   const effective = effectiveAllocation(saved, [
     "carousing_minutes",
     "raiding_minutes",
-  ]);
+  ], 42n);
   assert.deepEqual(saved, {
     carousing_minutes: 120,
     labor_minutes: 240,
     raiding_minutes: 180,
     thievery_minutes: 60,
   });
+  assert.equal(effective.carousing_minutes, 0);
+  assert.equal(effective.raiding_minutes, 0);
+  assert.ok(effective.labor_minutes >= 240);
+  assert.ok(effective.thievery_minutes >= 60);
+  assert.equal(Object.values(effective).reduce((sum, value) => sum + value, 0), 600);
+  const leisure = 1440 - Object.values(effective).reduce((sum, value) => sum + value, 0);
+  assert.equal(leisure, 840);
+});
+
+test("location mask uses Leisure only when no planned activity is available", () => {
+  const effective = effectiveAllocation(
+    { carousing_minutes: 60, raiding_minutes: 120 },
+    ["carousing_minutes", "raiding_minutes"],
+    42n,
+  );
   assert.deepEqual(effective, {
     carousing_minutes: 0,
-    labor_minutes: 240,
     raiding_minutes: 0,
-    thievery_minutes: 60,
   });
-  const leisure = 1440 - Object.values(effective).reduce((sum, value) => sum + value, 0);
-  assert.equal(leisure, 1140);
+  assert.equal(1440 - Object.values(effective).reduce((sum, value) => sum + value, 0), 1440);
+});
+
+test("weighted redistribution approaches the planned two-to-one ratio", () => {
+  assert.deepEqual(
+    effectiveAllocation(
+      {
+        combat_training_minutes: 60,
+        prayer_minutes: 120,
+        raiding_minutes: 90,
+      },
+      ["raiding_minutes"],
+      42n,
+    ),
+    {
+      combat_training_minutes: 75,
+      prayer_minutes: 195,
+      raiding_minutes: 0,
+    },
+  );
+
+  let combat = 0;
+  let prayer = 0;
+  for (let seed = 0n; seed < 4000n; seed += 1n) {
+    const effective = effectiveAllocation(
+      {
+        combat_training_minutes: 60,
+        prayer_minutes: 120,
+        raiding_minutes: 90,
+      },
+      ["raiding_minutes"],
+      seed,
+    );
+    combat += effective.combat_training_minutes - 60;
+    prayer += effective.prayer_minutes - 120;
+  }
+  assert.ok(prayer / combat > 1.9);
+  assert.ok(prayer / combat < 2.1);
 });
 
 test("schedule editor contains only activity allocations", () => {
