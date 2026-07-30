@@ -1,5 +1,31 @@
 # Third-party notices
 
+## Fantastic-disease folklore research
+
+The fantastic-disease content paraphrases historical dictionary, scholarly,
+library-catalogue, and public-domain sources. Source text is not redistributed:
+
+- *Frühneuhochdeutsches Wörterbuch*, “Mar” and “Bilwis” entries:
+  <https://www.fwb-online.de/go/mar.s.0m_1709314623> and
+  <https://fwb-online.de/lemma/bilwis.s.1f>
+- Thomas Schürmann, “Der Nachzehrerglauben in Mitteleuropa,”
+  *Ethnographisch-Archäologische Zeitschrift* 50 (2009):
+  <https://www.eaz-journal.org/index.php/eaz/article/download/851/907/2938>
+- Georgius Agricola, *De re metallica* (1556), public-domain English
+  translation: <https://www.gutenberg.org/files/38015/38015-h/38015-h>
+- Folger Shakespeare Library catalogue record for Agricola,
+  *De animantibus subterraneis* (1549):
+  <https://catalog.folger.edu/record/367251>
+- D. L. Ashliman's research collection, “The Mare in Scandinavian Belief,”
+  used only for explicitly later comparative variants:
+  <https://sites.pitt.edu/~dash/nightmare.html#mart>
+- *Deutsche Biographie*, “Paracelsus,” used for the 1566 abridged publication
+  history of *Liber de nymphis*:
+  <https://www.deutsche-biographie.de/sfz93903.html?language=en>
+- New York Public Library research catalogue, *Liber de nymphis, sylphis,
+  pygmaeis et salamandris*, used for the Huser/Basel 1591 textual history:
+  <https://test.nypl.org/research/research-catalog/bib/pb9916825293506421>
+
 ## Strategic map data
 
 The generated Paper map and terrain-routing packs adapt Viabundus Pre-modern

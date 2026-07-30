@@ -130,3 +130,11 @@ from becoming dead time:
 
 The intent is for wounds to shape an expedition and its aftermath without
 forcing the player to watch every hour pass.
+
+Fantastic disease follows the same rule: invented organisms and toxins may
+produce unusual but physical effects, while remaining inside the existing
+meters, routes, deterministic curves, phenotype variation, and generic
+interventions. Four starter diseases deliberately project to the four
+element/Humour correspondences used by Paracelsian scholars, but the underlying
+causes remain organisms, toxins, and environmental exposure rather than
+Humours. See [Fantastic diseases](../reference/fantastic-diseases.md).

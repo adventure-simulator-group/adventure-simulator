@@ -138,3 +138,11 @@ tellings. The small current subset also fits reusable humanoid/quadruped rigs.
 The Grimm [collection context](https://de.wikisource.org/wiki/Deutsche_Sagen)
 documents nineteenth-century collection of traditions; it does not prove every
 adapted motif in the MVP's exact place and year.
+
+Disease evidence remains physically authored and weighted rather than coupled
+to a hidden threat identity. Open bedding, grave, crop, and mine evidence can
+later support threat, corpse, or environment inferences alongside Bestiary
+categories. Learned characters may also classify the four source populations
+as sylph/air, nymph/water, salamander/fire, and pygmy/earth. That Paracelsian
+taxonomy does not replace regional names or turn a Bestiary category into a
+guaranteed diagnosis. See [Fantastic diseases](fantastic-diseases.md).
