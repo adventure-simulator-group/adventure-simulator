@@ -51,19 +51,19 @@ fn apply_dialogue_effect(
             crate::organization::join_organization(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::JoinOrganization => {
-            let organization_id = dialogue_organization_id(session, &live_npc)?;
+            let organization_id = dialogue_organization_id(ctx, session, &live_npc)?;
             crate::organization::join_organization(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::PayOrganizationDues => {
-            let organization_id = dialogue_organization_id(session, &live_npc)?;
+            let organization_id = dialogue_organization_id(ctx, session, &live_npc)?;
             crate::organization::pay_organization_dues(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::RequestOrganizationPromotion => {
-            let organization_id = dialogue_organization_id(session, &live_npc)?;
+            let organization_id = dialogue_organization_id(ctx, session, &live_npc)?;
             crate::organization::promote_organization_membership(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::PresentOrganization => {
-            let organization_id = dialogue_organization_id(session, &live_npc)?;
+            let organization_id = dialogue_organization_id(ctx, session, &live_npc)?;
             crate::organization::present_organization(ctx, character_id, organization_id)
         }
         adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
@@ -172,18 +172,33 @@ fn apply_dialogue_effect(
 /// Resolve organization business only from the trusted persistent NPC and its
 /// exact authored chapter. Dialogue content and clients never supply this ID.
 pub(crate) fn exact_organization_representative(
+    ctx: &ReducerContext,
     npc: &crate::settlement_population::SettlementNpc,
     settlement_id: &str,
     location_id: &str,
 ) -> Option<String> {
     let organization = adventuresim_core::organization::organization(&npc.organization_id)?;
-    let chapter = organization.chapter_at_location(settlement_id, location_id)?;
-    let expected_id = format!("npc:{settlement_id}:{}:0", chapter.location_id);
+    let chapter = organization.chapter(settlement_id)?;
+    let settlement = ctx.db.settlement().id().find(&settlement_id.to_owned())?;
+    if adventuresim_core::organization::chapter_effective_location_id(
+        organization,
+        chapter,
+        &settlement.economy,
+    ) != location_id
+    {
+        return None;
+    }
+    let expected_id = adventuresim_core::organization::organization_representative_id(
+        settlement_id,
+        &organization.id,
+    );
     if !adventuresim_core::organization::exact_representative_fields_match(
         &npc.id,
         &expected_id,
         &npc.home_settlement_id,
         settlement_id,
+        &npc.organization_id,
+        &organization.id,
         &npc.conversation_id,
     ) {
         return None;
@@ -192,10 +207,11 @@ pub(crate) fn exact_organization_representative(
 }
 
 fn dialogue_organization_id(
+    ctx: &ReducerContext,
     session: &DialogueSession,
     npc: &crate::settlement_population::SettlementNpc,
 ) -> Result<String, String> {
-    exact_organization_representative(npc, &session.settlement_id, &session.location_id)
+    exact_organization_representative(ctx, npc, &session.settlement_id, &session.location_id)
         .ok_or_else(|| "Dialogue NPC is not the representative of this chapter".into())
 }
 

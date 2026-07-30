@@ -687,7 +687,7 @@ mod service_availability_tests {
     }
 
     #[test]
-    fn service_apprenticeship_is_a_narrow_trainer_mediated_join_exception() {
+    fn service_apprenticeship_fallback_defers_to_colocated_representatives() {
         let source = SETTLEMENTS_SOURCE;
         let handler = source
             .split("async fn begin_service_apprenticeship")
@@ -699,6 +699,10 @@ mod service_availability_tests {
             .expect("service apprenticeship handler");
         assert!(handler.contains("organizations_for_chapter(&id)"));
         assert!(handler.contains("organization.service_id"));
+        assert!(handler.contains("exact_apprenticeship_representative_present"));
+        assert!(handler.contains("settlement_npc_presence"));
+        assert!(handler.contains("chapter_effective_location_id"));
+        assert!(handler.contains("Speak to the local organization representative"));
         assert!(handler.contains("\"join_organization\""));
         for forbidden in [
             "pay_organization_dues",

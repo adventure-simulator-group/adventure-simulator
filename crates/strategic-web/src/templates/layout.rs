@@ -336,6 +336,8 @@ fn settlement_top_bar(
                 }
                 @for organization in adventuresim_core::organization::organizations_for_chapter(settlement_id) {
                     @let chapter = organization.chapter(settlement_id).expect("local chapter");
+                    @let standalone = economy.is_none_or(|profile| adventuresim_core::organization::chapter_has_standalone_building(organization, chapter, profile));
+                    @if standalone {
                     @let kind = format!("{:?}", chapter.building_kind).to_ascii_lowercase();
                     @let tint = building_tint(settlement_id, &chapter.location_id, material);
                     a href=(format!("/settlements/{}/places/{}", settlement_id, chapter.location_id))
@@ -351,6 +353,7 @@ fn settlement_top_bar(
                         span class="service-tab-building" aria-hidden="true" {}
                         span class="service-tab-icon service-tab-icon-organization" aria-hidden="true" {}
                         span class="service-tab-label" aria-hidden="true" { (&chapter.building_name) }
+                    }
                     }
                 }
             }

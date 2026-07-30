@@ -98,7 +98,7 @@ the live sky tint and brightness. Until imported terrain selects the actual
 biome, a deterministic hash of the camp party or quest-location ID keeps the
 assigned scenery stable between visits without adding persisted state.
 
-Each settlement offers a number of services as tabs of a unified trade page. Each service corresponds to a profession, represented by a single NPC. A greeting links the NPC's profession; asking about it explains the work and offers a second linked topic through which the active character may become an apprentice. The left side lists what the NPC offers, including training or other services where appropriate, and the right side lists what the party offers.
+Each settlement offers a number of services as tabs of a unified trade page. Each service corresponds to a profession and has a default operator NPC. A greeting links the NPC's profession; when a matching local organization representative shares the building, asking about the work names that representative and directs prospective apprentices to them. Without a matching representative, the operator preserves the lightweight direct apprenticeship fallback. The left side lists what the NPC offers, including training or other services where appropriate, and the right side lists what the party offers.
 
 The general merchant teaches Command; cooks at inns teach Cooking; weaponsmiths and armourers teach Smithing; and tailors teach Tailoring. Medical crafts use three distinct organizations: the informal, fee-free Fellowship of Herbalists teaches Herbalism, the College of Physicians teaches Physiology for patient assessment, fallible differentials, and non-operative treatment, and the Surgeons' Guild teaches Surgery for operations. Their ranks and practice rewards are independent. The church teaches its own religious tradition through prayer and practice activities. Inns also sell cooking implements and food ingredients. Most apprentices pay for instruction; fellowship learners do not. At rank 2 in an associated profession skill they may practice independently for a small wage, and at rank 4 they may reach a senior rank whose practice earns a good income. Religious progression uses novice, cleric, and teacher as neutral interface terms, and visible religious practice earns local Fame rather than money.
 
@@ -235,10 +235,11 @@ trade, herbalist care, and repairs. The overview exposes prosperity,
 specializations, and every religion represented by the canonical legal status,
 not merely the faith selected for the single church/priest presentation.
 
-Authored organization chapters add distinct Place Facades alongside ordinary
-settlement services. Each opens a real organization building with one
-deterministic persistent representative. Visitors may enter and speak to the
-representative; nonmembers may ask to join, while members conduct dues,
-reactivation, promotion, and presentation business through the compiled
-dialogue. A service-linked guild keeps its ordinary merchant or craft service
-and dialogue in addition to its separate chapter building.
+Authored organization chapters retain stable settlement and `organization-*`
+location identity metadata. Chapters linked to an available market, forge,
+armoury, tailor, herbalist, inn, or church service place their deterministic
+persistent representative inside that ordinary service building, alongside its
+default operator and visitor, and do not add another Place Facade. If the
+mapped service is unavailable the chapter safely retains its standalone
+building. Physician and surgeon chapters, and organizations without a service,
+remain standalone. Organization-aware dialogue stays with the representative.

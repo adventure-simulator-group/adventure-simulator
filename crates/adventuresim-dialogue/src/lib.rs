@@ -135,6 +135,7 @@ pub enum RuntimeSlot {
     OrganizationAdmissionTerms,
     OrganizationDuesTerms,
     OrganizationRankStanding,
+    OrganizationRepresentativeName,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1039,6 +1040,56 @@ mod tests {
         let eligible = eligible_topics(c, &known, &FactContext::default());
         assert!(eligible.iter().any(|t| t.id == "profession"));
     }
+
+    #[test]
+    fn service_profession_refers_to_named_representative_without_direct_offer() {
+        let conversation = find_conversation("service-professions").unwrap();
+        let profession = conversation
+            .topics
+            .iter()
+            .find(|topic| topic.id == "profession")
+            .unwrap();
+        let apprenticeship = conversation
+            .topics
+            .iter()
+            .find(|topic| topic.id == "apprenticeship")
+            .unwrap();
+        let mut facts = FactContext::default();
+        facts.facts.insert(
+            FactKey::Service {
+                role: "professional".into(),
+            },
+            FactValue::Text("merchants".into()),
+        );
+        assert_eq!(
+            select_response(profession, &facts).unwrap().id,
+            "merchant-profession"
+        );
+        assert!(facts.matches(&apprenticeship.conditions));
+
+        facts.facts.insert(
+            FactKey::LocalOrganizationRepresentative {
+                role: "professional".into(),
+            },
+            FactValue::Bool(true),
+        );
+        let referral = select_response(profession, &facts).unwrap();
+        assert_eq!(referral.id, "merchant-profession-referral");
+        assert!(referral.effects.is_empty());
+        assert!(!facts.matches(&apprenticeship.conditions));
+        let mut bindings = RuntimeBindings::default();
+        bindings.bind(
+            RuntimeSlot::OrganizationRepresentativeName,
+            "<script>Greta & Co.</script>",
+        );
+        let resolved = bindings.resolve(&referral.turns[0].fragments).unwrap();
+        assert!(resolved.iter().any(|fragment| {
+            matches!(fragment, ResolvedFragment::Text { value } if value == "<script>Greta & Co.</script>")
+        }));
+        assert!(referral.turns[0].fragments.iter().all(|fragment| {
+            !matches!(fragment, Fragment::Topic { topic, .. } if topic == "apprenticeship")
+        }));
+    }
     #[test]
     fn generated_case_resolution_actions_are_compiled_for_services_and_residents() {
         for conversation_id in ["service-professions", "local-resident"] {
@@ -1286,6 +1337,7 @@ mod tests {
             "organization_admission_terms",
             "organization_dues_terms",
             "organization_rank_standing",
+            "organization_representative_name",
         ] {
             assert!(build.contains(&format!("| \"{slot}\"")));
         }

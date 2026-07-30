@@ -180,10 +180,12 @@ pub fn settlement_npc_location_page(
                     }
                     @for organization in adventuresim_core::organization::organizations_for_chapter(&settlement.id) {
                         @let chapter = organization.chapter(&settlement.id).expect("local chapter");
+                        @if adventuresim_core::organization::chapter_has_standalone_building(organization, chapter, &settlement.economy) {
                         a href=(format!("/settlements/{}/places/{}", settlement.id, chapter.location_id))
                             class=(if location_id == chapter.location_id { "active" } else { "" })
                             aria-current=(if location_id == chapter.location_id { "page" } else { "false" }) {
                             (&chapter.building_name)
+                        }
                         }
                     }
                 }
@@ -760,6 +762,23 @@ mod tests {
         assert!(residence_places.contains(&format!(">{}</a>", public_square.label)));
         assert!(residence_places.contains("aria-current=\"false\""));
         assert!(residence_places.contains("class=\"active\" aria-current=\"page\">Residences</a>"));
+
+        let mut colocated = settlement;
+        colocated.id = "viabundus-0".into();
+        colocated.economy.services = vec![adventuresim_world_schema::SettlementService::Market];
+        let mut colocated_character = character;
+        colocated_character.current_settlement_id = Some(colocated.id.clone());
+        let colocated_places = settlement_npc_location_page(
+            &colocated,
+            &colocated_character,
+            &[],
+            "residences",
+            Some("Visitor"),
+        )
+        .into_string();
+        assert!(!colocated_places.contains("organization-merchant-guild"));
+        assert!(colocated_places.contains("organization-physicians-college"));
+        assert!(colocated_places.contains("organization-surgeons-guild"));
 
         let components = include_str!("../../../static/css/components.css");
         assert!(components.contains(".settlement-places-nav {\n  display: grid;\n  gap: 0.3rem;"));

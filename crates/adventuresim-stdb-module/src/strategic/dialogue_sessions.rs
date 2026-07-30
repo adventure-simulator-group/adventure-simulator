@@ -34,6 +34,19 @@ pub fn start_dialogue(
     if npc.home_settlement_id != settlement_id {
         return Err("Dialogue actor is not at this settlement".into());
     }
+    if (npc.organization_id.is_empty()
+        && npc.conversation_id == "organization-representative")
+        || (!npc.organization_id.is_empty()
+            && exact_organization_representative(
+                ctx,
+                &npc,
+                &settlement_id,
+                &location_id,
+            )
+            .is_none())
+    {
+        return Err("Dialogue actor has no exact authority at this location".into());
+    }
     let presence = ctx
         .db
         .settlement_npc_presence()

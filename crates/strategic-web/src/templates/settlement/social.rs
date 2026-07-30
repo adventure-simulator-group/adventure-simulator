@@ -406,13 +406,9 @@ pub(super) fn player_chat_area(subject: &Character, active_character: &Character
 }
 
 pub(super) fn npc_location_id(service_id: &str) -> &str {
-    match service_id {
-        "merchants" => "market",
-        "weapons" => "forge",
-        "armor" => "armoury",
-        "clothing" => "tailor",
-        "religion" => "church",
-        other => other,
+    match adventuresim_core::organization::service_npc_location_id(service_id) {
+        Some(location_id) => location_id,
+        None => service_id,
     }
 }
 

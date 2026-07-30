@@ -1114,6 +1114,7 @@ fn source_may_disclose_public_threat(
     minute: u64,
 ) -> Option<&'static str> {
     let organization_id = crate::strategic::exact_organization_representative(
+        ctx,
         source_npc,
         listener_settlement_id,
         location_id,

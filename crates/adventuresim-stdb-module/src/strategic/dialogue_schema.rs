@@ -534,6 +534,19 @@ fn require_live_dialogue_presence(
         {
             return Err("Dialogue NPC is not present at the session location and time".into());
         }
+        if (npc.organization_id.is_empty()
+            && npc.conversation_id == "organization-representative")
+            || (!npc.organization_id.is_empty()
+                && exact_organization_representative(
+                    ctx,
+                    &npc,
+                    &session.settlement_id,
+                    &session.location_id,
+                )
+                .is_none())
+        {
+            return Err("Dialogue NPC has no exact authority at the session location".into());
+        }
         primary.get_or_insert(npc);
     }
     Ok(primary.expect("nonempty NPC participants"))

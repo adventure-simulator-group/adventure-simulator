@@ -31,10 +31,12 @@ rights or impose movement, faction, or eligibility restrictions.
 
 Chapters are explicit authored records, not settlement-ID flags. Every record
 names its settlement, a bounded stable `organization-*` location ID, building
-name and kind, and the title and profession of its representative. Each
-chapter therefore becomes a distinct navigable building even when several
-organizations share a settlement or an organization is also linked to an
-ordinary settlement service.
+name and kind, and the title and profession of its representative. That
+authored location remains the chapter's institutional identity. When a chapter
+is linked to an ordinary service that is present in the settlement, its
+representative is physically co-located with the service operator and visitors
+instead of adding another building. Chapters with no mapped available service,
+including physicians and surgeons, remain distinct navigable buildings.
 
 An organization may also declare explicit `starting_role` metadata: one of the
 ten authored start profession families plus distinct adult and old rank IDs.
@@ -78,7 +80,7 @@ existed in every listed settlement.
 The character sheet exposes the presented organization as a compact profession
 picker; it is only a self-presentation control. Joining, dues, reactivation,
 and promotion are conducted by speaking to the representative in the
-organization's chapter building. Its large label combines the member's rank with the service profession
+organization's local chapter venue. Its large label combines the member's rank with the service profession
 where one exists (for example, `Apprentice Weaponsmith`), while the smaller
 label names the organization. Crests are stable heraldic marks derived from the
 organization ID and service using the locally vendored Game Icons charges, so
@@ -90,13 +92,18 @@ presentation-only persistence fields.
 SpacetimeDB owns membership, rank, dues, presentation, payment, promotion, and
 equipment-law enforcement. Startup seeds exactly one deterministic persistent
 representative per authored chapter. The NPC carries an explicit organization
-binding, has an all-day authoritative presence at the exact chapter location,
+binding and has an all-day authoritative presence at either the mapped ordinary
+service building or, when no such service is available, the chapter building,
 and uses the compiled `organization-representative` conversation. Dialogue
 effects carry no organization ID: authority resolves it from that live NPC and
-revalidates the actor, session settlement, and exact chapter location before
+revalidates the actor, session settlement, authored local chapter, derived
+physical location, and organization-bound representative ID before
 reusing membership reducers. Joining is idempotent; the joining fee is charged once.
 Crossing a paid-through boundary suspends membership and clears its
-presentation. Paying at a chapter reactivates it without retroactive arrears.
+presentation. Service operators refer prospective apprentices to the named
+representative when one is present; the representative remains the authority
+for joining and membership. Paying at a chapter reactivates it without
+retroactive arrears.
 
 Forester (ranger), witch-hunter, and knightly organizations explicitly author
 `public_threat_referrals`; the capability is never inferred from names, skills,
