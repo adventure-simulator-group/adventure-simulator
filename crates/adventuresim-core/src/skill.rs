@@ -39,6 +39,9 @@ pub enum Skill {
     /// Mental. Trained. Food preparation, safety, and kitchen technique. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Cooking,
+    /// Mental. Trained. Preparing biological medicines. (10000h)
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
+    Herbalism,
     /// Mental. Trained. Meta-skill for knowledge of religious traditions. (5000h each)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Religion,
@@ -102,10 +105,10 @@ pub enum Skill {
     /// Mental. Intuitive. Movement over snow-covered ground. (30000h)
     #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
     TerrainSnow,
-    /// Mental. Trained. Knowledge of bodies and wounds. (10000h)
+    /// Mental. Trained. Operative wound care and surgical procedures. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
-    Anatomy,
-    /// Physical. Trained. Sewing, clothing repair, and wound stitching. (10000h)
+    Surgery,
+    /// Physical. Trained. Sewing and clothing repair. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Physical, is_trained = true)]
     Tailoring,
     /// Physical. Trained. Field maintenance and equipment repair. (10000h)
@@ -179,7 +182,7 @@ mod tests {
     fn only_family_skills_are_meta_skills() {
         assert!(Skill::Religion.is_meta_skill());
         assert!(Skill::Bestiary.is_meta_skill());
-        assert!(!Skill::Anatomy.is_meta_skill());
+        assert!(!Skill::Surgery.is_meta_skill());
         assert!(Skill::Bestiary.is_mental());
         assert!(!Skill::Bestiary.is_upper_body());
     }
@@ -188,7 +191,7 @@ mod tests {
     fn skill_and_aptitude_labels_are_canonical() {
         assert_eq!(Skill::Charm.label(), "Charm");
         assert_eq!(
-            Skill::Anatomy.governing_aptitude_kind().label(),
+            Skill::Surgery.governing_aptitude_kind().label(),
             "Intelligence"
         );
         assert_eq!(
@@ -471,6 +474,32 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn surgery_has_modest_symmetric_craft_correlations() {
+        for craft in [Skill::Knife, Skill::Tailoring] {
+            assert!(
+                Skill::Surgery
+                    .ordinary_correlations()
+                    .contains(&(craft, 0.15))
+            );
+            assert!(
+                craft
+                    .ordinary_correlations()
+                    .contains(&(Skill::Surgery, 0.15))
+            );
+        }
+        assert!(
+            Skill::Knife
+                .ordinary_correlations()
+                .contains(&(Skill::Cooking, 0.15))
+        );
+        assert!(
+            Skill::Knife
+                .ordinary_correlations()
+                .contains(&(Skill::Sword, 0.20))
+        );
+    }
 }
 
 impl Skill {
@@ -484,6 +513,7 @@ impl Skill {
             Self::Deception => "Deception",
             Self::Physiology => "Physiology",
             Self::Cooking => "Cooking",
+            Self::Herbalism => "Herbalism",
             Self::Religion => "Religion",
             Self::Bestiary => "Bestiary",
             Self::Polearm => "Polearm",
@@ -505,7 +535,7 @@ impl Skill {
             Self::TerrainWetlands => "Wetlands",
             Self::TerrainUrban => "Urban",
             Self::TerrainSnow => "Snow",
-            Self::Anatomy => "Anatomy",
+            Self::Surgery => "Surgery",
             Self::Tailoring => "Tailoring",
             Self::Smithing => "Smithing",
         }
@@ -567,8 +597,9 @@ impl Skill {
                 GoverningAptitude::Instinct
             }
             Self::Physiology
-            | Self::Anatomy
+            | Self::Surgery
             | Self::Cooking
+            | Self::Herbalism
             | Self::Religion
             | Self::Bestiary
             | Self::TerrainPlains
@@ -649,7 +680,14 @@ impl Skill {
     pub const fn ordinary_correlations(self) -> &'static [(Skill, f32)] {
         match self {
             Self::Cooking => &[(Self::Knife, 0.15)],
-            Self::Knife => &[(Self::Cooking, 0.15), (Self::Sword, 0.20)],
+            Self::Herbalism => &[],
+            Self::Surgery => &[(Self::Knife, 0.15), (Self::Tailoring, 0.15)],
+            Self::Knife => &[
+                (Self::Cooking, 0.15),
+                (Self::Sword, 0.20),
+                (Self::Surgery, 0.15),
+            ],
+            Self::Tailoring => &[(Self::Surgery, 0.15)],
             Self::Sword => &[(Self::Knife, 0.20)],
             Self::Dodge => &[(Self::Balance, 0.20)],
             Self::Balance => &[(Self::Dodge, 0.20)],

@@ -274,6 +274,7 @@ pub struct CharacterSkills {
     pub deception_hours: f32,
     pub physiology_hours: f32,
     pub cooking_hours: f32,
+    pub herbalism_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
     pub oral_languages: adventuresim_world_schema::OralLanguageHours,
@@ -286,7 +287,7 @@ pub struct CharacterSkills {
     pub terrain_wetlands_hours: f32,
     pub terrain_urban_hours: f32,
     pub terrain_snow_hours: f32,
-    pub anatomy_hours: f32,
+    pub surgery_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -939,7 +940,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
             .character_id()
             .find(id)
             .ok_or("Surgery demo character is missing skills")?;
-        skills.anatomy_hours = procedure_hours;
+        skills.surgery_hours = procedure_hours;
         skills.knife_hours = procedure_hours;
         skills.tailoring_hours = procedure_hours;
         ctx.db.character_skills().character_id().update(skills);
@@ -1072,6 +1073,59 @@ pub(crate) fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<()
 
     crate::capability::refresh_character_capability(ctx, RELIGION_SCHOLAR_CHARACTER_ID)?;
     crate::condition::refresh_character_strategic_condition(ctx, RELIGION_SCHOLAR_CHARACTER_ID)?;
+    Ok(())
+}
+
+/// Seed an isolated, selectable character for exercising every bounded
+/// Herbalism method and public grade in the strategic UI.
+pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), String> {
+    const HERBALISM_DEMO_CHARACTER_ID: u64 = 9_999_999_999_999_986;
+    if ctx
+        .db
+        .character()
+        .id()
+        .find(HERBALISM_DEMO_CHARACTER_ID)
+        .is_none()
+    {
+        insert_new_character(
+            ctx,
+            "Herbalism Demo".to_string(),
+            HERBALISM_DEMO_CHARACTER_ID,
+            false,
+        )?;
+    }
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(HERBALISM_DEMO_CHARACTER_ID)
+        .ok_or_else(|| "Herbalism demo is missing skill data".to_string())?;
+    skills.herbalism_hours = 10_000.0;
+    skills.physiology_hours = 4_000.0;
+    ctx.db.character_skills().character_id().update(skills);
+    for (item_id, quantity) in [
+        ("willow_bark_poor", 2),
+        ("willow_bark", 2),
+        ("willow_bark_fine", 2),
+        ("comfrey_fine", 2),
+        ("poppy", 2),
+        ("tincture_spirit", 4),
+        ("sage_poor", 2),
+    ] {
+        if ctx
+            .db
+            .inventory_item()
+            .character_and_item_id()
+            .filter((HERBALISM_DEMO_CHARACTER_ID, item_id))
+            .next()
+            .is_none()
+        {
+            add_inventory_item(ctx, HERBALISM_DEMO_CHARACTER_ID, item_id, quantity)
+                .ok_or_else(|| format!("Failed to add {item_id} to Herbalism Demo"))?;
+        }
+    }
+    crate::capability::refresh_character_capability(ctx, HERBALISM_DEMO_CHARACTER_ID)?;
+    crate::condition::refresh_character_strategic_condition(ctx, HERBALISM_DEMO_CHARACTER_ID)?;
     Ok(())
 }
 
@@ -1345,6 +1399,7 @@ fn insert_character_with_origin(
         deception_hours: generated_skills.map_or(1000.0, |s| s.deception),
         physiology_hours: generated_skills.map_or(1000.0, |s| s.physiology),
         cooking_hours: generated_skills.map_or(0.0, |s| s.cooking),
+        herbalism_hours: generated_skills.map_or(0.0, |s| s.herbalism),
         religion_hours: generated_skills
             .map_or_else(adventuresim_world_schema::ReligionHours::default, |s| {
                 s.religion
@@ -1367,7 +1422,7 @@ fn insert_character_with_origin(
         terrain_wetlands_hours: generated_skills.map_or(0.0, |s| s.terrain_wetlands),
         terrain_urban_hours: generated_skills.map_or(0.0, |s| s.terrain_urban),
         terrain_snow_hours: generated_skills.map_or(0.0, |s| s.terrain_snow),
-        anatomy_hours: generated_skills.map_or(1000.0, |s| s.anatomy),
+        surgery_hours: generated_skills.map_or(1000.0, |s| s.surgery),
         tailoring_hours: generated_skills.map_or(1000.0, |s| s.tailoring),
         smithing_hours: generated_skills.map_or(1000.0, |s| s.smithing),
     });

@@ -153,11 +153,9 @@ pub(super) async fn surgery(
             .map(|item| item.qty)
             .sum()
     };
-    let procedure_checks = get_character_capability(&state, actor_id)
+    let surgery_check = get_character_capability(&state, actor_id)
         .await
-        .map_or([0.0; 3], |capability| {
-            [capability.anatomy, capability.knife, capability.tailoring]
-        });
+        .map_or(0.0, |capability| capability.surgery);
     let available_splints = inventory
         .iter()
         .filter(|item| {
@@ -181,7 +179,7 @@ pub(super) async fn surgery(
         quantity("soft_soap"),
         alcohol_count,
         selected_alcohol,
-        procedure_checks,
+        surgery_check,
     );
     if patient_id == active.id {
         render_party_personal(

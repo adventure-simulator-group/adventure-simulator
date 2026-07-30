@@ -1,5 +1,10 @@
 # Foraging
 
+Willow bark, comfrey, poppy, and sage feed the bounded
+[Herbalism](herbalism.md) loop. Their public Poor/Ordinary/Fine catalogue
+identities preserve grade through stacking, trade, and transfer without hidden
+lot state.
+
 Foraging is a personal strategic activity performed in the acting character's
 current authoritative vicinity. It never chooses a nearby biome or creates a
 travel excursion. Settlement, exact case-site, and en-route camp coordinates

@@ -477,9 +477,9 @@ pub(super) fn character_summary_icons(
     push_standalone_summary_icon(
         &mut icons,
         skills,
-        "Anatomy",
+        "Surgery",
         "surgeon",
-        Skill::Anatomy,
+        Skill::Surgery,
         intelligence,
     );
     push_standalone_summary_icon(
@@ -707,7 +707,8 @@ impl ActivityPreviewRates {
 fn training_target_label(target: &adventuresim_core::organization::TrainingTarget) -> String {
     use adventuresim_core::organization::TrainingTarget;
     match target {
-        TrainingTarget::FixedSkill { skill } => skill.replace('_', " "),
+        TrainingTarget::FixedSkill { skill } => training_target_skill(target)
+            .map_or_else(|| skill.replace('_', " "), |skill| skill.label().into()),
         TrainingTarget::Religion { religion } => format!("{religion} Religion"),
         TrainingTarget::Bestiary { category } => format!("{category} Bestiary"),
         TrainingTarget::Terrain { terrain } => format!("{terrain} Terrain"),
@@ -728,7 +729,8 @@ fn training_target_skill(
             "deception" => Some(Skill::Deception),
             "physiology" => Some(Skill::Physiology),
             "cooking" => Some(Skill::Cooking),
-            "anatomy" => Some(Skill::Anatomy),
+            "herbalism" => Some(Skill::Herbalism),
+            "surgery" => Some(Skill::Surgery),
             "polearm" => Some(Skill::Polearm),
             "axe" => Some(Skill::Axe),
             "bludgeon" => Some(Skill::Bludgeon),
@@ -783,6 +785,8 @@ fn character_aptitude(attributes: &CharacterAttributes, skill: Skill) -> f32 {
 pub(crate) struct CharacterSheetActions<'a> {
     pub(super) cooking_href: Option<&'a str>,
     pub(super) cooking_open: bool,
+    pub(super) herbalism_href: Option<&'a str>,
+    pub(super) herbalism_open: bool,
     pub(super) foraging_href: Option<&'a str>,
     pub(super) foraging_open: bool,
 }
@@ -973,6 +977,7 @@ fn skills_table(
                         ))
                     }
                     (party_skill_row(skills, "Cooking", "cooking", Skill::Cooking, intelligence, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
+                    (party_skill_row(skills, "Herbalism", "caduceus", Skill::Herbalism, intelligence, head_health, schedule.is_some(), actions.herbalism_href.map(|href| SkillAction::Get { href, label: "Open herbalism menu", open: actions.herbalism_open })))
                     (religion_skill_rows(skills, intelligence, head_health, schedule, training_religion))
                     (bestiary_skill_rows(skills, intelligence, head_health, schedule.is_some()))
                     (language_skill_rows(skills, instinct, intelligence, schedule.is_some()))
@@ -988,7 +993,7 @@ fn skills_table(
                             open: actions.foraging_open,
                         }),
                     ))
-                    @if skills.anatomy_hours > 0.0 { (party_skill_row(skills, "Anatomy", "surgeon", Skill::Anatomy, intelligence, head_health, schedule.is_some(), None)) }
+                    @if skills.surgery_hours > 0.0 { (party_skill_row(skills, "Surgery", "surgeon", Skill::Surgery, intelligence, head_health, schedule.is_some(), None)) }
                     @if skills.tailoring_hours > 0.0 { (party_skill_row(skills, "Tailoring", "sewing-needle", Skill::Tailoring, arm_agility, upper_health, schedule.is_some(), None)) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row(skills, "Smithing", "smithing", Skill::Smithing, arm_agility, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
@@ -1778,7 +1783,7 @@ fn finite_hours(hours: f32) -> f32 {
     }
 }
 
-struct CharacterSkillHours<'a>(&'a CharacterSkills);
+pub(crate) struct CharacterSkillHours<'a>(pub(crate) &'a CharacterSkills);
 
 impl PlayerSkills for CharacterSkillHours<'_> {
     fn skill_hours_trained(&self, skill: Skill) -> f32 {
@@ -1802,6 +1807,7 @@ impl PlayerSkills for CharacterSkillHours<'_> {
             Skill::Deception => skills.deception_hours,
             Skill::Physiology => skills.physiology_hours,
             Skill::Cooking => skills.cooking_hours,
+            Skill::Herbalism => skills.herbalism_hours,
             Skill::Stealth => skills.stealth_hours,
             Skill::Balance => skills.balance_hours,
             Skill::TerrainPlains => skills.terrain_plains_hours,
@@ -1810,7 +1816,7 @@ impl PlayerSkills for CharacterSkillHours<'_> {
             Skill::TerrainWetlands => skills.terrain_wetlands_hours,
             Skill::TerrainUrban => skills.terrain_urban_hours,
             Skill::TerrainSnow => skills.terrain_snow_hours,
-            Skill::Anatomy => skills.anatomy_hours,
+            Skill::Surgery => skills.surgery_hours,
             Skill::Tailoring => skills.tailoring_hours,
             Skill::Smithing => skills.smithing_hours,
             Skill::Religion | Skill::Bestiary => 0.0,
@@ -2562,6 +2568,7 @@ mod tests {
             deception_hours: 0.0,
             physiology_hours: 0.0,
             cooking_hours: 0.0,
+            herbalism_hours: 0.0,
             religion_hours: adventuresim_world_schema::ReligionHours {
                 roman_catholic: 1_000.0,
                 ..Default::default()
@@ -2577,7 +2584,7 @@ mod tests {
             terrain_wetlands_hours: 0.0,
             terrain_urban_hours: 0.0,
             terrain_snow_hours: 0.0,
-            anatomy_hours: 0.0,
+            surgery_hours: 0.0,
             tailoring_hours: 0.0,
             smithing_hours: 0.0,
         };
@@ -2779,6 +2786,33 @@ mod tests {
     }
 
     #[test]
+    fn surgery_row_uses_the_new_name_and_lists_zero_hour_correlations() {
+        let skills = CharacterSkills {
+            surgery_hours: 1_000.0,
+            knife_hours: 0.0,
+            tailoring_hours: 0.0,
+            ..Default::default()
+        };
+        let rendered = party_skill_row(
+            &skills,
+            "Surgery",
+            "surgeon",
+            Skill::Surgery,
+            5.0,
+            1.0,
+            false,
+            None,
+        )
+        .into_string();
+
+        assert!(rendered.contains("&quot;name&quot;:&quot;Surgery&quot;"));
+        assert!(!rendered.contains("Anatomy"));
+        assert!(rendered.contains("0.0 hours from correlated skills:"));
+        assert!(rendered.contains("Knife | 15%"));
+        assert!(rendered.contains("Tailoring | 15%"));
+    }
+
+    #[test]
     fn terrain_rows_render_intuitive_cross_habitat_projection() {
         let skills = CharacterSkills {
             terrain_forest_hours: 1_000.0,
@@ -2888,18 +2922,13 @@ mod tests {
         assert!(carousing.contains("Charm: +0.50h"));
 
         let profession = ProfessionActivityPreview {
-            training_rates: vec![
-                ("Physiology".into(), 0.5),
-                ("Anatomy".into(), 1.0 / 6.0),
-                ("Knife".into(), 1.0 / 6.0),
-                ("Tailoring".into(), 1.0 / 6.0),
-            ],
+            training_rates: vec![("Herbalism".into(), 1.0)],
             apprenticeship_accrued: 0,
             practice_accrued: 0,
             practice_threshold: 8 * 60 * PROFESSION_ACCRUAL_SCALE,
             practice_weight: 1,
             practice_reward: "gold",
-            tier_label: "Apprentice".into(),
+            tier_label: "Learner".into(),
             practice_allowed: false,
             reputation_multiplier: 1.0,
         };
@@ -2912,10 +2941,54 @@ mod tests {
         )
         .into_string();
         assert!(apprenticeship.contains(">+2.00h<"));
-        assert!(apprenticeship.contains("Physiology: +1.00h"));
-        assert!(apprenticeship.contains("Anatomy: +0.33h"));
-        assert!(apprenticeship.contains("Knife: +0.33h"));
-        assert!(apprenticeship.contains("Tailoring: +0.33h"));
+        assert!(apprenticeship.contains("Herbalism: +2.00h"));
+        assert!(!apprenticeship.contains("Physiology:"));
+        assert!(!apprenticeship.contains("Surgery:"));
+        assert!(!apprenticeship.contains("Knife:"));
+        assert!(!apprenticeship.contains("Tailoring:"));
+
+        for (organization_id, rank_id, expected_skill) in [
+            ("herbalists_fellowship", "learner", "Herbalism"),
+            ("physicians_college", "student", "Physiology"),
+            ("surgeons_guild", "apprentice", "Surgery"),
+        ] {
+            let membership = OrganizationMembership {
+                id: 1,
+                character_id: 1,
+                organization_id: organization_id.into(),
+                rank_id: rank_id.into(),
+                joined_minute: 0,
+                dues_paid_through_minute: 1,
+                status: "active".into(),
+                apprenticeship_minutes_accrued: 0,
+                practice_minutes_accrued: 0,
+            };
+            let preview = ActivityPreviewRates::default().with_professions(
+                Some(&test_attributes(2.5)),
+                None,
+                &[membership],
+                "viabundus-0",
+                0,
+            );
+            let profession = preview.profession.get(organization_id).unwrap();
+            let rendered = activity_training_cell(
+                "Organization training",
+                "apprenticeship_minutes",
+                120,
+                Some(profession),
+                1.0,
+            )
+            .into_string();
+            assert!(rendered.contains(">+2.00h<"));
+            assert!(rendered.contains(&format!("{expected_skill}: +2.00h")));
+            for other in ["Herbalism", "Physiology", "Surgery"] {
+                if other != expected_skill {
+                    assert!(!rendered.contains(&format!("{other}:")));
+                }
+            }
+            assert!(!rendered.contains("Knife:"));
+            assert!(!rendered.contains("Tailoring:"));
+        }
 
         let leisure =
             activity_training_cell("Leisure", "leisure_minutes", 480, None, 1.0).into_string();

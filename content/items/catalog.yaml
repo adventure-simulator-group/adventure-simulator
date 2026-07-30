@@ -2,6 +2,115 @@
   "schema_version": 1,
   "items": [
     {
+      "id": "tincture_spirit",
+      "display_name": "Tincture spirit",
+      "weight_kg": 0.12,
+      "base_value": 4,
+      "tags": ["ingredient", "alcohol", "alcoholic_solvent", "tincture_solvent"],
+      "presentation": {"icon": "beer-stein"},
+      "kind": "ingredient"
+    },
+    {
+      "id": "willow_bark_poor", "display_name": "Poor willow bark", "weight_kg": 0.08,
+      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
+      "presentation": {"icon": "help"}, "kind": "ingredient"
+    },
+    {
+      "id": "willow_bark_fine", "display_name": "Fine willow bark", "weight_kg": 0.08,
+      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
+      "presentation": {"icon": "help"}, "kind": "ingredient"
+    },
+    {
+      "id": "comfrey_poor", "display_name": "Poor comfrey", "weight_kg": 0.08,
+      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
+      "presentation": {"icon": "help"}, "kind": "ingredient"
+    },
+    {
+      "id": "comfrey_fine", "display_name": "Fine comfrey", "weight_kg": 0.08,
+      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
+      "presentation": {"icon": "help"}, "kind": "ingredient"
+    },
+    {
+      "id": "poppy_poor", "display_name": "Poor poppy", "weight_kg": 0.05,
+      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
+      "presentation": {"icon": "help"}, "kind": "ingredient"
+    },
+    {
+      "id": "poppy_fine", "display_name": "Fine poppy", "weight_kg": 0.05,
+      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
+      "presentation": {"icon": "help"}, "kind": "ingredient"
+    },
+    {
+      "id": "sage_poor", "display_name": "Poor sage", "weight_kg": 0.05,
+      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
+      "presentation": {"icon": "help"}, "kind": "ingredient"
+    },
+    {
+      "id": "sage_fine", "display_name": "Fine sage", "weight_kg": 0.05,
+      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
+      "presentation": {"icon": "help"}, "kind": "ingredient"
+    },
+    {
+      "id": "spent_herb_waste", "display_name": "Spent herb waste", "weight_kg": 0.05,
+      "base_value": 0, "tags": ["herbal_waste"],
+      "presentation": {"icon": "help"}, "kind": "simple"
+    },
+    {
+      "id": "weak_willow_decoction", "display_name": "Weak willow decoction", "weight_kg": 0.25,
+      "base_value": 3, "tags": ["medication", "herbal_preparation", "potency_weak"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "strong_willow_decoction", "display_name": "Strong willow decoction", "weight_kg": 0.25,
+      "base_value": 9, "tags": ["medication", "herbal_preparation", "potency_strong"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "weak_comfrey_poultice", "display_name": "Weak comfrey poultice", "weight_kg": 0.18,
+      "base_value": 3, "tags": ["medication", "herbal_preparation", "potency_weak"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "comfrey_poultice", "display_name": "Comfrey poultice", "weight_kg": 0.18,
+      "base_value": 6, "tags": ["medication", "herbal_preparation", "potency_ordinary"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "fine_comfrey_poultice", "display_name": "Fine comfrey poultice", "weight_kg": 0.18,
+      "base_value": 9, "tags": ["medication", "herbal_preparation", "potency_strong"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "weak_poppy_tincture", "display_name": "Weak poppy tincture", "weight_kg": 0.12,
+      "base_value": 4, "tags": ["medication", "herbal_preparation", "potency_weak"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "poppy_tincture", "display_name": "Poppy tincture", "weight_kg": 0.12,
+      "base_value": 8, "tags": ["medication", "herbal_preparation", "potency_ordinary"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "strong_poppy_tincture", "display_name": "Strong poppy tincture", "weight_kg": 0.12,
+      "base_value": 12, "tags": ["medication", "herbal_preparation", "potency_strong"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "weak_sage_infusion", "display_name": "Weak sage infusion", "weight_kg": 0.25,
+      "base_value": 3, "tags": ["medication", "herbal_preparation", "potency_weak"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "sage_infusion", "display_name": "Sage infusion", "weight_kg": 0.25,
+      "base_value": 6, "tags": ["medication", "herbal_preparation", "potency_ordinary"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
+      "id": "fine_sage_infusion", "display_name": "Fine sage infusion", "weight_kg": 0.25,
+      "base_value": 9, "tags": ["medication", "herbal_preparation", "potency_strong"],
+      "presentation": {"icon": "help"}, "kind": "medication"
+    },
+    {
       "id": "apple",
       "display_name": "Apple",
       "weight_kg": 0.18,
@@ -540,9 +649,7 @@
       "display_name": "Comfrey",
       "weight_kg": 0.08,
       "base_value": 2,
-      "tags": [
-        "ingredient"
-      ],
+      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
       "presentation": {
         "icon": "help"
       },
@@ -1958,9 +2065,7 @@
       "display_name": "Poppy",
       "weight_kg": 0.05,
       "base_value": 4,
-      "tags": [
-        "ingredient"
-      ],
+      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
       "presentation": {
         "icon": "help"
       },
@@ -2338,7 +2443,9 @@
       "tags": [
         "ingredient",
         "food",
-        "stock_herbs"
+        "stock_herbs",
+        "medicinal_herb",
+        "grade_ordinary"
       ],
       "presentation": {
         "icon": "help"
@@ -3061,9 +3168,7 @@
       "display_name": "Willow bark",
       "weight_kg": 0.1,
       "base_value": 2,
-      "tags": [
-        "ingredient"
-      ],
+      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
       "presentation": {
         "icon": "help"
       },

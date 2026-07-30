@@ -94,6 +94,7 @@ fn skill_hours(skills: &CharacterSkills, skill: &str, leaf: Option<&str>) -> Opt
         "deception" => (Skill::Deception, skills.deception_hours),
         "physiology" => (Skill::Physiology, skills.physiology_hours),
         "cooking" => (Skill::Cooking, skills.cooking_hours),
+        "herbalism" => (Skill::Herbalism, skills.herbalism_hours),
         "religion" => (
             Skill::Religion,
             skills
@@ -104,7 +105,7 @@ fn skill_hours(skills: &CharacterSkills, skill: &str, leaf: Option<&str>) -> Opt
             Skill::Bestiary,
             skills.bestiary_hours.direct(bestiary_category(leaf?)?),
         ),
-        "anatomy" => (Skill::Anatomy, skills.anatomy_hours),
+        "surgery" => (Skill::Surgery, skills.surgery_hours),
         "polearm" => (Skill::Polearm, skills.polearm_hours),
         "axe" => (Skill::Axe, skills.axe_hours),
         "bludgeon" => (Skill::Bludgeon, skills.bludgeon_hours),

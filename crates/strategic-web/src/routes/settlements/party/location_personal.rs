@@ -304,6 +304,7 @@ pub(super) async fn render_party_personal(
             &projectiles,
             &filth,
             building.cooking(),
+            building.herbalism(),
             &active_inventory,
             &inventory_amounts,
             &food_lots,

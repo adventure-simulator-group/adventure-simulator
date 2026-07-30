@@ -723,6 +723,25 @@ mod tests {
     }
 
     #[test]
+    fn kind_aware_insertion_keeps_ingredients_fungible_and_medication_individual() {
+        let source = include_str!("item.rs");
+        let checked = source
+            .split("pub(crate) fn add_inventory_item_checked")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn add_inventory_item").next())
+            .expect("checked inventory insertion");
+        assert!(checked.contains("kind == Some(ItemKind::Medication)"));
+        assert!(checked.contains("let count = if individual { quantity } else { 1 }"));
+        assert!(checked.contains("quantity: if individual { 1 } else { quantity }"));
+        assert_eq!(
+            adventuresim_core::item_catalog::definition("tincture_spirit")
+                .unwrap()
+                .kind,
+            adventuresim_core::item_catalog::ItemKind::Ingredient
+        );
+    }
+
+    #[test]
     fn catalog_weapon_skill_distributions_cover_hybrids_and_ranged_families() {
         let halberd =
             project_definition(adventuresim_core::item_catalog::definition("halberd").unwrap())

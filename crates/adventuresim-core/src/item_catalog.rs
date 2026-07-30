@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn embedded_catalog_is_sorted_unique_complete_and_revisioned() {
-        assert_eq!(catalog().len(), 113);
+        assert_eq!(catalog().len(), 134);
         assert!(revision().len() == 64 && revision().bytes().all(|b| b.is_ascii_hexdigit()));
         assert!(
             catalog()
@@ -121,7 +121,7 @@ mod tests {
             + "\n";
         assert_eq!(
             format!("{:x}", Sha256::digest(stable_ids.as_bytes())),
-            "a4bd5f658c29042ad5a22d14a2a1235b85eba2070234cbff568cbb117d70f2fa",
+            "e7f25366ee7c6b5f3e5c1da889b6b600c0dc01883ce858cd0decf8f445d68056",
             "stable-ID golden changed; review persistence and reseed impact"
         );
 
@@ -141,7 +141,7 @@ mod tests {
             counts[index] += 1;
             counts
         });
-        assert_eq!(counts, [12, 6, 11, 3, 1, 1, 5, 24, 29, 21]);
+        assert_eq!(counts, [13, 6, 20, 14, 1, 1, 5, 24, 29, 21]);
     }
 
     #[test]

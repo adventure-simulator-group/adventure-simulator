@@ -101,10 +101,11 @@ pub struct StartingSkills {
     pub deception: f32,
     pub physiology: f32,
     pub bestiary: BestiaryHours,
-    pub anatomy: f32,
+    pub surgery: f32,
     pub stealth: f32,
     pub balance: f32,
     pub cooking: f32,
+    pub herbalism: f32,
     pub religion: ReligionHours,
     pub terrain_plains: f32,
     pub terrain_forest: f32,
@@ -418,10 +419,11 @@ pub fn generate(
         deception: 300.0,
         physiology: 250.0,
         bestiary: BestiaryHours::default(),
-        anatomy: 250.0,
+        surgery: 0.0,
         stealth: 450.0,
         balance: 600.0,
         cooking: 300.0,
+        herbalism: 0.0,
         religion: ReligionHours::default(),
         terrain_plains: 0.0,
         terrain_forest: 0.0,
@@ -612,7 +614,8 @@ fn set_fixed_skill(
         "deception" => skills.deception = hours,
         "physiology" => skills.physiology = hours,
         "cooking" => skills.cooking = hours,
-        "anatomy" => skills.anatomy = hours,
+        "herbalism" => skills.herbalism = hours,
+        "surgery" => skills.surgery = hours,
         "stealth" => skills.stealth = hours,
         "balance" => skills.balance = hours,
         "terrain_plains" => skills.terrain_plains = hours,
@@ -648,7 +651,8 @@ fn fixed_skill_hours(skills: &StartingSkills, skill: &str) -> Option<(Skill, f32
         "deception" => (Skill::Deception, skills.deception),
         "physiology" => (Skill::Physiology, skills.physiology),
         "cooking" => (Skill::Cooking, skills.cooking),
-        "anatomy" => (Skill::Anatomy, skills.anatomy),
+        "herbalism" => (Skill::Herbalism, skills.herbalism),
+        "surgery" => (Skill::Surgery, skills.surgery),
         "polearm" => (Skill::Polearm, skills.polearm),
         "axe" => (Skill::Axe, skills.axe),
         "bludgeon" => (Skill::Bludgeon, skills.bludgeon),
@@ -1252,8 +1256,8 @@ fn apply_professional_start(
             spec.skills.knife = hours * 0.35;
         }
         StartingProfession::Herbalist => {
-            spec.skills.physiology = hours;
-            spec.skills.anatomy = hours * 0.75;
+            spec.skills.herbalism = hours;
+            spec.skills.physiology = hours * 0.7;
             spec.skills.bludgeon = hours * 0.3;
         }
         StartingProfession::Cook => {
@@ -1462,7 +1466,8 @@ mod tests {
                 }
                 StartingProfession::Tailor => assert!(candidate.skills.tailoring >= 30_000.0),
                 StartingProfession::Herbalist => {
-                    assert!(candidate.skills.physiology >= 30_000.0)
+                    assert!(candidate.skills.herbalism >= 30_000.0);
+                    assert_eq!(candidate.skills.surgery, 0.0);
                 }
                 StartingProfession::Cook => assert!(candidate.skills.cooking >= 30_000.0),
                 StartingProfession::WitchHunter => {

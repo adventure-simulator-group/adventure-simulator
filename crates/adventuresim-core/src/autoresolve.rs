@@ -148,7 +148,7 @@ pub struct CombatSkills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub bestiary_hours: BestiaryHours,
-    pub anatomy_hours: f32,
+    pub surgery_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -174,6 +174,7 @@ impl PlayerSkills for CombatSkills {
             Skill::Deception => self.deception_hours,
             Skill::Physiology => self.physiology_hours,
             Skill::Cooking => 0.0,
+            Skill::Herbalism => 0.0,
             Skill::Religion => self.religion_hours,
             Skill::Bestiary => self.bestiary_hours.aggregate_effective(),
             Skill::Stealth => self.stealth_hours,
@@ -184,7 +185,7 @@ impl PlayerSkills for CombatSkills {
             | Skill::TerrainWetlands
             | Skill::TerrainUrban
             | Skill::TerrainSnow => 0.0,
-            Skill::Anatomy => self.anatomy_hours,
+            Skill::Surgery => self.surgery_hours,
             Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
         }

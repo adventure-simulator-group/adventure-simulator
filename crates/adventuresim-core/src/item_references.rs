@@ -9,9 +9,20 @@ pub const CURRENCY_IDS: [&str; 6] = [
     "danish_mark",
 ];
 
-pub const MEDICATION_IDS: [&str; 3] = [
+pub const MEDICATION_IDS: [&str; 14] = [
     "oral_rehydration_draught",
+    "weak_willow_decoction",
     "cooling_willow_draught",
+    "strong_willow_decoction",
+    "weak_comfrey_poultice",
+    "comfrey_poultice",
+    "fine_comfrey_poultice",
+    "weak_poppy_tincture",
+    "poppy_tincture",
+    "strong_poppy_tincture",
+    "weak_sage_infusion",
+    "sage_infusion",
+    "fine_sage_infusion",
     "honey_wound_dressing",
 ];
 

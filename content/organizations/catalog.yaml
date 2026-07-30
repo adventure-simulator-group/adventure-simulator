@@ -424,39 +424,139 @@
         "public_threat_referrals":  false
     },
     {
-        "id":  "herbalists_college",
-        "name":  "College of Herbalists",
-        "description":  "A local learned fellowship for remedies and wound care.",
+        "id":  "herbalists_fellowship",
+        "name":  "Fellowship of Herbalists",
+        "description":  "An informal local fellowship where practical gathering and remedy-making are shared through mentorship without university enrollment.",
         "service_id":  "herbalist",
         "starting_role":  {
                               "profession":  "herbalist",
-                              "adult_rank_id":  "practitioner",
-                              "old_rank_id":  "physician"
+                              "adult_rank_id":  "herbalist",
+                              "old_rank_id":  "elder_herbalist"
                           },
         "chapters":  [
                          {
                              "settlement_id":  "viabundus-0",
-                             "location_id":  "organization-herbalists-college",
-                             "building_name":  "College of Herbalists",
-                             "building_kind":  "college",
-                             "representative_title":  "college registrar",
+                             "location_id":  "organization-herbalists-fellowship",
+                             "building_name":  "Herbalists Meeting House",
+                             "building_kind":  "workshop",
+                             "representative_title":  "fellowship mentor",
                              "representative_profession":  "herbalist"
                          },
                          {
                              "settlement_id":  "viabundus-2337",
-                             "location_id":  "organization-herbalists-college",
-                             "building_name":  "College of Herbalists",
-                             "building_kind":  "college",
-                             "representative_title":  "college registrar",
+                             "location_id":  "organization-herbalists-fellowship",
+                             "building_name":  "Herbalists Meeting House",
+                             "building_kind":  "workshop",
+                             "representative_title":  "fellowship mentor",
                              "representative_profession":  "herbalist"
                          },
                          {
                              "settlement_id":  "viabundus-1826",
-                             "location_id":  "organization-herbalists-college",
-                             "building_name":  "College of Herbalists",
+                             "location_id":  "organization-herbalists-fellowship",
+                             "building_name":  "Herbalists Meeting House",
+                             "building_kind":  "workshop",
+                             "representative_title":  "fellowship mentor",
+                             "representative_profession":  "herbalist"
+                         }
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "learner",
+                          "name":  "Learner",
+                          "description":  "A learner gaining practical experience through shared work and mentorship.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "herbalist",
+                          "name":  "Herbalist",
+                          "description":  "A herbalist recognized for independent preparation work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "herbalism",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "elder_herbalist",
+                          "name":  "Elder Herbalist",
+                          "description":  "A senior herbalist who mentors others and preserves local methods.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "herbalism",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "herbalism",
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ],
+        "public_threat_referrals":  false
+    },
+    {
+        "id":  "physicians_college",
+        "name":  "College of Physicians",
+        "description":  "A learned clinical college for observing patients, forming fallible differentials, and administering non-operative treatment.",
+        "service_id":  "physician",
+        "chapters":  [
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-physicians-college",
+                             "building_name":  "College of Physicians",
                              "building_kind":  "college",
                              "representative_title":  "college registrar",
-                             "representative_profession":  "herbalist"
+                             "representative_profession":  "physician"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-physicians-college",
+                             "building_name":  "College of Physicians",
+                             "building_kind":  "college",
+                             "representative_title":  "college registrar",
+                             "representative_profession":  "physician"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-physicians-college",
+                             "building_name":  "College of Physicians",
+                             "building_kind":  "college",
+                             "representative_title":  "college registrar",
+                             "representative_profession":  "physician"
                          }
                      ],
         "recognition":  {
@@ -477,7 +577,7 @@
                       {
                           "id":  "student",
                           "name":  "Student",
-                          "description":  "A supervised student of remedies.",
+                          "description":  "A supervised student of patient assessment and non-operative treatment.",
                           "requirements":  [
 
                                            ],
@@ -485,18 +585,13 @@
                           "practice_reward_interval_minutes":  0
                       },
                       {
-                          "id":  "practitioner",
-                          "name":  "Practitioner",
-                          "description":  "A healer recognized for independent practice.",
+                          "id":  "physician",
+                          "name":  "Physician",
+                          "description":  "A physician recognized for independent practice.",
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
                                                    "skill":  "physiology",
-                                                   "minimum":  2.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "anatomy",
                                                    "minimum":  2.0
                                                }
                                            ],
@@ -504,18 +599,13 @@
                           "practice_reward_interval_minutes":  480
                       },
                       {
-                          "id":  "physician",
-                          "name":  "Physician",
-                          "description":  "A senior practitioner and teacher.",
+                          "id":  "master_physician",
+                          "name":  "Master Physician",
+                          "description":  "A senior physician and teacher of clinical practice.",
                           "requirements":  [
                                                {
                                                    "kind":  "skill_rating",
                                                    "skill":  "physiology",
-                                                   "minimum":  4.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "anatomy",
                                                    "minimum":  4.0
                                                }
                                            ],
@@ -528,17 +618,107 @@
                                           {
                                               "kind":  "fixed_skill",
                                               "skill":  "physiology",
-                                              "weight":  0.5
-                                          },
-                                          {
-                                              "kind":  "bestiary",
-                                              "category":  "human",
-                                              "weight":  0.16666667
-                                          },
+                                              "weight":  1.0
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+
+                       ],
+        "public_threat_referrals":  false
+    },
+    {
+        "id":  "surgeons_guild",
+        "name":  "Surgeons\u0027 Guild",
+        "description":  "A local craft fellowship for operative wound care and surgical procedures.",
+        "service_id":  "surgeon",
+        "chapters":  [
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-surgeons-guild",
+                             "building_name":  "Surgeons Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "surgeon"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-surgeons-guild",
+                             "building_name":  "Surgeons Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "surgeon"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-surgeons-guild",
+                             "building_name":  "Surgeons Guildhall",
+                             "building_kind":  "guildhall",
+                             "representative_title":  "guild steward",
+                             "representative_profession":  "surgeon"
+                         }
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  1,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "ranks":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "description":  "A supervised apprentice learning operative procedures.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0
+                      },
+                      {
+                          "id":  "surgeon",
+                          "name":  "Surgeon",
+                          "description":  "A surgeon recognized for independent operative practice.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "surgery",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480
+                      },
+                      {
+                          "id":  "master_surgeon",
+                          "name":  "Master Surgeon",
+                          "description":  "A senior surgeon and teacher of extraction and stitching.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "surgery",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120
+                      }
+                  ],
+        "activity":  {
+                         "training":  [
                                           {
                                               "kind":  "fixed_skill",
-                                              "skill":  "anatomy",
-                                              "weight":  0.33333333
+                                              "skill":  "surgery",
+                                              "weight":  1.0
                                           }
                                       ],
                          "reward":  "gold"

@@ -337,10 +337,10 @@ pub struct InterventionProfile {
     pub adverse_delta_per_unit: MeterVector,
 }
 
-/// This catalogue is seeded/purchased as pre-existing preparations. Physiology
-/// can administer and observe them but does not craft them; #214 owns lots,
-/// composition, recipes and preparation.
-pub const INTERVENTION_PROFILES: [InterventionProfile; 3] = [
+/// Versioned, generic physiology effects for bounded concrete preparations.
+/// Herbalism chooses one of these identities; Physiology administers it
+/// without knowing or matching a disease key.
+pub const INTERVENTION_PROFILES: [InterventionProfile; 14] = [
     InterventionProfile {
         preparation_id: crate::item_references::MEDICATION_IDS[0],
         version: 1,
@@ -358,13 +358,134 @@ pub const INTERVENTION_PROFILES: [InterventionProfile; 3] = [
         route: InterventionRoute::Oral,
         duration_minutes: 6 * 60,
         loss_delta_per_unit: MeterVector::from_const([
+            (Meter::Temperature, -0.07),
+            (Meter::Inflammation, -0.03),
+        ]),
+        adverse_delta_per_unit: MeterVector::from_const([(Meter::Coagulation, 0.02)]),
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[2],
+        version: 1,
+        route: InterventionRoute::Oral,
+        duration_minutes: 6 * 60,
+        loss_delta_per_unit: MeterVector::from_const([
             (Meter::Temperature, -0.12),
             (Meter::Inflammation, -0.06),
         ]),
         adverse_delta_per_unit: MeterVector::from_const([(Meter::Coagulation, 0.04)]),
     },
     InterventionProfile {
-        preparation_id: crate::item_references::MEDICATION_IDS[2],
+        preparation_id: crate::item_references::MEDICATION_IDS[3],
+        version: 1,
+        route: InterventionRoute::Oral,
+        duration_minutes: 6 * 60,
+        loss_delta_per_unit: MeterVector::from_const([
+            (Meter::Temperature, -0.17),
+            (Meter::Inflammation, -0.09),
+        ]),
+        adverse_delta_per_unit: MeterVector::from_const([(Meter::Coagulation, 0.07)]),
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[4],
+        version: 1,
+        route: InterventionRoute::Topical,
+        duration_minutes: 12 * 60,
+        loss_delta_per_unit: MeterVector::from_const([
+            (Meter::TissueIntegrity, -0.05),
+            (Meter::Inflammation, -0.02),
+        ]),
+        adverse_delta_per_unit: MeterVector::ZERO,
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[5],
+        version: 1,
+        route: InterventionRoute::Topical,
+        duration_minutes: 12 * 60,
+        loss_delta_per_unit: MeterVector::from_const([
+            (Meter::TissueIntegrity, -0.10),
+            (Meter::Inflammation, -0.05),
+        ]),
+        adverse_delta_per_unit: MeterVector::ZERO,
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[6],
+        version: 1,
+        route: InterventionRoute::Topical,
+        duration_minutes: 12 * 60,
+        loss_delta_per_unit: MeterVector::from_const([
+            (Meter::TissueIntegrity, -0.15),
+            (Meter::Inflammation, -0.07),
+        ]),
+        adverse_delta_per_unit: MeterVector::ZERO,
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[7],
+        version: 1,
+        route: InterventionRoute::Oral,
+        duration_minutes: 4 * 60,
+        loss_delta_per_unit: MeterVector::from_const([(Meter::Neurologic, -0.08)]),
+        adverse_delta_per_unit: MeterVector::from_const([
+            (Meter::Oxygenation, 0.04),
+            (Meter::RenalClearance, 0.03),
+        ]),
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[8],
+        version: 1,
+        route: InterventionRoute::Oral,
+        duration_minutes: 4 * 60,
+        loss_delta_per_unit: MeterVector::from_const([(Meter::Neurologic, -0.15)]),
+        adverse_delta_per_unit: MeterVector::from_const([
+            (Meter::Oxygenation, 0.09),
+            (Meter::RenalClearance, 0.06),
+        ]),
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[9],
+        version: 1,
+        route: InterventionRoute::Oral,
+        duration_minutes: 4 * 60,
+        loss_delta_per_unit: MeterVector::from_const([(Meter::Neurologic, -0.23)]),
+        adverse_delta_per_unit: MeterVector::from_const([
+            (Meter::Oxygenation, 0.16),
+            (Meter::RenalClearance, 0.11),
+        ]),
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[10],
+        version: 1,
+        route: InterventionRoute::Oral,
+        duration_minutes: 3 * 60,
+        loss_delta_per_unit: MeterVector::from_const([
+            (Meter::Inflammation, -0.03),
+            (Meter::Neurologic, -0.02),
+        ]),
+        adverse_delta_per_unit: MeterVector::from_const([(Meter::Hydration, 0.02)]),
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[11],
+        version: 1,
+        route: InterventionRoute::Oral,
+        duration_minutes: 3 * 60,
+        loss_delta_per_unit: MeterVector::from_const([
+            (Meter::Inflammation, -0.06),
+            (Meter::Neurologic, -0.04),
+        ]),
+        adverse_delta_per_unit: MeterVector::from_const([(Meter::Hydration, 0.04)]),
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[12],
+        version: 1,
+        route: InterventionRoute::Oral,
+        duration_minutes: 3 * 60,
+        loss_delta_per_unit: MeterVector::from_const([
+            (Meter::Inflammation, -0.09),
+            (Meter::Neurologic, -0.06),
+        ]),
+        adverse_delta_per_unit: MeterVector::from_const([(Meter::Hydration, 0.06)]),
+    },
+    InterventionProfile {
+        preparation_id: crate::item_references::MEDICATION_IDS[13],
         version: 1,
         route: InterventionRoute::Topical,
         duration_minutes: 12 * 60,

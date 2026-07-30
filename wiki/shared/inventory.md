@@ -1,5 +1,10 @@
 # Inventory
 
+Medicinal ingredients encode public grade in bounded catalogue identities.
+Prepared remedies are concrete quantity-one medication rows, so potency
+survives ordinary personal/party transfer, trade, and administration without
+linked metadata.
+
 Inventory should preserve the physical and economic consequences of equipment
 without turning every expedition into manual spreadsheet work.
 

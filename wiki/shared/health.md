@@ -55,10 +55,10 @@ The detailed privacy, meter, Humour, and notebook contract lives in
 
 Treatment is performed on one patient and one body region at a time:
 
-- bandaging uses Anatomy and a bandage;
-- splinting uses Anatomy and a splint;
-- projectile extraction combines Anatomy and Knife;
-- stitching combines Anatomy and Tailoring;
+- bandaging uses Surgery and a bandage;
+- splinting uses Surgery and a splint;
+- projectile extraction uses Surgery;
+- stitching uses Surgery;
 - cleaning consumes water, soap, and—where appropriate—disinfectant.
 
 Procedures advance the participants' personal strategic time. They may be

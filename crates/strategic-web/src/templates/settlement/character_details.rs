@@ -247,6 +247,7 @@ pub fn party_personal_page(
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
     cooking: bool,
+    herbalism: bool,
     inventory: &[InventoryItem],
     inventory_amounts: &[InventoryItemAmount],
     food_lots: &[FoodLot],
@@ -262,6 +263,12 @@ pub fn party_personal_page(
         active_character.id
     ));
     let cooking_open = cooking;
+    let herbalism_href = location.preserve_building(format!(
+        "{}/party/{}?herbalism=true",
+        location.base_path(),
+        active_character.id
+    ));
+    let herbalism_open = herbalism;
     let surgery_path_template = location.preserve_building(format!(
         "{}/party/{}/surgery/__limb__",
         location.base_path(),
@@ -307,6 +314,15 @@ pub fn party_personal_page(
                 food_lots,
                 item_definitions,
             ))
+        } @else if herbalism_open {
+            (super::trade::herbalism_activity_dialog(
+                location,
+                active_character,
+                skills,
+                attributes,
+                inventory,
+                item_definitions,
+            ))
         } @else if let Some(dialog) = foraging_dialog {
             (dialog)
         } @else {
@@ -345,6 +361,8 @@ pub fn party_personal_page(
         skill_actions: CharacterSheetActions {
             cooking_href: Some(&cooking_href),
             cooking_open,
+            herbalism_href: Some(&herbalism_href),
+            herbalism_open,
             foraging_href: Some(&foraging_href),
             foraging_open,
         },
@@ -717,6 +735,8 @@ fn profession_name(definition: &OrganizationDefinition, rank: &OrganizationRank)
         Some("armor") => Some("Armourer"),
         Some("clothing") => Some("Tailor"),
         Some("herbalist") => Some("Herbalist"),
+        Some("physician") => Some("Physician"),
+        Some("surgeon") => Some("Surgeon"),
         Some("inn") => Some("Cook"),
         _ => None,
     };
@@ -780,7 +800,9 @@ fn organization_charge(definition: &OrganizationDefinition) -> &'static str {
         Some("weapons") => "anvil",
         Some("armor") => "breastplate",
         Some("clothing") => "clothes",
-        Some("herbalist") => "caduceus",
+        Some("herbalist") => "medical-pack",
+        Some("physician") => "caduceus",
+        Some("surgeon") => "scalpel",
         Some("inn") => "meal",
         _ if definition.id.contains("forester") => "wood-axe",
         _ if definition.id.contains("saint_george")
@@ -1130,5 +1152,19 @@ mod tests {
         let definition = organization("weaponsmith_guild").expect("weapons guild");
         let rank = definition.ranks.first().expect("weapons guild rank");
         assert_eq!(profession_name(definition, rank), "Apprentice Weaponsmith");
+    }
+
+    #[test]
+    fn medical_organizations_have_distinct_professions_and_charges() {
+        for (id, profession, charge) in [
+            ("herbalists_fellowship", "Herbalist", "medical-pack"),
+            ("physicians_college", "Physician", "caduceus"),
+            ("surgeons_guild", "Apprentice Surgeon", "scalpel"),
+        ] {
+            let definition = organization(id).unwrap();
+            let rank = definition.ranks.first().unwrap();
+            assert_eq!(profession_name(definition, rank), profession);
+            assert_eq!(organization_charge(definition), charge);
+        }
     }
 }

@@ -1,4 +1,8 @@
-use adventuresim_core::equipment::EncumbranceSummary;
+use adventuresim_core::{
+    equipment::EncumbranceSummary,
+    herbalism::{CraftOutcome, PreparationMethod},
+    skill::Skill,
+};
 use maud::{Markup, html};
 
 use super::{
@@ -14,9 +18,9 @@ use super::{
     },
 };
 use crate::spacetimedb::{
-    Character, CharacterCondition, CharacterEquip, CharacterLimbs, CharacterStats, FoodLot,
-    InventoryItem, InventoryItemAmount, InventoryQuantityTarget, ItemDefinition, ItemSlot,
-    PartyInventoryItem, Settlement,
+    Character, CharacterAttributes, CharacterCondition, CharacterEquip, CharacterLimbs,
+    CharacterSkills, CharacterStats, FoodLot, InventoryItem, InventoryItemAmount,
+    InventoryQuantityTarget, ItemDefinition, ItemSlot, PartyInventoryItem, Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
@@ -408,6 +412,142 @@ pub(super) fn cooking_activity_dialog(
                 }))
             }
             }
+            }
+        }
+    }
+}
+
+pub(super) fn herbalism_activity_dialog(
+    location: &LocationView,
+    active_character: &Character,
+    skills: Option<&CharacterSkills>,
+    attributes: Option<&CharacterAttributes>,
+    inventory: &[InventoryItem],
+    item_definitions: &[ItemDefinition],
+) -> Markup {
+    let close_href = location.preserve_building(format!(
+        "{}/party/{}",
+        location.base_path(),
+        active_character.id
+    ));
+    let action = location.preserve_building(format!(
+        "{}/party/{}/herbalism",
+        location.base_path(),
+        active_character.id
+    ));
+    let capability = Skill::Herbalism.capped_rank_for_aptitude(
+        skills.map_or(0.0, |row| row.herbalism_hours),
+        attributes.map_or(0.0, |row| row.intelligence),
+    );
+    let ingredients = inventory
+        .iter()
+        .filter(|row| adventuresim_core::herbalism::normalize_ingredient(&row.item_id).is_some())
+        .collect::<Vec<_>>();
+    let encoded_preview = |item_id: &str, method: PreparationMethod| {
+        adventuresim_core::herbalism::preview(item_id, method, capability).map(|preview| {
+            let (output, degraded) = match preview.outcome {
+                CraftOutcome::Medication(id) => (item_display_name(id), false),
+                CraftOutcome::DegradedWaste(id) => (item_display_name(id), true),
+            };
+            let requirement = preview.required_consumable.map_or_else(
+                || "No additional consumable".to_string(),
+                |required| {
+                    format!(
+                        "{} × {}",
+                        item_display_name(required.item_id),
+                        required.units
+                    )
+                },
+            );
+            format!(
+                "{}|{}|{}|{}|{}|{}|{}",
+                output,
+                preview.duration_minutes,
+                preview.input_units,
+                requirement,
+                preview.expected_effect,
+                preview.risk,
+                degraded
+            )
+        })
+    };
+    html! {
+        div class="character-action-overlay" data-character-action-dialog data-initial-focus="[name=inventory_item_id]" {
+            a class="character-action-backdrop" href=(&close_href) aria-label="Close herbalism dialog" {}
+            section class="character-action-dialog herbalism-dialog" role="dialog" aria-modal="true"
+                aria-labelledby="herbalism-dialog-title" tabindex="-1" data-herbalism-activity {
+                header class="character-action-dialog-header" {
+                    h2 id="herbalism-dialog-title" { "Herbalism" }
+                    a class="character-action-dialog-close" href=(&close_href)
+                        aria-label="Close herbalism dialog" { "×" }
+                }
+                form method="post" action=(&action) data-herbalism-form {
+                    section aria-labelledby="herbal-ingredient-title" {
+                        h3 id="herbal-ingredient-title" { "Medicinal ingredient" }
+                        @if ingredients.is_empty() {
+                            (empty_state("No medicinal ingredients carried.", None, None))
+                        } @else {
+                            table class="trade-inventory-table herbalism-exchange-list" {
+                                tbody {
+                                    @for row in &ingredients {
+                                        @let definition = item_definitions.iter().find(|item| item.id == row.item_id);
+                                        @let grade = adventuresim_core::herbalism::normalize_ingredient(&row.item_id)
+                                            .map_or("Ordinary", |(_, grade)| grade.label());
+                                        tr class="trade-inventory-row trade-row-player" {
+                                            td class="inventory-item-type" { (item_type_icon(&row.item_id)) }
+                                            td class="inventory-item-name" {
+                                                label {
+                                                    input type="radio" name="inventory_item_id" value=(row.id)
+                                                        data-herbal-ingredient
+                                                        data-item-id=(&row.item_id)
+                                                        data-dry-grind=[encoded_preview(&row.item_id, PreparationMethod::DryGrind)]
+                                                        data-infuse-decoct=[encoded_preview(&row.item_id, PreparationMethod::InfuseDecoct)]
+                                                        data-tincture=[encoded_preview(&row.item_id, PreparationMethod::Tincture)];
+                                                    (item_display_name(&row.item_id))
+                                                    span class="inventory-item-quality" {
+                                                        " · " (grade)
+                                                    }
+                                                }
+                                            }
+                                            td class="inventory-count" { (row.qty) }
+                                            td class="inventory-weight" { (definition.map_or(0.0, |item| item.weight)) " kg" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    fieldset class="herbalism-methods" {
+                        legend { "Preparation method" }
+                        @for method in PreparationMethod::ALL {
+                            @let description_id = format!("herbal-method-{}-description", method.slug());
+                            label class="btn btn-secondary"
+                                tabindex="0"
+                                aria-describedby=(&description_id)
+                                aria-disabled="true"
+                                data-method-label=(method.label())
+                                data-method-description=(method.description())
+                                data-strategic-tooltip=(method.description()) {
+                                input type="radio" name="method" value=(method.slug())
+                                    data-herbal-method;
+                                (method.label())
+                                span id=(&description_id) class="sr-only"
+                                    data-herbal-method-status {
+                                    (method.description())
+                                }
+                            }
+                        }
+                    }
+                    p class="small-copy herbalism-preview" data-herbal-preview role="status" aria-live="polite" {
+                        "Select one ingredient and one method."
+                    }
+                    div class="party-offer herbalism-actions" {
+                        a class="btn btn-secondary party-offer-cancel" href=(&close_href) { "Cancel" }
+                        button type="submit" class="btn btn-primary" disabled data-herbal-submit {
+                            "Prepare"
+                        }
+                    }
+                }
             }
         }
     }

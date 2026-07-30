@@ -12,6 +12,7 @@ pub(crate) const SETTLEMENTS_SOURCE: &str = concat!(
     include_str!("service_quests.rs"),
     include_str!("party/location_personal.rs"),
     include_str!("party/cooking.rs"),
+    include_str!("party/herbalism.rs"),
     include_str!("party/training_activity.rs"),
     include_str!("party/inventory_medical.rs"),
     include_str!("party/social.rs"),
@@ -111,9 +112,10 @@ use party::{
     deposit_party_inventory, discard_inventory_items, finalize_merchant_offer,
     finalize_party_offer, liquidate_party_assets, merchants, party_member, party_personal,
     party_pool_inventory, party_social, party_stats, perform_immediate_activity,
-    perform_social_action, remove_party_member, render_party_personal, render_party_stats,
-    resolve_location, set_automatic_social_chat, set_equipment, set_inventory_target,
-    stop_preparation, transfer_party_item, update_training_schedule, withdraw_party_inventory,
+    perform_social_action, prepare_herbal_remedy, remove_party_member, render_party_personal,
+    render_party_stats, resolve_location, set_automatic_social_chat, set_equipment,
+    set_inventory_target, stop_preparation, transfer_party_item, update_training_schedule,
+    withdraw_party_inventory,
 };
 use religion::{religion_dialogue, renounce_religion, resolve_religious_demand, set_religion};
 use rendering::{

@@ -273,7 +273,7 @@ fn spawn_connected_player(
         bestiary_draconid_hours: player.skills.bestiary_hours.draconid,
         bestiary_construct_hours: player.skills.bestiary_hours.construct,
         bestiary_wildmen_hours: player.skills.bestiary_hours.wildmen,
-        anatomy_hours: player.skills.anatomy_hours,
+        surgery_hours: player.skills.surgery_hours,
         stealth_hours: player.skills.stealth_hours,
         balance_hours: player.skills.balance_hours,
         tailoring_hours: player.skills.tailoring_hours,

@@ -22,11 +22,23 @@
           { "id": "weaponsmith-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "weapons" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! A weaponsmith learns to forge, fit, and maintain the tools a fighting company depends upon. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
           { "id": "armourer-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "armor" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! An armourer shapes and repairs protection that must move with its wearer and endure hard blows. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
           { "id": "tailor-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "clothing" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! A tailor turns cloth into durable, well-fitted garments and learns the trade of the needle. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
-          { "id": "physician-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "herbalist" }, "turns": [
+          { "id": "herbalist-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "herbalist" }, "turns": [
+            { "speaker": "professional", "fragments": [
+              { "kind": "text", "value": "An herbalist learns to identify, grade, and prepare plants without claiming to diagnose the patient. Ask if you wish to become an " },
+              { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }
+            ] }
+          ], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
+          { "id": "physician-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "physician" }, "turns": [
             { "speaker": "player", "fragments": [{ "kind": "period_claim", "value": "An excess of one humour must reveal which illness afflicts the patient." }] },
             { "speaker": "professional", "fragments": [
               { "kind": "authoritative_explanation", "reference": "physiology/humours", "value": "No. Humours are lossy regional sums: several hidden functional losses can make the same reading. A physician records repeated readings, symptoms, known interventions, and gaps without inventing a diagnosis." },
               { "kind": "text", "value": " Ask if you wish to become an " },
+              { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }
+            ] }
+          ], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
+          { "id": "surgeon-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "surgeon" }, "turns": [
+            { "speaker": "professional", "fragments": [
+              { "kind": "text", "value": "A surgeon learns operative wound care, extraction, and stitching. Every procedure checks Surgery directly; Knife and Tailoring practice can contribute indirectly through related experience. Ask if you wish to become an " },
               { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }
             ] }
           ], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },

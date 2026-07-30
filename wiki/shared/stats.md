@@ -1,5 +1,9 @@
 # Attributes
 
+Herbalism is a first-class trained mental skill governed by Intelligence. It
+prepares biological medicine and remains separate from patient-facing
+Physiology and food-facing Cooking.
+
 The Terrain family includes **Snow**, a mental, intuitive,
 Intelligence-governed skill with a 30,000-hour curve. Snow has symmetric 0.20
 ordinary correlation with Plains, Forest, Hills, Wetlands, and Urban. It is an
@@ -83,7 +87,7 @@ In theory eyesight/hearing should be further subdivided into eyes/ears for damag
 
 ### Intelligence
 The depth at which your character can think. Intelligence governs learning and
-mastery for Physiology, Anatomy, Cooking, Religion, Bestiary, and the Terrain
+mastery for Physiology, Surgery, Cooking, Religion, Bestiary, and the Terrain
 leaves. It does not add to their final checks.
 
 0. Not capable of conscious thought
@@ -128,7 +132,7 @@ skill rank supplies the check itself.
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs. They are not increased via an abstract XP/leveling system, and very little of their value comes from using them during tactical play. Instead they are trained through activities in the character's off-screen settlement-downtime schedule. Individual skill-study allocations are not available.
 
-Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Charm and improves Morale; only a disorder incident adds Infamy. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Physiology, Anatomy, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview signed Gold, Fame/Infamy, Morale, and Fatigue generated per day. Leisure is the unallocated remainder and includes sleep.
+Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Charm and improves Morale; only a disorder incident adds Infamy. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Physiology, Surgery, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview signed Gold, Fame/Infamy, Morale, and Fatigue generated per day. Leisure is the unallocated remainder and includes sleep.
 
 Selecting an explicit activity icon previews and performs one continuous one-to-24-hour interval using the same training and outcome rules. Its preview is based on the chosen duration; Prayer/Meditation and Carousing are nonlinear, so increasing their duration has diminishing Morale returns. Immediate activity never includes implicit Leisure or modifies the recurring allocation.
 
@@ -200,7 +204,7 @@ This distinction applies only to correlated training. An intuitive target may
 benefit from correlated hours without formal training in that target. A trained
 target evaluates to zero until it has target-specific direct hours, regardless
 of correlated knowledge. Correlation is derived in one pass, never stored, and
-never produces mastery morale. Physiology, Anatomy, Religion and Bestiary
+never produces mastery morale. Physiology, Surgery, Religion and Bestiary
 leaves, and Written languages are trained; Oral languages are intuitive.
 
 Ordinary skill transfer uses a deliberately sparse symmetric matrix: Cooking
@@ -441,20 +445,16 @@ separate Terrain meta-skill and does not stack with Balance.
 4. Skilled gymnast or martial artist, can walk a tightrope
 5. Graceful elf
 
-### Anatomy (mental, trained, 10000 hours)
-Anatomy represents trained knowledge of bodies and wounds. Intelligence governs
+### Surgery (mental, trained, 10000 hours)
+Surgery represents trained operative wound care. Intelligence governs
 its training speed and mastery cap, while head injury remains a performance
-penalty. Herbalist apprenticeship and practice divide their training between
-Physiology (one half) and Anatomy, Knife, and Tailoring (one sixth each).
+penalty. The Fellowship of Herbalists trains Herbalism; the College of
+Physicians trains Physiology; and the Surgeons' Guild trains Surgery.
 
-Surgery is a procedure, not a skill. Projectile extraction averages the
-treating character's Anatomy and Knife checks; stitching averages Anatomy and
-Tailoring. Bandaging and splinting use Anatomy alone. Self-treatment applies
-the shared 2.5-point penalty after the applicable skills are combined.
-
-The recruitment rail's general Surgery coverage is the lower of the extraction
-and stitching checks. A specialist therefore cannot appear able to perform
-both procedures merely because their unrelated third skill is high.
+Projectile extraction, stitching, bandaging, and splinting all check Surgery
+directly. Self-treatment applies the shared 2.5-point penalty. Surgery has
+modest symmetric correlations with Knife and Tailoring, allowing related craft
+practice to contribute indirectly without making either a procedure input.
 
 ### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
 
@@ -469,7 +469,7 @@ underlying terrain rather than Urban and reduce training in proportion to the
 time they save.
 
 ### Tailoring (trained, 10000 hours)
-Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, and stitching combines it with Anatomy.
+Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability. It is modestly correlated with Surgery but is not a direct stitching check.
 
 ### Smithing (trained, 10000 hours)
 Smithing makes and repairs weapons, armor, and shields. It does not repair clothing.

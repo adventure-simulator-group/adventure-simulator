@@ -371,9 +371,10 @@ fn update_skills_ui(
             Skill::Physiology => format!("{:.2}", skills.physiology_hours),
             // Cooking is strategic-only and is not carried in tactical snapshots.
             Skill::Cooking => "0.00".to_owned(),
+            Skill::Herbalism => "0.00".to_owned(),
             Skill::Religion => format!("{:.2}", skills.religion_hours),
             Skill::Bestiary => "0.00".to_string(),
-            Skill::Anatomy => format!("{:.2}", skills.anatomy_hours),
+            Skill::Surgery => format!("{:.2}", skills.surgery_hours),
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),
             Skill::Balance => format!("{:.2}", skills.balance_hours),
             Skill::TerrainPlains
