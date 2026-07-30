@@ -872,6 +872,16 @@ pub(crate) fn protected_point_exposure(
 
 const MAX_PARTY_INTERVAL_SPANS: usize = 4_096;
 const MAX_PARTY_INTERVAL_WORK: u64 = 50_000_000;
+const MAX_PARTY_INTERVAL_CANDIDATES: usize = 1_000_000;
+
+fn blood_interval_work_budget(minutes: u64) -> u64 {
+    let routes = disease::STARTER_DISEASES
+        .iter()
+        .filter(|definition| definition.supports(TransmissionVector::Blood))
+        .count()
+        .max(1) as u64;
+    minutes.saturating_mul(routes)
+}
 
 #[derive(Clone, Debug)]
 struct CachedCoverage {
@@ -974,7 +984,13 @@ pub fn plan_party_disease_interval(
                     .filter(*id),
             )
         {
-            spans_by_id.entry(span.id).or_insert(span);
+            disease::insert_unique_bounded(
+                &mut spans_by_id,
+                span.id,
+                span,
+                MAX_PARTY_INTERVAL_SPANS,
+            )
+            .map_err(str::to_string)?;
         }
     }
     let peer_ids = spans_by_id
@@ -1080,14 +1096,10 @@ pub fn plan_party_disease_interval(
             (character_id, segments)
         })
         .collect();
-    let blood_routes = disease::STARTER_DISEASES
-        .iter()
-        .filter(|definition| definition.supports(TransmissionVector::Blood))
-        .count()
-        .max(1) as u64;
     let base_work = requested
         .saturating_mul(ids.len() as u64)
-        .saturating_mul(blood_routes);
+        .saturating_mul(2)
+        .saturating_mul(blood_interval_work_budget(1));
     if base_work > MAX_PARTY_INTERVAL_WORK {
         return Err("Party disease interval exceeds bounded exposure work".into());
     }
@@ -1179,7 +1191,9 @@ pub fn plan_party_disease_interval(
                     return Err("Party disease interval exceeds bounded exposure work".into());
                 }
                 let definition = disease::definition(disease_id);
-                if let Some(at) = disease::first_eligible_protected_presence_exposure_minute(
+                let remaining_candidates =
+                    MAX_PARTY_INTERVAL_CANDIDATES.saturating_sub(scheduled.len());
+                let attempts = disease::eligible_protected_presence_exposure_attempt_minutes(
                     &episodes,
                     disease_id,
                     *id,
@@ -1190,8 +1204,11 @@ pub fn plan_party_disease_interval(
                     definition.base_acquisition,
                     immunity,
                     definition.primary_community_vector,
+                    remaining_candidates,
                     |minute| plan.check_at(*id, minute),
-                ) {
+                )
+                .map_err(str::to_string)?;
+                for at in attempts {
                     scheduled.push(InfectionEpisode {
                         id: disease::outbreak_exposure_seed(*id, &format!("{source_id}:{at}")),
                         character_id: *id,
@@ -1211,6 +1228,7 @@ pub fn plan_party_disease_interval(
             false,
             allow_healing,
             Some(&plan),
+            blood_interval_work_budget(end.saturating_sub(start)),
         )?);
     }
     let windows = pairs
@@ -1832,6 +1850,7 @@ fn clip_elapsed_for_disease_planned(
         true,
         allow_healing,
         Some(plan),
+        blood_interval_work_budget(through.saturating_sub(now)),
     )?;
     for event in events.iter().filter(|event| event.minute <= through) {
         match event.kind {

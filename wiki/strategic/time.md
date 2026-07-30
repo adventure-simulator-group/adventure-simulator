@@ -33,6 +33,14 @@ absolute-minute timeline. Candidates in the same minute resolve
 simultaneously; a newly infected character becomes a contact source on the
 next minute. This preserves multi-person transmission chains across whole and
 chunked travel, sleep, treatment, rest, and catch-up intervals.
+Long-running outbreaks and local problems keep stable future attempts in that
+timeline, so exposure resumes after an earlier episode resolves instead of
+depending on where the player split the action.
+
+The interval work reservation includes both the side-effect-free infected-blood
+planning pass and the bounded checkpoint pass over the actually committed
+prefix. Raw indexed presence rows are rejected as soon as their deduplicated
+count exceeds the cap, before coverage materialization.
 
 The server stores official time as an absolute number of game minutes rather than a wrapping calendar value. A newly initialized world begins on August 20 at 00:00. A 365-day year is 525,600 minutes, and one game minute takes exactly 84/73 real seconds, making one game year one real week. Calendar displays wrap this absolute number into a day-of-year and time-of-day, but comparisons never wrap.
 

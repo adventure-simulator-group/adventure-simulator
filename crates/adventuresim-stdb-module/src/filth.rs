@@ -151,6 +151,7 @@ pub fn blood_episodes_through(
     persist_checkpoint: bool,
     allow_healing: bool,
     plan: Option<&crate::disease::PartyDiseaseIntervalPlan>,
+    max_work: u64,
 ) -> Result<Vec<adventuresim_core::disease::InfectionEpisode>, String> {
     if to <= from {
         return Ok(Vec::new());
@@ -176,6 +177,7 @@ pub fn blood_episodes_through(
     let routes = predicted_wound_routes(ctx, character_id, allow_healing)?;
     let mut episodes = crate::disease::character_episodes(ctx, character_id)?;
     let original_len = episodes.len();
+    let mut work = 0;
     for disease_id in adventuresim_core::disease::STARTER_DISEASES
         .iter()
         .filter(|definition| {
@@ -207,6 +209,8 @@ pub fn blood_episodes_through(
             .into_iter()
             .flat_map(|(window_start, window_end)| window_start..=window_end)
         {
+            adventuresim_core::disease::add_bounded_work(&mut work, 1, max_work)
+                .map_err(str::to_string)?;
             if adventuresim_core::disease::has_unresolved_disease(
                 &episodes, disease_id, minute, immunity,
             ) {

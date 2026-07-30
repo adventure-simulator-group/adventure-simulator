@@ -93,6 +93,8 @@ transmission. Community, blood, and contact acquisitions resolve together in
 absolute-minute order. Acquisitions within one minute are simultaneous and a
 new infection can transmit onward starting on the following minute, making
 secondary spread agree between one long interval and equivalent chunks.
+Environmental sources retain stable later attempts, allowing exposure to
+resume if an earlier episode resolves while the outbreak continues.
 
 Solo catch-up uses recorded co-presence only. An open span may cover the
 catching-up character through the lesser of their requested horizon and an

@@ -355,6 +355,32 @@ pub struct AcquisitionTimeline {
     pub work_units: u64,
 }
 
+pub fn insert_unique_bounded<K: Ord, V>(
+    values: &mut std::collections::BTreeMap<K, V>,
+    key: K,
+    value: V,
+    limit: usize,
+) -> Result<bool, &'static str> {
+    use std::collections::btree_map::Entry;
+    if values.len() >= limit && !values.contains_key(&key) {
+        return Err("Disease interval has too many raw presence spans");
+    }
+    Ok(match values.entry(key) {
+        Entry::Vacant(entry) => {
+            entry.insert(value);
+            true
+        }
+        Entry::Occupied(_) => false,
+    })
+}
+
+pub fn add_bounded_work(work: &mut u64, amount: u64, max: u64) -> Result<(), &'static str> {
+    *work = work.saturating_add(amount);
+    (*work <= max)
+        .then_some(())
+        .ok_or("Disease interval exceeds bounded exposure work")
+}
+
 /// Resolve already-assembled route candidates and contact transmission in one
 /// absolute-minute timeline. Acquisitions at a minute are simultaneous and
 /// become eligible contact sources only on the following minute.
@@ -983,6 +1009,51 @@ pub fn first_eligible_protected_presence_exposure_minute(
         )
     })
 }
+
+#[allow(clippy::too_many_arguments)]
+pub fn eligible_protected_presence_exposure_attempt_minutes(
+    episodes: &[InfectionEpisode],
+    disease_id: DiseaseId,
+    character_id: u64,
+    exposure_id: &str,
+    from: u64,
+    to: u64,
+    intensity: f32,
+    base_acquisition: f32,
+    immunity: f32,
+    vector: TransmissionVector,
+    max_attempts: usize,
+    physiology_check_at: impl Fn(u64) -> f32,
+) -> Result<Vec<u64>, &'static str> {
+    if to <= from || intensity <= 0.0 {
+        return Ok(Vec::new());
+    }
+    let mut attempts = Vec::new();
+    for minute in (from + 1)..=to {
+        if has_unresolved_disease(episodes, disease_id, minute, immunity) {
+            continue;
+        }
+        let prior_immunity = acquired_immunity(episodes, disease_id, minute, immunity);
+        let key = format!("{exposure_id}:{minute}");
+        if acquisition_succeeds(
+            outbreak_exposure_seed(character_id, &key),
+            &DiseaseDefinition {
+                base_acquisition: base_acquisition / 1_440.0,
+                ..*definition(disease_id)
+            },
+            immunity,
+            prior_immunity,
+            residual_exposure(intensity, vector, physiology_check_at(minute)),
+        ) {
+            if attempts.len() >= max_attempts {
+                return Err("Disease interval exceeds bounded acquisition candidates");
+            }
+            attempts.push(minute);
+        }
+    }
+    Ok(attempts)
+}
+
 pub fn severity(e: InfectionEpisode, immunity: f32) -> f32 {
     let unit = (severity_seed(e) >> 11) as f64 / (1u64 << 53) as f64;
     let innate = (immunity / 5.0).clamp(0.0, 1.0);
@@ -2206,5 +2277,117 @@ mod tests {
         )
         .unwrap();
         assert!(result.proposals[&2][0].contracted_at <= peer_clock);
+    }
+
+    #[test]
+    fn long_environmental_source_reattempts_after_resolution_whole_or_split() {
+        let initial_episode = timeline_episode(51, 7, 0);
+        let initial = [(7, vec![initial_episode])].into_iter().collect();
+        let immunity = [(7, 0.0)].into_iter().collect();
+        let targets = [7].into_iter().collect();
+        let resolution = (1..60 * DAY)
+            .find(|minute| evaluate(initial_episode, *minute, 0.0).stage == DiseaseStage::Resolved)
+            .unwrap();
+        let split_at = resolution.saturating_sub(1);
+        let to = resolution + 30 * DAY;
+        let scheduled = |from, to| {
+            eligible_protected_presence_exposure_attempt_minutes(
+                &[initial_episode],
+                DiseaseId::Influenza,
+                7,
+                "long-running-outbreak",
+                from,
+                to,
+                1_000.0,
+                definition(DiseaseId::Influenza).base_acquisition,
+                0.0,
+                TransmissionVector::CloseContact,
+                100_000,
+                |_| 0.0,
+            )
+            .unwrap()
+            .into_iter()
+            .map(|at| InfectionEpisode {
+                id: outbreak_exposure_seed(7, &format!("long-running-outbreak:{at}")),
+                character_id: 7,
+                disease_id: DiseaseId::Influenza,
+                contracted_at: at,
+                ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+                phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+            })
+            .collect::<Vec<_>>()
+        };
+        let whole = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            scheduled(0, to),
+            &[],
+            &immunity,
+            0,
+            to,
+            0,
+            1_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        assert!(whole.proposals[&7][0].contracted_at >= resolution);
+
+        let first = resolve_acquisition_timeline(
+            &targets,
+            &initial,
+            scheduled(0, split_at),
+            &[],
+            &immunity,
+            0,
+            split_at,
+            0,
+            1_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        let mut split_initial = initial;
+        for (id, episodes) in &first.proposals {
+            split_initial.entry(*id).or_default().extend(episodes);
+        }
+        let second = resolve_acquisition_timeline(
+            &targets,
+            &split_initial,
+            scheduled(split_at, to),
+            &[],
+            &immunity,
+            split_at,
+            to,
+            first.work_units,
+            1_000_000,
+            |_, _| 0.0,
+        )
+        .unwrap();
+        let mut split = first.proposals;
+        for (id, episodes) in second.proposals {
+            split.entry(id).or_default().extend(episodes);
+        }
+        assert_eq!(whole.proposals, split);
+    }
+
+    #[test]
+    fn raw_presence_span_and_checkpoint_work_caps_fail_closed() {
+        let mut spans = std::collections::BTreeMap::new();
+        assert_eq!(insert_unique_bounded(&mut spans, 1, "a", 2), Ok(true));
+        assert_eq!(
+            insert_unique_bounded(&mut spans, 1, "duplicate", 2),
+            Ok(false)
+        );
+        assert_eq!(insert_unique_bounded(&mut spans, 2, "b", 2), Ok(true));
+        assert_eq!(
+            insert_unique_bounded(&mut spans, 3, "excess", 2),
+            Err("Disease interval has too many raw presence spans")
+        );
+
+        let mut work = 0;
+        assert_eq!(add_bounded_work(&mut work, 4, 5), Ok(()));
+        assert_eq!(
+            add_bounded_work(&mut work, 2, 5),
+            Err("Disease interval exceeds bounded exposure work")
+        );
     }
 }
