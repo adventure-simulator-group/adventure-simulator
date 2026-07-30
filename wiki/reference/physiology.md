@@ -16,6 +16,16 @@ non-operative treatment. Herbalists prepare remedies through Herbalism, while
 surgeons train Surgery for operative procedures.
 Membership and advancement in one organization never confer a rank in another.
 
+Physiology also supports a narrow bedside **Reassure** response to companions'
+injury or pain, fatigue, and hunger or thirst morale concerns. This is honest,
+period-facing attention to the patient's account and plainly observable
+distress. It is a modest, low-risk morale intervention rather than medical
+success: the action does not identify a condition, predict its course, triage
+the patient, prescribe supportive care, endorse Humour theory, or alter any
+physical state. Hunger or thirst reassurance is intentionally the weakest
+authored case. See [Morale](../shared/morale.md) for the shared social-action,
+relationship, cooldown, history, privacy, and automatic-care rules.
+
 ## Private authority
 
 The authoritative strategic simulation derives ten bounded functional-loss

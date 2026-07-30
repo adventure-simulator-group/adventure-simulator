@@ -32,6 +32,23 @@ social care considers Prayer alongside the other eligible approaches using the
 same target-specific check, personality fit, cooldown, and authoritative
 resolver.
 
+Companion responses also include **Reassure** for injury or pain, fatigue, and
+hunger or thirst concerns. The action uses the actor's Physiology check after
+shared-language scaling. Its closed, topic-specific bedside catalog is
+deliberately conservative: injury reassurance is the strongest of the three,
+fatigue is weaker, and hunger or thirst is materially weakest. All three offer
+less morale reward and less risk than the relevant specialist or riskier social
+approaches; they are not claimed to be safer than simply listening.
+
+Reassurance consists only of honest attention to what the patient reports and
+what is plainly observable. It makes no diagnosis, prognosis, triage decision,
+humoral claim, or prescription. It changes morale and relationship state only,
+never wounds, disease, needs, medication, or any other physical state. It uses
+the same five-minute manual cost, target-specific cooldown, durable interaction
+history, compact successful-address state, affinity rules, privacy boundary,
+and opt-in automatic-care pipeline as other companion responses. Reassurance
+does not reveal personality beliefs.
+
 Living, co-located companions show an observer-specific Party Rail badge for
 each current actionable negative source row that this character has not yet
 successfully addressed. Separate sources count separately even when they share

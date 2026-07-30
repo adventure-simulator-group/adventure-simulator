@@ -9,13 +9,13 @@ use adventuresim_core::social::{
     SOCIAL_RESPONSE_MINUTES, SelfKnowledge as CoreSelfKnowledge, SocialActionKind, SocialAttempt,
     SocialTopic, Transparency as CoreTransparency, actor_allows_social_action,
     actor_allows_social_prayer, affinity_gain, assess_testimony_claim, axis_for_topic,
-    canonical_cooldown_id, canonical_pair, choose_automatic_social_action,
-    command_gravitas_modifier, diagnosed_axis, diagnosis_for_axis, discovery_training_split,
-    flirt_charm_modifier, humor_charm_modifier, incompatible_flirt_outcome, prayer_approach,
-    prayer_resolution_profile, realized_affinity_delta, resolve_casual_chat,
-    resolve_claim_challenge, resolve_social_attempt, resolve_social_attempt_with_profile,
-    self_knowledge_insight_modifier, settle_affinity, should_replace_belief,
-    social_source_eligible, topic_for_source_kind,
+    bedside_reassurance_approach, bedside_reassurance_resolution_profile, canonical_cooldown_id,
+    canonical_pair, choose_automatic_social_action, command_gravitas_modifier, diagnosed_axis,
+    diagnosis_for_axis, discovery_training_split, flirt_charm_modifier, humor_charm_modifier,
+    incompatible_flirt_outcome, prayer_approach, prayer_resolution_profile,
+    realized_affinity_delta, resolve_casual_chat, resolve_claim_challenge, resolve_social_attempt,
+    resolve_social_attempt_with_profile, self_knowledge_insight_modifier, settle_affinity,
+    should_replace_belief, social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -2002,6 +2002,7 @@ fn parse_action(value: &str) -> Result<SocialActionKind, String> {
         "listen" => Ok(SocialActionKind::Listen),
         "commiserate" => Ok(SocialActionKind::Commiserate),
         "pray" => Ok(SocialActionKind::Pray),
+        "reassure" => Ok(SocialActionKind::Reassure),
         "lighten_mood" => Ok(SocialActionKind::LightenMood),
         "command" => Ok(SocialActionKind::Rally),
         "deception" => Ok(SocialActionKind::Reframe),
@@ -2017,6 +2018,7 @@ fn social_action_skill(action: SocialActionKind, shares_concern: bool) -> Skill 
         SocialActionKind::Commiserate if shares_concern => Skill::Insight,
         SocialActionKind::Commiserate => Skill::Deception,
         SocialActionKind::Pray => Skill::Religion,
+        SocialActionKind::Reassure => Skill::Physiology,
         SocialActionKind::LightenMood => Skill::Charm,
         SocialActionKind::Rally => Skill::Command,
         SocialActionKind::Reframe => Skill::Deception,
@@ -2223,10 +2225,11 @@ fn automatic_social_action(
     target_id: u64,
     topic: SocialTopic,
 ) -> Result<Option<SocialActionKind>, String> {
-    const ACTIONS: [SocialActionKind; 7] = [
+    const ACTIONS: [SocialActionKind; 8] = [
         SocialActionKind::Listen,
         SocialActionKind::Commiserate,
         SocialActionKind::Pray,
+        SocialActionKind::Reassure,
         SocialActionKind::LightenMood,
         SocialActionKind::Rally,
         SocialActionKind::Reframe,
@@ -2301,6 +2304,15 @@ fn automatic_social_action(
                 personality_fit,
                 prayer_resolution_profile(approach, conviction_code(target_personality.conviction))
                     .risk,
+            )
+        } else if action == SocialActionKind::Reassure {
+            let approach = bedside_reassurance_approach(topic)
+                .expect("Reassurance candidates require an authored health topic");
+            AutomaticSocialCandidate::with_resolved_risk(
+                action,
+                skill_check,
+                personality_fit,
+                bedside_reassurance_resolution_profile(approach).risk,
             )
         } else {
             AutomaticSocialCandidate::ordinary(action, skill_check, personality_fit)
@@ -2507,6 +2519,7 @@ fn discovery_axes(
             vec![PersonalityAxis::Conscience, PersonalityAxis::Sociability]
         }
         SocialActionKind::Pray => vec![PersonalityAxis::Conviction],
+        SocialActionKind::Reassure => Vec::new(),
         SocialActionKind::LightenMood => vec![PersonalityAxis::Mirth],
         SocialActionKind::Rally => vec![
             PersonalityAxis::Nerve,
@@ -2734,6 +2747,14 @@ fn perform_social_action_authoritative(
     } else {
         None
     };
+    let reassurance = if action == SocialActionKind::Reassure {
+        Some(
+            bedside_reassurance_approach(topic)
+                .ok_or("That social approach does not fit this concern")?,
+        )
+    } else {
+        None
+    };
     let now = ctx
         .db
         .character_time()
@@ -2854,6 +2875,11 @@ fn perform_social_action_authoritative(
         resolve_social_attempt_with_profile(
             attempt,
             prayer_resolution_profile(approach, conviction_code(target_personality.conviction)),
+        )
+    } else if let Some(approach) = reassurance {
+        resolve_social_attempt_with_profile(
+            attempt,
+            bedside_reassurance_resolution_profile(approach),
         )
     } else {
         resolve_social_attempt(attempt)
@@ -3451,6 +3477,39 @@ mod contract_tests {
         assert!(check.contains("religion_hours.effective(religion)"));
         assert!(!check.contains("maximum_effective"));
         assert!(!check.contains("aggregate_party_check"));
+    }
+
+    #[test]
+    fn bedside_reassurance_uses_physiology_without_personality_discovery() {
+        assert_eq!(parse_action("reassure"), Ok(SocialActionKind::Reassure));
+        assert_eq!(
+            social_action_skill(SocialActionKind::Reassure, false),
+            Skill::Physiology
+        );
+        assert!(discovery_axes(SocialActionKind::Reassure, SocialTopic::Injury, false).is_empty());
+
+        let source = include_str!("social.rs");
+        let automatic = source
+            .split("fn automatic_social_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn sensitivity").next())
+            .expect("automatic selector");
+        assert!(automatic.contains("SocialActionKind::Reassure"));
+        assert!(automatic.contains("bedside_reassurance_resolution_profile"));
+
+        let authoritative = source
+            .split("fn perform_social_action_authoritative")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn apply_automatic_social_chats")
+                    .next()
+            })
+            .expect("authoritative action");
+        assert!(authoritative.contains("bedside_reassurance_approach(topic)"));
+        assert!(authoritative.contains("language_scaled_effect"));
+        assert!(authoritative.contains("\"social_interaction\""));
+        assert!(!authoritative.contains("physiology_administration"));
+        assert!(!authoritative.contains("record_health"));
     }
 
     #[test]
