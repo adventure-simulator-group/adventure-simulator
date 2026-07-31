@@ -722,6 +722,7 @@ pub fn ensure_settlement_population(
             .character_id()
             .update(representative);
     }
+    crate::relationship::ensure_seeded_family_households(ctx, settlement_id)?;
     Ok(())
 }
 pub fn npc_is_present(presence: &SettlementResidentPresence, minute: u64) -> bool {

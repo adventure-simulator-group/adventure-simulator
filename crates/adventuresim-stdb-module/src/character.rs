@@ -1833,6 +1833,16 @@ pub(crate) fn insert_character_with_origin(
         ),
         alive: true,
     });
+    let initial_minute = options.initial_time_minute.unwrap_or(0);
+    let birth_minute =
+        i128::from(initial_minute).saturating_sub(i128::from(character.age_years).saturating_mul(
+            i128::from(adventuresim_core::strategic_time::MINUTES_PER_YEAR),
+        ));
+    crate::relationship::record_character_birth(
+        ctx,
+        character.id,
+        birth_minute.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64,
+    );
     if !temporary && !newborn {
         let urban = matches!(
             start_settlement.category,

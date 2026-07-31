@@ -1,7 +1,8 @@
 use adventuresim_core::activity::{ActivityLocation, LocationActivity};
 use adventuresim_core::strategic_schedule::{
-    ActivityOutcomeInputs, DailySchedule, SkillHours, apply_organization_training,
-    apply_religion_training, apply_schedule_training, settlement_activity_outcome,
+    ActivityOutcomeInputs, DailySchedule, SkillHours, SocializingSociability,
+    apply_organization_training, apply_religion_training, apply_schedule_training_for_personality,
+    settlement_activity_outcome,
 };
 use adventuresim_core::strategic_time::{
     MINUTES_PER_DAY, MINUTES_PER_YEAR, WORLD_START_MINUTE, allocated_schedule_minutes,
@@ -16,6 +17,10 @@ use crate::condition::{character_condition as _, character_strategic_condition a
 use crate::disease::character_illness_status as _;
 use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
 use crate::organization::organization_membership as _;
+use crate::personality::{
+    Sociability as CharacterSociability, Transparency as CharacterTransparency,
+    character_personality,
+};
 use crate::strategic::{
     party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
 };
@@ -332,6 +337,7 @@ pub(crate) fn settle_lifecycle_after_character_time_write(
     character_id: u64,
     minute: u64,
 ) -> Result<(), String> {
+    crate::relationship::settle_character_age(ctx, character_id, minute);
     crate::residence::settle_residence_billing(ctx, character_id)?;
     crate::relationship::settle_due_weddings(ctx, character_id, minute)?;
     crate::relationship::settle_due_births(ctx, character_id, minute)?;
@@ -987,11 +993,36 @@ fn apply_training(
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
-    let mut excess = apply_schedule_training(
+    let personality = ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(character_id);
+    let sociability =
+        personality.as_ref().map_or(
+            SocializingSociability::Neutral,
+            |personality| match personality.sociability {
+                CharacterSociability::Neutral => SocializingSociability::Neutral,
+                CharacterSociability::Gregarious => SocializingSociability::Gregarious,
+                CharacterSociability::Solitary => SocializingSociability::Solitary,
+            },
+        );
+    let transparency = personality
+        .as_ref()
+        .map_or(Transparency::Neutral, |personality| {
+            match personality.transparency {
+                CharacterTransparency::Neutral => Transparency::Neutral,
+                CharacterTransparency::Open => Transparency::Open,
+                CharacterTransparency::Guarded => Transparency::Guarded,
+            }
+        });
+    let mut excess = apply_schedule_training_for_personality(
         &mut hours,
         core_schedule(schedule),
         elapsed,
         activities,
+        sociability,
+        transparency,
         &attributes,
     );
     let prayer_religion = ctx
@@ -3545,7 +3576,7 @@ mod tests {
             ..Default::default()
         };
         let mut hours = SkillHours::default();
-        apply_schedule_training(
+        adventuresim_core::strategic_schedule::apply_schedule_training(
             &mut hours,
             core_schedule(&allocation),
             MINUTES_PER_DAY * 2,

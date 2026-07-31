@@ -12,7 +12,7 @@ use adventuresim_core::courtship::{
     succeeds_daily_trial, uncovered_minute_spans,
 };
 use adventuresim_core::strategic_schedule::{DailySchedule, restorative_leisure_spans};
-use adventuresim_core::strategic_time::MINUTES_PER_DAY;
+use adventuresim_core::strategic_time::{MINUTES_PER_DAY, MINUTES_PER_YEAR};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::{character, character__view};
@@ -76,12 +76,12 @@ pub fn enforce_temporal_scope(
         TemporalScope::ExclusiveShared => {
             let target_id = target_id.ok_or("Exclusive scope requires a second participant")?;
             let target_minute = canonical_now(ctx, target_id)?;
-            if actor_minute != target_minute {
-                return Err(
-                    "Exclusive canonical action requires synchronized personal dates".into(),
-                );
-            }
-            Ok(actor_minute)
+            // A hard shared fact is effective at the later known frontier. It
+            // never rewrites the lagging participant's personal clock. Active
+            // uniqueness rows reserve both people immediately, so an actor at
+            // an earlier date sees a future engagement as romantically
+            // unavailable without learning its private details.
+            Ok(actor_minute.max(target_minute))
         }
     }
 }
@@ -129,6 +129,26 @@ pub struct HouseholdMember {
     #[unique]
     pub character_id: u64,
     pub joined_minute: u64,
+    pub role: HouseholdRole,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum HouseholdRole {
+    Head,
+    Spouse,
+    AdultChild,
+    Dependent,
+}
+
+/// Effective birth coordinate for age derivation. Existing adults are given a
+/// synthetic birth minute from their initial age; newborns use the actual
+/// delivery minute.
+#[derive(Clone, Debug)]
+#[table(accessor = character_birth)]
+pub struct CharacterBirth {
+    #[primary_key]
+    pub character_id: u64,
+    pub birth_minute: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -676,6 +696,21 @@ pub(crate) fn next_lifecycle_boundary(
     start_minute: u64,
     end_minute: u64,
 ) -> Option<u64> {
+    let birthday = ctx
+        .db
+        .character_birth()
+        .character_id()
+        .find(character_id)
+        .and_then(|birth| {
+            let year = i128::from(MINUTES_PER_YEAR);
+            let start = i128::from(start_minute);
+            let birth_minute = i128::from(birth.birth_minute);
+            let completed = (start.saturating_sub(birth_minute)).max(0) / year;
+            let next = birth_minute.saturating_add((completed + 1).saturating_mul(year));
+            u64::try_from(next)
+                .ok()
+                .filter(|minute| start_minute < *minute && *minute < end_minute)
+        });
     let wedding = ctx
         .db
         .exclusive_commitment()
@@ -711,7 +746,12 @@ pub(crate) fn next_lifecycle_boundary(
         .flatten()
         .filter(|minute| start_minute < *minute && *minute < end_minute)
         .min();
-    wedding.into_iter().chain(birth).chain(marriage).min()
+    wedding
+        .into_iter()
+        .chain(birth)
+        .chain(marriage)
+        .chain(birthday)
+        .min()
 }
 
 pub fn initialize_npc_policy(
@@ -974,7 +1014,13 @@ fn leave_household(ctx: &ReducerContext, character_id: u64) {
     }
 }
 
-fn join_household(ctx: &ReducerContext, household_id: &str, character_id: u64, minute: u64) {
+fn join_household(
+    ctx: &ReducerContext,
+    household_id: &str,
+    character_id: u64,
+    minute: u64,
+    role: HouseholdRole,
+) {
     if ctx
         .db
         .household_member()
@@ -990,7 +1036,141 @@ fn join_household(ctx: &ReducerContext, household_id: &str, character_id: u64, m
         household_id: household_id.to_owned(),
         character_id,
         joined_minute: minute,
+        role,
     });
+}
+
+pub fn record_character_birth(ctx: &ReducerContext, character_id: u64, birth_minute: i64) {
+    if ctx
+        .db
+        .character_birth()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        ctx.db.character_birth().insert(CharacterBirth {
+            character_id,
+            birth_minute,
+        });
+    }
+}
+
+pub fn effective_age_years(ctx: &ReducerContext, character_id: u64, minute: u64) -> Option<u16> {
+    let character = ctx.db.character().id().find(character_id)?;
+    let Some(birth) = ctx.db.character_birth().character_id().find(character_id) else {
+        return Some(character.age_years);
+    };
+    let elapsed = i128::from(minute).saturating_sub(i128::from(birth.birth_minute));
+    Some((elapsed.max(0) as u128 / u128::from(MINUTES_PER_YEAR)).min(u128::from(u16::MAX)) as u16)
+}
+
+/// Refresh the cached display age from the authoritative birth coordinate.
+/// Calling this at every lifecycle boundary naturally promotes dependents at
+/// their yearly boundary without granting newborn starter equipment.
+pub fn settle_character_age(ctx: &ReducerContext, character_id: u64, minute: u64) {
+    let Some(mut character) = ctx.db.character().id().find(character_id) else {
+        return;
+    };
+    let Some(age_years) = effective_age_years(ctx, character_id, minute) else {
+        return;
+    };
+    if character.age_years != age_years {
+        character.age_years = age_years;
+        ctx.db.character().id().update(character);
+    }
+}
+
+/// Turn the deterministic resident roster into coherent authoritative family
+/// units. Each complete cohort is father, mother, adult daughter, adult son;
+/// incomplete tails still receive one household and unique roles, but no
+/// fabricated identities or kinship edges.
+pub fn ensure_seeded_family_households(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Result<(), String> {
+    let mut residents: Vec<_> = ctx
+        .db
+        .npc_policy()
+        .iter()
+        .filter(|policy| policy.home_settlement_id == settlement_id)
+        .map(|policy| policy.character_id)
+        .collect();
+    residents.sort_unstable();
+    for (cohort, family) in residents.chunks(4).enumerate() {
+        let household_id = format!("household:seeded:{settlement_id}:{cohort}");
+        if ctx.db.household().id().find(&household_id).is_none() {
+            ctx.db.household().insert(Household {
+                id: household_id.clone(),
+                home_settlement_id: settlement_id.to_owned(),
+                created_minute: 0,
+            });
+        }
+        let roles = [
+            HouseholdRole::Head,
+            HouseholdRole::Spouse,
+            HouseholdRole::AdultChild,
+            HouseholdRole::AdultChild,
+        ];
+        for (index, character_id) in family.iter().copied().enumerate() {
+            join_household(ctx, &household_id, character_id, 0, roles[index]);
+        }
+        if family.len() < 4 {
+            continue;
+        }
+        let assigned = [
+            (family[0], Sex::Male, Presentation::Man, 52u16),
+            (family[1], Sex::Female, Presentation::Woman, 48u16),
+            (family[2], Sex::Female, Presentation::Woman, 24u16),
+            (family[3], Sex::Male, Presentation::Man, 21u16),
+        ];
+        for (character_id, sex, presentation, age) in assigned {
+            let mut character = ctx
+                .db
+                .character()
+                .id()
+                .find(character_id)
+                .ok_or("Seeded family member is missing its Character")?;
+            character.age_years = age;
+            ctx.db.character().id().update(character);
+            let mut personality = ctx
+                .db
+                .character_personality()
+                .character_id()
+                .find(character_id)
+                .ok_or("Seeded family member is missing personality")?;
+            personality.sex = sex;
+            personality.presentation = presentation;
+            ctx.db
+                .character_personality()
+                .character_id()
+                .update(personality);
+            let birth = CharacterBirth {
+                character_id,
+                birth_minute: -(i64::from(age)
+                    * i64::try_from(MINUTES_PER_YEAR).unwrap_or(i64::MAX)),
+            };
+            if ctx
+                .db
+                .character_birth()
+                .character_id()
+                .find(character_id)
+                .is_some()
+            {
+                ctx.db.character_birth().character_id().update(birth);
+            } else {
+                ctx.db.character_birth().insert(birth);
+            }
+        }
+        for child in [family[2], family[3]] {
+            for parent in [family[0], family[1]] {
+                ensure_kinship(ctx, child, parent, KinshipKind::Parent, 0);
+                ensure_kinship(ctx, parent, child, KinshipKind::Child, 0);
+            }
+        }
+        ensure_kinship(ctx, family[2], family[3], KinshipKind::Sibling, 0);
+        ensure_kinship(ctx, family[3], family[2], KinshipKind::Sibling, 0);
+    }
+    Ok(())
 }
 
 fn father_of(ctx: &ReducerContext, child_id: u64) -> Option<u64> {
@@ -1046,6 +1226,39 @@ pub fn settle_due_weddings(
         .collect();
     for commitment in due {
         let effective_minute = commitment.effective_minute;
+        // NPC participants causally reach the ceremony without login. A
+        // player-controlled participant is never advanced implicitly; the
+        // reservation remains pending until that personal frontier reaches
+        // the ceremony, preventing location checks against stale history.
+        let mut player_lagging = false;
+        for character_id in [
+            commitment.first_character_id,
+            commitment.second_character_id,
+        ] {
+            let frontier = canonical_now(ctx, character_id)?;
+            if frontier < effective_minute {
+                if ctx
+                    .db
+                    .npc_policy()
+                    .character_id()
+                    .find(character_id)
+                    .is_some()
+                {
+                    advance_npc_personal_time(ctx, character_id, effective_minute)?;
+                } else {
+                    player_lagging = true;
+                }
+            }
+        }
+        if player_lagging {
+            continue;
+        }
+        let Some(commitment) = ctx.db.exclusive_commitment().id().find(&commitment.id) else {
+            continue;
+        };
+        if commitment.status != CommitmentStatus::Reserved {
+            continue;
+        }
         let Some(first) = ctx.db.character().id().find(commitment.first_character_id) else {
             transition_commitment_terminal(
                 ctx,
@@ -1076,7 +1289,11 @@ pub fn settle_due_weddings(
             );
             continue;
         }
-        if first.age_years < ADULT_AGE_YEARS || second.age_years < ADULT_AGE_YEARS {
+        if effective_age_years(ctx, first.id, effective_minute).unwrap_or(first.age_years)
+            < ADULT_AGE_YEARS
+            || effective_age_years(ctx, second.id, effective_minute).unwrap_or(second.age_years)
+                < ADULT_AGE_YEARS
+        {
             transition_commitment_terminal(
                 ctx,
                 commitment,
@@ -1116,42 +1333,6 @@ pub fn settle_due_weddings(
             );
             continue;
         };
-        let household_id = format!("household:{}", commitment.id);
-        if ctx.db.household().id().find(&household_id).is_none() {
-            ctx.db.household().insert(Household {
-                id: household_id.clone(),
-                home_settlement_id: commitment.ceremony_settlement_id.clone(),
-                created_minute: commitment.effective_minute,
-            });
-        }
-        for character_id in [first.id, second.id] {
-            join_household(
-                ctx,
-                &household_id,
-                character_id,
-                commitment.effective_minute,
-            );
-            crate::residence::move_residence_occupant_internal(
-                ctx,
-                residence_character_id,
-                character_id,
-                commitment.effective_minute,
-            )?;
-        }
-        ensure_kinship(
-            ctx,
-            first.id,
-            second.id,
-            KinshipKind::Spouse,
-            commitment.effective_minute,
-        );
-        ensure_kinship(
-            ctx,
-            second.id,
-            first.id,
-            KinshipKind::Spouse,
-            commitment.effective_minute,
-        );
         let courtship_id = format!(
             "courtship:{}:{}",
             first.id.min(second.id),
@@ -1183,6 +1364,78 @@ pub fn settle_due_weddings(
                     })
             })
             .unwrap_or((first.id, second.id));
+        let planned_dowry = if !formal {
+            (None, 0, DowryOutcomeKind::NotFormal)
+        } else if let Some(father) = father_of(ctx, bride_id) {
+            let amount = formal_dowry_amount(crate::item::personal_currency_total(ctx, father));
+            if amount == 0 {
+                (Some(father), 0, DowryOutcomeKind::NoDowry)
+            } else if crate::item::personal_currency_total(ctx, father) < u64::from(amount) {
+                (Some(father), amount, DowryOutcomeKind::InsufficientFunds)
+            } else {
+                crate::item::validate_personal_currency_credit(
+                    ctx,
+                    &commitment.ceremony_settlement_id,
+                    amount,
+                )?;
+                (Some(father), amount, DowryOutcomeKind::Paid)
+            }
+        } else {
+            (None, 0, DowryOutcomeKind::FatherUnavailable)
+        };
+        // All fallible validation is complete before the first durable write.
+        if let (Some(father), amount, DowryOutcomeKind::Paid) = planned_dowry {
+            crate::item::consume_personal_currency(ctx, father, u64::from(amount))
+                .expect("dowry funds were prevalidated");
+            crate::item::credit_personal_currency(
+                ctx,
+                recipient_id,
+                &commitment.ceremony_settlement_id,
+                amount,
+            )
+            .expect("dowry currency was prevalidated");
+        }
+        let household_id = format!("household:{}", commitment.id);
+        if ctx.db.household().id().find(&household_id).is_none() {
+            ctx.db.household().insert(Household {
+                id: household_id.clone(),
+                home_settlement_id: commitment.ceremony_settlement_id.clone(),
+                created_minute: commitment.effective_minute,
+            });
+        }
+        for (character_id, role) in [
+            (first.id, HouseholdRole::Head),
+            (second.id, HouseholdRole::Spouse),
+        ] {
+            join_household(
+                ctx,
+                &household_id,
+                character_id,
+                commitment.effective_minute,
+                role,
+            );
+            crate::residence::move_residence_occupant_internal(
+                ctx,
+                residence_character_id,
+                character_id,
+                commitment.effective_minute,
+            )
+            .expect("active wedding residence was prevalidated");
+        }
+        ensure_kinship(
+            ctx,
+            first.id,
+            second.id,
+            KinshipKind::Spouse,
+            commitment.effective_minute,
+        );
+        ensure_kinship(
+            ctx,
+            second.id,
+            first.id,
+            KinshipKind::Spouse,
+            commitment.effective_minute,
+        );
         if ctx
             .db
             .dowry_outcome()
@@ -1190,28 +1443,7 @@ pub fn settle_due_weddings(
             .find(&commitment.id)
             .is_none()
         {
-            let (father_id, amount, outcome) = if !formal {
-                (None, 0, DowryOutcomeKind::NotFormal)
-            } else if let Some(father) = father_of(ctx, bride_id) {
-                let amount = formal_dowry_amount(crate::item::personal_currency_total(ctx, father));
-                if amount == 0 {
-                    (Some(father), 0, DowryOutcomeKind::NoDowry)
-                } else if crate::item::consume_personal_currency(ctx, father, amount.into())
-                    .is_err()
-                {
-                    (Some(father), amount, DowryOutcomeKind::InsufficientFunds)
-                } else {
-                    crate::item::credit_personal_currency(
-                        ctx,
-                        recipient_id,
-                        &commitment.ceremony_settlement_id,
-                        amount,
-                    )?;
-                    (Some(father), amount, DowryOutcomeKind::Paid)
-                }
-            } else {
-                (None, 0, DowryOutcomeKind::FatherUnavailable)
-            };
+            let (father_id, amount, outcome) = planned_dowry;
             ctx.db.dowry_outcome().insert(DowryOutcome {
                 commitment_id: commitment.id.clone(),
                 father_id,
@@ -1816,6 +2048,11 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
             None,
             Some(&newborn_life),
         )?;
+        record_character_birth(
+            ctx,
+            child_id,
+            i64::try_from(pregnancy.due_minute).unwrap_or(i64::MAX),
+        );
         if let Some(mut personality) = ctx.db.character_personality().character_id().find(child_id)
         {
             personality.sex = if pregnancy.child_female {
@@ -1878,6 +2115,7 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 &household_member.household_id,
                 child_id,
                 pregnancy.due_minute,
+                HouseholdRole::Dependent,
             );
         }
         if let Some(residence_character_id) =
@@ -1896,7 +2134,8 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 residence_character_id,
                 child_id,
                 pregnancy.due_minute,
-            )?;
+            )
+            .expect("birth residence was prevalidated");
         }
         pregnancy.status = PregnancyStatus::Born;
         pregnancy.birth_character_id = Some(child_id);
@@ -1914,6 +2153,54 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 .mother_id()
                 .delete(pregnancy.mother_id);
         }
+    }
+    Ok(())
+}
+
+fn validate_due_birth(ctx: &ReducerContext, pregnancy: &Pregnancy) -> Result<(), String> {
+    if pregnancy.status != PregnancyStatus::Active {
+        return Err("Pregnancy is not active".into());
+    }
+    if ctx.db.character().id().find(pregnancy.mother_id).is_none()
+        || ctx.db.character().id().find(pregnancy.father_id).is_none()
+    {
+        return Err("Birth parents are unavailable".into());
+    }
+    if ctx
+        .db
+        .settlement()
+        .id()
+        .find(&pregnancy.birth_settlement_id)
+        .is_none()
+    {
+        return Err("Birth settlement is unavailable".into());
+    }
+    if ctx
+        .db
+        .child_identity_reservation()
+        .character_id()
+        .find(pregnancy.reserved_child_id)
+        .is_none_or(|row| row.pregnancy_id != pregnancy.id)
+        || ctx
+            .db
+            .character()
+            .id()
+            .find(pregnancy.reserved_child_id)
+            .is_some()
+    {
+        return Err("Reserved child identity is unavailable".into());
+    }
+    if let Some(holder_id) = pregnancy.birth_residence_character_id
+        && ctx
+            .db
+            .character_residence()
+            .character_id()
+            .find(holder_id)
+            .is_none_or(|residence| {
+                !residence.active || residence.settlement_id != pregnancy.birth_settlement_id
+            })
+    {
+        return Err("Birth residence is unavailable".into());
     }
     Ok(())
 }
@@ -2108,7 +2395,11 @@ pub fn settle_due_lifecycle_events_global(
                 id,
                 mother_id,
             } => {
-                if let Err(error) = settle_due_births(ctx, mother_id, effective_minute) {
+                let pregnancy = ctx.db.pregnancy().id().find(&id);
+                if let Some(error) = pregnancy
+                    .as_ref()
+                    .and_then(|pregnancy| validate_due_birth(ctx, pregnancy).err())
+                {
                     quarantine_invalid_birth(ctx, &id, effective_minute);
                     record_lifecycle_failure(
                         ctx,
@@ -2118,6 +2409,11 @@ pub fn settle_due_lifecycle_events_global(
                         now,
                         error,
                     );
+                } else {
+                    // Preflight precedes every write. An unexpected failure in
+                    // the commit path aborts this reducer transaction instead
+                    // of being caught after partial character construction.
+                    settle_due_births(ctx, mother_id, effective_minute)?;
                 }
             }
         }
@@ -2349,7 +2645,9 @@ pub fn settle_secret_courtship_discovery_for_pair(
             continue;
         };
         if !observer.alive
-            || observer.age_years < ADULT_AGE_YEARS
+            || effective_age_years(ctx, observer_id, day.saturating_mul(MINUTES_PER_DAY))
+                .unwrap_or(observer.age_years)
+                < ADULT_AGE_YEARS
             || first_person.current_settlement_id != second_person.current_settlement_id
             || observer.current_settlement_id != first_person.current_settlement_id
         {
@@ -2503,6 +2801,9 @@ fn validate_canonical_courtship_pair(
     suitor_id: u64,
     partner_id: u64,
 ) -> Result<u64, String> {
+    if suitor_id == partner_id {
+        return Err("A character cannot court themself".into());
+    }
     let suitor = ctx
         .db
         .character()
@@ -2515,10 +2816,18 @@ fn validate_canonical_courtship_pair(
         .id()
         .find(partner_id)
         .ok_or("Potential partner not found")?;
+    let effective_minute = enforce_temporal_scope(
+        ctx,
+        suitor_id,
+        Some(partner_id),
+        TemporalScope::ExclusiveShared,
+    )?;
     if !suitor.alive
         || !partner.alive
-        || suitor.age_years < ADULT_AGE_YEARS
-        || partner.age_years < ADULT_AGE_YEARS
+        || effective_age_years(ctx, suitor_id, effective_minute).unwrap_or(suitor.age_years)
+            < ADULT_AGE_YEARS
+        || effective_age_years(ctx, partner_id, effective_minute).unwrap_or(partner.age_years)
+            < ADULT_AGE_YEARS
     {
         return Err("Courtship requires two living adult characters".into());
     }
@@ -2581,12 +2890,7 @@ fn validate_canonical_courtship_pair(
     {
         return Err("Close relatives cannot court".into());
     }
-    enforce_temporal_scope(
-        ctx,
-        suitor_id,
-        Some(partner_id),
-        TemporalScope::ExclusiveShared,
-    )
+    Ok(effective_minute)
 }
 
 fn establish_courtship(
@@ -2759,6 +3063,14 @@ pub fn cancel_wedding(
         return Err("Only a participant can cancel this wedding".into());
     }
     let minute = canonical_now(ctx, actor_id)?;
+    if commitment.status != CommitmentStatus::Reserved {
+        return Err(
+            "Only a reserved wedding can be cancelled; end an active marriage instead".into(),
+        );
+    }
+    if minute >= commitment.effective_minute {
+        return Err("A wedding cannot be cancelled at or after its ceremony minute".into());
+    }
     transition_commitment_terminal(
         ctx,
         commitment,
@@ -3029,6 +3341,47 @@ mod tests {
     }
 
     #[test]
+    fn exclusive_scope_uses_later_frontier_without_clock_synchronization() {
+        let source = include_str!("relationship.rs");
+        let guard = source
+            .split("pub fn enforce_temporal_scope")
+            .nth(1)
+            .unwrap()
+            .split("pub enum KinshipKind")
+            .next()
+            .unwrap();
+        assert!(guard.contains("actor_minute.max(target_minute)"));
+        assert!(!guard.contains("actor_minute != target_minute"));
+        let wedding = source
+            .split("pub fn settle_due_weddings")
+            .nth(1)
+            .unwrap()
+            .split("pub fn settle_due_weddings_global")
+            .next()
+            .unwrap();
+        assert!(wedding.contains("advance_npc_personal_time"));
+        assert!(wedding.contains("player_lagging"));
+    }
+
+    #[test]
+    fn seeded_family_contract_has_unique_roles_and_canonical_edges() {
+        let source = include_str!("relationship.rs");
+        let seed = source
+            .split("pub fn ensure_seeded_family_households")
+            .nth(1)
+            .unwrap()
+            .split("fn father_of")
+            .next()
+            .unwrap();
+        assert!(seed.contains("residents.chunks(4)"));
+        assert!(seed.contains("HouseholdRole::Head"));
+        assert!(seed.contains("HouseholdRole::Spouse"));
+        assert!(seed.contains("KinshipKind::Parent"));
+        assert!(seed.contains("KinshipKind::Sibling"));
+        assert!(seed.contains("character_personality().character_id().update"));
+    }
+
+    #[test]
     fn every_commitment_terminal_transition_releases_reservations_and_audits() {
         let source = include_str!("relationship.rs");
         let transition = source
@@ -3094,6 +3447,7 @@ mod tests {
         assert!(birth.contains("pregnancy.reserved_child_id"));
         assert!(birth.contains("NpcLifeFacts {"));
         assert!(birth.contains("age_years: 0"));
+        assert!(birth.contains("record_character_birth"));
         assert!(!birth.contains("child.age_years = 0"));
         assert!(birth.contains("active_pregnancy()"));
         assert!(birth.contains(".delete(pregnancy.mother_id)"));
@@ -3292,7 +3646,22 @@ mod tests {
         assert!(queue.contains("due.truncate(limit)"));
         assert!(queue.contains("record_lifecycle_failure"));
         assert!(queue.contains("quarantine_invalid_birth"));
-        assert!(!queue.contains("settle_due_births(ctx, mother_id, effective_minute)?"));
+        assert!(queue.contains("validate_due_birth"));
+        assert!(queue.contains("settle_due_births(ctx, mother_id, effective_minute)?"));
+    }
+
+    #[test]
+    fn cancellation_only_applies_to_future_reserved_weddings() {
+        let source = include_str!("relationship.rs");
+        let cancel = source
+            .split("pub fn cancel_wedding")
+            .nth(1)
+            .unwrap()
+            .split("pub fn expire_wedding_reservation")
+            .next()
+            .unwrap();
+        assert!(cancel.contains("commitment.status != CommitmentStatus::Reserved"));
+        assert!(cancel.contains("minute >= commitment.effective_minute"));
     }
 
     #[test]

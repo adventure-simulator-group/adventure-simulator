@@ -740,6 +740,18 @@ pub fn credit_personal_currency(
     Ok(())
 }
 
+pub fn validate_personal_currency_credit(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    amount: u32,
+) -> Result<(), String> {
+    if amount == 0 {
+        Ok(())
+    } else {
+        currency_id_for_settlement(ctx, settlement_id).map(|_| ())
+    }
+}
+
 fn merged_currency_quantity(existing: u32, credit: u32) -> Option<u32> {
     existing.checked_add(credit)
 }
