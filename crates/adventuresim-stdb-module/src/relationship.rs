@@ -23,6 +23,7 @@ use crate::personality::{
     Courtship as PersonalityCourtship, Inclination, Presentation, Sex, character_personality,
 };
 use crate::residence::{ResidenceTransitionKind, residence_holding, residence_transition};
+use crate::settlement_population::{npc_is_present, settlement_resident_presence};
 use crate::social::{CharacterAffinity, character_affinity};
 use crate::strategic::{settlement, strategic_gateway_authority__view};
 use crate::time::{character_time, character_time__view};
@@ -2424,23 +2425,21 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 HouseholdRole::Dependent,
             );
         }
-        if let Some(residence_holding_id) =
-            pregnancy
-                .birth_residence_holding_id
-                .clone()
-                .filter(|holding_id| {
-                    ctx.db
-                        .residence_holding()
-                        .id()
-                        .find(holding_id.to_owned())
-                        .is_some_and(|holding| {
-                            crate::residence::holding_active_at(
-                                ctx,
-                                &holding.id,
-                                pregnancy.due_minute,
-                            ) && holding.settlement_id == settlement_id
-                        })
-                })
+        if let Some(residence_holding_id) = [mother.id, father.id]
+            .into_iter()
+            .filter_map(|parent_id| {
+                crate::residence::occupant_holding_id_at(ctx, parent_id, pregnancy.due_minute)
+            })
+            .find(|holding_id| {
+                ctx.db
+                    .residence_holding()
+                    .id()
+                    .find(holding_id.to_owned())
+                    .is_some_and(|holding| {
+                        crate::residence::holding_active_at(ctx, &holding.id, pregnancy.due_minute)
+                            && holding.settlement_id == settlement_id
+                    })
+            })
         {
             // Housing is ancillary to an uncomplicated birth. If household
             // or occupancy authority changed during the pregnancy, the child
@@ -2848,13 +2847,29 @@ fn socializing_target(
 ) -> Option<u64> {
     let actor = ctx.db.character().id().find(actor_id)?;
     let same_settlement = |candidate: &crate::Character| {
-        character_alive_at(ctx, candidate.id, effective_minute)
-            // Character's mutable location is only authoritative at its own
-            // frontier. Do not let a target already advanced beyond this
-            // slice contribute a future move to historical selection.
-            && canonical_now(ctx, candidate.id)
-                .is_ok_and(|candidate_minute| candidate_minute <= effective_minute)
-            && candidate.id != actor_id
+        if !character_alive_at(ctx, candidate.id, effective_minute) || candidate.id == actor_id {
+            return false;
+        }
+        if let Some(presence) = ctx
+            .db
+            .settlement_resident_presence()
+            .character_id()
+            .find(candidate.id)
+        {
+            return actor.current_settlement_id.as_deref() == Some(&presence.settlement_id)
+                && npc_is_present(&presence, effective_minute);
+        }
+        // A mutable location without an interval history is authoritative
+        // only at the character's own frontier. Fail closed for historical
+        // selection rather than leaking a future move into this slice.
+        (canonical_now(ctx, candidate.id)
+            .is_ok_and(|candidate_minute| candidate_minute <= effective_minute)
+            || ctx
+                .db
+                .character_death()
+                .character_id()
+                .find(candidate.id)
+                .is_some_and(|death| death.strategic_minute > effective_minute))
             && candidate.current_settlement_id == actor.current_settlement_id
     };
     let location_id = actor.current_settlement_id.as_deref()?;
@@ -2921,6 +2936,93 @@ fn socializing_target(
     )
 }
 
+/// Earliest known boundary at which the deterministic socializing priority
+/// list can change. Resident schedules are recurring location histories; hard
+/// birth/death and courtship timestamps are durable one-time histories.
+fn next_socializing_boundary(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    start_minute: u64,
+    end_minute: u64,
+) -> Option<u64> {
+    let actor_settlement = ctx
+        .db
+        .character()
+        .id()
+        .find(actor_id)
+        .and_then(|actor| actor.current_settlement_id);
+    let day_start = (start_minute / MINUTES_PER_DAY).saturating_mul(MINUTES_PER_DAY);
+    let resident: Vec<u64> = actor_settlement.map_or_else(Vec::new, |settlement_id| {
+        ctx.db
+            .settlement_resident_presence()
+            .iter()
+            .filter(|presence| presence.settlement_id == settlement_id)
+            .flat_map(|presence| {
+                [presence.start_minute, presence.end_minute]
+                    .into_iter()
+                    .map(|offset| day_start.saturating_add(u64::from(offset)))
+            })
+            .collect()
+    });
+    let births = ctx
+        .db
+        .character_birth()
+        .iter()
+        .filter_map(|birth| u64::try_from(birth.birth_minute).ok());
+    let deaths = ctx
+        .db
+        .character_death()
+        .iter()
+        .map(|death| death.strategic_minute);
+    let courtships = ctx
+        .db
+        .courtship()
+        .iter()
+        .filter(move |courtship| {
+            courtship.first_character_id == actor_id || courtship.second_character_id == actor_id
+        })
+        .flat_map(|courtship| [Some(courtship.started_minute), courtship.resolved_minute])
+        .flatten();
+    resident
+        .into_iter()
+        .chain(births)
+        .chain(deaths)
+        .chain(courtships)
+        .filter(|minute| start_minute < *minute && *minute < end_minute)
+        .min()
+}
+
+fn record_socializing_receipt(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    day: u64,
+    start_minute: u64,
+    end_minute: u64,
+    minutes: u64,
+) {
+    let id = socializing_id(actor_id, day, target_id);
+    let existing = ctx.db.socializing_receipt().id().find(&id);
+    let receipt = SocializingReceipt {
+        id,
+        actor_id,
+        target_id,
+        day,
+        start_minute: existing.as_ref().map_or(start_minute, |receipt| {
+            receipt.start_minute.min(start_minute)
+        }),
+        end_minute,
+        minutes: existing
+            .as_ref()
+            .map_or(minutes, |receipt| receipt.minutes.saturating_add(minutes)),
+    };
+    if existing.is_some() {
+        ctx.db.socializing_receipt().id().update(receipt);
+    } else {
+        ctx.db.socializing_receipt().insert(receipt);
+    }
+}
+
 /// Resolve scheduled Socializing without consuming another person's canonical
 /// time.  The social edge is intentionally soft: existing engagements merely
 /// change romantic eligibility, never prevent close friendship.
@@ -2956,61 +3058,53 @@ pub fn apply_scheduled_socializing(
             .max()
             .unwrap_or(start)
             .max(start);
-        let minutes = allocation(end).saturating_sub(allocation(applied_through));
-        if minutes == 0 {
-            continue;
-        }
-        // Re-evaluate availability for every realized chronological slice.
-        // A target who left, died, or became unavailable never receives later
-        // affinity merely because an earlier slice selected them.
-        // Select against the beginning of this realized slice. The actor's
-        // stored clock already points at `interval_end`, so consulting it here
-        // would let births and relationship changes later in a bulk advance
-        // rewrite an earlier day's companion.
-        let Some(target_id) = socializing_target(ctx, actor_id, day, applied_through) else {
-            continue;
-        };
-        let id = socializing_id(actor_id, day, target_id);
-        let existing = ctx.db.socializing_receipt().id().find(&id);
-        let _ =
-            enforce_temporal_scope(ctx, actor_id, Some(target_id), TemporalScope::PairwiseSoft)?;
-        let actor_party_id = ctx
-            .db
-            .character()
-            .id()
-            .find(actor_id)
-            .and_then(|character| character.party_id);
-        let target_is_party_member = actor_party_id.is_some()
-            && ctx
-                .db
-                .character()
-                .id()
-                .find(target_id)
-                .is_some_and(|character| character.party_id == actor_party_id);
-        if target_is_party_member {
-            crate::social::apply_async_socializing_without_familiarity(
-                ctx, actor_id, target_id, minutes,
-            )?;
-        } else {
-            crate::social::apply_async_socializing(ctx, actor_id, target_id, minutes)?;
-        }
-        let receipt = SocializingReceipt {
-            id,
-            actor_id,
-            target_id,
-            day,
-            start_minute: existing
-                .as_ref()
-                .map_or(start, |receipt| receipt.start_minute.min(start)),
-            end_minute: end,
-            minutes: existing
-                .as_ref()
-                .map_or(minutes, |receipt| receipt.minutes.saturating_add(minutes)),
-        };
-        if existing.is_some() {
-            ctx.db.socializing_receipt().id().update(receipt);
-        } else {
-            ctx.db.socializing_receipt().insert(receipt);
+        let mut cursor = applied_through.min(end);
+        while cursor < end {
+            let slice_end = next_socializing_boundary(ctx, actor_id, cursor, end).unwrap_or(end);
+            let minutes = allocation(slice_end).saturating_sub(allocation(cursor));
+            // Select against the beginning of each availability slice. The
+            // actor's stored clock already points at `interval_end`, so a
+            // future death or recurring resident departure must not rewrite
+            // the earlier part of a bulk advance.
+            let Some(target_id) = socializing_target(ctx, actor_id, day, cursor) else {
+                // The actor id is an impossible real target and therefore a
+                // private zero-minute watermark. It prevents a later chunk
+                // from retroactively realizing time for which nobody was
+                // available.
+                record_socializing_receipt(ctx, actor_id, actor_id, day, cursor, slice_end, 0);
+                cursor = slice_end;
+                continue;
+            };
+            if minutes > 0 {
+                let _ = enforce_temporal_scope(
+                    ctx,
+                    actor_id,
+                    Some(target_id),
+                    TemporalScope::PairwiseSoft,
+                )?;
+                let actor_party_id = ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(actor_id)
+                    .and_then(|character| character.party_id);
+                let target_is_party_member = actor_party_id.is_some()
+                    && ctx
+                        .db
+                        .character()
+                        .id()
+                        .find(target_id)
+                        .is_some_and(|character| character.party_id == actor_party_id);
+                if target_is_party_member {
+                    crate::social::apply_async_socializing_without_familiarity(
+                        ctx, actor_id, target_id, minutes,
+                    )?;
+                } else {
+                    crate::social::apply_async_socializing(ctx, actor_id, target_id, minutes)?;
+                }
+            }
+            record_socializing_receipt(ctx, actor_id, target_id, day, cursor, slice_end, minutes);
+            cursor = slice_end;
         }
     }
     Ok(())
@@ -4115,8 +4209,10 @@ mod tests {
         assert!(birth.contains("age_years: 0"));
         assert!(birth.contains("record_character_birth"));
         assert!(birth.contains("household_id_at(ctx, mother.id, pregnancy.due_minute)"));
+        assert!(birth.contains("occupant_holding_id_at("));
         assert!(birth.contains("holding_active_at("));
         assert!(birth.contains("move_residence_occupant_effective"));
+        assert!(!birth.contains("pregnancy.birth_residence_holding_id"));
         assert!(!birth.contains("child.age_years = 0"));
         assert!(birth.contains("active_pregnancy()"));
         assert!(birth.contains(".delete(pregnancy.mother_id)"));
@@ -4212,9 +4308,10 @@ mod tests {
         assert!(source.contains("format!(\"socializing:{actor_id}:{day}:{target_id}\")"));
         assert!(socializing.contains("receipt.day == day"));
         assert!(socializing.contains(".max()"));
-        assert!(socializing.contains("receipt.minutes.saturating_add(minutes)"));
+        assert!(source.contains("receipt.minutes.saturating_add(minutes)"));
         assert!(socializing.contains("apply_async_socializing_without_familiarity"));
-        assert!(socializing.contains("socializing_target(ctx, actor_id, day, applied_through)"));
+        assert!(socializing.contains("socializing_target(ctx, actor_id, day, cursor)"));
+        assert!(socializing.contains("private zero-minute watermark"));
         let target = source
             .split("fn socializing_target")
             .nth(1)
@@ -4224,8 +4321,39 @@ mod tests {
             .unwrap();
         assert!(target.contains("character_alive_at(ctx, candidate.id, effective_minute)"));
         assert!(target.contains("candidate_minute <= effective_minute"));
+        assert!(target.contains("death.strategic_minute > effective_minute"));
+        assert!(target.contains("npc_is_present(&presence, effective_minute)"));
         assert!(target.contains("select_daily_location_target"));
         assert!(!target.contains("canonical_now(ctx, actor_id)"));
+    }
+
+    #[test]
+    fn scheduled_socializing_splits_at_availability_boundaries() {
+        let source = include_str!("relationship.rs");
+        let boundaries = source
+            .split("fn next_socializing_boundary")
+            .nth(1)
+            .unwrap()
+            .split("fn record_socializing_receipt")
+            .next()
+            .unwrap();
+        assert!(boundaries.contains("presence.start_minute, presence.end_minute"));
+        assert!(boundaries.contains("character_birth()"));
+        assert!(boundaries.contains("character_death()"));
+        assert!(boundaries.contains("courtship.started_minute"));
+        assert!(boundaries.contains("courtship.resolved_minute"));
+
+        let socializing = source
+            .split("pub fn apply_scheduled_socializing")
+            .nth(1)
+            .unwrap()
+            .split("pub fn settle_secret_courtship_discovery_for_pair")
+            .next()
+            .unwrap();
+        assert!(socializing.contains("while cursor < end"));
+        assert!(socializing.contains("next_socializing_boundary(ctx, actor_id, cursor, end)"));
+        assert!(socializing.contains("allocation(slice_end).saturating_sub(allocation(cursor))"));
+        assert!(socializing.contains("cursor = slice_end"));
     }
 
     #[test]

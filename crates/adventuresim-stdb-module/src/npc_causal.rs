@@ -162,12 +162,19 @@ fn schedule_is_unallocated(schedule: &ScheduleAllocation) -> bool {
         && schedule.practice_organization_id.is_none()
 }
 
-fn has_prior_schedule_decision(ctx: &ReducerContext, character_id: u64) -> bool {
+fn has_initialized_schedule_decision(ctx: &ReducerContext, character_id: u64) -> bool {
     ctx.db
         .npc_policy_decision_receipt()
         .character_id()
         .filter(character_id)
-        .any(|receipt| receipt.phase == NpcPolicyDecisionPhase::Schedule)
+        .any(|receipt| {
+            receipt.phase == NpcPolicyDecisionPhase::Schedule
+                && matches!(
+                    receipt.outcome,
+                    NpcPolicyDecisionOutcome::ScheduleInitialized
+                        | NpcPolicyDecisionOutcome::SchedulePreserved
+                )
+        })
 }
 
 fn initialize_saved_schedule_once(
@@ -180,13 +187,30 @@ fn initialize_saved_schedule_once(
     if phase_already_decided(ctx, character_id, day, NpcPolicyDecisionPhase::Schedule) {
         return Ok(());
     }
+    let age_years = crate::relationship::effective_age_years(ctx, character_id, minute)
+        .ok_or("NPC policy character is missing age chronology")?;
+    if age_years < ADULT_AGE_YEARS {
+        // Dependents retain the empty schedule created with their full
+        // Character. Childhood work and education are separate follow-ups;
+        // never install the adult labor/socializing policy before adulthood.
+        record_decision(
+            ctx,
+            character_id,
+            day,
+            NpcPolicyDecisionPhase::Schedule,
+            NpcPolicyDecisionOutcome::Ineligible,
+            None,
+            minute,
+        );
+        return Ok(());
+    }
     let mut schedule = ctx
         .db
         .character_training_schedule()
         .character_id()
         .find(character_id)
         .ok_or("NPC policy character is missing a saved schedule")?;
-    let previously_initialized = has_prior_schedule_decision(ctx, character_id);
+    let previously_initialized = has_initialized_schedule_decision(ctx, character_id);
     let outcome = if !previously_initialized && schedule_is_unallocated(&schedule.downtime) {
         let initial =
             adventuresim_core::npc_policy::initial_npc_schedule(character_id, policy_seed);
@@ -522,6 +546,23 @@ mod tests {
         assert!(source.contains("SchedulePreserved"));
         assert!(source.contains("settle_npc_residence"));
         assert!(source.contains("phase_already_decided"));
+    }
+
+    #[test]
+    fn dependent_schedule_waits_for_authoritative_adulthood() {
+        let source = include_str!("npc_causal.rs");
+        let initialization = source
+            .split("fn initialize_saved_schedule_once")
+            .nth(1)
+            .expect("schedule initialization")
+            .split("fn settle_housing_decision")
+            .next()
+            .unwrap();
+        assert!(initialization.contains("effective_age_years(ctx, character_id, minute)"));
+        assert!(initialization.contains("age_years < ADULT_AGE_YEARS"));
+        assert!(initialization.contains("NpcPolicyDecisionOutcome::Ineligible"));
+        assert!(initialization.contains("has_initialized_schedule_decision"));
+        assert!(!initialization.contains("has_prior_schedule_decision"));
     }
 
     #[test]

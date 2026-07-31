@@ -557,7 +557,11 @@ const fn residence_transition_precedence(kind: ResidenceTransitionKind) -> u8 {
     }
 }
 
-fn occupant_holding_id_at(ctx: &ReducerContext, character_id: u64, minute: u64) -> Option<String> {
+pub(crate) fn occupant_holding_id_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Option<String> {
     let mut transitions = ctx
         .db
         .residence_transition()

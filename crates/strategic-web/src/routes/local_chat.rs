@@ -200,14 +200,16 @@ async fn actor_and_selector(
                 return Err("Player conversations do not accept an NPC location".into());
             }
             let id: u64 = subject_id.parse().map_err(|_| "Invalid player")?;
-            let subject = state
-                .db
-                .query::<Character>(&format!("SELECT * FROM backend_characters WHERE id = {id}"))
+            let subject = super::data::character_as_observed(state, id, actor.id)
                 .await
                 .map_err(|e| e.to_string())?
-                .into_iter()
-                .next()
-                .ok_or("Player not found")?;
+                .ok_or("Player is not available at your personal date")?;
+            if !super::data::characters_share_frontier(state, actor.id, subject.id)
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                return Err("Player is not at this location".into());
+            }
             let actor_site = character_case_site_id(state, actor.id).await?;
             let subject_site = character_case_site_id(state, subject.id).await?;
             if actor.current_settlement_id != subject.current_settlement_id
@@ -333,11 +335,6 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
         .unwrap_or_default();
     let own: std::collections::HashSet<u64> =
         memberships.into_iter().map(|m| m.character_id).collect();
-    let characters = state
-        .db
-        .query::<Character>("SELECT * FROM backend_characters")
-        .await
-        .unwrap_or_default();
     let all_messages = state
         .db
         .query::<BackendLocalChatMessage>(&format!(
@@ -359,21 +356,30 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
     for id in ids.iter().copied().take(MAX_INCOMING_PLAYERS) {
         candidate_sites.insert(id, character_case_site_id(&state, id).await.ok().flatten());
     }
-    Json(
-        characters
-            .into_iter()
-            .filter(|c| {
-                ids.contains(&c.id)
-                    && c.current_settlement_id == actor.current_settlement_id
-                    && candidate_sites.get(&c.id) == Some(&actor_site)
-            })
-            .take(MAX_INCOMING_PLAYERS)
-            .map(|c| IncomingPlayer {
-                id: c.id.to_string(),
-                name: c.name,
-            })
-            .collect(),
-    )
+    let mut visible = Vec::new();
+    for id in ids.into_iter().take(MAX_INCOMING_PLAYERS) {
+        let synchronized = super::data::characters_share_frontier(&state, actor.id, id)
+            .await
+            .unwrap_or(false);
+        let candidate = if synchronized {
+            super::data::character_as_observed(&state, id, actor.id)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        if let Some(candidate) = candidate
+            && candidate.current_settlement_id == actor.current_settlement_id
+            && candidate_sites.get(&candidate.id) == Some(&actor_site)
+        {
+            visible.push(IncomingPlayer {
+                id: candidate.id.to_string(),
+                name: candidate.name,
+            });
+        }
+    }
+    Json(visible)
 }
 
 #[cfg(test)]
@@ -382,6 +388,30 @@ mod tests {
         LocalNpcPresenceRow, LocalNpcRow, npc_authority_matches, npc_history_location_is_navigable,
     };
     use crate::spacetimedb::SettlementCategory;
+
+    #[test]
+    fn player_chat_co_location_requires_equal_personal_frontiers() {
+        let source = include_str!("local_chat.rs");
+        let selector = source
+            .split("async fn actor_and_selector")
+            .nth(1)
+            .unwrap()
+            .split("async fn messages")
+            .next()
+            .unwrap();
+        assert!(selector.contains("character_as_observed(state, id, actor.id)"));
+        assert!(selector.contains("characters_share_frontier(state, actor.id, subject.id)"));
+
+        let incoming = source
+            .split("async fn incoming")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(incoming.contains("characters_share_frontier(&state, actor.id, id)"));
+        assert!(!incoming.contains(".query::<Character>(\"SELECT * FROM backend_characters\")"));
+    }
 
     #[test]
     fn hidden_npc_locations_cannot_authorize_chat_history() {

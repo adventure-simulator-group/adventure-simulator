@@ -182,8 +182,10 @@ edges atomically. Every character has an authoritative birth coordinate; age
 is derived at the effective minute and its cached display value advances at
 yearly lifecycle boundaries, so dependents naturally become adults. Seeded
 town residents are arranged into deterministic households with parent/child
-and sibling edges without creating duplicate identities. Childhood behavior,
-education, inheritance, contraception,
+and sibling edges without creating duplicate identities. Dependent NPCs keep
+an unallocated Leisure schedule; the autonomous adult labor and Socializing
+plan is installed only when authoritative birth chronology reaches adulthood.
+Childhood education and other age-specific behavior, inheritance, contraception,
 infertility, miscarriage, and childbirth risk remain follow-up systems.
 Child identity, name choice, sex, and home placement use separate stable seed
 domains based on the canonical parent pair, pregnancy ordinal, birth minute,

@@ -9,6 +9,47 @@ struct BackendCharacterDeathMinute {
     strategic_minute: u64,
 }
 
+async fn character_minute(state: &AppState, character_id: u64) -> Result<Option<u64>> {
+    state
+        .db
+        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
+            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
+        ))
+        .await
+        .map(|time| time.map(|time| time.minutes))
+}
+
+/// Mutable Character columns have no effective-dated history yet. They are
+/// safe to use cross-character only when the subject has not advanced beyond
+/// the observer. Callers that need co-location or another shared-current fact
+/// should additionally require equal frontiers.
+pub(crate) async fn character_not_ahead_of_observer(
+    state: &AppState,
+    character_id: u64,
+    observer_character_id: u64,
+) -> Result<bool> {
+    if character_id == observer_character_id {
+        return Ok(true);
+    }
+    let (subject, observer) = tokio::join!(
+        character_minute(state, character_id),
+        character_minute(state, observer_character_id),
+    );
+    Ok(matches!((subject?, observer?), (Some(subject), Some(observer)) if subject <= observer))
+}
+
+pub(crate) async fn characters_share_frontier(
+    state: &AppState,
+    first_character_id: u64,
+    second_character_id: u64,
+) -> Result<bool> {
+    let (first, second) = tokio::join!(
+        character_minute(state, first_character_id),
+        character_minute(state, second_character_id),
+    );
+    Ok(matches!((first?, second?), (Some(first), Some(second)) if first == second))
+}
+
 fn prefer_complete_cache<T>(cache: Option<Option<T>>, fallback: Option<T>) -> Option<T> {
     cache.unwrap_or(fallback)
 }
@@ -99,6 +140,12 @@ pub(crate) async fn character_as_observed(
     character_id: u64,
     observer_character_id: u64,
 ) -> Result<Option<Character>> {
+    if !character_not_ahead_of_observer(state, character_id, observer_character_id).await? {
+        // We cannot reconstruct location, party, age, wealth, or progression
+        // at the observer's earlier date. Fail closed instead of returning a
+        // row containing mutable facts from the subject's future.
+        return Ok(None);
+    }
     let mut character = character(state, character_id).await?;
     if let Some(character) = character.as_mut() {
         project_alive_as_observed(
@@ -116,11 +163,21 @@ pub(crate) async fn character_is_alive_as_observed(
     character_id: u64,
     observer_character_id: u64,
 ) -> Result<bool> {
-    Ok(
-        character_as_observed(state, character_id, observer_character_id)
-            .await?
-            .is_some_and(|character| character.alive),
+    // Life state has its own effective-dated history, so callers that need
+    // only this fact must not inherit the fail-closed policy for unrelated
+    // mutable Character fields. This keeps asynchronous NPC dialogue
+    // available without exposing the NPC's future location, wealth, or party.
+    let mut character = character(state, character_id).await?;
+    let Some(character) = character.as_mut() else {
+        return Ok(false);
+    };
+    project_alive_as_observed(
+        state,
+        observer_character_id,
+        std::slice::from_mut(character),
     )
+    .await?;
+    Ok(character.alive)
 }
 
 #[cfg(test)]
@@ -168,8 +225,11 @@ mod tests {
     fn character_loader_uses_authoritative_case_site_projection() {
         let source = include_str!("data.rs");
         let loader = source
-            .split("pub(crate) async fn character")
+            .split("pub(crate) async fn character(")
             .nth(1)
+            .unwrap()
+            .split("pub(crate) async fn project_alive_as_observed")
+            .next()
             .unwrap();
         assert!(loader.contains("backend_character_case_site_locations"));
         assert!(loader.contains("character.current_case_site_id"));
@@ -193,6 +253,37 @@ mod tests {
         assert!(projection.contains("let Some(observer_minute)"));
         assert!(projection.contains("character.alive = true"));
         assert!(!projection.contains("character_death WHERE"));
+    }
+
+    #[test]
+    fn cross_character_loader_fails_closed_before_reading_future_mutable_state() {
+        let source = include_str!("data.rs");
+        let loader = source
+            .split("pub(crate) async fn character_as_observed")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) async fn character_is_alive_as_observed")
+            .next()
+            .unwrap();
+        let chronology = loader.find("character_not_ahead_of_observer").unwrap();
+        let mutable_read = loader.find("character(state, character_id)").unwrap();
+        assert!(chronology < mutable_read);
+        assert!(loader.contains("return Ok(None)"));
+    }
+
+    #[test]
+    fn life_only_projection_does_not_require_mutable_frontier_alignment() {
+        let source = include_str!("data.rs");
+        let loader = source
+            .split("pub(crate) async fn character_is_alive_as_observed")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(loader.contains("project_alive_as_observed"));
+        assert!(!loader.contains("character_as_observed"));
+        assert!(!loader.contains("character_not_ahead_of_observer"));
     }
 }
 

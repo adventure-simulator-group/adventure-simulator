@@ -344,6 +344,26 @@ pub(crate) async fn get_active_party_members(
     });
     let mut members: Vec<Character> = join_all(lookups).await.into_iter().flatten().collect();
     if let Some(actor) = active_character {
+        // Party membership and Character are mutable current projections. A
+        // member whose personal frontier is ahead of the viewer would expose
+        // future location, party, progression, and wealth through this model,
+        // so omit that row until the viewer catches up.
+        let visibility = join_all(members.iter().map(|member| async move {
+            (
+                member.id,
+                super::super::data::character_not_ahead_of_observer(
+                    state, member.id, actor.id,
+                )
+                .await
+                .unwrap_or(false),
+            )
+        }))
+        .await;
+        let visible_ids = visibility
+            .into_iter()
+            .filter_map(|(id, visible)| visible.then_some(id))
+            .collect::<HashSet<_>>();
+        members.retain(|member| visible_ids.contains(&member.id));
         if let Err(error) = super::super::data::project_alive_as_observed(
             state,
             actor.id,

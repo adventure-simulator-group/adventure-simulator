@@ -59,16 +59,20 @@ async fn character_condition(
     };
     let (viewer, subject) = tokio::join!(
         super::data::character(&state, viewer_id),
-        super::data::character(&state, id),
+        super::data::character_as_observed(&state, id, viewer_id),
     );
     let (Ok(Some(viewer)), Ok(Some(subject))) = (viewer, subject) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    let synchronized = viewer.id == subject.id
+        || super::data::characters_share_frontier(&state, viewer.id, subject.id)
+            .await
+            .unwrap_or(false);
     let same_party = viewer.id == subject.id
         || (viewer.party_id.is_some() && viewer.party_id == subject.party_id);
     let colocated = viewer.current_settlement_id == subject.current_settlement_id
         && viewer.current_case_site_id == subject.current_case_site_id;
-    if !same_party || !colocated {
+    if !synchronized || !same_party || !colocated {
         return StatusCode::FORBIDDEN.into_response();
     }
     Json(
@@ -350,5 +354,20 @@ mod tests {
         assert!(loader.contains("project_alive_as_observed"));
         assert!(loader.contains("character.id"));
         assert!(loader.contains("character.alive = true"));
+    }
+
+    #[test]
+    fn condition_authorization_rejects_unsynchronized_mutable_character_state() {
+        let source = include_str!("characters.rs");
+        let handler = source
+            .split("async fn character_condition")
+            .nth(1)
+            .unwrap()
+            .split("struct ConfirmCandidateForm")
+            .next()
+            .unwrap();
+        assert!(handler.contains("character_as_observed(&state, id, viewer_id)"));
+        assert!(handler.contains("characters_share_frontier"));
+        assert!(handler.contains("!synchronized || !same_party || !colocated"));
     }
 }
