@@ -3,10 +3,39 @@ pub const ERRANTRY_FINALE_THREAT_ID: &str = "armed_retainer";
 pub const FEY_COUNTERMEASURE_REDUCTION_BPS: u32 = 2_500;
 pub const FEY_COUNTERMEASURE_SCALE_FLOOR_BPS: u32 = 5_000;
 pub const FEY_COUNTERMEASURE_MULTIPLIER_BPS: u32 = 7_500;
+pub const DISPATCH_COUNTERMEASURE_REDUCTION_BPS: u32 = 1_500;
+pub const DISPATCH_COUNTERMEASURE_MULTIPLIER_BPS: u32 = 8_500;
+pub const COURIER_REST_DELAY_MINUTES: u64 = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum ChallengePresenterCatalogId {
     LadyBeneathThornV1,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum ErrantryFinaleDefenseKind {
+    UnnaturalProwess,
+    Reinforcements,
+    PoisonedArms,
+    ConcealedTrap,
+    Glamour,
+    SupernaturalArmor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum ErrantryCountermeasureKind {
+    FavorOfTheThornLady,
+    CapturedDispatch,
+    Antidote,
+    TrapWarning,
+    ColdIronCharm,
+    BlessedWeapon,
+    RescuedAlly,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum RoadChallengeCatalogId {
+    WoundedOrderCourierV1,
 }
 
 /// Private case-level authority for an Order-issued errantry.
@@ -22,7 +51,8 @@ pub struct ErrantryAuthority {
     pub issuer_location_id: String,
     pub finale_case_site_id: String,
     pub finale_hostile_group_id: String,
-    pub preliminary_challenge_id: String,
+    pub preliminary_challenge_ids: Vec<String>,
+    pub finale_defenses_json: String,
 }
 
 /// Durable, typed and source-idempotent boon awarded by the preliminary trial.
@@ -37,8 +67,62 @@ pub struct ErrantryCountermeasure {
     pub case_site_id: String,
     pub hostile_group_id: String,
     pub item_id: String,
+    pub kind: ErrantryCountermeasureKind,
+    pub counters_defense: ErrantryFinaleDefenseKind,
     pub combat_scale_reduction_bps: u32,
+    pub combat_capability_multiplier_bps: u32,
     pub awarded_at_minute: u64,
+}
+
+/// A chat-native, non-puzzle interruption that becomes available only after
+/// resting at its bound road camp. Ignoring it requires no mutation; choosing
+/// either response closes it without affecting the finale objective.
+#[derive(Clone, Debug)]
+#[table(accessor = road_challenge_authority)]
+pub struct RoadChallengeAuthority {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
+    #[index(btree)]
+    pub party_id: String,
+    pub case_id: String,
+    pub finale_case_site_id: String,
+    pub finale_hostile_group_id: String,
+    pub journey_departure_minute: u64,
+    pub camp_movement_minute: u64,
+    pub available_at_elapsed_minute: u64,
+    pub catalog_id: RoadChallengeCatalogId,
+    pub revision: u32,
+    pub open: bool,
+    pub resolved_choice: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = road_challenge_resolution_receipt)]
+pub struct RoadChallengeResolutionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub challenge_id: String,
+    pub party_id: String,
+    pub character_id: u64,
+    pub action_id: String,
+    pub choice: String,
+    pub resolved_at_minute: u64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendRoadChallenge {
+    pub id: String,
+    pub case_id: String,
+    pub owner_character_id: u64,
+    pub catalog_id: RoadChallengeCatalogId,
+    pub revision: u32,
+    pub open: bool,
+    pub active: bool,
+    pub resolved_choice: Option<String>,
+    pub boon_item_id: Option<String>,
+    pub counters_defense: Option<ErrantryFinaleDefenseKind>,
 }
 
 #[derive(Clone, Debug)]
@@ -192,6 +276,48 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
         .collect()
 }
 
+#[view(accessor = backend_road_challenges, public)]
+pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .road_challenge_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .filter_map(|challenge| {
+            let party = ctx.db.party_authority().id().find(&challenge.party_id)?;
+            let accepted = party
+                .active_contract_id
+                .as_ref()
+                .and_then(|id| ctx.db.contract_authority().id().find(id))
+                .is_some_and(|contract| {
+                    contract.case_id == challenge.case_id
+                        && contract.status == ContractStatus::Accepted
+                        && contract.accepted_by.as_deref() == Some(&challenge.party_id)
+                });
+            let active = accepted && party_at_bound_road_challenge_view(ctx, &party, &challenge);
+            let boon = ctx
+                .db
+                .errantry_countermeasure()
+                .source_challenge_id()
+                .find(&challenge.id);
+            Some(BackendRoadChallenge {
+                id: challenge.id,
+                case_id: challenge.case_id,
+                owner_character_id: party.leader_id,
+                catalog_id: challenge.catalog_id,
+                revision: challenge.revision,
+                open: challenge.open,
+                active,
+                resolved_choice: challenge.resolved_choice,
+                boon_item_id: boon.as_ref().map(|item| item.item_id.clone()),
+                counters_defense: boon.map(|item| item.counters_defense),
+            })
+        })
+        .collect()
+}
+
 fn journey_destination_matches(endpoint: &JourneyEndpoint, case_site_id: &str) -> bool {
     matches!(
         endpoint,
@@ -211,6 +337,21 @@ fn journey_at_bound_trial_camp(
         challenge.camp_movement_minute,
     )
         && journey_destination_matches(&journey.destination, &challenge.finale_case_site_id)
+}
+
+fn journey_at_bound_road_challenge(
+    journey: &PartyJourney,
+    challenge: &RoadChallengeAuthority,
+) -> bool {
+    adventuresim_core::errantry::rested_road_trial_camp_matches(
+        journey.departure_minute,
+        journey.completed_minutes,
+        journey.completed_elapsed_minutes,
+        &journey.camp_stop_minutes,
+        challenge.journey_departure_minute,
+        challenge.camp_movement_minute,
+        challenge.available_at_elapsed_minute,
+    ) && journey_destination_matches(&journey.destination, &challenge.finale_case_site_id)
 }
 
 fn party_at_bound_trial_camp_view(
@@ -257,9 +398,53 @@ fn party_at_bound_trial_camp(
             .is_some_and(|encounter| encounter.status == "awaiting_choice")
 }
 
-/// Bind the first optional preliminary trial to the first real camp reached on
-/// its accepted finale journey. Issuance never predicts camp coordinates.
-pub(crate) fn bind_errantry_trial_to_current_camp(
+fn party_at_bound_road_challenge_view(
+    ctx: &ViewContext,
+    party: &Party,
+    challenge: &RoadChallengeAuthority,
+) -> bool {
+    party.current_settlement_id.is_none()
+        && party.current_case_site_id.is_none()
+        && party.camp_destination.is_some()
+        && ctx
+            .db
+            .party_journey_authority()
+            .party_id()
+            .find(&party.id)
+            .is_some_and(|journey| journey_at_bound_road_challenge(&journey, challenge))
+        && !ctx
+            .db
+            .strategic_encounter()
+            .party_id()
+            .find(&party.id)
+            .is_some_and(|encounter| encounter.status == "awaiting_choice")
+}
+
+fn party_at_bound_road_challenge(
+    ctx: &ReducerContext,
+    party: &Party,
+    challenge: &RoadChallengeAuthority,
+) -> bool {
+    party.current_settlement_id.is_none()
+        && party.current_case_site_id.is_none()
+        && party.camp_destination.is_some()
+        && ctx
+            .db
+            .party_journey_authority()
+            .party_id()
+            .find(&party.id)
+            .is_some_and(|journey| journey_at_bound_road_challenge(&journey, challenge))
+        && !ctx
+            .db
+            .strategic_encounter()
+            .party_id()
+            .find(&party.id)
+            .is_some_and(|encounter| encounter.status == "awaiting_choice")
+}
+
+/// Bind optional preliminary trials to the first real camp reached on their
+/// accepted finale journey. Issuance never predicts camp coordinates.
+pub(crate) fn bind_errantry_trials_to_current_camp(
     ctx: &ReducerContext,
     party_id: &str,
 ) -> Result<(), String> {
@@ -311,41 +496,76 @@ pub(crate) fn bind_errantry_trial_to_current_camp(
         })
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| left.id.cmp(&right.id));
-    let Some(mut challenge) = candidates.into_iter().next() else {
-        return Ok(());
-    };
     let site_id = format!(
         "journey-camp:{}:{}",
         journey.departure_minute, journey.completed_minutes
     );
-    let mut frame: adventuresim_core::errantry::ErrantryFrame =
-        serde_json::from_str(&challenge.errantry_frame_json)
-            .map_err(|_| "Errantry frame authority is invalid")?;
-    let trial = frame
-        .trials
-        .iter_mut()
-        .find(|trial| trial.challenge_id.as_deref() == Some(&challenge.id))
-        .ok_or("Challenge is not bound to its errantry frame")?;
-    trial.site_id = site_id;
-    challenge.errantry_frame_json =
-        serde_json::to_string(&frame).map_err(|_| "Could not encode errantry frame")?;
-    challenge.journey_departure_minute = journey.departure_minute;
-    challenge.camp_movement_minute = journey.completed_minutes;
-    challenge.camp_elapsed_minute = journey.completed_elapsed_minutes;
-    ctx.db.challenge_authority().id().update(challenge);
+    if let Some(mut challenge) = candidates.into_iter().next() {
+        let mut frame: adventuresim_core::errantry::ErrantryFrame =
+            serde_json::from_str(&challenge.errantry_frame_json)
+                .map_err(|_| "Errantry frame authority is invalid")?;
+        if !frame
+            .trials
+            .iter()
+            .any(|trial| trial.challenge_id.as_deref() == Some(&challenge.id))
+        {
+            return Err("Challenge is not bound to its errantry frame".into());
+        }
+        for trial in &mut frame.trials {
+            if trial.site_id == "journey-camp:unbound" {
+                trial.site_id = site_id.clone();
+            }
+        }
+        challenge.errantry_frame_json =
+            serde_json::to_string(&frame).map_err(|_| "Could not encode errantry frame")?;
+        challenge.journey_departure_minute = journey.departure_minute;
+        challenge.camp_movement_minute = journey.completed_minutes;
+        challenge.camp_elapsed_minute = journey.completed_elapsed_minutes;
+        ctx.db.challenge_authority().id().update(challenge);
+    }
+    let mut road_candidates = ctx
+        .db
+        .road_challenge_authority()
+        .party_id()
+        .filter(&party_id.to_string())
+        .filter(|challenge| {
+            challenge.open
+                && challenge.case_id == contract.case_id
+                && challenge.finale_case_site_id == destination.id.value
+                && challenge.journey_departure_minute == 0
+        })
+        .collect::<Vec<_>>();
+    road_candidates.sort_by(|left, right| left.id.cmp(&right.id));
+    for mut challenge in road_candidates {
+        challenge.journey_departure_minute = journey.departure_minute;
+        challenge.camp_movement_minute = journey.completed_minutes;
+        challenge.available_at_elapsed_minute = journey
+            .completed_elapsed_minutes
+            .saturating_add(COURIER_REST_DELAY_MINUTES);
+        ctx.db.road_challenge_authority().id().update(challenge);
+    }
     Ok(())
 }
 
 fn award_errantry_countermeasure(
     ctx: &ReducerContext,
-    challenge: &ChallengeAuthority,
+    source_challenge_id: &str,
+    party_id: &str,
+    case_id: &str,
+    case_site_id: &str,
+    hostile_group_id: &str,
+    item_id: &str,
+    kind: ErrantryCountermeasureKind,
+    counters_defense: ErrantryFinaleDefenseKind,
+    combat_scale_reduction_bps: u32,
+    combat_capability_multiplier_bps: u32,
     now: u64,
 ) -> Result<(), String> {
     if ctx
         .db
         .errantry_countermeasure()
         .source_challenge_id()
-        .find(&challenge.id)
+        .find(&source_challenge_id.to_string())
         .is_some()
     {
         return Ok(());
@@ -353,19 +573,22 @@ fn award_errantry_countermeasure(
     ctx.db
         .errantry_countermeasure()
         .insert(ErrantryCountermeasure {
-            source_challenge_id: challenge.id.clone(),
-            party_id: challenge.party_id.clone(),
-            case_id: challenge.case_id.clone(),
-            case_site_id: challenge.finale_case_site_id.clone(),
-            hostile_group_id: challenge.finale_hostile_group_id.clone(),
-            item_id: adventuresim_core::item_references::FEY_COUNTERMEASURE_ITEM_ID.into(),
-            combat_scale_reduction_bps: FEY_COUNTERMEASURE_REDUCTION_BPS,
+            source_challenge_id: source_challenge_id.into(),
+            party_id: party_id.into(),
+            case_id: case_id.into(),
+            case_site_id: case_site_id.into(),
+            hostile_group_id: hostile_group_id.into(),
+            item_id: item_id.into(),
+            kind,
+            counters_defense,
+            combat_scale_reduction_bps,
+            combat_capability_multiplier_bps,
             awarded_at_minute: now,
         });
     ctx.db.party_inventory_item().insert(PartyInventoryItem {
         id: 0,
-        party_id: challenge.party_id.clone(),
-        item_id: adventuresim_core::item_references::FEY_COUNTERMEASURE_ITEM_ID.into(),
+        party_id: party_id.into(),
+        item_id: item_id.into(),
         quantity: 1,
     });
     Ok(())
@@ -378,8 +601,20 @@ pub(crate) fn errantry_mission_scale_snapshot(
     case_site_id: &str,
     hostile_group_id: &str,
     base_scale_bps: u32,
-) -> (u32, u32, Option<String>) {
-    let boon = ctx
+) -> (u32, u32, Option<String>, String) {
+    let defenses = ctx
+        .db
+        .errantry_authority()
+        .case_id()
+        .find(&case_id.to_string())
+        .and_then(|errantry| {
+            serde_json::from_str::<Vec<adventuresim_core::errantry::FinaleDefenseKind>>(
+                &errantry.finale_defenses_json,
+            )
+            .ok()
+        })
+        .unwrap_or_default();
+    let countermeasures = ctx
         .db
         .errantry_countermeasure()
         .party_id()
@@ -389,16 +624,62 @@ pub(crate) fn errantry_mission_scale_snapshot(
                 && boon.case_site_id == case_site_id
                 && boon.hostile_group_id == hostile_group_id
         })
-        .max_by_key(|boon| boon.combat_scale_reduction_bps);
-    match boon {
-        Some(boon) => (
-            base_scale_bps
-                .saturating_sub(boon.combat_scale_reduction_bps)
-                .max(FEY_COUNTERMEASURE_SCALE_FLOOR_BPS),
-            FEY_COUNTERMEASURE_MULTIPLIER_BPS,
-            Some(boon.source_challenge_id),
-        ),
-        None => (base_scale_bps, 10_000, None),
+        .map(|boon| adventuresim_core::errantry::MaterialCountermeasure {
+            kind: core_countermeasure_kind(boon.kind),
+            source_challenge_id: boon.source_challenge_id,
+            item_id: boon.item_id,
+            counters: core_defense_kind(boon.counters_defense),
+            enemy_scale_reduction_bps: boon.combat_scale_reduction_bps,
+            enemy_capability_multiplier_bps: boon.combat_capability_multiplier_bps,
+        })
+        .collect::<Vec<_>>();
+    let resolution = adventuresim_core::errantry::resolve_finale_approach(
+        &defenses,
+        &countermeasures,
+    );
+    let primary_source = resolution
+        .applied
+        .first()
+        .map(|item| item.source_challenge_id.clone());
+    let enemy_scale = base_scale_bps
+        .saturating_sub(resolution.enemy_scale_reduction_bps)
+        .max(FEY_COUNTERMEASURE_SCALE_FLOOR_BPS);
+    let snapshot_json = serde_json::to_string(&resolution)
+        .expect("finale approach resolution is serializable");
+    (
+        enemy_scale,
+        resolution.enemy_capability_multiplier_bps,
+        primary_source,
+        snapshot_json,
+    )
+}
+
+fn core_defense_kind(
+    kind: ErrantryFinaleDefenseKind,
+) -> adventuresim_core::errantry::FinaleDefenseKind {
+    use adventuresim_core::errantry::FinaleDefenseKind as Core;
+    match kind {
+        ErrantryFinaleDefenseKind::UnnaturalProwess => Core::UnnaturalProwess,
+        ErrantryFinaleDefenseKind::Reinforcements => Core::Reinforcements,
+        ErrantryFinaleDefenseKind::PoisonedArms => Core::PoisonedArms,
+        ErrantryFinaleDefenseKind::ConcealedTrap => Core::ConcealedTrap,
+        ErrantryFinaleDefenseKind::Glamour => Core::Glamour,
+        ErrantryFinaleDefenseKind::SupernaturalArmor => Core::SupernaturalArmor,
+    }
+}
+
+fn core_countermeasure_kind(
+    kind: ErrantryCountermeasureKind,
+) -> adventuresim_core::errantry::CountermeasureKind {
+    use adventuresim_core::errantry::CountermeasureKind as Core;
+    match kind {
+        ErrantryCountermeasureKind::FavorOfTheThornLady => Core::FavorOfTheThornLady,
+        ErrantryCountermeasureKind::CapturedDispatch => Core::CapturedDispatch,
+        ErrantryCountermeasureKind::Antidote => Core::Antidote,
+        ErrantryCountermeasureKind::TrapWarning => Core::TrapWarning,
+        ErrantryCountermeasureKind::ColdIronCharm => Core::ColdIronCharm,
+        ErrantryCountermeasureKind::BlessedWeapon => Core::BlessedWeapon,
+        ErrantryCountermeasureKind::RescuedAlly => Core::RescuedAlly,
     }
 }
 
@@ -511,7 +792,7 @@ pub fn submit_ordered_sigil_challenge(
         .find(&case_id)
         .ok_or("Case has no errantry issuance authority")?;
     if errantry.contract_id != contract.id
-        || errantry.preliminary_challenge_id != challenge.id
+        || !errantry.preliminary_challenge_ids.contains(&challenge.id)
         || errantry.finale_case_site_id != challenge.finale_case_site_id
         || errantry.finale_hostile_group_id != challenge.finale_hostile_group_id
         || errantry.issuer_organization_id != ERRANTRY_ISSUER_ORGANIZATION_ID
@@ -622,7 +903,20 @@ pub fn submit_ordered_sigil_challenge(
     }
     ctx.db.challenge_authority().id().update(challenge.clone());
     if correct {
-        award_errantry_countermeasure(ctx, &challenge, now)?;
+        award_errantry_countermeasure(
+            ctx,
+            &challenge.id,
+            &challenge.party_id,
+            &challenge.case_id,
+            &challenge.finale_case_site_id,
+            &challenge.finale_hostile_group_id,
+            adventuresim_core::item_references::FEY_COUNTERMEASURE_ITEM_ID,
+            ErrantryCountermeasureKind::FavorOfTheThornLady,
+            ErrantryFinaleDefenseKind::UnnaturalProwess,
+            FEY_COUNTERMEASURE_REDUCTION_BPS,
+            FEY_COUNTERMEASURE_MULTIPLIER_BPS,
+            now,
+        )?;
         let solved_challenge_id = challenge.id.clone();
         ingest_case_outcome_fact(
             ctx,
@@ -634,6 +928,133 @@ pub fn submit_ordered_sigil_challenge(
             },
         )?;
     }
+    Ok(())
+}
+
+/// Resolve the mortal roadside courtesy trial. It becomes available only
+/// after resting at its exact bound camp. Simply continuing travel ignores it
+/// without blocking the finale objective.
+#[reducer]
+pub fn resolve_errantry_road_challenge(
+    ctx: &ReducerContext,
+    character_id: u64,
+    challenge_id: String,
+    expected_revision: u32,
+    choice: String,
+    action_id: String,
+) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
+    if action_id.is_empty() || action_id.len() > 160 {
+        return Err("Road challenge action ID is invalid".into());
+    }
+    if choice != "aid" && choice != "leave" {
+        return Err("Road challenge choice is invalid".into());
+    }
+    let receipt_id = format!("road-challenge:{challenge_id}:{action_id}");
+    if let Some(existing) = ctx
+        .db
+        .road_challenge_resolution_receipt()
+        .id()
+        .find(&receipt_id)
+    {
+        return if existing.challenge_id == challenge_id
+            && existing.character_id == character_id
+            && existing.choice == choice
+        {
+            Ok(())
+        } else {
+            Err("Conflicting road challenge retry".into())
+        };
+    }
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let party_id = character.party_id.ok_or("Must be in a party")?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can answer this road challenge".into());
+    }
+    let mut challenge = ctx
+        .db
+        .road_challenge_authority()
+        .id()
+        .find(&challenge_id)
+        .ok_or("Road challenge not found")?;
+    if challenge.party_id != party_id {
+        return Err("Road challenge does not belong to this party".into());
+    }
+    let contract_id = party
+        .active_contract_id
+        .as_deref()
+        .ok_or("No active errantry contract")?;
+    let contract = ctx
+        .db
+        .contract_authority()
+        .id()
+        .find(contract_id.to_string())
+        .ok_or("Active errantry contract not found")?;
+    if contract.status != ContractStatus::Accepted
+        || contract.accepted_by.as_deref() != Some(&party_id)
+        || contract.case_id != challenge.case_id
+    {
+        return Err("Road challenge is not bound to the accepted errantry".into());
+    }
+    let errantry = ctx
+        .db
+        .errantry_authority()
+        .case_id()
+        .find(&challenge.case_id)
+        .ok_or("Errantry authority not found")?;
+    if !errantry.preliminary_challenge_ids.contains(&challenge.id)
+        || errantry.finale_case_site_id != challenge.finale_case_site_id
+        || errantry.finale_hostile_group_id != challenge.finale_hostile_group_id
+    {
+        return Err("Road challenge authority does not match errantry".into());
+    }
+    if !party_at_bound_road_challenge(ctx, &party, &challenge) {
+        return Err("Road challenge is not active at this camp".into());
+    }
+    if !challenge.open || challenge.resolved_choice.is_some() {
+        return Err("Road challenge is already closed".into());
+    }
+    if challenge.revision != expected_revision {
+        return Err("Road challenge is stale".into());
+    }
+    let now = crate::time::refresh_clock(ctx)?;
+    if choice == "aid" {
+        award_errantry_countermeasure(
+            ctx,
+            &challenge.id,
+            &challenge.party_id,
+            &challenge.case_id,
+            &challenge.finale_case_site_id,
+            &challenge.finale_hostile_group_id,
+            adventuresim_core::item_references::CAPTURED_DISPATCH_ITEM_ID,
+            ErrantryCountermeasureKind::CapturedDispatch,
+            ErrantryFinaleDefenseKind::Reinforcements,
+            DISPATCH_COUNTERMEASURE_REDUCTION_BPS,
+            DISPATCH_COUNTERMEASURE_MULTIPLIER_BPS,
+            now,
+        )?;
+    }
+    challenge.open = false;
+    challenge.resolved_choice = Some(choice.clone());
+    challenge.revision = challenge.revision.saturating_add(1);
+    ctx.db.road_challenge_authority().id().update(challenge);
+    ctx.db
+        .road_challenge_resolution_receipt()
+        .insert(RoadChallengeResolutionReceipt {
+            id: receipt_id,
+            challenge_id,
+            party_id,
+            character_id,
+            action_id,
+            choice,
+            resolved_at_minute: now,
+        });
     Ok(())
 }
 
@@ -891,6 +1312,7 @@ fn materialize_order_errantry(
     let case_id = format!("case:errantry-puzzle:{suffix}");
     let contract_id = format!("contract:errantry-puzzle:{suffix}");
     let challenge_id = format!("challenge:ordered-sigils:{suffix}");
+    let courier_challenge_id = format!("challenge:wounded-order-courier:{suffix}");
     let case_site_id = format!("case-site:errantry-finale:{suffix}");
     let hostile_group_id = format!("hostile-group:errantry-finale:{suffix}");
     // The preliminary trial is a true optional boon: defeating the finale
@@ -970,13 +1392,22 @@ fn materialize_order_errantry(
         id: format!("errantry:five-signs:{suffix}"),
         purpose: adventuresim_core::errantry::ErrantryPurpose::ProveWorth,
         charge: "Keep faith upon the road and answer the trial with discernment.".into(),
-        trials: vec![adventuresim_core::errantry::TrialBinding {
-            order: 0,
-            trial_id: format!("trial:five-signs:{suffix}"),
-            challenge_id: Some(challenge_id.clone()),
-            site_id: "journey-camp:unbound".into(),
-            kind: adventuresim_core::errantry::TrialKind::Puzzle,
-        }],
+        trials: vec![
+            adventuresim_core::errantry::TrialBinding {
+                order: 0,
+                trial_id: format!("trial:five-signs:{suffix}"),
+                challenge_id: Some(challenge_id.clone()),
+                site_id: "journey-camp:unbound".into(),
+                kind: adventuresim_core::errantry::TrialKind::Puzzle,
+            },
+            adventuresim_core::errantry::TrialBinding {
+                order: 1,
+                trial_id: format!("trial:wounded-courier:{suffix}"),
+                challenge_id: Some(courier_challenge_id.clone()),
+                site_id: "journey-camp:unbound".into(),
+                kind: adventuresim_core::errantry::TrialKind::Social,
+            },
+        ],
     };
     ctx.db.challenge_authority().insert(ChallengeAuthority {
         id: challenge_id.clone(),
@@ -997,6 +1428,27 @@ fn materialize_order_errantry(
         open: true,
         solved_at_minute: None,
     });
+    ctx.db
+        .road_challenge_authority()
+        .insert(RoadChallengeAuthority {
+            id: courier_challenge_id.clone(),
+            gateway_bucket: 0,
+            party_id: party_id.clone(),
+            case_id: case_id.clone(),
+            finale_case_site_id: case_site_id.clone(),
+            finale_hostile_group_id: hostile_group_id.clone(),
+            journey_departure_minute: 0,
+            camp_movement_minute: 0,
+            available_at_elapsed_minute: 0,
+            catalog_id: RoadChallengeCatalogId::WoundedOrderCourierV1,
+            revision: 0,
+            open: true,
+            resolved_choice: None,
+        });
+    let finale_defenses = vec![
+        adventuresim_core::errantry::FinaleDefenseKind::UnnaturalProwess,
+        adventuresim_core::errantry::FinaleDefenseKind::Reinforcements,
+    ];
     ctx.db.errantry_authority().insert(ErrantryAuthority {
         case_id: case_id.clone(),
         contract_id: contract_id.clone(),
@@ -1006,7 +1458,9 @@ fn materialize_order_errantry(
         issuer_location_id,
         finale_case_site_id: case_site_id.clone(),
         finale_hostile_group_id: hostile_group_id,
-        preliminary_challenge_id: challenge_id.clone(),
+        preliminary_challenge_ids: vec![challenge_id.clone(), courier_challenge_id],
+        finale_defenses_json: serde_json::to_string(&finale_defenses)
+            .map_err(|_| "Could not encode finale defenses")?,
     });
     crate::investigation::disclose_exact_case_site(
         ctx,
@@ -1068,7 +1522,7 @@ fn materialize_order_errantry(
             crate::investigation::set_character_case_site(ctx, member_id, None);
             ctx.db.character().id().update(member);
         }
-        bind_errantry_trial_to_current_camp(ctx, &party_id)?;
+        bind_errantry_trials_to_current_camp(ctx, &party_id)?;
     } else {
         ctx.db.party_authority().id().update(party);
     }
@@ -1205,6 +1659,42 @@ mod challenge_source_boundary_tests {
         assert!(tactical.contains("mission.enemy_combat_scale_bps"));
         let autoresolve = include_str!("autoresolve.rs");
         assert!(autoresolve.contains("mission.enemy_combat_scale_bps"));
+    }
+
+    #[test]
+    fn rested_courier_trial_is_optional_authorized_and_material() {
+        let source = include_str!("challenges.rs");
+        let reducer = source
+            .split("pub fn resolve_errantry_road_challenge")
+            .nth(1)
+            .and_then(|tail| tail.split("fn puzzle_demo_enabled").next())
+            .unwrap();
+        assert!(reducer.contains("require_strategic_gateway"));
+        assert!(reducer.contains("party.leader_id != character_id"));
+        assert!(reducer.contains("party_at_bound_road_challenge"));
+        assert!(source.contains("encounter.status == \"awaiting_choice\""));
+        assert!(reducer.contains("CAPTURED_DISPATCH_ITEM_ID"));
+        assert!(reducer.contains("ErrantryFinaleDefenseKind::Reinforcements"));
+        assert!(!reducer.contains("ingest_case_outcome_fact"));
+        assert!(source.contains("COURIER_REST_DELAY_MINUTES"));
+        assert!(source.contains("preliminary_challenge_ids"));
+        assert!(source.contains("finale_defenses_json"));
+    }
+
+    #[test]
+    fn mission_snapshot_records_all_typed_approach_effects() {
+        let source = include_str!("challenges.rs");
+        let snapshot = source
+            .split("pub(crate) fn errantry_mission_scale_snapshot")
+            .nth(1)
+            .and_then(|tail| tail.split("fn core_defense_kind").next())
+            .unwrap();
+        assert!(snapshot.contains("resolve_finale_approach"));
+        assert!(snapshot.contains("finale_defenses_json"));
+        assert!(snapshot.contains("combat_capability_multiplier_bps"));
+        assert!(snapshot.contains("serde_json::to_string(&resolution)"));
+        let mission = include_str!("authority_model.rs");
+        assert!(mission.contains("errantry_approach_snapshot_json"));
     }
 
     #[test]

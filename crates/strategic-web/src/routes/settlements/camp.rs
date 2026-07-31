@@ -55,6 +55,7 @@ pub(super) struct CampQuery {
     forage: Option<bool>,
     forage_receipt: Option<String>,
     forage_error: Option<String>,
+    road_result: Option<String>,
 }
 
 pub(super) async fn camp(
@@ -303,6 +304,32 @@ pub(super) async fn camp(
     let trial = challenges
         .iter()
         .find(|challenge| challenge.active && challenge.open && !challenge.solved);
+    let road_challenges = match state
+        .db
+        .query::<BackendRoadChallenge>(&format!(
+            "SELECT * FROM backend_road_challenges WHERE owner_character_id = {}",
+            character.id
+        ))
+        .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                character_id = character.id,
+                "camp road challenge state unavailable"
+            );
+            Vec::new()
+        }
+    };
+    let road_trial = road_challenges
+        .iter()
+        .find(|challenge| challenge.active && challenge.open);
+    let road_result = query.road_result.as_deref().filter(|result| {
+        road_challenges.iter().any(|challenge| {
+            !challenge.open && challenge.resolved_choice.as_deref() == Some(*result)
+        })
+    });
     let foraging_dialog = if query.forage.unwrap_or(false) {
         Some(
             crate::routes::foraging::activity_dialog(
@@ -340,12 +367,57 @@ pub(super) async fn camp(
                     trial.presenter_catalog_id,
                 )
             }),
+            road_trial,
+            road_result,
             foraging_dialog,
             Some(&character.name),
         )
         .into_string(),
     )
     .into_response()
+}
+
+#[derive(Deserialize)]
+pub(super) struct ErrantryRoadChallengeForm {
+    challenge_id: String,
+    expected_revision: u32,
+    choice: String,
+    action_id: String,
+}
+
+pub(super) async fn resolve_errantry_road_challenge(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<ErrantryRoadChallengeForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "resolve_errantry_road_challenge",
+            &[
+                json!(character_id),
+                json!(form.challenge_id),
+                json!(form.expected_revision),
+                json!(form.choice),
+                json!(form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to(match form.choice.as_str() {
+            "aid" => "/camp?road_result=aid",
+            "leave" => "/camp?road_result=leave",
+            _ => "/camp",
+        })
+        .into_response(),
+        Err(error) if error.to_string().contains("stale") => {
+            StatusCode::CONFLICT.into_response()
+        }
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 fn direct_demo_challenge_redirect(
@@ -424,6 +496,27 @@ mod direct_demo_redirect_tests {
 
         let another = challenge("challenge:ordered-sigils:demo:7:1", true, true, false);
         assert_eq!(direct_demo_challenge_redirect(&[demo, another], 7), None);
+    }
+}
+
+#[cfg(test)]
+mod road_challenge_route_tests {
+    #[test]
+    fn courier_is_chat_native_optional_and_server_authoritative() {
+        let route = include_str!("camp.rs");
+        let router = include_str!("router.rs");
+        let template = include_str!("../../templates/settlement/travel.rs");
+        assert!(route.contains("SELECT * FROM backend_road_challenges"));
+        assert!(route.contains("challenge.active && challenge.open"));
+        assert!(route.contains(
+            "!challenge.open && challenge.resolved_choice.as_deref() == Some(*result)"
+        ));
+        assert!(route.contains("\"resolve_errantry_road_challenge\""));
+        assert!(router.contains("/camp/errantry-road-challenge"));
+        assert!(template.contains("aria-label=\"Roadside conversation\""));
+        assert!(template.contains("Give aid and take the dispatch"));
+        assert!(template.contains("Leave him by the road"));
+        assert!(!template.contains("supernatural-spoken-line\" {\n                                    strong { \"Wounded Order courier"));
     }
 }
 

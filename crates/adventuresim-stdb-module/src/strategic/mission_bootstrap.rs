@@ -561,6 +561,7 @@ pub fn seed_standalone_tactical_mission(
             enemy_combat_scale_bps,
             countermeasure_multiplier_bps,
             countermeasure_source_challenge_id,
+            errantry_approach_snapshot_json,
         ) =
             errantry_mission_scale_snapshot(
                 ctx,
@@ -594,6 +595,7 @@ pub fn seed_standalone_tactical_mission(
             enemy_combat_scale_bps,
             countermeasure_multiplier_bps,
             countermeasure_source_challenge_id,
+            errantry_approach_snapshot_json,
             normalized_combat_power,
             drop_item_id: group.drop_item_id.clone(),
             drop_quantity: group.drop_quantity,

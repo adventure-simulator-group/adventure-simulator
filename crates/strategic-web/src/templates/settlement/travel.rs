@@ -17,9 +17,9 @@ use super::{
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    ChallengePresenterCatalogId, Character, ContractPresentation, JourneyPrecipitation,
-    JourneyTerrainKind, Party, PartyJourney, PartyJourneyItinerary, PartyJourneyRoute, Settlement,
-    StrategicEncounter,
+    BackendRoadChallenge, ChallengePresenterCatalogId, Character, ContractPresentation,
+    JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, RoadChallengeCatalogId, Settlement, StrategicEncounter,
 };
 use crate::templates::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
@@ -822,6 +822,8 @@ pub fn camp_page(
     continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
     trial: Option<(&str, &str, ChallengePresenterCatalogId)>,
+    road_trial: Option<&BackendRoadChallenge>,
+    road_result: Option<&str>,
     foraging_dialog: Option<Markup>,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -898,7 +900,67 @@ pub fn camp_page(
                         }
                     }
                 }
-            } @else {
+            }
+            @if let Some(road_trial) = road_trial {
+                @match road_trial.catalog_id {
+                    RoadChallengeCatalogId::WoundedOrderCourierV1 => {
+                        section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation" {
+                            div class="settlement-chat-layout" {
+                                div class="settlement-chat-conversation" {
+                                    div class="settlement-chat-messages" aria-live="polite" {
+                                        p { strong { "Wounded Order courier: " }
+                                            "Sir knight, I fled the Black Knight's men. Their sealed dispatch names the reinforcements waiting at the ford."
+                                        }
+                                        p { strong { "Wounded Order courier: " }
+                                            "Bind my wound and bear this warning onward."
+                                        }
+                                        div class="dialogue-actions" {
+                                            @for (choice, label) in [
+                                                ("aid", "Give aid and take the dispatch"),
+                                                ("leave", "Leave him by the road"),
+                                            ] {
+                                                form action="/camp/errantry-road-challenge" method="post" {
+                                                    input type="hidden" name="challenge_id" value=(&road_trial.id);
+                                                    input type="hidden" name="expected_revision" value=(road_trial.revision);
+                                                    input type="hidden" name="choice" value=(choice);
+                                                    input type="hidden" name="action_id"
+                                                        value=(format!("road-choice:{}:{}:{choice}", road_trial.id, road_trial.revision));
+                                                    button type="submit" class="btn btn-primary" { (label) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            @if let Some(result) = road_result {
+                section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation result" {
+                    div class="settlement-chat-layout" {
+                        div class="settlement-chat-conversation" {
+                            div class="settlement-chat-messages" aria-live="polite" {
+                                @match result {
+                                    "aid" => {
+                                        p { strong { "Wounded Order courier: " }
+                                            "My thanks. Take the captured dispatch; it reveals where the Black Knight's reinforcements wait."
+                                        }
+                                        p class="text-muted" { "Captured Black Knight dispatch added to the party inventory." }
+                                    }
+                                    "leave" => {
+                                        p { strong { "Wounded Order courier: " }
+                                            "Then ride on, sir knight. I shall keep the dispatch if strength permits."
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            @if trial.is_none() && road_trial.is_none() && road_result.is_none() {
                 (settlement_chat_area("Camp", active_character))
             }
         }

@@ -23,6 +23,35 @@ pub enum ChallengePresenterCatalogId {
     LadyBeneathThornV1,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendRoadChallenge {
+    pub id: String,
+    pub case_id: String,
+    pub owner_character_id: u64,
+    pub catalog_id: RoadChallengeCatalogId,
+    pub revision: u32,
+    pub open: bool,
+    pub active: bool,
+    pub resolved_choice: Option<String>,
+    pub boon_item_id: Option<String>,
+    pub counters_defense: Option<ErrantryFinaleDefenseKind>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum RoadChallengeCatalogId {
+    WoundedOrderCourierV1,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum ErrantryFinaleDefenseKind {
+    UnnaturalProwess,
+    Reinforcements,
+    PoisonedArms,
+    ConcealedTrap,
+    Glamour,
+    SupernaturalArmor,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct BestiaryEnemyLoreView {
     pub id: String,

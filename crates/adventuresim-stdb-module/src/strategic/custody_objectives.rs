@@ -1597,6 +1597,7 @@ pub(crate) fn ensure_bound_mission_authority(
         enemy_combat_scale_bps,
         countermeasure_multiplier_bps,
         countermeasure_source_challenge_id,
+        errantry_approach_snapshot_json,
     ) =
         errantry_mission_scale_snapshot(
             ctx,
@@ -1630,6 +1631,7 @@ pub(crate) fn ensure_bound_mission_authority(
         enemy_combat_scale_bps,
         countermeasure_multiplier_bps,
         countermeasure_source_challenge_id,
+        errantry_approach_snapshot_json,
         normalized_combat_power,
         drop_item_id: hostile_group.drop_item_id.clone(),
         drop_quantity: hostile_group.drop_quantity,

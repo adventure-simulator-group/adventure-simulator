@@ -4,6 +4,9 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::errantry_countermeasure_kind_type::ErrantryCountermeasureKind;
+use super::errantry_finale_defense_kind_type::ErrantryFinaleDefenseKind;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ErrantryCountermeasure {
@@ -13,7 +16,10 @@ pub struct ErrantryCountermeasure {
     pub case_site_id: String,
     pub hostile_group_id: String,
     pub item_id: String,
+    pub kind: ErrantryCountermeasureKind,
+    pub counters_defense: ErrantryFinaleDefenseKind,
     pub combat_scale_reduction_bps: u32,
+    pub combat_capability_multiplier_bps: u32,
     pub awarded_at_minute: u64,
 }
 
@@ -31,7 +37,11 @@ pub struct ErrantryCountermeasureCols {
     pub case_site_id: __sdk::__query_builder::Col<ErrantryCountermeasure, String>,
     pub hostile_group_id: __sdk::__query_builder::Col<ErrantryCountermeasure, String>,
     pub item_id: __sdk::__query_builder::Col<ErrantryCountermeasure, String>,
+    pub kind: __sdk::__query_builder::Col<ErrantryCountermeasure, ErrantryCountermeasureKind>,
+    pub counters_defense:
+        __sdk::__query_builder::Col<ErrantryCountermeasure, ErrantryFinaleDefenseKind>,
     pub combat_scale_reduction_bps: __sdk::__query_builder::Col<ErrantryCountermeasure, u32>,
+    pub combat_capability_multiplier_bps: __sdk::__query_builder::Col<ErrantryCountermeasure, u32>,
     pub awarded_at_minute: __sdk::__query_builder::Col<ErrantryCountermeasure, u64>,
 }
 
@@ -48,9 +58,15 @@ impl __sdk::__query_builder::HasCols for ErrantryCountermeasure {
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
             hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
             item_id: __sdk::__query_builder::Col::new(table_name, "item_id"),
+            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            counters_defense: __sdk::__query_builder::Col::new(table_name, "counters_defense"),
             combat_scale_reduction_bps: __sdk::__query_builder::Col::new(
                 table_name,
                 "combat_scale_reduction_bps",
+            ),
+            combat_capability_multiplier_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "combat_capability_multiplier_bps",
             ),
             awarded_at_minute: __sdk::__query_builder::Col::new(table_name, "awarded_at_minute"),
         }

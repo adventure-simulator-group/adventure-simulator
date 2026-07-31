@@ -58,10 +58,10 @@ checked. Other representatives and services cannot issue it.
 
 Production acceptance leaves the party in its settlement and creates the
 ordinary accepted journey destination. The party departs through the normal
-travel flow. The preliminary trial is initially unbound and attaches to the
+travel flow. The preliminary trials are initially unbound and attach to the
 first persisted camp on that exact journey; stale URLs from an earlier camp no
-longer project or accept the challenge. Only the development demo fabricates a
-midpoint camp and moves the party there immediately.
+longer project or accept them. Only the development demo fabricates a midpoint
+camp and moves the party there immediately.
 
 The preliminary fey trial is optional. It is available only to the accepted
 party at a persisted camp on the active journey whose exact departure,
@@ -69,19 +69,28 @@ movement, elapsed, and finale-destination coordinates match private authority.
 A pending random encounter hides and blocks trial actions. The trial is not a
 `StrategicEncounter` and never blocks **Continue travel**.
 
-The puzzle is preliminary rather than a quest objective: bypassing it and
-defeating the finale's four armed retainers resolves the errantry normally.
+After at least one hour of rest at that same camp, an optional wounded Order
+courier can interrupt the rest. This is a mortal, ordinary-prose conversation
+inside the camp chat window. Aiding him yields his physical captured dispatch;
+leaving him, ignoring him, or continuing the journey remains valid. Neither
+preliminary challenge is a quest objective: defeating the finale's four armed
+retainers resolves the errantry normally.
 
-Solving awards a durable party inventory item, the **Favor of the Thorn Lady**,
-and a typed source-idempotent countermeasure bound to that party, case, finale
-site, and hostile group. When the finale mission first binds, its immutable
-snapshot records base scale, effective scale, and countermeasure source. The
-effective enemy combat scale is reduced by 25%, with a 50% floor; tactical play
-and autoresolve consume the same effective snapshot. The snapshot also records
-a bounded 75% countermeasure multiplier applied to enemy physical capability
-and trained combat skill in both paths. Base scale, effective scale,
-countermeasure multiplier, and source challenge remain auditable. Existing
-missions and hostile-group authority are never mutated.
+The finale authors typed defenses. This first frame uses **Unnatural Prowess**
+and **Reinforcements**. Each material boon is a typed, source-idempotent
+countermeasure bound to its party, case, finale site, and hostile group. The
+Favor of the Thorn Lady counters Unnatural Prowess, reducing enemy scale by
+25% and applying a 75% enemy-capability multiplier. The captured dispatch
+counters Reinforcements, reducing scale by 15% and applying an 85%
+enemy-capability multiplier.
+
+When the finale mission first binds, a deterministic resolver chooses the
+strongest applicable countermeasure for each authored defense and records the
+applied and unresolved defenses in an immutable approach snapshot. Scale
+reductions add with a 50% floor; capability multipliers compose with the same
+floor. Tactical play and autoresolve consume the same effective scale and
+capability snapshot. Irrelevant boons and duplicate weaker counters do not
+alter it. Existing missions and hostile-group authority are never mutated.
 
 ## Direct development demo
 
@@ -95,4 +104,6 @@ Order issuer even though the selected Social Demo character begins in
 Riverdale.
 The HTTP adapter redirects directly to the chat puzzle, skipping ordinary
 dialogue acceptance and travel setup. Solving shows the boon and returns to
-camp so **Continue travel** can reach the bound finale.
+camp. Rest at least one hour to exercise the wounded-courier interruption, or
+use **Continue travel** to bypass either preliminary challenge and reach the
+bound finale.

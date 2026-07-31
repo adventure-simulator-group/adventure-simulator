@@ -1117,6 +1117,7 @@ pub struct MissionAuthority {
     pub enemy_combat_scale_bps: u32,
     pub countermeasure_multiplier_bps: u32,
     pub countermeasure_source_challenge_id: Option<String>,
+    pub errantry_approach_snapshot_json: String,
     pub normalized_combat_power: u32,
     pub drop_item_id: Option<String>,
     pub drop_quantity: u32,

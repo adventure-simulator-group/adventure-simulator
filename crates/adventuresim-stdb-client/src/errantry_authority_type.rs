@@ -15,7 +15,8 @@ pub struct ErrantryAuthority {
     pub issuer_location_id: String,
     pub finale_case_site_id: String,
     pub finale_hostile_group_id: String,
-    pub preliminary_challenge_id: String,
+    pub preliminary_challenge_ids: Vec<String>,
+    pub finale_defenses_json: String,
 }
 
 impl __sdk::InModule for ErrantryAuthority {
@@ -34,7 +35,8 @@ pub struct ErrantryAuthorityCols {
     pub issuer_location_id: __sdk::__query_builder::Col<ErrantryAuthority, String>,
     pub finale_case_site_id: __sdk::__query_builder::Col<ErrantryAuthority, String>,
     pub finale_hostile_group_id: __sdk::__query_builder::Col<ErrantryAuthority, String>,
-    pub preliminary_challenge_id: __sdk::__query_builder::Col<ErrantryAuthority, String>,
+    pub preliminary_challenge_ids: __sdk::__query_builder::Col<ErrantryAuthority, Vec<String>>,
+    pub finale_defenses_json: __sdk::__query_builder::Col<ErrantryAuthority, String>,
 }
 
 impl __sdk::__query_builder::HasCols for ErrantryAuthority {
@@ -61,9 +63,13 @@ impl __sdk::__query_builder::HasCols for ErrantryAuthority {
                 table_name,
                 "finale_hostile_group_id",
             ),
-            preliminary_challenge_id: __sdk::__query_builder::Col::new(
+            preliminary_challenge_ids: __sdk::__query_builder::Col::new(
                 table_name,
-                "preliminary_challenge_id",
+                "preliminary_challenge_ids",
+            ),
+            finale_defenses_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "finale_defenses_json",
             ),
         }
     }

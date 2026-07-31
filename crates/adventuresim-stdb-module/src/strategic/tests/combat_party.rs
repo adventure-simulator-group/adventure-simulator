@@ -19,6 +19,7 @@
             enemy_combat_scale_bps: 10_000,
             countermeasure_multiplier_bps: 10_000,
             countermeasure_source_challenge_id: None,
+            errantry_approach_snapshot_json: "{}".into(),
             normalized_combat_power: 10_000,
             drop_item_id: None,
             drop_quantity: 0,
