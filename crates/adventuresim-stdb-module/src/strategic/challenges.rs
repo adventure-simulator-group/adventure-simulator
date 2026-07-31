@@ -337,9 +337,12 @@ fn puzzle_demo_enabled() -> bool {
 fn active_puzzle_demo(
     ctx: &ReducerContext,
     party_id: &str,
+    character_id: u64,
     settlement_id: &str,
 ) -> Option<(ChallengeAuthority, Contract)> {
     let party_key = party_id.to_string();
+    let demo_prefix =
+        format!("challenge:ordered-sigils:demo:{character_id}:{settlement_id}:");
     let mut challenges = ctx
         .db
         .challenge_authority()
@@ -349,7 +352,7 @@ fn active_puzzle_demo(
             challenge.open
                 && challenge.solved_at_minute.is_none()
                 && challenge.site_id == settlement_id
-                && challenge.id.starts_with("challenge:ordered-sigils:demo:")
+                && challenge.id.starts_with(&demo_prefix)
         })
         .collect::<Vec<_>>();
     challenges.sort_by(|left, right| left.id.cmp(&right.id));
@@ -394,7 +397,9 @@ pub fn load_puzzle_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), S
     if party.leader_id != character_id {
         return Err("Only the party leader can load the puzzle demo".into());
     }
-    if let Some((_, contract)) = active_puzzle_demo(ctx, &party_id, &settlement_id) {
+    if let Some((_, contract)) =
+        active_puzzle_demo(ctx, &party_id, character_id, &settlement_id)
+    {
         if let Some(active) = party.active_contract_id.as_deref()
             && active != contract.id
         {
@@ -596,6 +601,17 @@ mod challenge_source_boundary_tests {
         assert!(reuse < fresh_ordinal);
         assert!(loader.contains("return Ok(())"));
         assert!(loader.contains("ordinal.rotate_left(23)"));
+        let reuse_lookup = source
+            .split("fn active_puzzle_demo")
+            .nth(1)
+            .unwrap()
+            .split("fn puzzle_demo_suffix")
+            .next()
+            .unwrap();
+        assert!(
+            reuse_lookup
+                .contains("challenge:ordered-sigils:demo:{character_id}:{settlement_id}:")
+        );
 
         let submit = source
             .split("pub fn submit_ordered_sigil_challenge")
