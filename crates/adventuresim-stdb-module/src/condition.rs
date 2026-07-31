@@ -2017,6 +2017,12 @@ pub fn apply_settlement_leisure_condition(
         outcome.morale_earning_minutes,
         interval_end_minute,
     );
+    crate::residence::apply_residence_leisure_morale(
+        ctx,
+        character_id,
+        outcome.morale,
+        interval_end_minute,
+    )?;
     Ok(())
 }
 

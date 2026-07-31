@@ -13,6 +13,7 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 use crate::character::character;
 use crate::personality::{Courtship as PersonalityCourtship, Inclination, Presentation, Sex, character_personality};
 use crate::time::character_time;
+use crate::character_skills;
 
 /// Marks a normal full Character as being advanced by deterministic NPC policy
 /// rather than by an account owner.  It intentionally does not weaken the
@@ -316,7 +317,7 @@ fn formal_dowry_amount(father_wealth: u64) -> u32 {
     if father_wealth >= 300 { 100 } else if father_wealth >= 100 { 45 } else if father_wealth >= 30 { 15 } else { 0 }
 }
 
-fn settle_due_weddings(ctx: &ReducerContext, participant_id: u64, now: u64) -> Result<(), String> {
+pub fn settle_due_weddings(ctx: &ReducerContext, participant_id: u64, now: u64) -> Result<(), String> {
     let due: Vec<_> = ctx.db.exclusive_commitment().iter()
         .filter(|row| row.status == CommitmentStatus::Reserved && row.kind == CommitmentKind::Engagement
             && row.effective_minute <= now && (row.first_character_id == participant_id || row.second_character_id == participant_id))
@@ -339,11 +340,16 @@ fn settle_due_weddings(ctx: &ReducerContext, participant_id: u64, now: u64) -> R
         ensure_kinship(ctx, second.id, first.id, KinshipKind::Spouse, commitment.effective_minute);
         let courtship_id = format!("courtship:{}:{}", first.id.min(second.id), first.id.max(second.id));
         if ctx.db.courtship().id().find(&courtship_id).is_some_and(|courtship| courtship.kind == CourtshipKind::Formal) {
-            if let Some(father) = father_of(ctx, second.id) {
+            let (bride_id, recipient_id) = [first.id, second.id].into_iter()
+                .find_map(|candidate| ctx.db.character_personality().character_id().find(candidate)
+                    .filter(|personality| personality.sex == Sex::Female)
+                    .map(|_| (candidate, if candidate == first.id { second.id } else { first.id })))
+                .ok_or("Formal marriage requires a female bride")?;
+            if let Some(father) = father_of(ctx, bride_id) {
                 let dowry = formal_dowry_amount(crate::item::personal_currency_total(ctx, father));
                 if dowry > 0 && crate::item::consume_personal_currency(ctx, father, dowry.into()).is_ok() {
-                    if let Some(settlement_id) = first.current_settlement_id.as_deref() {
-                        crate::item::credit_personal_currency(ctx, first.id, settlement_id, dowry)?;
+                    if let Some(settlement_id) = ctx.db.character().id().find(recipient_id).and_then(|person| person.current_settlement_id) {
+                        crate::item::credit_personal_currency(ctx, recipient_id, &settlement_id, dowry)?;
                     }
                 }
             }
@@ -513,7 +519,48 @@ pub fn apply_scheduled_socializing(
         if ctx.db.socializing_receipt().id().find(&id).is_some() { continue; }
         let Some(target_id) = socializing_target(ctx, actor_id, day) else { continue; };
         crate::social::apply_async_socializing(ctx, actor_id, target_id, minutes)?;
+        settle_secret_courtship_discovery_for_pair(ctx, actor_id, target_id, day)?;
         ctx.db.socializing_receipt().insert(SocializingReceipt { id, actor_id, target_id, start_minute: start, end_minute: end, minutes });
+    }
+    Ok(())
+}
+
+/// Resolve the public-risk side of an informal relationship once per observer
+/// and day.  The receipt makes it independent of time-advance chunking; only
+/// living adult parents and siblings co-located with either partner observe.
+pub fn settle_secret_courtship_discovery_for_pair(
+    ctx: &ReducerContext,
+    first_id: u64,
+    second_id: u64,
+    day: u64,
+) -> Result<(), String> {
+    let (first, second) = canonical_pair(first_id, second_id);
+    let courtship_id = format!("courtship:{first}:{second}");
+    let Some(courtship) = ctx.db.courtship().id().find(&courtship_id) else { return Ok(()); };
+    if courtship.kind != CourtshipKind::Informal || courtship.status == CourtshipStatus::Ended { return Ok(()); }
+    let first_person = ctx.db.character().id().find(first).ok_or("Courtship participant not found")?;
+    let second_person = ctx.db.character().id().find(second).ok_or("Courtship participant not found")?;
+    let mut observers: Vec<_> = ctx.db.character_kinship().iter()
+        .filter(|edge| (edge.subject_id == first || edge.subject_id == second)
+            && matches!(edge.kind, KinshipKind::Parent | KinshipKind::Sibling))
+        .map(|edge| edge.related_id).collect();
+    observers.sort_unstable(); observers.dedup();
+    for observer_id in observers {
+        let id = format!("discovery:{courtship_id}:{observer_id}");
+        if ctx.db.courtship_discovery().id().find(&id).is_some() { continue; }
+        let Some(observer) = ctx.db.character().id().find(observer_id) else { continue; };
+        if !observer.alive || observer.age_years < ADULT_AGE_YEARS
+            || (observer.current_settlement_id != first_person.current_settlement_id
+                && observer.current_settlement_id != second_person.current_settlement_id)
+        { continue; }
+        let insight = ctx.db.character_skills().character_id().find(observer_id).map_or(0.0, |skills| skills.insight_hours.sqrt());
+        let deception = [first, second].into_iter().filter_map(|id| ctx.db.character_skills().character_id().find(id))
+            .map(|skills| skills.deception_hours.sqrt()).fold(0.0_f32, f32::max);
+        let entropy = ((first ^ second ^ observer_id ^ day.rotate_left(19)) % 10_000) as f32 / 10_000.0;
+        let discovery_chance = ((insight - deception) * 0.08 + 0.15).clamp(0.02, 0.85);
+        if entropy < discovery_chance {
+            ctx.db.courtship_discovery().insert(CourtshipDiscovery { id, courtship_id: courtship_id.clone(), observer_id, discovered_minute: day.saturating_mul(MINUTES_PER_DAY) });
+        }
     }
     Ok(())
 }

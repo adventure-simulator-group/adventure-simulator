@@ -913,6 +913,9 @@ fn ensure_settlement_activity_inner(
     // World import writes only canonical settlement facts. These derived
     // service rows are instead materialized when settlement activity is used.
     crate::repair::ensure_settlement_smith(ctx, settlement_id);
+    crate::residence::ensure_settlement_residence_offers(ctx, settlement_id).map_err(
+        |error| settlement_activity_stage_error(settlement_id, "residence offers", error),
+    )?;
     crate::settlement_population::ensure_settlement_population(ctx, settlement_id).map_err(
         |error| settlement_activity_stage_error(settlement_id, "settlement population", error),
     )?;

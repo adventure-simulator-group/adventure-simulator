@@ -5,6 +5,7 @@ use adventuresim_core::courtship::HousingTier as CoreHousingTier;
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
+use crate::character::character;
 use crate::strategic::settlement;
 use crate::time::character_time;
 
@@ -137,6 +138,29 @@ pub fn settle_residence_billing(ctx: &ReducerContext, character_id: u64) -> Resu
     }
     residence.last_billed_minute = residence.last_billed_minute.saturating_add(periods.saturating_mul(RESIDENCE_BILLING_PERIOD_MINUTES));
     ctx.db.character_residence().character_id().update(residence);
+    Ok(())
+}
+
+/// Residence comfort is a separate refreshable morale source rather than an
+/// alteration of baseline Leisure arithmetic. This makes tier benefits local
+/// to the home settlement and preserves the underlying fatigue model.
+pub fn apply_residence_leisure_morale(
+    ctx: &ReducerContext,
+    character_id: u64,
+    baseline_morale: f32,
+    now: u64,
+) -> Result<(), String> {
+    if baseline_morale <= 0.0 { return Ok(()); }
+    let Some(residence) = ctx.db.character_residence().character_id().find(character_id) else { return Ok(()); };
+    if !residence.active { return Ok(()); }
+    let character = ctx.db.character().id().find(character_id).ok_or("Character not found")?;
+    if character.current_settlement_id.as_deref() != Some(&residence.settlement_id) { return Ok(()); }
+    let offer = offer(ctx, &residence.settlement_id, residence.tier)?;
+    let bonus = baseline_morale * (f32::from(offer.leisure_morale_basis_points) / 10_000.0 - 1.0);
+    if bonus > 0.0 {
+        crate::condition::record_morale_event(ctx, character_id, "residence_leisure", bonus, Some(format!("residence:{}", residence.settlement_id)))?;
+    }
+    let _ = now; // Event timestamps are owned by the shared morale recorder.
     Ok(())
 }
 

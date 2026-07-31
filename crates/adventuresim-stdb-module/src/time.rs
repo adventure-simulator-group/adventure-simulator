@@ -351,6 +351,9 @@ pub fn advance_character_time(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::residence::settle_residence_billing(ctx, character_id)?;
+    crate::relationship::settle_due_weddings(ctx, character_id, starting_minute.saturating_add(elapsed))?;
+    crate::relationship::settle_due_births(ctx, character_id, starting_minute.saturating_add(elapsed))?;
     crate::condition::apply_weather_exposure(
         ctx,
         character_id,
@@ -1601,6 +1604,9 @@ pub fn perform_immediate_activity(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::residence::settle_residence_billing(ctx, character_id)?;
+    crate::relationship::settle_due_weddings(ctx, character_id, starting_minute.saturating_add(elapsed))?;
+    crate::relationship::settle_due_births(ctx, character_id, starting_minute.saturating_add(elapsed))?;
     crate::condition::apply_weather_exposure(
         ctx,
         character_id,
