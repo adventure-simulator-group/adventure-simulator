@@ -16,6 +16,11 @@ pub const WEDDING_NOTICE_MINUTES: u64 = MINUTES_PER_YEAR;
 pub const GESTATION_MINUTES: u64 = 280 * MINUTES_PER_DAY;
 pub const SOCIALIZING_QUANTUM_MINUTES: u16 = 15;
 pub const HOUSING_BILLING_PERIOD_MINUTES: u64 = 30 * MINUTES_PER_DAY;
+/// Necessities are charged to the holding's owner for every person supported
+/// by that home at the due minute. Dependents cost less than adults but are
+/// never free, so marriage and children have an explicit household cost.
+pub const ADULT_NECESSITIES_PER_30_DAYS: u32 = 4;
+pub const DEPENDENT_NECESSITIES_PER_30_DAYS: u32 = 2;
 pub const CONCEPTION_QUANTUM_MINUTES: u64 = 60;
 pub const CONCEPTION_CHANCE_PER_TEN_THOUSAND: u16 = 40;
 
@@ -38,6 +43,43 @@ pub struct HousingEconomy {
     pub owner_maintenance_per_30_days: u32,
     pub property_tax_per_30_days: u32,
     pub leisure_morale_basis_points: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ResidencePeriodCharge {
+    pub base_housing: u64,
+    pub adult_necessities: u64,
+    pub dependent_necessities: u64,
+}
+
+impl ResidencePeriodCharge {
+    pub const fn total(self) -> u64 {
+        self.base_housing
+            .saturating_add(self.adult_necessities)
+            .saturating_add(self.dependent_necessities)
+    }
+}
+
+/// Produce the auditable line items for one holding and one due date.
+pub const fn residence_period_charge(
+    economy: HousingEconomy,
+    owned: bool,
+    supported_adults: u32,
+    supported_dependents: u32,
+) -> ResidencePeriodCharge {
+    ResidencePeriodCharge {
+        base_housing: if owned {
+            economy
+                .owner_maintenance_per_30_days
+                .saturating_add(economy.property_tax_per_30_days) as u64
+        } else {
+            economy.rent_per_30_days as u64
+        },
+        adult_necessities: supported_adults.saturating_mul(ADULT_NECESSITIES_PER_30_DAYS) as u64,
+        dependent_necessities: supported_dependents
+            .saturating_mul(DEPENDENT_NECESSITIES_PER_30_DAYS)
+            as u64,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -675,6 +717,21 @@ mod tests {
         assert_eq!(whole.funds_remaining, late.funds_remaining);
         assert_eq!(whole.next_due_minute, late.next_due_minute);
         assert_eq!(whole.first_unpaid_due_minute, late.first_unpaid_due_minute);
+    }
+
+    #[test]
+    fn owned_property_is_cheaper_and_supported_people_add_necessities() {
+        let economy = HousingTier::Moderate.economy();
+        let renter = residence_period_charge(economy, false, 1, 0);
+        let owner = residence_period_charge(economy, true, 1, 0);
+        assert!(owner.base_housing < renter.base_housing);
+        assert!(owner.base_housing >= u64::from(economy.property_tax_per_30_days));
+
+        let family = residence_period_charge(economy, true, 2, 2);
+        assert_eq!(
+            family.total() - owner.total(),
+            u64::from(ADULT_NECESSITIES_PER_30_DAYS + 2 * DEPENDENT_NECESSITIES_PER_30_DAYS)
+        );
     }
 
     #[test]

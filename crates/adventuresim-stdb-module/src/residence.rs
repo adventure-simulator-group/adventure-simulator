@@ -1,16 +1,19 @@
-//! Settlement residences: permanent three-tier offers, one designated home,
-//! explicit occupancy, and chronological recurring billing.
+//! Settlement residences: permanent three-tier offers, durable legal
+//! holdings, one designated primary home, explicit occupancy, and
+//! chronological recurring billing.
+
+use std::collections::BTreeMap;
 
 use adventuresim_core::courtship::{
     HOUSING_BILLING_PERIOD_MINUTES, HousingTier as CoreHousingTier, RESIDENCE_MORALE_SPEC,
-    RefreshableMorale, plan_due_period_settlement, refresh_bounded_leisure_morale,
-    residence_leisure_bonus_milli,
+    RefreshableMorale, refresh_bounded_leisure_morale, residence_leisure_bonus_milli,
+    residence_period_charge,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::character::character;
 use crate::condition::{MoraleEvent, morale_event};
-use crate::relationship::{character_kinship, household_member};
+use crate::relationship::{HouseholdRole, character_kinship, household_member};
 use crate::strategic::settlement;
 use crate::time::character_time;
 
@@ -64,21 +67,46 @@ pub enum ResidenceTenure {
     Owner,
 }
 
-/// Current designated residence. Replacing or relinquishing it first resolves
-/// all occupancy and writes an immutable transition receipt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum ResidenceHoldingStatus {
+    Active,
+    Dormant,
+    Relinquished,
+}
+
+/// Durable legal interest in one physical home. An owner may retain any
+/// number of purchased holdings; a renter may have at most one active rental.
+/// The stable ID includes the owner-local acquisition ordinal so buying the
+/// same tier in the same settlement twice never overwrites history.
 #[derive(Clone, Debug)]
-#[table(accessor = character_residence)]
-pub struct CharacterResidence {
+#[table(accessor = residence_holding)]
+pub struct ResidenceHolding {
     #[primary_key]
-    pub character_id: u64,
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
     #[index(btree)]
     pub settlement_id: String,
     pub tier: ResidenceTier,
     pub tenure: ResidenceTenure,
-    pub active: bool,
+    pub status: ResidenceHoldingStatus,
+    pub acquired_ordinal: u64,
+    pub acquired_minute: u64,
     pub last_billed_minute: u64,
     pub next_due_minute: u64,
-    pub acquired_minute: u64,
+    pub resolved_minute: Option<u64>,
+}
+
+/// Exactly one designated home per character, independent of how many legal
+/// holdings they own.
+#[derive(Clone, Debug)]
+#[table(accessor = primary_residence)]
+pub struct PrimaryResidence {
+    #[primary_key]
+    pub character_id: u64,
+    #[index(btree)]
+    pub holding_id: String,
+    pub designated_minute: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -87,17 +115,25 @@ pub enum ResidenceChargeOutcome {
     Unpaid,
 }
 
-/// Immutable one-period charge receipt. Paid and unpaid have distinct IDs so
-/// a dormant owner can later recover and settle the same due period.
+/// Immutable one-period ledger receipt. The components make property cost and
+/// supported-household necessities auditable without exposing this private
+/// authority table directly to clients.
 #[derive(Clone, Debug)]
 #[table(accessor = residence_charge)]
 pub struct ResidenceCharge {
     #[primary_key]
     pub id: String,
     #[index(btree)]
-    pub residence_character_id: u64,
+    pub holding_id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
     pub due_minute: u64,
+    pub base_housing_amount: u64,
+    pub adult_necessities_amount: u64,
+    pub dependent_necessities_amount: u64,
     pub amount: u64,
+    pub supported_adults: u32,
+    pub supported_dependents: u32,
     pub outcome: ResidenceChargeOutcome,
     pub recorded_minute: u64,
 }
@@ -109,7 +145,7 @@ pub struct ResidenceOccupant {
     #[primary_key]
     pub character_id: u64,
     #[index(btree)]
-    pub residence_character_id: u64,
+    pub holding_id: String,
     pub admitted_minute: u64,
 }
 
@@ -130,7 +166,9 @@ pub struct ResidenceTransition {
     #[primary_key]
     pub id: String,
     #[index(btree)]
-    pub residence_character_id: u64,
+    pub holding_id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
     pub affected_character_id: u64,
     pub kind: ResidenceTransitionKind,
     pub minute: u64,
@@ -140,29 +178,40 @@ pub fn offer_id(settlement_id: &str, tier: ResidenceTier) -> String {
     format!("residence:{settlement_id}:{}", tier.id())
 }
 
+fn holding_id(
+    owner_character_id: u64,
+    settlement_id: &str,
+    tier: ResidenceTier,
+    acquired_ordinal: u64,
+) -> String {
+    format!(
+        "residence-holding:{owner_character_id}:{settlement_id}:{}:{acquired_ordinal}",
+        tier.id()
+    )
+}
+
 fn transition_id(
-    residence_character_id: u64,
+    holding_id: &str,
     affected_character_id: u64,
     minute: u64,
     kind: ResidenceTransitionKind,
 ) -> String {
-    format!(
-        "residence-transition:{residence_character_id}:{affected_character_id}:{minute}:{kind:?}"
-    )
+    format!("residence-transition:{holding_id}:{affected_character_id}:{minute}:{kind:?}")
 }
 
 fn record_transition(
     ctx: &ReducerContext,
-    residence_character_id: u64,
+    holding: &ResidenceHolding,
     affected_character_id: u64,
     minute: u64,
     kind: ResidenceTransitionKind,
 ) {
-    let id = transition_id(residence_character_id, affected_character_id, minute, kind);
+    let id = transition_id(&holding.id, affected_character_id, minute, kind);
     if ctx.db.residence_transition().id().find(&id).is_none() {
         ctx.db.residence_transition().insert(ResidenceTransition {
             id,
-            residence_character_id,
+            holding_id: holding.id.clone(),
+            owner_character_id: holding.owner_character_id,
             affected_character_id,
             kind,
             minute,
@@ -227,41 +276,52 @@ fn offer(
         .ok_or_else(|| "Residence offer not found".to_string())
 }
 
-fn charge_per_period(residence: &CharacterResidence, offer: &SettlementResidenceOffer) -> u64 {
-    u64::from(match residence.tenure {
-        ResidenceTenure::Renter => offer.rent_per_period,
-        ResidenceTenure::Owner => offer
-            .owner_maintenance_per_period
-            .saturating_add(offer.property_tax_per_period),
-    })
+/// Private projection seam used by reducers and the authenticated gateway.
+/// Legal holdings and their ledgers remain private.
+pub fn primary_residence_holding(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Option<ResidenceHolding> {
+    let primary = ctx
+        .db
+        .primary_residence()
+        .character_id()
+        .find(character_id)?;
+    ctx.db
+        .residence_holding()
+        .id()
+        .find(&primary.holding_id)
+        .filter(|row| row.status == ResidenceHoldingStatus::Active)
 }
 
 pub fn active_primary_residence(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: &str,
-) -> Option<CharacterResidence> {
-    ctx.db
-        .character_residence()
-        .character_id()
-        .find(character_id)
-        .filter(|row| row.active && row.settlement_id == settlement_id)
+) -> Option<ResidenceHolding> {
+    primary_residence_holding(ctx, character_id)
+        .filter(|holding| holding.settlement_id == settlement_id)
 }
 
-/// Resolve the active home an occupant is entitled to use. A residence is
-/// owned or rented by its holder, so every benefit must follow the occupancy
-/// edge rather than assuming the beneficiary is also the holder.
+/// Resolve the active home an occupant is entitled to use through occupancy,
+/// not through ownership.
 pub fn active_residence_for_occupant(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: &str,
-) -> Option<CharacterResidence> {
+) -> Option<ResidenceHolding> {
     let occupant = ctx
         .db
         .residence_occupant()
         .character_id()
         .find(character_id)?;
-    active_primary_residence(ctx, occupant.residence_character_id, settlement_id)
+    ctx.db
+        .residence_holding()
+        .id()
+        .find(&occupant.holding_id)
+        .filter(|row| {
+            row.status == ResidenceHoldingStatus::Active && row.settlement_id == settlement_id
+        })
 }
 
 pub(crate) fn remove_occupant_at(
@@ -278,51 +338,51 @@ pub(crate) fn remove_occupant_at(
         .residence_occupant()
         .character_id()
         .delete(character_id);
-    record_transition(
-        ctx,
-        occupant.residence_character_id,
-        character_id,
-        minute,
-        ResidenceTransitionKind::OccupantRemoved,
-    );
+    if let Some(holding) = ctx.db.residence_holding().id().find(&occupant.holding_id) {
+        record_transition(
+            ctx,
+            &holding,
+            character_id,
+            minute,
+            ResidenceTransitionKind::OccupantRemoved,
+        );
+    }
     Some(occupant)
 }
 
-/// Canonical internal move used by atomic wedding and birth settlement. Those
-/// reducers establish the household or kinship authority in the same
-/// transaction before moving the character.
+/// Canonical atomic move used after wedding/birth authority is established.
 pub(crate) fn move_residence_occupant_internal(
     ctx: &ReducerContext,
-    residence_character_id: u64,
+    holding_id: &str,
     character_id: u64,
     minute: u64,
 ) -> Result<(), String> {
-    let residence = ctx
+    let holding = ctx
         .db
-        .character_residence()
-        .character_id()
-        .find(residence_character_id)
-        .filter(|row| row.active)
-        .ok_or("Active residence not found")?;
+        .residence_holding()
+        .id()
+        .find(holding_id.to_owned())
+        .filter(|row| row.status == ResidenceHoldingStatus::Active)
+        .ok_or("Active residence holding not found")?;
     if let Some(existing) = ctx
         .db
         .residence_occupant()
         .character_id()
         .find(character_id)
     {
-        if existing.residence_character_id == residence.character_id {
+        if existing.holding_id == holding.id {
             return Ok(());
         }
         remove_occupant_at(ctx, character_id, minute);
     }
     ctx.db.residence_occupant().insert(ResidenceOccupant {
         character_id,
-        residence_character_id,
+        holding_id: holding.id.clone(),
         admitted_minute: minute,
     });
     record_transition(
         ctx,
-        residence_character_id,
+        &holding,
         character_id,
         minute,
         ResidenceTransitionKind::OccupantAdmitted,
@@ -332,28 +392,28 @@ pub(crate) fn move_residence_occupant_internal(
 
 fn admission_relationship_authorized(
     ctx: &ReducerContext,
-    residence_character_id: u64,
+    owner_character_id: u64,
     occupant_id: u64,
     actor_minute: u64,
 ) -> bool {
     use crate::relationship::KinshipKind;
 
-    if residence_character_id == occupant_id {
+    if owner_character_id == occupant_id {
         return true;
     }
     let same_household = ctx
         .db
         .household_member()
         .character_id()
-        .find(residence_character_id)
+        .find(owner_character_id)
         .zip(ctx.db.household_member().character_id().find(occupant_id))
-        .is_some_and(|(holder, occupant)| {
-            holder.household_id == occupant.household_id
-                && holder.joined_minute <= actor_minute
+        .is_some_and(|(owner, occupant)| {
+            owner.household_id == occupant.household_id
+                && owner.joined_minute <= actor_minute
                 && occupant.joined_minute <= actor_minute
         });
     let family = ctx.db.character_kinship().iter().any(|edge| {
-        edge.subject_id == residence_character_id
+        edge.subject_id == owner_character_id
             && edge.related_id == occupant_id
             && edge.established_minute <= actor_minute
             && matches!(
@@ -366,27 +426,27 @@ fn admission_relationship_authorized(
 
 fn validate_public_admission(
     ctx: &ReducerContext,
-    residence: &CharacterResidence,
+    holding: &ResidenceHolding,
     occupant_id: u64,
 ) -> Result<(), String> {
     use crate::relationship::KinshipKind;
     use adventuresim_core::courtship::ADULT_AGE_YEARS;
 
-    let holder = crate::character::require_living_character(ctx, residence.character_id)?;
+    let owner = crate::character::require_living_character(ctx, holding.owner_character_id)?;
     let occupant = crate::character::require_living_character(ctx, occupant_id)?;
     let actor_minute = crate::relationship::enforce_temporal_scope(
         ctx,
-        residence.character_id,
+        holding.owner_character_id,
         Some(occupant_id),
         crate::relationship::TemporalScope::PairwiseSoft,
     )?;
-    if holder.current_settlement_id.as_deref() != Some(&residence.settlement_id)
-        || occupant.current_settlement_id.as_deref() != Some(&residence.settlement_id)
+    if owner.current_settlement_id.as_deref() != Some(&holding.settlement_id)
+        || occupant.current_settlement_id.as_deref() != Some(&holding.settlement_id)
     {
         return Err("Residence admission requires both characters to be co-located".into());
     }
     let dependent = ctx.db.character_kinship().iter().any(|edge| {
-        edge.subject_id == residence.character_id
+        edge.subject_id == holding.owner_character_id
             && edge.related_id == occupant_id
             && edge.established_minute <= actor_minute
             && matches!(edge.kind, KinshipKind::Parent | KinshipKind::Child)
@@ -394,7 +454,12 @@ fn validate_public_admission(
     if occupant.age_years < ADULT_AGE_YEARS && !dependent {
         return Err("Only an adult or dependent child may occupy a residence".into());
     }
-    if !admission_relationship_authorized(ctx, residence.character_id, occupant_id, actor_minute) {
+    if !admission_relationship_authorized(
+        ctx,
+        holding.owner_character_id,
+        occupant_id,
+        actor_minute,
+    ) {
         return Err("Only an active household member or immediate family may be admitted".into());
     }
     if ctx
@@ -402,133 +467,249 @@ fn validate_public_admission(
         .residence_occupant()
         .character_id()
         .find(occupant_id)
-        .is_some_and(|existing| existing.residence_character_id != residence.character_id)
+        .is_some_and(|existing| existing.holding_id != holding.id)
     {
         return Err("Character already occupies a different residence".into());
     }
     Ok(())
 }
 
-fn relinquish_current_residence_at(
-    ctx: &ReducerContext,
-    character_id: u64,
-    minute: u64,
-) -> Result<(), String> {
-    let Some(residence) = ctx
+fn occupants_for_holding(ctx: &ReducerContext, holding_id: &str) -> Vec<u64> {
+    ctx.db
+        .residence_occupant()
+        .holding_id()
+        .filter(holding_id)
+        .map(|row| row.character_id)
+        .collect()
+}
+
+fn clear_primary_if_holding(ctx: &ReducerContext, character_id: u64, holding_id: &str) {
+    if ctx
         .db
-        .character_residence()
+        .primary_residence()
         .character_id()
         .find(character_id)
-    else {
-        return Ok(());
-    };
-    let occupants: Vec<_> = ctx
+        .is_some_and(|primary| primary.holding_id == holding_id)
+    {
+        ctx.db
+            .primary_residence()
+            .character_id()
+            .delete(character_id);
+    }
+}
+
+fn relinquish_holding_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    holding_id: &str,
+    minute: u64,
+) -> Result<(), String> {
+    let mut holding = ctx
         .db
-        .residence_occupant()
-        .residence_character_id()
-        .filter(character_id)
-        .map(|row| row.character_id)
-        .collect();
-    for occupant_id in occupants {
+        .residence_holding()
+        .id()
+        .find(holding_id.to_owned())
+        .filter(|row| row.owner_character_id == character_id)
+        .ok_or("Residence holding not found")?;
+    if holding.status == ResidenceHoldingStatus::Relinquished {
+        return Ok(());
+    }
+    for occupant_id in occupants_for_holding(ctx, holding_id) {
         remove_occupant_at(ctx, occupant_id, minute);
     }
+    clear_primary_if_holding(ctx, character_id, holding_id);
+    holding.status = ResidenceHoldingStatus::Relinquished;
+    holding.resolved_minute = Some(minute);
     record_transition(
         ctx,
-        character_id,
+        &holding,
         character_id,
         minute,
         ResidenceTransitionKind::Relinquished,
     );
-    ctx.db
-        .character_residence()
-        .character_id()
-        .delete(residence.character_id);
+    ctx.db.residence_holding().id().update(holding);
     Ok(())
 }
 
-/// Settle bills in chronological one-period units. Successful receipts and
-/// `next_due_minute` are identical whether time arrives in one chunk or many.
-pub fn settle_residence_billing(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    let Some(mut residence) = ctx
+fn supported_occupant_counts_at(
+    ctx: &ReducerContext,
+    holding_id: &str,
+    due_minute: u64,
+) -> (u32, u32) {
+    let mut latest: BTreeMap<u64, (u64, bool)> = BTreeMap::new();
+    for transition in ctx
         .db
-        .character_residence()
-        .character_id()
-        .find(character_id)
-    else {
-        return Ok(());
+        .residence_transition()
+        .holding_id()
+        .filter(holding_id)
+        .filter(|row| {
+            row.minute <= due_minute
+                && matches!(
+                    row.kind,
+                    ResidenceTransitionKind::OccupantAdmitted
+                        | ResidenceTransitionKind::OccupantRemoved
+                )
+        })
+    {
+        let admitted = transition.kind == ResidenceTransitionKind::OccupantAdmitted;
+        let candidate = (transition.minute, admitted);
+        if latest
+            .get(&transition.affected_character_id)
+            .is_none_or(|current| candidate > *current)
+        {
+            latest.insert(transition.affected_character_id, candidate);
+        }
+    }
+    let mut adults = 0_u32;
+    let mut dependents = 0_u32;
+    for (character_id, (_, admitted)) in latest {
+        if !admitted {
+            continue;
+        }
+        let household_dependent = ctx
+            .db
+            .household_member()
+            .character_id()
+            .find(character_id)
+            .is_some_and(|member| {
+                member.joined_minute <= due_minute && member.role == HouseholdRole::Dependent
+            });
+        let underage = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .is_some_and(|character| {
+                character.age_years < adventuresim_core::courtship::ADULT_AGE_YEARS
+            });
+        if household_dependent || underage {
+            dependents = dependents.saturating_add(1);
+        } else {
+            adults = adults.saturating_add(1);
+        }
+    }
+    (adults, dependents)
+}
+
+fn period_charge(
+    ctx: &ReducerContext,
+    holding: &ResidenceHolding,
+    due_minute: u64,
+) -> Result<
+    (
+        u32,
+        u32,
+        adventuresim_core::courtship::ResidencePeriodCharge,
+    ),
+    String,
+> {
+    let (adults, dependents) = supported_occupant_counts_at(ctx, &holding.id, due_minute);
+    Ok((
+        adults,
+        dependents,
+        residence_period_charge(
+            holding.tier.core().economy(),
+            holding.tenure == ResidenceTenure::Owner,
+            adults,
+            dependents,
+        ),
+    ))
+}
+
+fn settle_one_holding_period(
+    ctx: &ReducerContext,
+    mut holding: ResidenceHolding,
+    available: &mut u64,
+    total_spent: &mut u64,
+) -> Result<(), String> {
+    let due_minute = holding.next_due_minute;
+    let (adults, dependents, charge) = period_charge(ctx, &holding, due_minute)?;
+    let amount = charge.total();
+    let paid = *available >= amount;
+    let outcome = if paid {
+        ResidenceChargeOutcome::Paid
+    } else {
+        ResidenceChargeOutcome::Unpaid
     };
-    if !residence.active {
-        return Ok(());
+    let id = format!(
+        "residence-charge:{}:{due_minute}:{}",
+        holding.id,
+        if paid { "paid" } else { "unpaid" }
+    );
+    if ctx.db.residence_charge().id().find(&id).is_none() {
+        ctx.db.residence_charge().insert(ResidenceCharge {
+            id,
+            holding_id: holding.id.clone(),
+            owner_character_id: holding.owner_character_id,
+            due_minute,
+            base_housing_amount: charge.base_housing,
+            adult_necessities_amount: charge.adult_necessities,
+            dependent_necessities_amount: charge.dependent_necessities,
+            amount,
+            supported_adults: adults,
+            supported_dependents: dependents,
+            outcome,
+            recorded_minute: due_minute,
+        });
     }
-    let now = residence_now(ctx, character_id)?;
-    let offer = offer(ctx, &residence.settlement_id, residence.tier)?;
-    let each = charge_per_period(&residence, &offer);
-    let available = crate::item::personal_currency_total(ctx, character_id);
-    let plan = plan_due_period_settlement(residence.next_due_minute, now, available, each);
-    if plan.amount_spent > 0 {
-        crate::item::consume_personal_currency(ctx, character_id, plan.amount_spent)?;
-    }
-    for period in 0..plan.periods_paid {
-        let due_minute = residence
-            .next_due_minute
-            .saturating_add(period.saturating_mul(RESIDENCE_BILLING_PERIOD_MINUTES));
-        let id = format!("residence-charge:{character_id}:{due_minute}:paid");
-        if ctx.db.residence_charge().id().find(&id).is_none() {
-            ctx.db.residence_charge().insert(ResidenceCharge {
-                id,
-                residence_character_id: character_id,
-                due_minute,
-                amount: each,
-                outcome: ResidenceChargeOutcome::Paid,
-                recorded_minute: due_minute,
-            });
-        }
-        residence.last_billed_minute = due_minute;
-    }
-    residence.next_due_minute = plan.next_due_minute;
-    if let Some(unpaid_due) = plan.first_unpaid_due_minute {
-        let id = format!("residence-charge:{character_id}:{unpaid_due}:unpaid");
-        if ctx.db.residence_charge().id().find(&id).is_none() {
-            ctx.db.residence_charge().insert(ResidenceCharge {
-                id,
-                residence_character_id: character_id,
-                due_minute: unpaid_due,
-                amount: each,
-                outcome: ResidenceChargeOutcome::Unpaid,
-                recorded_minute: unpaid_due,
-            });
-        }
-        residence.active = false;
+    if !paid {
+        holding.status = ResidenceHoldingStatus::Dormant;
         record_transition(
             ctx,
-            character_id,
-            character_id,
-            unpaid_due,
+            &holding,
+            holding.owner_character_id,
+            due_minute,
             ResidenceTransitionKind::Dormant,
         );
-        if residence.tenure == ResidenceTenure::Renter {
-            let occupants: Vec<_> = ctx
-                .db
-                .residence_occupant()
-                .residence_character_id()
-                .filter(character_id)
-                .map(|row| row.character_id)
-                .collect();
-            for occupant_id in occupants {
-                remove_occupant_at(ctx, occupant_id, unpaid_due);
+        clear_primary_if_holding(ctx, holding.owner_character_id, &holding.id);
+        if holding.tenure == ResidenceTenure::Renter {
+            for occupant_id in occupants_for_holding(ctx, &holding.id) {
+                remove_occupant_at(ctx, occupant_id, due_minute);
             }
         }
+    } else {
+        *available = available.saturating_sub(amount);
+        *total_spent = total_spent.saturating_add(amount);
+        holding.last_billed_minute = due_minute;
+        holding.next_due_minute = due_minute.saturating_add(RESIDENCE_BILLING_PERIOD_MINUTES);
     }
-    ctx.db
-        .character_residence()
-        .character_id()
-        .update(residence);
+    ctx.db.residence_holding().id().update(holding);
     Ok(())
 }
 
-/// Residence comfort is one fixed-duration, refreshable, bounded morale
-/// source. The condition helper's personality duration is intentionally not
-/// used here because housing has a fixed seven-day rules duration.
+/// Settle every active legal holding in `(due minute, holding ID)` order.
+/// Nonprimary owned properties therefore continue to incur maintenance and
+/// property tax. Each due period is indivisible; the first unaffordable bill
+/// retains the remaining funds and its authoritative due frontier.
+pub fn settle_residence_billing(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let now = residence_now(ctx, character_id)?;
+    let mut available = crate::item::personal_currency_total(ctx, character_id);
+    let mut total_spent = 0_u64;
+    loop {
+        let next = ctx
+            .db
+            .residence_holding()
+            .owner_character_id()
+            .filter(character_id)
+            .filter(|holding| {
+                holding.status == ResidenceHoldingStatus::Active && holding.next_due_minute <= now
+            })
+            .min_by(|left, right| {
+                (left.next_due_minute, left.id.as_str())
+                    .cmp(&(right.next_due_minute, right.id.as_str()))
+            });
+        let Some(holding) = next else {
+            break;
+        };
+        settle_one_holding_period(ctx, holding, &mut available, &mut total_spent)?;
+    }
+    if total_spent > 0 {
+        crate::item::consume_personal_currency(ctx, character_id, total_spent)?;
+    }
+    Ok(())
+}
+
+/// Residence comfort is one fixed-duration, refreshable, bounded source.
 pub fn apply_residence_leisure_morale(
     ctx: &ReducerContext,
     character_id: u64,
@@ -544,17 +725,14 @@ pub fn apply_residence_leisure_morale(
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    let Some(residence) = character
+    let Some(holding) = character
         .current_settlement_id
         .as_deref()
         .and_then(|settlement_id| active_residence_for_occupant(ctx, character_id, settlement_id))
     else {
         return Ok(());
     };
-    if character.current_settlement_id.as_deref() != Some(&residence.settlement_id) {
-        return Ok(());
-    }
-    let offer = offer(ctx, &residence.settlement_id, residence.tier)?;
+    let offer = offer(ctx, &holding.settlement_id, holding.tier)?;
     let earned_milli = residence_leisure_bonus_milli(
         (baseline_morale * 1_000.0).round().max(0.0) as u32,
         offer.leisure_morale_basis_points,
@@ -614,13 +792,54 @@ pub fn apply_residence_leisure_morale(
     Ok(())
 }
 
+fn designate_holding_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    holding_id: &str,
+    minute: u64,
+) -> Result<(), String> {
+    let holding = ctx
+        .db
+        .residence_holding()
+        .id()
+        .find(holding_id.to_owned())
+        .filter(|row| row.owner_character_id == character_id)
+        .filter(|row| row.status == ResidenceHoldingStatus::Active)
+        .ok_or("Active residence holding not found")?;
+    let primary = PrimaryResidence {
+        character_id,
+        holding_id: holding.id.clone(),
+        designated_minute: minute,
+    };
+    if ctx
+        .db
+        .primary_residence()
+        .character_id()
+        .find(character_id)
+        .is_some()
+    {
+        ctx.db.primary_residence().character_id().update(primary);
+    } else {
+        ctx.db.primary_residence().insert(primary);
+    }
+    move_residence_occupant_internal(ctx, &holding.id, character_id, minute)?;
+    record_transition(
+        ctx,
+        &holding,
+        character_id,
+        minute,
+        ResidenceTransitionKind::Designated,
+    );
+    Ok(())
+}
+
 fn acquire_residence_internal(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: &str,
     tier: ResidenceTier,
     tenure: ResidenceTenure,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
     if character.current_settlement_id.as_deref() != Some(settlement_id) {
         return Err("You must be in a settlement to acquire a residence there".into());
@@ -632,26 +851,52 @@ fn acquire_residence_internal(
     };
     crate::item::consume_personal_currency(ctx, character_id, initial_charge)?;
     let now = residence_now(ctx, character_id)?;
-    relinquish_current_residence_at(ctx, character_id, now)?;
-    ctx.db.character_residence().insert(CharacterResidence {
-        character_id,
+    if tenure == ResidenceTenure::Renter {
+        let active_rentals: Vec<_> = ctx
+            .db
+            .residence_holding()
+            .owner_character_id()
+            .filter(character_id)
+            .filter(|row| {
+                row.tenure == ResidenceTenure::Renter
+                    && row.status != ResidenceHoldingStatus::Relinquished
+            })
+            .map(|row| row.id)
+            .collect();
+        for active_rental in active_rentals {
+            relinquish_holding_at(ctx, character_id, &active_rental, now)?;
+        }
+    }
+    let acquired_ordinal = ctx
+        .db
+        .residence_holding()
+        .owner_character_id()
+        .filter(character_id)
+        .count() as u64;
+    let id = holding_id(character_id, settlement_id, tier, acquired_ordinal);
+    let holding = ResidenceHolding {
+        id: id.clone(),
+        owner_character_id: character_id,
         settlement_id: settlement_id.to_owned(),
         tier,
         tenure,
-        active: true,
+        status: ResidenceHoldingStatus::Active,
+        acquired_ordinal,
+        acquired_minute: now,
         last_billed_minute: now,
         next_due_minute: now.saturating_add(RESIDENCE_BILLING_PERIOD_MINUTES),
-        acquired_minute: now,
-    });
+        resolved_minute: None,
+    };
+    ctx.db.residence_holding().insert(holding.clone());
     record_transition(
         ctx,
-        character_id,
+        &holding,
         character_id,
         now,
         ResidenceTransitionKind::Acquired,
     );
-    move_residence_occupant_internal(ctx, character_id, character_id, now)?;
-    Ok(())
+    designate_holding_at(ctx, character_id, &id, now)?;
+    Ok(id)
 }
 
 fn acquire_residence(
@@ -662,7 +907,7 @@ fn acquire_residence(
     tenure: ResidenceTenure,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
-    acquire_residence_internal(ctx, character_id, settlement_id, tier, tenure)
+    acquire_residence_internal(ctx, character_id, settlement_id, tier, tenure).map(|_| ())
 }
 
 #[reducer]
@@ -698,87 +943,76 @@ pub fn buy_residence(
 }
 
 #[reducer]
-pub fn relinquish_residence(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+pub fn relinquish_residence(
+    ctx: &ReducerContext,
+    character_id: u64,
+    holding_id: String,
+) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     let now = residence_now(ctx, character_id)?;
-    relinquish_current_residence_at(ctx, character_id, now)
+    relinquish_holding_at(ctx, character_id, &holding_id, now)
 }
 
 #[reducer]
-pub fn designate_residence(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+pub fn designate_residence(
+    ctx: &ReducerContext,
+    character_id: u64,
+    holding_id: String,
+) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     let now = residence_now(ctx, character_id)?;
-    let mut residence = ctx
-        .db
-        .character_residence()
-        .character_id()
-        .find(character_id)
-        .ok_or("Residence not found")?;
-    if !residence.active {
-        return Err("A dormant residence must be recovered before designation".into());
-    }
-    residence.active = true;
-    ctx.db
-        .character_residence()
-        .character_id()
-        .update(residence);
-    record_transition(
-        ctx,
-        character_id,
-        character_id,
-        now,
-        ResidenceTransitionKind::Designated,
-    );
-    Ok(())
+    designate_holding_at(ctx, character_id, &holding_id, now)
 }
 
 #[reducer]
-pub fn recover_owned_residence(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+pub fn recover_owned_residence(
+    ctx: &ReducerContext,
+    character_id: u64,
+    holding_id: String,
+) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
-    recover_owned_residence_internal(ctx, character_id)
+    recover_owned_residence_internal(ctx, character_id, &holding_id)
 }
 
-fn recover_owned_residence_internal(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+fn recover_owned_residence_internal(
+    ctx: &ReducerContext,
+    character_id: u64,
+    holding_id: &str,
+) -> Result<(), String> {
     let now = residence_now(ctx, character_id)?;
-    let mut residence = ctx
+    let mut holding = ctx
         .db
-        .character_residence()
-        .character_id()
-        .find(character_id)
-        .ok_or("Residence not found")?;
-    if residence.tenure != ResidenceTenure::Owner {
+        .residence_holding()
+        .id()
+        .find(holding_id.to_owned())
+        .filter(|row| row.owner_character_id == character_id)
+        .ok_or("Residence holding not found")?;
+    if holding.tenure != ResidenceTenure::Owner {
         return Err("Only an owned residence can be recovered".into());
     }
-    if residence.active {
+    if holding.status == ResidenceHoldingStatus::Relinquished {
+        return Err("A relinquished property cannot be recovered".into());
+    }
+    if holding.status == ResidenceHoldingStatus::Active {
         return Ok(());
     }
-    let offer = offer(ctx, &residence.settlement_id, residence.tier)?;
-    let each = charge_per_period(&residence, &offer);
-    if crate::item::personal_currency_total(ctx, character_id) < each {
-        return Err("Not enough coin to recover the residence".into());
-    }
-    residence.active = true;
-    ctx.db
-        .character_residence()
-        .character_id()
-        .update(residence);
+    holding.status = ResidenceHoldingStatus::Active;
+    ctx.db.residence_holding().id().update(holding.clone());
     settle_residence_billing(ctx, character_id)?;
-    if ctx
+    let recovered = ctx
         .db
-        .character_residence()
-        .character_id()
-        .find(character_id)
-        .is_some_and(|row| row.active)
-    {
-        move_residence_occupant_internal(ctx, character_id, character_id, now)?;
-        record_transition(
-            ctx,
-            character_id,
-            character_id,
-            now,
-            ResidenceTransitionKind::Recovered,
-        );
-    }
+        .residence_holding()
+        .id()
+        .find(holding_id.to_owned())
+        .filter(|row| row.status == ResidenceHoldingStatus::Active)
+        .ok_or("Not enough coin to recover the residence")?;
+    record_transition(
+        ctx,
+        &recovered,
+        character_id,
+        now,
+        ResidenceTransitionKind::Recovered,
+    );
     Ok(())
 }
 
@@ -791,9 +1025,7 @@ pub(crate) enum NpcResidenceOutcome {
     NotAtHome,
 }
 
-/// Scheduler-only residence policy. It spends only currency already owned by
-/// the NPC and delegates all state changes to the same internal operations as
-/// public reducers.
+/// Scheduler-only residence policy using the same holdings and billing rules.
 pub(crate) fn settle_npc_residence(
     ctx: &ReducerContext,
     character_id: u64,
@@ -803,72 +1035,51 @@ pub(crate) fn settle_npc_residence(
     if character.current_settlement_id.as_deref() != Some(home_settlement_id) {
         return Ok(NpcResidenceOutcome::NotAtHome);
     }
-    if let Some(occupancy) = ctx
+    if ctx
         .db
         .residence_occupant()
         .character_id()
         .find(character_id)
-        && ctx
-            .db
-            .character_residence()
-            .character_id()
-            .find(occupancy.residence_character_id)
-            .is_some_and(|residence| residence.active)
+        .and_then(|occupancy| ctx.db.residence_holding().id().find(&occupancy.holding_id))
+        .is_some_and(|holding| holding.status == ResidenceHoldingStatus::Active)
     {
         return Ok(NpcResidenceOutcome::AlreadyOccupant);
     }
-    if let Some(residence) = ctx
+    let owned = ctx
         .db
-        .character_residence()
-        .character_id()
-        .find(character_id)
-    {
-        if residence.active {
-            move_residence_occupant_internal(
-                ctx,
-                character_id,
-                character_id,
-                residence_now(ctx, character_id)?,
-            )?;
-            return Ok(NpcResidenceOutcome::AlreadyOccupant);
-        }
-        if residence.tenure == ResidenceTenure::Owner
-            && residence.settlement_id == home_settlement_id
+        .residence_holding()
+        .owner_character_id()
+        .filter(character_id)
+        .filter(|holding| {
+            holding.tenure == ResidenceTenure::Owner
+                && holding.settlement_id == home_settlement_id
+                && holding.status != ResidenceHoldingStatus::Relinquished
+        })
+        .min_by_key(|holding| (holding.acquired_ordinal, holding.id.clone()));
+    if let Some(holding) = owned {
+        if holding.status == ResidenceHoldingStatus::Dormant
+            && recover_owned_residence_internal(ctx, character_id, &holding.id).is_err()
         {
-            let now = residence_now(ctx, character_id)?;
-            let residence_offer = offer(ctx, home_settlement_id, residence.tier)?;
-            let each = charge_per_period(&residence, &residence_offer);
-            let periods_due = if now < residence.next_due_minute {
-                0
-            } else {
-                now.saturating_sub(residence.next_due_minute)
-                    .checked_div(RESIDENCE_BILLING_PERIOD_MINUTES)
-                    .unwrap_or(0)
-                    .saturating_add(1)
-            };
-            let required = each.saturating_mul(periods_due);
-            if crate::item::personal_currency_total(ctx, character_id) >= required {
-                recover_owned_residence_internal(ctx, character_id)?;
-                if ctx
-                    .db
-                    .character_residence()
-                    .character_id()
-                    .find(character_id)
-                    .is_some_and(|row| row.active)
-                {
-                    return Ok(NpcResidenceOutcome::RecoveredOwner);
-                }
-            }
             return Ok(NpcResidenceOutcome::NoAffordableOffer);
         }
-        // A lapsed rental cannot be used as a second home. The next
-        // acquisition will replace it through the ordinary transition path.
+        designate_holding_at(
+            ctx,
+            character_id,
+            &holding.id,
+            residence_now(ctx, character_id)?,
+        )?;
+        return Ok(if holding.status == ResidenceHoldingStatus::Dormant {
+            NpcResidenceOutcome::RecoveredOwner
+        } else {
+            NpcResidenceOutcome::AlreadyOccupant
+        });
     }
     ensure_settlement_residence_offers(ctx, home_settlement_id)?;
     let available = crate::item::personal_currency_total(ctx, character_id);
-    let offers = ResidenceTier::ALL.map(|tier| {
+    let mut resolved = Vec::with_capacity(ResidenceTier::ALL.len());
+    for tier in ResidenceTier::ALL {
         let row = offer(ctx, home_settlement_id, tier)?;
-        Ok::<_, String>((
+        resolved.push((
             tier,
             adventuresim_core::npc_policy::NpcHouseOffer {
                 rank: match tier {
@@ -879,11 +1090,7 @@ pub(crate) fn settle_npc_residence(
                 initial_cost: u64::from(row.rent_per_period),
                 recurring_cost: u64::from(row.rent_per_period),
             },
-        ))
-    });
-    let mut resolved = Vec::with_capacity(ResidenceTier::ALL.len());
-    for candidate in offers {
-        resolved.push(candidate?);
+        ));
     }
     let Some(selected) = adventuresim_core::npc_policy::best_affordable_house(
         available,
@@ -908,37 +1115,46 @@ pub(crate) fn settle_npc_residence(
 #[reducer]
 pub fn admit_household_occupant(
     ctx: &ReducerContext,
-    residence_character_id: u64,
+    owner_character_id: u64,
+    holding_id: String,
     occupant_id: u64,
 ) -> Result<(), String> {
-    crate::strategic::require_strategic_character_authority(ctx, residence_character_id)?;
-    let now = residence_now(ctx, residence_character_id)?;
-    let residence = ctx
+    crate::strategic::require_strategic_character_authority(ctx, owner_character_id)?;
+    let now = residence_now(ctx, owner_character_id)?;
+    let holding = ctx
         .db
-        .character_residence()
-        .character_id()
-        .find(residence_character_id)
-        .filter(|row| row.active)
-        .ok_or("Active residence not found")?;
-    validate_public_admission(ctx, &residence, occupant_id)?;
-    move_residence_occupant_internal(ctx, residence_character_id, occupant_id, now)
+        .residence_holding()
+        .id()
+        .find(&holding_id)
+        .filter(|row| row.owner_character_id == owner_character_id)
+        .filter(|row| row.status == ResidenceHoldingStatus::Active)
+        .ok_or("Active residence holding not found")?;
+    validate_public_admission(ctx, &holding, occupant_id)?;
+    move_residence_occupant_internal(ctx, &holding.id, occupant_id, now)
 }
 
 #[reducer]
 pub fn remove_household_occupant(
     ctx: &ReducerContext,
-    residence_character_id: u64,
+    owner_character_id: u64,
+    holding_id: String,
     occupant_id: u64,
 ) -> Result<(), String> {
-    crate::strategic::require_strategic_character_authority(ctx, residence_character_id)?;
+    crate::strategic::require_strategic_character_authority(ctx, owner_character_id)?;
+    ctx.db
+        .residence_holding()
+        .id()
+        .find(&holding_id)
+        .filter(|row| row.owner_character_id == owner_character_id)
+        .ok_or("Residence holding not found")?;
     let existing = ctx
         .db
         .residence_occupant()
         .character_id()
         .find(occupant_id)
-        .filter(|row| row.residence_character_id == residence_character_id)
+        .filter(|row| row.holding_id == holding_id)
         .ok_or("Character does not occupy this residence")?;
-    let now = residence_now(ctx, residence_character_id)?;
+    let now = residence_now(ctx, owner_character_id)?;
     remove_occupant_at(ctx, existing.character_id, now);
     Ok(())
 }
@@ -948,22 +1164,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn offers_are_stable_and_three_tiered() {
+    fn offers_and_holding_ids_are_stable() {
         assert_eq!(ResidenceTier::ALL.len(), 3);
         assert_ne!(
             offer_id("lubeck", ResidenceTier::Cheap),
             offer_id("lubeck", ResidenceTier::Fancy)
         );
+        assert_ne!(
+            holding_id(1, "lubeck", ResidenceTier::Cheap, 0),
+            holding_id(1, "lubeck", ResidenceTier::Cheap, 1)
+        );
     }
 
     #[test]
-    fn billing_contract_uses_next_due_and_one_period_receipts() {
+    fn schema_separates_many_holdings_from_one_primary_and_one_occupancy() {
         let source = include_str!("residence.rs");
-        assert!(source.contains("plan_due_period_settlement"));
-        assert!(source.contains("pub next_due_minute: u64"));
-        assert!(source.contains("pub struct ResidenceCharge"));
-        assert!(source.contains("for period in 0..plan.periods_paid"));
-        assert!(!source.contains("charge_for_periods"));
+        assert!(source.contains("#[table(accessor = residence_holding)]"));
+        assert!(source.contains("pub struct PrimaryResidence"));
+        assert!(source.contains("pub struct ResidenceOccupant"));
+        assert!(source.contains("pub holding_id: String"));
+        assert!(!source.contains("pub struct CharacterResidence"));
+        assert!(!source.contains("#[table(accessor = residence_holding, public)]"));
+    }
+
+    #[test]
+    fn acquisition_preserves_owned_property_and_replaces_only_a_rental() {
+        let source = include_str!("residence.rs");
+        let acquisition = source
+            .split("fn acquire_residence_internal")
+            .nth(1)
+            .unwrap()
+            .split("fn acquire_residence")
+            .next()
+            .unwrap();
+        assert!(acquisition.contains("tenure == ResidenceTenure::Renter"));
+        assert!(acquisition.contains("row.tenure == ResidenceTenure::Renter"));
+        assert!(!acquisition.contains("ResidenceTenure::Owner\n"));
+        assert!(acquisition.contains("designate_holding_at"));
+    }
+
+    #[test]
+    fn billing_covers_all_holdings_and_audits_household_line_items() {
+        let source = include_str!("residence.rs");
         let billing = source
             .split("pub fn settle_residence_billing")
             .nth(1)
@@ -971,72 +1213,62 @@ mod tests {
             .split("pub fn apply_residence_leisure_morale")
             .next()
             .unwrap();
-        assert!(billing.contains("recorded_minute: due_minute"));
-        assert!(billing.contains("recorded_minute: unpaid_due"));
-        assert!(billing.contains("ResidenceTransitionKind::Dormant"));
-        assert!(billing.contains("remove_occupant_at(ctx, occupant_id, unpaid_due)"));
+        assert!(billing.contains("owner_character_id()"));
+        assert!(billing.contains(".min_by(|left, right|"));
+        assert!(billing.contains("(left.next_due_minute, left.id.as_str())"));
+        assert!(billing.contains("settle_one_holding_period"));
+        assert!(source.contains("adult_necessities_amount"));
+        assert!(source.contains("dependent_necessities_amount"));
+        assert!(source.contains("supported_occupant_counts_at"));
+        assert!(source.contains("next_due_minute = due_minute.saturating_add"));
     }
 
     #[test]
-    fn replacement_resolves_occupancy_before_inserting_new_home() {
-        let source = include_str!("residence.rs");
-        let acquisition = source
-            .split("fn acquire_residence")
-            .nth(1)
-            .unwrap()
-            .split("#[reducer]")
-            .next()
-            .unwrap();
-        assert!(
-            acquisition.find("relinquish_current_residence_at").unwrap()
-                < acquisition.find("CharacterResidence {").unwrap()
+    fn interleaved_holdings_allocate_partial_funds_in_global_due_order() {
+        // Two periods for A straddle B's first period. With only ten coins,
+        // chronological settlement pays A1 and B1, then records A2 unpaid.
+        let mut bills = vec![(10_u64, "a", 6_u64), (30, "a", 6), (20, "b", 4)];
+        bills.sort_by_key(|(due, holding, _)| (*due, *holding));
+        let mut funds = 10_u64;
+        let outcomes: Vec<_> = bills
+            .into_iter()
+            .map(|(due, holding, amount)| {
+                let paid = funds >= amount;
+                if paid {
+                    funds -= amount;
+                }
+                (due, holding, paid)
+            })
+            .collect();
+        assert_eq!(
+            outcomes,
+            vec![(10, "a", true), (20, "b", true), (30, "a", false)]
         );
+        assert_eq!(funds, 0);
+
+        let source = include_str!("residence.rs");
+        let one_period = source
+            .split("fn settle_one_holding_period")
+            .nth(1)
+            .unwrap()
+            .split("pub fn settle_residence_billing")
+            .next()
+            .unwrap();
+        assert!(!one_period.contains("while holding"));
     }
 
     #[test]
-    fn public_admission_is_authorized_and_never_steals_occupancy() {
+    fn specific_relinquishment_resolves_occupants_without_deleting_history() {
         let source = include_str!("residence.rs");
-        let public = source
-            .split("fn validate_public_admission")
+        let relinquish = source
+            .split("fn relinquish_holding_at")
             .nth(1)
             .unwrap()
-            .split("fn relinquish_current_residence_at")
+            .split("fn supported_occupant_counts_at")
             .next()
             .unwrap();
-        assert!(public.contains("require_living_character"));
-        assert!(public.contains("co-located"));
-        assert!(public.contains("ADULT_AGE_YEARS"));
-        assert!(public.contains("admission_relationship_authorized"));
-        assert!(public.contains("already occupies a different residence"));
-        assert!(!public.contains("remove_occupant_at"));
-    }
-
-    #[test]
-    fn occupant_benefits_resolve_through_the_holder() {
-        let source = include_str!("residence.rs");
-        let resolver = source
-            .split("pub fn active_residence_for_occupant")
-            .nth(1)
-            .unwrap()
-            .split("pub(crate) fn remove_occupant_at")
-            .next()
-            .unwrap();
-        assert!(resolver.contains("residence_occupant()"));
-        assert!(resolver.contains("active_primary_residence"));
-        let morale = source
-            .split("pub fn apply_residence_leisure_morale")
-            .nth(1)
-            .unwrap()
-            .split("fn acquire_residence")
-            .next()
-            .unwrap();
-        assert!(morale.contains("active_residence_for_occupant"));
-    }
-
-    #[test]
-    fn residence_authority_is_private() {
-        let source = include_str!("residence.rs");
-        assert!(source.contains("#[table(accessor = character_residence)]"));
-        assert!(!source.contains("#[table(accessor = character_residence, public)]"));
+        assert!(relinquish.contains("occupants_for_holding"));
+        assert!(relinquish.contains("ResidenceHoldingStatus::Relinquished"));
+        assert!(!relinquish.contains("residence_holding().id().delete"));
     }
 }

@@ -11,16 +11,30 @@ order. Purchase price, rent, maintenance, property tax, and Leisure benefit
 must each increase strictly from one tier to the next. For every tier,
 maintenance plus property tax must remain lower than rent.
 
-A character designates at most one primary residence. Renting pays the first
-30-day period up front; buying pays the purchase price up front. Subsequent
-bills settle lazily from the character's personal clock in whole 30-day
+A legal residence holding is distinct from a designated primary home. A
+character may keep multiple purchased houses in multiple settlements but may
+designate at most one active holding as home. A new purchase never destroys an
+older property. Renting pays the first 30-day period up front and is limited to
+one non-relinquished rental; buying pays the purchase price up front. A
+specific holding can be sold or relinquished, explicitly removing its
+occupants and primary designation while retaining its immutable history. A
+dormant purchased holding can be recovered and any eligible active holding can
+later be designated.
+
+Subsequent bills settle lazily from the owner's personal clock in whole 30-day
 periods, so advancing a month once has the same result as advancing it in
-smaller chunks. A failed rent, tax, or maintenance charge deactivates the
-residence without deleting ownership history. Reacquisition is explicit.
-Billing iterates due dates chronologically. Each period is an indivisible
-charge: partial funds are retained, and the first unpaid date remains the
-authoritative failure frontier. A successful period advances the next due date
-by exactly `30 × 1,440` minutes.
+smaller chunks. Billing considers every active holding in chronological
+`(due date, holding ID)` order, including maintenance and property tax on
+nonprimary purchased property. Each period has separate auditable base
+housing, adult necessities, and dependent necessities amounts. The occupant
+counts are evaluated from admission/removal history at that due minute, so a
+spouse or dependent child increases the household's upkeep while they live
+there, and no longer affects later bills after removal, marriage end, or
+widowhood. Each period is an indivisible charge: partial funds are retained,
+and the first unpaid date remains the authoritative failure frontier. A
+successful period advances the next due date by exactly `30 × 1,440` minutes.
+An unpaid rental loses occupancy; an unpaid purchased holding becomes dormant
+but its ownership history remains.
 
 An active residence is a distinct settlement rest provision. It is never
 represented as `at_inn = false`, which remains the temple/religious service

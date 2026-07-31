@@ -23,7 +23,8 @@ use crate::personality::{
     Courtship as PersonalityCourtship, Inclination, Presentation, Sex, character_personality,
 };
 use crate::residence::{
-    ResidenceTransitionKind, character_residence, residence_occupant, residence_transition,
+    ResidenceHoldingStatus, ResidenceTransitionKind, residence_holding, residence_occupant,
+    residence_transition,
 };
 use crate::social::{CharacterAffinity, character_affinity};
 use crate::strategic::{settlement, strategic_gateway_authority__view};
@@ -340,7 +341,7 @@ pub struct Pregnancy {
     pub child_female: bool,
     pub child_home_seed: u64,
     pub birth_settlement_id: String,
-    pub birth_residence_character_id: Option<u64>,
+    pub birth_residence_holding_id: Option<String>,
     pub status: PregnancyStatus,
     pub birth_character_id: Option<u64>,
     pub resolved_minute: Option<u64>,
@@ -1315,15 +1316,15 @@ pub fn settle_due_weddings(
             );
             continue;
         }
-        let residence_character_id = [first.id, second.id].into_iter().find(|character_id| {
+        let residence_holding_id = [first.id, second.id].into_iter().find_map(|character_id| {
             crate::residence::active_primary_residence(
                 ctx,
-                *character_id,
+                character_id,
                 &commitment.ceremony_settlement_id,
             )
-            .is_some()
+            .map(|holding| holding.id)
         });
-        let Some(residence_character_id) = residence_character_id else {
+        let Some(residence_holding_id) = residence_holding_id else {
             transition_commitment_terminal(
                 ctx,
                 commitment,
@@ -1416,7 +1417,7 @@ pub fn settle_due_weddings(
             );
             crate::residence::move_residence_occupant_internal(
                 ctx,
-                residence_character_id,
+                &residence_holding_id,
                 character_id,
                 commitment.effective_minute,
             )
@@ -1549,7 +1550,7 @@ pub fn establish_pregnancy(
     {
         return Err("Pregnancy requires a valid conception settlement".into());
     }
-    let birth_residence_character_id = [mother_id, father_id].into_iter().find_map(|parent_id| {
+    let birth_residence_holding_id = [mother_id, father_id].into_iter().find_map(|parent_id| {
         ctx.db
             .residence_transition()
             .iter()
@@ -1569,7 +1570,7 @@ pub fn establish_pregnancy(
                 )
             })
             .filter(|transition| transition.kind == ResidenceTransitionKind::OccupantAdmitted)
-            .map(|transition| transition.residence_character_id)
+            .map(|transition| transition.holding_id)
     });
     let seeds = deterministic_child_seeds(
         &mother_id.to_string(),
@@ -1601,7 +1602,7 @@ pub fn establish_pregnancy(
         child_female: seeds.female,
         child_home_seed: seeds.home,
         birth_settlement_id: birth_settlement_id.to_owned(),
-        birth_residence_character_id,
+        birth_residence_holding_id,
         status: PregnancyStatus::Active,
         birth_character_id: None,
         resolved_minute: None,
@@ -2118,20 +2119,24 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 HouseholdRole::Dependent,
             );
         }
-        if let Some(residence_character_id) =
-            pregnancy.birth_residence_character_id.filter(|holder_id| {
-                ctx.db
-                    .character_residence()
-                    .character_id()
-                    .find(*holder_id)
-                    .is_some_and(|residence| {
-                        residence.active && residence.settlement_id == settlement_id
-                    })
-            })
+        if let Some(residence_holding_id) =
+            pregnancy
+                .birth_residence_holding_id
+                .clone()
+                .filter(|holding_id| {
+                    ctx.db
+                        .residence_holding()
+                        .id()
+                        .find(holding_id.to_owned())
+                        .is_some_and(|holding| {
+                            holding.status == ResidenceHoldingStatus::Active
+                                && holding.settlement_id == settlement_id
+                        })
+                })
         {
             crate::residence::move_residence_occupant_internal(
                 ctx,
-                residence_character_id,
+                &residence_holding_id,
                 child_id,
                 pregnancy.due_minute,
             )
@@ -2190,14 +2195,15 @@ fn validate_due_birth(ctx: &ReducerContext, pregnancy: &Pregnancy) -> Result<(),
     {
         return Err("Reserved child identity is unavailable".into());
     }
-    if let Some(holder_id) = pregnancy.birth_residence_character_id
+    if let Some(holding_id) = pregnancy.birth_residence_holding_id.as_deref()
         && ctx
             .db
-            .character_residence()
-            .character_id()
-            .find(holder_id)
-            .is_none_or(|residence| {
-                !residence.active || residence.settlement_id != pregnancy.birth_settlement_id
+            .residence_holding()
+            .id()
+            .find(holding_id.to_owned())
+            .is_none_or(|holding| {
+                holding.status != ResidenceHoldingStatus::Active
+                    || holding.settlement_id != pregnancy.birth_settlement_id
             })
     {
         return Err("Birth residence is unavailable".into());
@@ -3301,7 +3307,8 @@ fn resolve_marriage(
             .residence_occupant()
             .character_id()
             .find(character_id)
-            .is_some_and(|occupant| occupant.residence_character_id != character_id)
+            .and_then(|occupant| ctx.db.residence_holding().id().find(&occupant.holding_id))
+            .is_some_and(|holding| holding.owner_character_id != character_id)
         {
             crate::residence::remove_occupant_at(ctx, character_id, minute);
         }

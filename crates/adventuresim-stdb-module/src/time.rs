@@ -2144,7 +2144,10 @@ fn require_character_residence_rest(ctx: &ReducerContext, character_id: u64) -> 
     let residence =
         crate::residence::active_residence_for_occupant(ctx, character_id, settlement_id)
             .ok_or("You do not have a residence")?;
-    debug_assert!(residence.active && residence.settlement_id == settlement_id);
+    debug_assert!(
+        residence.status == crate::residence::ResidenceHoldingStatus::Active
+            && residence.settlement_id == settlement_id
+    );
     Ok(())
 }
 
