@@ -530,6 +530,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     crate::time::initialize_time(ctx);
+    crate::npc_causal::initialize_npc_causal_schedule(ctx);
     crate::disease::initialize_physiology_key(ctx);
     log::info!(
         "Populating items from catalog revision {}",

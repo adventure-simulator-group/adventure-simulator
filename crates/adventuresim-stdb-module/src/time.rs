@@ -325,6 +325,21 @@ pub fn initialize_character_time(ctx: &ReducerContext, character_id: u64) -> Res
     ensure_character_time(ctx, character_id)
 }
 
+/// The single lifecycle boundary for an authoritative personal-clock write.
+/// Callers finish injury/disease settlement first so wedding cancellation and
+/// widowhood observe the final alive state at this frontier.
+pub(crate) fn settle_lifecycle_after_character_time_write(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Result<(), String> {
+    crate::residence::settle_residence_billing(ctx, character_id)?;
+    crate::relationship::settle_due_weddings(ctx, character_id, minute)?;
+    crate::relationship::settle_due_births(ctx, character_id, minute)?;
+    crate::relationship::settle_marriage_lifecycle_for_character(ctx, character_id, minute);
+    Ok(())
+}
+
 /// Record time spent travelling without applying recovery, activities, or
 /// training. Travel time belongs only to the character's personal clock.
 pub fn advance_character_time(
@@ -352,9 +367,6 @@ pub fn advance_character_time(
         .character_time()
         .character_id()
         .update(character_time);
-    crate::residence::settle_residence_billing(ctx, character_id)?;
-    crate::relationship::settle_due_weddings(ctx, character_id, starting_minute.saturating_add(elapsed))?;
-    crate::relationship::settle_due_births(ctx, character_id, starting_minute.saturating_add(elapsed))?;
     crate::condition::apply_weather_exposure(
         ctx,
         character_id,
@@ -366,6 +378,11 @@ pub fn advance_character_time(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -408,6 +425,11 @@ fn advance_character_time_in_plan(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -638,6 +660,11 @@ pub fn advance_character_wait_time(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -665,6 +692,7 @@ pub fn advance_character_wait_time_in_plan(
         .character_id()
         .find(character_id)
         .ok_or("Character time record not found")?;
+    let starting_minute = time.minutes;
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
@@ -680,6 +708,11 @@ pub fn advance_character_wait_time_in_plan(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -1615,9 +1648,6 @@ pub fn perform_immediate_activity(
         .character_time()
         .character_id()
         .update(character_time);
-    crate::residence::settle_residence_billing(ctx, character_id)?;
-    crate::relationship::settle_due_weddings(ctx, character_id, starting_minute.saturating_add(elapsed))?;
-    crate::relationship::settle_due_births(ctx, character_id, starting_minute.saturating_add(elapsed))?;
     crate::condition::apply_weather_exposure(
         ctx,
         character_id,
@@ -1629,6 +1659,7 @@ pub fn perform_immediate_activity(
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(ctx, character_id, interval_end)?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(());
@@ -1830,7 +1861,11 @@ pub fn rest_at_settlement(
         ctx,
         character_id,
         u64::from(requested_days) * MINUTES_PER_DAY,
-        if at_inn { SettlementRestProvision::Inn } else { SettlementRestProvision::Temple },
+        if at_inn {
+            SettlementRestProvision::Inn
+        } else {
+            SettlementRestProvision::Temple
+        },
         true,
         true,
         None,
@@ -1854,7 +1889,11 @@ pub fn rest_at_settlement_hours(
         ctx,
         character_id,
         requested_minutes,
-        if at_inn { SettlementRestProvision::Inn } else { SettlementRestProvision::Temple },
+        if at_inn {
+            SettlementRestProvision::Inn
+        } else {
+            SettlementRestProvision::Temple
+        },
         true,
         true,
         None,
@@ -2175,20 +2214,12 @@ fn rest_for_minutes(
         elapsed,
         starting_minute.saturating_add(elapsed),
     )?;
-    crate::relationship::apply_spouse_leisure_conception(
-        ctx,
-        character_id,
-        starting_minute,
-        starting_minute.saturating_add(elapsed),
-        recovery_elapsed,
-    )?;
-    crate::relationship::apply_spouse_leisure_morale(
-        ctx,
-        character_id,
-        starting_minute.saturating_add(elapsed),
-        recovery_elapsed,
-    )?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(0);
@@ -2453,6 +2484,11 @@ fn advance_personal_camp_time(
     crate::social::settle_shared_party_time(ctx, member_id);
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        member_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(0);
     }
@@ -2698,6 +2734,7 @@ pub fn rest_at_camp(
         crate::social::settle_shared_party_time(ctx, member_id);
         crate::condition::apply_elapsed_needs(ctx, member_id, member_elapsed)?;
         crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
+        settle_lifecycle_after_character_time_write(ctx, member_id, interval_end_minute)?;
         if terminal.is_some() || !settled.alive {
             continue;
         }
@@ -2851,9 +2888,15 @@ fn party_fatigue_summary(ctx: &ReducerContext, members: &[u64]) -> Result<(f32, 
     Ok((total / members.len() as f32, maximum))
 }
 
-/// Advance through elapsed time. Returns true when a character was forced to
-/// catch up from more than a year behind; callers should skip their action.
-pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
+/// Advance one stationary character through their ordinary saved schedule to
+/// an explicit personal frontier. This is shared by lazy player catch-up and
+/// bounded autonomous NPC policy; callers choose the target, never the
+/// character being observed.
+pub(crate) fn advance_stationary_character_to(
+    ctx: &ReducerContext,
+    character_id: u64,
+    target_minutes: u64,
+) -> Result<(), String> {
     ensure_character_time(ctx, character_id)?;
     let character = ctx
         .db
@@ -2864,25 +2907,20 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     if !character.alive {
         // A corpse's strategic minute remains the death minute. Lazy reads must
         // not train, recover, consume provisions, or advance it.
-        return Ok(false);
+        return Ok(());
     }
-    let official_minutes = refresh_clock(ctx)?;
     let mut character_time = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
-    let forced_catch_up =
-        official_minutes.saturating_sub(character_time.minutes) > MINUTES_PER_YEAR;
-    let target_minutes = if forced_catch_up {
-        official_minutes.saturating_sub(MINUTES_PER_YEAR)
-    } else {
-        official_minutes
-    };
+    if target_minutes < character_time.minutes {
+        return Err("Character time cannot be advanced retroactively".into());
+    }
     let requested_elapsed = target_minutes.saturating_sub(character_time.minutes);
     if requested_elapsed == 0 {
-        return Ok(forced_catch_up);
+        return Ok(());
     }
     let starting_minute = character_time.minutes;
     let saved_schedule = ctx
@@ -2936,9 +2974,14 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
-        return Ok(forced_catch_up);
+        return Ok(());
     }
     let mut skills = ctx
         .db
@@ -2982,6 +3025,29 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     }
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::organization::settle_membership_dues(ctx, character_id)?;
+    Ok(())
+}
+
+/// Advance through elapsed wall-clock time. Returns true when a character was
+/// forced to catch up from more than a year behind; callers should skip their
+/// action.
+pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
+    ensure_character_time(ctx, character_id)?;
+    let official_minutes = refresh_clock(ctx)?;
+    let current_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character time record not found".to_string())?
+        .minutes;
+    let forced_catch_up = official_minutes.saturating_sub(current_minute) > MINUTES_PER_YEAR;
+    let target_minutes = if forced_catch_up {
+        official_minutes.saturating_sub(MINUTES_PER_YEAR)
+    } else {
+        official_minutes
+    };
+    advance_stationary_character_to(ctx, character_id, target_minutes)?;
     Ok(forced_catch_up)
 }
 
@@ -3045,8 +3111,8 @@ mod tests {
             ),
             ("pub fn rest_at_camp", "fn party_fatigue_summary"),
             (
-                "fn synchronize_character",
-                "pub fn synchronize_character_time",
+                "pub(crate) fn advance_stationary_character_to",
+                "pub fn synchronize_character",
             ),
         ] {
             let body = source
@@ -3363,8 +3429,8 @@ mod tests {
         for (start, end) in [
             ("fn rest_for_minutes", "fn inn_stay_cost"),
             (
-                "pub fn synchronize_character(",
-                "/// Explicitly synchronize",
+                "pub(crate) fn advance_stationary_character_to(",
+                "/// Advance through elapsed wall-clock time",
             ),
         ] {
             let interval = source

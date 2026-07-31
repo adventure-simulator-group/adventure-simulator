@@ -413,8 +413,10 @@ pub fn seed_simulation_disease(
         .ok_or("Simulation character time not found")?;
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
+    let interval_end = time.minutes;
     ctx.db.character_time().character_id().update(time);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    crate::time::settle_lifecycle_after_character_time_write(ctx, character_id, interval_end)?;
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }

@@ -18,7 +18,7 @@ use crate::personality::{
 use crate::residence::residence_occupant;
 use crate::social::{CharacterAffinity, character_affinity};
 use crate::strategic::strategic_gateway_authority__view;
-use crate::time::character_time;
+use crate::time::{character_time, character_time__view};
 use std::collections::BTreeSet;
 
 /// Marks a normal full Character as being advanced by deterministic NPC policy
@@ -40,6 +40,41 @@ pub enum TemporalScope {
     Institutional,
     NpcCanonical,
     ExclusiveShared,
+}
+
+/// Enforce the chronology contract at canonical mutation boundaries.
+/// Pairwise-soft and institutional interactions intentionally inspect only the
+/// actor's frontier: dialogue, affinity, guild, trade, rest, and socializing
+/// may address someone without advancing or even reading the target's clock.
+pub fn enforce_temporal_scope(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: Option<u64>,
+    scope: TemporalScope,
+) -> Result<u64, String> {
+    let actor_minute = canonical_now(ctx, actor_id)?;
+    match scope {
+        TemporalScope::ActorLocal | TemporalScope::PairwiseSoft | TemporalScope::Institutional => {
+            Ok(actor_minute)
+        }
+        TemporalScope::NpcCanonical => {
+            let target_id = target_id.ok_or("NPC-canonical scope requires a target")?;
+            if ctx.db.npc_policy().character_id().find(target_id).is_none() {
+                return Err("NPC-canonical scope requires an NPC-policy character".into());
+            }
+            Ok(actor_minute)
+        }
+        TemporalScope::ExclusiveShared => {
+            let target_id = target_id.ok_or("Exclusive scope requires a second participant")?;
+            let target_minute = canonical_now(ctx, target_id)?;
+            if actor_minute != target_minute {
+                return Err(
+                    "Exclusive canonical action requires synchronized personal dates".into(),
+                );
+            }
+            Ok(actor_minute)
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -354,27 +389,66 @@ pub fn backend_character_relationship_statuses(
         .into_iter()
         .filter_map(|character_id| {
             ctx.db.character().id().find(character_id).map(|character| {
+                let observer_minute = ctx
+                    .db
+                    .character_time()
+                    .character_id()
+                    .find(character.id)
+                    .map_or(0, |time| time.minutes);
                 let spouse_id = ctx
                     .db
-                    .character_kinship()
-                    .subject_id()
+                    .marriage()
+                    .first_character_id()
                     .filter(character.id)
-                    .find_map(|edge| (edge.kind == KinshipKind::Spouse).then_some(edge.related_id));
+                    .chain(ctx.db.marriage().second_character_id().filter(character.id))
+                    .find(|marriage| {
+                        (marriage.first_character_id == character.id
+                            || marriage.second_character_id == character.id)
+                            && marriage.married_minute <= observer_minute
+                            && marriage
+                                .resolved_minute
+                                .is_none_or(|resolved| resolved > observer_minute)
+                    })
+                    .map(|marriage| {
+                        if marriage.first_character_id == character.id {
+                            marriage.second_character_id
+                        } else {
+                            marriage.first_character_id
+                        }
+                    });
                 let courtship = ctx
                     .db
                     .courtship()
                     .first_character_id()
                     .filter(character.id)
-                    .find(|row| row.status != CourtshipStatus::Ended)
+                    .find(|row| {
+                        row.started_minute <= observer_minute
+                            && row
+                                .resolved_minute
+                                .is_none_or(|resolved| resolved > observer_minute)
+                    })
                     .or_else(|| {
                         ctx.db
                             .courtship()
                             .second_character_id()
                             .filter(character.id)
-                            .find(|row| row.status != CourtshipStatus::Ended)
+                            .find(|row| {
+                                row.started_minute <= observer_minute
+                                    && row
+                                        .resolved_minute
+                                        .is_none_or(|resolved| resolved > observer_minute)
+                            })
                     });
                 let (courtship_partner_id, courtship_kind, courtship_exposed) =
                     courtship.map_or((None, None, false), |row| {
+                        let exposed = ctx
+                            .db
+                            .courtship_discovery()
+                            .courtship_id()
+                            .filter(&row.id)
+                            .any(|receipt| {
+                                receipt.succeeded && receipt.attempted_minute <= observer_minute
+                            });
                         (
                             Some(if row.first_character_id == character.id {
                                 row.second_character_id
@@ -388,21 +462,21 @@ pub fn backend_character_relationship_statuses(
                                 }
                                 .into(),
                             ),
-                            row.status == CourtshipStatus::Exposed,
+                            exposed,
                         )
                     });
                 let pregnancy = ctx
                     .db
-                    .active_pregnancy()
+                    .pregnancy()
                     .mother_id()
-                    .find(character.id)
-                    .and_then(|active| ctx.db.pregnancy().id().find(&active.pregnancy_id))
-                    .or_else(|| {
-                        ctx.db
-                            .pregnancy()
-                            .father_id()
-                            .filter(character.id)
-                            .find(|row| row.status == PregnancyStatus::Active)
+                    .filter(character.id)
+                    .chain(ctx.db.pregnancy().father_id().filter(character.id))
+                    .find(|row| {
+                        (row.mother_id == character.id || row.father_id == character.id)
+                            && row.conceived_minute <= observer_minute
+                            && row
+                                .resolved_minute
+                                .is_none_or(|resolved| resolved > observer_minute)
                     });
                 BackendCharacterRelationshipStatus {
                     character_id: character.id,
@@ -411,7 +485,11 @@ pub fn backend_character_relationship_statuses(
                     courtship_kind,
                     courtship_exposed,
                     pregnancy_due_minute: pregnancy.as_ref().map(|row| row.due_minute),
-                    pregnancy_child_id: pregnancy.and_then(|row| row.birth_character_id),
+                    pregnancy_child_id: pregnancy.and_then(|row| {
+                        (row.due_minute <= observer_minute)
+                            .then_some(row.birth_character_id)
+                            .flatten()
+                    }),
                 }
             })
         })
@@ -502,11 +580,7 @@ pub fn advance_npc_personal_time(
     // NPC can never skip a due event by retaining an advanced date.
     time.minutes = target_minute;
     ctx.db.character_time().character_id().update(time);
-    crate::residence::settle_residence_billing(ctx, character_id)?;
-    settle_due_weddings(ctx, character_id, target_minute)?;
-    settle_due_births(ctx, character_id, target_minute)?;
-    settle_marriage_lifecycle_for_character(ctx, character_id, target_minute);
-    Ok(())
+    crate::time::settle_lifecycle_after_character_time_write(ctx, character_id, target_minute)
 }
 
 fn canonical_pair(first: u64, second: u64) -> (u64, u64) {
@@ -966,6 +1040,36 @@ pub fn settle_due_weddings(
     Ok(())
 }
 
+/// Settle a stable, bounded slice of due engagements without requiring either
+/// participant's clock to be accessed. Active exclusivity guarantees that
+/// delegating each selected row through its first participant cannot expand
+/// the batch.
+pub fn settle_due_weddings_global(
+    ctx: &ReducerContext,
+    now: u64,
+    limit: usize,
+) -> Result<usize, String> {
+    let mut due: Vec<_> = ctx
+        .db
+        .exclusive_commitment()
+        .iter()
+        .filter(|row| {
+            row.status == CommitmentStatus::Reserved
+                && row.kind == CommitmentKind::Engagement
+                && row.effective_minute <= now
+        })
+        .collect();
+    due.sort_by(|left, right| {
+        (left.effective_minute, left.id.as_str()).cmp(&(right.effective_minute, right.id.as_str()))
+    });
+    due.truncate(limit);
+    let count = due.len();
+    for commitment in due {
+        settle_due_weddings(ctx, commitment.first_character_id, now)?;
+    }
+    Ok(count)
+}
+
 pub fn establish_pregnancy(
     ctx: &ReducerContext,
     mother_id: u64,
@@ -1346,6 +1450,31 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
     Ok(())
 }
 
+/// Materialize a stable, bounded slice of due pregnancies independently of
+/// parent access. Each mother can have only one active pregnancy, so the
+/// per-mother settlement call cannot exceed this selected batch.
+pub fn settle_due_births_global(
+    ctx: &ReducerContext,
+    now: u64,
+    limit: usize,
+) -> Result<usize, String> {
+    let mut due: Vec<_> = ctx
+        .db
+        .pregnancy()
+        .iter()
+        .filter(|row| row.status == PregnancyStatus::Active && row.due_minute <= now)
+        .collect();
+    due.sort_by(|left, right| {
+        (left.due_minute, left.id.as_str()).cmp(&(right.due_minute, right.id.as_str()))
+    });
+    due.truncate(limit);
+    let count = due.len();
+    for pregnancy in due {
+        settle_due_births(ctx, pregnancy.mother_id, now)?;
+    }
+    Ok(count)
+}
+
 fn socializing_id(actor_id: u64, start_minute: u64, end_minute: u64) -> String {
     format!("socializing:{actor_id}:{start_minute}:{end_minute}")
 }
@@ -1458,6 +1587,8 @@ pub fn apply_scheduled_socializing(
         let Some(target_id) = socializing_target(ctx, actor_id, day) else {
             continue;
         };
+        let _ =
+            enforce_temporal_scope(ctx, actor_id, Some(target_id), TemporalScope::PairwiseSoft)?;
         crate::social::apply_async_socializing(ctx, actor_id, target_id, minutes)?;
         settle_secret_courtship_discovery_for_pair(ctx, actor_id, target_id, day)?;
         ctx.db.socializing_receipt().insert(SocializingReceipt {
@@ -1697,12 +1828,12 @@ fn validate_canonical_courtship_pair(
     {
         return Err("Close relatives cannot court".into());
     }
-    let suitor_time = canonical_now(ctx, suitor_id)?;
-    let partner_time = canonical_now(ctx, partner_id)?;
-    if suitor_time != partner_time {
-        return Err("Canonical courtship requires synchronized personal dates".into());
-    }
-    Ok(partner_time)
+    enforce_temporal_scope(
+        ctx,
+        suitor_id,
+        Some(partner_id),
+        TemporalScope::ExclusiveShared,
+    )
 }
 
 fn establish_courtship(
@@ -2059,7 +2190,7 @@ mod tests {
     }
 
     #[test]
-    fn npc_policy_uses_the_single_character_clock_and_settles_after_advancing_it() {
+    fn npc_policy_uses_the_single_character_clock_and_central_lifecycle_hook() {
         let source = include_str!("relationship.rs");
         assert!(!source.contains("struct NpcPersonalTime"));
         assert!(!source.contains("npc_personal_time()"));
@@ -2073,10 +2204,51 @@ mod tests {
         let clock_write = advancement
             .find("character_time().character_id().update(time)")
             .unwrap();
-        assert!(clock_write < advancement.find("settle_residence_billing").unwrap());
-        assert!(clock_write < advancement.find("settle_due_weddings").unwrap());
-        assert!(clock_write < advancement.find("settle_due_births").unwrap());
+        assert!(
+            clock_write
+                < advancement
+                    .find("settle_lifecycle_after_character_time_write")
+                    .unwrap()
+        );
         assert!(advancement.contains("target_minute < time.minutes"));
+    }
+
+    #[test]
+    fn relationship_projection_is_effective_dated_by_personal_frontier() {
+        let source = include_str!("relationship.rs");
+        let projection = source
+            .split("pub fn backend_character_relationship_statuses")
+            .nth(1)
+            .unwrap()
+            .split("pub struct SocializingReceipt")
+            .next()
+            .unwrap();
+        assert!(projection.contains("observer_minute"));
+        assert!(projection.contains("marriage.married_minute <= observer_minute"));
+        assert!(projection.contains("row.conceived_minute <= observer_minute"));
+        assert!(projection.contains("receipt.attempted_minute <= observer_minute"));
+        assert!(projection.contains("row.due_minute <= observer_minute"));
+    }
+
+    #[test]
+    fn soft_scope_never_reads_or_synchronizes_the_target_clock() {
+        let source = include_str!("relationship.rs");
+        let guard = source
+            .split("pub fn enforce_temporal_scope")
+            .nth(1)
+            .unwrap()
+            .split("pub enum KinshipKind")
+            .next()
+            .unwrap();
+        let soft = guard
+            .split("TemporalScope::ActorLocal")
+            .nth(1)
+            .unwrap()
+            .split("TemporalScope::NpcCanonical")
+            .next()
+            .unwrap();
+        assert!(!soft.contains("canonical_now(ctx, target_id)"));
+        assert!(!soft.contains("synchronize"));
     }
 
     #[test]

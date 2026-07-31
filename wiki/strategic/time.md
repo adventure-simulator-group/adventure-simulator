@@ -60,6 +60,12 @@ personal date. An `NpcPolicy` is authority over an ordinary full Character,
 not a parallel clock. NPC policy advancement rejects retroactive targets and
 atomically settles due residence billing, weddings, and births after writing
 the new frontier; a failed settlement rolls back the clock write with it.
+The module seeds one private recurring causal processor. Each invocation first
+settles bounded wedding and birth batches in effective-minute/identity order,
+without waiting for a participant login, then selects at most 64 living NPCs
+by `(CharacterTime, character id)` and advances each through at most one day of
+its ordinary stationary schedule. Dead characters remain frozen. Scheduler
+jitter therefore changes catch-up latency, not durable ordering or step size.
 Actor-local dialogue, trade, guild, quest, and rest interactions may remain
 asynchronous when they do not mutate that canonical NPC state.
 

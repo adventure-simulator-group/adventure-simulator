@@ -62,7 +62,14 @@ same transaction. Player travel and account-owned schedule reducers never
 advance an NPC on its behalf. Institutional services (guild admission,
 renewable market trade, ordinary rest, and actor-local quest journal updates)
 remain asynchronous only when they neither read nor write dynamic canonical
-NPC state.
+NPC state. A private bounded scheduler advances living NPCs in stable
+`(personal minute, character id)` order by no more than one day per pass.
+Weddings and births use separate bounded effective-date queues, so they resolve
+without either participant being accessed. Relationship projections are
+evaluated against the projected character's personal minute: a globally
+reserved engagement may block a conflicting romance while a marriage,
+pregnancy, exposure, or child which is still in that character's future is not
+shown.
 
 Socializing is a 15-minute allocated strategic activity, distinct from both
 Leisure and Carousing. One deterministic companion receives all of a daily
