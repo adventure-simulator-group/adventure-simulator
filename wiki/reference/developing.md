@@ -144,6 +144,13 @@ gameplay evaluation. Both recipes create, claim, and delete their own
   nonce-named loopback database, compile a one-run bootstrap capability in
   memory, and accepts no host, database, or capability override.
 
+For a fast, credential-free lifecycle rule-composition check, run
+`just strategic-sim-lifecycle <new-output-dir> <seed>`. It refuses an existing
+directory and writes immutable whole-cadence, daily-cadence, and comparison
+reports. This is an offline pure-rule tier; see
+[`strategic-simulation.md`](strategic-simulation.md#lifecycle-acceptance-tier)
+for its exact coverage and limits.
+
 The current strategic/tactical boundaries and tactical lifecycle are documented
 in [Architecture](architecture.md). This page is the canonical home for local
 commands, prerequisites, and operator-safe development workflows.
