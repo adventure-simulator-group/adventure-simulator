@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::backend_challenge_type::BackendChallenge;
+use super::challenge_presenter_catalog_id_type::ChallengePresenterCatalogId;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_challenges`.

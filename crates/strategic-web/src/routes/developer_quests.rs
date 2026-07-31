@@ -307,7 +307,7 @@ async fn load_autopsy_demo(State(state): State<AppState>, session: Session) -> R
                 .into_response();
         }
     };
-    let Some(_settlement_id) = character.current_settlement_id else {
+    let Some(settlement_id) = character.current_settlement_id else {
         return (
             StatusCode::CONFLICT,
             Json(json!({"message":"Load the autopsy demo while in a settlement"})),
@@ -415,7 +415,7 @@ async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Re
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
     };
-    let Some(settlement_id) = character.current_settlement_id else {
+    let Some(_settlement_id) = character.current_settlement_id else {
         return (
             StatusCode::CONFLICT,
             Json(json!({"message":"Load the puzzle demo while in a settlement"})),

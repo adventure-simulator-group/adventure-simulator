@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::challenge_presenter_catalog_id_type::ChallengePresenterCatalogId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendChallenge {
@@ -11,14 +13,16 @@ pub struct BackendChallenge {
     pub case_id: String,
     pub party_id: String,
     pub owner_character_id: u64,
-    pub site_id: String,
+    pub finale_case_site_id: String,
     pub puzzle_projection_json: String,
-    pub presenter_json: String,
+    pub presenter_catalog_id: ChallengePresenterCatalogId,
     pub revision: u32,
     pub open: bool,
     pub solved: bool,
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
+    pub boon_item_id: Option<String>,
+    pub boon_combat_scale_reduction_bps: Option<u32>,
 }
 
 impl __sdk::InModule for BackendChallenge {
@@ -33,14 +37,17 @@ pub struct BackendChallengeCols {
     pub case_id: __sdk::__query_builder::Col<BackendChallenge, String>,
     pub party_id: __sdk::__query_builder::Col<BackendChallenge, String>,
     pub owner_character_id: __sdk::__query_builder::Col<BackendChallenge, u64>,
-    pub site_id: __sdk::__query_builder::Col<BackendChallenge, String>,
+    pub finale_case_site_id: __sdk::__query_builder::Col<BackendChallenge, String>,
     pub puzzle_projection_json: __sdk::__query_builder::Col<BackendChallenge, String>,
-    pub presenter_json: __sdk::__query_builder::Col<BackendChallenge, String>,
+    pub presenter_catalog_id:
+        __sdk::__query_builder::Col<BackendChallenge, ChallengePresenterCatalogId>,
     pub revision: __sdk::__query_builder::Col<BackendChallenge, u32>,
     pub open: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub solved: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub active: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub last_attempt_correct: __sdk::__query_builder::Col<BackendChallenge, Option<bool>>,
+    pub boon_item_id: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
+    pub boon_combat_scale_reduction_bps: __sdk::__query_builder::Col<BackendChallenge, Option<u32>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendChallenge {
@@ -51,12 +58,18 @@ impl __sdk::__query_builder::HasCols for BackendChallenge {
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
-            site_id: __sdk::__query_builder::Col::new(table_name, "site_id"),
+            finale_case_site_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "finale_case_site_id",
+            ),
             puzzle_projection_json: __sdk::__query_builder::Col::new(
                 table_name,
                 "puzzle_projection_json",
             ),
-            presenter_json: __sdk::__query_builder::Col::new(table_name, "presenter_json"),
+            presenter_catalog_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "presenter_catalog_id",
+            ),
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             open: __sdk::__query_builder::Col::new(table_name, "open"),
             solved: __sdk::__query_builder::Col::new(table_name, "solved"),
@@ -64,6 +77,11 @@ impl __sdk::__query_builder::HasCols for BackendChallenge {
             last_attempt_correct: __sdk::__query_builder::Col::new(
                 table_name,
                 "last_attempt_correct",
+            ),
+            boon_item_id: __sdk::__query_builder::Col::new(table_name, "boon_item_id"),
+            boon_combat_scale_reduction_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "boon_combat_scale_reduction_bps",
             ),
         }
     }

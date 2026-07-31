@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod abandon_contract_reducer;
 pub mod accept_contract_reducer;
+pub mod accept_order_errantry_reducer;
 pub mod accept_party_join_request_reducer;
 pub mod activity_incident_entropy_type;
 pub mod administer_preparation_reducer;
@@ -134,6 +135,7 @@ pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
 pub mod challenge_attempt_receipt_type;
 pub mod challenge_authority_type;
+pub mod challenge_presenter_catalog_id_type;
 pub mod change_inventory_item_reducer;
 pub mod character_affinity_type;
 pub mod character_attributes_table;
@@ -274,6 +276,8 @@ pub mod equipment_occupancy_table;
 pub mod equipment_occupancy_type;
 pub mod equipment_parent_requirement_type;
 pub mod equipment_placement_type;
+pub mod errantry_authority_type;
+pub mod errantry_countermeasure_type;
 pub mod evidence_presentation_kind_type;
 pub mod examine_corpse_reducer;
 pub mod examine_outbreak_patient_reducer;
@@ -731,6 +735,7 @@ pub mod written_language_hours_type;
 
 pub use abandon_contract_reducer::abandon_contract;
 pub use accept_contract_reducer::accept_contract;
+pub use accept_order_errantry_reducer::accept_order_errantry;
 pub use accept_party_join_request_reducer::accept_party_join_request;
 pub use activity_incident_entropy_type::ActivityIncidentEntropy;
 pub use administer_preparation_reducer::administer_preparation;
@@ -857,6 +862,7 @@ pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
 pub use challenge_attempt_receipt_type::ChallengeAttemptReceipt;
 pub use challenge_authority_type::ChallengeAuthority;
+pub use challenge_presenter_catalog_id_type::ChallengePresenterCatalogId;
 pub use change_inventory_item_reducer::change_inventory_item;
 pub use character_affinity_type::CharacterAffinity;
 pub use character_attributes_table::*;
@@ -997,6 +1003,8 @@ pub use equipment_occupancy_table::*;
 pub use equipment_occupancy_type::EquipmentOccupancy;
 pub use equipment_parent_requirement_type::EquipmentParentRequirement;
 pub use equipment_placement_type::EquipmentPlacement;
+pub use errantry_authority_type::ErrantryAuthority;
+pub use errantry_countermeasure_type::ErrantryCountermeasure;
 pub use evidence_presentation_kind_type::EvidencePresentationKind;
 pub use examine_corpse_reducer::examine_corpse;
 pub use examine_outbreak_patient_reducer::examine_outbreak_patient;
@@ -1467,6 +1475,10 @@ pub enum Reducer {
     AcceptContract {
         character_id: u64,
         contract_id: String,
+    },
+    AcceptOrderErrantry {
+        character_id: u64,
+        dialogue_session_id: String,
     },
     AcceptPartyJoinRequest {
         leader_id: u64,
@@ -2184,6 +2196,7 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::AbandonContract { .. } => "abandon_contract",
             Reducer::AcceptContract { .. } => "accept_contract",
+            Reducer::AcceptOrderErrantry { .. } => "accept_order_errantry",
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AdministerPreparation { .. } => "administer_preparation",
             Reducer::AdvanceSimulationWorldTime { .. } => "advance_simulation_world_time",
@@ -2352,6 +2365,13 @@ impl __sdk::Reducer for Reducer {
 }             => __sats::bsatn::to_vec(&accept_contract_reducer::AcceptContractArgs {
                 character_id: character_id.clone(),
                 contract_id: contract_id.clone(),
+}),
+            Reducer::AcceptOrderErrantry{
+                character_id,
+                dialogue_session_id,
+}             => __sats::bsatn::to_vec(&accept_order_errantry_reducer::AcceptOrderErrantryArgs {
+                character_id: character_id.clone(),
+                dialogue_session_id: dialogue_session_id.clone(),
 }),
             Reducer::AcceptPartyJoinRequest{
                 leader_id,

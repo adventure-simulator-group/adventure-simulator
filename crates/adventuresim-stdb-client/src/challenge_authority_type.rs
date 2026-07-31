@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::challenge_presenter_catalog_id_type::ChallengePresenterCatalogId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ChallengeAuthority {
@@ -11,10 +13,14 @@ pub struct ChallengeAuthority {
     pub gateway_bucket: u8,
     pub case_id: String,
     pub party_id: String,
-    pub site_id: String,
+    pub finale_case_site_id: String,
+    pub finale_hostile_group_id: String,
+    pub journey_departure_minute: u64,
+    pub camp_movement_minute: u64,
+    pub camp_elapsed_minute: u64,
     pub errantry_frame_json: String,
     pub puzzle_json: String,
-    pub presenter_json: String,
+    pub presenter_catalog_id: ChallengePresenterCatalogId,
     pub revision: u32,
     pub open: bool,
     pub solved_at_minute: Option<u64>,
@@ -32,10 +38,15 @@ pub struct ChallengeAuthorityCols {
     pub gateway_bucket: __sdk::__query_builder::Col<ChallengeAuthority, u8>,
     pub case_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
     pub party_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
-    pub site_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
+    pub finale_case_site_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
+    pub finale_hostile_group_id: __sdk::__query_builder::Col<ChallengeAuthority, String>,
+    pub journey_departure_minute: __sdk::__query_builder::Col<ChallengeAuthority, u64>,
+    pub camp_movement_minute: __sdk::__query_builder::Col<ChallengeAuthority, u64>,
+    pub camp_elapsed_minute: __sdk::__query_builder::Col<ChallengeAuthority, u64>,
     pub errantry_frame_json: __sdk::__query_builder::Col<ChallengeAuthority, String>,
     pub puzzle_json: __sdk::__query_builder::Col<ChallengeAuthority, String>,
-    pub presenter_json: __sdk::__query_builder::Col<ChallengeAuthority, String>,
+    pub presenter_catalog_id:
+        __sdk::__query_builder::Col<ChallengeAuthority, ChallengePresenterCatalogId>,
     pub revision: __sdk::__query_builder::Col<ChallengeAuthority, u32>,
     pub open: __sdk::__query_builder::Col<ChallengeAuthority, bool>,
     pub solved_at_minute: __sdk::__query_builder::Col<ChallengeAuthority, Option<u64>>,
@@ -49,13 +60,35 @@ impl __sdk::__query_builder::HasCols for ChallengeAuthority {
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
-            site_id: __sdk::__query_builder::Col::new(table_name, "site_id"),
+            finale_case_site_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "finale_case_site_id",
+            ),
+            finale_hostile_group_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "finale_hostile_group_id",
+            ),
+            journey_departure_minute: __sdk::__query_builder::Col::new(
+                table_name,
+                "journey_departure_minute",
+            ),
+            camp_movement_minute: __sdk::__query_builder::Col::new(
+                table_name,
+                "camp_movement_minute",
+            ),
+            camp_elapsed_minute: __sdk::__query_builder::Col::new(
+                table_name,
+                "camp_elapsed_minute",
+            ),
             errantry_frame_json: __sdk::__query_builder::Col::new(
                 table_name,
                 "errantry_frame_json",
             ),
             puzzle_json: __sdk::__query_builder::Col::new(table_name, "puzzle_json"),
-            presenter_json: __sdk::__query_builder::Col::new(table_name, "presenter_json"),
+            presenter_catalog_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "presenter_catalog_id",
+            ),
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             open: __sdk::__query_builder::Col::new(table_name, "open"),
             solved_at_minute: __sdk::__query_builder::Col::new(table_name, "solved_at_minute"),
