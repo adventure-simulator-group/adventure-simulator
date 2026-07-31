@@ -1115,6 +1115,7 @@ pub struct MissionAuthority {
     pub enemy_difficulty: i32,
     pub base_enemy_combat_scale_bps: u32,
     pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
     pub countermeasure_source_challenge_id: Option<String>,
     pub normalized_combat_power: u32,
     pub drop_item_id: Option<String>,

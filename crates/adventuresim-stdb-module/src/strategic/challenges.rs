@@ -1,7 +1,8 @@
 pub const ERRANTRY_ISSUER_ORGANIZATION_ID: &str = "order_saint_george";
-pub const FEY_COUNTERMEASURE_ITEM_ID: &str = "favor_of_the_thorn_lady";
+pub const ERRANTRY_FINALE_THREAT_ID: &str = "armed_retainer";
 pub const FEY_COUNTERMEASURE_REDUCTION_BPS: u32 = 2_500;
 pub const FEY_COUNTERMEASURE_SCALE_FLOOR_BPS: u32 = 5_000;
+pub const FEY_COUNTERMEASURE_MULTIPLIER_BPS: u32 = 7_500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum ChallengePresenterCatalogId {
@@ -38,6 +39,30 @@ pub struct ErrantryCountermeasure {
     pub item_id: String,
     pub combat_scale_reduction_bps: u32,
     pub awarded_at_minute: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = order_errantry_acceptance_receipt)]
+pub struct OrderErrantryAcceptanceReceipt {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub dialogue_session_id: String,
+    pub action_id: String,
+    pub character_id: u64,
+    pub case_id: String,
+    pub contract_id: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErrantryLaunch {
+    NormalTravel,
+    DirectDemoCamp,
+}
+
+struct MaterializedErrantry {
+    case_id: String,
+    contract_id: String,
 }
 
 /// Private deterministic challenge authority. `puzzle_json` contains the seed
@@ -240,6 +265,85 @@ fn party_at_bound_trial_camp(
             .is_some_and(|encounter| encounter.status == "awaiting_choice")
 }
 
+/// Bind the first optional preliminary trial to the first real camp reached on
+/// its accepted finale journey. Issuance never predicts camp coordinates.
+pub(crate) fn bind_errantry_trial_to_current_camp(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<(), String> {
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    if party.camp_destination.is_none() {
+        return Ok(());
+    }
+    let journey = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&party_id.to_string())
+        .ok_or("Camp has no journey authority")?;
+    let JourneyEndpoint::CaseSite(destination) = &journey.destination else {
+        return Ok(());
+    };
+    let Some(contract_id) = party.active_contract_id.as_deref() else {
+        return Ok(());
+    };
+    let Some(contract) = ctx
+        .db
+        .contract_authority()
+        .id()
+        .find(contract_id.to_string())
+    else {
+        return Ok(());
+    };
+    if contract.status != ContractStatus::Accepted
+        || contract.accepted_by.as_deref() != Some(party_id)
+    {
+        return Ok(());
+    }
+    let mut candidates = ctx
+        .db
+        .challenge_authority()
+        .party_id()
+        .filter(&party_id.to_string())
+        .filter(|challenge| {
+            challenge.open
+                && challenge.solved_at_minute.is_none()
+                && challenge.case_id == contract.case_id
+                && challenge.finale_case_site_id == destination.id.value
+                && challenge.journey_departure_minute == 0
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.id.cmp(&right.id));
+    let Some(mut challenge) = candidates.into_iter().next() else {
+        return Ok(());
+    };
+    let site_id = format!(
+        "journey-camp:{}:{}",
+        journey.departure_minute, journey.completed_minutes
+    );
+    let mut frame: adventuresim_core::errantry::ErrantryFrame =
+        serde_json::from_str(&challenge.errantry_frame_json)
+            .map_err(|_| "Errantry frame authority is invalid")?;
+    let trial = frame
+        .trials
+        .iter_mut()
+        .find(|trial| trial.challenge_id.as_deref() == Some(&challenge.id))
+        .ok_or("Challenge is not bound to its errantry frame")?;
+    trial.site_id = site_id;
+    challenge.errantry_frame_json =
+        serde_json::to_string(&frame).map_err(|_| "Could not encode errantry frame")?;
+    challenge.journey_departure_minute = journey.departure_minute;
+    challenge.camp_movement_minute = journey.completed_minutes;
+    challenge.camp_elapsed_minute = journey.completed_elapsed_minutes;
+    ctx.db.challenge_authority().id().update(challenge);
+    Ok(())
+}
+
 fn award_errantry_countermeasure(
     ctx: &ReducerContext,
     challenge: &ChallengeAuthority,
@@ -262,14 +366,14 @@ fn award_errantry_countermeasure(
             case_id: challenge.case_id.clone(),
             case_site_id: challenge.finale_case_site_id.clone(),
             hostile_group_id: challenge.finale_hostile_group_id.clone(),
-            item_id: FEY_COUNTERMEASURE_ITEM_ID.into(),
+            item_id: adventuresim_core::item_references::FEY_COUNTERMEASURE_ITEM_ID.into(),
             combat_scale_reduction_bps: FEY_COUNTERMEASURE_REDUCTION_BPS,
             awarded_at_minute: now,
         });
     ctx.db.party_inventory_item().insert(PartyInventoryItem {
         id: 0,
         party_id: challenge.party_id.clone(),
-        item_id: FEY_COUNTERMEASURE_ITEM_ID.into(),
+        item_id: adventuresim_core::item_references::FEY_COUNTERMEASURE_ITEM_ID.into(),
         quantity: 1,
     });
     Ok(())
@@ -282,7 +386,7 @@ pub(crate) fn errantry_mission_scale_snapshot(
     case_site_id: &str,
     hostile_group_id: &str,
     base_scale_bps: u32,
-) -> (u32, Option<String>) {
+) -> (u32, u32, Option<String>) {
     let boon = ctx
         .db
         .errantry_countermeasure()
@@ -299,9 +403,10 @@ pub(crate) fn errantry_mission_scale_snapshot(
             base_scale_bps
                 .saturating_sub(boon.combat_scale_reduction_bps)
                 .max(FEY_COUNTERMEASURE_SCALE_FLOOR_BPS),
+            FEY_COUNTERMEASURE_MULTIPLIER_BPS,
             Some(boon.source_challenge_id),
         ),
-        None => (base_scale_bps, None),
+        None => (base_scale_bps, 10_000, None),
     }
 }
 
@@ -587,6 +692,13 @@ fn puzzle_demo_suffix(character_id: u64, ordinal: u64) -> String {
     format!("demo:{character_id}:{ordinal}")
 }
 
+fn errantry_suffix(character_id: u64, ordinal: u64, launch: ErrantryLaunch) -> String {
+    match launch {
+        ErrantryLaunch::DirectDemoCamp => puzzle_demo_suffix(character_id, ordinal),
+        ErrantryLaunch::NormalTravel => format!("order:{character_id}:{ordinal}"),
+    }
+}
+
 fn order_errantry_issuer(
     ctx: &ReducerContext,
 ) -> Option<(
@@ -628,7 +740,7 @@ pub fn load_puzzle_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), S
     if !puzzle_demo_enabled() {
         return Err("Puzzle demo loading is disabled in this module build".into());
     }
-    materialize_order_errantry(ctx, character_id, None)
+    materialize_order_errantry(ctx, character_id, None, ErrantryLaunch::DirectDemoCamp).map(|_| ())
 }
 
 /// Narrow production issuance seam: the client identifies only its live
@@ -639,8 +751,37 @@ pub fn accept_order_errantry(
     ctx: &ReducerContext,
     character_id: u64,
     dialogue_session_id: String,
+    action_id: String,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    if action_id.is_empty() || action_id.len() > 160 {
+        return Err("Errantry acceptance action ID is invalid".into());
+    }
+    let receipt_id = format!("order-errantry-accept:{dialogue_session_id}:{action_id}");
+    // Exact lost-response retries return before physical dialogue presence is
+    // revalidated. The immutable receipt is accepted only while its sourced
+    // case and contract still agree with current errantry authority.
+    if let Some(receipt) = ctx
+        .db
+        .order_errantry_acceptance_receipt()
+        .id()
+        .find(&receipt_id)
+    {
+        let current = ctx
+            .db
+            .errantry_authority()
+            .case_id()
+            .find(&receipt.case_id);
+        return if receipt.dialogue_session_id == dialogue_session_id
+            && receipt.action_id == action_id
+            && receipt.character_id == character_id
+            && current.is_some_and(|errantry| errantry.contract_id == receipt.contract_id)
+        {
+            Ok(())
+        } else {
+            Err("Conflicting Order errantry acceptance retry".into())
+        };
+    }
     let session = ctx
         .db
         .dialogue_session()
@@ -662,11 +803,23 @@ pub fn accept_order_errantry(
     if organization.id != ERRANTRY_ISSUER_ORGANIZATION_ID {
         return Err("Only the Order of St. George can issue this errantry".into());
     }
-    materialize_order_errantry(
+    let materialized = materialize_order_errantry(
         ctx,
         character_id,
         Some((npc, session.settlement_id, session.location_id)),
-    )
+        ErrantryLaunch::NormalTravel,
+    )?;
+    ctx.db
+        .order_errantry_acceptance_receipt()
+        .insert(OrderErrantryAcceptanceReceipt {
+            id: receipt_id,
+            dialogue_session_id,
+            action_id,
+            character_id,
+            case_id: materialized.case_id,
+            contract_id: materialized.contract_id,
+        });
+    Ok(())
 }
 
 fn materialize_order_errantry(
@@ -677,7 +830,8 @@ fn materialize_order_errantry(
         String,
         String,
     )>,
-) -> Result<(), String> {
+    launch: ErrantryLaunch,
+) -> Result<MaterializedErrantry, String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
     let party_id = character.party_id.clone().ok_or("Must be in a party")?;
     let mut party = ctx
@@ -687,17 +841,22 @@ fn materialize_order_errantry(
         .find(&party_id)
         .ok_or("Party not found")?;
     if party.leader_id != character_id {
-        return Err("Only the party leader can load the puzzle demo".into());
+        return Err("Only the party leader can accept or load this errantry".into());
     }
-    if let Some((_, contract)) = active_puzzle_demo(ctx, &party_id, character_id) {
+    if launch == ErrantryLaunch::DirectDemoCamp
+        && let Some((challenge, contract)) = active_puzzle_demo(ctx, &party_id, character_id)
+    {
         if let Some(active) = party.active_contract_id.as_deref()
             && active != contract.id
         {
             return Err("Finish or abandon the active quest before loading the puzzle demo".into());
         }
-        party.active_contract_id = Some(contract.id);
+        party.active_contract_id = Some(contract.id.clone());
         ctx.db.party_authority().id().update(party);
-        return Ok(());
+        return Ok(MaterializedErrantry {
+            case_id: challenge.case_id,
+            contract_id: contract.id,
+        });
     }
     let origin_settlement_id = character
         .current_settlement_id
@@ -719,14 +878,16 @@ fn materialize_order_errantry(
             .id()
             .find(&active)
             .ok_or("Active quest not found")?;
-        if active_contract.service_id != "errantry:order_saint_george" {
-            return Err("Finish or abandon the active quest before loading the puzzle demo".into());
-        }
-        // A terminal demo should normally have cleared itself. Repairing this
-        // stale zero-reward pointer keeps the developer fixture renewable.
-        party.active_contract_id = None;
+        return Err(format!(
+            "Finish or abandon the active quest '{}' before accepting errantry",
+            active_contract.title
+        ));
     }
-    let demo_prefix = format!("challenge:ordered-sigils:demo:{character_id}:");
+    let namespace = match launch {
+        ErrantryLaunch::DirectDemoCamp => "demo",
+        ErrantryLaunch::NormalTravel => "order",
+    };
+    let demo_prefix = format!("challenge:ordered-sigils:{namespace}:{character_id}:");
     let ordinal = ctx
         .db
         .challenge_authority()
@@ -734,31 +895,24 @@ fn materialize_order_errantry(
         .filter(&party_id)
         .filter(|challenge| challenge.id.starts_with(&demo_prefix))
         .count() as u64;
-    let suffix = puzzle_demo_suffix(character_id, ordinal);
+    let suffix = errantry_suffix(character_id, ordinal, launch);
     let case_id = format!("case:errantry-puzzle:{suffix}");
     let contract_id = format!("contract:errantry-puzzle:{suffix}");
     let challenge_id = format!("challenge:ordered-sigils:{suffix}");
     let case_site_id = format!("case-site:errantry-finale:{suffix}");
     let hostile_group_id = format!("hostile-group:errantry-finale:{suffix}");
+    // The preliminary trial is a true optional boon: defeating the finale
+    // resolves the case whether or not ChallengeSolved was emitted.
     let objective = adventuresim_core::case::ObjectiveExpression::new(vec![
         adventuresim_core::case::ObjectivePath {
             objectives: vec![adventuresim_core::case::Objective {
-                id: adventuresim_core::case::ObjectiveId::new(format!(
-                    "objective:solve-puzzle:{suffix}"
-                ))
-                .map_err(|_| "Puzzle objective ID is invalid")?,
-                requirement: adventuresim_core::case::ObjectiveRequirement::SolveChallenge {
-                    challenge_id: challenge_id.clone(),
-                },
-            },
-            adventuresim_core::case::Objective {
                 id: adventuresim_core::case::ObjectiveId::new(format!(
                     "objective:defeat-finale:{suffix}"
                 ))
                 .map_err(|_| "Finale objective ID is invalid")?,
                 requirement: adventuresim_core::case::ObjectiveRequirement::Defeat {
                     hostile_group_id: hostile_group_id.clone(),
-                    count: 3,
+                    count: 4,
                 },
             }],
         },
@@ -791,7 +945,7 @@ fn materialize_order_errantry(
         status: ContractStatus::Accepted,
         accepted_by: Some(party_id.clone()),
         opposition_wording: "an enchanted gate".into(),
-        opposition_count_wording: "one".into(),
+        opposition_count_wording: "a household guard".into(),
         accepted_at_minute: Some(crate::time::refresh_clock(ctx)?),
         paid_at_minute: None,
     });
@@ -816,12 +970,10 @@ fn materialize_order_errantry(
         ctx,
         &hostile_group_id,
         &site,
-        "evil_knight".into(),
-        3,
-        2,
+        ERRANTRY_FINALE_THREAT_ID.into(),
+        4,
+        6,
     )?;
-    let camp_movement_minute = 60;
-    let camp_elapsed_minute = 60;
     let frame = adventuresim_core::errantry::ErrantryFrame {
         id: format!("errantry:five-signs:{suffix}"),
         purpose: adventuresim_core::errantry::ErrantryPurpose::ProveWorth,
@@ -830,7 +982,7 @@ fn materialize_order_errantry(
             order: 0,
             trial_id: format!("trial:five-signs:{suffix}"),
             challenge_id: Some(challenge_id.clone()),
-            site_id: format!("journey-camp:{now}:{camp_movement_minute}"),
+            site_id: "journey-camp:unbound".into(),
             kind: adventuresim_core::errantry::TrialKind::Puzzle,
         }],
     };
@@ -841,9 +993,9 @@ fn materialize_order_errantry(
         party_id: party_id.clone(),
         finale_case_site_id: case_site_id.clone(),
         finale_hostile_group_id: hostile_group_id.clone(),
-        journey_departure_minute: now,
-        camp_movement_minute,
-        camp_elapsed_minute,
+        journey_departure_minute: 0,
+        camp_movement_minute: 0,
+        camp_elapsed_minute: 0,
         errantry_frame_json: serde_json::to_string(&frame)
             .map_err(|_| "Could not encode errantry frame authority")?,
         puzzle_json: serde_json::to_string(&puzzle)
@@ -862,65 +1014,84 @@ fn materialize_order_errantry(
         issuer_location_id,
         finale_case_site_id: case_site_id.clone(),
         finale_hostile_group_id: hostile_group_id,
-        preliminary_challenge_id: challenge_id,
+        preliminary_challenge_id: challenge_id.clone(),
     });
+    crate::investigation::disclose_exact_case_site(
+        ctx,
+        character_id,
+        &case_id,
+        &site,
+        "the Order of St. George",
+    )?;
     let destination = JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-        id: CaseSiteId::from(case_site_id),
-        name: site.name,
+        id: CaseSiteId::from(case_site_id.clone()),
+        name: site.name.clone(),
     });
-    ctx.db.party_journey_authority().insert(PartyJourney {
-        party_id: party_id.clone(),
-        gateway_bucket: 0,
-        origin: JourneyEndpoint::Settlement(JourneySettlementEndpoint {
-            id: origin_settlement_id,
-            name: origin_settlement.name,
-        }),
-        destination: destination.clone(),
-        total_minutes: 120,
-        completed_minutes: camp_movement_minute,
-        camp_stop_minutes: vec![camp_movement_minute],
-        forecast_camp_stop_minutes: Vec::new(),
-        fatigue_percent: party.camp_fatigue_percent,
-        plan_version: 2,
-        departure_minute: now,
-        total_elapsed_minutes: 120,
-        completed_elapsed_minutes: camp_elapsed_minute,
-        walking_minutes_per_day: party.walking_minutes_per_day,
-        travel_at_night: party.travel_at_night,
-        camp_duration_mode: party.camp_duration_mode,
-        fixed_camp_minutes: party.fixed_camp_minutes,
-    });
-    ctx.db
-        .party_journey_encounter_authority()
-        .insert(PartyJourneyEncounterAuthority {
+    party.active_contract_id = Some(contract_id.clone());
+    if launch == ErrantryLaunch::DirectDemoCamp {
+        let camp_movement_minute = 60;
+        let camp_elapsed_minute = 60;
+        ctx.db.party_journey_authority().insert(PartyJourney {
             party_id: party_id.clone(),
-            seed: ctx.random(),
-            next_roll: 1,
+            gateway_bucket: 0,
+            origin: JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+                id: origin_settlement_id,
+                name: origin_settlement.name,
+            }),
+            destination: destination.clone(),
+            total_minutes: 120,
+            completed_minutes: camp_movement_minute,
+            camp_stop_minutes: vec![camp_movement_minute],
+            forecast_camp_stop_minutes: Vec::new(),
+            fatigue_percent: party.camp_fatigue_percent,
+            plan_version: 2,
+            departure_minute: now,
+            total_elapsed_minutes: 120,
+            completed_elapsed_minutes: camp_elapsed_minute,
+            walking_minutes_per_day: party.walking_minutes_per_day,
+            travel_at_night: party.travel_at_night,
+            camp_duration_mode: party.camp_duration_mode,
+            fixed_camp_minutes: party.fixed_camp_minutes,
         });
-    party.active_contract_id = Some(contract_id);
-    party.current_settlement_id = None;
-    party.current_case_site_id = None;
-    party.camp_destination = Some(destination);
-    party.camp_remaining_minutes = 60;
-    ctx.db.party_authority().id().update(party);
-    for member_id in living_party_member_ids(ctx, &party_id) {
-        let mut member = ctx
-            .db
-            .character()
-            .id()
-            .find(member_id)
-            .ok_or("Party member not found")?;
-        member.current_settlement_id = None;
-        crate::investigation::set_character_case_site(ctx, member_id, None);
-        ctx.db.character().id().update(member);
+        ctx.db
+            .party_journey_encounter_authority()
+            .insert(PartyJourneyEncounterAuthority {
+                party_id: party_id.clone(),
+                seed: ctx.random(),
+                next_roll: 1,
+            });
+        party.current_settlement_id = None;
+        party.current_case_site_id = None;
+        party.camp_destination = Some(destination);
+        party.camp_remaining_minutes = 60;
+        ctx.db.party_authority().id().update(party);
+        for member_id in living_party_member_ids(ctx, &party_id) {
+            let mut member = ctx
+                .db
+                .character()
+                .id()
+                .find(member_id)
+                .ok_or("Party member not found")?;
+            member.current_settlement_id = None;
+            crate::investigation::set_character_case_site(ctx, member_id, None);
+            ctx.db.character().id().update(member);
+        }
+        bind_errantry_trial_to_current_camp(ctx, &party_id)?;
+    } else {
+        ctx.db.party_authority().id().update(party);
     }
-    Ok(())
+    Ok(MaterializedErrantry {
+        case_id,
+        contract_id,
+    })
 }
 
 #[cfg(test)]
 mod challenge_source_boundary_tests {
     use super::{
-        ChallengeAttemptReceipt, puzzle_demo_suffix, validate_challenge_retry,
+        ChallengeAttemptReceipt, ERRANTRY_FINALE_THREAT_ID,
+        FEY_COUNTERMEASURE_MULTIPLIER_BPS, autoresolve_enemy_with_countermeasure,
+        puzzle_demo_suffix, validate_challenge_retry,
     };
 
     #[test]
@@ -1035,5 +1206,57 @@ mod challenge_source_boundary_tests {
         assert!(tactical.contains("mission.enemy_combat_scale_bps"));
         let autoresolve = include_str!("autoresolve.rs");
         assert!(autoresolve.contains("mission.enemy_combat_scale_bps"));
+    }
+
+    #[test]
+    fn authored_finale_threat_and_boon_reduce_consumed_strength() {
+        assert_eq!(
+            ERRANTRY_FINALE_THREAT_ID
+                .parse::<adventuresim_core::bestiary::ThreatId>()
+                .unwrap(),
+            adventuresim_core::bestiary::ThreatId::ArmedRetainer
+        );
+        let base = autoresolve_enemy_with_countermeasure(
+            1,
+            ERRANTRY_FINALE_THREAT_ID,
+            6,
+            10_000,
+            10_000,
+        )
+        .unwrap();
+        let aided = autoresolve_enemy_with_countermeasure(
+            2,
+            ERRANTRY_FINALE_THREAT_ID,
+            6,
+            7_500,
+            FEY_COUNTERMEASURE_MULTIPLIER_BPS,
+        )
+        .unwrap();
+        assert!(aided.attributes.endurance < base.attributes.endurance);
+        assert!(aided.skills.sword_hours < base.skills.sword_hours);
+
+        let source = include_str!("challenges.rs");
+        assert!(source.contains("ERRANTRY_FINALE_THREAT_ID.into()"));
+        assert!(source.contains("4,\n        6,"));
+        assert!(source.contains("ErrantryLaunch::NormalTravel"));
+        assert!(source.contains("ErrantryLaunch::DirectDemoCamp"));
+    }
+
+    #[test]
+    fn committed_acceptance_retry_precedes_live_presence_validation() {
+        let source = include_str!("challenges.rs");
+        let reducer = source
+            .split("pub fn accept_order_errantry")
+            .nth(1)
+            .and_then(|tail| tail.split("fn materialize_order_errantry").next())
+            .unwrap();
+        assert!(
+            reducer
+                .find("order_errantry_acceptance_receipt()")
+                .unwrap()
+                < reducer.find("require_live_dialogue_presence").unwrap()
+        );
+        assert!(reducer.contains("errantry.contract_id == receipt.contract_id"));
+        assert!(reducer.contains("Conflicting Order errantry acceptance retry"));
     }
 }

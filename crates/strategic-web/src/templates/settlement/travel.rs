@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use adventuresim_core::{
     bestiary::ThreatId,
+    errantry::{FeyPresenterCatalogId, FeySpeechPart, fey_speech},
     strategic_time::{ItinerarySegment, ItinerarySegmentKind},
 };
 use maud::{Markup, html};
@@ -16,8 +17,9 @@ use super::{
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    Character, ContractPresentation, JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney,
-    PartyJourneyItinerary, PartyJourneyRoute, Settlement, StrategicEncounter,
+    ChallengePresenterCatalogId, Character, ContractPresentation, JourneyPrecipitation,
+    JourneyTerrainKind, Party, PartyJourney, PartyJourneyItinerary, PartyJourneyRoute, Settlement,
+    StrategicEncounter,
 };
 use crate::templates::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
@@ -819,7 +821,7 @@ pub fn camp_page(
     planned_wake_minute: u16,
     continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
-    trial: Option<(&str, &str)>,
+    trial: Option<(&str, &str, ChallengePresenterCatalogId)>,
     foraging_dialog: Option<Markup>,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -872,14 +874,21 @@ pub fn camp_page(
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
             (visual_stage("camp", "Camp", "A resting place beside the party's onward route"))
-            @if let Some((case_id, challenge_id)) = trial {
+            @if let Some((case_id, challenge_id, presenter_catalog_id)) = trial {
+                @let opening = match presenter_catalog_id {
+                    ChallengePresenterCatalogId::LadyBeneathThornV1 =>
+                        fey_speech(
+                            FeyPresenterCatalogId::LadyBeneathThornV1,
+                            FeySpeechPart::Introduction,
+                        )[0],
+                };
                 section class="settlement-chat challenge-chat-invitation" aria-label="Fey conversation" {
                     div class="settlement-chat-layout" {
                         div class="settlement-chat-conversation" {
                             div class="settlement-chat-messages" aria-live="polite" {
                                 p class="supernatural-spoken-line" {
                                     strong { "The Lady Beneath the Thorn: " }
-                                    "Good knight, five signs attend my moonlit gate."
+                                    (opening)
                                 }
                                 a class="btn btn-primary"
                                     href=(format!("/quests/{case_id}/challenges/{challenge_id}")) {

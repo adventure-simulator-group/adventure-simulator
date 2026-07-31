@@ -30,7 +30,7 @@ async fn projection(
     challenge_id: &str,
 ) -> Result<BackendChallenge, StatusCode> {
     let sql = format!(
-        "SELECT * FROM backend_challenges WHERE owner_character_id = {character_id} AND case_id = {} AND id = {}",
+        "SELECT * FROM backend_challenges WHERE owner_character_id = {character_id} AND case_id = {} AND id = {} AND active = true",
         sql_string_literal(case_id),
         sql_string_literal(challenge_id)
     );
@@ -104,6 +104,9 @@ async fn submit(
     let Some(character_id) = session.character_id_u64() else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
+    if let Err(status) = projection(&state, character_id, &case_id, &challenge_id).await {
+        return status.into_response();
+    }
     let ordering = match parse_form_sigils([
         &form.sigil_0,
         &form.sigil_1,
@@ -154,6 +157,14 @@ mod tests {
         assert!(source.contains("get(show).post(submit)"));
         assert!(source.contains("Redirect::to"));
         assert!(source.contains("owner_character_id = {character_id}"));
+        assert!(source.contains("AND active = true"));
+        assert!(
+            source
+                .matches("projection(&state, character_id, &case_id, &challenge_id)")
+                .count()
+                >= 2,
+            "both display and submission must reject stale camp URLs before reducer dispatch"
+        );
         assert!(source.contains("submit_ordered_sigil_challenge"));
     }
 }

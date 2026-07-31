@@ -304,7 +304,13 @@ pub(super) async fn camp(
             encounter.as_ref(),
             trial
                 .as_ref()
-                .map(|trial| (trial.case_id.as_str(), trial.id.as_str())),
+                .map(|trial| {
+                    (
+                        trial.case_id.as_str(),
+                        trial.id.as_str(),
+                        trial.presenter_catalog_id,
+                    )
+                }),
             foraging_dialog,
             Some(&character.name),
         )

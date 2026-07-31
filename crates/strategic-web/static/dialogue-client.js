@@ -260,6 +260,7 @@
         button.disabled = true;
         request("/api/dialogue/accept-order-errantry", {
           session_id: view.session_id,
+          action_id: actionId(),
         }).then((result) => {
           window.location.assign(result.redirect);
         }).catch((error) => {

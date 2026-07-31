@@ -49,10 +49,19 @@ disabled until physical interaction has its own typed, non-dialogue contract.
 
 Only `order_saint_george` has the authored `errantry_issuance` capability.
 Production acceptance is a narrow vertical-slice action inside an existing
-organization-representative dialogue. The client supplies only its dialogue
-session; the reducer re-derives the live NPC, exact chapter, settlement,
-location, and organization capability before creating the accepted quest.
-Other representatives and services cannot issue it.
+organization-representative dialogue. The client supplies its dialogue session
+and an idempotency action ID; the reducer re-derives the live NPC, exact
+chapter, settlement, location, and organization capability before creating the
+accepted quest. A durable acceptance receipt makes an exact retry return the
+original case and contract before the now-consumed dialogue presence is
+checked. Other representatives and services cannot issue it.
+
+Production acceptance leaves the party in its settlement and creates the
+ordinary accepted journey destination. The party departs through the normal
+travel flow. The preliminary trial is initially unbound and attaches to the
+first persisted camp on that exact journey; stale URLs from an earlier camp no
+longer project or accept the challenge. Only the development demo fabricates a
+midpoint camp and moves the party there immediately.
 
 The preliminary fey trial is optional. It is available only to the accepted
 party at a persisted camp on the active journey whose exact departure,
@@ -60,13 +69,19 @@ movement, elapsed, and finale-destination coordinates match private authority.
 A pending random encounter hides and blocks trial actions. The trial is not a
 `StrategicEncounter` and never blocks **Continue travel**.
 
+The puzzle is preliminary rather than a quest objective: bypassing it and
+defeating the finale's four armed retainers resolves the errantry normally.
+
 Solving awards a durable party inventory item, the **Favor of the Thorn Lady**,
 and a typed source-idempotent countermeasure bound to that party, case, finale
 site, and hostile group. When the finale mission first binds, its immutable
 snapshot records base scale, effective scale, and countermeasure source. The
 effective enemy combat scale is reduced by 25%, with a 50% floor; tactical play
-and autoresolve consume the same effective snapshot. Existing missions and
-hostile-group authority are never mutated.
+and autoresolve consume the same effective snapshot. The snapshot also records
+a bounded 75% countermeasure multiplier applied to enemy physical capability
+and trained combat skill in both paths. Base scale, effective scale,
+countermeasure multiplier, and source challenge remain auditable. Existing
+missions and hostile-group authority are never mutated.
 
 ## Direct development demo
 

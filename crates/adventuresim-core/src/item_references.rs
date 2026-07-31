@@ -31,16 +31,18 @@ pub const STANDARD_WATERSKIN_ID: &str = "waterskin";
 pub const ARROW_ID: &str = "arrow";
 pub const SOFT_SOAP_ID: &str = "soft_soap";
 pub const FIELD_TENT_ID: &str = "field_tent";
+pub const FEY_COUNTERMEASURE_ITEM_ID: &str = "favor_of_the_thorn_lady";
 pub const SURGERY_KIT_ID: &str = "surgery_kit";
 pub const TAVERN_DRINK_ITEM_ID: &str = "table_wine";
 
-pub const REQUIRED_GAMEPLAY_ITEM_IDS: [&str; 16] = [
+pub const REQUIRED_GAMEPLAY_ITEM_IDS: [&str; 17] = [
     "arrow",
     "bandage",
     "cooked_meal",
     "cooking_pan",
     "cooking_pot",
     "field_tent",
+    "favor_of_the_thorn_lady",
     "portable_oven",
     "small_beer",
     "table_wine",

@@ -117,8 +117,21 @@ pub(crate) fn autoresolve_enemy(
     difficulty: i32,
     combat_scale_bps: u32,
 ) -> Result<Combatant, String> {
+    autoresolve_enemy_with_countermeasure(id, enemy_type, difficulty, combat_scale_bps, 10_000)
+}
+
+pub(crate) fn autoresolve_enemy_with_countermeasure(
+    id: u64,
+    enemy_type: &str,
+    difficulty: i32,
+    combat_scale_bps: u32,
+    countermeasure_multiplier_bps: u32,
+) -> Result<Combatant, String> {
     use adventuresim_core::bestiary::{AttackStyle, Protection};
-    let scale = adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps);
+    let scale = adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps)
+        * adventuresim_core::threat_escalation::combat_countermeasure_physical_multiplier(
+            countermeasure_multiplier_bps,
+        );
     let rating = (1.2 + difficulty.max(1) as f32 * 0.35) * scale;
     let threat_profile = parse_threat(enemy_type)?.profile();
     let profile = threat_profile.combat;
@@ -141,7 +154,12 @@ pub(crate) fn autoresolve_enemy(
         left_leg_agility: rating,
         right_leg_agility: rating,
     };
-    let training = rating * 1_500.0 * profile.training_multiplier;
+    let training = rating
+        * 1_500.0
+        * profile.training_multiplier
+        * adventuresim_core::threat_escalation::combat_countermeasure_training_multiplier(
+            countermeasure_multiplier_bps,
+        );
     combatant.skills = CombatSkills {
         sword_hours: training,
         bow_hours: if profile.ranged { training * 2.0 } else { 0.0 },

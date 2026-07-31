@@ -17,6 +17,7 @@
             enemy_difficulty: 1,
             base_enemy_combat_scale_bps: 10_000,
             enemy_combat_scale_bps: 10_000,
+            countermeasure_multiplier_bps: 10_000,
             countermeasure_source_challenge_id: None,
             normalized_combat_power: 10_000,
             drop_item_id: None,

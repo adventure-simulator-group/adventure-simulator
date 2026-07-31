@@ -454,6 +454,7 @@ pub mod objective_continuity_kind_type;
 pub mod official_religion_type;
 pub mod open_corpse_reducer;
 pub mod oral_language_hours_type;
+pub mod order_errantry_acceptance_receipt_type;
 pub mod organic_soil_type;
 pub mod organization_membership_table;
 pub mod organization_membership_type;
@@ -1181,6 +1182,7 @@ pub use objective_continuity_kind_type::ObjectiveContinuityKind;
 pub use official_religion_type::OfficialReligion;
 pub use open_corpse_reducer::open_corpse;
 pub use oral_language_hours_type::OralLanguageHours;
+pub use order_errantry_acceptance_receipt_type::OrderErrantryAcceptanceReceipt;
 pub use organic_soil_type::OrganicSoil;
 pub use organization_membership_table::*;
 pub use organization_membership_type::OrganizationMembership;
@@ -1479,6 +1481,7 @@ pub enum Reducer {
     AcceptOrderErrantry {
         character_id: u64,
         dialogue_session_id: String,
+        action_id: String,
     },
     AcceptPartyJoinRequest {
         leader_id: u64,
@@ -2369,9 +2372,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::AcceptOrderErrantry{
                 character_id,
                 dialogue_session_id,
+                action_id,
 }             => __sats::bsatn::to_vec(&accept_order_errantry_reducer::AcceptOrderErrantryArgs {
                 character_id: character_id.clone(),
                 dialogue_session_id: dialogue_session_id.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::AcceptPartyJoinRequest{
                 leader_id,

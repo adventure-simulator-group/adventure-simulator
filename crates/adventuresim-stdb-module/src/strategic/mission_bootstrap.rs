@@ -202,11 +202,12 @@ pub fn autoresolve_mission(
         .collect::<Result<Vec<_>, String>>()?;
     let enemies = (0..u64::from(mission.enemy_count))
         .map(|index| {
-            autoresolve_enemy(
+            autoresolve_enemy_with_countermeasure(
                 u64::MAX.saturating_sub(index),
                 &hostile_group.enemy_type,
                 mission.enemy_difficulty,
                 mission.enemy_combat_scale_bps,
+                mission.countermeasure_multiplier_bps,
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -556,7 +557,11 @@ pub fn seed_standalone_tactical_mission(
     let mission = if let Some(existing) = ctx.db.mission_authority().id().find(&mission_id) {
         existing
     } else {
-        let (enemy_combat_scale_bps, countermeasure_source_challenge_id) =
+        let (
+            enemy_combat_scale_bps,
+            countermeasure_multiplier_bps,
+            countermeasure_source_challenge_id,
+        ) =
             errantry_mission_scale_snapshot(
                 ctx,
                 &party_id,
@@ -587,6 +592,7 @@ pub fn seed_standalone_tactical_mission(
             enemy_difficulty: group.base_difficulty,
             base_enemy_combat_scale_bps: group.combat_scale_bps,
             enemy_combat_scale_bps,
+            countermeasure_multiplier_bps,
             countermeasure_source_challenge_id,
             normalized_combat_power,
             drop_item_id: group.drop_item_id.clone(),
@@ -632,6 +638,7 @@ pub fn seed_standalone_tactical_mission(
             required_enemy_kills,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
+            countermeasure_multiplier_bps: mission.countermeasure_multiplier_bps,
             normalized_combat_power: mission.normalized_combat_power,
         });
     Ok(())

@@ -155,6 +155,7 @@ struct ConversationView {
 #[derive(Deserialize)]
 struct AcceptOrderErrantryRequest {
     session_id: String,
+    action_id: String,
 }
 
 #[derive(Serialize)]
@@ -172,14 +173,20 @@ async fn accept_order_errantry(
         .db
         .call(
             "accept_order_errantry",
-            &[json!(character_id), json!(request.session_id)],
+            &[
+                json!(character_id),
+                json!(request.session_id),
+                json!(request.action_id),
+            ],
         )
         .await
         .map_err(|error| {
             tracing::warn!(%error, character_id, "Order errantry acceptance rejected");
             StatusCode::UNPROCESSABLE_ENTITY
         })?;
-    Ok(Json(AcceptOrderErrantryResponse { redirect: "/camp" }))
+    Ok(Json(AcceptOrderErrantryResponse {
+        redirect: "/quests",
+    }))
 }
 #[derive(Serialize)]
 struct EventView {

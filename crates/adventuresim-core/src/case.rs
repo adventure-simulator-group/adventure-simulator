@@ -707,6 +707,35 @@ mod tests {
     }
 
     #[test]
+    fn optional_preliminary_challenge_does_not_gate_finale_defeat() {
+        let expression = ObjectiveExpression::new(vec![ObjectivePath {
+            objectives: vec![Objective {
+                id: oid("objective:finale"),
+                requirement: ObjectiveRequirement::Defeat {
+                    hostile_group_id: "hostile-group:errantry-finale".into(),
+                    count: 4,
+                },
+            }],
+        }])
+        .unwrap();
+        let finale = fact(
+            "fact:finale",
+            "case:errantry",
+            "party:knights",
+            OutcomeFactKind::HostilesDefeated {
+                hostile_group_id: "hostile-group:errantry-finale".into(),
+                count: 4,
+            },
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:errantry"), "party:knights", &[finale])
+                .state,
+            EvaluationState::Satisfied
+        );
+    }
+
+    #[test]
     fn impossible_path_does_not_poison_viable_alternative() {
         let expression = ObjectiveExpression::new(vec![
             ObjectivePath {

@@ -344,6 +344,7 @@ fn record_party_journey_camp(
         journey.camp_stop_minutes.push(journey.completed_minutes);
     }
     ctx.db.party_journey_authority().party_id().update(journey);
+    bind_errantry_trial_to_current_camp(ctx, party_id)?;
     Ok(())
 }
 

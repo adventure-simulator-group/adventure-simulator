@@ -1593,7 +1593,11 @@ pub(crate) fn ensure_bound_mission_authority(
         .id()
         .find(&hostile_group_id)
         .ok_or("Bound hostile group disappeared")?;
-    let (enemy_combat_scale_bps, countermeasure_source_challenge_id) =
+    let (
+        enemy_combat_scale_bps,
+        countermeasure_multiplier_bps,
+        countermeasure_source_challenge_id,
+    ) =
         errantry_mission_scale_snapshot(
             ctx,
             party_id,
@@ -1624,6 +1628,7 @@ pub(crate) fn ensure_bound_mission_authority(
         enemy_difficulty: hostile_group.base_difficulty,
         base_enemy_combat_scale_bps: hostile_group.combat_scale_bps,
         enemy_combat_scale_bps,
+        countermeasure_multiplier_bps,
         countermeasure_source_challenge_id,
         normalized_combat_power,
         drop_item_id: hostile_group.drop_item_id.clone(),

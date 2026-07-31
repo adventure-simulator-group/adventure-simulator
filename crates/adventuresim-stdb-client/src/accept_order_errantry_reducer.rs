@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct AcceptOrderErrantryArgs {
     pub character_id: u64,
     pub dialogue_session_id: String,
+    pub action_id: String,
 }
 
 impl From<AcceptOrderErrantryArgs> for super::Reducer {
@@ -16,6 +17,7 @@ impl From<AcceptOrderErrantryArgs> for super::Reducer {
         Self::AcceptOrderErrantry {
             character_id: args.character_id,
             dialogue_session_id: args.dialogue_session_id,
+            action_id: args.action_id,
         }
     }
 }
@@ -39,8 +41,9 @@ pub trait accept_order_errantry {
         &self,
         character_id: u64,
         dialogue_session_id: String,
+        action_id: String,
     ) -> __sdk::Result<()> {
-        self.accept_order_errantry_then(character_id, dialogue_session_id, |_, _| {})
+        self.accept_order_errantry_then(character_id, dialogue_session_id, action_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `accept_order_errantry` to run as soon as possible,
@@ -53,6 +56,7 @@ pub trait accept_order_errantry {
         &self,
         character_id: u64,
         dialogue_session_id: String,
+        action_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -67,6 +71,7 @@ impl accept_order_errantry for super::RemoteReducers {
         &self,
         character_id: u64,
         dialogue_session_id: String,
+        action_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -78,6 +83,7 @@ impl accept_order_errantry for super::RemoteReducers {
             AcceptOrderErrantryArgs {
                 character_id,
                 dialogue_session_id,
+                action_id,
             },
             callback,
         )

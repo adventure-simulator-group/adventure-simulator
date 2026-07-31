@@ -643,6 +643,7 @@ pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Res
         id,
         tactical_server.enemy_difficulty,
         tactical_server.enemy_combat_scale_bps,
+        tactical_server.countermeasure_multiplier_bps,
     )?;
     enter_mission(ctx, id, server)
 }
@@ -652,12 +653,19 @@ fn scale_temporary_enemy(
     character_id: u64,
     base_difficulty: i32,
     combat_scale_bps: u32,
+    countermeasure_multiplier_bps: u32,
 ) -> Result<(), String> {
     let authored = 1.0 + (base_difficulty.clamp(1, 20) - 1) as f32 * 0.1;
     let physical = authored
-        * adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps);
+        * adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps)
+        * adventuresim_core::threat_escalation::combat_countermeasure_physical_multiplier(
+            countermeasure_multiplier_bps,
+        );
     let training = authored
-        * adventuresim_core::threat_escalation::combat_training_multiplier(combat_scale_bps);
+        * adventuresim_core::threat_escalation::combat_training_multiplier(combat_scale_bps)
+        * adventuresim_core::threat_escalation::combat_countermeasure_training_multiplier(
+            countermeasure_multiplier_bps,
+        );
     let mut attributes = ctx
         .db
         .character_attributes()

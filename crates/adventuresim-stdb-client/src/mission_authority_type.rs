@@ -27,6 +27,7 @@ pub struct MissionAuthority {
     pub enemy_difficulty: i32,
     pub base_enemy_combat_scale_bps: u32,
     pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
     pub countermeasure_source_challenge_id: Option<String>,
     pub normalized_combat_power: u32,
     pub drop_item_id: Option<String>,
@@ -58,6 +59,7 @@ pub struct MissionAuthorityCols {
     pub enemy_difficulty: __sdk::__query_builder::Col<MissionAuthority, i32>,
     pub base_enemy_combat_scale_bps: __sdk::__query_builder::Col<MissionAuthority, u32>,
     pub enemy_combat_scale_bps: __sdk::__query_builder::Col<MissionAuthority, u32>,
+    pub countermeasure_multiplier_bps: __sdk::__query_builder::Col<MissionAuthority, u32>,
     pub countermeasure_source_challenge_id:
         __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
     pub normalized_combat_power: __sdk::__query_builder::Col<MissionAuthority, u32>,
@@ -99,6 +101,10 @@ impl __sdk::__query_builder::HasCols for MissionAuthority {
             enemy_combat_scale_bps: __sdk::__query_builder::Col::new(
                 table_name,
                 "enemy_combat_scale_bps",
+            ),
+            countermeasure_multiplier_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "countermeasure_multiplier_bps",
             ),
             countermeasure_source_challenge_id: __sdk::__query_builder::Col::new(
                 table_name,
