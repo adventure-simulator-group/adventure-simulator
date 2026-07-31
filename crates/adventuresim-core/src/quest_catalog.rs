@@ -1001,21 +1001,31 @@ mod tests {
             .iter_mut()
             .find(|document| document["evidence"].is_array())
             .unwrap();
-        investigation["evidence"][0]["topics"][1]["bestiary"][0]["support_bps"] =
-            serde_json::json!(10_001);
-        assert!(
-            crate::quest_catalog_validation::validate_documents(&invalid_support, &files)
-                .unwrap_err()
-                .contains("outside 0..=10000")
-        );
+        let implication = investigation["evidence"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .flat_map(|evidence| evidence["topics"].as_array_mut().unwrap())
+            .find_map(|topic| topic.get_mut("bestiary")?.as_array_mut()?.first_mut())
+            .unwrap();
+        implication["support_bps"] = serde_json::json!(10_001);
+        let error = crate::quest_catalog_validation::validate_documents(&invalid_support, &files)
+            .unwrap_err();
+        assert!(error.contains("outside 0..=10000"), "{error}");
 
         let (mut oversized_interpretation, files) = raw_catalog();
         let investigation = oversized_interpretation
             .iter_mut()
             .find(|document| document["evidence"].is_array())
             .unwrap();
-        investigation["evidence"][0]["topics"][1]["bestiary"][0]["interpretation"] =
-            serde_json::json!("é".repeat(513));
+        let implication = investigation["evidence"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .flat_map(|evidence| evidence["topics"].as_array_mut().unwrap())
+            .find_map(|topic| topic.get_mut("bestiary")?.as_array_mut()?.first_mut())
+            .unwrap();
+        implication["interpretation"] = serde_json::json!("é".repeat(513));
         assert!(
             crate::quest_catalog_validation::validate_documents(&oversized_interpretation, &files)
                 .unwrap_err()
@@ -1080,10 +1090,15 @@ mod tests {
             .iter_mut()
             .find(|document| document["evidence"].is_array())
             .unwrap();
-        investigation["evidence"][0]["topics"][1]["check"]["difficulty_min_milli"] =
-            serde_json::json!(9000);
-        investigation["evidence"][0]["topics"][1]["check"]["difficulty_max_milli"] =
-            serde_json::json!(1000);
+        let check = investigation["evidence"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .flat_map(|evidence| evidence["topics"].as_array_mut().unwrap())
+            .find_map(|topic| topic.get_mut("check")?.as_object_mut())
+            .unwrap();
+        check["difficulty_min_milli"] = serde_json::json!(9000);
+        check["difficulty_max_milli"] = serde_json::json!(1000);
         assert!(
             crate::quest_catalog_validation::validate_documents(&bad_dc, &files)
                 .unwrap_err()
