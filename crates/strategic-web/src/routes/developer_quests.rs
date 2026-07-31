@@ -6,7 +6,7 @@
 use super::{AppState, BackendSettlementNpcRow as NpcRow};
 use crate::{
     session::Session,
-    spacetimedb::{Character, CharacterTime, Settlement, sql_string_literal},
+    spacetimedb::{BackendChallenge, Character, CharacterTime, Settlement, sql_string_literal},
 };
 use adventuresim_core::{
     developer_quest::{self as dq, DeveloperGenerationContext, DeveloperQuestDefinition},
@@ -428,13 +428,43 @@ async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Re
         .await
     {
         Ok(()) => {
-            let suffix = format!("{character_id}-{settlement_id}");
+            let demo_prefix =
+                format!("challenge:ordered-sigils:demo:{character_id}:{settlement_id}:");
+            let sql = format!(
+                "SELECT * FROM backend_challenges WHERE owner_character_id = {character_id}"
+            );
+            let mut playable = match state.db.query::<BackendChallenge>(&sql).await {
+                Ok(rows) => rows
+                    .into_iter()
+                    .filter(|row| {
+                        row.active
+                            && row.open
+                            && !row.solved
+                            && row.site_id == settlement_id
+                            && row.id.starts_with(&demo_prefix)
+                    })
+                    .collect::<Vec<_>>(),
+                Err(error) => {
+                    tracing::error!(%error, character_id, "failed to project loaded puzzle demo");
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                }
+            };
+            if playable.len() != 1 {
+                tracing::error!(
+                    character_id,
+                    count = playable.len(),
+                    "puzzle demo did not expose exactly one playable challenge"
+                );
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            let challenge = playable.pop().expect("length checked");
             (
                 StatusCode::CREATED,
                 Json(json!({
                     "status":"loaded",
                     "redirect_to":format!(
-                        "/quests/case:errantry-puzzle:{suffix}/challenges/challenge:ordered-sigils:{suffix}"
+                        "/quests/{}/challenges/{}",
+                        challenge.case_id, challenge.id
                     )
                 })),
             )
@@ -504,7 +534,9 @@ mod tests {
         let source = include_str!("developer_quests.rs");
         assert!(source.contains("/api/developer/puzzle-demo"));
         assert!(source.contains("\"load_puzzle_demo\", &[json!(character_id)]"));
-        assert!(source.contains("/challenges/challenge:ordered-sigils:"));
+        assert!(source.contains("query::<BackendChallenge>"));
+        assert!(source.contains("row.id.starts_with(&demo_prefix)"));
+        assert!(source.contains("challenge.case_id, challenge.id"));
         let loader = source
             .split("async fn load_puzzle_demo")
             .nth(1)

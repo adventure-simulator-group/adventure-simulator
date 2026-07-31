@@ -227,6 +227,15 @@ impl OrderedSigilPuzzle {
         if !is_permutation(&self.solution) {
             return Err("ordered-sigil solution is malformed");
         }
+        if self.clues.iter().any(|clue| match clue {
+            OrderedSigilClue::Exact { position, .. } | OrderedSigilClue::NotAt { position, .. } => {
+                usize::from(*position) >= ORDERED_SIGIL_COUNT
+            }
+            OrderedSigilClue::Before { first, second }
+            | OrderedSigilClue::Adjacent { first, second } => first == second,
+        }) {
+            return Err("ordered-sigil clue coordinates are malformed");
+        }
         let found = solutions(&self.clues, 2);
         if found.len() != 1 || found[0] != self.solution {
             return Err("ordered-sigil clues do not prove the canonical solution");
@@ -363,6 +372,342 @@ pub fn presenter(kind: PresenterKind) -> ChallengePresenter {
     }
 }
 
+/// Adapts formal puzzle clues to presenter language without changing their
+/// truth conditions. Supernatural speech comes only from the closed catalog
+/// below; mechanisms retain concise non-spoken instruction prose.
+pub fn presented_clue_text(kind: PresenterKind, clue: &OrderedSigilClue) -> &'static str {
+    if kind == PresenterKind::RuinContraption {
+        return ruin_clue_text(clue);
+    }
+    let sigil = |value: Sigil| match value {
+        Sigil::Crown => 0,
+        Sigil::Hart => 1,
+        Sigil::Moon => 2,
+        Sigil::Rose => 3,
+        Sigil::Sword => 4,
+    };
+    match *clue {
+        OrderedSigilClue::Exact {
+            sigil: value,
+            position,
+        } => FEY_EXACT[sigil(value)][usize::from(position)],
+        OrderedSigilClue::NotAt {
+            sigil: value,
+            position,
+        } => FEY_NOT_AT[sigil(value)][usize::from(position)],
+        OrderedSigilClue::Before { first, second } => FEY_BEFORE[sigil(first)][sigil(second)],
+        OrderedSigilClue::Adjacent { first, second } => FEY_ADJACENT[sigil(first)][sigil(second)],
+    }
+}
+
+fn ruin_clue_text(clue: &OrderedSigilClue) -> &'static str {
+    let sigil = |value: Sigil| match value {
+        Sigil::Crown => 0,
+        Sigil::Hart => 1,
+        Sigil::Moon => 2,
+        Sigil::Rose => 3,
+        Sigil::Sword => 4,
+    };
+    match *clue {
+        OrderedSigilClue::Exact {
+            sigil: value,
+            position,
+        } => RUIN_EXACT[sigil(value)][usize::from(position)],
+        OrderedSigilClue::NotAt {
+            sigil: value,
+            position,
+        } => RUIN_NOT_AT[sigil(value)][usize::from(position)],
+        OrderedSigilClue::Before { first, second } => RUIN_BEFORE[sigil(first)][sigil(second)],
+        OrderedSigilClue::Adjacent { first, second } => RUIN_ADJACENT[sigil(first)][sigil(second)],
+    }
+}
+
+// Closed, reviewed supernatural clue speech. Every reachable entry is an
+// authored modern-spelling Shakespearean line intended as iambic pentameter.
+const FEY_EXACT: [[&str; 5]; 5] = [
+    [
+        "The Crown shall now in first position stand.",
+        "The Crown shall in the second station stand.",
+        "The Crown shall now in third position stand.",
+        "The Crown shall now in fourth position stand.",
+        "The Crown shall now in fifth position stand.",
+    ],
+    [
+        "The Hart shall now in first position stand.",
+        "The Hart shall in the second station stand.",
+        "The Hart shall now in third position stand.",
+        "The Hart shall now in fourth position stand.",
+        "The Hart shall now in fifth position stand.",
+    ],
+    [
+        "The Moon shall now in first position stand.",
+        "The Moon shall in the second station stand.",
+        "The Moon shall now in third position stand.",
+        "The Moon shall now in fourth position stand.",
+        "The Moon shall now in fifth position stand.",
+    ],
+    [
+        "The Rose shall now in first position stand.",
+        "The Rose shall in the second station stand.",
+        "The Rose shall now in third position stand.",
+        "The Rose shall now in fourth position stand.",
+        "The Rose shall now in fifth position stand.",
+    ],
+    [
+        "The Sword shall now in first position stand.",
+        "The Sword shall in the second station stand.",
+        "The Sword shall now in third position stand.",
+        "The Sword shall now in fourth position stand.",
+        "The Sword shall now in fifth position stand.",
+    ],
+];
+
+const FEY_NOT_AT: [[&str; 5]; 5] = [
+    [
+        "The Crown shall never hold the first estate.",
+        "The Crown shall not hold the second estate.",
+        "The Crown shall never hold the third estate.",
+        "The Crown shall never hold the fourth estate.",
+        "The Crown shall never hold the fifth estate.",
+    ],
+    [
+        "The Hart shall never hold the first estate.",
+        "The Hart shall not hold the second estate.",
+        "The Hart shall never hold the third estate.",
+        "The Hart shall never hold the fourth estate.",
+        "The Hart shall never hold the fifth estate.",
+    ],
+    [
+        "The Moon shall never hold the first estate.",
+        "The Moon shall not hold the second estate.",
+        "The Moon shall never hold the third estate.",
+        "The Moon shall never hold the fourth estate.",
+        "The Moon shall never hold the fifth estate.",
+    ],
+    [
+        "The Rose shall never hold the first estate.",
+        "The Rose shall not hold the second estate.",
+        "The Rose shall never hold the third estate.",
+        "The Rose shall never hold the fourth estate.",
+        "The Rose shall never hold the fifth estate.",
+    ],
+    [
+        "The Sword shall never hold the first estate.",
+        "The Sword shall not hold the second estate.",
+        "The Sword shall never hold the third estate.",
+        "The Sword shall never hold the fourth estate.",
+        "The Sword shall never hold the fifth estate.",
+    ],
+];
+
+const FEY_BEFORE: [[&str; 5]; 5] = [
+    [
+        "",
+        "The Crown must take its place before the Hart.",
+        "The Crown must take its place before the Moon.",
+        "The Crown must take its place before the Rose.",
+        "The Crown must take its place before the Sword.",
+    ],
+    [
+        "The Hart must take its place before the Crown.",
+        "",
+        "The Hart must take its place before the Moon.",
+        "The Hart must take its place before the Rose.",
+        "The Hart must take its place before the Sword.",
+    ],
+    [
+        "The Moon must take its place before the Crown.",
+        "The Moon must take its place before the Hart.",
+        "",
+        "The Moon must take its place before the Rose.",
+        "The Moon must take its place before the Sword.",
+    ],
+    [
+        "The Rose must take its place before the Crown.",
+        "The Rose must take its place before the Hart.",
+        "The Rose must take its place before the Moon.",
+        "",
+        "The Rose must take its place before the Sword.",
+    ],
+    [
+        "The Sword must take its place before the Crown.",
+        "The Sword must take its place before the Hart.",
+        "The Sword must take its place before the Moon.",
+        "The Sword must take its place before the Rose.",
+        "",
+    ],
+];
+
+const FEY_ADJACENT: [[&str; 5]; 5] = [
+    [
+        "",
+        "Let Crown and Hart stand ever side by side.",
+        "Let Crown and Moon stand ever side by side.",
+        "Let Crown and Rose stand ever side by side.",
+        "Let Crown and Sword stand ever side by side.",
+    ],
+    [
+        "Let Hart and Crown stand ever side by side.",
+        "",
+        "Let Hart and Moon stand ever side by side.",
+        "Let Hart and Rose stand ever side by side.",
+        "Let Hart and Sword stand ever side by side.",
+    ],
+    [
+        "Let Moon and Crown stand ever side by side.",
+        "Let Moon and Hart stand ever side by side.",
+        "",
+        "Let Moon and Rose stand ever side by side.",
+        "Let Moon and Sword stand ever side by side.",
+    ],
+    [
+        "Let Rose and Crown stand ever side by side.",
+        "Let Rose and Hart stand ever side by side.",
+        "Let Rose and Moon stand ever side by side.",
+        "",
+        "Let Rose and Sword stand ever side by side.",
+    ],
+    [
+        "Let Sword and Crown stand ever side by side.",
+        "Let Sword and Hart stand ever side by side.",
+        "Let Sword and Moon stand ever side by side.",
+        "Let Sword and Rose stand ever side by side.",
+        "",
+    ],
+];
+
+// Closed mechanism inscriptions remain presenter-specific but are not speech.
+const RUIN_EXACT: [[&str; 5]; 5] = [
+    [
+        "Crown: I.",
+        "Crown: II.",
+        "Crown: III.",
+        "Crown: IV.",
+        "Crown: V.",
+    ],
+    [
+        "Hart: I.",
+        "Hart: II.",
+        "Hart: III.",
+        "Hart: IV.",
+        "Hart: V.",
+    ],
+    [
+        "Moon: I.",
+        "Moon: II.",
+        "Moon: III.",
+        "Moon: IV.",
+        "Moon: V.",
+    ],
+    [
+        "Rose: I.",
+        "Rose: II.",
+        "Rose: III.",
+        "Rose: IV.",
+        "Rose: V.",
+    ],
+    [
+        "Sword: I.",
+        "Sword: II.",
+        "Sword: III.",
+        "Sword: IV.",
+        "Sword: V.",
+    ],
+];
+const RUIN_NOT_AT: [[&str; 5]; 5] = [
+    [
+        "Crown ≠ I.",
+        "Crown ≠ II.",
+        "Crown ≠ III.",
+        "Crown ≠ IV.",
+        "Crown ≠ V.",
+    ],
+    [
+        "Hart ≠ I.",
+        "Hart ≠ II.",
+        "Hart ≠ III.",
+        "Hart ≠ IV.",
+        "Hart ≠ V.",
+    ],
+    [
+        "Moon ≠ I.",
+        "Moon ≠ II.",
+        "Moon ≠ III.",
+        "Moon ≠ IV.",
+        "Moon ≠ V.",
+    ],
+    [
+        "Rose ≠ I.",
+        "Rose ≠ II.",
+        "Rose ≠ III.",
+        "Rose ≠ IV.",
+        "Rose ≠ V.",
+    ],
+    [
+        "Sword ≠ I.",
+        "Sword ≠ II.",
+        "Sword ≠ III.",
+        "Sword ≠ IV.",
+        "Sword ≠ V.",
+    ],
+];
+const RUIN_BEFORE: [[&str; 5]; 5] = [
+    [
+        "",
+        "Crown < Hart.",
+        "Crown < Moon.",
+        "Crown < Rose.",
+        "Crown < Sword.",
+    ],
+    [
+        "Hart < Crown.",
+        "",
+        "Hart < Moon.",
+        "Hart < Rose.",
+        "Hart < Sword.",
+    ],
+    [
+        "Moon < Crown.",
+        "Moon < Hart.",
+        "",
+        "Moon < Rose.",
+        "Moon < Sword.",
+    ],
+    [
+        "Rose < Crown.",
+        "Rose < Hart.",
+        "Rose < Moon.",
+        "",
+        "Rose < Sword.",
+    ],
+    [
+        "Sword < Crown.",
+        "Sword < Hart.",
+        "Sword < Moon.",
+        "Sword < Rose.",
+        "",
+    ],
+];
+const RUIN_ADJACENT: [[&str; 5]; 5] = [
+    [
+        "",
+        "Crown—Hart.",
+        "Crown—Moon.",
+        "Crown—Rose.",
+        "Crown—Sword.",
+    ],
+    ["Hart—Crown.", "", "Hart—Moon.", "Hart—Rose.", "Hart—Sword."],
+    ["Moon—Crown.", "Moon—Hart.", "", "Moon—Rose.", "Moon—Sword."],
+    ["Rose—Crown.", "Rose—Hart.", "Rose—Moon.", "", "Rose—Sword."],
+    [
+        "Sword—Crown.",
+        "Sword—Hart.",
+        "Sword—Moon.",
+        "Sword—Rose.",
+        "",
+    ],
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,5 +787,44 @@ mod tests {
             all.iter()
                 .all(|line| line.ends_with('.') && !line.contains('{'))
         );
+
+        let mut clue_lines = Vec::new();
+        for sigil in Sigil::ALL {
+            for position in 0..ORDERED_SIGIL_COUNT as u8 {
+                clue_lines.push(presented_clue_text(
+                    PresenterKind::FeySpoken,
+                    &OrderedSigilClue::Exact { sigil, position },
+                ));
+                clue_lines.push(presented_clue_text(
+                    PresenterKind::FeySpoken,
+                    &OrderedSigilClue::NotAt { sigil, position },
+                ));
+            }
+            for other in Sigil::ALL {
+                if sigil != other {
+                    clue_lines.push(presented_clue_text(
+                        PresenterKind::FeySpoken,
+                        &OrderedSigilClue::Before {
+                            first: sigil,
+                            second: other,
+                        },
+                    ));
+                    clue_lines.push(presented_clue_text(
+                        PresenterKind::FeySpoken,
+                        &OrderedSigilClue::Adjacent {
+                            first: sigil,
+                            second: other,
+                        },
+                    ));
+                }
+            }
+        }
+        assert_eq!(clue_lines.len(), 90);
+        assert!(clue_lines.iter().all(|line| {
+            !line.is_empty()
+                && line.ends_with('.')
+                && !line.contains('{')
+                && !line.contains("position {}")
+        }));
     }
 }

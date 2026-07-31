@@ -53,6 +53,7 @@ pub struct BackendChallenge {
     pub revision: u32,
     pub open: bool,
     pub solved: bool,
+    pub active: bool,
     pub last_attempt_correct: Option<bool>,
 }
 
@@ -71,6 +72,15 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
                 serde_json::from_str(&challenge.puzzle_json).ok()?;
             puzzle.validate().ok()?;
             let projection = serde_json::to_string(&puzzle.projection()).ok()?;
+            let active = party
+                .active_contract_id
+                .as_ref()
+                .and_then(|id| ctx.db.contract_authority().id().find(id))
+                .is_some_and(|contract| {
+                    contract.case_id == challenge.case_id
+                        && contract.status == ContractStatus::Accepted
+                        && contract.accepted_by.as_deref() == Some(&challenge.party_id)
+                });
             let last_attempt_correct = ctx
                 .db
                 .challenge_attempt_receipt()
@@ -89,6 +99,7 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
                 revision: challenge.revision,
                 open: challenge.open,
                 solved: challenge.solved_at_minute.is_some(),
+                active,
                 last_attempt_correct,
             })
         })
@@ -104,6 +115,26 @@ fn parse_ordered_sigils(
     ordering
         .try_into()
         .map_err(|_| "Submit exactly five sigils".into())
+}
+
+fn validate_challenge_retry(
+    existing: &ChallengeAttemptReceipt,
+    case_id: &str,
+    challenge_id: &str,
+    party_id: &str,
+    character_id: u64,
+    normalized_ordering: &str,
+) -> Result<(), String> {
+    if existing.case_id == case_id
+        && existing.challenge_id == challenge_id
+        && existing.party_id == party_id
+        && existing.character_id == character_id
+        && existing.ordering_json == normalized_ordering
+    {
+        Ok(())
+    } else {
+        Err("Conflicting retry for challenge revision".into())
+    }
 }
 
 /// Submit one complete ordering. Every authority coordinate is derived again:
@@ -130,6 +161,36 @@ pub fn submit_ordered_sigil_challenge(
     if party.leader_id != character_id {
         return Err("Only the party leader can answer this challenge".into());
     }
+    let mut challenge = ctx
+        .db
+        .challenge_authority()
+        .id()
+        .find(&challenge_id)
+        .ok_or("Challenge not found")?;
+    if challenge.case_id != case_id || challenge.party_id != party_id {
+        return Err("Challenge authority does not match this party and case".into());
+    }
+    let ordering = parse_ordered_sigils(&ordering_json)?;
+    let normalized_ordering =
+        serde_json::to_string(&ordering).map_err(|_| "Could not encode sigil ordering")?;
+    let receipt_id = format!(
+        "challenge-attempt:{}:{}:{}",
+        challenge.id, party_id, expected_revision
+    );
+    // Lost-response retries remain idempotent after a successful attempt has
+    // closed the challenge, resolved the case, paid the demo contract, and
+    // cleared the party's active contract. New attempts continue below and
+    // must satisfy every live authority check.
+    if let Some(existing) = ctx.db.challenge_attempt_receipt().id().find(&receipt_id) {
+        return validate_challenge_retry(
+            &existing,
+            &case_id,
+            &challenge_id,
+            &party_id,
+            character_id,
+            &normalized_ordering,
+        );
+    }
     let active_contract_id = party
         .active_contract_id
         .as_ref()
@@ -155,36 +216,10 @@ pub fn submit_ordered_sigil_challenge(
     if case.resolution_status != CaseResolutionStatus::Open {
         return Err("Case is no longer open".into());
     }
-    let mut challenge = ctx
-        .db
-        .challenge_authority()
-        .id()
-        .find(&challenge_id)
-        .ok_or("Challenge not found")?;
-    if challenge.case_id != case_id || challenge.party_id != party_id {
-        return Err("Challenge authority does not match this party and case".into());
-    }
     let at_site = character.current_settlement_id.as_deref() == Some(&challenge.site_id)
         && party.current_settlement_id.as_deref() == Some(&challenge.site_id);
     if !at_site {
         return Err("Party is not at the challenge site".into());
-    }
-    let ordering = parse_ordered_sigils(&ordering_json)?;
-    let normalized_ordering =
-        serde_json::to_string(&ordering).map_err(|_| "Could not encode sigil ordering")?;
-    let receipt_id = format!(
-        "challenge-attempt:{}:{}:{}",
-        challenge.id, party_id, expected_revision
-    );
-    if let Some(existing) = ctx.db.challenge_attempt_receipt().id().find(&receipt_id) {
-        return if existing.case_id == case_id
-            && existing.character_id == character_id
-            && existing.ordering_json == normalized_ordering
-        {
-            Ok(())
-        } else {
-            Err("Conflicting retry for challenge revision".into())
-        };
     }
     if !challenge.open || challenge.solved_at_minute.is_some() {
         return Err("Challenge is closed".into());
@@ -249,15 +284,43 @@ pub fn submit_ordered_sigil_challenge(
     }
     ctx.db.challenge_authority().id().update(challenge.clone());
     if correct {
+        let solved_challenge_id = challenge.id.clone();
         ingest_case_outcome_fact(
             ctx,
-            &format!("challenge-solved:{}", challenge.id),
+            &format!("challenge-solved:{solved_challenge_id}"),
             &case_id,
             &party_id,
             adventuresim_core::case::OutcomeFactKind::ChallengeSolved {
-                challenge_id: challenge.id,
+                challenge_id: solved_challenge_id,
             },
         )?;
+        if contract.service_id == "developer:puzzle-demo"
+            && contract.gold_reward == 0
+            && contract.xp_reward == 0
+        {
+            let mut completed_contract = ctx
+                .db
+                .contract_authority()
+                .id()
+                .find(&contract.id)
+                .ok_or("Completed puzzle demo contract not found")?;
+            completed_contract.status = ContractStatus::Paid;
+            completed_contract.paid_at_minute = Some(now);
+            ctx.db
+                .contract_authority()
+                .id()
+                .update(completed_contract);
+            let mut completed_party = ctx
+                .db
+                .party_authority()
+                .id()
+                .find(&party_id)
+                .ok_or("Completed puzzle demo party not found")?;
+            if completed_party.active_contract_id.as_deref() == Some(&contract.id) {
+                completed_party.active_contract_id = None;
+                ctx.db.party_authority().id().update(completed_party);
+            }
+        }
     }
     Ok(())
 }
@@ -269,6 +332,44 @@ fn puzzle_demo_enabled() -> bool {
             token,
         )
     })
+}
+
+fn active_puzzle_demo(
+    ctx: &ReducerContext,
+    party_id: &str,
+    settlement_id: &str,
+) -> Option<(ChallengeAuthority, Contract)> {
+    let party_key = party_id.to_string();
+    let mut challenges = ctx
+        .db
+        .challenge_authority()
+        .party_id()
+        .filter(&party_key)
+        .filter(|challenge| {
+            challenge.open
+                && challenge.solved_at_minute.is_none()
+                && challenge.site_id == settlement_id
+                && challenge.id.starts_with("challenge:ordered-sigils:demo:")
+        })
+        .collect::<Vec<_>>();
+    challenges.sort_by(|left, right| left.id.cmp(&right.id));
+    challenges.into_iter().find_map(|challenge| {
+        let contract = ctx
+            .db
+            .contract_authority()
+            .case_id()
+            .filter(&challenge.case_id)
+            .find(|contract| {
+                contract.service_id == "developer:puzzle-demo"
+                    && contract.status == ContractStatus::Accepted
+                    && contract.accepted_by.as_deref() == Some(party_id)
+            })?;
+        Some((challenge, contract))
+    })
+}
+
+fn puzzle_demo_suffix(character_id: u64, settlement_id: &str, ordinal: u64) -> String {
+    format!("demo:{character_id}:{settlement_id}:{ordinal}")
 }
 
 /// Creates or reuses an accepted, immediately playable errantry quest.
@@ -293,16 +394,42 @@ pub fn load_puzzle_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), S
     if party.leader_id != character_id {
         return Err("Only the party leader can load the puzzle demo".into());
     }
-
-    let suffix = format!("{character_id}-{settlement_id}");
+    if let Some((_, contract)) = active_puzzle_demo(ctx, &party_id, &settlement_id) {
+        if let Some(active) = party.active_contract_id.as_deref()
+            && active != contract.id
+        {
+            return Err("Finish or abandon the active quest before loading the puzzle demo".into());
+        }
+        party.active_contract_id = Some(contract.id);
+        ctx.db.party_authority().id().update(party);
+        return Ok(());
+    }
+    if let Some(active) = party.active_contract_id.clone() {
+        let active_contract = ctx
+            .db
+            .contract_authority()
+            .id()
+            .find(&active)
+            .ok_or("Active quest not found")?;
+        if active_contract.service_id != "developer:puzzle-demo" {
+            return Err("Finish or abandon the active quest before loading the puzzle demo".into());
+        }
+        // A terminal demo should normally have cleared itself. Repairing this
+        // stale zero-reward pointer keeps the developer fixture renewable.
+        party.active_contract_id = None;
+    }
+    let demo_prefix = format!("challenge:ordered-sigils:demo:{character_id}:{settlement_id}:");
+    let ordinal = ctx
+        .db
+        .challenge_authority()
+        .party_id()
+        .filter(&party_id)
+        .filter(|challenge| challenge.id.starts_with(&demo_prefix))
+        .count() as u64;
+    let suffix = puzzle_demo_suffix(character_id, &settlement_id, ordinal);
     let case_id = format!("case:errantry-puzzle:{suffix}");
     let contract_id = format!("contract:errantry-puzzle:{suffix}");
     let challenge_id = format!("challenge:ordered-sigils:{suffix}");
-    if let Some(active) = &party.active_contract_id
-        && active != &contract_id
-    {
-        return Err("Finish or abandon the active quest before loading the puzzle demo".into());
-    }
     let objective = adventuresim_core::case::ObjectiveExpression::new(vec![
         adventuresim_core::case::ObjectivePath {
             objectives: vec![adventuresim_core::case::Objective {
@@ -319,86 +446,68 @@ pub fn load_puzzle_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), S
     .map_err(|_| "Puzzle objective is invalid")?;
     let objective_expression_json =
         serde_json::to_string(&objective).map_err(|_| "Could not encode puzzle objective")?;
-    if ctx.db.case_authority().id().find(&case_id).is_none() {
-        ctx.db.case_authority().insert(CaseAuthority {
-            id: case_id.clone(),
-            investigation_case_id: format!("errantry:{suffix}"),
-            provenance_kind: "manual".into(),
-            generated_case_id: String::new(),
-            local_problem_id: None,
-            objective_expression_json,
-            resolution_status: CaseResolutionStatus::Open,
-            resolved_by_party_id: None,
-        });
-    }
-    if ctx
-        .db
-        .contract_authority()
-        .id()
-        .find(&contract_id)
-        .is_none()
-    {
-        ctx.db.contract_authority().insert(Contract {
-            id: contract_id.clone(),
-            gateway_bucket: 0,
-            case_id: case_id.clone(),
-            title: "The Trial of Five Signs".into(),
-            description: "A knightly errand leads directly to a trial of discernment.".into(),
-            difficulty: 1,
-            gold_reward: 0,
-            xp_reward: 0,
-            settlement_id: settlement_id.clone(),
-            service_id: "developer:puzzle-demo".into(),
-            issuer_npc_id: "developer:puzzle-demo".into(),
-            status: ContractStatus::Accepted,
-            accepted_by: Some(party_id.clone()),
-            opposition_wording: "an enchanted gate".into(),
-            opposition_count_wording: "one".into(),
-            accepted_at_minute: Some(crate::time::refresh_clock(ctx)?),
-            paid_at_minute: None,
-        });
-    }
-    if ctx
-        .db
-        .challenge_authority()
-        .id()
-        .find(&challenge_id)
-        .is_none()
-    {
-        let seed = 0x4b4e_4947_4854_4c59 ^ character_id;
-        let puzzle = adventuresim_core::errantry::OrderedSigilPuzzle::generate(seed);
-        let presenter = adventuresim_core::errantry::presenter(
-            adventuresim_core::errantry::PresenterKind::FeySpoken,
-        );
-        let frame = adventuresim_core::errantry::ErrantryFrame {
-            id: format!("errantry:five-signs:{suffix}"),
-            purpose: adventuresim_core::errantry::ErrantryPurpose::ProveWorth,
-            charge: "Keep faith upon the road and answer the trial with discernment.".into(),
-            trials: vec![adventuresim_core::errantry::TrialBinding {
-                order: 0,
-                trial_id: format!("trial:five-signs:{suffix}"),
-                challenge_id: Some(challenge_id.clone()),
-                site_id: settlement_id.clone(),
-                kind: adventuresim_core::errantry::TrialKind::Puzzle,
-            }],
-        };
-        ctx.db.challenge_authority().insert(ChallengeAuthority {
-            id: challenge_id,
-            gateway_bucket: 0,
-            case_id,
-            party_id: party_id.clone(),
+    ctx.db.case_authority().insert(CaseAuthority {
+        id: case_id.clone(),
+        investigation_case_id: format!("errantry:{suffix}"),
+        provenance_kind: "manual".into(),
+        generated_case_id: String::new(),
+        local_problem_id: None,
+        objective_expression_json,
+        resolution_status: CaseResolutionStatus::Open,
+        resolved_by_party_id: None,
+    });
+    ctx.db.contract_authority().insert(Contract {
+        id: contract_id.clone(),
+        gateway_bucket: 0,
+        case_id: case_id.clone(),
+        title: "The Trial of Five Signs".into(),
+        description: "A knightly errand leads directly to a trial of discernment.".into(),
+        difficulty: 1,
+        gold_reward: 0,
+        xp_reward: 0,
+        settlement_id: settlement_id.clone(),
+        service_id: "developer:puzzle-demo".into(),
+        issuer_npc_id: "developer:puzzle-demo".into(),
+        status: ContractStatus::Accepted,
+        accepted_by: Some(party_id.clone()),
+        opposition_wording: "an enchanted gate".into(),
+        opposition_count_wording: "one".into(),
+        accepted_at_minute: Some(crate::time::refresh_clock(ctx)?),
+        paid_at_minute: None,
+    });
+    let seed = 0x4b4e_4947_4854_4c59 ^ character_id ^ ordinal.rotate_left(23);
+    let puzzle = adventuresim_core::errantry::OrderedSigilPuzzle::generate(seed);
+    let presenter = adventuresim_core::errantry::presenter(
+        adventuresim_core::errantry::PresenterKind::FeySpoken,
+    );
+    let frame = adventuresim_core::errantry::ErrantryFrame {
+        id: format!("errantry:five-signs:{suffix}"),
+        purpose: adventuresim_core::errantry::ErrantryPurpose::ProveWorth,
+        charge: "Keep faith upon the road and answer the trial with discernment.".into(),
+        trials: vec![adventuresim_core::errantry::TrialBinding {
+            order: 0,
+            trial_id: format!("trial:five-signs:{suffix}"),
+            challenge_id: Some(challenge_id.clone()),
             site_id: settlement_id.clone(),
-            errantry_frame_json: serde_json::to_string(&frame)
-                .map_err(|_| "Could not encode errantry frame authority")?,
-            puzzle_json: serde_json::to_string(&puzzle)
-                .map_err(|_| "Could not encode puzzle authority")?,
-            presenter_json: serde_json::to_string(&presenter)
-                .map_err(|_| "Could not encode puzzle presenter")?,
-            revision: 0,
-            open: true,
-            solved_at_minute: None,
-        });
-    }
+            kind: adventuresim_core::errantry::TrialKind::Puzzle,
+        }],
+    };
+    ctx.db.challenge_authority().insert(ChallengeAuthority {
+        id: challenge_id,
+        gateway_bucket: 0,
+        case_id,
+        party_id: party_id.clone(),
+        site_id: settlement_id.clone(),
+        errantry_frame_json: serde_json::to_string(&frame)
+            .map_err(|_| "Could not encode errantry frame authority")?,
+        puzzle_json: serde_json::to_string(&puzzle)
+            .map_err(|_| "Could not encode puzzle authority")?,
+        presenter_json: serde_json::to_string(&presenter)
+            .map_err(|_| "Could not encode puzzle presenter")?,
+        revision: 0,
+        open: true,
+        solved_at_minute: None,
+    });
     party.active_contract_id = Some(contract_id);
     party.current_settlement_id = Some(settlement_id);
     ctx.db.party_authority().id().update(party);
@@ -407,6 +516,10 @@ pub fn load_puzzle_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), S
 
 #[cfg(test)]
 mod challenge_source_boundary_tests {
+    use super::{
+        ChallengeAttemptReceipt, puzzle_demo_suffix, validate_challenge_retry,
+    };
+
     #[test]
     fn public_projection_omits_private_truth_fields() {
         let source = include_str!("challenges.rs");
@@ -423,5 +536,76 @@ mod challenge_source_boundary_tests {
         assert!(source.contains("ChallengeSolved"));
         assert!(source.contains("challenge.revision != expected_revision"));
         assert!(source.contains("contract.accepted_by.as_deref() != Some(&party_id)"));
+    }
+
+    #[test]
+    fn lost_success_response_retries_exactly_but_conflicts_fail() {
+        let receipt = ChallengeAttemptReceipt {
+            id: "challenge-attempt:challenge:test:party:test:0".into(),
+            challenge_id: "challenge:test".into(),
+            case_id: "case:test".into(),
+            party_id: "party:test".into(),
+            character_id: 7,
+            submitted_revision: 0,
+            ordering_json: "[\"Crown\",\"Hart\",\"Moon\",\"Rose\",\"Sword\"]".into(),
+            correct: true,
+            resulting_revision: 1,
+            attempted_at_minute: 42,
+        };
+        validate_challenge_retry(
+            &receipt,
+            "case:test",
+            "challenge:test",
+            "party:test",
+            7,
+            "[\"Crown\",\"Hart\",\"Moon\",\"Rose\",\"Sword\"]",
+        )
+        .unwrap();
+        assert!(
+            validate_challenge_retry(
+                &receipt,
+                "case:test",
+                "challenge:test",
+                "party:test",
+                7,
+                "[\"Sword\",\"Hart\",\"Moon\",\"Rose\",\"Crown\"]",
+            )
+            .unwrap_err()
+            .contains("Conflicting retry")
+        );
+
+        let source = include_str!("challenges.rs");
+        let receipt_check = source
+            .find("if let Some(existing) = ctx.db.challenge_attempt_receipt()")
+            .unwrap();
+        let active_contract = source.find("let active_contract_id = party").unwrap();
+        let case_open = source.find("case.resolution_status !=").unwrap();
+        assert!(receipt_check < active_contract && receipt_check < case_open);
+    }
+
+    #[test]
+    fn demo_is_reused_while_open_and_renewed_after_terminal_cleanup() {
+        assert_ne!(
+            puzzle_demo_suffix(7, "settlement:test", 0),
+            puzzle_demo_suffix(7, "settlement:test", 1)
+        );
+        let source = include_str!("challenges.rs");
+        let loader = source.split("pub fn load_puzzle_demo").nth(1).unwrap();
+        let reuse = loader.find("active_puzzle_demo").unwrap();
+        let fresh_ordinal = loader.find("let ordinal =").unwrap();
+        assert!(reuse < fresh_ordinal);
+        assert!(loader.contains("return Ok(())"));
+        assert!(loader.contains("ordinal.rotate_left(23)"));
+
+        let submit = source
+            .split("pub fn submit_ordered_sigil_challenge")
+            .nth(1)
+            .unwrap()
+            .split("fn puzzle_demo_enabled")
+            .next()
+            .unwrap();
+        assert!(submit.contains("completed_contract.status = ContractStatus::Paid"));
+        assert!(submit.contains("completed_contract.paid_at_minute = Some(now)"));
+        assert!(submit.contains("completed_party.active_contract_id = None"));
     }
 }

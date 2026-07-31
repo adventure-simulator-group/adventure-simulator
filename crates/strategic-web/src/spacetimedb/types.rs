@@ -12,6 +12,7 @@ pub struct BackendChallenge {
     pub revision: u32,
     pub open: bool,
     pub solved: bool,
+    pub active: bool,
     pub last_attempt_correct: Option<bool>,
 }
 

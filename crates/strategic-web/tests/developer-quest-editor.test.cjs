@@ -69,7 +69,9 @@ test("puzzle demo creates a real quest and redirects straight to its challenge",
   assert.match(script, /fetch\("\/api\/developer\/puzzle-demo"/);
   assert.match(script, /window\.location\.assign\(body\.redirect_to\)/);
   assert.match(route, /\.route\("\/api\/developer\/puzzle-demo"/);
-  assert.match(route, /\/challenges\/challenge:ordered-sigils:/);
+  assert.match(route, /query::<BackendChallenge>/);
+  assert.match(route, /row\.id\.starts_with\(&demo_prefix\)/);
+  assert.match(route, /challenge\.case_id, challenge\.id/);
 });
 
 test("HTTP adapter derives settlement and leaves discovery to normal rumors", () => {

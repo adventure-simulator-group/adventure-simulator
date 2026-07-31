@@ -10,7 +10,10 @@ skipping rumor, travel, and manual contract acceptance. The no-JavaScript form
 uses POST/redirect/GET and preserves safe wrong/correct feedback.
 
 The loader is idempotent for the selected character and settlement and is
-disabled in ordinary module builds. See
+disabled in ordinary module builds. Duplicate loads reuse the open puzzle;
+solving terminally pays the zero-reward fixture and clears it, and the next
+load creates a fresh playable identity. The redirect is read from the safe
+challenge projection rather than reconstructed by the HTTP adapter. See
 [Errantry and modular challenges](errantry-and-challenges.md).
 
 ## Outbreak demo

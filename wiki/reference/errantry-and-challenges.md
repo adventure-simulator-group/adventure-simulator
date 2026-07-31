@@ -50,6 +50,12 @@ with bounded authored variants; inscriptions, books, and mechanisms may use a
 different register when their text is not spoken by a supernatural being.
 Automated syllable counting is not an authoring substitute.
 
+This rule includes procedural puzzle clues. The ordered-sigil fey presenter has
+a closed exhaustive catalog covering all 90 reachable sigil, position, order,
+and adjacency combinations. The renderer marks those clues as the Lady's
+speech. The ruin presenter uses a separate terse inscription catalog; formal
+clue truth remains identical.
+
 ## Direct development demo
 
 Run `just puzzle-demo`, select or create a character in a settlement, enable
@@ -57,4 +63,9 @@ browser-local developer mode, and choose **Puzzle demo**. The development-only
 reducer creates or reuses a deterministic real errantry case, accepted
 contract, and observer-bound challenge, then the HTTP adapter redirects
 directly to the server-rendered puzzle. This skips rumor, travel, and manual
-acceptance. The reducer is unavailable in ordinary module builds.
+acceptance. Repeated loading reuses the current open demo. Solving immediately
+marks its zero-reward contract paid and clears the party's active quest, so the
+next load creates a fresh namespaced playable challenge rather than returning
+to the solved page. The HTTP adapter derives the redirect from the safe
+post-reducer challenge projection. The reducer is unavailable in ordinary
+module builds.

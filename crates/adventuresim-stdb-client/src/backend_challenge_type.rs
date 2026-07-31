@@ -17,6 +17,7 @@ pub struct BackendChallenge {
     pub revision: u32,
     pub open: bool,
     pub solved: bool,
+    pub active: bool,
     pub last_attempt_correct: Option<bool>,
 }
 
@@ -38,6 +39,7 @@ pub struct BackendChallengeCols {
     pub revision: __sdk::__query_builder::Col<BackendChallenge, u32>,
     pub open: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub solved: __sdk::__query_builder::Col<BackendChallenge, bool>,
+    pub active: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub last_attempt_correct: __sdk::__query_builder::Col<BackendChallenge, Option<bool>>,
 }
 
@@ -58,6 +60,7 @@ impl __sdk::__query_builder::HasCols for BackendChallenge {
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             open: __sdk::__query_builder::Col::new(table_name, "open"),
             solved: __sdk::__query_builder::Col::new(table_name, "solved"),
+            active: __sdk::__query_builder::Col::new(table_name, "active"),
             last_attempt_correct: __sdk::__query_builder::Col::new(
                 table_name,
                 "last_attempt_correct",
