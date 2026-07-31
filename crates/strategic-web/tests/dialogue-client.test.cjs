@@ -10,6 +10,12 @@ const {
   dialogueResponseIsCurrent,
   dialogueSubmission,
   dialogueTopicPayload,
+  relationshipLabel,
+  relationshipLevel,
+  romanticResponse,
+  socialDurationChoices,
+  contextualMutationIsCurrent,
+  courtshipPresentation,
 } = require("../static/dialogue-client.js");
 
 test("errantry acceptance reuses its action ID after a lost response", async () => {
@@ -65,10 +71,13 @@ test("dialogue client is schema-driven with stable authoritative actions", () =>
   assert.doesNotMatch(source, /professionDetails|openQuestOffer|beginHerbalistConversation|dialogueActions/);
 });
 
-test("topics are exposed only through inline dialogue text", () => {
+test("authored topics stay inline while contextual social topics use icon controls", () => {
   assert.doesNotMatch(source, /data-dialogue-topic-pane/);
   assert.doesNotMatch(source, /topicList\.replaceChildren/);
   assert.match(source, /row\.append\(topicAnchor/);
+  assert.match(source, /dialogue-context-topics/);
+  assert.match(source, /contextTopicButton\("social", "conversation"/);
+  assert.match(source, /contextTopicButton\("romance", "rose"/);
   assert.match(source, /document\.createDocumentFragment\(\)/);
   assert.match(source, /fragment\.append\(anchor, edit\)/);
   assert.doesNotMatch(source, /anchor\.append\(edit\)/);
@@ -135,9 +144,42 @@ test("settlement NPCs reuse the circular party portrait structure", () => {
   assert.match(source, /party-portrait-face/);
   assert.match(source, /party-portrait-name settlement-npc-name/);
   assert.match(source, /portrait\.append\(face, name\)/);
-  assert.match(source, /data\.openNpcSocial|dataset\.openNpcSocial/);
-  assert.match(source, /settlement-npc-social-button/);
-  assert.match(source, /npc-social-summary/);
+  assert.doesNotMatch(source, /data\.openNpcSocial|dataset\.openNpcSocial/);
+  assert.doesNotMatch(source, /settlement-npc-social-button/);
+  assert.doesNotMatch(source, /npc-social-summary/);
+});
+
+test("socializing and romance are dialogue responses with visual relationship meters", () => {
+  assert.equal(relationshipLabel("well_known"), "well known");
+  assert.equal(relationshipLevel("affinity", "trusted"), 1);
+  assert.equal(relationshipLevel("morale", "guarded"), 2 / 3);
+  assert.deepEqual(socialDurationChoices.map((choice) => choice.minutes), [15, 60, 240]);
+  assert.equal(romanticResponse("formal_courtship").icon, "rose");
+  assert.equal(romanticResponse("schedule_wedding").icon, "calendar");
+  assert.deepEqual(courtshipPresentation("formal", false), { icon: "rose", label: "formal courtship; formal and public" });
+  assert.deepEqual(courtshipPresentation("informal", false), { icon: "lockpicks", label: "informal courtship; private" });
+  assert.deepEqual(courtshipPresentation("informal", true), { icon: "eye-target", label: "informal courtship; known to family" });
+  assert.match(source, /dataset\.dialogueContextPrompt/);
+  assert.match(source, /appendContextExchange/);
+  assert.match(source, /npc-relationship-meter/);
+  assert.match(source, /requested_minutes: choice\.minutes/);
+  assert.match(source, /track\.setAttribute\("role", "meter"\)/);
+  assert.match(source, /currentView\.open_prompt \|\| contextualMutation/);
+  assert.match(source, /const render = \(view\) => \{[\s\S]*?removeContextPrompt\(\);/);
+  assert.doesNotMatch(source, /success_chance|personality_fit|morale_delta/);
+});
+
+test("contextual mutations are bound to the active NPC, path, session, revision, and operation", () => {
+  const binding = { token: "op-1", selectionGeneration: 3, npcId: "npc:anna", path: "/anna/social", sessionId: "dialogue:anna", revision: 4 };
+  const view = { session_id: "dialogue:anna", revision: 4 };
+  assert.equal(contextualMutationIsCurrent(binding, "op-1", 3, "npc:anna", "/anna/social", view), true);
+  assert.equal(contextualMutationIsCurrent(binding, "op-2", 3, "npc:anna", "/anna/social", view), false);
+  assert.equal(contextualMutationIsCurrent(binding, "op-1", 4, "npc:anna", "/anna/social", view), false);
+  assert.equal(contextualMutationIsCurrent(binding, "op-1", 3, "npc:elsa", "/elsa/social", view), false);
+  assert.equal(contextualMutationIsCurrent(binding, "op-1", 3, "npc:anna", "/anna/social", { ...view, revision: 5 }), false);
+  assert.match(source, /if \(!contextMutationCurrent\(binding\)\) return/);
+  assert.match(source, /contextualMutation = null/);
+  assert.match(source, /setContextControlsDisabled\(true\)/);
 });
 
 test("NPCs without initials use the neutral person silhouette without losing their accessible name", () => {

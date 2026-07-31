@@ -225,10 +225,12 @@ greyer text when confidence is lower; their exact confidence is available on
 hover together with a hint about which approaches that trait may favor or
 resent.
 
-The same social menu also supports ordinary conversation with another living,
-co-located party member or a currently present settlement NPC. The player
-chooses 15 minutes to eight hours in 15-minute increments, with 30 minutes as
-the default. A conversation with a settlement NPC must fit wholly inside that
+The selected local's dialogue includes a contextual conversation topic. Its
+spoken responses offer a brief exchange, an unhurried visit, or an evening
+together; exact durations remain available to assistive technology and on
+hover without making raw minutes the primary interface. Courtship and wedding
+proposals likewise appear as dialogue topics and spoken responses rather than
+standalone action buttons. A conversation with a settlement NPC must fit wholly inside that
 NPC's current presence window. Each quarter hour uses the speaker's Charm and Insight together
 with mutual personality fit and the existing relationship. Familiarity always
 records the shared time, but morale and directional affinity can rise or fall;

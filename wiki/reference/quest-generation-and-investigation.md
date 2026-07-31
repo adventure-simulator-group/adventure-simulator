@@ -41,9 +41,9 @@ server-private entropy and stored; public NPC IDs do not determine them. Named
 morale-event rows preserve why morale changes. Current settled morale,
 relationship affinity, familiarity, personality, and the chosen approach all
 affect resolution, while browser projections remain qualitative.
-Ordinary timed chat is available from the normal social menu rather than the
-quest transcript. It may improve or strain morale and affinity and always
-builds familiarity, but it never diagnoses pressure or releases testimony.
+Ordinary timed chat is a contextual topic in the selected resident's dialogue.
+It may improve or strain morale and affinity and always builds familiarity,
+but it never diagnoses pressure or releases testimony.
 Claim-specific Charm, Command, and Bluff responses remain available only in
 the active dialogue session where that observer heard the claim.
 

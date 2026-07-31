@@ -26,7 +26,7 @@
   const pendingLocalRows = (existingRows, pendingInteractiveRows = []) => [
     ...pendingInteractiveRows,
     ...existingRows.filter((row) => row.dataset.chatChannel === "local"
-      && row.dataset.privateDialogue === "true"),
+      && (row.dataset.privateDialogue === "true" || row.dataset.dialogueContextual === "true")),
   ];
 
   const applyChannelVisibility = (rows, visibleChannels) => {

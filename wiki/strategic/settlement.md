@@ -185,13 +185,14 @@ the full skill rail separately shows injury-adjusted current performance.
 Recruitment recommendation matching continues to use the existing capability
 projection; the icon summary is presentation only.
 
-Portrait social affordances open the normal social popup for party members and
-present settlement NPCs. The selected person's morale/relationship area opens
-the same popup. Its ordinary **Chat** activity has a 30-minute default and a
-15-minute duration slider up to eight hours. Quest-specific confrontation
-approaches are not duplicated there: they appear only while the corresponding
-quest dialogue is active. The fallible Insight impression happens passively
-when the witness's quest testimony is heard.
+Party portraits retain their normal social surface. Selecting a present
+settlement NPC instead opens that person's dialogue; icon topics in the
+transcript reveal spoken responses for ordinary conversation and, when legal,
+courtship or wedding proposals. Qualitative morale, affinity, and familiarity
+appear as icon meters beside the selected person. Quest-specific confrontation
+approaches appear only while the corresponding quest dialogue is active. The
+fallible Insight impression happens passively when the witness's quest
+testimony is heard.
 
 A living active character with Physiology 2 or better sees the selected
 character's Physiology surface as a passive, durable notebook derived from

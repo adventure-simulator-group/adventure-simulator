@@ -848,56 +848,47 @@ fn romantic_rejection_message(error: &str) -> Option<&'static str> {
     [
         (
             "enough affinity",
-            "You are not close enough for that relationship yet.",
+            "I care for you, but I am not ready for that relationship.",
         ),
         (
             "father",
-            "Her family does not approve of a formal courtship.",
+            "My family would not approve of a formal courtship.",
         ),
         (
             "formal route",
-            "This relationship must be approached formally.",
+            "I cannot agree unless we approach this formally.",
         ),
-        (
-            "mutual attraction",
-            "They care for you, but not romantically.",
-        ),
+        ("mutual attraction", "I care for you, but not romantically."),
         (
             "exclusive romantic",
-            "One of you already has an exclusive commitment.",
+            "I cannot make that promise while one of us is already committed.",
         ),
         (
             "already has exclusive",
-            "One of you already has an exclusive commitment.",
+            "I cannot make that promise while one of us is already committed.",
         ),
         (
             "already in active marriage",
-            "One of you is already married.",
+            "I cannot agree while one of us is already married.",
         ),
         (
             "requires co-location",
-            "You need to be together to do that.",
+            "We need to be together before we can speak of that.",
         ),
-        (
-            "living adult",
-            "This relationship is not eligible for courtship.",
-        ),
+        ("living adult", "I cannot enter that courtship."),
         (
             "Close relatives",
-            "This relationship is not eligible for courtship.",
+            "We are too closely related for courtship.",
         ),
         (
             "active courtship",
-            "A wedding can only be scheduled from an active courtship.",
+            "We must be courting before we can plan a wedding.",
         ),
         (
             "shared ceremony settlement",
-            "Choose a shared settlement for the ceremony first.",
+            "We must first agree where the ceremony will be held.",
         ),
-        (
-            "residence",
-            "A suitable home is required before the wedding.",
-        ),
+        ("residence", "We need a suitable home before the wedding."),
     ]
     .into_iter()
     .find_map(|(needle, message)| error.contains(needle).then_some(message))
@@ -929,17 +920,17 @@ async fn npc_romance_action(
         "formal_courtship" => (
             "begin_formal_courtship",
             vec![json!(character_id), json!(resident_character_id)],
-            "You begin a formal courtship.",
+            "Yes. Let us seek my family's blessing and proceed openly.",
         ),
         "informal_courtship" => (
             "begin_informal_courtship",
             vec![json!(character_id), json!(resident_character_id)],
-            "You agree to court discreetly.",
+            "Yes. We will keep this between ourselves.",
         ),
         "schedule_wedding" => (
             "schedule_wedding",
             vec![json!(character_id), json!(resident_character_id)],
-            "Your wedding is scheduled one year from now.",
+            "Then it is settled. One year from today.",
         ),
         "cancel_wedding" => {
             let Some(commitment) =
@@ -948,7 +939,7 @@ async fn npc_romance_action(
                 let view = npc_social_view(&state, character_id, npc, None).await?;
                 return Ok(Json(NpcRomanceActionResult {
                     ok: false,
-                    message: "There is no scheduled wedding to cancel.".into(),
+                    message: "There is no wedding between us to cancel.".into(),
                     view,
                 }));
             };
@@ -962,7 +953,7 @@ async fn npc_romance_action(
                             .expect("projected active commitment has an id")
                     ),
                 ],
-                "The wedding has been cancelled.",
+                "I understand. The wedding will not go forward.",
             )
         }
         _ => return Err(StatusCode::NOT_FOUND),
@@ -982,10 +973,7 @@ async fn npc_romance_action(
                     error = %error_text,
                     "romantic action rejected"
                 );
-                (
-                    false,
-                    "That relationship change could not be completed right now.".into(),
-                )
+                (false, "I cannot make that promise right now.".into())
             }
         }
     };

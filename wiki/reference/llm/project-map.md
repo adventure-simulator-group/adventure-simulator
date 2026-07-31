@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1585)
+## Files (1583)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1403,7 +1403,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/static/physiology-dialog.js` — Repository support file.
 - `crates/strategic-web/static/rest-duration.js` — Repository support file.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
-- `crates/strategic-web/static/social-menu.js` — Repository support file.
 - `crates/strategic-web/static/strategic-condition.js` — Repository support file.
 - `crates/strategic-web/static/strategic-map.js` — Repository support file.
 - `crates/strategic-web/static/strategic-mutations.js` — Repository support file.
@@ -1489,7 +1488,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/tests/rest-duration.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/rust-module-source.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
-- `crates/strategic-web/tests/social-menu.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/strategic-map-behavior.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/strategic-mutations.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/strategic-navigation.test.cjs` — Repository support file.

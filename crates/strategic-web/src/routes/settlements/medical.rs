@@ -634,11 +634,9 @@ pub(super) async fn settlement_resident_place(
                 courtship_kind: status.courtship_kind.clone(),
                 courtship_exposed: status.courtship_exposed,
                 wedding,
-                pregnancy_due_label: status.pregnancy_due_minute.map(|due| {
-                    let days = due
-                        .saturating_sub(character_minute)
-                        .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY);
-                    format!("in about {days} days")
+                pregnancy_due_days: status.pregnancy_due_minute.map(|due| {
+                    due.saturating_sub(character_minute)
+                        .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY)
                 }),
                 child_names: name(status.pregnancy_child_id).into_iter().collect(),
             }

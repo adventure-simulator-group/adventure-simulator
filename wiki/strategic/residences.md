@@ -11,6 +11,16 @@ order. Purchase price, rent, maintenance, property tax, and Leisure benefit
 must each increase strictly from one tier to the next. For every tier,
 maintenance plus property tax must remain lower than rent.
 
+The residence screen compares these tiers with colored icon meters for rent,
+purchase cost, owner upkeep, and Leisure comfort. Exact amounts remain in
+tooltips, accessible labels, and the confirmation shown before a rent or
+purchase is submitted. Holding actions are icon controls with accessible names;
+financial commitments and irreversible relinquishment require confirmation.
+Household status uses named family members alongside spouse, courtship,
+privacy, wedding, pregnancy, and child icons. Wedding and pregnancy timing use
+progress bars, with exact dates or remaining days available on hover and to
+assistive technology.
+
 A legal residence holding is distinct from a designated primary home. A
 character may keep multiple purchased houses in multiple settlements but may
 designate at most one active holding as home. A new purchase never destroys an

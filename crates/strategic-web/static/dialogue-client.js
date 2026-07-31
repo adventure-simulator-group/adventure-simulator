@@ -69,6 +69,43 @@
       },
     };
   };
+  const relationshipLabel = (value) => String(value || "uncertain").replaceAll("_", " ");
+  const relationshipLevel = (kind, value) => {
+    const bands = {
+      affinity: ["hostile", "reserved", "warm", "trusted"],
+      familiarity: ["new", "known", "familiar", "well_known"],
+      morale: ["distressed", "guarded", "settled"],
+    }[kind] || [];
+    const index = bands.indexOf(String(value || ""));
+    return index < 0 ? 0 : (index + 1) / bands.length;
+  };
+  const socialDurationChoices = Object.freeze([
+    { id: "brief", minutes: 15, icon: "conversation", label: "Do you have a moment to talk?", detail: "A brief fifteen-minute conversation." },
+    { id: "visit", minutes: 60, icon: "sun", label: "I would like to stay and talk awhile.", detail: "An unhurried one-hour visit." },
+    { id: "evening", minutes: 240, icon: "calendar", label: "Shall we spend the evening together?", detail: "A long four-hour conversation." },
+  ]);
+  const romanticResponse = (action) => ({
+    formal_courtship: { icon: "rose", label: "Ask for a formal courtship", line: "I would like to seek your family's leave to court you." },
+    informal_courtship: { icon: "lockpicks", label: "Propose a private courtship", line: "Would you court me, even if we must keep it between us?" },
+    schedule_wedding: { icon: "calendar", label: "Plan the wedding", line: "Let us choose the day and make our promise." },
+    cancel_wedding: { icon: "broken-heart", label: "Cancel the wedding", line: "I cannot go forward with the wedding as planned." },
+  })[action] || null;
+  const courtshipPresentation = (kind, exposed) => {
+    const informal = kind === "informal";
+    if (!informal) return { icon: "rose", label: `${relationshipLabel(kind)} courtship; formal and public` };
+    return exposed
+      ? { icon: "eye-target", label: "informal courtship; known to family" }
+      : { icon: "lockpicks", label: "informal courtship; private" };
+  };
+  const contextualMutationIsCurrent = (binding, activeToken, currentGeneration, currentNpcId, currentPath, currentView) => Boolean(
+    binding
+    && binding.token === activeToken
+    && binding.selectionGeneration === currentGeneration
+    && binding.npcId === currentNpcId
+    && binding.path === currentPath
+    && binding.sessionId === currentView?.session_id
+    && binding.revision === currentView?.revision
+  );
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
@@ -78,6 +115,12 @@
       dialogueResponseIsCurrent,
       dialogueTopicPayload,
       exactCandidate,
+      relationshipLabel,
+      relationshipLevel,
+      romanticResponse,
+      socialDurationChoices,
+      contextualMutationIsCurrent,
+      courtshipPresentation,
     };
   }
   if (typeof document === "undefined") return;
@@ -96,8 +139,10 @@
   const npcStrip = document.querySelector("[data-npc-strip]");
   const npcDescription = document.querySelector("[data-npc-description]");
   let currentView = null;
+  let currentSocial = null;
   let selectionGeneration = 0;
   let startInFlight = null;
+  let contextualMutation = null;
 
   const actionId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const request = async (path, payload) => {
@@ -113,6 +158,72 @@
     if (!source?.edit_url) return null;
     const link = document.createElement("a"); link.className = "dialogue-source-link"; link.href = source.edit_url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.hidden = !document.documentElement.hasAttribute("data-developer-mode"); link.setAttribute("aria-label", `Edit dialogue source at ${source.file} line ${source.line}`); link.title = `Edit ${source.file}:${source.line}`; const icon = document.createElement("span"); icon.className = "dialogue-source-icon"; icon.setAttribute("aria-hidden", "true"); link.append(icon); return link;
   };
+  const socialPath = () => {
+    const npcId = chat.dataset.localChatSubject || "";
+    const settlement = npcStrip?.dataset.npcSettlement || "";
+    const location = npcStrip?.dataset.npcLocation || "";
+    if (!npcId || !settlement || !location) return null;
+    return `/api/settlements/${encodeURIComponent(settlement)}/locations/${encodeURIComponent(location)}/npcs/${encodeURIComponent(npcId)}/social`;
+  };
+  const contextualRow = (speaker, body, player = false) => {
+    const row = document.createElement("div");
+    row.className = player ? "chat-player-message" : "chat-npc-message";
+    row.dataset.chatChannel = "local";
+    row.dataset.dialogueContextual = "true";
+    const timestamp = document.createElement("span"); timestamp.className = "chat-timestamp"; timestamp.textContent = "[--:--] ";
+    const name = document.createElement("strong"); name.textContent = `${speaker}: `;
+    row.append(timestamp, name, document.createTextNode(body));
+    return row;
+  };
+  const visualVital = (kind, value, icon) => {
+    const label = relationshipLabel(value);
+    const vital = document.createElement("span");
+    vital.className = `npc-relationship-vital npc-relationship-${kind}`;
+    vital.title = `${kind}: ${label}`;
+    vital.setAttribute("aria-label", vital.title);
+    const glyph = document.createElement("span"); glyph.className = "game-icon"; glyph.style.setProperty("--game-icon", `url('/static/icons/game/${icon}.svg')`); glyph.setAttribute("aria-hidden", "true");
+    const percent = Math.round(relationshipLevel(kind, value) * 100);
+    const track = document.createElement("span"); track.className = "npc-relationship-meter"; track.setAttribute("role", "meter"); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", "100"); track.setAttribute("aria-valuenow", String(percent)); track.setAttribute("aria-valuetext", label);
+    const fill = document.createElement("span"); fill.style.width = `${percent}%`; fill.setAttribute("aria-hidden", "true");
+    track.append(fill); vital.append(glyph, track);
+    return vital;
+  };
+  const renderRelationshipVitals = () => {
+    if (!npcDescription) return;
+    npcDescription.querySelector("[data-npc-relationship-vitals]")?.remove();
+    if (!currentSocial) return;
+    const vitals = document.createElement("div");
+    vitals.className = "npc-relationship-vitals";
+    vitals.dataset.npcRelationshipVitals = "true";
+    vitals.setAttribute("role", "group");
+    vitals.setAttribute("aria-label", `Your relationship with ${currentSocial.name}`);
+    vitals.append(
+      visualVital("affinity", currentSocial.affinity, "heart-beats"),
+      visualVital("familiarity", currentSocial.familiarity, "conversation"),
+      visualVital("morale", currentSocial.morale, "sun"),
+    );
+    if (currentSocial.courtship_kind) {
+      const presentation = courtshipPresentation(currentSocial.courtship_kind, currentSocial.courtship_exposed);
+      const courtship = document.createElement("span");
+      courtship.className = "npc-relationship-state";
+      courtship.title = presentation.label;
+      courtship.setAttribute("role", "img");
+      courtship.setAttribute("aria-label", courtship.title);
+      const icon = document.createElement("span"); icon.className = "game-icon"; icon.style.setProperty("--game-icon", `url('/static/icons/game/${presentation.icon}.svg')`); icon.setAttribute("aria-hidden", "true");
+      courtship.append(icon); vitals.append(courtship);
+    }
+    if (Number.isFinite(currentSocial.wedding_countdown_days)) {
+      const wedding = document.createElement("span");
+      wedding.className = "npc-relationship-state npc-wedding-progress";
+      wedding.title = `Wedding in ${currentSocial.wedding_countdown_days} days`;
+      const percent = Math.round(Math.max(0, Math.min(100, (365 - currentSocial.wedding_countdown_days) / 365 * 100)));
+      wedding.setAttribute("role", "meter"); wedding.setAttribute("aria-valuemin", "0"); wedding.setAttribute("aria-valuemax", "100"); wedding.setAttribute("aria-valuenow", String(percent)); wedding.setAttribute("aria-valuetext", wedding.title);
+      wedding.style.setProperty("--wedding-progress", `${percent}%`);
+      const icon = document.createElement("span"); icon.className = "game-icon"; icon.style.setProperty("--game-icon", "url('/static/icons/game/calendar.svg')"); icon.setAttribute("aria-hidden", "true");
+      wedding.append(icon); vitals.append(wedding);
+    }
+    npcDescription.append(vitals);
+  };
   const topicAnchor = (topic, binding) => {
     const anchor = document.createElement("a"); anchor.href = "#"; anchor.className = "chat-quest-link"; anchor.textContent = topic.label; anchor.dataset.dialogueTopic = topic.id; anchor.dataset.dialogueSession = binding.sessionId; anchor.dataset.dialogueRevision = String(binding.revision); anchor.dataset.dialogueGeneration = String(binding.selectionGeneration); anchor.dataset.dialogueNpc = binding.npcId; const edit = sourceLink(topic.source); if (!edit) return anchor; const fragment = document.createDocumentFragment(); fragment.append(anchor, edit); return fragment;
   };
@@ -124,6 +235,85 @@
     else prompt.choices.forEach((choice) => { const label = document.createElement("label"); const choiceInput = document.createElement("input"); choiceInput.type = prompt.mode === "Multi" ? "checkbox" : "radio"; choiceInput.name = "choice"; choiceInput.value = choice.id; if (prompt.mode !== "Multi" && prompt.min_choices > 0) choiceInput.required = true; label.append(choiceInput, document.createTextNode(choice.label)); const edit = sourceLink(choice.source); if (edit) label.append(edit); group.append(label); });
     if (prompt.mode !== "YesNo") { const submit = document.createElement("button"); submit.type = "submit"; submit.className = "btn btn-small"; submit.textContent = "Answer"; group.append(submit); }
     form.append(group); messages.append(form);
+  };
+  const removeContextPrompt = () => messages?.querySelector("[data-dialogue-context-prompt]")?.remove();
+  const setContextControlsDisabled = (disabled) => messages?.querySelectorAll("[data-dialogue-context-topics] button, [data-dialogue-context-prompt] button").forEach((button) => { button.disabled = disabled; });
+  const beginContextMutation = () => {
+    const path = socialPath();
+    if (!path || contextualMutation || !currentView?.session_id) return null;
+    const binding = { token: actionId(), selectionGeneration, npcId: chat.dataset.localChatSubject || "", path, sessionId: currentView.session_id, revision: currentView.revision };
+    contextualMutation = binding; setContextControlsDisabled(true); return binding;
+  };
+  const contextMutationCurrent = (binding) => contextualMutationIsCurrent(binding, contextualMutation?.token, selectionGeneration, chat.dataset.localChatSubject || "", socialPath(), currentView);
+  const finishContextMutation = (binding) => {
+    if (!contextMutationCurrent(binding)) return;
+    contextualMutation = null; setContextControlsDisabled(false); renderContextTopics();
+  };
+  const responseButton = ({ icon, label, detail }, onChoose) => {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "dialogue-context-response";
+    button.title = detail || label; button.setAttribute("aria-label", `${label}. ${detail || ""}`.trim());
+    const glyph = document.createElement("span"); glyph.className = "game-icon"; glyph.style.setProperty("--game-icon", `url('/static/icons/game/${icon}.svg')`); glyph.setAttribute("aria-hidden", "true");
+    const line = document.createElement("span"); line.textContent = label;
+    button.append(glyph, line); button.addEventListener("click", onChoose, { signal });
+    return button;
+  };
+  const appendContextExchange = (playerLine, npcLine) => {
+    messages.append(contextualRow("You", playerLine, true), contextualRow(currentSocial?.name || "Resident", npcLine));
+    messages.scrollTop = messages.scrollHeight;
+  };
+  const refreshSocialContext = async (generation = selectionGeneration) => {
+    const path = socialPath(); if (!path) return null;
+    const response = await window.strategicBackgroundFetch(`dialogue-social:${path}`, path, { headers: { Accept: "application/json" } });
+    if (!response.ok) return null;
+    const social = await response.json();
+    if (generation !== selectionGeneration || social.resident_character_id !== chat.dataset.localChatSubject) return null;
+    currentSocial = social; renderRelationshipVitals(); renderContextTopics(); return social;
+  };
+  const chooseSocialResponse = async (choice) => {
+    const binding = beginContextMutation(); if (!binding) return;
+    try {
+      const response = await window.strategicFetch(binding.path, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ requested_minutes: choice.minutes, action_id: binding.token }) });
+      if (!response.ok) throw new Error(`Conversation failed (${response.status})`);
+      const social = await response.json(); if (!contextMutationCurrent(binding)) return;
+      currentSocial = social;
+      const reaction = ({ positive: "I am glad we had this time together.", mixed: "That was awkward in places, but I am glad we spoke.", negative: "I think we should leave the conversation there." })[currentSocial.last_outcome] || "Thank you for speaking with me.";
+      removeContextPrompt(); appendContextExchange(choice.label, reaction); renderRelationshipVitals(); renderContextTopics();
+    } catch (error) { if (contextMutationCurrent(binding)) window.reportStrategicError(error, "choose conversation response"); }
+    finally { finishContextMutation(binding); }
+  };
+  const chooseRomanticResponse = async (action, responseView) => {
+    const binding = beginContextMutation(); if (!binding) return;
+    try {
+      const response = await window.strategicFetch(binding.path.replace(/\/social$/, `/romance/${encodeURIComponent(action)}`), { method: "POST", headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error(`Relationship response failed (${response.status})`);
+      const result = await response.json(); if (!contextMutationCurrent(binding)) return;
+      if (!result || typeof result.ok !== "boolean" || typeof result.message !== "string" || !result.view) throw new Error("Relationship response returned an invalid result");
+      currentSocial = result.view; removeContextPrompt(); appendContextExchange(responseView.line, result.message); renderRelationshipVitals(); renderContextTopics();
+    } catch (error) { if (contextMutationCurrent(binding)) window.reportStrategicError(error, "choose relationship response"); }
+    finally { finishContextMutation(binding); }
+  };
+  const renderContextPrompt = (kind) => {
+    removeContextPrompt(); if (!messages || !currentSocial || currentView?.open_prompt || contextualMutation) return;
+    const panel = document.createElement("section"); panel.className = "dialogue-context-prompt"; panel.dataset.dialogueContextPrompt = kind;
+    panel.setAttribute("aria-label", kind === "social" ? "Ways to spend time together" : "Relationship responses");
+    const choices = document.createElement("div"); choices.className = "dialogue-context-responses";
+    if (kind === "social") socialDurationChoices.forEach((choice) => choices.append(responseButton(choice, () => chooseSocialResponse(choice))));
+    else (currentSocial.romantic_actions || []).forEach((action) => { const view = romanticResponse(action); if (view) choices.append(responseButton({ ...view, detail: view.line }, () => chooseRomanticResponse(action, view))); });
+    panel.append(choices); messages.append(panel); panel.querySelector("button")?.focus(); messages.scrollTop = messages.scrollHeight;
+  };
+  const contextTopicButton = (kind, icon, label) => {
+    const button = document.createElement("button"); button.type = "button"; button.className = `dialogue-context-topic dialogue-context-topic-${kind}`; button.title = label; button.setAttribute("aria-label", label);
+    const glyph = document.createElement("span"); glyph.className = "game-icon"; glyph.style.setProperty("--game-icon", `url('/static/icons/game/${icon}.svg')`); glyph.setAttribute("aria-hidden", "true"); button.append(glyph);
+    button.addEventListener("click", () => renderContextPrompt(kind), { signal }); return button;
+  };
+  const renderContextTopics = () => {
+    messages?.querySelector("[data-dialogue-context-topics]")?.remove();
+    if (!messages || !currentSocial || !currentView?.session_id || currentView.open_prompt || contextualMutation) return;
+    const topics = document.createElement("nav"); topics.className = "dialogue-context-topics"; topics.dataset.dialogueContextTopics = "true"; topics.setAttribute("aria-label", `Conversation topics for ${currentSocial.name}`);
+    topics.append(contextTopicButton("social", "conversation", "Spend time talking"));
+    if ((currentSocial.romantic_actions || []).length) topics.append(contextTopicButton("romance", "rose", "Courtship and marriage"));
+    messages.append(topics);
   };
   let expandedClaimToken = null;
   const affinityFeedback = (delta) => {
@@ -236,6 +426,8 @@
   };
   const render = (view) => {
     currentView = view;
+    if (contextualMutation && !contextMutationCurrent(contextualMutation)) contextualMutation = null;
+    removeContextPrompt();
     const binding = {
       sessionId: view.session_id,
       revision: view.revision,
@@ -296,6 +488,7 @@
       row.append(button);
       messages.append(row);
     }
+    renderContextTopics();
     refreshCompletion();
     messages.scrollTop = messages.scrollHeight;
   };
@@ -399,17 +592,23 @@
     const key = `${actor}:${location}:${generation}`;
     if (startInFlight?.key === key) return startInFlight.promise;
     const promise = request("/api/dialogue/start", { npc_actor_id: actor, location_id: location }).then((view) => {
-      if (generation === selectionGeneration && chat.dataset.localChatSubject === actor) render(view);
+      if (generation === selectionGeneration && chat.dataset.localChatSubject === actor) {
+        render(view);
+        return refreshSocialContext(generation);
+      }
+      return null;
     }).catch((error) => { if (generation === selectionGeneration) window.reportStrategicError(error, "start dialogue"); }).finally(() => { if (startInFlight?.key === key) startInFlight = null; });
     startInFlight = { key, promise };
     return promise;
   };
   const selectNpc = (npc, button) => {
     selectionGeneration += 1;
+    contextualMutation = null;
     chat.dataset.localChatSubject = npc.id;
     chat.dispatchEvent(new Event("local-chat-subject-changed"));
     currentView = null;
-    messages?.querySelectorAll("[data-dialogue-scripted]").forEach((node) => node.remove());
+    currentSocial = null;
+    messages?.querySelectorAll("[data-dialogue-scripted], [data-dialogue-contextual], [data-dialogue-context-prompt], [data-dialogue-context-topics]").forEach((node) => node.remove());
     refreshCompletion();
     npcStrip?.querySelectorAll(".settlement-npc-portrait").forEach((candidate) => {
       const active = candidate === button;
@@ -421,8 +620,7 @@
       const placeholder = document.createElement("div"); placeholder.className = npc.initials ? "visual-stage-placeholder" : "visual-stage-placeholder npc-portrait-silhouette"; placeholder.setAttribute("aria-hidden", "true"); placeholder.textContent = npc.initials || "";
       const heading = document.createElement("h2"); heading.textContent = npc.name;
       const description = document.createElement("p"); description.textContent = npc.description;
-      const social = document.createElement("button"); social.type = "button"; social.className = "npc-social-summary"; social.dataset.openNpcSocial = npc.id; social.textContent = "Morale and relationship"; social.setAttribute("aria-label", `Open social menu for ${npc.name}`);
-      npcDescription.replaceChildren(placeholder, heading, description, social);
+      npcDescription.replaceChildren(placeholder, heading, description);
     }
     begin();
   };
@@ -439,13 +637,10 @@
       const face = document.createElement("span"); face.className = npc.initials ? "party-portrait-face" : "party-portrait-face npc-portrait-silhouette"; face.setAttribute("aria-hidden", "true"); face.textContent = npc.initials || "";
       const name = document.createElement("span"); name.className = "party-portrait-name settlement-npc-name"; name.textContent = npc.name;
       portrait.append(face, name); button.append(portrait); button.addEventListener("click", () => selectNpc(npc, button));
-      const social = document.createElement("button"); social.type = "button"; social.className = "settlement-npc-social-button"; social.dataset.openNpcSocial = npc.id; social.setAttribute("aria-label", `Open social menu for ${npc.name}`); social.title = `Social — ${npc.name}`;
-      const socialIcon = document.createElement("span"); socialIcon.className = "stat-icon"; socialIcon.style.setProperty("--stat-icon", "url('/static/icons/game/conversation.svg')"); socialIcon.setAttribute("aria-hidden", "true"); social.append(socialIcon);
-      const shell = document.createElement("span"); shell.className = "settlement-npc-portrait-shell"; shell.append(button, social); button._socialShell = shell;
       button.addEventListener("keydown", (event) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); const offset = event.key === 'ArrowRight' ? 1 : -1; buttons[(buttons.indexOf(button) + offset + buttons.length) % buttons.length].focus(); });
       return button;
     });
-    npcStrip.replaceChildren(...buttons.map((button) => button._socialShell));
+    npcStrip.replaceChildren(...buttons);
     const defaultIndex = Math.max(0, people.findIndex((npc) => npc.is_default));
     selectNpc(people[defaultIndex], buttons[defaultIndex]);
   };

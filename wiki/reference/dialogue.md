@@ -43,7 +43,8 @@ in the current session. Generic greetings and ordinary conversation therefore
 show no claim controls. Once engaged, each highlighted claim is a real
 accessible control, including green and uncertain claims. Activating one opens
 its local Charm, Command, and Bluff responses immediately below the utterance.
-Relationship, familiarity, and demeanor remain in the normal social popup.
+Relationship, familiarity, and demeanor appear as icon-and-meter context beside
+the selected speaker.
 Hidden concern binding, diagnostic correctness, personality fit, checks, rolls,
 and chances remain private.
 Hearing testimony spends no additional time for Insight. Charm is the
@@ -53,14 +54,21 @@ five strategic minutes. A claim can receive at most one response; other claims
 remain actionable. Action receipts and session revisions make retries
 idempotent and stale requests fail closed.
 
-Ordinary conversation is deliberately outside the quest dialogue controls.
-The normal social menu offers a duration-selectable chat with a present local;
-claim responses appear only in the relevant active dialogue session after that
-witness's quest testimony is heard. Casual
-chat can still change that NPC's
+Ordinary conversation and relationship proposals are contextual dialogue
+topics for the selected local, not a separate social popup. Choosing the
+conversation icon reveals a few spoken time-commitment responses; choosing the
+rose reveals only currently legal courtship or wedding responses. The exact
+duration is available in each response's tooltip and accessible label rather
+than displayed as a raw number. Claim responses remain available only in the
+relevant active dialogue session after that witness's quest testimony is
+heard. Casual chat can still change that NPC's
 private morale, directional affinity, and familiarity, so time spent getting
 to know someone can affect a later confrontation without revealing whether
 they have quest information.
+The resulting contextual exchange is client dialogue presentation: local-chat
+live reconciliation preserves it, while selecting another NPC or reloading the
+page may clear it. The social and romance reducers remain the authoritative
+record of the underlying time and relationship mutation.
 
 A challenge succeeds only when that particular claim is factually inaccurate
 and its social check succeeds. Accurate claims and insufficient checks share the same safe
