@@ -70,6 +70,15 @@ live reconciliation preserves it, while selecting another NPC or reloading the
 page may clear it. The social and romance reducers remain the authoritative
 record of the underlying time and relationship mutation.
 
+Social and romance state uses closed Rust discriminants across the module,
+generated client, and web gateway: affinity, familiarity, morale, chat outcome,
+chat target, courtship kind, and romance action are not free-form strings.
+The gateway validates conversation durations and idempotency keys into dedicated
+types before route logic runs. Reducer rejections carry a stable typed courtship
+reason alongside human-readable detail, so dialogue presentation never depends
+on matching error prose. JSON keeps the corresponding snake-case values as the
+browser wire representation.
+
 A challenge succeeds only when that particular claim is factually inaccurate
 and its social check succeeds. Accurate claims and insufficient checks share the same safe
 failure wording. Success may release only the canonical withheld testimony

@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod social_notification_query_tests {
     use super::{
-        SETTLEMENTS_SOURCE, social_action_blocked_by_actor, social_action_error_feedback,
-        social_feedback, valid_casual_chat_action_id, valid_casual_chat_minutes,
+        SETTLEMENTS_SOURCE, SocialActionId, SocialDuration, social_action_blocked_by_actor,
+        social_action_error_feedback, social_feedback,
     };
     use adventuresim_core::social::SocialActionKind;
 
@@ -27,13 +27,18 @@ mod social_notification_query_tests {
 
     #[test]
     fn casual_chat_forms_validate_stable_opaque_action_ids() {
-        assert!(valid_casual_chat_minutes(15));
-        assert!(valid_casual_chat_minutes(480));
-        assert!(!valid_casual_chat_minutes(14));
-        assert!(!valid_casual_chat_minutes(481));
-        assert!(valid_casual_chat_action_id("chat-19af-2"));
-        assert!(!valid_casual_chat_action_id(""));
-        assert!(!valid_casual_chat_action_id("chat:19af"));
+        assert_eq!(SocialDuration::try_from(15).unwrap().minutes(), 15);
+        assert_eq!(SocialDuration::try_from(480).unwrap().minutes(), 480);
+        assert!(SocialDuration::try_from(14).is_err());
+        assert!(SocialDuration::try_from(481).is_err());
+        assert_eq!(
+            SocialActionId::try_from("chat-19af-2".to_owned())
+                .unwrap()
+                .as_str(),
+            "chat-19af-2"
+        );
+        assert!(SocialActionId::try_from(String::new()).is_err());
+        assert!(SocialActionId::try_from("chat:19af".to_owned()).is_err());
 
         let source = SETTLEMENTS_SOURCE;
         let handler = source
@@ -41,7 +46,7 @@ mod social_notification_query_tests {
             .nth(1)
             .and_then(|tail| tail.split("fn social_action_error_feedback").next())
             .expect("party chat handler");
-        assert!(handler.contains("json!(&form.action_id)"));
+        assert!(handler.contains("json!(form.action_id.as_str())"));
         assert!(!handler.contains("SystemTime::now"));
     }
 

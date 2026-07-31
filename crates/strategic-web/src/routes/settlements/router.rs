@@ -159,7 +159,10 @@ use super::travel::{
     CaseSiteKnowledgePresentation, TravelDestination, TravelForm, TravelProvisionForecast,
     active_contract_tooltip, connected_destinations, populate_itinerary_forecasts,
 };
-use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
+use super::{
+    AppState, PartyAction, PartyActionOutcome, SocialActionId, SocialDuration,
+    execute_or_request_party_action,
+};
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
@@ -178,7 +181,7 @@ use crate::spacetimedb::{
     RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand,
     RepairOrder, ResidenceTier, RetainedProjectile, ScheduleAllocation, Settlement,
     SettlementAlias, SettlementDescription, SettlementResidenceOffer, SettlementSmith,
-    SocialAddress, SocialBelief, StrategicEncounter, TravelEdge,
+    SocialAddress, SocialBelief, SocialChatOutcome, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,

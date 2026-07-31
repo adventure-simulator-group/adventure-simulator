@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1583)
+## Files (1588)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -140,6 +140,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/administer_preparation_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/admit_household_occupant_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/advance_simulation_world_time_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/affinity_band_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/agricultural_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/agricultural_limitation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/agriculture_industry_type.rs` — Generated SpacetimeDB data type.
@@ -443,6 +444,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/fallback_historical_vegetation_method_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fallback_historical_vegetation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fallback_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/familiarity_band_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/ferry_route_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/ferry_waterway_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/field_shelter_type.rs` — Generated SpacetimeDB data type.
@@ -609,6 +611,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/morale_band_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/morale_event_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/morale_event_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/native_range_evidence_type.rs` — Generated SpacetimeDB data type.
@@ -834,7 +837,9 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/social_action_cooldown_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/social_address_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/social_belief_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/social_chat_outcome_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/social_chat_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/social_chat_target_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/social_interaction_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/social_organization_instance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/socializing_receipt_type.rs` — Generated SpacetimeDB data type.

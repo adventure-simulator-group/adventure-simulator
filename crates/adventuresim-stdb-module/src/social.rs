@@ -129,6 +129,43 @@ pub struct CharacterFamiliarity {
 /// Idempotent, qualitative result of a deliberately selected ordinary chat.
 /// Exact checks, personality fit, rolls, morale, and affinity deltas remain
 /// private and are never stored in the gateway-facing receipt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum SocialChatTargetKind {
+    SettlementResident,
+    PartyMember,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum SocialChatOutcome {
+    Positive,
+    Mixed,
+    Negative,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum AffinityBand {
+    Hostile,
+    Reserved,
+    Warm,
+    Trusted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum FamiliarityBand {
+    New,
+    Known,
+    Familiar,
+    WellKnown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum MoraleBand {
+    Uncertain,
+    Distressed,
+    Guarded,
+    Settled,
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = social_chat_receipt)]
 pub struct SocialChatReceipt {
@@ -137,10 +174,10 @@ pub struct SocialChatReceipt {
     #[index(btree)]
     pub actor_id: u64,
     pub action_id: String,
-    pub target_kind: String,
+    pub target_kind: SocialChatTargetKind,
     pub target_id: String,
     pub requested_minutes: u64,
-    pub outcome: String,
+    pub outcome: SocialChatOutcome,
     pub occurred_at_minute: u64,
 }
 
@@ -148,10 +185,10 @@ pub struct SocialChatReceipt {
 pub struct BackendSocialChatReceipt {
     pub id: String,
     pub actor_id: u64,
-    pub target_kind: String,
+    pub target_kind: SocialChatTargetKind,
     pub target_id: String,
     pub requested_minutes: u64,
-    pub outcome: String,
+    pub outcome: SocialChatOutcome,
     pub occurred_at_minute: u64,
 }
 
@@ -180,9 +217,9 @@ pub fn backend_social_chat_receipts(ctx: &ViewContext) -> Vec<BackendSocialChatR
 pub struct BackendSettlementResidentRelationship {
     pub observer_character_id: u64,
     pub resident_character_id: u64,
-    pub affinity_band: String,
-    pub familiarity_band: String,
-    pub morale_band: String,
+    pub affinity_band: AffinityBand,
+    pub familiarity_band: FamiliarityBand,
+    pub morale_band: MoraleBand,
 }
 
 /// Private authority for social actions scoped to one live dialogue encounter.
@@ -262,41 +299,38 @@ pub struct BackendDialogueWitnessClaim {
     pub affinity_delta: f32,
 }
 
-fn relationship_band(value: f32) -> String {
+fn relationship_band(value: f32) -> AffinityBand {
     if value <= -25.0 {
-        "hostile"
+        AffinityBand::Hostile
     } else if value < 15.0 {
-        "reserved"
+        AffinityBand::Reserved
     } else if value < 50.0 {
-        "warm"
+        AffinityBand::Warm
     } else {
-        "trusted"
+        AffinityBand::Trusted
     }
-    .into()
 }
 
-fn familiarity_band(minutes: u64) -> String {
+fn familiarity_band(minutes: u64) -> FamiliarityBand {
     if minutes < 60 {
-        "new"
+        FamiliarityBand::New
     } else if minutes < 8 * 60 {
-        "known"
+        FamiliarityBand::Known
     } else if minutes < 40 * 60 {
-        "familiar"
+        FamiliarityBand::Familiar
     } else {
-        "well_known"
+        FamiliarityBand::WellKnown
     }
-    .into()
 }
 
-fn morale_band(value: f32) -> String {
+fn morale_band(value: f32) -> MoraleBand {
     if value <= -20.0 {
-        "distressed"
+        MoraleBand::Distressed
     } else if value < 10.0 {
-        "guarded"
+        MoraleBand::Guarded
     } else {
-        "settled"
+        MoraleBand::Settled
     }
-    .into()
 }
 
 #[view(accessor = backend_settlement_resident_relationships, public)]
@@ -476,7 +510,7 @@ fn chat_replayed(
     ctx: &ReducerContext,
     actor_id: u64,
     action_id: &str,
-    target_kind: &str,
+    target_kind: SocialChatTargetKind,
     target_id: &str,
     requested_minutes: u64,
 ) -> Result<bool, String> {
@@ -532,7 +566,7 @@ fn resolve_casual_chat_segments(
     familiarity_hours: f32,
     actor: CasualChatDisposition,
     target: CasualChatDisposition,
-) -> (f32, f32, String) {
+) -> (f32, f32, SocialChatOutcome) {
     let mut morale_delta = 0.0;
     let mut affinity_delta = 0.0;
     let mut positive_segments = 0u64;
@@ -553,30 +587,30 @@ fn resolve_casual_chat_segments(
         affinity = (affinity + outcome.affinity_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
     }
     let outcome = if positive_segments * 3 >= segments * 2 {
-        "positive"
+        SocialChatOutcome::Positive
     } else if positive_segments * 3 <= segments {
-        "negative"
+        SocialChatOutcome::Negative
     } else {
-        "mixed"
+        SocialChatOutcome::Mixed
     };
-    (morale_delta, affinity_delta, outcome.into())
+    (morale_delta, affinity_delta, outcome)
 }
 
 fn insert_chat_receipt(
     ctx: &ReducerContext,
     actor_id: u64,
     action_id: String,
-    target_kind: &str,
+    target_kind: SocialChatTargetKind,
     target_id: String,
     requested_minutes: u64,
-    outcome: String,
+    outcome: SocialChatOutcome,
     occurred_at_minute: u64,
 ) {
     ctx.db.social_chat_receipt().insert(SocialChatReceipt {
         id: chat_receipt_id(actor_id, &action_id),
         actor_id,
         action_id,
-        target_kind: target_kind.into(),
+        target_kind,
         target_id,
         requested_minutes,
         outcome,
@@ -606,7 +640,7 @@ pub fn spend_time_with_settlement_resident(
         ctx,
         actor_id,
         &action_id,
-        "settlement_resident_profile",
+        SocialChatTargetKind::SettlementResident,
         &target_key,
         requested_minutes,
     )? {
@@ -721,7 +755,7 @@ pub fn spend_time_with_settlement_resident(
         ctx,
         actor_id,
         action_id,
-        "settlement_resident_profile",
+        SocialChatTargetKind::SettlementResident,
         target_key,
         requested_minutes,
         outcome,
@@ -751,7 +785,7 @@ pub fn chat_with_party_member(
         ctx,
         actor_id,
         &action_id,
-        "party_member",
+        SocialChatTargetKind::PartyMember,
         &target_key,
         requested_minutes,
     )? {
@@ -834,7 +868,7 @@ pub fn chat_with_party_member(
         ctx,
         actor_id,
         action_id,
-        "party_member",
+        SocialChatTargetKind::PartyMember,
         target_key,
         requested_minutes,
         outcome,
@@ -3756,6 +3790,26 @@ mod contract_tests {
         assert!(reducer.contains("npc_presence_remaining_minutes"));
         assert!(reducer.contains("settlement_resident_profile"));
         assert!(reducer.contains("requested_minutes > remaining"));
+        assert!(reducer.contains("SocialChatTargetKind::SettlementResident"));
+        assert!(!reducer.contains("\"settlement_resident_profile\","));
+    }
+
+    #[test]
+    fn qualitative_social_projections_use_closed_bands() {
+        assert_eq!(relationship_band(-30.0), AffinityBand::Hostile);
+        assert_eq!(relationship_band(50.0), AffinityBand::Trusted);
+        assert_eq!(familiarity_band(60), FamiliarityBand::Known);
+        assert_eq!(morale_band(-20.0), MoraleBand::Distressed);
+        let source = include_str!("social.rs");
+        let receipt = source
+            .split("pub struct SocialChatReceipt")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct BackendSocialChatReceipt").next())
+            .expect("typed social chat receipt");
+        assert!(receipt.contains("SocialChatTargetKind"));
+        assert!(receipt.contains("SocialChatOutcome"));
+        assert!(!receipt.contains("target_kind: String"));
+        assert!(!receipt.contains("outcome: String"));
     }
 
     #[test]

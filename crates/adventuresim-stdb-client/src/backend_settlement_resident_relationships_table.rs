@@ -2,7 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::affinity_band_type::AffinityBand;
 use super::backend_settlement_resident_relationship_type::BackendSettlementResidentRelationship;
+use super::familiarity_band_type::FamiliarityBand;
+use super::morale_band_type::MoraleBand;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_settlement_resident_relationships`.

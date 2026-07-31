@@ -5,6 +5,7 @@
 //! callers advance a long interval in exactly the same way as smaller chunks.
 
 use crate::strategic_time::{MINUTES_PER_DAY, MINUTES_PER_YEAR};
+use std::{fmt, str::FromStr};
 
 pub const ADULT_AGE_YEARS: u16 = 16;
 pub const FORMAL_COURTSHIP_AFFINITY: f32 = 45.0;
@@ -23,6 +24,83 @@ pub const ADULT_NECESSITIES_PER_30_DAYS: u32 = 4;
 pub const DEPENDENT_NECESSITIES_PER_30_DAYS: u32 = 2;
 pub const CONCEPTION_QUANTUM_MINUTES: u64 = 60;
 pub const CONCEPTION_CHANCE_PER_TEN_THOUSAND: u16 = 40;
+
+const COURTSHIP_REJECTION_PREFIX: &str = "[courtship_rejection:";
+
+/// Stable, machine-readable reasons returned across the reducer boundary.
+/// Human prose may change without breaking gateway behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CourtshipRejectionCode {
+    Affinity,
+    FatherApproval,
+    FormalRoute,
+    MutualAttraction,
+    ExclusiveCommitment,
+    AlreadyMarried,
+    CoLocation,
+    IneligibleCharacter,
+    CloseRelative,
+    ActiveCourtshipRequired,
+    CeremonySettlementRequired,
+    ResidenceRequired,
+}
+
+impl CourtshipRejectionCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Affinity => "affinity",
+            Self::FatherApproval => "father_approval",
+            Self::FormalRoute => "formal_route",
+            Self::MutualAttraction => "mutual_attraction",
+            Self::ExclusiveCommitment => "exclusive_commitment",
+            Self::AlreadyMarried => "already_married",
+            Self::CoLocation => "co_location",
+            Self::IneligibleCharacter => "ineligible_character",
+            Self::CloseRelative => "close_relative",
+            Self::ActiveCourtshipRequired => "active_courtship_required",
+            Self::CeremonySettlementRequired => "ceremony_settlement_required",
+            Self::ResidenceRequired => "residence_required",
+        }
+    }
+}
+
+impl fmt::Display for CourtshipRejectionCode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl FromStr for CourtshipRejectionCode {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "affinity" => Ok(Self::Affinity),
+            "father_approval" => Ok(Self::FatherApproval),
+            "formal_route" => Ok(Self::FormalRoute),
+            "mutual_attraction" => Ok(Self::MutualAttraction),
+            "exclusive_commitment" => Ok(Self::ExclusiveCommitment),
+            "already_married" => Ok(Self::AlreadyMarried),
+            "co_location" => Ok(Self::CoLocation),
+            "ineligible_character" => Ok(Self::IneligibleCharacter),
+            "close_relative" => Ok(Self::CloseRelative),
+            "active_courtship_required" => Ok(Self::ActiveCourtshipRequired),
+            "ceremony_settlement_required" => Ok(Self::CeremonySettlementRequired),
+            "residence_required" => Ok(Self::ResidenceRequired),
+            _ => Err(()),
+        }
+    }
+}
+
+pub fn coded_courtship_rejection(code: CourtshipRejectionCode, detail: &str) -> String {
+    format!("{COURTSHIP_REJECTION_PREFIX}{code}] {detail}")
+}
+
+pub fn parse_courtship_rejection(value: &str) -> Option<CourtshipRejectionCode> {
+    let start = value.find(COURTSHIP_REJECTION_PREFIX)? + COURTSHIP_REJECTION_PREFIX.len();
+    let code = value[start..].split_once(']')?.0;
+    code.parse().ok()
+}
 
 /// Residence Leisure is one refreshable source which lasts for one week.
 pub const RESIDENCE_MORALE_CAP_MILLI: u32 = 8_000;
@@ -625,6 +703,22 @@ pub fn crossed_days(start_minute: u64, end_minute: u64) -> impl Iterator<Item = 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn courtship_rejection_codes_round_trip_without_parsing_human_prose() {
+        let rejection = coded_courtship_rejection(
+            CourtshipRejectionCode::FatherApproval,
+            "The family does not approve",
+        );
+        assert_eq!(
+            parse_courtship_rejection(&format!("Reducer failed: {rejection}")),
+            Some(CourtshipRejectionCode::FatherApproval)
+        );
+        assert_eq!(
+            parse_courtship_rejection("The family does not approve"),
+            None
+        );
+    }
 
     #[test]
     fn courtship_trait_thresholds_are_ordered() {

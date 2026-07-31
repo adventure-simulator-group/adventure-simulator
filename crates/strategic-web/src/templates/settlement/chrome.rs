@@ -5,8 +5,8 @@ use maud::{Markup, html};
 use super::social::{npc_description_stage, npc_portrait_strip, settlement_resident_chat_area};
 use super::{SoapRestPreview, corpse_medical_dialog, rest_service_menu};
 use crate::spacetimedb::{
-    BackendCharacterResidenceStatus, BackendCorpse, Character, ResidenceTenure, ResidenceTier,
-    Settlement, SettlementAlias, SettlementCategory, SettlementDescription,
+    BackendCharacterResidenceStatus, BackendCorpse, Character, CourtshipKind, ResidenceTenure,
+    ResidenceTier, Settlement, SettlementAlias, SettlementCategory, SettlementDescription,
     SettlementDescriptionKind, SettlementResidenceOffer,
 };
 use crate::templates::{
@@ -321,7 +321,7 @@ pub struct WeddingPresentation {
 pub struct RelationshipPresentation {
     pub spouse_name: Option<String>,
     pub courtship_partner_name: Option<String>,
-    pub courtship_kind: Option<String>,
+    pub courtship_kind: Option<CourtshipKind>,
     pub courtship_exposed: bool,
     pub wedding: Option<WeddingPresentation>,
     pub pregnancy_due_days: Option<u64>,
@@ -474,11 +474,12 @@ fn residence_offer_panel(
                     }
                 }
                 @if let Some(partner_name) = &relationship.courtship_partner_name {
-                    @let courtship_kind = relationship.courtship_kind.as_deref().unwrap_or("active");
-                    @let informal = courtship_kind == "informal";
+                    @let courtship_kind = relationship.courtship_kind.unwrap_or(CourtshipKind::Informal);
+                    @let informal = courtship_kind == CourtshipKind::Informal;
+                    @let courtship_kind_label = match courtship_kind { CourtshipKind::Formal => "formal", CourtshipKind::Informal => "informal" };
                     @let courtship_visibility = if !informal { "; formal and public" } else if relationship.courtship_exposed { "; known to family" } else { "; private" };
                     @let courtship_icon = if !informal { "rose" } else if relationship.courtship_exposed { "eye-target" } else { "lockpicks" };
-                    @let courtship_label = format!("{courtship_kind} courtship with {partner_name}{courtship_visibility}");
+                    @let courtship_label = format!("{courtship_kind_label} courtship with {partner_name}{courtship_visibility}");
                     div class="household-member" title=(&courtship_label) aria-label=(&courtship_label) {
                         (decorative_game_icon("rose")) span class="household-member-name" { (partner_name) }
                         span class="household-member-state" aria-hidden="true" {
@@ -1205,7 +1206,7 @@ mod tests {
         let relationship = RelationshipPresentation {
             spouse_name: Some("Anna".into()),
             courtship_partner_name: Some("Bea".into()),
-            courtship_kind: Some("formal".into()),
+            courtship_kind: Some(CourtshipKind::Formal),
             courtship_exposed: false,
             wedding: Some(WeddingPresentation {
                 days_remaining: 365,

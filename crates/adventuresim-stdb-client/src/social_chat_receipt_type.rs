@@ -4,16 +4,19 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::social_chat_outcome_type::SocialChatOutcome;
+use super::social_chat_target_kind_type::SocialChatTargetKind;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct SocialChatReceipt {
     pub id: String,
     pub actor_id: u64,
     pub action_id: String,
-    pub target_kind: String,
+    pub target_kind: SocialChatTargetKind,
     pub target_id: String,
     pub requested_minutes: u64,
-    pub outcome: String,
+    pub outcome: SocialChatOutcome,
     pub occurred_at_minute: u64,
 }
 
@@ -28,10 +31,10 @@ pub struct SocialChatReceiptCols {
     pub id: __sdk::__query_builder::Col<SocialChatReceipt, String>,
     pub actor_id: __sdk::__query_builder::Col<SocialChatReceipt, u64>,
     pub action_id: __sdk::__query_builder::Col<SocialChatReceipt, String>,
-    pub target_kind: __sdk::__query_builder::Col<SocialChatReceipt, String>,
+    pub target_kind: __sdk::__query_builder::Col<SocialChatReceipt, SocialChatTargetKind>,
     pub target_id: __sdk::__query_builder::Col<SocialChatReceipt, String>,
     pub requested_minutes: __sdk::__query_builder::Col<SocialChatReceipt, u64>,
-    pub outcome: __sdk::__query_builder::Col<SocialChatReceipt, String>,
+    pub outcome: __sdk::__query_builder::Col<SocialChatReceipt, SocialChatOutcome>,
     pub occurred_at_minute: __sdk::__query_builder::Col<SocialChatReceipt, u64>,
 }
 

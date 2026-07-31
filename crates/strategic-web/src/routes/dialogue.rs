@@ -1,13 +1,19 @@
-use super::{AppState, BackendSettlementResidentRow as SettlementResidentRow};
-use crate::spacetimedb::{BackendCharacterRelationshipStatus, Settlement, SettlementCategory};
+use super::{
+    AppState, BackendSettlementResidentRow as SettlementResidentRow, SocialActionId, SocialDuration,
+};
+use crate::spacetimedb::{
+    AffinityBand, BackendCharacterRelationshipStatus, CourtshipKind, FamiliarityBand, MoraleBand,
+    Settlement, SettlementCategory, SocialChatOutcome, SocialChatTargetKind,
+};
 use crate::{session::Session, spacetimedb::sql_string_literal};
+use adventuresim_core::courtship::{CourtshipRejectionCode, parse_courtship_rejection};
 use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::json;
 
 pub fn routes() -> Router<AppState> {
@@ -115,31 +121,115 @@ struct NpcView {
 
 #[derive(Deserialize)]
 struct NpcSocialRelationshipRow {
-    affinity_band: String,
-    familiarity_band: String,
-    morale_band: String,
+    #[serde(deserialize_with = "crate::spacetimedb::deserialize_affinity_band")]
+    affinity_band: AffinityBand,
+    #[serde(deserialize_with = "crate::spacetimedb::deserialize_familiarity_band")]
+    familiarity_band: FamiliarityBand,
+    #[serde(deserialize_with = "crate::spacetimedb::deserialize_morale_band")]
+    morale_band: MoraleBand,
+}
+
+fn serialize_affinity_band<S>(value: &AffinityBand, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(match value {
+        AffinityBand::Hostile => "hostile",
+        AffinityBand::Reserved => "reserved",
+        AffinityBand::Warm => "warm",
+        AffinityBand::Trusted => "trusted",
+    })
+}
+
+fn serialize_familiarity_band<S>(value: &FamiliarityBand, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(match value {
+        FamiliarityBand::New => "new",
+        FamiliarityBand::Known => "known",
+        FamiliarityBand::Familiar => "familiar",
+        FamiliarityBand::WellKnown => "well_known",
+    })
+}
+
+fn serialize_morale_band<S>(value: &MoraleBand, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(match value {
+        MoraleBand::Uncertain => "uncertain",
+        MoraleBand::Distressed => "distressed",
+        MoraleBand::Guarded => "guarded",
+        MoraleBand::Settled => "settled",
+    })
+}
+
+fn serialize_optional_social_outcome<S>(
+    value: &Option<SocialChatOutcome>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(SocialChatOutcome::Positive) => serializer.serialize_some("positive"),
+        Some(SocialChatOutcome::Mixed) => serializer.serialize_some("mixed"),
+        Some(SocialChatOutcome::Negative) => serializer.serialize_some("negative"),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn serialize_optional_courtship_kind<S>(
+    value: &Option<CourtshipKind>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(CourtshipKind::Formal) => serializer.serialize_some("formal"),
+        Some(CourtshipKind::Informal) => serializer.serialize_some("informal"),
+        None => serializer.serialize_none(),
+    }
 }
 
 #[derive(Deserialize)]
 struct SocialChatReceiptRow {
-    target_kind: String,
+    #[serde(deserialize_with = "crate::spacetimedb::deserialize_social_chat_target_kind")]
+    target_kind: SocialChatTargetKind,
     target_id: String,
     requested_minutes: u64,
-    outcome: String,
+    #[serde(deserialize_with = "crate::spacetimedb::deserialize_social_chat_outcome")]
+    outcome: SocialChatOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum RomanceAction {
+    FormalCourtship,
+    InformalCourtship,
+    ScheduleWedding,
+    CancelWedding,
 }
 
 #[derive(Serialize)]
 struct NpcSocialView {
     resident_character_id: String,
     name: String,
-    affinity: String,
-    familiarity: String,
-    morale: String,
-    last_outcome: Option<String>,
-    courtship_kind: Option<String>,
+    #[serde(serialize_with = "serialize_affinity_band")]
+    affinity: AffinityBand,
+    #[serde(serialize_with = "serialize_familiarity_band")]
+    familiarity: FamiliarityBand,
+    #[serde(serialize_with = "serialize_morale_band")]
+    morale: MoraleBand,
+    #[serde(serialize_with = "serialize_optional_social_outcome")]
+    last_outcome: Option<SocialChatOutcome>,
+    #[serde(serialize_with = "serialize_optional_courtship_kind")]
+    courtship_kind: Option<CourtshipKind>,
     courtship_exposed: bool,
     wedding_countdown_days: Option<u64>,
-    romantic_actions: Vec<String>,
+    romantic_actions: Vec<RomanceAction>,
 }
 
 #[derive(Serialize)]
@@ -151,8 +241,8 @@ struct NpcRomanceActionResult {
 
 #[derive(Deserialize)]
 struct NpcChatRequest {
-    requested_minutes: u64,
-    action_id: String,
+    requested_minutes: SocialDuration,
+    action_id: SocialActionId,
 }
 
 #[derive(Serialize)]
@@ -338,8 +428,10 @@ fn npc_matches_location_binding(
 #[cfg(test)]
 mod npc_navigation_tests {
     use super::{
-        SettlementResidentRow, npc_location_is_navigable, npc_matches_location_binding,
-        npc_presence_contains,
+        AffinityBand, CourtshipKind, CourtshipRejectionCode, FamiliarityBand, MoraleBand,
+        NpcChatRequest, NpcSocialView, RomanceAction, SettlementResidentRow, SocialChatOutcome,
+        npc_location_is_navigable, npc_matches_location_binding, npc_presence_contains,
+        romantic_rejection_message,
     };
     use crate::spacetimedb::SettlementCategory;
 
@@ -525,6 +617,70 @@ mod npc_navigation_tests {
     }
 
     #[test]
+    fn social_transport_serializes_closed_types_as_stable_wire_discriminants() {
+        let view = NpcSocialView {
+            resident_character_id: "42".into(),
+            name: "Anna".into(),
+            affinity: AffinityBand::Trusted,
+            familiarity: FamiliarityBand::WellKnown,
+            morale: MoraleBand::Settled,
+            last_outcome: Some(SocialChatOutcome::Positive),
+            courtship_kind: Some(CourtshipKind::Formal),
+            courtship_exposed: false,
+            wedding_countdown_days: None,
+            romantic_actions: vec![RomanceAction::ScheduleWedding],
+        };
+        let value = serde_json::to_value(view).unwrap();
+        assert_eq!(value["affinity"], "trusted");
+        assert_eq!(value["familiarity"], "well_known");
+        assert_eq!(value["morale"], "settled");
+        assert_eq!(value["last_outcome"], "positive");
+        assert_eq!(value["courtship_kind"], "formal");
+        assert_eq!(value["romantic_actions"][0], "schedule_wedding");
+    }
+
+    #[test]
+    fn social_request_parsing_enforces_duration_and_action_id_invariants() {
+        let valid: NpcChatRequest = serde_json::from_value(serde_json::json!({
+            "requested_minutes": 60,
+            "action_id": "chat-19af-2"
+        }))
+        .unwrap();
+        assert_eq!(valid.requested_minutes.minutes(), 60);
+        assert_eq!(valid.action_id.as_str(), "chat-19af-2");
+        assert!(
+            serde_json::from_value::<NpcChatRequest>(serde_json::json!({
+                "requested_minutes": 17,
+                "action_id": "chat-19af-2"
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<NpcChatRequest>(serde_json::json!({
+                "requested_minutes": 60,
+                "action_id": "chat:19af"
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn romantic_rejections_use_stable_codes_instead_of_prose_matching() {
+        assert_eq!(
+            romantic_rejection_message(CourtshipRejectionCode::FatherApproval),
+            "My family would not approve of a formal courtship."
+        );
+        let source = include_str!("dialogue.rs");
+        let mapper = source
+            .split("fn romantic_rejection_message")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn npc_romance_action").next())
+            .expect("typed romance rejection mapper");
+        assert!(!mapper.contains("contains("));
+        assert!(source.contains("parse_courtship_rejection(&error_text)"));
+    }
+
+    #[test]
     fn npc_chat_http_retry_checks_receipt_before_current_presence() {
         let source = include_str!("dialogue.rs");
         let handler = source
@@ -539,9 +695,13 @@ mod npc_navigation_tests {
             .find("available_social_npc")
             .expect("presence lookup");
         assert!(receipt < presence);
-        assert!(handler.contains("receipt.target_kind != \"settlement_resident\""));
+        assert!(
+            handler.contains("receipt.target_kind != SocialChatTargetKind::SettlementResident")
+        );
         assert!(handler.contains("receipt.target_id != resident_character_id"));
-        assert!(handler.contains("receipt.requested_minutes != request.requested_minutes"));
+        assert!(
+            handler.contains("receipt.requested_minutes != request.requested_minutes.minutes()")
+        );
     }
 }
 
@@ -746,7 +906,7 @@ async fn npc_social_view(
     state: &AppState,
     character_id: u64,
     npc: SettlementResidentRow,
-    last_outcome: Option<String>,
+    last_outcome: Option<SocialChatOutcome>,
 ) -> Result<NpcSocialView, StatusCode> {
     let relationship = state
         .db
@@ -778,14 +938,17 @@ async fn npc_social_view(
         .is_some_and(|status| status.courtship_partner_id == Some(npc.character_id));
     let mut romantic_actions = Vec::new();
     if active_commitment.is_some() {
-        romantic_actions.push("cancel_wedding".into());
+        romantic_actions.push(RomanceAction::CancelWedding);
     } else if courting_this_npc {
-        romantic_actions.push("schedule_wedding".into());
+        romantic_actions.push(RomanceAction::ScheduleWedding);
     } else if status
         .as_ref()
         .is_none_or(|status| status.spouse_id.is_none() && status.courtship_partner_id.is_none())
     {
-        romantic_actions.extend(["formal_courtship".into(), "informal_courtship".into()]);
+        romantic_actions.extend([
+            RomanceAction::FormalCourtship,
+            RomanceAction::InformalCourtship,
+        ]);
     }
     let courtship_kind = courting_this_npc
         .then(|| {
@@ -810,13 +973,13 @@ async fn npc_social_view(
         name: npc.name,
         affinity: relationship
             .as_ref()
-            .map_or_else(|| "reserved".into(), |row| row.affinity_band.clone()),
+            .map_or(AffinityBand::Reserved, |row| row.affinity_band),
         familiarity: relationship
             .as_ref()
-            .map_or_else(|| "new".into(), |row| row.familiarity_band.clone()),
+            .map_or(FamiliarityBand::New, |row| row.familiarity_band),
         morale: relationship
             .as_ref()
-            .map_or_else(|| "uncertain".into(), |row| row.morale_band.clone()),
+            .map_or(MoraleBand::Uncertain, |row| row.morale_band),
         last_outcome,
         courtship_kind,
         courtship_exposed,
@@ -844,54 +1007,35 @@ async fn active_commitment_with(
     }))
 }
 
-fn romantic_rejection_message(error: &str) -> Option<&'static str> {
-    [
-        (
-            "enough affinity",
-            "I care for you, but I am not ready for that relationship.",
-        ),
-        (
-            "father",
-            "My family would not approve of a formal courtship.",
-        ),
-        (
-            "formal route",
-            "I cannot agree unless we approach this formally.",
-        ),
-        ("mutual attraction", "I care for you, but not romantically."),
-        (
-            "exclusive romantic",
-            "I cannot make that promise while one of us is already committed.",
-        ),
-        (
-            "already has exclusive",
-            "I cannot make that promise while one of us is already committed.",
-        ),
-        (
-            "already in active marriage",
-            "I cannot agree while one of us is already married.",
-        ),
-        (
-            "requires co-location",
-            "We need to be together before we can speak of that.",
-        ),
-        ("living adult", "I cannot enter that courtship."),
-        (
-            "Close relatives",
-            "We are too closely related for courtship.",
-        ),
-        (
-            "active courtship",
-            "We must be courting before we can plan a wedding.",
-        ),
-        (
-            "shared ceremony settlement",
-            "We must first agree where the ceremony will be held.",
-        ),
-        ("residence", "We need a suitable home before the wedding."),
-    ]
-    .into_iter()
-    .find_map(|(needle, message)| error.contains(needle).then_some(message))
+fn romantic_rejection_message(code: CourtshipRejectionCode) -> &'static str {
+    match code {
+        CourtshipRejectionCode::Affinity => {
+            "I care for you, but I am not ready for that relationship."
+        }
+        CourtshipRejectionCode::FatherApproval => {
+            "My family would not approve of a formal courtship."
+        }
+        CourtshipRejectionCode::FormalRoute => {
+            "I cannot agree unless we approach this through the available route."
+        }
+        CourtshipRejectionCode::MutualAttraction => "I care for you, but not romantically.",
+        CourtshipRejectionCode::ExclusiveCommitment => {
+            "I cannot make that promise while one of us is already committed."
+        }
+        CourtshipRejectionCode::AlreadyMarried => {
+            "I cannot agree while one of us is already married."
+        }
+        CourtshipRejectionCode::CoLocation => "We need to be together before we can speak of that.",
+        CourtshipRejectionCode::IneligibleCharacter => "I cannot enter that courtship.",
+        CourtshipRejectionCode::CloseRelative => "We are too closely related for courtship.",
+        CourtshipRejectionCode::ActiveCourtshipRequired => {
+            "We must be courting before we can plan a wedding."
+        }
+        CourtshipRejectionCode::CeremonySettlementRequired => {
+            "We must first agree where the ceremony will be held."
+        }
+        CourtshipRejectionCode::ResidenceRequired => "We need a suitable home before the wedding.",
+    }
 }
 
 async fn npc_romance_action(
@@ -900,7 +1044,7 @@ async fn npc_romance_action(
         String,
         String,
         String,
-        String,
+        RomanceAction,
     )>,
     session: Session,
 ) -> Result<Json<NpcRomanceActionResult>, StatusCode> {
@@ -916,23 +1060,23 @@ async fn npc_romance_action(
         resident_character_id,
     )
     .await?;
-    let (reducer, args, success) = match action.as_str() {
-        "formal_courtship" => (
+    let (reducer, args, success) = match action {
+        RomanceAction::FormalCourtship => (
             "begin_formal_courtship",
             vec![json!(character_id), json!(resident_character_id)],
             "Yes. Let us seek my family's blessing and proceed openly.",
         ),
-        "informal_courtship" => (
+        RomanceAction::InformalCourtship => (
             "begin_informal_courtship",
             vec![json!(character_id), json!(resident_character_id)],
             "Yes. We will keep this between ourselves.",
         ),
-        "schedule_wedding" => (
+        RomanceAction::ScheduleWedding => (
             "schedule_wedding",
             vec![json!(character_id), json!(resident_character_id)],
             "Then it is settled. One year from today.",
         ),
-        "cancel_wedding" => {
+        RomanceAction::CancelWedding => {
             let Some(commitment) =
                 active_commitment_with(&state, character_id, resident_character_id).await?
             else {
@@ -956,20 +1100,19 @@ async fn npc_romance_action(
                 "I understand. The wedding will not go forward.",
             )
         }
-        _ => return Err(StatusCode::NOT_FOUND),
     };
     let result = state.db.call(reducer, &args).await;
     let (ok, message) = match result {
         Ok(()) => (true, success.to_owned()),
         Err(error) => {
             let error_text = error.to_string();
-            if let Some(message) = romantic_rejection_message(&error_text) {
-                (false, message.to_owned())
+            if let Some(code) = parse_courtship_rejection(&error_text) {
+                (false, romantic_rejection_message(code).to_owned())
             } else {
                 tracing::warn!(
                     character_id,
                     resident_character_id,
-                    action,
+                    ?action,
                     error = %error_text,
                     "romantic action rejected"
                 );
@@ -1013,9 +1156,6 @@ async fn chat_with_npc(
     let resident_character_id = resident_character_id
         .parse::<u64>()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
-    if !(15..=8 * 60).contains(&request.requested_minutes) || request.requested_minutes % 15 != 0 {
-        return Err(StatusCode::BAD_REQUEST);
-    }
     let npc = social_npc_in_scope(
         &state,
         character_id,
@@ -1024,7 +1164,7 @@ async fn chat_with_npc(
         resident_character_id,
     )
     .await?;
-    let receipt_id = format!("{character_id}:{}", request.action_id);
+    let receipt_id = format!("{character_id}:{}", request.action_id.as_str());
     if let Some(receipt) = state
         .db
         .query_one::<SocialChatReceiptRow>(&format!(
@@ -1034,9 +1174,9 @@ async fn chat_with_npc(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
     {
-        if receipt.target_kind != "settlement_resident"
+        if receipt.target_kind != SocialChatTargetKind::SettlementResident
             || receipt.target_id != resident_character_id.to_string()
-            || receipt.requested_minutes != request.requested_minutes
+            || receipt.requested_minutes != request.requested_minutes.minutes()
         {
             return Err(StatusCode::CONFLICT);
         }
@@ -1059,8 +1199,8 @@ async fn chat_with_npc(
             &[
                 json!(character_id),
                 json!(resident_character_id),
-                json!(request.requested_minutes),
-                json!(&request.action_id),
+                json!(request.requested_minutes.minutes()),
+                json!(request.action_id.as_str()),
             ],
         )
         .await

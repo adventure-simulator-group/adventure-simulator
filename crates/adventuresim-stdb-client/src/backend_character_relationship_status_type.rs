@@ -4,13 +4,15 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::courtship_kind_type::CourtshipKind;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendCharacterRelationshipStatus {
     pub character_id: u64,
     pub spouse_id: Option<u64>,
     pub courtship_partner_id: Option<u64>,
-    pub courtship_kind: Option<String>,
+    pub courtship_kind: Option<CourtshipKind>,
     pub courtship_exposed: bool,
     pub wedding_commitment_id: Option<String>,
     pub wedding_partner_id: Option<u64>,
@@ -33,7 +35,7 @@ pub struct BackendCharacterRelationshipStatusCols {
     pub courtship_partner_id:
         __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<u64>>,
     pub courtship_kind:
-        __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<String>>,
+        __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<CourtshipKind>>,
     pub courtship_exposed: __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, bool>,
     pub wedding_commitment_id:
         __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<String>>,

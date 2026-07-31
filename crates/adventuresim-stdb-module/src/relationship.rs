@@ -4,12 +4,13 @@
 
 use adventuresim_core::courtship::{
     ADULT_AGE_YEARS, CONCEPTION_CHANCE_PER_TEN_THOUSAND, ConceptionQuantumState,
-    CourtshipDisposition, FORMAL_COURTSHIP_AFFINITY, FORMAL_FATHER_APPROVAL_AFFINITY,
-    GESTATION_MINUTES, LeisureInterval, MinuteSpan, SPOUSE_LEISURE_MORALE_SPEC,
-    WEDDING_NOTICE_MINUTES, conception_quantum_plan, deterministic_child_seeds,
-    informal_affinity_threshold, joint_leisure_minutes, refresh_bounded_leisure_morale,
-    select_daily_location_target, spouse_leisure_earned_milli, stable_lifecycle_hash,
-    succeeds_daily_trial, uncovered_minute_spans,
+    CourtshipDisposition, CourtshipRejectionCode, FORMAL_COURTSHIP_AFFINITY,
+    FORMAL_FATHER_APPROVAL_AFFINITY, GESTATION_MINUTES, LeisureInterval, MinuteSpan,
+    SPOUSE_LEISURE_MORALE_SPEC, WEDDING_NOTICE_MINUTES, coded_courtship_rejection,
+    conception_quantum_plan, deterministic_child_seeds, informal_affinity_threshold,
+    joint_leisure_minutes, refresh_bounded_leisure_morale, select_daily_location_target,
+    spouse_leisure_earned_milli, stable_lifecycle_hash, succeeds_daily_trial,
+    uncovered_minute_spans,
 };
 use adventuresim_core::strategic_schedule::{DailySchedule, restorative_leisure_spans};
 use adventuresim_core::strategic_time::{MINUTES_PER_DAY, MINUTES_PER_YEAR};
@@ -515,7 +516,7 @@ pub struct BackendCharacterRelationshipStatus {
     pub character_id: u64,
     pub spouse_id: Option<u64>,
     pub courtship_partner_id: Option<u64>,
-    pub courtship_kind: Option<String>,
+    pub courtship_kind: Option<CourtshipKind>,
     pub courtship_exposed: bool,
     pub wedding_commitment_id: Option<String>,
     pub wedding_partner_id: Option<u64>,
@@ -637,13 +638,7 @@ pub fn backend_character_relationship_statuses(
                             } else {
                                 row.first_character_id
                             }),
-                            Some(
-                                match row.kind {
-                                    CourtshipKind::Formal => "formal",
-                                    CourtshipKind::Informal => "informal",
-                                }
-                                .into(),
-                            ),
+                            Some(row.kind),
                             exposed,
                         )
                     });
@@ -1117,7 +1112,10 @@ pub fn reserve_wedding(
     if relationship_conflicts_at(ctx, first, scheduled_from_minute, Some(&courtship_id))
         || relationship_conflicts_at(ctx, second, scheduled_from_minute, Some(&courtship_id))
     {
-        return Err("A historical exclusive relationship conflicts at the wedding date".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::ExclusiveCommitment,
+            "A historical exclusive relationship conflicts at the wedding date",
+        ));
     }
     for participant in [first, second] {
         if let Some(existing) = ctx
@@ -1126,9 +1124,12 @@ pub fn reserve_wedding(
             .character_id()
             .find(participant)
         {
-            return Err(format!(
-                "Character already has exclusive commitment {}",
-                existing.commitment_id
+            return Err(coded_courtship_rejection(
+                CourtshipRejectionCode::ExclusiveCommitment,
+                &format!(
+                    "Character already has exclusive commitment {}",
+                    existing.commitment_id
+                ),
             ));
         }
         if let Some(existing) = ctx
@@ -1137,9 +1138,12 @@ pub fn reserve_wedding(
             .character_id()
             .find(participant)
         {
-            return Err(format!(
-                "Character is already in active marriage {}",
-                existing.marriage_id
+            return Err(coded_courtship_rejection(
+                CourtshipRejectionCode::AlreadyMarried,
+                &format!(
+                    "Character is already in active marriage {}",
+                    existing.marriage_id
+                ),
             ));
         }
     }
@@ -1158,7 +1162,12 @@ pub fn reserve_wedding(
     let ceremony_settlement_id = first_person
         .current_settlement_id
         .filter(|settlement| second_person.current_settlement_id.as_ref() == Some(settlement))
-        .ok_or("Wedding scheduling requires a shared ceremony settlement")?;
+        .ok_or_else(|| {
+            coded_courtship_rejection(
+                CourtshipRejectionCode::CeremonySettlementRequired,
+                "Wedding scheduling requires a shared ceremony settlement",
+            )
+        })?;
     let prefix = commitment_id(first, second);
     let ordinal = ctx
         .db
@@ -3331,10 +3340,16 @@ fn validate_canonical_courtship_pair(
         || effective_age_years(ctx, partner_id, effective_minute).unwrap_or(partner.age_years)
             < ADULT_AGE_YEARS
     {
-        return Err("Courtship requires two living adult characters".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::IneligibleCharacter,
+            "Courtship requires two living adult characters",
+        ));
     }
     if suitor.current_settlement_id != partner.current_settlement_id {
-        return Err("Courtship requires co-location".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::CoLocation,
+            "Courtship requires co-location",
+        ));
     }
     let suitor_personality = ctx
         .db
@@ -3355,7 +3370,10 @@ fn validate_canonical_courtship_pair(
         partner_personality.inclination,
         suitor_personality.presentation,
     ) {
-        return Err("This pair does not have mutual attraction".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::MutualAttraction,
+            "This pair does not have mutual attraction",
+        ));
     }
     let (first, second) = canonical_pair(suitor_id, partner_id);
     let permitted_courtship_id = format!("courtship:{first}:{second}");
@@ -3370,7 +3388,10 @@ fn validate_canonical_courtship_pair(
         effective_minute,
         Some(&permitted_courtship_id),
     ) {
-        return Err("An exclusive romantic commitment prevents new courtship".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::ExclusiveCommitment,
+            "An exclusive romantic commitment prevents new courtship",
+        ));
     }
     if ctx
         .db
@@ -3378,7 +3399,10 @@ fn validate_canonical_courtship_pair(
         .iter()
         .any(|edge| edge.subject_id == suitor_id && edge.related_id == partner_id)
     {
-        return Err("Close relatives cannot court".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::CloseRelative,
+            "Close relatives cannot court",
+        ));
     }
     Ok(effective_minute)
 }
@@ -3397,7 +3421,10 @@ fn establish_courtship(
         return match (existing.status, existing.kind == kind) {
             (CourtshipStatus::Active | CourtshipStatus::Exposed, true) => Ok(()),
             (CourtshipStatus::Active | CourtshipStatus::Exposed, false) => {
-                Err("This pair already has an active courtship of another kind".into())
+                Err(coded_courtship_rejection(
+                    CourtshipRejectionCode::ExclusiveCommitment,
+                    "This pair already has an active courtship of another kind",
+                ))
             }
             (CourtshipStatus::Ended, _) => {
                 Err("Ended courtship history is final for this pair".into())
@@ -3405,8 +3432,16 @@ fn establish_courtship(
         };
     }
     let (approved_father_id, planned_dowry_amount) = if kind == CourtshipKind::Formal {
-        let father = father_of_at(ctx, partner_id, minute)?
-            .ok_or("Formal courtship requires a known living father")?;
+        let father = father_of_at(ctx, partner_id, minute)
+            .map_err(|detail| {
+                coded_courtship_rejection(CourtshipRejectionCode::FatherApproval, &detail)
+            })?
+            .ok_or_else(|| {
+                coded_courtship_rejection(
+                    CourtshipRejectionCode::FatherApproval,
+                    "Formal courtship requires a known living father",
+                )
+            })?;
         (
             Some(father),
             formal_dowry_amount(crate::item::personal_currency_total(ctx, father)),
@@ -3664,19 +3699,36 @@ pub fn begin_formal_courtship(
         .find(partner_id)
         .ok_or("Partner personality not found")?;
     if suitor.sex != Sex::Male || partner.sex != Sex::Female {
-        return Err("Formal courtship currently requires a man suitor and woman partner".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::FormalRoute,
+            "Formal courtship currently requires a man suitor and woman partner",
+        ));
     }
     if affinity_at(ctx, partner_id, suitor_id, minute)
         .is_none_or(|affinity| affinity < FORMAL_COURTSHIP_AFFINITY)
     {
-        return Err("The prospective partner does not yet have enough affinity".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::Affinity,
+            "The prospective partner does not yet have enough affinity",
+        ));
     }
-    let father = father_of_at(ctx, partner_id, minute)?
-        .ok_or("Formal courtship requires a known living father")?;
+    let father = father_of_at(ctx, partner_id, minute)
+        .map_err(|detail| {
+            coded_courtship_rejection(CourtshipRejectionCode::FatherApproval, &detail)
+        })?
+        .ok_or_else(|| {
+            coded_courtship_rejection(
+                CourtshipRejectionCode::FatherApproval,
+                "Formal courtship requires a known living father",
+            )
+        })?;
     if affinity_at(ctx, father, suitor_id, minute)
         .is_none_or(|affinity| affinity < FORMAL_FATHER_APPROVAL_AFFINITY)
     {
-        return Err("Her father does not approve of this suitor".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::FatherApproval,
+            "Her father does not approve of this suitor",
+        ));
     }
     establish_courtship(
         ctx,
@@ -3705,10 +3757,10 @@ pub fn begin_informal_courtship(
     if affinity_at(ctx, partner_id, suitor_id, minute).is_none_or(|affinity| {
         affinity < informal_affinity_threshold(personality_disposition(partner.courtship))
     }) {
-        return Err(
-            "The prospective partner does not yet have enough affinity for informal courtship"
-                .into(),
-        );
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::Affinity,
+            "The prospective partner does not yet have enough affinity for informal courtship",
+        ));
     }
     let suitor_personality = ctx
         .db
@@ -3717,13 +3769,18 @@ pub fn begin_informal_courtship(
         .find(suitor_id)
         .ok_or("Suitor personality not found")?;
     let formal_pair = suitor_personality.sex == Sex::Male && partner.sex == Sex::Female;
-    let living_father = father_of_at(ctx, partner_id, minute)?;
+    let living_father = father_of_at(ctx, partner_id, minute).map_err(|detail| {
+        coded_courtship_rejection(CourtshipRejectionCode::FatherApproval, &detail)
+    })?;
     let father_approves = living_father.is_some_and(|father| {
         affinity_at(ctx, father, suitor_id, minute)
             .is_some_and(|affinity| affinity >= FORMAL_FATHER_APPROVAL_AFFINITY)
     });
     if formal_pair && father_approves {
-        return Err("Her father's approval makes the formal route available".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::FormalRoute,
+            "Her father's approval makes the formal route available",
+        ));
     }
     let secrecy_reason = if formal_pair && living_father.is_some() {
         CourtshipSecrecyReason::FatherDisapproval
@@ -3760,7 +3817,10 @@ pub fn schedule_wedding(
         .find(&courtship_id)
         .is_some_and(|courtship| courtship.status != CourtshipStatus::Ended)
     {
-        return Err("A wedding requires an active courtship".into());
+        return Err(coded_courtship_rejection(
+            CourtshipRejectionCode::ActiveCourtshipRequired,
+            "A wedding requires an active courtship",
+        ));
     }
     reserve_wedding(ctx, first, second, minute).map(|_| ())
 }
@@ -4376,6 +4436,26 @@ mod tests {
             .unwrap();
         assert!(establishment.contains("active courtship of another kind"));
         assert!(establishment.contains("Ended courtship history is final"));
+    }
+
+    #[test]
+    fn player_courtship_rejections_carry_stable_typed_codes() {
+        let source = include_str!("relationship.rs");
+        for reducer in [
+            "pub fn begin_formal_courtship",
+            "pub fn begin_informal_courtship",
+            "pub fn schedule_wedding",
+        ] {
+            let body = source
+                .split(reducer)
+                .nth(1)
+                .and_then(|tail| tail.split("#[reducer]").next())
+                .expect("courtship reducer body");
+            assert!(body.contains("CourtshipRejectionCode"));
+        }
+        assert!(source.contains("CourtshipRejectionCode::MutualAttraction"));
+        assert!(source.contains("CourtshipRejectionCode::ExclusiveCommitment"));
+        assert!(source.contains("CourtshipRejectionCode::FatherApproval"));
     }
 
     #[test]

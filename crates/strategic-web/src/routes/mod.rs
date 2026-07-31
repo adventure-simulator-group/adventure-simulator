@@ -86,6 +86,74 @@ pub(crate) enum PartyActionOutcome {
     Requested,
 }
 
+/// A validated ordinary-conversation duration. Parsing at the HTTP boundary
+/// prevents invalid minute counts from entering route logic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SocialDuration(u16);
+
+impl SocialDuration {
+    pub(crate) const fn minutes(self) -> u64 {
+        self.0 as u64
+    }
+}
+
+impl TryFrom<u64> for SocialDuration {
+    type Error = &'static str;
+
+    fn try_from(minutes: u64) -> Result<Self, Self::Error> {
+        if (15..=8 * 60).contains(&minutes) && minutes.is_multiple_of(15) {
+            Ok(Self(minutes as u16))
+        } else {
+            Err("choose 15 minutes to 8 hours in 15-minute increments")
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SocialDuration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::try_from(u64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Opaque idempotency key accepted from the browser after validation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SocialActionId(String);
+
+impl SocialActionId {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for SocialActionId {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !value.is_empty()
+            && value.len() <= 96
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            Ok(Self(value))
+        } else {
+            Err("invalid conversation action ID")
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SocialActionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Accept a return destination only when it is a local absolute-path URL.
 ///
 /// Workflows may carry this value through query strings and hidden form fields,

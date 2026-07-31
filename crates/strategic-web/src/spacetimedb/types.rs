@@ -267,6 +267,151 @@ pub struct BackendOutbreakPatient {
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 
+pub use adventuresim_stdb_client::{
+    AffinityBand, CourtshipKind, FamiliarityBand, MoraleBand, SocialChatOutcome,
+    SocialChatTargetKind,
+};
+
+fn unit_variant_name<E>(value: Value) -> Result<String, E>
+where
+    E: serde::de::Error,
+{
+    match value {
+        Value::String(name) => Ok(name),
+        Value::Object(variant) if variant.len() == 1 => {
+            Ok(variant.into_iter().next().expect("one variant").0)
+        }
+        _ => Err(E::custom("expected a unit enum variant")),
+    }
+}
+
+pub(crate) fn deserialize_affinity_band<'de, D>(deserializer: D) -> Result<AffinityBand, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Hostile" => Ok(AffinityBand::Hostile),
+        "Reserved" => Ok(AffinityBand::Reserved),
+        "Warm" => Ok(AffinityBand::Warm),
+        "Trusted" => Ok(AffinityBand::Trusted),
+        _ => Err(D::Error::custom("unknown affinity band")),
+    }
+}
+
+pub(crate) fn deserialize_familiarity_band<'de, D>(
+    deserializer: D,
+) -> Result<FamiliarityBand, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "New" => Ok(FamiliarityBand::New),
+        "Known" => Ok(FamiliarityBand::Known),
+        "Familiar" => Ok(FamiliarityBand::Familiar),
+        "WellKnown" => Ok(FamiliarityBand::WellKnown),
+        _ => Err(D::Error::custom("unknown familiarity band")),
+    }
+}
+
+pub(crate) fn deserialize_morale_band<'de, D>(deserializer: D) -> Result<MoraleBand, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Uncertain" => Ok(MoraleBand::Uncertain),
+        "Distressed" => Ok(MoraleBand::Distressed),
+        "Guarded" => Ok(MoraleBand::Guarded),
+        "Settled" => Ok(MoraleBand::Settled),
+        _ => Err(D::Error::custom("unknown morale band")),
+    }
+}
+
+pub(crate) fn deserialize_social_chat_outcome<'de, D>(
+    deserializer: D,
+) -> Result<SocialChatOutcome, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Positive" => Ok(SocialChatOutcome::Positive),
+        "Mixed" => Ok(SocialChatOutcome::Mixed),
+        "Negative" => Ok(SocialChatOutcome::Negative),
+        _ => Err(D::Error::custom("unknown social chat outcome")),
+    }
+}
+
+pub(crate) fn deserialize_social_chat_target_kind<'de, D>(
+    deserializer: D,
+) -> Result<SocialChatTargetKind, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "SettlementResident" => Ok(SocialChatTargetKind::SettlementResident),
+        "PartyMember" => Ok(SocialChatTargetKind::PartyMember),
+        _ => Err(D::Error::custom("unknown social chat target kind")),
+    }
+}
+
+pub(crate) fn deserialize_optional_courtship_kind<'de, D>(
+    deserializer: D,
+) -> Result<Option<CourtshipKind>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    match unit_variant_name::<D::Error>(value)?.as_str() {
+        "Formal" => Ok(Some(CourtshipKind::Formal)),
+        "Informal" => Ok(Some(CourtshipKind::Informal)),
+        _ => Err(D::Error::custom("unknown courtship kind")),
+    }
+}
+
+#[cfg(test)]
+mod typed_social_transport_tests {
+    use super::*;
+
+    #[derive(Deserialize)]
+    struct AffinityWire {
+        #[serde(deserialize_with = "deserialize_affinity_band")]
+        affinity: AffinityBand,
+    }
+
+    #[derive(Deserialize)]
+    struct CourtshipWire {
+        #[serde(deserialize_with = "deserialize_optional_courtship_kind")]
+        courtship: Option<CourtshipKind>,
+    }
+
+    #[test]
+    fn social_enum_adapters_accept_sql_unit_variant_encodings() {
+        assert_eq!(
+            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": "Trusted"}))
+                .unwrap()
+                .affinity,
+            AffinityBand::Trusted
+        );
+        assert_eq!(
+            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": {"Warm": []}}))
+                .unwrap()
+                .affinity,
+            AffinityBand::Warm
+        );
+        assert_eq!(
+            serde_json::from_value::<CourtshipWire>(serde_json::json!({"courtship": "Formal"}))
+                .unwrap()
+                .courtship,
+            Some(CourtshipKind::Formal)
+        );
+        assert!(
+            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": "invented"}))
+                .is_err()
+        );
+    }
+}
+
 /// Response from SpacetimeDB SQL query (array of result sets)
 pub type QueryResponse = Vec<QueryResult>;
 
@@ -553,12 +698,13 @@ pub struct BackendCharacterResidenceStatus {
     pub acquired_minute: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BackendCharacterRelationshipStatus {
     pub character_id: u64,
     pub spouse_id: Option<u64>,
     pub courtship_partner_id: Option<u64>,
-    pub courtship_kind: Option<String>,
+    #[serde(deserialize_with = "deserialize_optional_courtship_kind")]
+    pub courtship_kind: Option<CourtshipKind>,
     pub courtship_exposed: bool,
     pub wedding_commitment_id: Option<String>,
     pub wedding_partner_id: Option<u64>,

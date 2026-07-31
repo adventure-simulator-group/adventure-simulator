@@ -4,14 +4,18 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::affinity_band_type::AffinityBand;
+use super::familiarity_band_type::FamiliarityBand;
+use super::morale_band_type::MoraleBand;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendSettlementResidentRelationship {
     pub observer_character_id: u64,
     pub resident_character_id: u64,
-    pub affinity_band: String,
-    pub familiarity_band: String,
-    pub morale_band: String,
+    pub affinity_band: AffinityBand,
+    pub familiarity_band: FamiliarityBand,
+    pub morale_band: MoraleBand,
 }
 
 impl __sdk::InModule for BackendSettlementResidentRelationship {
@@ -26,10 +30,11 @@ pub struct BackendSettlementResidentRelationshipCols {
         __sdk::__query_builder::Col<BackendSettlementResidentRelationship, u64>,
     pub resident_character_id:
         __sdk::__query_builder::Col<BackendSettlementResidentRelationship, u64>,
-    pub affinity_band: __sdk::__query_builder::Col<BackendSettlementResidentRelationship, String>,
+    pub affinity_band:
+        __sdk::__query_builder::Col<BackendSettlementResidentRelationship, AffinityBand>,
     pub familiarity_band:
-        __sdk::__query_builder::Col<BackendSettlementResidentRelationship, String>,
-    pub morale_band: __sdk::__query_builder::Col<BackendSettlementResidentRelationship, String>,
+        __sdk::__query_builder::Col<BackendSettlementResidentRelationship, FamiliarityBand>,
+    pub morale_band: __sdk::__query_builder::Col<BackendSettlementResidentRelationship, MoraleBand>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendSettlementResidentRelationship {
