@@ -614,14 +614,13 @@ pub fn apply_residence_leisure_morale(
     Ok(())
 }
 
-fn acquire_residence(
+fn acquire_residence_internal(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: &str,
     tier: ResidenceTier,
     tenure: ResidenceTenure,
 ) -> Result<(), String> {
-    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     let character = crate::character::require_living_character(ctx, character_id)?;
     if character.current_settlement_id.as_deref() != Some(settlement_id) {
         return Err("You must be in a settlement to acquire a residence there".into());
@@ -653,6 +652,17 @@ fn acquire_residence(
     );
     move_residence_occupant_internal(ctx, character_id, character_id, now)?;
     Ok(())
+}
+
+fn acquire_residence(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+    tier: ResidenceTier,
+    tenure: ResidenceTenure,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    acquire_residence_internal(ctx, character_id, settlement_id, tier, tenure)
 }
 
 #[reducer]
@@ -725,6 +735,10 @@ pub fn designate_residence(ctx: &ReducerContext, character_id: u64) -> Result<()
 #[reducer]
 pub fn recover_owned_residence(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    recover_owned_residence_internal(ctx, character_id)
+}
+
+fn recover_owned_residence_internal(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
     let now = residence_now(ctx, character_id)?;
     let mut residence = ctx
         .db
@@ -766,6 +780,129 @@ pub fn recover_owned_residence(ctx: &ReducerContext, character_id: u64) -> Resul
         );
     }
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NpcResidenceOutcome {
+    AlreadyOccupant,
+    RecoveredOwner,
+    Rented(ResidenceTier),
+    NoAffordableOffer,
+    NotAtHome,
+}
+
+/// Scheduler-only residence policy. It spends only currency already owned by
+/// the NPC and delegates all state changes to the same internal operations as
+/// public reducers.
+pub(crate) fn settle_npc_residence(
+    ctx: &ReducerContext,
+    character_id: u64,
+    home_settlement_id: &str,
+) -> Result<NpcResidenceOutcome, String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if character.current_settlement_id.as_deref() != Some(home_settlement_id) {
+        return Ok(NpcResidenceOutcome::NotAtHome);
+    }
+    if let Some(occupancy) = ctx
+        .db
+        .residence_occupant()
+        .character_id()
+        .find(character_id)
+        && ctx
+            .db
+            .character_residence()
+            .character_id()
+            .find(occupancy.residence_character_id)
+            .is_some_and(|residence| residence.active)
+    {
+        return Ok(NpcResidenceOutcome::AlreadyOccupant);
+    }
+    if let Some(residence) = ctx
+        .db
+        .character_residence()
+        .character_id()
+        .find(character_id)
+    {
+        if residence.active {
+            move_residence_occupant_internal(
+                ctx,
+                character_id,
+                character_id,
+                residence_now(ctx, character_id)?,
+            )?;
+            return Ok(NpcResidenceOutcome::AlreadyOccupant);
+        }
+        if residence.tenure == ResidenceTenure::Owner
+            && residence.settlement_id == home_settlement_id
+        {
+            let now = residence_now(ctx, character_id)?;
+            let residence_offer = offer(ctx, home_settlement_id, residence.tier)?;
+            let each = charge_per_period(&residence, &residence_offer);
+            let periods_due = if now < residence.next_due_minute {
+                0
+            } else {
+                now.saturating_sub(residence.next_due_minute)
+                    .checked_div(RESIDENCE_BILLING_PERIOD_MINUTES)
+                    .unwrap_or(0)
+                    .saturating_add(1)
+            };
+            let required = each.saturating_mul(periods_due);
+            if crate::item::personal_currency_total(ctx, character_id) >= required {
+                recover_owned_residence_internal(ctx, character_id)?;
+                if ctx
+                    .db
+                    .character_residence()
+                    .character_id()
+                    .find(character_id)
+                    .is_some_and(|row| row.active)
+                {
+                    return Ok(NpcResidenceOutcome::RecoveredOwner);
+                }
+            }
+            return Ok(NpcResidenceOutcome::NoAffordableOffer);
+        }
+        // A lapsed rental cannot be used as a second home. The next
+        // acquisition will replace it through the ordinary transition path.
+    }
+    ensure_settlement_residence_offers(ctx, home_settlement_id)?;
+    let available = crate::item::personal_currency_total(ctx, character_id);
+    let offers = ResidenceTier::ALL.map(|tier| {
+        let row = offer(ctx, home_settlement_id, tier)?;
+        Ok::<_, String>((
+            tier,
+            adventuresim_core::npc_policy::NpcHouseOffer {
+                rank: match tier {
+                    ResidenceTier::Cheap => 0,
+                    ResidenceTier::Moderate => 1,
+                    ResidenceTier::Fancy => 2,
+                },
+                initial_cost: u64::from(row.rent_per_period),
+                recurring_cost: u64::from(row.rent_per_period),
+            },
+        ))
+    });
+    let mut resolved = Vec::with_capacity(ResidenceTier::ALL.len());
+    for candidate in offers {
+        resolved.push(candidate?);
+    }
+    let Some(selected) = adventuresim_core::npc_policy::best_affordable_house(
+        available,
+        resolved.iter().map(|(_, offer)| *offer),
+    ) else {
+        return Ok(NpcResidenceOutcome::NoAffordableOffer);
+    };
+    let tier = resolved
+        .into_iter()
+        .find_map(|(tier, offer)| (offer == selected).then_some(tier))
+        .ok_or("Selected residence offer disappeared")?;
+    acquire_residence_internal(
+        ctx,
+        character_id,
+        home_settlement_id,
+        tier,
+        ResidenceTenure::Renter,
+    )?;
+    Ok(NpcResidenceOutcome::Rented(tier))
 }
 
 #[reducer]

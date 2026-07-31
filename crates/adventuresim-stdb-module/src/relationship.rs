@@ -2929,6 +2929,176 @@ fn establish_courtship(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NpcCourtshipOutcome {
+    Formal,
+    Informal,
+    Ineligible,
+}
+
+/// Scheduler-only NPC-to-NPC courtship and engagement transaction. Expected
+/// social ineligibility is a no-op outcome; missing canonical components or a
+/// broken invariant aborts the scheduler reducer.
+pub(crate) fn establish_npc_courtship_and_wedding(
+    ctx: &ReducerContext,
+    suitor_id: u64,
+    partner_id: u64,
+) -> Result<NpcCourtshipOutcome, String> {
+    if suitor_id == partner_id
+        || ctx.db.npc_policy().character_id().find(suitor_id).is_none()
+        || ctx
+            .db
+            .npc_policy()
+            .character_id()
+            .find(partner_id)
+            .is_none()
+    {
+        return Ok(NpcCourtshipOutcome::Ineligible);
+    }
+    let suitor = ctx
+        .db
+        .character()
+        .id()
+        .find(suitor_id)
+        .ok_or("NPC suitor character not found")?;
+    let partner = ctx
+        .db
+        .character()
+        .id()
+        .find(partner_id)
+        .ok_or("NPC partner character not found")?;
+    let suitor_time = canonical_now(ctx, suitor_id)?;
+    let partner_time = canonical_now(ctx, partner_id)?;
+    let effective_minute = suitor_time.max(partner_time);
+    if !suitor.alive
+        || !partner.alive
+        || effective_age_years(ctx, suitor_id, effective_minute).unwrap_or(suitor.age_years)
+            < ADULT_AGE_YEARS
+        || effective_age_years(ctx, partner_id, effective_minute).unwrap_or(partner.age_years)
+            < ADULT_AGE_YEARS
+        || suitor.current_settlement_id.is_none()
+        || suitor.current_settlement_id != partner.current_settlement_id
+    {
+        return Ok(NpcCourtshipOutcome::Ineligible);
+    }
+    let suitor_personality = ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(suitor_id)
+        .ok_or("NPC suitor personality not found")?;
+    let partner_personality = ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(partner_id)
+        .ok_or("NPC partner personality not found")?;
+    if !inclination_accepts(
+        suitor_personality.inclination,
+        partner_personality.presentation,
+    ) || !inclination_accepts(
+        partner_personality.inclination,
+        suitor_personality.presentation,
+    ) {
+        return Ok(NpcCourtshipOutcome::Ineligible);
+    }
+    if ctx
+        .db
+        .exclusive_commitment_participant()
+        .character_id()
+        .find(suitor_id)
+        .is_some()
+        || ctx
+            .db
+            .exclusive_commitment_participant()
+            .character_id()
+            .find(partner_id)
+            .is_some()
+        || ctx
+            .db
+            .marriage_participant()
+            .character_id()
+            .find(suitor_id)
+            .is_some()
+        || ctx
+            .db
+            .marriage_participant()
+            .character_id()
+            .find(partner_id)
+            .is_some()
+        || ctx.db.character_kinship().iter().any(|edge| {
+            (edge.subject_id == suitor_id && edge.related_id == partner_id)
+                || (edge.subject_id == partner_id && edge.related_id == suitor_id)
+        })
+    {
+        return Ok(NpcCourtshipOutcome::Ineligible);
+    }
+    let (first, second) = canonical_pair(suitor_id, partner_id);
+    let courtship_id = format!("courtship:{first}:{second}");
+    if ctx.db.courtship().id().find(&courtship_id).is_some() {
+        return Ok(NpcCourtshipOutcome::Ineligible);
+    }
+
+    let partner_affinity = crate::social::current_affinity(ctx, partner_id, suitor_id);
+    let formal_pair = suitor_personality.sex == Sex::Male && partner_personality.sex == Sex::Female;
+    let living_father = father_of(ctx, partner_id);
+    let father_approves = living_father.is_some_and(|father| {
+        crate::social::current_affinity(ctx, father, suitor_id) >= FORMAL_FATHER_APPROVAL_AFFINITY
+    });
+    let route = adventuresim_core::npc_policy::npc_courtship_route(
+        adventuresim_core::npc_policy::NpcCourtshipEligibility {
+            both_npc: true,
+            co_located: true,
+            living_adults: true,
+            mutually_attracted: true,
+            nonkin: true,
+            conflict_free: true,
+            formal_pair,
+            father_approves,
+            formal_affinity_met: partner_affinity >= FORMAL_COURTSHIP_AFFINITY,
+            informal_affinity_met: partner_affinity
+                >= informal_affinity_threshold(personality_disposition(
+                    partner_personality.courtship,
+                )),
+        },
+    );
+    let (kind, secrecy_reason, outcome) = match route {
+        adventuresim_core::npc_policy::NpcCourtshipRoute::Formal => {
+            (CourtshipKind::Formal, None, NpcCourtshipOutcome::Formal)
+        }
+        adventuresim_core::npc_policy::NpcCourtshipRoute::Informal => {
+            let reason = if formal_pair && living_father.is_some() {
+                CourtshipSecrecyReason::FatherDisapproval
+            } else {
+                CourtshipSecrecyReason::FormalRouteUnavailable
+            };
+            (
+                CourtshipKind::Informal,
+                Some(reason),
+                NpcCourtshipOutcome::Informal,
+            )
+        }
+        adventuresim_core::npc_policy::NpcCourtshipRoute::Ineligible => {
+            return Ok(NpcCourtshipOutcome::Ineligible);
+        }
+    };
+
+    // Reuse the complete shared validator immediately before the atomic
+    // writes. Every expected rejection above has already become a no-op, so a
+    // failure here means canonical infrastructure changed underneath policy.
+    let validated_minute = validate_canonical_courtship_pair(ctx, suitor_id, partner_id)?;
+    establish_courtship(
+        ctx,
+        suitor_id,
+        partner_id,
+        kind,
+        secrecy_reason,
+        validated_minute,
+    )?;
+    reserve_wedding(ctx, first, second, validated_minute)?;
+    Ok(outcome)
+}
+
 #[reducer]
 pub fn begin_formal_courtship(
     ctx: &ReducerContext,

@@ -66,14 +66,22 @@ settles one bounded queue containing both weddings and births, ordered by
 for a participant login. Weddings precede births when they share an exact
 minute. Indexed due-minute scans are capped before merging, and a malformed
 gameplay event is terminalized with a durable failure receipt so it cannot
-stall later events or the recurring schedule. The processor then selects at
-most 64 living NPCs
-by `(CharacterTime, character id)` and advances each through at most one day of
-its ordinary stationary schedule. Dead characters remain frozen. Scheduler
-jitter therefore changes catch-up latency, not durable ordering or step size.
+stall later events or the recurring schedule. The processor then selects the
+earliest exact-`CharacterTime` cohort, ordered by character ID and capped at
+64. Every member records the day's policy decisions before any member
+advances, after which each advances through at most one day of its ordinary
+stationary schedule. A private character/day/phase receipt makes retries
+idempotent. The first policy pass initializes an otherwise untouched NPC
+schedule with six hours of Labor and a stable one-to-two hours of Socializing
+in 15-minute units; any existing plan is preserved, and later passes never
+overwrite it. Dead characters remain frozen. Scheduler jitter therefore
+changes catch-up latency, not durable ordering, choices, or step size.
 Actor-local dialogue, trade, guild, quest, and rest interactions may remain
 asynchronous when they do not mutate that canonical NPC state. Those reducers
 declare their temporal scope and never move the target's personal clock.
+Autonomous trade, travel, and guild decisions are intentionally outside this
+first lifecycle parity gate; future policies must use the same cohort and
+receipt contract rather than adding another NPC clock.
 Authoritative travel and stationary time paths split an actor interval at the
 next wedding, birth, or marriage boundary. Globally materialized future facts
 are filtered by effective minute, so pre-ceremony leisure and household actions

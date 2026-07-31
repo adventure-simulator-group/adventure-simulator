@@ -62,10 +62,14 @@ same transaction. Player travel and account-owned schedule reducers never
 advance an NPC on its behalf. Institutional services (guild admission,
 renewable market trade, ordinary rest, and actor-local quest journal updates)
 remain asynchronous only when they neither read nor write dynamic canonical
-NPC state. A private bounded scheduler advances living NPCs in stable
-`(personal minute, character id)` order by no more than one day per pass.
-Weddings and births use separate bounded effective-date queues, so they resolve
-without either participant being accessed. Relationship projections are
+NPC state. A private bounded scheduler advances living NPCs in
+exact-personal-minute cohorts, then character-ID order, by no more than one
+day per pass. It records schedule, housing, and romance decisions for every
+member of a cohort before advancing any member.
+Weddings and births use separate bounded effective-date queues. NPC participants
+causally advance through a ceremony boundary without login; a wedding involving
+a lagging player remains reserved until that player's frontier arrives, so the
+ceremony never evaluates location against stale history. Relationship projections are
 evaluated against the projected character's personal minute: a globally
 reserved engagement may block a conflicting romance while a marriage,
 pregnancy, exposure, or child which is still in that character's future is not
@@ -85,6 +89,17 @@ Ambiguous targets are scored by a stable hash of actor, absolute calendar day,
 location, and target; character ID is the final tie break. Iteration or table
 insertion order therefore cannot change the selected companion.
 
+Autonomous romance considers at most 16 deterministically ordered, currently
+present settlement residents. Both people must have `NpcPolicy`; policy never
+targets a player-owned character. The ordinary living-adult, mutual
+attraction, co-location, non-kinship, and exclusivity checks use the later of
+the two independent personal dates without synchronizing either clock.
+Formal and informal affinity, father approval, personality threshold, and
+secrecy rules are the same rules exposed to players. A successful courtship
+atomically reserves its wedding one year ahead; expected ineligibility is a
+durable no-op receipt, while missing canonical infrastructure aborts the
+scheduler transaction.
+
 Socializing trains one conserved Social training budget at the ordinary
 activity rate. Gregarious, Neutral, and Solitary actors direct 60%, 50%, and
 40% respectively to Charm. Transparency splits the remainder: Open directs
@@ -96,7 +111,10 @@ to Deception. The three integer basis-point weights always sum to 10,000.
 Courtship is an explicit canonical action, never an automatic threshold
 transition. Both participants must be living adults, co-located, mutually
 attracted according to their private inclination and observable presentation,
-not close kin, and synchronized to the relevant canonical date. High affinity
+not close kin, and evaluated at the later participant frontier without moving
+the lagging participant's clock. The resulting courtship is effective-dated,
+and an immediate exclusive wedding reservation blocks conflicting romance even
+when its details remain in a character's future. High affinity
 with a person who has an exclusive commitment remains friendship rather than a
 counterfactual romantic relationship.
 
@@ -126,7 +144,12 @@ trial with a stable ordinal and exact crossing minute. Pregnancy is exclusive
 to the mother, lasts exactly 280 days,
 and has no complications in this pass. A due pregnancy materializes one full,
 NPC-policy-controlled dependent child, then creates parent/child and household
-edges atomically. Childhood behavior, education, inheritance, contraception,
+edges atomically. Every character has an authoritative birth coordinate; age
+is derived at the effective minute and its cached display value advances at
+yearly lifecycle boundaries, so dependents naturally become adults. Seeded
+town residents are arranged into deterministic households with parent/child
+and sibling edges without creating duplicate identities. Childhood behavior,
+education, inheritance, contraception,
 infertility, miscarriage, and childbirth risk remain follow-up systems.
 Child identity, name choice, sex, and home placement use separate stable seed
 domains based on the canonical parent pair, pregnancy ordinal, birth minute,
