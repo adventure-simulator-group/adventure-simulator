@@ -52,11 +52,11 @@ pub struct AppState {
 
 /// Serde transport for the gateway's player-visible settlement NPC projection.
 ///
-/// This deliberately mirrors `BackendSettlementNpc` instead of the private
+/// This deliberately mirrors `BackendSettlementResident` instead of the private
 /// authoritative settlement population row.
 #[derive(Clone, Deserialize)]
-pub(crate) struct BackendSettlementNpcRow {
-    pub id: String,
+pub(crate) struct BackendSettlementResidentRow {
+    pub character_id: u64,
     pub home_settlement_id: String,
     pub name: String,
     pub age_band: String,

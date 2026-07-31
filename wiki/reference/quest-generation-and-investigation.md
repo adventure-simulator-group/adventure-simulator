@@ -291,11 +291,14 @@ has no public table accessor. Gateway projections expose only symptoms and
 observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
-Persistent settlement NPCs also cross that boundary through a dedicated
-`BackendSettlementNpc` projection. The projected row contains the NPC's stable
-identity, home settlement, player-visible appearance, profession, household,
-local role, service, and conversation identity. It deliberately excludes the
-authoritative NPC's private `sex` and internal `projection_id`. Gateway-side
+Persistent settlement residents also cross that boundary through a dedicated
+`BackendSettlementResident` projection. The projected row joins the ordinary
+Character identity and age, private personality presentation, and
+`SettlementResidentProfile` metadata. It contains the resident's stable decimal
+character ID, home settlement, player-visible appearance, profession,
+household, local role, service, and conversation identity. It deliberately
+excludes private `sex` and the profile's internal `projection_id`; missing
+Character or personality authority fails closed. Gateway-side
 developer quest previews use visible age, presentation, profession, and role
 for witness discovery. Preview, authoritative developer compilation, and later
 victim-profile target validation share one visible-field candidate and

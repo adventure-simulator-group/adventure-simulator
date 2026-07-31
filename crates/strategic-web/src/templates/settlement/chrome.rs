@@ -2,12 +2,12 @@ use std::collections::BTreeSet;
 
 use maud::{Markup, html};
 
-use super::{corpse_medical_dialog, rest_service_menu, SoapRestPreview};
-use super::social::{npc_description_stage, npc_portrait_strip, settlement_npc_chat_area};
+use super::social::{npc_description_stage, npc_portrait_strip, settlement_resident_chat_area};
+use super::{SoapRestPreview, corpse_medical_dialog, rest_service_menu};
 use crate::spacetimedb::{
-    BackendCharacterRelationshipStatus, BackendCorpse, Character, CharacterResidence, ResidenceTenure, ResidenceTier,
-    Settlement, SettlementAlias, SettlementCategory, SettlementResidenceOffer,
-    SettlementDescription, SettlementDescriptionKind,
+    BackendCharacterRelationshipStatus, BackendCorpse, Character, CharacterResidence,
+    ResidenceTenure, ResidenceTier, Settlement, SettlementAlias, SettlementCategory,
+    SettlementDescription, SettlementDescriptionKind, SettlementResidenceOffer,
 };
 use crate::templates::{
     game_icon, population_description, settlement_layout_with_session, sidebar_section,
@@ -126,7 +126,7 @@ pub fn settlement_overview_page(
                 }
             }
             (npc_description_stage(&settlement.name, "Select a local resident to see their visible description."))
-            (settlement_npc_chat_area(&settlement.name, active_character, &settlement.id, "overview", None))
+            (settlement_resident_chat_area(&settlement.name, active_character, &settlement.id, "overview", None))
         }
         aside class="right-sidebar" {
             (sidebar_section("Description", html! {
@@ -161,14 +161,14 @@ pub fn settlement_overview_page(
 }
 
 /// Shared authoritative shell for non-service public, residential, and keep locations.
-pub fn settlement_npc_location_page(
+pub fn settlement_resident_location_page(
     settlement: &Settlement,
     active_character: &Character,
     party_members: &[Character],
     location_id: &str,
     logged_in_as: Option<&str>,
 ) -> Markup {
-    settlement_npc_location_page_with_panel(
+    settlement_resident_location_page_with_panel(
         settlement,
         active_character,
         party_members,
@@ -188,7 +188,7 @@ pub fn settlement_residence_page(
     relationship: Option<&BackendCharacterRelationshipStatus>,
 ) -> Markup {
     let panel = residence_offer_panel(settlement, offers, current, relationship);
-    settlement_npc_location_page_with_panel(
+    settlement_resident_location_page_with_panel(
         settlement,
         active_character,
         party_members,
@@ -198,7 +198,7 @@ pub fn settlement_residence_page(
     )
 }
 
-fn settlement_npc_location_page_with_panel(
+fn settlement_resident_location_page_with_panel(
     settlement: &Settlement,
     active_character: &Character,
     party_members: &[Character],
@@ -263,7 +263,7 @@ fn settlement_npc_location_page_with_panel(
             (party_portrait_overlay(party_members, Some(active_character), &format!("/locations/settlement/{}", settlement.id), None, false))
             (npc_portrait_strip(&settlement.id, location_id))
             (npc_description_stage(title, description))
-            (settlement_npc_chat_area(title, Some(active_character), &settlement.id, location_id, None))
+            (settlement_resident_chat_area(title, Some(active_character), &settlement.id, location_id, None))
         }
         aside class="right-sidebar" {
             (sidebar_section("Location", html! { p { (description) } }))
@@ -294,11 +294,19 @@ fn settlement_npc_location_page_with_panel(
 }
 
 fn residence_tier_label(tier: ResidenceTier) -> &'static str {
-    match tier { ResidenceTier::Cheap => "Cheap", ResidenceTier::Moderate => "Moderate", ResidenceTier::Fancy => "Fancy" }
+    match tier {
+        ResidenceTier::Cheap => "Cheap",
+        ResidenceTier::Moderate => "Moderate",
+        ResidenceTier::Fancy => "Fancy",
+    }
 }
 
 fn residence_tier_id(tier: ResidenceTier) -> &'static str {
-    match tier { ResidenceTier::Cheap => "cheap", ResidenceTier::Moderate => "moderate", ResidenceTier::Fancy => "fancy" }
+    match tier {
+        ResidenceTier::Cheap => "cheap",
+        ResidenceTier::Moderate => "moderate",
+        ResidenceTier::Fancy => "fancy",
+    }
 }
 
 fn residence_offer_panel(
@@ -307,39 +315,42 @@ fn residence_offer_panel(
     current: Option<&CharacterResidence>,
     relationship: Option<&BackendCharacterRelationshipStatus>,
 ) -> Markup {
-    sidebar_section("Residences", html! {
-        @if let Some(current) = current {
-            p { "Current: " (residence_tier_label(current.tier)) " " (match current.tenure { ResidenceTenure::Renter => "rental", ResidenceTenure::Owner => "owned" })
-                @if !current.active { " (payment overdue)" }
-            }
-        } @else { p { "No primary residence." } }
-        @if let Some(relationship) = relationship {
-            @if let Some(spouse_id) = relationship.spouse_id { p { "Spouse: character #" (spouse_id) } }
-            @if let Some(partner_id) = relationship.courtship_partner_id {
-                p { "Courtship: " (relationship.courtship_kind.as_deref().unwrap_or("active")) " with character #" (partner_id)
-                    @if relationship.courtship_exposed { " (known to family)" }
+    sidebar_section(
+        "Residences",
+        html! {
+            @if let Some(current) = current {
+                p { "Current: " (residence_tier_label(current.tier)) " " (match current.tenure { ResidenceTenure::Renter => "rental", ResidenceTenure::Owner => "owned" })
+                    @if !current.active { " (payment overdue)" }
+                }
+            } @else { p { "No primary residence." } }
+            @if let Some(relationship) = relationship {
+                @if let Some(spouse_id) = relationship.spouse_id { p { "Spouse: character #" (spouse_id) } }
+                @if let Some(partner_id) = relationship.courtship_partner_id {
+                    p { "Courtship: " (relationship.courtship_kind.as_deref().unwrap_or("active")) " with character #" (partner_id)
+                        @if relationship.courtship_exposed { " (known to family)" }
+                    }
+                }
+                @if let Some(due_minute) = relationship.pregnancy_due_minute {
+                    p { "Expected birth at strategic minute " (due_minute)
+                        @if relationship.pregnancy_child_id.is_some() { " (birth recorded)" }
+                    }
                 }
             }
-            @if let Some(due_minute) = relationship.pregnancy_due_minute {
-                p { "Expected birth at strategic minute " (due_minute)
-                    @if relationship.pregnancy_child_id.is_some() { " (birth recorded)" }
+            @for offer in offers {
+                div class="residence-offer" {
+                    strong { (residence_tier_label(offer.tier)) }
+                    p { (offer.rent_per_period) " coin / 30 days" }
+                    p { (offer.purchase_price) " coin to buy" }
+                    form action=(format!("/settlements/{}/residences/rent/{}", settlement.id, residence_tier_id(offer.tier))) method="post" {
+                        button type="submit" class="btn btn-small" { "Rent" }
+                    }
+                    form action=(format!("/settlements/{}/residences/buy/{}", settlement.id, residence_tier_id(offer.tier))) method="post" {
+                        button type="submit" class="btn btn-small" { "Buy" }
+                    }
                 }
             }
-        }
-        @for offer in offers {
-            div class="residence-offer" {
-                strong { (residence_tier_label(offer.tier)) }
-                p { (offer.rent_per_period) " coin / 30 days" }
-                p { (offer.purchase_price) " coin to buy" }
-                form action=(format!("/settlements/{}/residences/rent/{}", settlement.id, residence_tier_id(offer.tier))) method="post" {
-                    button type="submit" class="btn btn-small" { "Rent" }
-                }
-                form action=(format!("/settlements/{}/residences/buy/{}", settlement.id, residence_tier_id(offer.tier))) method="post" {
-                    button type="submit" class="btn btn-small" { "Buy" }
-                }
-            }
-        }
-    })
+        },
+    )
 }
 
 fn settlement_alias_labels(settlement: &Settlement, aliases: &[SettlementAlias]) -> Vec<String> {
@@ -925,7 +936,7 @@ mod tests {
             social_notification_count: 0,
             automatic_social_chat_enabled: false,
         };
-        let residences = settlement_npc_location_page(
+        let residences = settlement_resident_location_page(
             &settlement,
             &character,
             &[],
@@ -949,7 +960,7 @@ mod tests {
         colocated.economy.services = vec![adventuresim_world_schema::SettlementService::Market];
         let mut colocated_character = character;
         colocated_character.current_settlement_id = Some(colocated.id.clone());
-        let colocated_places = settlement_npc_location_page(
+        let colocated_places = settlement_resident_location_page(
             &colocated,
             &colocated_character,
             &[],

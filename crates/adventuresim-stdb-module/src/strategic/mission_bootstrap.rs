@@ -913,9 +913,9 @@ fn ensure_settlement_activity_inner(
     // World import writes only canonical settlement facts. These derived
     // service rows are instead materialized when settlement activity is used.
     crate::repair::ensure_settlement_smith(ctx, settlement_id);
-    crate::residence::ensure_settlement_residence_offers(ctx, settlement_id).map_err(
-        |error| settlement_activity_stage_error(settlement_id, "residence offers", error),
-    )?;
+    crate::residence::ensure_settlement_residence_offers(ctx, settlement_id).map_err(|error| {
+        settlement_activity_stage_error(settlement_id, "residence offers", error)
+    })?;
     crate::settlement_population::ensure_settlement_population(ctx, settlement_id).map_err(
         |error| settlement_activity_stage_error(settlement_id, "settlement population", error),
     )?;
@@ -1036,115 +1036,43 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
             .settlement_id()
             .filter(&settlement_id.to_string())
             .filter(|offer| offer.status == RecruitmentOfferStatus::Open)
-            .map(|offer| offer.settlement_npc_id)
+            .map(|offer| offer.settlement_resident_id)
             .collect();
         let Some((npc, presence)) = ctx
             .db
-            .settlement_npc()
+            .settlement_resident_profile()
             .home_settlement_id()
             .filter(&settlement_id.to_string())
-            .filter(|npc| !used_npcs.contains(&npc.id))
+            .filter(|npc| !used_npcs.contains(&npc.character_id))
             .filter_map(|npc| {
                 ctx.db
-                    .settlement_npc_presence()
-                    .npc_id()
-                    .find(&npc.id)
+                    .settlement_resident_presence()
+                    .character_id()
+                    .find(npc.character_id)
                     .filter(|presence| crate::settlement_population::npc_is_present(presence, now))
                     .map(|presence| (npc, presence))
             })
-            .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.id.clone()))
+            .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.character_id.clone()))
         else {
             break;
         };
-        let leader_name = npc.name.clone();
-        let mut leader_id =
-            adventuresim_core::settlement_population::stable_hash(&npc.id) | (1_u64 << 63);
-        while ctx.db.character().id().find(leader_id).is_some() {
-            leader_id = leader_id.wrapping_add(1) | (1_u64 << 63);
+        let leader_id = npc.character_id;
+        let mut leader = ctx
+            .db
+            .character()
+            .id()
+            .find(leader_id)
+            .ok_or("Recruiting resident has no Character")?;
+        let leader_name = leader.name.clone();
+        if leader.party_id.is_none() {
+            crate::strategic::create_solo_party_for_character(ctx, leader_id)?;
+            leader = ctx
+                .db
+                .character()
+                .id()
+                .find(leader_id)
+                .ok_or("Recruiting resident disappeared")?;
         }
-        let age_draw = adventuresim_core::settlement_population::stable_hash(&format!(
-            "{}:materialized-age",
-            npc.id
-        ));
-        let (minimum_age, span) = match npc.age_band {
-            crate::settlement_population::NpcAgeBand::Child => (6, 7),
-            crate::settlement_population::NpcAgeBand::Adolescent => (13, 5),
-            crate::settlement_population::NpcAgeBand::Adult => (18, 42),
-            crate::settlement_population::NpcAgeBand::Elder => (60, 16),
-        };
-        let organization_id = if npc.organization_id.is_empty() {
-            let profession = match (npc.service_id.as_str(), npc.profession.as_str()) {
-                ("merchants", _) | ("books", _) | (_, "merchant") => {
-                    Some(adventuresim_core::organization::StartingProfession::Merchant)
-                }
-                ("weapons", _) | (_, "weaponsmith") => {
-                    Some(adventuresim_core::organization::StartingProfession::Weaponsmith)
-                }
-                ("armor", _) | (_, "armourer") => {
-                    Some(adventuresim_core::organization::StartingProfession::Armourer)
-                }
-                ("clothing", _) | (_, "tailor") => {
-                    Some(adventuresim_core::organization::StartingProfession::Tailor)
-                }
-                ("herbalist", _) | (_, "herbalist") => {
-                    Some(adventuresim_core::organization::StartingProfession::Herbalist)
-                }
-                ("inn", _) | (_, "innkeeper") => {
-                    Some(adventuresim_core::organization::StartingProfession::Cook)
-                }
-                ("religion", _) | (_, "cleric") => Some(
-                    adventuresim_core::organization::StartingProfession::LearnedReligiousPractitioner,
-                ),
-                _ => None,
-            };
-            profession.and_then(|profession| {
-                adventuresim_core::organization::catalog()
-                    .organizations
-                    .iter()
-                    .find(|definition| {
-                        definition
-                            .starting_role
-                            .as_ref()
-                            .is_some_and(|role| role.profession == profession)
-                    })
-                    .map(|definition| definition.id.clone())
-            })
-        } else {
-            Some(npc.organization_id.clone())
-        };
-        crate::character::insert_new_npc_character_with_life(
-            ctx,
-            leader_name.clone(),
-            leader_id,
-            true,
-            crate::character::NpcLifeFacts {
-                age_years: minimum_age + (age_draw % span) as u16,
-                organization_id,
-                literacy: (crate::social_estate::settlement_npc_estate(ctx, &npc.id)
-                    .is_ok_and(|estate| {
-                        estate == adventuresim_core::organization::Estate::Noble
-                    }))
-                .then(|| {
-                    let settlement = ctx
-                        .db
-                        .settlement()
-                        .id()
-                        .find(&settlement_id.to_string())
-                        .expect("recruitment settlement exists");
-                    if settlement.languages.dominant_german()
-                        == adventuresim_world_schema::OralLanguage::Low
-                    {
-                        adventuresim_world_schema::WrittenLanguage::Low
-                    } else {
-                        adventuresim_world_schema::WrittenLanguage::German
-                    }
-                }),
-            },
-        )?;
-        crate::social_estate::copy_settlement_npc_social_roles_to_character(
-            ctx, &npc.id, leader_id,
-        )?;
-        let mut leader = ctx.db.character().id().find(leader_id).unwrap();
         leader.current_settlement_id = Some(settlement_id.to_string());
         ctx.db.character().id().update(leader.clone());
         crate::character::set_character_languages_for_settlement(
@@ -1187,7 +1115,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
                 quantity: 3,
                 weapon_precision: (ctx.random::<u64>() % 4) as f32 * 0.5,
             });
-        let source_key = format!("settlement-recruiter:{}", npc.id);
+        let source_key = format!("settlement-recruiter:{}", npc.character_id);
         let offer_key = format!("recruitment-offer:{source_key}");
         ctx.db.recruitment_offer().insert(RecruitmentOffer {
             id_key: offer_key.clone(),
@@ -1195,7 +1123,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
             source_id: RecruitmentSourceId { value: source_key },
             recruiting_party_id: party_id,
             settlement_id: settlement_id.to_string(),
-            settlement_npc_id: npc.id,
+            settlement_resident_id: npc.character_id,
             location_id: presence.location_id,
             leader_id,
             status: RecruitmentOfferStatus::Open,
@@ -1239,11 +1167,19 @@ fn generated_witness_candidates(
     let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep, settlement_id);
     let mut candidates = ctx
         .db
-        .settlement_npc()
+        .settlement_resident_profile()
         .home_settlement_id()
         .filter(&settlement_id.to_string())
-        .filter_map(|npc| {
-            let presence = ctx.db.settlement_npc_presence().npc_id().find(&npc.id)?;
+        .filter_map(|profile| {
+            let npc = crate::settlement_population::resolve_settlement_resident(
+                ctx,
+                profile.character_id,
+            )?;
+            let presence = ctx
+                .db
+                .settlement_resident_presence()
+                .character_id()
+                .find(npc.character_id)?;
             let demographic = generated_npc_demographic(&npc);
             let mut circumstances = BTreeSet::from([
                 Circumstance::NightWindow,
@@ -1265,12 +1201,12 @@ fn generated_witness_candidates(
             let sex = format!("{:?}", npc.sex).to_ascii_lowercase();
             let presence_version = generated_npc_presence_version(&npc, &presence);
             Some(WitnessCandidate {
-                npc_id: npc.id,
-                display_name: npc.name,
+                resident_character_id: npc.character_id,
+                display_name: npc.name.clone(),
                 demographic,
                 age_band,
                 sex,
-                profession: npc.profession,
+                profession: npc.profession.clone(),
                 visible_description: generated_witness_visible_description(
                     &npc.height,
                     &npc.build,
@@ -1285,7 +1221,7 @@ fn generated_witness_candidates(
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
+    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
     candidates
 }
 
@@ -1309,22 +1245,30 @@ fn developer_witness_candidates(
     let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep, settlement_id);
     let mut candidates = ctx
         .db
-        .settlement_npc()
+        .settlement_resident_profile()
         .home_settlement_id()
         .filter(&settlement_id.to_string())
-        .filter_map(|npc| {
-            let presence = ctx.db.settlement_npc_presence().npc_id().find(&npc.id)?;
+        .filter_map(|profile| {
+            let npc = crate::settlement_population::resolve_settlement_resident(
+                ctx,
+                profile.character_id,
+            )?;
+            let presence = ctx
+                .db
+                .settlement_resident_presence()
+                .character_id()
+                .find(npc.character_id)?;
             developer_npc_witness_candidate(&npc, &presence)
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
+    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
     candidates
 }
 
 pub(crate) fn developer_npc_witness_candidate(
-    npc: &crate::settlement_population::SettlementNpc,
-    presence: &crate::settlement_population::SettlementNpcPresence,
+    npc: &crate::settlement_population::ResolvedSettlementResident,
+    presence: &crate::settlement_population::SettlementResidentPresence,
 ) -> Option<adventuresim_core::quest_generation::WitnessCandidate> {
     use adventuresim_core::quest_generation::{
         VisibleWitnessCandidateInput, visible_witness_candidate,
@@ -1332,7 +1276,7 @@ pub(crate) fn developer_npc_witness_candidate(
     let age_band = format!("{:?}", npc.age_band);
     let presentation = format!("{:?}", npc.presentation);
     visible_witness_candidate(VisibleWitnessCandidateInput {
-        npc_id: &npc.id,
+        resident_character_id: npc.character_id,
         display_name: &npc.name,
         age_band: &age_band,
         presentation: &presentation,
@@ -1351,7 +1295,7 @@ pub(crate) fn developer_npc_witness_candidate(
 }
 
 pub(crate) fn generated_npc_demographic(
-    npc: &crate::settlement_population::SettlementNpc,
+    npc: &crate::settlement_population::ResolvedSettlementResident,
 ) -> adventuresim_core::quest_generation::WitnessDemographic {
     let age_band = format!("{:?}", npc.age_band).to_ascii_lowercase();
     let sex = format!("{:?}", npc.sex).to_ascii_lowercase();
@@ -1363,12 +1307,12 @@ pub(crate) fn generated_npc_demographic(
 }
 
 pub(crate) fn generated_npc_presence_version(
-    npc: &crate::settlement_population::SettlementNpc,
-    presence: &crate::settlement_population::SettlementNpcPresence,
+    npc: &crate::settlement_population::ResolvedSettlementResident,
+    presence: &crate::settlement_population::SettlementResidentPresence,
 ) -> u64 {
     adventuresim_core::settlement_population::stable_hash(&format!(
         "victim-presence-v1:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{}",
-        npc.id,
+        npc.character_id,
         npc.age_band,
         npc.sex,
         npc.profession,
@@ -1648,19 +1592,10 @@ fn materialize_generated_quest(
             coordinates_are_geographic: geographic,
             distance_m,
         };
-        if let Some(existing) = ctx
-            .db
-            .case_site_authority()
-            .id_key()
-            .find(&row.id_key)
-        {
+        if let Some(existing) = ctx.db.case_site_authority().id_key().find(&row.id_key) {
             return Err(format!(
                 "Generated case-site ID collision: {} for {} ({}) already belongs to {} ({})",
-                row.id_key,
-                generated.canonical_case_id,
-                row.name,
-                existing.case_id,
-                existing.name
+                row.id_key, generated.canonical_case_id, row.name, existing.case_id, existing.name
             ));
         }
         ctx.db.case_site_authority().insert(row.clone());
@@ -1736,7 +1671,7 @@ fn materialize_generated_quest(
             crate::investigation::InvestigationTestimonyBundle {
                 id: witness.id.0.clone(),
                 case_id: generated.canonical_case_id.clone(),
-                witness_ref: witness.npc_id.clone(),
+                witness_ref: witness.resident_character_id.to_string(),
                 reliability_json: serde_json::to_string(
                     &witness
                         .testimony
@@ -2034,14 +1969,15 @@ mod developer_quest_source_tests {
     #[test]
     fn developer_witness_projection_matches_core_for_every_presentation() {
         use crate::settlement_population::{
-            NpcAgeBand, NpcPresentation, NpcSex, SettlementNpc, SettlementNpcPresence,
+            NpcAgeBand, NpcPresentation, NpcSex, SettlementResidentPresence,
+            SettlementResidentProfile,
         };
         use adventuresim_core::quest_generation::{
             VisibleWitnessCandidateInput, visible_witness_candidate,
         };
 
-        let presence = SettlementNpcPresence {
-            npc_id: "npc:visible".into(),
+        let presence = SettlementResidentPresence {
+            character_id: "npc:visible".into(),
             settlement_id: "settlement:visible".into(),
             location_id: "market".into(),
             start_minute: 480,
@@ -2053,7 +1989,7 @@ mod developer_quest_source_tests {
             NpcPresentation::Woman,
             NpcPresentation::Ambiguous,
         ] {
-            let npc = SettlementNpc {
+            let npc = SettlementResidentProfile {
                 id: "npc:visible".into(),
                 projection_id: 42,
                 home_settlement_id: "settlement:visible".into(),
@@ -2078,7 +2014,7 @@ mod developer_quest_source_tests {
             let age_band = format!("{:?}", npc.age_band);
             let presentation = format!("{:?}", npc.presentation);
             let direct = visible_witness_candidate(VisibleWitnessCandidateInput {
-                npc_id: &npc.id,
+                resident_character_id: &npc.character_id,
                 display_name: &npc.name,
                 age_band: &age_band,
                 presentation: &presentation,

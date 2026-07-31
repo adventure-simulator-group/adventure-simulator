@@ -223,7 +223,7 @@ impl LiveRunner {
                 let merchant_count = self
                     .connection
                     .db
-                    .backend_settlement_npcs()
+                    .backend_settlement_residents()
                     .iter()
                     .filter(|npc| {
                         npc.home_settlement_id == settlement_id && npc.service_id == "merchants"
@@ -231,10 +231,10 @@ impl LiveRunner {
                     .filter(|npc| {
                         self.connection
                             .db
-                            .settlement_npc_presence()
+                            .settlement_resident_presence()
                             .iter()
                             .any(|presence| {
-                                presence.npc_id == npc.id
+                                presence.character_id == npc.character_id
                                     && presence.settlement_id == settlement_id
                                     && presence.location_id == "market"
                                     && presence.is_default
@@ -941,7 +941,11 @@ impl LiveRunner {
         Ok(Some(JourneyTravelOutcome::Completed))
     }
 
-    pub(super) fn choose_quest(&self, party: &Party, profile: &AgentProfile) -> Option<BackendContract> {
+    pub(super) fn choose_quest(
+        &self,
+        party: &Party,
+        profile: &AgentProfile,
+    ) -> Option<BackendContract> {
         let settlement = party.current_settlement_id.as_ref()?;
         let mut quests: Vec<_> = self
             .connection
@@ -972,5 +976,4 @@ impl LiveRunner {
                     )
             })
     }
-
 }

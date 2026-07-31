@@ -6,65 +6,65 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SpendTimeWithSettlementNpcArgs {
+pub(super) struct SpendTimeWithSettlementResidentArgs {
     pub actor_id: u64,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub requested_minutes: u64,
     pub action_id: String,
 }
 
-impl From<SpendTimeWithSettlementNpcArgs> for super::Reducer {
-    fn from(args: SpendTimeWithSettlementNpcArgs) -> Self {
-        Self::SpendTimeWithSettlementNpc {
+impl From<SpendTimeWithSettlementResidentArgs> for super::Reducer {
+    fn from(args: SpendTimeWithSettlementResidentArgs) -> Self {
+        Self::SpendTimeWithSettlementResident {
             actor_id: args.actor_id,
-            npc_id: args.npc_id,
+            resident_character_id: args.resident_character_id,
             requested_minutes: args.requested_minutes,
             action_id: args.action_id,
         }
     }
 }
 
-impl __sdk::InModule for SpendTimeWithSettlementNpcArgs {
+impl __sdk::InModule for SpendTimeWithSettlementResidentArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `spend_time_with_settlement_npc`.
+/// Extension trait for access to the reducer `spend_time_with_settlement_resident`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait spend_time_with_settlement_npc {
-    /// Request that the remote module invoke the reducer `spend_time_with_settlement_npc` to run as soon as possible.
+pub trait spend_time_with_settlement_resident {
+    /// Request that the remote module invoke the reducer `spend_time_with_settlement_resident` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`spend_time_with_settlement_npc:spend_time_with_settlement_npc_then`] to run a callback after the reducer completes.
-    fn spend_time_with_settlement_npc(
+    /// /// Use [`spend_time_with_settlement_resident:spend_time_with_settlement_resident_then`] to run a callback after the reducer completes.
+    fn spend_time_with_settlement_resident(
         &self,
         actor_id: u64,
-        npc_id: String,
+        resident_character_id: u64,
         requested_minutes: u64,
         action_id: String,
     ) -> __sdk::Result<()> {
-        self.spend_time_with_settlement_npc_then(
+        self.spend_time_with_settlement_resident_then(
             actor_id,
-            npc_id,
+            resident_character_id,
             requested_minutes,
             action_id,
             |_, _| {},
         )
     }
 
-    /// Request that the remote module invoke the reducer `spend_time_with_settlement_npc` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `spend_time_with_settlement_resident` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn spend_time_with_settlement_npc_then(
+    fn spend_time_with_settlement_resident_then(
         &self,
         actor_id: u64,
-        npc_id: String,
+        resident_character_id: u64,
         requested_minutes: u64,
         action_id: String,
 
@@ -76,11 +76,11 @@ pub trait spend_time_with_settlement_npc {
     ) -> __sdk::Result<()>;
 }
 
-impl spend_time_with_settlement_npc for super::RemoteReducers {
-    fn spend_time_with_settlement_npc_then(
+impl spend_time_with_settlement_resident for super::RemoteReducers {
+    fn spend_time_with_settlement_resident_then(
         &self,
         actor_id: u64,
-        npc_id: String,
+        resident_character_id: u64,
         requested_minutes: u64,
         action_id: String,
 
@@ -91,9 +91,9 @@ impl spend_time_with_settlement_npc for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            SpendTimeWithSettlementNpcArgs {
+            SpendTimeWithSettlementResidentArgs {
                 actor_id,
-                npc_id,
+                resident_character_id,
                 requested_minutes,
                 action_id,
             },

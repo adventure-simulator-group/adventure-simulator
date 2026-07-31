@@ -160,34 +160,34 @@ impl<'ctx> RecruitmentOfferRecruitingPartyIdUnique<'ctx> {
     }
 }
 
-/// Access to the `settlement_npc_id` unique index on the table `recruitment_offer`,
+/// Access to the `settlement_resident_id` unique index on the table `recruitment_offer`,
 /// which allows point queries on the field of the same name
-/// via the [`RecruitmentOfferSettlementNpcIdUnique::find`] method.
+/// via the [`RecruitmentOfferSettlementResidentIdUnique::find`] method.
 ///
 /// Users are encouraged not to explicitly reference this type,
 /// but to directly chain method calls,
-/// like `ctx.db.recruitment_offer().settlement_npc_id().find(...)`.
-pub struct RecruitmentOfferSettlementNpcIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<RecruitmentOffer, String>,
+/// like `ctx.db.recruitment_offer().settlement_resident_id().find(...)`.
+pub struct RecruitmentOfferSettlementResidentIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<RecruitmentOffer, u64>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> RecruitmentOfferTableHandle<'ctx> {
-    /// Get a handle on the `settlement_npc_id` unique index on the table `recruitment_offer`.
-    pub fn settlement_npc_id(&self) -> RecruitmentOfferSettlementNpcIdUnique<'ctx> {
-        RecruitmentOfferSettlementNpcIdUnique {
+    /// Get a handle on the `settlement_resident_id` unique index on the table `recruitment_offer`.
+    pub fn settlement_resident_id(&self) -> RecruitmentOfferSettlementResidentIdUnique<'ctx> {
+        RecruitmentOfferSettlementResidentIdUnique {
             imp: self
                 .imp
-                .get_unique_constraint::<String>("settlement_npc_id"),
+                .get_unique_constraint::<u64>("settlement_resident_id"),
             phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'ctx> RecruitmentOfferSettlementNpcIdUnique<'ctx> {
-    /// Find the subscribed row whose `settlement_npc_id` column value is equal to `col_val`,
+impl<'ctx> RecruitmentOfferSettlementResidentIdUnique<'ctx> {
+    /// Find the subscribed row whose `settlement_resident_id` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<RecruitmentOffer> {
+    pub fn find(&self, col_val: &u64) -> Option<RecruitmentOffer> {
         self.imp.find(col_val)
     }
 }
@@ -197,7 +197,8 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
     let _table = client_cache.get_or_make_table::<RecruitmentOffer>("recruitment_offer");
     _table.add_unique_constraint::<String>("id_key", |row| &row.id_key);
     _table.add_unique_constraint::<String>("recruiting_party_id", |row| &row.recruiting_party_id);
-    _table.add_unique_constraint::<String>("settlement_npc_id", |row| &row.settlement_npc_id);
+    _table
+        .add_unique_constraint::<u64>("settlement_resident_id", |row| &row.settlement_resident_id);
 }
 
 #[doc(hidden)]

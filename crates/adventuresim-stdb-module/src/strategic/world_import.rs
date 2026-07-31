@@ -300,29 +300,34 @@ fn discard_placeholder_settlement_data(ctx: &ReducerContext) -> Result<(), Strin
         }
         for presence in ctx
             .db
-            .settlement_npc_presence()
+            .settlement_resident_presence()
             .settlement_id()
             .filter(settlement_id)
             .collect::<Vec<_>>()
         {
             ctx.db
-                .settlement_npc_presence()
-                .npc_id()
-                .delete(&presence.npc_id);
+                .settlement_resident_presence()
+                .character_id()
+                .delete(&presence.character_id);
         }
         for npc in ctx
             .db
-            .settlement_npc()
+            .settlement_resident_profile()
             .home_settlement_id()
             .filter(settlement_id)
             .collect::<Vec<_>>()
         {
-            crate::social_estate::delete_settlement_npc_social_roles(ctx, &npc.id);
             ctx.db
-                .settlement_npc_seed_explanation()
-                .npc_id()
-                .delete(&npc.id);
-            ctx.db.settlement_npc().id().delete(&npc.id);
+                .settlement_resident_seed_explanation()
+                .character_id()
+                .delete(npc.character_id);
+            ctx.db
+                .settlement_resident_profile()
+                .character_id()
+                .delete(npc.character_id);
+            if let Some(character) = ctx.db.character().id().find(npc.character_id) {
+                crate::character::delete_character_for_world_import(ctx, character)?;
+            }
         }
         crate::social_estate::delete_unreferenced_settlement_social_organizations(
             ctx,

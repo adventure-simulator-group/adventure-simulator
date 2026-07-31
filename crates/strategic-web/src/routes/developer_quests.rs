@@ -3,7 +3,7 @@
 //! Developer mode is browser-local UI hiding, not authorization. These routes
 //! require an active character but intentionally add no developer credential.
 
-use super::{AppState, BackendSettlementNpcRow as NpcRow};
+use super::{AppState, BackendSettlementResidentRow as NpcRow};
 use crate::{
     session::Session,
     spacetimedb::{BackendChallenge, Character, CharacterTime, Settlement, sql_string_literal},
@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 
 #[derive(Clone, Deserialize)]
 struct PresenceRow {
-    npc_id: String,
+    resident_character_id: u64,
     settlement_id: String,
     location_id: String,
     start_minute: u16,
@@ -88,9 +88,9 @@ async fn active_context(
         .map_or(0, |time| time.minutes);
     let literal = sql_string_literal(&settlement_id);
     let npc_sql =
-        format!("SELECT * FROM backend_settlement_npcs WHERE home_settlement_id = {literal}");
+        format!("SELECT * FROM backend_settlement_residents WHERE home_settlement_id = {literal}");
     let presence_sql =
-        format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {literal}");
+        format!("SELECT * FROM settlement_resident_presence WHERE settlement_id = {literal}");
     let (npcs, presences) = tokio::join!(
         state.db.query::<NpcRow>(&npc_sql),
         state.db.query::<PresenceRow>(&presence_sql)
@@ -110,9 +110,11 @@ async fn active_context(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .into_iter()
         .filter_map(|npc| {
-            let presence = presences.iter().find(|row| row.npc_id == npc.id)?;
+            let presence = presences
+                .iter()
+                .find(|row| row.resident_character_id == npc.character_id)?;
             visible_witness_candidate(VisibleWitnessCandidateInput {
-                npc_id: &npc.id,
+                resident_character_id: npc.character_id,
                 display_name: &npc.name,
                 age_band: &npc.age_band,
                 presentation: &npc.presentation,
@@ -131,7 +133,7 @@ async fn active_context(
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
+    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
     let context = GenerationContext {
         seed,
         observer_entropy_hi: seed.rotate_left(17),
@@ -501,11 +503,11 @@ mod tests {
             .expect("developer quest production source");
         let transport = include_str!("mod.rs");
         let row = transport
-            .split("pub(crate) struct BackendSettlementNpcRow {")
+            .split("pub(crate) struct BackendSettlementResidentRow {")
             .nth(1)
             .and_then(|tail| tail.split_once('}').map(|(body, _)| body))
             .expect("NPC transport row");
-        assert!(source.contains("BackendSettlementNpcRow as NpcRow"));
+        assert!(source.contains("BackendSettlementResidentRow as NpcRow"));
         assert!(row.contains("presentation: String"));
         assert!(!row.contains("sex: String"));
         assert!(!row.contains("projection_id:"));

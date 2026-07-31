@@ -71,8 +71,8 @@ realized clamped affinity change, never the exact relationship value.
 
 ## Persistent settlement actors
 
-Settlement dialogue is authorized against persistent `settlement_npc` identities and
-their authoritative strategic `settlement_npc_presence`, rather than a client-created
+Settlement dialogue is authorized against persistent `settlement_resident` identities and
+their authoritative strategic `settlement_resident_presence`, rather than a client-created
 `<settlement>:<service>` name. A location may contain several NPCs; changing the
 addressed portrait changes the actor while the character remains at that location.
 Service providers retain their service conversation, while ordinary residents use the

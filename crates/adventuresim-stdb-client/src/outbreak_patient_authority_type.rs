@@ -10,8 +10,8 @@ pub struct OutbreakPatientAuthority {
     pub id: String,
     pub gateway_bucket: u8,
     pub case_id: String,
-    pub presentation_npc_id: String,
-    pub family_npc_id: Option<String>,
+    pub presentation_resident_character_id: u64,
+    pub family_resident_character_id: Option<u64>,
     pub patient_key: u64,
     pub episode_id: u64,
     pub disease_id: String,
@@ -38,8 +38,10 @@ pub struct OutbreakPatientAuthorityCols {
     pub id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
     pub gateway_bucket: __sdk::__query_builder::Col<OutbreakPatientAuthority, u8>,
     pub case_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
-    pub presentation_npc_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
-    pub family_npc_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<String>>,
+    pub presentation_resident_character_id:
+        __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
+    pub family_resident_character_id:
+        __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<u64>>,
     pub patient_key: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
     pub episode_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
     pub disease_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
@@ -62,11 +64,14 @@ impl __sdk::__query_builder::HasCols for OutbreakPatientAuthority {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
-            presentation_npc_id: __sdk::__query_builder::Col::new(
+            presentation_resident_character_id: __sdk::__query_builder::Col::new(
                 table_name,
-                "presentation_npc_id",
+                "presentation_resident_character_id",
             ),
-            family_npc_id: __sdk::__query_builder::Col::new(table_name, "family_npc_id"),
+            family_resident_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "family_resident_character_id",
+            ),
             patient_key: __sdk::__query_builder::Col::new(table_name, "patient_key"),
             episode_id: __sdk::__query_builder::Col::new(table_name, "episode_id"),
             disease_id: __sdk::__query_builder::Col::new(table_name, "disease_id"),
@@ -101,7 +106,8 @@ pub struct OutbreakPatientAuthorityIxCols {
     pub episode_id: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, u64>,
     pub gateway_bucket: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, u8>,
     pub id: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, String>,
-    pub presentation_npc_id: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, String>,
+    pub presentation_resident_character_id:
+        __sdk::__query_builder::IxCol<OutbreakPatientAuthority, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for OutbreakPatientAuthority {
@@ -112,9 +118,9 @@ impl __sdk::__query_builder::HasIxCols for OutbreakPatientAuthority {
             episode_id: __sdk::__query_builder::IxCol::new(table_name, "episode_id"),
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            presentation_npc_id: __sdk::__query_builder::IxCol::new(
+            presentation_resident_character_id: __sdk::__query_builder::IxCol::new(
                 table_name,
-                "presentation_npc_id",
+                "presentation_resident_character_id",
             ),
         }
     }

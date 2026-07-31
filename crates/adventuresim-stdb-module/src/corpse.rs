@@ -22,8 +22,8 @@ use crate::{
     investigation::character_case_site_occupancy,
     item::inventory_item,
     outbreak::outbreak_patient_authority,
-    settlement_population::{SettlementNpc, settlement_npc},
-    social::settlement_npc_relationship,
+    settlement_population::{SettlementResidentProfile, settlement_resident_profile},
+    social::{character_familiarity, current_affinity},
     strategic::{settlement, strategic_encounter, strategic_gateway_authority__view},
     surgery::{limb_injury, retained_projectile},
     time::{advance_character_wait_time, character_time, character_time__view},
@@ -122,7 +122,7 @@ pub struct CorpseFamilyBinding {
     #[index(btree)]
     pub corpse_id: String,
     #[index(btree)]
-    pub npc_id: String,
+    pub resident_character_id: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -134,7 +134,7 @@ pub struct CorpsePermission {
     pub corpse_id: String,
     #[index(btree)]
     pub party_id: String,
-    pub granted_by_npc_id: String,
+    pub granted_by_resident_character_id: u64,
     pub kind: CorpsePermissionKind,
     pub scope: CorpsePermissionScope,
     pub granted_minute: u64,
@@ -149,7 +149,7 @@ pub struct CorpsePermissionAttempt {
     pub corpse_id: String,
     #[index(btree)]
     pub party_id: String,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub scope: CorpsePermissionScope,
     pub approach: String,
     pub granted: bool,
@@ -330,8 +330,11 @@ fn apply_unauthorized_consequences(
         crate::social::apply_corpse_family_offense(
             ctx,
             actor_id,
-            &family.npc_id,
-            &format!("unauthorized-autopsy:{action_id}:{}", family.npc_id),
+            family.resident_character_id,
+            &format!(
+                "unauthorized-autopsy:{action_id}:{}",
+                family.resident_character_id
+            ),
             -18.0,
             -12.0,
         )?;
@@ -937,7 +940,7 @@ pub(crate) fn seed_autopsy_demo(ctx: &ReducerContext, actor_id: u64) -> Result<(
 
     let family_npc = ctx
         .db
-        .settlement_npc()
+        .settlement_resident_profile()
         .home_settlement_id()
         .filter(&settlement_id)
         .filter(|npc| {
@@ -947,14 +950,14 @@ pub(crate) fn seed_autopsy_demo(ctx: &ReducerContext, actor_id: u64) -> Result<(
                     "reeve" | "local lord" | "magistrate"
                 )
         })
-        .min_by(|left, right| left.id.cmp(&right.id))
+        .min_by_key(|npc| npc.character_id)
         .ok_or("Autopsy demo settlement has no NPC available as explicit family")?;
     for corpse_id in [recent_id, buried_id] {
         materialize_corpse_family_bindings(
             ctx,
             &corpse_id,
             &settlement_id,
-            std::slice::from_ref(&family_npc.id),
+            std::slice::from_ref(&family_npc.character_id),
         )?;
     }
     Ok(())
@@ -969,30 +972,30 @@ pub(crate) fn materialize_corpse_family_bindings(
     ctx: &ReducerContext,
     corpse_id: &str,
     settlement_id: &str,
-    family_npc_ids: &[String],
+    family_resident_character_ids: &[u64],
 ) -> Result<(), String> {
-    if family_npc_ids.len() > MAX_BOUND_FAMILY_MEMBERS {
+    if family_resident_character_ids.len() > MAX_BOUND_FAMILY_MEMBERS {
         return Err("Corpse family binding exceeds its bounded limit".into());
     }
-    let mut unique = family_npc_ids.to_vec();
+    let mut unique = family_resident_character_ids.to_vec();
     unique.sort();
     unique.dedup();
-    for npc_id in unique {
+    for resident_character_id in unique {
         let npc = ctx
             .db
-            .settlement_npc()
-            .id()
-            .find(&npc_id)
+            .settlement_resident_profile()
+            .character_id()
+            .find(resident_character_id)
             .ok_or("Corpse family binding references an unknown NPC")?;
         if npc.home_settlement_id != settlement_id {
             return Err("Corpse family member belongs to another settlement".into());
         }
-        let id = format!("{corpse_id}:{npc_id}");
+        let id = format!("{corpse_id}:{resident_character_id}");
         if ctx.db.corpse_family_binding().id().find(&id).is_none() {
             ctx.db.corpse_family_binding().insert(CorpseFamilyBinding {
                 id,
                 corpse_id: corpse_id.into(),
-                npc_id,
+                resident_character_id,
             });
         }
     }
@@ -1556,8 +1559,11 @@ pub fn burn_corpse(
             crate::social::apply_corpse_family_offense(
                 ctx,
                 actor_id,
-                &family.npc_id,
-                &format!("corpse-burning:{receipt_id}:{}", family.npc_id),
+                family.resident_character_id,
+                &format!(
+                    "corpse-burning:{receipt_id}:{}",
+                    family.resident_character_id
+                ),
                 0.0,
                 family_affinity_delta,
             )?;
@@ -1586,7 +1592,7 @@ pub(crate) fn grant_permission_from_dialogue(
     ctx: &ReducerContext,
     actor_id: u64,
     corpse_id: &str,
-    npc_id: &str,
+    resident_character_id: u64,
     scope: CorpsePermissionScope,
     approach: &str,
 ) -> Result<bool, String> {
@@ -1606,9 +1612,9 @@ pub(crate) fn grant_permission_from_dialogue(
     }
     let npc = ctx
         .db
-        .settlement_npc()
-        .id()
-        .find(&npc_id.to_owned())
+        .settlement_resident_profile()
+        .character_id()
+        .find(resident_character_id)
         .ok_or("NPC not found")?;
     let kind = permission_kind_for_npc(ctx, &corpse, &npc)
         .ok_or("NPC cannot grant permission for this corpse")?;
@@ -1628,19 +1634,23 @@ pub(crate) fn grant_permission_from_dialogue(
         Approach::GuildPetition => "guild",
     };
     let scope_label = permission_scope_label(scope);
-    let attempt_id = format!("{corpse_id}:{party_id}:{npc_id}:{scope_label}:{approach_label}");
+    let attempt_id =
+        format!("{corpse_id}:{party_id}:{resident_character_id}:{scope_label}:{approach_label}");
     if let Some(attempt) = ctx.db.corpse_permission_attempt().id().find(&attempt_id) {
         return Ok(attempt.granted);
     }
-    let relationship = ctx
+    let affinity = current_affinity(ctx, resident_character_id, actor_id);
+    let (low_id, high_id) =
+        adventuresim_core::social::canonical_pair(actor_id, resident_character_id)
+            .ok_or("Permission petitioner and resident must differ")?;
+    let familiarity_minutes = ctx
         .db
-        .settlement_npc_relationship()
+        .character_familiarity()
         .id()
-        .find(&format!("{actor_id}:{npc_id}"));
-    let affinity = relationship.as_ref().map_or(0.0, |row| row.affinity_anchor);
-    let familiarity_bps = relationship.as_ref().map_or(0, |row| {
-        ((row.shared_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16
-    });
+        .find(&format!("{low_id}:{high_id}"))
+        .map_or(0, |row| row.shared_minutes);
+    let familiarity_bps =
+        ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
     let (fame, infamy) = crate::reputation::local_reputation(ctx, actor_id, &corpse.settlement_id);
     let reputation_modifier =
         adventuresim_core::reputation::npc_reaction_modifier(fame, infamy, familiarity_bps);
@@ -1706,9 +1716,7 @@ pub(crate) fn grant_permission_from_dialogue(
         skill_check,
         language_coefficient,
         affinity,
-        familiarity_hours: relationship
-            .as_ref()
-            .map_or(0.0, |row| row.shared_minutes as f32 / 60.0),
+        familiarity_hours: familiarity_minutes as f32 / 60.0,
         reputation_modifier,
         professional_fit,
         authority_fit,
@@ -1722,7 +1730,7 @@ pub(crate) fn grant_permission_from_dialogue(
             id: attempt_id,
             corpse_id: corpse_id.into(),
             party_id: party_id.clone(),
-            npc_id: npc_id.into(),
+            resident_character_id,
             scope,
             approach: approach_label.into(),
             granted,
@@ -1734,7 +1742,7 @@ pub(crate) fn grant_permission_from_dialogue(
             id,
             corpse_id: corpse_id.into(),
             party_id: party_id.clone(),
-            granted_by_npc_id: npc_id.into(),
+            granted_by_resident_character_id: resident_character_id,
             kind,
             scope,
             granted_minute: attempted_minute,
@@ -1744,8 +1752,11 @@ pub(crate) fn grant_permission_from_dialogue(
                 crate::social::apply_corpse_family_offense(
                     ctx,
                     actor_id,
-                    &relative.npc_id,
-                    &format!("family-bypassed:{corpse_id}:{}", relative.npc_id),
+                    relative.resident_character_id,
+                    &format!(
+                        "family-bypassed:{corpse_id}:{}",
+                        relative.resident_character_id
+                    ),
                     -5.0,
                     -3.0,
                 )?;
@@ -1801,14 +1812,14 @@ fn titled_permission_kind(
 fn permission_kind_for_npc(
     ctx: &ReducerContext,
     corpse: &StrategicCorpse,
-    npc: &SettlementNpc,
+    npc: &SettlementResidentProfile,
 ) -> Option<CorpsePermissionKind> {
     let family = ctx
         .db
         .corpse_family_binding()
         .corpse_id()
         .filter(&corpse.id)
-        .any(|row| row.npc_id == npc.id);
+        .any(|row| row.resident_character_id == npc.character_id);
     titled_permission_kind(
         npc.home_settlement_id == corpse.settlement_id,
         family,
@@ -1822,12 +1833,17 @@ fn permission_kind_for_npc(
 pub(crate) fn permission_topics_for_npc(
     ctx: &ReducerContext,
     actor_id: u64,
-    npc_id: &str,
+    resident_character_id: u64,
 ) -> Vec<(String, String)> {
     let Ok(party_id) = observer_party(ctx, actor_id) else {
         return Vec::new();
     };
-    let Some(npc) = ctx.db.settlement_npc().id().find(&npc_id.to_owned()) else {
+    let Some(npc) = ctx
+        .db
+        .settlement_resident_profile()
+        .character_id()
+        .find(resident_character_id)
+    else {
         return Vec::new();
     };
     let minute = now(ctx, actor_id).unwrap_or(0);
@@ -1889,7 +1905,7 @@ pub(crate) fn permission_topics_for_npc(
                                 "{}:{}:{}:{}:{}",
                                 corpse.id,
                                 party_id,
-                                npc_id,
+                                resident_character_id,
                                 permission_scope_label(scope),
                                 approach
                             ))
@@ -2033,7 +2049,7 @@ mod tests {
     fn corpse_family_bindings_have_an_explicit_materialization_seam() {
         let source = include_str!("corpse.rs");
         assert!(source.contains("materialize_corpse_family_bindings"));
-        assert!(source.contains("family_npc_ids: &[String]"));
+        assert!(source.contains("family_resident_character_ids: &[u64]"));
         assert!(!source.contains(".household"));
     }
 }

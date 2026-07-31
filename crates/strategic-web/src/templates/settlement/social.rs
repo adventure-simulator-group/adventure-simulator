@@ -429,7 +429,7 @@ pub(super) fn npc_description_stage(name: &str, fallback: &str) -> Markup {
     } }
 }
 
-pub(super) fn settlement_npc_chat_area(
+pub(super) fn settlement_resident_chat_area(
     location: &str,
     active_character: Option<&Character>,
     settlement_id: &str,
@@ -582,7 +582,7 @@ pub(super) fn inventory_rail(
 mod tests {
     use super::*;
     use crate::spacetimedb::*;
-    use crate::templates::settlement::settlement_npc_location_page;
+    use crate::templates::settlement::settlement_resident_location_page;
     use crate::templates::settlement::test_support::*;
 
     #[test]
@@ -919,13 +919,14 @@ mod tests {
     }
 
     #[test]
-    fn settlement_npc_strip_exposes_accessible_authoritative_context() {
+    fn settlement_resident_strip_exposes_accessible_authoritative_context() {
         let strip = npc_portrait_strip("lubeck", "market").into_string();
         assert!(strip.contains("aria-label=\"People here\""));
         assert!(strip.contains("data-npc-settlement=\"lubeck\""));
         assert!(strip.contains("data-npc-location=\"market\""));
-        let chat = settlement_npc_chat_area("Market", None, "lubeck", "market", Some("merchants"))
-            .into_string();
+        let chat =
+            settlement_resident_chat_area("Market", None, "lubeck", "market", Some("merchants"))
+                .into_string();
         assert!(chat.contains("data-local-chat-kind=\"npc\""));
         assert!(chat.contains("data-local-chat-location=\"market\""));
         assert!(chat.contains("data-dialogue-catalog-revision"));
@@ -956,7 +957,7 @@ mod tests {
             automatic_social_chat_enabled: false,
         };
         for location in ["residences", "keep"] {
-            let markup = settlement_npc_location_page(
+            let markup = settlement_resident_location_page(
                 &settlement(),
                 &character,
                 &[],

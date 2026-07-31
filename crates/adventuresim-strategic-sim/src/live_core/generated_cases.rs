@@ -148,7 +148,7 @@ impl LiveRunner {
         let candidates = self
             .connection
             .db
-            .settlement_npc_presence()
+            .settlement_resident_presence()
             .iter()
             .filter(|presence| {
                 presence.settlement_id == settlement_id
@@ -157,13 +157,14 @@ impl LiveRunner {
             .filter_map(|presence| {
                 self.connection
                     .db
-                    .backend_settlement_npcs()
+                    .backend_settlement_residents()
                     .iter()
                     .find(|npc| {
-                        npc.id == presence.npc_id && npc.home_settlement_id == settlement_id
+                        npc.character_id == presence.character_id
+                            && npc.home_settlement_id == settlement_id
                     })
                     .map(|npc| PublicNpcCandidate {
-                        npc_id: npc.id,
+                        resident_character_id: npc.character_id,
                         name: npc.name,
                         profession: npc.profession,
                         conversation_id: npc.conversation_id,
@@ -193,7 +194,7 @@ impl LiveRunner {
                 character_id,
                 session_id.clone(),
                 candidate.conversation_id.clone(),
-                candidate.npc_id.clone(),
+                candidate.resident_character_id.to_string(),
                 candidate.location_id.clone(),
                 adventuresim_dialogue::CATALOG_DIGEST.to_owned(),
                 cb,
@@ -239,7 +240,7 @@ impl LiveRunner {
             .iter()
             .map(|candidate| {
                 (
-                    candidate.npc_id.clone(),
+                    candidate.resident_character_id.clone(),
                     candidate.conversation_id.clone(),
                     candidate.location_id.clone(),
                 )
@@ -1281,5 +1282,4 @@ impl LiveRunner {
         self.event(leader_agent, CoreLoopEventKind::TurnIn, quest.id.clone());
         Ok(())
     }
-
 }

@@ -16,7 +16,7 @@ pub enum Storefront {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SettlementNpcTab {
+pub struct SettlementResidentTab {
     pub location_id: &'static str,
     pub label: &'static str,
 }
@@ -98,19 +98,19 @@ pub fn player_visible_npc_tabs(
     profile: &SettlementEconomyProfile,
     has_keep: bool,
     settlement_id: &str,
-) -> Vec<SettlementNpcTab> {
+) -> Vec<SettlementResidentTab> {
     let mut tabs = vec![
-        SettlementNpcTab {
+        SettlementResidentTab {
             location_id: "overview",
             label: "Public square",
         },
-        SettlementNpcTab {
+        SettlementResidentTab {
             location_id: "residences",
             label: "Residences",
         },
     ];
     if has_keep {
-        tabs.push(SettlementNpcTab {
+        tabs.push(SettlementResidentTab {
             location_id: "keep",
             label: "Keep",
         });
@@ -158,7 +158,7 @@ pub fn player_visible_npc_tabs(
         ),
     ] {
         if available {
-            tabs.push(SettlementNpcTab { location_id, label });
+            tabs.push(SettlementResidentTab { location_id, label });
         }
     }
     for organization in crate::organization::organizations_for_chapter(settlement_id) {
@@ -166,7 +166,7 @@ pub fn player_visible_npc_tabs(
             .chapter(settlement_id)
             .expect("chapter iterator guarantees a local chapter");
         if crate::organization::chapter_has_standalone_building(organization, chapter, profile) {
-            tabs.push(SettlementNpcTab {
+            tabs.push(SettlementResidentTab {
                 location_id: chapter.location_id.as_str(),
                 label: chapter.building_name.as_str(),
             });
@@ -176,9 +176,9 @@ pub fn player_visible_npc_tabs(
 }
 
 pub fn visible_npc_tab<'a>(
-    tabs: &'a [SettlementNpcTab],
+    tabs: &'a [SettlementResidentTab],
     location_id: &str,
-) -> Option<&'a SettlementNpcTab> {
+) -> Option<&'a SettlementResidentTab> {
     tabs.iter().find(|tab| tab.location_id == location_id)
 }
 

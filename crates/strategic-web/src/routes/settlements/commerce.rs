@@ -18,10 +18,11 @@ pub(super) async fn merchant_provider_id(
 ) -> Option<String> {
     let settlement_literal = sql_string_literal(settlement_id);
     let providers_sql = format!(
-        "SELECT * FROM backend_settlement_npcs WHERE home_settlement_id = {settlement_literal}"
+        "SELECT * FROM backend_settlement_residents WHERE home_settlement_id = {settlement_literal}"
     );
-    let presences_sql =
-        format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {settlement_literal}");
+    let presences_sql = format!(
+        "SELECT * FROM settlement_resident_presence WHERE settlement_id = {settlement_literal}"
+    );
     let (providers, presences) = tokio::join!(
         state.db.query::<MerchantProviderRow>(&providers_sql),
         state
@@ -37,7 +38,7 @@ pub(super) async fn merchant_provider_id(
                 presences
                     .iter()
                     .any(|presence| {
-                        presence.npc_id == provider.id
+                        presence.resident_character_id == provider.id
                             && presence.settlement_id == settlement_id
                             && presence.location_id == location_id
                             && presence.is_default
@@ -49,7 +50,10 @@ pub(super) async fn merchant_provider_id(
     matches.next().is_none().then_some(provider)
 }
 
-pub(super) async fn provisioning_storefront_path(state: &AppState, settlement: &Settlement) -> Option<String> {
+pub(super) async fn provisioning_storefront_path(
+    state: &AppState,
+    settlement: &Settlement,
+) -> Option<String> {
     use adventuresim_core::settlement_economy::{Storefront, storefront_available};
 
     for (storefront, service_id, location_id) in [

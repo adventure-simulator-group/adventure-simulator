@@ -437,7 +437,7 @@ pub(super) async fn show_settlement(Path(id): Path<String>) -> Redirect {
     Redirect::to(&format!("/locations/settlement/{id}"))
 }
 
-pub(super) async fn settlement_npc_place(
+pub(super) async fn settlement_resident_place(
     State(state): State<AppState>,
     Path((id, place)): Path<(String, String)>,
     session: Session,
@@ -504,7 +504,9 @@ pub(super) async fn settlement_npc_place(
         let (offers, residence, relationship) = tokio::join!(
             state.db.query::<SettlementResidenceOffer>(&offers_sql),
             state.db.query_one::<CharacterResidence>(&residence_sql),
-            state.db.query_one::<BackendCharacterRelationshipStatus>(&relationship_sql),
+            state
+                .db
+                .query_one::<BackendCharacterRelationshipStatus>(&relationship_sql),
         );
         let mut offers = offers.unwrap_or_default();
         offers.sort_by_key(|offer| match offer.tier {
@@ -526,7 +528,7 @@ pub(super) async fn settlement_npc_place(
         );
     }
     Html(
-        settlement_npc_location_page(
+        settlement_resident_location_page(
             &settlement,
             character,
             &party_members,

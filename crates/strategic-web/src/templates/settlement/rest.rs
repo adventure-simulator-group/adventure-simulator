@@ -134,9 +134,27 @@ pub fn rest_result_page(
 ) -> Markup {
     service_page(
         settlement,
-        if at_inn { "inn" } else if at_residence { "residences" } else { "religion" },
-        if at_inn { "The Inn" } else if at_residence { "Home" } else { "Church" },
-        if at_inn { "Innkeeper" } else if at_residence { "Household" } else { "Priest" },
+        if at_inn {
+            "inn"
+        } else if at_residence {
+            "residences"
+        } else {
+            "religion"
+        },
+        if at_inn {
+            "The Inn"
+        } else if at_residence {
+            "Home"
+        } else {
+            "Church"
+        },
+        if at_inn {
+            "Innkeeper"
+        } else if at_residence {
+            "Household"
+        } else {
+            "Priest"
+        },
         "",
         active_character,
         inventory,

@@ -2,16 +2,12 @@ fn receive_referred_testimony(
     ctx: &ReducerContext,
     character_id: u64,
     session: &DialogueSession,
-    live_npc: &crate::settlement_population::SettlementNpc,
+    live_npc: &crate::settlement_population::SettlementResidentProfile,
     action_id: &str,
 ) -> Result<(), String> {
-    let (generated, witness) = dialogue_referred_witness(
-        ctx,
-        character_id,
-        session,
-        &live_npc.id,
-    )?
-    .ok_or("Addressed NPC has no available generated testimony here")?;
+    let (generated, witness) =
+        dialogue_referred_witness(ctx, character_id, session, live_npc.character_id)?
+            .ok_or("Addressed NPC has no available generated testimony here")?;
     crate::investigation::persist_generated_testimony(
         ctx,
         character_id,
@@ -27,7 +23,7 @@ pub(crate) fn dialogue_referred_witness(
     ctx: &ReducerContext,
     character_id: u64,
     session: &DialogueSession,
-    npc_id: &str,
+    resident_character_id: u64,
 ) -> Result<
     Option<(
         adventuresim_core::quest_generation::GeneratedCase,
@@ -47,7 +43,7 @@ pub(crate) fn dialogue_referred_witness(
             ctx,
             character_id,
             &receipt.opaque_case_ref,
-            npc_id,
+            resident_character_id,
             &session.settlement_id,
             &session.location_id,
         )?
@@ -57,7 +53,7 @@ pub(crate) fn dialogue_referred_witness(
     crate::investigation::known_outbreak_witness(
         ctx,
         character_id,
-        npc_id,
+        resident_character_id,
         &session.settlement_id,
         &session.location_id,
     )
@@ -80,12 +76,13 @@ pub(crate) fn referred_testimony_claims(
     ctx: &ReducerContext,
     character_id: u64,
     session: &DialogueSession,
-    npc_id: &str,
+    resident_character_id: u64,
     withheld: bool,
     event_sequence: u32,
 ) -> Result<Vec<ReferredTestimonyClaim>, String> {
-    let (_, witness) = dialogue_referred_witness(ctx, character_id, session, npc_id)?
-        .ok_or("Dialogue has no bound witness testimony")?;
+    let (_, witness) =
+        dialogue_referred_witness(ctx, character_id, session, resident_character_id)?
+            .ok_or("Dialogue has no bound witness testimony")?;
     let claims = witness
         .testimony
         .iter()
@@ -146,11 +143,12 @@ pub(crate) fn release_referred_withheld_testimony(
     ctx: &ReducerContext,
     character_id: u64,
     session: &DialogueSession,
-    npc_id: &str,
+    resident_character_id: u64,
     action_id: &str,
 ) -> Result<u32, String> {
-    let (generated, witness) = dialogue_referred_witness(ctx, character_id, session, npc_id)?
-        .ok_or("Dialogue has no bound witness testimony")?;
+    let (generated, witness) =
+        dialogue_referred_witness(ctx, character_id, session, resident_character_id)?
+            .ok_or("Dialogue has no bound witness testimony")?;
     let released = witness
         .testimony
         .iter()
@@ -180,7 +178,7 @@ pub(crate) fn release_referred_withheld_testimony(
         .dialogue_participant()
         .session_id()
         .filter(&session.id)
-        .find(|participant| participant.actor_id == npc_id)
+        .find(|participant| participant.actor_id == resident_character_id.to_string())
         .map(|participant| participant.role)
         .ok_or("Witness dialogue participant disappeared")?;
     let sequence = ctx
@@ -286,7 +284,7 @@ fn generated_dialogue_recipient(
     case: &CaseAuthority,
     objective_id: &str,
     action: &adventuresim_dialogue::InvestigationAction,
-    npc_ids: &HashSet<String>,
+    resident_character_ids: &HashSet<String>,
     fallback: String,
 ) -> Result<Option<String>, String> {
     let authority = ctx
@@ -301,7 +299,7 @@ fn generated_dialogue_recipient(
         &manifest,
         objective_id,
         action,
-        npc_ids,
+        resident_character_ids,
     ))
 }
 
@@ -337,7 +335,7 @@ fn generated_dialogue_producer_recipient(
     manifest: &adventuresim_core::quest_generation::GeneratedCase,
     objective_id: &str,
     action: &adventuresim_dialogue::InvestigationAction,
-    npc_ids: &HashSet<String>,
+    resident_character_ids: &HashSet<String>,
 ) -> Option<String> {
     manifest
         .dialogue_producers
@@ -346,8 +344,10 @@ fn generated_dialogue_producer_recipient(
             producer.objective_id.as_str() == objective_id
                 && generated_dialogue_action_matches(producer.action, action)
         })
-        .filter(|producer| npc_ids.contains(&producer.recipient_npc_id))
-        .map(|producer| producer.recipient_npc_id.clone())
+        .filter(|producer| {
+            resident_character_ids.contains(&producer.recipient_resident_character_id.to_string())
+        })
+        .map(|producer| producer.recipient_resident_character_id.to_string())
 }
 
 fn generated_dialogue_action_matches(
@@ -417,7 +417,7 @@ fn dialogue_objective_recipient(
     case: &CaseAuthority,
     requirement: &adventuresim_core::case::ObjectiveRequirement,
     action: &adventuresim_dialogue::InvestigationAction,
-    npc_ids: &HashSet<String>,
+    resident_character_ids: &HashSet<String>,
     fallback_recipient_id: &str,
     active_contract: Option<&Contract>,
 ) -> Option<String> {
@@ -456,7 +456,8 @@ fn dialogue_objective_recipient(
                     && belief.proposition_id == subject_ref.as_str()
             })
             .then(|| fallback_recipient_id.into()),
-        (R::Negotiate { subject_ref }, A::Negotiate) => (npc_ids.contains(subject_ref.as_str())
+        (R::Negotiate { subject_ref }, A::Negotiate) => (resident_character_ids
+            .contains(subject_ref.as_str())
             && ctx
                 .db
                 .investigation_belief()
@@ -473,7 +474,7 @@ fn dialogue_objective_recipient(
                 recipient_id,
             },
             A::PresentProof,
-        ) => (npc_ids.contains(recipient_id.as_str())
+        ) => (resident_character_ids.contains(recipient_id.as_str())
             && evidence_can_be_presented(ctx, character_id, party_id, case, evidence_id.as_str()))
         .then(|| recipient_id.as_str().into()),
         (
@@ -482,8 +483,8 @@ fn dialogue_objective_recipient(
                 recipient_id,
             },
             A::PresentTestimony,
-        ) => (npc_ids.contains(witness_id.as_str())
-            && npc_ids.contains(recipient_id.as_str())
+        ) => (resident_character_ids.contains(witness_id.as_str())
+            && resident_character_ids.contains(recipient_id.as_str())
             && ctx
                 .db
                 .investigation_received_testimony()
@@ -500,7 +501,7 @@ fn dialogue_objective_recipient(
                 custodian_id,
             },
             A::ReturnAsset,
-        ) => (npc_ids.contains(custodian_id.as_str())
+        ) => (resident_character_ids.contains(custodian_id.as_str())
             && ctx
                 .db
                 .case_custody()
@@ -512,7 +513,8 @@ fn dialogue_objective_recipient(
                         && custody.holder_id == party_id
                 }))
         .then(|| custodian_id.as_str().into()),
-        (R::Release { subject_id }, A::ReleaseSubject) => (npc_ids.contains(subject_id.as_str())
+        (R::Release { subject_id }, A::ReleaseSubject) => (resident_character_ids
+            .contains(subject_id.as_str())
             && ctx
                 .db
                 .case_custody()
@@ -530,7 +532,7 @@ fn dialogue_objective_recipient(
                 recipient_id,
             },
             A::ExchangeAsset,
-        ) => (npc_ids.contains(recipient_id.as_str())
+        ) => (resident_character_ids.contains(recipient_id.as_str())
             && ctx
                 .db
                 .case_custody()
@@ -542,10 +544,11 @@ fn dialogue_objective_recipient(
                         && custody.holder_id == party_id
                 }))
         .then(|| recipient_id.as_str().into()),
-        (R::ReportToIssuer { issuer_id }, A::ReportToIssuer) => (npc_ids
+        (R::ReportToIssuer { issuer_id }, A::ReportToIssuer) => (resident_character_ids
             .contains(issuer_id.as_str())
             && active_contract.is_some_and(|contract| {
-                contract.case_id == case.id && contract.issuer_npc_id == issuer_id.as_str()
+                contract.case_id == case.id
+                    && contract.issuer_resident_character_id.to_string() == issuer_id.as_str()
             }))
         .then(|| issuer_id.as_str().into()),
         _ => None,
@@ -581,7 +584,7 @@ fn issue_dialogue_investigation_bindings(
     if party.leader_id != character_id {
         return Ok(false);
     }
-    let npc_ids: HashSet<_> = ctx
+    let resident_character_ids: HashSet<_> = ctx
         .db
         .dialogue_participant()
         .session_id()
@@ -589,7 +592,7 @@ fn issue_dialogue_investigation_bindings(
         .filter(|participant| participant.character_id.is_none())
         .map(|participant| participant.actor_id)
         .collect();
-    let fallback_recipient_id = npc_ids
+    let fallback_recipient_id = resident_character_ids
         .iter()
         .next()
         .ok_or("Dialogue has no NPC participant")?;
@@ -623,7 +626,7 @@ fn issue_dialogue_investigation_bindings(
         .investigation_received_testimony()
         .owner_character_id()
         .filter(character_id)
-        .filter(|received| npc_ids.contains(&received.witness_ref))
+        .filter(|received| resident_character_ids.contains(&received.witness_ref))
     {
         exact_case_refs.insert(received.public_case_id);
     }
@@ -659,7 +662,7 @@ fn issue_dialogue_investigation_bindings(
                         .investigation_belief()
                         .owner_character_id()
                         .filter(character_id)
-                        .filter(|belief| npc_ids.contains(&belief.proposition_id))
+                        .filter(|belief| resident_character_ids.contains(&belief.proposition_id))
                         .map(|belief| belief.case_id),
                 );
             }
@@ -675,7 +678,8 @@ fn issue_dialogue_investigation_bindings(
             }
             adventuresim_dialogue::InvestigationAction::ReportToIssuer => {
                 if let Some(contract) = &active_contract
-                    && npc_ids.contains(&contract.issuer_npc_id)
+                    && resident_character_ids
+                        .contains(&contract.issuer_resident_character_id.to_string())
                 {
                     exact_case_refs.insert(contract.case_id.clone());
                 }
@@ -711,7 +715,7 @@ fn issue_dialogue_investigation_bindings(
                     &case,
                     &objective.requirement,
                     action,
-                    &npc_ids,
+                    &resident_character_ids,
                     fallback_recipient_id,
                     active_contract.as_ref(),
                 ) && let Some(recipient_id) = generated_dialogue_recipient(
@@ -719,7 +723,7 @@ fn issue_dialogue_investigation_bindings(
                     &case,
                     objective.id.as_str(),
                     action,
-                    &npc_ids,
+                    &resident_character_ids,
                     recipient_id,
                 )? {
                     let expected_custody_version = match &objective.requirement {
@@ -877,11 +881,12 @@ fn dialogue_public_case_id(
                     .session_id()
                     .filter(&session.id)
                     .filter(|participant| participant.character_id.is_none())
-                    .find_map(|participant| {
-                        dialogue_referred_witness(ctx, character_id, session, &participant.actor_id)
-                            .transpose()
+                    .find_map(|participant| participant.actor_id.parse::<u64>().ok())
+                    .map(|resident_id| {
+                        dialogue_referred_witness(ctx, character_id, session, resident_id)
                     })
-                    .transpose()?;
+                    .transpose()?
+                    .flatten();
                 if let Some((manifest, _)) = generated {
                     public_case_ids.insert(manifest.public_case_id);
                 }
@@ -990,12 +995,13 @@ fn refresh_dialogue_topic_options(
                     .filter(&session.id)
                     .find(|participant| participant.character_id.is_none())
                     .map(|participant| {
-                        dialogue_referred_witness(
-                            ctx,
-                            character_id,
-                            session,
-                            &participant.actor_id,
-                        )
+                        participant
+                            .actor_id
+                            .parse::<u64>()
+                            .map_err(|_| "Dialogue NPC identity is invalid".to_owned())
+                            .and_then(|resident_id| {
+                                dialogue_referred_witness(ctx, character_id, session, resident_id)
+                            })
                     })
                     .transpose()?
                     .flatten()
@@ -1023,7 +1029,7 @@ fn refresh_dialogue_topic_options(
             });
         }
     }
-    if let Some(npc_id) = ctx
+    if let Some(resident_character_id) = ctx
         .db
         .dialogue_participant()
         .session_id()
@@ -1031,9 +1037,13 @@ fn refresh_dialogue_topic_options(
         .find(|participant| participant.character_id.is_none())
         .map(|participant| participant.actor_id)
     {
-        for (topic_id, label) in
-            crate::corpse::permission_topics_for_npc(ctx, character_id, &npc_id)
-        {
+        for (topic_id, label) in crate::corpse::permission_topics_for_npc(
+            ctx,
+            character_id,
+            resident_character_id
+                .parse::<u64>()
+                .map_err(|_| "Dialogue NPC identity is invalid")?,
+        ) {
             ctx.db.dialogue_topic_option().insert(DialogueTopicOption {
                 id: format!("{}:{topic_id}", session.id),
                 gateway_bucket: 0,

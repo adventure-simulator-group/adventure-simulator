@@ -25,33 +25,25 @@ pub fn start_dialogue(
         .current_settlement_id
         .ok_or("Dialogue requires a settlement")?;
     require_navigable_npc_location(ctx, &settlement_id, &location_id)?;
-    let npc = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&npc_actor_id)
+    let npc_character_id = npc_actor_id
+        .parse::<u64>()
+        .map_err(|_| "Dialogue NPC identity is invalid")?;
+    let npc = crate::settlement_population::resolve_settlement_resident(ctx, npc_character_id)
         .ok_or("Dialogue actor is not a persistent settlement NPC")?;
     if npc.home_settlement_id != settlement_id {
         return Err("Dialogue actor is not at this settlement".into());
     }
-    if (npc.organization_id.is_empty()
-        && npc.conversation_id == "organization-representative")
+    if (npc.organization_id.is_empty() && npc.conversation_id == "organization-representative")
         || (!npc.organization_id.is_empty()
-            && exact_organization_representative(
-                ctx,
-                &npc,
-                &settlement_id,
-                &location_id,
-            )
-            .is_none())
+            && exact_organization_representative(ctx, &npc, &settlement_id, &location_id).is_none())
     {
         return Err("Dialogue actor has no exact authority at this location".into());
     }
     let presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&npc_actor_id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(npc_character_id)
         .ok_or("Dialogue actor has no authoritative presence")?;
     let minute = ctx
         .db
@@ -127,14 +119,16 @@ pub fn start_dialogue(
     });
     let available_npcs: Vec<_> = ctx
         .db
-        .settlement_npc_presence()
+        .settlement_resident_presence()
         .settlement_id()
         .filter(&settlement_id)
         .filter(|candidate| {
             candidate.location_id == location_id
                 && crate::settlement_population::npc_is_present(candidate, minute)
         })
-        .filter_map(|presence| ctx.db.settlement_npc().id().find(&presence.npc_id))
+        .filter_map(|presence| {
+            crate::settlement_population::resolve_settlement_resident(ctx, presence.character_id)
+        })
         .collect();
     let mut used_npcs = HashSet::new();
     for (index, (role_name, role)) in conversation
@@ -152,20 +146,21 @@ pub fn start_dialogue(
             available_npcs
                 .iter()
                 .find(|candidate| {
-                    candidate.id != npc_actor_id && !used_npcs.contains(&candidate.id)
+                    candidate.character_id != npc_character_id
+                        && !used_npcs.contains(&candidate.character_id)
                 })
                 .cloned()
                 .ok_or("Required NPC role has no persistent actor at this location")?
         };
-        used_npcs.insert(bound.id.clone());
+        used_npcs.insert(bound.character_id);
         ctx.db.dialogue_participant().insert(DialogueParticipant {
             id: format!("{id}:npc:{role_name}"),
             gateway_bucket: 0,
             session_id: id.clone(),
             role: role_name.clone(),
             character_id: None,
-            display_name: bound.name,
-            actor_id: bound.id,
+            display_name: bound.name.clone(),
+            actor_id: bound.character_id.to_string(),
         });
     }
     let session = ctx
@@ -240,7 +235,7 @@ pub fn start_dialogue(
         ctx,
         character_id,
         &session.id,
-        &npc_actor_id,
+        npc_character_id,
         &session.location_id,
     )?;
     // Entering a tavern (or the overview fallback) is itself the reliable,
@@ -278,7 +273,7 @@ pub fn start_dialogue(
                 ctx,
                 &session,
                 character_id,
-                &npc_actor_id,
+                npc_character_id,
                 &delivery,
             )?,
         };
@@ -302,7 +297,12 @@ pub fn start_dialogue(
             )?;
         }
     }
-    crate::social::ensure_dialogue_witness_capability(ctx, &session, character_id, &npc_actor_id)?;
+    crate::social::ensure_dialogue_witness_capability(
+        ctx,
+        &session,
+        character_id,
+        npc_character_id,
+    )?;
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
 }

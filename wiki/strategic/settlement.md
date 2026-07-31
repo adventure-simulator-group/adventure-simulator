@@ -20,8 +20,12 @@ inn is the discovery funnel; a settlement without an available inn uses overview
 
 ## People and locations
 
-Every seeded or imported settlement has persistent local NPC identities in addition to
-its service providers. The overview/public area and service locations contain multiple
+Every seeded or imported settlement has persistent local people in addition to
+its service providers. Each is a full `Character` identified by the same
+authoritative `u64` character ID used by parties, relationships, morale, estate,
+and personal time. `SettlementResidentProfile` adds only local appearance,
+vocation, service, and dialogue metadata under that ID; it is not a second NPC
+identity. The overview/public area and service locations contain multiple
 people; towns and larger settlements also populate a keep. A horizontal, keyboard-
 navigable circular portrait strip selects whom the active character addresses. It is
 attached just above the resizable chat panel, opposite the party portrait strip, and
@@ -50,7 +54,8 @@ building art is available, non-service tabs reuse neutral building art and house
 icons. These places use the same authoritative portrait, description, and chat surface;
 villages and hamlets cannot enter a keep that their population does not have.
 
-NPC presences and daily time windows are strategic database state, not tactical
+Resident presences and daily time windows are keyed by that character ID and
+are strategic database state, not tactical
 positions or tick state. The player view exposes physical presentation, occupation,
 household, observable presentation, and public local role, but never private
 sex, personality, motives, beliefs, quest truth,

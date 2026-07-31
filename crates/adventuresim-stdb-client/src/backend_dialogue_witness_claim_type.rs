@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct BackendDialogueWitnessClaim {
     pub observer_character_id: u64,
     pub session_id: String,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub event_sequence: u32,
     pub claim_order: u32,
     pub challenge_token: String,
@@ -34,7 +34,7 @@ impl __sdk::InModule for BackendDialogueWitnessClaim {
 pub struct BackendDialogueWitnessClaimCols {
     pub observer_character_id: __sdk::__query_builder::Col<BackendDialogueWitnessClaim, u64>,
     pub session_id: __sdk::__query_builder::Col<BackendDialogueWitnessClaim, String>,
-    pub npc_id: __sdk::__query_builder::Col<BackendDialogueWitnessClaim, String>,
+    pub resident_character_id: __sdk::__query_builder::Col<BackendDialogueWitnessClaim, u64>,
     pub event_sequence: __sdk::__query_builder::Col<BackendDialogueWitnessClaim, u32>,
     pub claim_order: __sdk::__query_builder::Col<BackendDialogueWitnessClaim, u32>,
     pub challenge_token: __sdk::__query_builder::Col<BackendDialogueWitnessClaim, String>,
@@ -58,7 +58,10 @@ impl __sdk::__query_builder::HasCols for BackendDialogueWitnessClaim {
                 "observer_character_id",
             ),
             session_id: __sdk::__query_builder::Col::new(table_name, "session_id"),
-            npc_id: __sdk::__query_builder::Col::new(table_name, "npc_id"),
+            resident_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "resident_character_id",
+            ),
             event_sequence: __sdk::__query_builder::Col::new(table_name, "event_sequence"),
             claim_order: __sdk::__query_builder::Col::new(table_name, "claim_order"),
             challenge_token: __sdk::__query_builder::Col::new(table_name, "challenge_token"),

@@ -1363,14 +1363,17 @@ fn victim_cohort_is_current_view(
     if target.case_id != capability.case_id {
         return false;
     }
-    let Some(npc) = ctx.db.settlement_npc().id().find(&target.npc_id) else {
+    let Some(npc) = crate::settlement_population::resolve_settlement_resident_view(
+        ctx,
+        target.resident_character_id,
+    ) else {
         return false;
     };
     let Some(presence) = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&target.npc_id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(target.resident_character_id)
     else {
         return false;
     };
@@ -1418,7 +1421,7 @@ fn victim_cohort_is_current_view(
     }
     let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
         cohort_id: target.cohort_id.clone(),
-        npc_id: target.npc_id.clone(),
+        resident_character_id: target.resident_character_id.clone(),
         demographic,
         age_band: target.age_band.clone(),
         sex: target.sex.clone(),
@@ -1432,7 +1435,7 @@ fn victim_cohort_is_current_view(
         crate::strategic::developer_npc_witness_candidate(&npc, &presence)
     } else {
         Some(adventuresim_core::quest_generation::WitnessCandidate {
-            npc_id: npc.id.clone(),
+            resident_character_id: npc.character_id.clone(),
             display_name: npc.name.clone(),
             demographic: crate::strategic::generated_npc_demographic(&npc),
             age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),

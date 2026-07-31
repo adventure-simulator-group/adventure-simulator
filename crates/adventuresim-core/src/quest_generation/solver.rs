@@ -29,7 +29,7 @@ fn solve_variables(
             .witness_candidates
             .iter()
             .map(|witness| {
-                witness.npc_id.len()
+                std::mem::size_of::<u64>()
                     + witness.profession.len()
                     + witness.visible_description.len()
                     + witness.expected_location.len()
@@ -81,7 +81,10 @@ fn solve_variables(
                                 module_id: ModuleId::new("module.circumstance"),
                                 relation_id: RelationId::new("relation.circumstance.npc_fact"),
                                 factor_ids: vec![FactorId::new("factor.witness.actual_schedule")],
-                                candidate_id: format!("{}:{circumstance:?}", witness.npc_id),
+                                candidate_id: format!(
+                                    "{}:{circumstance:?}",
+                                    witness.resident_character_id
+                                ),
                                 plausibility: 0,
                                 curation: 0,
                                 accepted: false,
@@ -143,7 +146,7 @@ fn solve_variables(
                             ),
                             (
                                 "module.witness",
-                                witness.npc_id.clone(),
+                                witness.resident_character_id.to_string(),
                                 None,
                                 vec!["factor.witness.actual_population"],
                             ),
@@ -193,7 +196,7 @@ fn solve_variables(
                         module_id: ModuleId::new("module.witness"),
                         relation_id: RelationId::new("relation.solver.backtrack"),
                         factor_ids: vec![FactorId::new("factor.no_valid_circumstance")],
-                        candidate_id: witness.npc_id.clone(),
+                        candidate_id: witness.resident_character_id.to_string(),
                         plausibility: 0,
                         curation: 0,
                         accepted: false,
@@ -593,7 +596,10 @@ fn deterministic_witness_order(context: &GenerationContext) -> Vec<usize> {
     indices.sort_by_key(|index| {
         hash(
             context.seed,
-            &format!("witness:{}", context.witness_candidates[*index].npc_id),
+            &format!(
+                "witness:{}",
+                context.witness_candidates[*index].resident_character_id
+            ),
         )
     });
     indices
@@ -604,7 +610,7 @@ fn build_actions(
     family: TemplateFamily,
     finale: &SiteId,
     area_id: &str,
-    witness_npc_id: &str,
+    witness_resident_character_id: u64,
     route_variant: RouteVariant,
     attack_pattern: AttackPattern,
     victim_target: Option<&GeneratedPatternTarget>,
@@ -694,7 +700,7 @@ fn build_actions(
                 InvestigationActionKind::LocateContact,
                 RouteClass::PatternSurveillance,
                 "contact",
-                witness_npc_id.into(),
+                witness_resident_character_id.to_string(),
                 None,
                 "approach",
                 true,
@@ -777,7 +783,7 @@ fn build_actions(
                 InvestigationActionKind::Watch,
                 RouteClass::PatternSurveillance,
                 "contact",
-                witness_npc_id.into(),
+                witness_resident_character_id.to_string(),
                 Some("locate_contact"),
                 "approach",
                 false,
@@ -903,7 +909,7 @@ fn build_actions(
                 InvestigationActionKind::LocateContact,
                 RouteClass::SocialInquiry,
                 "contact",
-                witness_npc_id.into(),
+                witness_resident_character_id.to_string(),
                 None,
                 "inspect_last_known",
                 true,

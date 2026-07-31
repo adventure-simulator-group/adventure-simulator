@@ -69,13 +69,13 @@ struct LocationQuery {
 
 #[derive(Deserialize)]
 struct LocalNpcRow {
-    id: String,
+    character_id: u64,
     home_settlement_id: String,
 }
 
 #[derive(Deserialize)]
 struct LocalNpcPresenceRow {
-    npc_id: String,
+    resident_character_id: u64,
     settlement_id: String,
     location_id: String,
     start_minute: u16,
@@ -90,7 +90,7 @@ fn npc_authority_matches(
     minute: u64,
 ) -> bool {
     let minute = (minute % 1_440) as u16;
-    npc.id == presence.npc_id
+    npc.character_id == presence.resident_character_id
         && npc.home_settlement_id == settlement_id
         && presence.settlement_id == settlement_id
         && presence.location_id == requested_location_id
@@ -170,7 +170,7 @@ async fn actor_and_selector(
             let npc = state
                 .db
                 .query_one::<LocalNpcRow>(&format!(
-                    "SELECT * FROM backend_settlement_npcs WHERE id = {}",
+                    "SELECT * FROM backend_settlement_residents WHERE id = {}",
                     sql_string_literal(subject_id)
                 ))
                 .await
@@ -179,7 +179,7 @@ async fn actor_and_selector(
             let presence = state
                 .db
                 .query_one::<LocalNpcPresenceRow>(&format!(
-                    "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
+                    "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {}",
                     sql_string_literal(subject_id)
                 ))
                 .await
@@ -242,9 +242,9 @@ async fn messages(
             .await
             .map_err(|e| (StatusCode::FORBIDDEN, e))?;
     let selector_filter = match &selector {
-        ConversationSelector::Npc(npc_id) => format!(
-            "conversation_kind = 'npc' AND subject_npc_id = {}",
-            sql_string_literal(npc_id)
+        ConversationSelector::Npc(resident_character_id) => format!(
+            "conversation_kind = 'npc' AND subject_resident_character_id = {}",
+            sql_string_literal(resident_character_id)
         ),
         ConversationSelector::PlayerParty(party_id) => format!(
             "conversation_kind = 'player' AND subject_party_id = {}",
@@ -442,7 +442,7 @@ mod tests {
             home_settlement_id: "riverdale".into(),
         };
         let mut presence = LocalNpcPresenceRow {
-            npc_id: npc.id.clone(),
+            resident_character_id: npc.id.clone(),
             settlement_id: "riverdale".into(),
             location_id: "inn".into(),
             start_minute: 0,
@@ -495,8 +495,10 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("async fn messages").next())
             .expect("local chat authority handler");
-        assert!(local_route.contains("SELECT * FROM backend_settlement_npcs WHERE id = {}"));
-        assert!(local_route.contains("SELECT * FROM settlement_npc_presence WHERE npc_id = {}"));
+        assert!(local_route.contains("SELECT * FROM backend_settlement_residents WHERE id = {}"));
+        assert!(local_route.contains(
+            "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {}"
+        ));
         assert!(
             include_str!("local_chat.rs").contains("presence.location_id == requested_location_id")
         );

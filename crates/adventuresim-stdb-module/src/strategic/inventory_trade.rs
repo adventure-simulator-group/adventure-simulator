@@ -1718,13 +1718,14 @@ pub fn finalize_merchant_trade(
     sell_quantities: Vec<u32>,
     party_scope: bool,
 ) -> Result<(), String> {
-    let provider_npc_id = default_merchant_provider(ctx, &settlement_id, "merchants", "market")?;
+    let provider_resident_character_id =
+        default_merchant_provider(ctx, &settlement_id, "merchants", "market")?;
     finalize_storefront_trade_impl(
         ctx,
         character_id,
         settlement_id,
         "merchants".into(),
-        provider_npc_id,
+        provider_resident_character_id,
         buy_item_ids,
         buy_quantities,
         sell_inventory_ids,
@@ -1739,7 +1740,7 @@ pub fn finalize_storefront_trade(
     character_id: u64,
     settlement_id: String,
     service_id: String,
-    provider_npc_id: String,
+    provider_resident_character_id: u64,
     buy_item_ids: Vec<String>,
     buy_quantities: Vec<u32>,
     sell_inventory_ids: Vec<u64>,
@@ -1751,7 +1752,7 @@ pub fn finalize_storefront_trade(
         character_id,
         settlement_id,
         service_id,
-        provider_npc_id,
+        provider_resident_character_id,
         buy_item_ids,
         buy_quantities,
         sell_inventory_ids,
@@ -1786,33 +1787,33 @@ fn default_merchant_provider(
     settlement_id: &str,
     service_id: &str,
     location_id: &str,
-) -> Result<String, String> {
+) -> Result<u64, String> {
     unique_default_merchant_provider(
         ctx.db
-            .settlement_npc()
+            .settlement_resident_profile()
             .iter()
             .filter(|npc| npc.home_settlement_id == settlement_id && npc.service_id == service_id)
             .filter_map(|npc| {
                 ctx.db
-                    .settlement_npc_presence()
-                    .npc_id()
-                    .find(&npc.id)
+                    .settlement_resident_presence()
+                    .character_id()
+                    .find(npc.character_id)
                     .filter(|presence| {
                         presence.settlement_id == settlement_id
                             && presence.location_id == location_id
                             && presence.is_default
                     })
-                    .map(|_| npc.id)
+                    .map(|_| npc.character_id)
             }),
     )
 }
 
 fn unique_default_merchant_provider(
-    providers: impl IntoIterator<Item = String>,
-) -> Result<String, String> {
+    providers: impl IntoIterator<Item = u64>,
+) -> Result<u64, String> {
     let providers = providers.into_iter().collect::<Vec<_>>();
     match providers.as_slice() {
-        [provider] => Ok(provider.clone()),
+        [provider] => Ok(*provider),
         [] => Err("Merchant service provider not found".into()),
         _ => Err("Merchant service provider is ambiguous".into()),
     }
@@ -1824,7 +1825,7 @@ fn finalize_storefront_trade_impl(
     character_id: u64,
     settlement_id: String,
     service_id: String,
-    provider_npc_id: String,
+    provider_resident_character_id: u64,
     buy_item_ids: Vec<String>,
     buy_quantities: Vec<u32>,
     sell_inventory_ids: Vec<u64>,
@@ -1857,15 +1858,15 @@ fn finalize_storefront_trade_impl(
     }
     let provider = ctx
         .db
-        .settlement_npc()
-        .id()
-        .find(&provider_npc_id)
+        .settlement_resident_profile()
+        .character_id()
+        .find(provider_resident_character_id)
         .ok_or("Merchant service provider not found")?;
     let provider_presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&provider_npc_id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(provider_resident_character_id)
         .ok_or("Merchant service provider has no presence")?;
     let problem_minute = ctx
         .db
@@ -1882,7 +1883,8 @@ fn finalize_storefront_trade_impl(
     {
         return Err("Merchant service provider is not available".into());
     }
-    if default_merchant_provider(ctx, &settlement_id, &service_id, location_id)? != provider_npc_id
+    if default_merchant_provider(ctx, &settlement_id, &service_id, location_id)?
+        != provider_resident_character_id
     {
         return Err("Merchant service provider does not match this storefront".into());
     }

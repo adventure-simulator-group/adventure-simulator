@@ -1396,7 +1396,7 @@ mod quest_route_tests {
             xp_reward: 10,
             settlement_id: "settlement".into(),
             service_id: "tavern".into(),
-            issuer_npc_id: "npc:issuer".into(),
+            issuer_resident_character_id: "npc:issuer".into(),
             status: ContractPresentationStatus::Accepted,
             accepted_by: Some("party".into()),
             opposition_wording: "unknown opposition".into(),

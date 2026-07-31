@@ -21,6 +21,7 @@ use crate::{
     item::item,
     organization::{organization_membership, organization_presentation},
     personality::character_personality,
+    relationship::npc_policy,
     repair::{item_condition, repair_order},
     strategic::{inventory_quantity_target, party_authority, party_member, settlement},
     surgery::{limb_injury, retained_projectile},
@@ -971,6 +972,15 @@ fn delete_character_data(
         .character_personality()
         .character_id()
         .delete(character.id);
+    if ctx
+        .db
+        .npc_policy()
+        .character_id()
+        .find(character.id)
+        .is_some()
+    {
+        ctx.db.npc_policy().character_id().delete(character.id);
+    }
     ctx.db
         .character_capability()
         .character_id()
@@ -1632,34 +1642,6 @@ pub(crate) fn insert_persistent_npc_character(
         },
         None,
         Some(&life),
-    )
-}
-
-pub(crate) fn insert_new_npc_character_with_life(
-    ctx: &ReducerContext,
-    name: String,
-    id: u64,
-    temporary: bool,
-    facts: NpcLifeFacts,
-) -> Result<(), String> {
-    let mode = if temporary {
-        CharacterCreationMode::TemporaryNpc
-    } else {
-        CharacterCreationMode::PersistentNpc
-    };
-    insert_character_with_origin(
-        ctx,
-        name,
-        id,
-        CharacterCreationOptions {
-            origin_settlement_id: None,
-            mode,
-            create_solo_party: temporary,
-            stable_seed: id,
-            initial_time_minute: None,
-        },
-        None,
-        Some(&facts),
     )
 }
 
@@ -2964,7 +2946,7 @@ mod starting_character_boundary_tests {
             .split("pub(crate) fn insert_persistent_npc_character")
             .nth(1)
             .unwrap()
-            .split("pub(crate) fn insert_new_npc_character_with_life")
+            .split("fn insert_starting_character")
             .next()
             .unwrap();
         assert!(persistent.contains("origin_settlement_id: Some(origin_settlement_id)"));

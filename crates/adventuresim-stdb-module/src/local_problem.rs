@@ -6,7 +6,7 @@ use crate::{
         InvestigationLead, case_site_authority, investigation_event_authority,
         investigation_evidence_authority, investigation_lead,
     },
-    settlement_population::{settlement_npc, settlement_npc_presence},
+    settlement_population::{settlement_resident_presence, settlement_resident_profile},
     strategic::{
         ValidatedQuestGenerationAuthority, hostile_group_authority, quest_generation_authority,
         settlement, strategic_gateway_authority__view, travel_edge,
@@ -67,8 +67,8 @@ pub struct GeneratedProblemIncident {
     pub occurred_at: u64,
     pub event_id: String,
     pub proposition_id: String,
-    pub witness_npc_id: String,
-    pub victim_npc_id: String,
+    pub witness_resident_character_id: u64,
+    pub victim_resident_character_id: u64,
     pub circumstance: String,
     pub site_id: String,
     pub evidence_id: String,
@@ -119,9 +119,9 @@ pub struct LocalProblemReceipt {
     pub settlement_id: String,
     pub problem_id: String,
     pub opaque_case_ref: String,
-    pub source_npc_id: String,
+    pub source_resident_character_id: u64,
     pub discovery_session_id: String,
-    pub contact_npc_id: String,
+    pub contact_resident_character_id: u64,
     pub expected_location_id: String,
     pub safe_summary: String,
     /// Observer chronology used by owner-facing journal projections.
@@ -187,7 +187,7 @@ pub struct PublicThreatDisclosure {
     pub exact_site_id: String,
     pub approximate_count: String,
     pub source_kind: String,
-    pub source_npc_id: String,
+    pub source_resident_character_id: u64,
     pub learned_at: u64,
 }
 
@@ -578,8 +578,8 @@ pub(crate) fn ensure_generated_incidents(
                 occurred_at,
                 event_id: event_id.clone(),
                 proposition_id: proposition_id.clone(),
-                witness_npc_id: witness.npc_id.clone(),
-                victim_npc_id: victim.npc_id.clone(),
+                witness_resident_character_id: witness.resident_character_id.clone(),
+                victim_resident_character_id: victim.resident_character_id.clone(),
                 circumstance: format!("{circumstance:?}").to_ascii_lowercase(),
                 site_id: site.id.0.clone(),
                 evidence_id: evidence_id.clone(),
@@ -603,7 +603,7 @@ pub(crate) fn ensure_generated_incidents(
                     case_id: incident.case_id.clone(),
                     canonical_propositions_json: serde_json::to_string(&[serde_json::json!({
                         "id": proposition_id,
-                        "subject": victim.npc_id,
+                        "subject": victim.resident_character_id,
                         "predicate": "was affected by a further incident near",
                         "object": site.id.0,
                     })])
@@ -1039,7 +1039,7 @@ fn referral_location_label(
         .witnesses
         .iter()
         .find(|witness| {
-            witness.npc_id == receipt.contact_npc_id
+            witness.resident_character_id == receipt.contact_resident_character_id
                 && witness.expected_location == receipt.expected_location_id
         })
         .map(adventuresim_core::quest_generation::referral_display_location)
@@ -1154,7 +1154,7 @@ fn bounded_hearing_graph(ctx: &ReducerContext, listener_node: u64) -> BoundedHea
 fn source_may_disclose_public_threat(
     ctx: &ReducerContext,
     character_id: u64,
-    source_npc: &crate::settlement_population::SettlementNpc,
+    source_npc: &crate::settlement_population::SettlementResidentProfile,
     listener_settlement_id: &str,
     location_id: &str,
     minute: u64,
@@ -1204,7 +1204,7 @@ fn surface_public_threat(
     ctx: &ReducerContext,
     character_id: u64,
     session_id: &str,
-    source_npc: &crate::settlement_population::SettlementNpc,
+    source_npc: &crate::settlement_population::SettlementResidentProfile,
     listener_settlement_id: &str,
     location_id: &str,
     observer_minute: u64,
@@ -1339,7 +1339,7 @@ fn surface_public_threat(
         exact_site_id: site.id.0.clone(),
         approximate_count: count_band.into(),
         source_kind: source_kind.into(),
-        source_npc_id: source_npc.id.clone(),
+        source_resident_character_id: source_npc.character_id.clone(),
         learned_at: observer_minute,
     };
     if ctx
@@ -1425,8 +1425,8 @@ fn surface_new_problem(
     problem: &LocalProblemAuthority,
     character_id: u64,
     session_id: &str,
-    source_npc_id: &str,
-    source_npc: Option<&crate::settlement_population::SettlementNpc>,
+    source_resident_character_id: u64,
+    source_npc: Option<&crate::settlement_population::ResolvedSettlementResident>,
     settlement_id: &str,
     observer_minute: u64,
     official_world_minute: u64,
@@ -1446,14 +1446,17 @@ fn surface_new_problem(
     let Some(witness) = validated.manifest.witnesses.first() else {
         return Ok(false);
     };
-    let Some(contact) = ctx.db.settlement_npc().id().find(&witness.npc_id) else {
+    let Some(contact) = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        witness.resident_character_id,
+    ) else {
         return Ok(false);
     };
     let Some(presence) = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&witness.npc_id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(witness.resident_character_id)
         .filter(|presence| {
             presence.settlement_id == settlement_id
                 && presence.location_id == witness.expected_location
@@ -1473,10 +1476,15 @@ fn surface_new_problem(
     if location_label.is_empty() {
         return Ok(false);
     }
+    let source_identity = source_npc.map(|npc| npc.character_id.to_string());
+    let source = source_npc
+        .zip(source_identity.as_deref())
+        .map(|(npc, id)| (id, npc.name.as_str()));
+    let contact_identity = contact.character_id.to_string();
     let presentation = lp::referral_presentation(
         &symptom.public_summary,
-        source_npc.map(|npc| (npc.id.as_str(), npc.name.as_str())),
-        &contact.id,
+        source,
+        &contact_identity,
         &contact.name,
         &contact.profession,
         &contact.height,
@@ -1491,9 +1499,9 @@ fn surface_new_problem(
         settlement_id: settlement_id.into(),
         problem_id: problem.id.clone(),
         opaque_case_ref: problem.opaque_case_ref.clone(),
-        source_npc_id: source_npc_id.into(),
+        source_resident_character_id,
         discovery_session_id: session_id.into(),
-        contact_npc_id: contact.id,
+        contact_resident_character_id: contact.character_id,
         expected_location_id: presence.location_id,
         safe_summary: symptom.public_summary,
         learned_at: observer_minute,
@@ -1519,7 +1527,7 @@ pub fn surface_problem(
     ctx: &ReducerContext,
     character_id: u64,
     session_id: &str,
-    source_npc_id: &str,
+    source_resident_character_id: u64,
     location_id: &str,
 ) -> Result<(), String> {
     let character = ctx
@@ -1531,12 +1539,11 @@ pub fn surface_problem(
     let settlement_id = character
         .current_settlement_id
         .ok_or("Problem discovery requires a settlement")?;
-    let source_npc = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&source_npc_id.to_owned())
-        .filter(|npc| npc.home_settlement_id == settlement_id);
+    let source_npc = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        source_resident_character_id,
+    )
+    .filter(|npc| npc.home_settlement_id == settlement_id);
     // Problem authority is anchored to the official world clock. A character's
     // elapsed clock is an observer timeline and may be ahead of or behind it
     // after travel, treatment, or bulk settlement activity.
@@ -1570,11 +1577,15 @@ pub fn surface_problem(
     let inn_available = inn_service
         && ctx
             .db
-            .settlement_npc_presence()
+            .settlement_resident_presence()
             .settlement_id()
             .filter(&settlement_id)
             .any(|presence| {
-                let npc = ctx.db.settlement_npc().id().find(&presence.npc_id);
+                let npc = ctx
+                    .db
+                    .settlement_resident_profile()
+                    .character_id()
+                    .find(presence.character_id);
                 dialogue_capable_inn_contact(
                     &presence.settlement_id,
                     &settlement_id,
@@ -1582,7 +1593,7 @@ pub fn surface_problem(
                     crate::settlement_population::npc_is_present(&presence, observer_minute),
                     npc.as_ref().is_some_and(|npc| {
                         npc.home_settlement_id == settlement_id
-                            && crate::settlement_population::npc_is_dialogue_capable(npc)
+                            && crate::settlement_population::resident_is_dialogue_capable(npc)
                     }),
                 )
             });
@@ -1621,7 +1632,7 @@ pub fn surface_problem(
                 problem,
                 character_id,
                 session_id,
-                source_npc_id,
+                source_resident_character_id,
                 source_npc.as_ref(),
                 &settlement_id,
                 observer_minute,
@@ -1735,7 +1746,10 @@ pub fn surface_problem(
                 });
             return Ok(());
         }
-        let Some(contact) = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id) else {
+        let Some(contact) = crate::settlement_population::resolve_settlement_resident(
+            ctx,
+            receipt.contact_resident_character_id,
+        ) else {
             continue;
         };
         let Some(location_label) = referral_location_label(ctx, problem, &receipt) else {
@@ -1743,9 +1757,9 @@ pub fn surface_problem(
         };
         let present = ctx
             .db
-            .settlement_npc_presence()
-            .npc_id()
-            .find(&receipt.contact_npc_id)
+            .settlement_resident_presence()
+            .character_id()
+            .find(receipt.contact_resident_character_id)
             .is_some_and(|presence| {
                 presence.settlement_id == settlement_id
                     && presence.location_id == receipt.expected_location_id
@@ -1753,6 +1767,12 @@ pub fn surface_problem(
         if !present {
             continue;
         }
+        let source_identity = source_npc.as_ref().map(|npc| npc.character_id.to_string());
+        let source = source_npc
+            .as_ref()
+            .zip(source_identity.as_deref())
+            .map(|(npc, id)| (id, npc.name.as_str()));
+        let contact_identity = contact.character_id.to_string();
         ctx.db
             .local_problem_rumor_delivery()
             .insert(LocalProblemRumorDelivery {
@@ -1763,10 +1783,8 @@ pub fn surface_problem(
                 receipt_id: receipt.id,
                 fragments_json: referral_fragments_json(lp::referral_presentation(
                     &receipt.safe_summary,
-                    source_npc
-                        .as_ref()
-                        .map(|npc| (npc.id.as_str(), npc.name.as_str())),
-                    &contact.id,
+                    source,
+                    &contact_identity,
                     &contact.name,
                     &contact.profession,
                     &contact.height,
@@ -1786,7 +1804,7 @@ pub fn surface_problem(
             &problem,
             character_id,
             session_id,
-            source_npc_id,
+            source_resident_character_id,
             source_npc.as_ref(),
             &settlement_id,
             observer_minute,
@@ -2164,7 +2182,7 @@ mod tests {
         for binding in [
             "problem.opaque_case_ref != receipt.opaque_case_ref",
             "problem.id != receipt.problem_id",
-            "witness.npc_id == receipt.contact_npc_id",
+            "witness.resident_character_id == receipt.contact_resident_character_id",
             "witness.expected_location == receipt.expected_location_id",
         ] {
             assert!(referral.contains(binding), "{binding}");
@@ -2285,9 +2303,11 @@ mod tests {
         let local = include_str!("local_problem.rs");
         let surface = local.split("pub fn surface_problem").nth(1).unwrap();
         assert!(surface.contains("validated.manifest.witnesses.first()"));
-        assert!(surface.contains("settlement_npc().id().find(&witness.npc_id)"));
+        assert!(surface.contains(
+            "settlement_resident_profile().character_id().find(witness.resident_character_id)"
+        ));
         assert!(surface.contains("presence.location_id == witness.expected_location"));
-        assert!(surface.contains("contact_npc_id: contact.id"));
+        assert!(surface.contains("contact_resident_character_id: contact.character_id"));
         assert!(surface.contains("discovery_session_id: session_id.into()"));
 
         let strategic = crate::strategic::STRATEGIC_SOURCE;
@@ -2304,7 +2324,7 @@ mod tests {
             .unwrap();
         assert!(receive.contains("referred_generated_witness"));
         assert!(receive.contains("&receipt.opaque_case_ref"));
-        assert!(receive.contains("&live_npc.id"));
+        assert!(receive.contains("&live_npc.character_id"));
         assert!(receive.contains("&session.settlement_id"));
         assert!(receive.contains("&session.location_id"));
         assert!(!receive.contains("manifest.witnesses"));

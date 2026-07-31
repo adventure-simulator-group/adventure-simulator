@@ -155,10 +155,11 @@ pub(super) async fn finalize_merchant_offer(
                 .into_iter()
                 .map(|entry| (entry.id, entry.quantity))
                 .unzip();
-            let provider_npc_id = merchant_provider_id(&state, &id, &service_id, location_id).await;
+            let provider_resident_character_id =
+                merchant_provider_id(&state, &id, &service_id, location_id).await;
             if items.is_empty() && sell_ids.is_empty() {
                 trade_completed = true;
-            } else if let Some(provider_npc_id) = provider_npc_id {
+            } else if let Some(provider_resident_character_id) = provider_resident_character_id {
                 match state
                     .db
                     .call(
@@ -167,7 +168,7 @@ pub(super) async fn finalize_merchant_offer(
                             json!(character.id),
                             json!(&id),
                             json!(&service_id),
-                            json!(provider_npc_id),
+                            json!(provider_resident_character_id),
                             json!(items),
                             json!(quantities),
                             json!(sell_ids),

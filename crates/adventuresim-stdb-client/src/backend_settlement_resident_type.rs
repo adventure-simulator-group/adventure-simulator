@@ -9,8 +9,8 @@ use super::npc_presentation_type::NpcPresentation;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct BackendSettlementNpc {
-    pub id: String,
+pub struct BackendSettlementResident {
+    pub character_id: u64,
     pub home_settlement_id: String,
     pub name: String,
     pub age_band: NpcAgeBand,
@@ -30,39 +30,39 @@ pub struct BackendSettlementNpc {
     pub conversation_id: String,
 }
 
-impl __sdk::InModule for BackendSettlementNpc {
+impl __sdk::InModule for BackendSettlementResident {
     type Module = super::RemoteModule;
 }
 
-/// Column accessor struct for the table `BackendSettlementNpc`.
+/// Column accessor struct for the table `BackendSettlementResident`.
 ///
 /// Provides typed access to columns for query building.
-pub struct BackendSettlementNpcCols {
-    pub id: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub home_settlement_id: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub name: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub age_band: __sdk::__query_builder::Col<BackendSettlementNpc, NpcAgeBand>,
-    pub presentation: __sdk::__query_builder::Col<BackendSettlementNpc, NpcPresentation>,
-    pub height: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub build: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub hair: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub facial_hair: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub complexion: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub visible_features: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub clothing: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub profession: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub household: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub local_role: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub service_id: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub organization_id: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
-    pub conversation_id: __sdk::__query_builder::Col<BackendSettlementNpc, String>,
+pub struct BackendSettlementResidentCols {
+    pub character_id: __sdk::__query_builder::Col<BackendSettlementResident, u64>,
+    pub home_settlement_id: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub name: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub age_band: __sdk::__query_builder::Col<BackendSettlementResident, NpcAgeBand>,
+    pub presentation: __sdk::__query_builder::Col<BackendSettlementResident, NpcPresentation>,
+    pub height: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub build: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub hair: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub facial_hair: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub complexion: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub visible_features: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub clothing: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub profession: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub household: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub local_role: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub service_id: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub organization_id: __sdk::__query_builder::Col<BackendSettlementResident, String>,
+    pub conversation_id: __sdk::__query_builder::Col<BackendSettlementResident, String>,
 }
 
-impl __sdk::__query_builder::HasCols for BackendSettlementNpc {
-    type Cols = BackendSettlementNpcCols;
+impl __sdk::__query_builder::HasCols for BackendSettlementResident {
+    type Cols = BackendSettlementResidentCols;
     fn cols(table_name: &'static str) -> Self::Cols {
-        BackendSettlementNpcCols {
-            id: __sdk::__query_builder::Col::new(table_name, "id"),
+        BackendSettlementResidentCols {
+            character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             home_settlement_id: __sdk::__query_builder::Col::new(table_name, "home_settlement_id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             age_band: __sdk::__query_builder::Col::new(table_name, "age_band"),

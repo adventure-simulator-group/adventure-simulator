@@ -119,14 +119,24 @@ views of contracts, dialogue, investigations, evidence, physiology, and
 case-site knowledge. A public or subscribed row is not automatically safe to
 use as an authorization decision.
 
-The gateway settlement-NPC roster is likewise an explicit player-visible
-projection rather than the authoritative population row. It includes stable
-identity, home settlement, visible description, occupation, household, local
-role, service, and conversation routing. It omits private demographic sex and
-the internal projection traversal key. Browser quest discovery builds its
-candidate and commitment from visible age, presentation, profession, role, and
-presence. Presentation is committed as seen but is not interpreted as private
-sex; the public developer flow leaves that selector empty.
+Every persistent settlement resident is an ordinary full `Character` with one
+authoritative `u64` character ID, the usual component rows, one
+`CharacterTime`, and an `NpcPolicy`. There is no parallel NPC person record or
+string identity. `SettlementResidentProfile`, keyed by that character ID,
+contains only settlement-specific appearance, vocation, service, and
+conversation metadata; presence is keyed by the same ID. Recruitment adds that
+same Character to a party rather than materializing a replacement.
+
+The gateway resident roster is an explicit player-visible join over Character,
+private personality, resident profile, and presence authority. It includes the
+decimal character ID, home settlement, visible description, occupation,
+household, local role, service, and conversation routing. It omits private
+demographic sex and the internal projection traversal key. A missing Character
+or private personality component fails closed rather than falling back to
+duplicated profile data. Browser quest discovery builds its candidate and
+commitment from visible age, presentation, profession, role, and presence.
+Presentation is committed as seen but is not interpreted as private sex; the
+public developer flow leaves that selector empty.
 
 ## Strategic web
 

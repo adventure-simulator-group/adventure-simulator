@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct InvestigationPatternTargetAuthority {
     pub cohort_id: String,
     pub case_id: String,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub demographic: String,
     pub age_band: String,
     pub sex: String,
@@ -29,7 +29,8 @@ impl __sdk::InModule for InvestigationPatternTargetAuthority {
 pub struct InvestigationPatternTargetAuthorityCols {
     pub cohort_id: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
     pub case_id: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
-    pub npc_id: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
+    pub resident_character_id:
+        __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, u64>,
     pub demographic: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
     pub age_band: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
     pub sex: __sdk::__query_builder::Col<InvestigationPatternTargetAuthority, String>,
@@ -46,7 +47,10 @@ impl __sdk::__query_builder::HasCols for InvestigationPatternTargetAuthority {
         InvestigationPatternTargetAuthorityCols {
             cohort_id: __sdk::__query_builder::Col::new(table_name, "cohort_id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
-            npc_id: __sdk::__query_builder::Col::new(table_name, "npc_id"),
+            resident_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "resident_character_id",
+            ),
             demographic: __sdk::__query_builder::Col::new(table_name, "demographic"),
             age_band: __sdk::__query_builder::Col::new(table_name, "age_band"),
             sex: __sdk::__query_builder::Col::new(table_name, "sex"),

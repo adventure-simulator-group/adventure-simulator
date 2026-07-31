@@ -270,7 +270,10 @@ pub(super) async fn settlement_map(
     )
 }
 
-pub(super) fn settlement_html_travel_available(is_current_settlement: bool, has_party: bool) -> bool {
+pub(super) fn settlement_html_travel_available(
+    is_current_settlement: bool,
+    has_party: bool,
+) -> bool {
     is_current_settlement && has_party
 }
 
@@ -324,7 +327,7 @@ mod map_quest_tests {
             xp_reward: 1,
             settlement_id: "issuer".into(),
             service_id: "inn".into(),
-            issuer_npc_id: String::new(),
+            issuer_resident_character_id: String::new(),
             status,
             accepted_by: Some("party".into()),
             opposition_wording: "unknown opposition".into(),

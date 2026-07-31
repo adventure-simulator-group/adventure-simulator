@@ -213,11 +213,7 @@ pub(super) async fn rest(
     } else {
         vec![json!(character_id), json!(requested_minutes), json!(at_inn)]
     };
-    if let Err(error) = state
-        .db
-        .call(reducer, &reducer_arguments)
-        .await
-    {
+    if let Err(error) = state.db.call(reducer, &reducer_arguments).await {
         tracing::warn!(
             character_id,
             requested_settlement_id = %id,
@@ -236,7 +232,13 @@ pub(super) async fn rest(
                     safe_rest_error(&error.to_string()),
                     &format!(
                         "/settlements/{id}/{}",
-                        if at_inn { "inn" } else if at_residence { "places/residences" } else { "religion" }
+                        if at_inn {
+                            "inn"
+                        } else if at_residence {
+                            "places/residences"
+                        } else {
+                            "religion"
+                        }
                     ),
                     "Return to rest service",
                     None,
@@ -731,7 +733,7 @@ mod service_availability_tests {
         assert!(handler.contains("organizations_for_chapter(&id)"));
         assert!(handler.contains("organization.service_id"));
         assert!(handler.contains("exact_apprenticeship_representative_present"));
-        assert!(handler.contains("settlement_npc_presence"));
+        assert!(handler.contains("settlement_resident_presence"));
         assert!(handler.contains("chapter_effective_location_id"));
         assert!(handler.contains("Speak to the local organization representative"));
         assert!(handler.contains("\"join_organization\""));

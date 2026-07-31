@@ -653,7 +653,7 @@ mod tests {
             xp_reward: 1,
             settlement_id: settlement_id.to_string(),
             service_id: "inn".into(),
-            issuer_npc_id: String::new(),
+            issuer_resident_character_id: String::new(),
             status,
             accepted_by: None,
             opposition_wording: "unknown opposition".into(),
