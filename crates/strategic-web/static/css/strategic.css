@@ -2446,6 +2446,27 @@ body.character-action-dialog-open { overflow: hidden; }
   cursor: pointer;
 }
 
+.residence-offer-grid {
+  display: grid;
+  gap: .65rem;
+  margin-top: .75rem;
+}
+
+.residence-offer {
+  display: grid;
+  gap: .35rem;
+  padding: .65rem;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 12%);
+}
+
+.residence-offer p,
+.residence-offer form { margin: 0; }
+.residence-notice { color: var(--accent-gold-light); }
+.romance-actions { display: grid; gap: .5rem; }
+.romance-actions .btn { justify-self: start; }
+
 .settlement-npc-portrait:is(.active, [aria-pressed="true"]) .party-portrait-initial {
   box-shadow:
     0 0 0 2px var(--accent-gold),

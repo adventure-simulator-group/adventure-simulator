@@ -545,6 +545,15 @@ pub struct CharacterResidence {
     pub tenure: ResidenceTenure,
     pub active: bool,
     pub last_billed_minute: u64,
+    pub next_due_minute: u64,
+    pub acquired_minute: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResidenceOccupant {
+    pub character_id: u64,
+    pub residence_character_id: u64,
+    pub admitted_minute: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -556,6 +565,26 @@ pub struct BackendCharacterRelationshipStatus {
     pub courtship_exposed: bool,
     pub pregnancy_due_minute: Option<u64>,
     pub pregnancy_child_id: Option<u64>,
+}
+
+/// Private gateway-only scheduling row. Never serialize this directly to the
+/// browser: handlers reduce it to participant names and a calendar countdown.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExclusiveCommitment {
+    pub id: String,
+    pub first_character_id: u64,
+    pub second_character_id: u64,
+    pub status: String,
+    pub ceremony_settlement_id: String,
+    pub effective_minute: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BackendCourtshipDiscoveryStatus {
+    pub observer_character_id: u64,
+    pub first_character_id: u64,
+    pub second_character_id: u64,
+    pub discovered_minute: u64,
 }
 
 fn deserialize_settlement_religious_status<'de, D>(

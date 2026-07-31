@@ -11,6 +11,45 @@ pub(super) fn parse_surgery_limb(slug: &str) -> Option<LimbRegion> {
     })
 }
 
+#[derive(Default, Deserialize)]
+pub(super) struct ResidencePageQuery {
+    residence_notice: Option<String>,
+}
+
+fn residence_notice(code: Option<&str>) -> Option<&'static str> {
+    match code {
+        Some("rented") => Some("The residence is now rented and ready to use."),
+        Some("bought") => Some("You bought the residence."),
+        Some("relinquished") => Some("You relinquished the residence."),
+        Some("designated") => Some("This residence is now your designated home."),
+        Some("recovered") => Some("The owned residence is active again."),
+        Some("funds") => Some("You do not have enough coin for that."),
+        Some("location") => Some("You must be in this settlement to do that."),
+        Some("overdue") => Some("Settle the overdue housing cost before doing that."),
+        Some("unavailable") => Some("That housing change is not available."),
+        _ => None,
+    }
+}
+
+fn relationship_date_label(minute: u64) -> String {
+    let day = minute / adventuresim_core::strategic_time::MINUTES_PER_DAY;
+    let year = 1544 + day / 365;
+    let day_of_year = day % 365 + 1;
+    format!("year {year}, day {day_of_year}")
+}
+
+fn housing_error_code(error: &str) -> &'static str {
+    if error.contains("coin") || error.contains("fund") {
+        "funds"
+    } else if error.contains("settlement") || error.contains("co-location") {
+        "location"
+    } else if error.contains("dormant") || error.contains("due") {
+        "overdue"
+    } else {
+        "unavailable"
+    }
+}
+
 pub(super) async fn required_surgery_rows<T>(
     state: &AppState,
     sql: &str,
@@ -440,6 +479,7 @@ pub(super) async fn show_settlement(Path(id): Path<String>) -> Redirect {
 pub(super) async fn settlement_resident_place(
     State(state): State<AppState>,
     Path((id, place)): Path<(String, String)>,
+    Query(page_query): Query<ResidencePageQuery>,
     session: Session,
 ) -> Html<String> {
     let organization_chapter =
@@ -497,22 +537,127 @@ pub(super) async fn settlement_resident_place(
             "SELECT * FROM character_residence WHERE character_id = {}",
             character.id,
         );
+        let occupancy_sql = format!(
+            "SELECT * FROM residence_occupant WHERE character_id = {}",
+            character.id,
+        );
         let relationship_sql = format!(
             "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {}",
             character.id,
         );
-        let (offers, residence, relationship) = tokio::join!(
+        let commitment_first_sql = format!(
+            "SELECT * FROM exclusive_commitment WHERE first_character_id = {}",
+            character.id
+        );
+        let commitment_second_sql = format!(
+            "SELECT * FROM exclusive_commitment WHERE second_character_id = {}",
+            character.id
+        );
+        let (offers, residence, occupancy, relationship, first_commitments, second_commitments) = tokio::join!(
             state.db.query::<SettlementResidenceOffer>(&offers_sql),
             state.db.query_one::<CharacterResidence>(&residence_sql),
+            state.db.query_one::<ResidenceOccupant>(&occupancy_sql),
             state
                 .db
                 .query_one::<BackendCharacterRelationshipStatus>(&relationship_sql),
+            state.db.query::<ExclusiveCommitment>(&commitment_first_sql),
+            state
+                .db
+                .query::<ExclusiveCommitment>(&commitment_second_sql),
         );
         let mut offers = offers.unwrap_or_default();
         offers.sort_by_key(|offer| match offer.tier {
             ResidenceTier::Cheap => 0,
             ResidenceTier::Moderate => 1,
             ResidenceTier::Fancy => 2,
+        });
+        let residence = residence.ok().flatten();
+        let occupancy = occupancy.ok().flatten();
+        let occupied_residence = if let Some(occupancy) = occupancy.as_ref()
+            && occupancy.residence_character_id != character.id
+        {
+            state
+                .db
+                .query_one::<CharacterResidence>(&format!(
+                    "SELECT * FROM character_residence WHERE character_id = {}",
+                    occupancy.residence_character_id
+                ))
+                .await
+                .ok()
+                .flatten()
+        } else {
+            residence.clone()
+        };
+        let can_rest_at_home = occupied_residence
+            .as_ref()
+            .is_some_and(|home| home.active && home.settlement_id == settlement.id);
+        let relationship = relationship.ok().flatten();
+        let related_ids = relationship
+            .iter()
+            .flat_map(|status| {
+                [
+                    status.spouse_id,
+                    status.courtship_partner_id,
+                    status.pregnancy_child_id,
+                ]
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        let mut related_characters = Vec::new();
+        for related_id in related_ids {
+            if let Ok(Some(related)) = state
+                .db
+                .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {related_id}"))
+                .await
+            {
+                related_characters.push(related);
+            }
+        }
+        let character_minute = state
+            .db
+            .query_one::<CharacterTime>(&format!(
+                "SELECT * FROM character_time WHERE character_id = {}",
+                character.id
+            ))
+            .await
+            .ok()
+            .flatten()
+            .map_or(0, |time| time.minutes);
+        let mut commitments = first_commitments.unwrap_or_default();
+        commitments.extend(second_commitments.unwrap_or_default());
+        let wedding = commitments
+            .iter()
+            .find(|row| row.status.eq_ignore_ascii_case("reserved"))
+            .map(|row| WeddingPresentation {
+                days_remaining: row
+                    .effective_minute
+                    .saturating_sub(character_minute)
+                    .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY),
+                date_label: relationship_date_label(row.effective_minute),
+            });
+        let presentation = relationship.as_ref().map(|status| {
+            let name = |id: Option<u64>| {
+                id.and_then(|id| {
+                    related_characters
+                        .iter()
+                        .find(|character| character.id == id)
+                        .map(|character| character.name.clone())
+                })
+            };
+            RelationshipPresentation {
+                spouse_name: name(status.spouse_id),
+                courtship_partner_name: name(status.courtship_partner_id),
+                courtship_kind: status.courtship_kind.clone(),
+                courtship_exposed: status.courtship_exposed,
+                wedding,
+                pregnancy_due_label: status.pregnancy_due_minute.map(|due| {
+                    let days = due
+                        .saturating_sub(character_minute)
+                        .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY);
+                    format!("in about {days} days")
+                }),
+                child_names: name(status.pregnancy_child_id).into_iter().collect(),
+            }
         });
         return Html(
             settlement_residence_page(
@@ -521,8 +666,10 @@ pub(super) async fn settlement_resident_place(
                 &party_members,
                 Some(&character.name),
                 &offers,
-                residence.ok().flatten().as_ref(),
-                relationship.ok().flatten().as_ref(),
+                residence.as_ref(),
+                presentation.as_ref(),
+                can_rest_at_home,
+                residence_notice(page_query.residence_notice.as_deref()),
             )
             .into_string(),
         );
@@ -552,22 +699,45 @@ pub(super) async fn change_residence(
         "cheap" => json!({ "cheap": [] }),
         "moderate" => json!({ "moderate": [] }),
         "fancy" => json!({ "fancy": [] }),
-        _ => return Redirect::to(&fallback),
+        "current" => serde_json::Value::Null,
+        _ => return Redirect::to(&format!("{fallback}?residence_notice=unavailable")),
     };
-    let reducer = match action.as_str() {
-        "rent" => "rent_residence",
-        "buy" => "buy_residence",
-        _ => return Redirect::to(&fallback),
+    let (reducer, args, success) = match action.as_str() {
+        "rent" => (
+            "rent_residence",
+            vec![json!(character_id), json!(id), tier_argument],
+            "rented",
+        ),
+        "buy" => (
+            "buy_residence",
+            vec![json!(character_id), json!(id), tier_argument],
+            "bought",
+        ),
+        "relinquish" => (
+            "relinquish_residence",
+            vec![json!(character_id)],
+            "relinquished",
+        ),
+        "designate" => (
+            "designate_residence",
+            vec![json!(character_id)],
+            "designated",
+        ),
+        "recover" => (
+            "recover_owned_residence",
+            vec![json!(character_id)],
+            "recovered",
+        ),
+        _ => return Redirect::to(&format!("{fallback}?residence_notice=unavailable")),
     };
-    match state
-        .db
-        .call(reducer, &[json!(character_id), json!(id), tier_argument])
-        .await
-    {
-        Ok(()) => Redirect::to(&fallback),
+    match state.db.call(reducer, &args).await {
+        Ok(()) => Redirect::to(&format!("{fallback}?residence_notice={success}")),
         Err(error) => {
             tracing::warn!(character_id, action, tier, %error, "residence acquisition rejected");
-            Redirect::to(&fallback)
+            Redirect::to(&format!(
+                "{fallback}?residence_notice={}",
+                housing_error_code(&error.to_string())
+            ))
         }
     }
 }

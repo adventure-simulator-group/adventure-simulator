@@ -161,17 +161,12 @@ async fn actor_and_selector(
             ) {
                 return Err("NPC is not local".into());
             }
-            if subject_id.chars().count() > 160
-                || subject_id.chars().any(char::is_control)
-                || subject_id.is_empty()
-            {
-                return Err("NPC is not local".into());
-            }
+            let resident_character_id =
+                subject_id.parse::<u64>().map_err(|_| "NPC is not local")?;
             let npc = state
                 .db
                 .query_one::<LocalNpcRow>(&format!(
-                    "SELECT * FROM backend_settlement_residents WHERE id = {}",
-                    sql_string_literal(subject_id)
+                    "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
                 ))
                 .await
                 .map_err(|error| error.to_string())?
@@ -179,8 +174,7 @@ async fn actor_and_selector(
             let presence = state
                 .db
                 .query_one::<LocalNpcPresenceRow>(&format!(
-                    "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {}",
-                    sql_string_literal(subject_id)
+                    "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {resident_character_id}"
                 ))
                 .await
                 .map_err(|error| error.to_string())?
@@ -438,11 +432,11 @@ mod tests {
     #[test]
     fn riverdale_inn_npc_chain_uses_authority_not_encoded_id_shape() {
         let npc = LocalNpcRow {
-            id: "npc:riverdale:inn:0".into(),
+            character_id: 41,
             home_settlement_id: "riverdale".into(),
         };
         let mut presence = LocalNpcPresenceRow {
-            resident_character_id: npc.id.clone(),
+            resident_character_id: npc.character_id,
             settlement_id: "riverdale".into(),
             location_id: "inn".into(),
             start_minute: 0,
@@ -495,7 +489,10 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("async fn messages").next())
             .expect("local chat authority handler");
-        assert!(local_route.contains("SELECT * FROM backend_settlement_residents WHERE id = {}"));
+        assert!(
+            local_route
+                .contains("SELECT * FROM backend_settlement_residents WHERE character_id = {}")
+        );
         assert!(local_route.contains(
             "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {}"
         ));

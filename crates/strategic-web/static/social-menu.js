@@ -9,6 +9,12 @@
   const actionId = () => globalThis.crypto?.randomUUID?.()
     || `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const relationshipLabel = (value) => String(value || "uncertain").replaceAll("_", " ");
+  const romanticActionLabel = (action) => ({
+    formal_courtship: "Ask to court formally",
+    informal_courtship: "Propose a private courtship",
+    schedule_wedding: "Schedule wedding",
+    cancel_wedding: "Cancel wedding",
+  })[action] || "Relationship action";
   const FOCUSABLE = [
     "a[href]", "button:not(:disabled)", "input:not([type='hidden']):not(:disabled)",
     "select:not(:disabled)", "textarea:not(:disabled)", "[tabindex]:not([tabindex='-1'])",
@@ -17,7 +23,7 @@
     .filter((element) => !element.hidden && !element.closest("[hidden]")
       && element.getAttribute("aria-hidden") !== "true");
   if (typeof module !== "undefined") {
-    module.exports = { formatDuration, relationshipLabel };
+    module.exports = { formatDuration, relationshipLabel, romanticActionLabel };
   }
   if (typeof window === "undefined" || typeof document === "undefined") return;
   let activeOverlay = null;
@@ -60,7 +66,7 @@
     return `/api/settlements/${encodeURIComponent(strip.dataset.npcSettlement)}/locations/${encodeURIComponent(strip.dataset.npcLocation)}/npcs/${encodeURIComponent(npcId)}/social`;
   };
 
-  const renderNpcSocial = (view, path, opener) => {
+  const renderNpcSocial = (view, path, opener, actionFeedback = null) => {
     closeActiveOverlay(false);
     const controller = new AbortController();
     const { signal } = controller;
@@ -149,7 +155,37 @@
       })[view.last_outcome] || "You spend some time talking.";
     }
     section.append(heading, form, feedback);
-    rail.append(relationship, section);
+    const romance = document.createElement("section");
+    romance.className = "sidebar-section romance-actions";
+    const romanceHeading = document.createElement("h3");
+    romanceHeading.textContent = "Courtship and marriage";
+    romance.append(romanceHeading);
+    if (view.courtship_kind) {
+      const status = document.createElement("p");
+      status.textContent = `${relationshipLabel(view.courtship_kind)} courtship${view.courtship_exposed ? " — known to family" : ""}`;
+      romance.append(status);
+    }
+    if (Number.isFinite(view.wedding_countdown_days)) {
+      const wedding = document.createElement("p");
+      wedding.textContent = `Wedding in ${view.wedding_countdown_days} days`;
+      romance.append(wedding);
+    }
+    const romanceFeedback = document.createElement("p");
+    romanceFeedback.className = actionFeedback?.ok === false
+      ? "social-feedback social-feedback-error"
+      : "social-feedback";
+    romanceFeedback.setAttribute("role", "status");
+    romanceFeedback.textContent = actionFeedback?.message || "";
+    romance.append(romanceFeedback);
+    (view.romantic_actions || []).forEach((action) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-small";
+      button.dataset.romanticAction = action;
+      button.textContent = romanticActionLabel(action);
+      romance.append(button);
+    });
+    rail.append(relationship, section, romance);
     dialog.append(header, rail);
     overlay.append(backdrop, dialog);
     document.body.append(overlay);
@@ -206,6 +242,35 @@
         feedback.textContent = "The conversation could not be completed right now.";
         window.reportStrategicError(error, "chat with local resident");
         submit.disabled = false;
+      }
+    }, { signal });
+    romance.addEventListener("click", async (event) => {
+      const button = event.target.closest?.("[data-romantic-action]");
+      if (!button) return;
+      button.disabled = true;
+      const romancePath = path.replace(/\/social$/, `/romance/${encodeURIComponent(button.dataset.romanticAction)}`);
+      try {
+        const response = await window.strategicFetch(romancePath, {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          signal,
+        });
+        if (!response.ok) throw new Error(`Relationship action failed (${response.status})`);
+        const result = await response.json();
+        if (signal.aborted) return;
+        if (!result || typeof result.ok !== "boolean" || typeof result.message !== "string" || !result.view) {
+          throw new Error("Relationship action returned an invalid response");
+        }
+        renderNpcSocial(result.view, path, opener, {
+          ok: result.ok,
+          message: result.message,
+        });
+      } catch (error) {
+        if (signal.aborted || error?.name === "AbortError") return;
+        romanceFeedback.className = "social-feedback social-feedback-error";
+        romanceFeedback.textContent = "That relationship change could not be completed right now.";
+        window.reportStrategicError(error, "change NPC relationship");
+        button.disabled = false;
       }
     }, { signal });
     dialog.focus();

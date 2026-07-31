@@ -1,3 +1,18 @@
+#[derive(serde::Deserialize)]
+struct MerchantProviderRow {
+    character_id: u64,
+    home_settlement_id: String,
+    service_id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct MerchantProviderPresenceRow {
+    resident_character_id: u64,
+    settlement_id: String,
+    location_id: String,
+    is_default: bool,
+}
+
 pub(super) fn merchant_service_location(service_id: &str) -> Option<&'static str> {
     match service_id {
         "merchants" => Some("market"),
@@ -38,16 +53,16 @@ pub(super) async fn merchant_provider_id(
                 presences
                     .iter()
                     .any(|presence| {
-                        presence.resident_character_id == provider.id
+                        presence.resident_character_id == provider.character_id
                             && presence.settlement_id == settlement_id
                             && presence.location_id == location_id
                             && presence.is_default
                     })
-                    .then_some(provider.id)
+                    .then_some(provider.character_id)
             })
     });
     let provider = matches.next()?;
-    matches.next().is_none().then_some(provider)
+    matches.next().is_none().then(|| provider.to_string())
 }
 
 pub(super) async fn provisioning_storefront_path(

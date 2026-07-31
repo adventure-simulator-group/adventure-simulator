@@ -4,7 +4,11 @@ const path = require("node:path");
 const test = require("node:test");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "social-menu.js"), "utf8");
-const { formatDuration, relationshipLabel } = require("../static/social-menu.js");
+const {
+  formatDuration,
+  relationshipLabel,
+  romanticActionLabel,
+} = require("../static/social-menu.js");
 
 test("chat duration presentation supports quarter-hour activity controls", () => {
   assert.equal(formatDuration(15), "15 minutes");
@@ -36,4 +40,14 @@ test("NPC social modal follows soft-navigation lifecycle and traps focus", () =>
 test("an NPC chat form retains one action ID across transport retries", () => {
   assert.match(source, /const submissionActionId = actionId\(\)/);
   assert.match(source, /action_id: submissionActionId/);
+});
+
+test("courtship controls use structured safe results and preserve modal focus", () => {
+  assert.equal(romanticActionLabel("formal_courtship"), "Ask to court formally");
+  assert.equal(romanticActionLabel("schedule_wedding"), "Schedule wedding");
+  assert.match(source, /typeof result\.ok !== "boolean"/);
+  assert.match(source, /typeof result\.message !== "string"/);
+  assert.match(source, /renderNpcSocial\(result\.view, path, opener/);
+  assert.match(source, /dialog\.focus\(\)/);
+  assert.doesNotMatch(source, /error\.message.*textContent|textContent.*error\.message/);
 });

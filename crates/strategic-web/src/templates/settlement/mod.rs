@@ -31,7 +31,8 @@ pub(crate) use chrome::{
     settlement_description,
 };
 pub use chrome::{
-    settlement_overview_page, settlement_residence_page, settlement_resident_location_page,
+    RelationshipPresentation, WeddingPresentation, settlement_overview_page,
+    settlement_residence_page, settlement_resident_location_page,
 };
 pub use context::{LocationKind, LocationView};
 pub use rest::{RestSummary, SoapRestPreview, rest_result_page};

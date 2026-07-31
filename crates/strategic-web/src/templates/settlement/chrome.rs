@@ -5,9 +5,9 @@ use maud::{Markup, html};
 use super::social::{npc_description_stage, npc_portrait_strip, settlement_resident_chat_area};
 use super::{SoapRestPreview, corpse_medical_dialog, rest_service_menu};
 use crate::spacetimedb::{
-    BackendCharacterRelationshipStatus, BackendCorpse, Character, CharacterResidence,
-    ResidenceTenure, ResidenceTier, Settlement, SettlementAlias, SettlementCategory,
-    SettlementDescription, SettlementDescriptionKind, SettlementResidenceOffer,
+    BackendCorpse, Character, CharacterResidence, ResidenceTenure, ResidenceTier, Settlement,
+    SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
+    SettlementResidenceOffer,
 };
 use crate::templates::{
     game_icon, population_description, settlement_layout_with_session, sidebar_section,
@@ -175,6 +175,7 @@ pub fn settlement_resident_location_page(
         location_id,
         logged_in_as,
         None,
+        false,
     )
 }
 
@@ -185,9 +186,11 @@ pub fn settlement_residence_page(
     logged_in_as: Option<&str>,
     offers: &[SettlementResidenceOffer],
     current: Option<&CharacterResidence>,
-    relationship: Option<&BackendCharacterRelationshipStatus>,
+    relationship: Option<&RelationshipPresentation>,
+    can_rest_at_home: bool,
+    notice: Option<&str>,
 ) -> Markup {
-    let panel = residence_offer_panel(settlement, offers, current, relationship);
+    let panel = residence_offer_panel(settlement, offers, current, relationship, notice);
     settlement_resident_location_page_with_panel(
         settlement,
         active_character,
@@ -195,6 +198,7 @@ pub fn settlement_residence_page(
         "residences",
         logged_in_as,
         Some(panel),
+        can_rest_at_home,
     )
 }
 
@@ -205,6 +209,7 @@ fn settlement_resident_location_page_with_panel(
     location_id: &str,
     logged_in_as: Option<&str>,
     residence_panel: Option<Markup>,
+    can_rest_at_home: bool,
 ) -> Markup {
     let chapter =
         adventuresim_core::organization::organization_chapter_at(&settlement.id, location_id);
@@ -269,14 +274,19 @@ fn settlement_resident_location_page_with_panel(
             (sidebar_section("Location", html! { p { (description) } }))
             @if location_id == "residences" {
                 @if let Some(panel) = residence_panel { (panel) }
-                (sidebar_section("Home", rest_service_menu(
-                    "Home",
-                    &settlement.id,
-                    "residence",
-                    None,
-                    None,
-                    SoapRestPreview::default(),
-                )))
+                @if can_rest_at_home {
+                    (sidebar_section("Home", html! {
+                        p class="text-muted small-copy" { "Your active local home covers this stay." }
+                        (rest_service_menu(
+                            "Home",
+                            &settlement.id,
+                            "residence",
+                            None,
+                            None,
+                            SoapRestPreview::default(),
+                        ))
+                    }))
+                }
             }
         }
     };
@@ -291,6 +301,23 @@ fn settlement_resident_location_page_with_panel(
         content,
         logged_in_as,
     )
+}
+
+#[derive(Debug, Clone)]
+pub struct WeddingPresentation {
+    pub days_remaining: u64,
+    pub date_label: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RelationshipPresentation {
+    pub spouse_name: Option<String>,
+    pub courtship_partner_name: Option<String>,
+    pub courtship_kind: Option<String>,
+    pub courtship_exposed: bool,
+    pub wedding: Option<WeddingPresentation>,
+    pub pregnancy_due_label: Option<String>,
+    pub child_names: Vec<String>,
 }
 
 fn residence_tier_label(tier: ResidenceTier) -> &'static str {
@@ -313,34 +340,62 @@ fn residence_offer_panel(
     settlement: &Settlement,
     offers: &[SettlementResidenceOffer],
     current: Option<&CharacterResidence>,
-    relationship: Option<&BackendCharacterRelationshipStatus>,
+    relationship: Option<&RelationshipPresentation>,
+    notice: Option<&str>,
 ) -> Markup {
     sidebar_section(
         "Residences",
         html! {
+            @if let Some(notice) = notice {
+                p class="residence-notice" role="status" { (notice) }
+            }
             @if let Some(current) = current {
                 p { "Current: " (residence_tier_label(current.tier)) " " (match current.tenure { ResidenceTenure::Renter => "rental", ResidenceTenure::Owner => "owned" })
                     @if !current.active { " (payment overdue)" }
                 }
+                p class="text-muted small-copy" {
+                    @if current.active { "Next payment: " } @else { "Overdue since " }
+                    (format_residence_date(current.next_due_minute)) "."
+                }
+                @if current.tenure == ResidenceTenure::Owner && !current.active {
+                    form action=(format!("/settlements/{}/residences/recover/current", settlement.id)) method="post" {
+                        button type="submit" class="btn btn-small" { "Recover owned home" }
+                    }
+                }
+                @if current.active {
+                    form action=(format!("/settlements/{}/residences/designate/current", settlement.id)) method="post" {
+                        button type="submit" class="btn btn-small" { "Designate as home" }
+                    }
+                }
+                form action=(format!("/settlements/{}/residences/relinquish/current", settlement.id)) method="post" {
+                    button type="submit" class="btn btn-small btn-danger" { "Relinquish home" }
+                }
             } @else { p { "No primary residence." } }
             @if let Some(relationship) = relationship {
-                @if let Some(spouse_id) = relationship.spouse_id { p { "Spouse: character #" (spouse_id) } }
-                @if let Some(partner_id) = relationship.courtship_partner_id {
-                    p { "Courtship: " (relationship.courtship_kind.as_deref().unwrap_or("active")) " with character #" (partner_id)
+                @if let Some(spouse_name) = &relationship.spouse_name { p { "Spouse: " (spouse_name) } }
+                @if let Some(partner_name) = &relationship.courtship_partner_name {
+                    p { "Courtship: " (relationship.courtship_kind.as_deref().unwrap_or("active")) " with " (partner_name)
                         @if relationship.courtship_exposed { " (known to family)" }
                     }
                 }
-                @if let Some(due_minute) = relationship.pregnancy_due_minute {
-                    p { "Expected birth at strategic minute " (due_minute)
-                        @if relationship.pregnancy_child_id.is_some() { " (birth recorded)" }
-                    }
+                @if let Some(wedding) = &relationship.wedding {
+                    p { "Wedding: " (&wedding.date_label) " (" (wedding.days_remaining) " days remaining)" }
+                }
+                @if let Some(due) = &relationship.pregnancy_due_label {
+                    p { "Expected birth " (due) "." }
+                }
+                @for child in &relationship.child_names {
+                    p { "Child: " (child) }
                 }
             }
+            div class="residence-offer-grid" {
             @for offer in offers {
-                div class="residence-offer" {
+                article class="residence-offer" data-residence-tier=(residence_tier_id(offer.tier)) {
                     strong { (residence_tier_label(offer.tier)) }
-                    p { (offer.rent_per_period) " coin / 30 days" }
-                    p { (offer.purchase_price) " coin to buy" }
+                    p { "Rent: " (offer.rent_per_period) " coin per 30 days" }
+                    p { "Buy: " (offer.purchase_price) " coin" }
+                    p { "Owner upkeep: " (offer.owner_maintenance_per_period) " + " (offer.property_tax_per_period) " tax per 30 days" }
+                    p { "Leisure benefit: +" (format_morale_percent(offer.leisure_morale_basis_points)) "% morale" }
                     form action=(format!("/settlements/{}/residences/rent/{}", settlement.id, residence_tier_id(offer.tier))) method="post" {
                         button type="submit" class="btn btn-small" { "Rent" }
                     }
@@ -349,8 +404,24 @@ fn residence_offer_panel(
                     }
                 }
             }
+            }
         },
     )
+}
+
+fn format_morale_percent(basis_points: u16) -> String {
+    let whole = basis_points / 100;
+    let fraction = basis_points % 100;
+    if fraction == 0 {
+        whole.to_string()
+    } else {
+        format!("{whole}.{fraction:02}")
+    }
+}
+
+fn format_residence_date(minute: u64) -> String {
+    let day = minute / adventuresim_core::strategic_time::MINUTES_PER_DAY;
+    format!("year {}, day {}", 1544 + day / 365, day % 365 + 1)
 }
 
 fn settlement_alias_labels(settlement: &Settlement, aliases: &[SettlementAlias]) -> Vec<String> {
@@ -977,6 +1048,54 @@ mod tests {
         assert!(components.contains(
             ".settlement-places-nav a:is(:hover, :focus-visible, .active, [aria-current=\"page\"])"
         ));
+    }
+
+    #[test]
+    fn residence_panel_compares_three_tiers_and_names_family_without_raw_time_or_ids() {
+        let settlement = settlement();
+        let offers = [
+            ResidenceTier::Cheap,
+            ResidenceTier::Moderate,
+            ResidenceTier::Fancy,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, tier)| SettlementResidenceOffer {
+            id: format!("home-{index}"),
+            settlement_id: settlement.id.clone(),
+            tier,
+            purchase_price: 100 + index as u32 * 100,
+            rent_per_period: 10 + index as u32 * 10,
+            owner_maintenance_per_period: 3 + index as u32,
+            property_tax_per_period: 2 + index as u32,
+            leisure_morale_basis_points: 40 + index as u16 * 40,
+        })
+        .collect::<Vec<_>>();
+        let relationship = RelationshipPresentation {
+            spouse_name: Some("Anna".into()),
+            courtship_partner_name: None,
+            courtship_kind: None,
+            courtship_exposed: false,
+            wedding: Some(WeddingPresentation {
+                days_remaining: 365,
+                date_label: "year 1546, day 120".into(),
+            }),
+            pregnancy_due_label: Some("in about 270 days".into()),
+            child_names: vec!["Elsa".into()],
+        };
+        let markup = residence_offer_panel(&settlement, &offers, None, Some(&relationship), None)
+            .into_string();
+
+        assert_eq!(markup.matches("class=\"residence-offer\"").count(), 3);
+        for tier in ["cheap", "moderate", "fancy"] {
+            assert!(markup.contains(&format!("data-residence-tier=\"{tier}\"")));
+        }
+        assert!(markup.contains("Owner upkeep:"));
+        assert!(markup.contains("Leisure benefit:"));
+        assert!(markup.contains("Spouse: Anna"));
+        assert!(markup.contains("Child: Elsa"));
+        assert!(!markup.contains("character #"));
+        assert!(!markup.contains("strategic minute"));
     }
 
     #[test]
