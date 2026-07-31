@@ -199,7 +199,10 @@ its actually elapsed prefix is committed. This includes terminal-clipped
 travel, settlement activity/rest, field waiting/rest, and official-time
 synchronization. The pure minute calculation gives the same result when an
 interval is partitioned. Settlement shelter blocks rain and wind; explicit
-field rest instead uses the chosen bivouac or party-owned tent.
+field rest instead uses the chosen bivouac or party-owned tent. Rest at an
+inn, temple, or residence occurs indoors: exterior temperature cannot create
+new thermal strain there, and existing wetness and strain recover toward
+neutral.
 
 The calendar treats Day 7 and every seventh day thereafter as Sunday. A religious character who is in a settlement on Sunday receives an explicit call to keep a full day of worship and rest. Traveling during any part of Sunday counts as refusing that call. The server applies the same continuous Fervor- and party-Command-based morale penalty once for that Sunday, including when a journey begins Saturday night and ends Monday morning. A pending Sunday demand is automatically resolved as refused when the party departs; already resolved Sundays cannot be penalized twice.
 
