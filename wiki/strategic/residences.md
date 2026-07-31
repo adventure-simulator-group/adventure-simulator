@@ -29,6 +29,17 @@ maintenance, and property tax remain the recurring cost. A residence supplies
 local lodging and tiered Leisure morale only in its own settlement; it neither
 makes another settlement free nor replaces travel costs.
 
+The residence ledger is private gateway authority. A resident receives home
+rest and comfort through an explicit occupancy edge to the renter or owner,
+so spouses and dependent children receive the same tier benefit without
+pretending to own the home. Public admission requires living co-located
+characters and an active shared household or spouse/parent/child relationship;
+an existing place in another home is rejected rather than silently stolen.
+Wedding and birth settlement use a private atomic move after establishing the
+new household or kinship. A character has one active household membership.
+Ending a marriage or widowhood releases the marriage household and guest
+occupancy deterministically, while a residence holder keeps their own home.
+
 Residence and spouse Leisure are each represented by one refreshable morale
 source rather than a new stackable event per rest. Residence morale is capped
 at 8 points and lasts seven days; spouse Leisure is capped at 12 points and

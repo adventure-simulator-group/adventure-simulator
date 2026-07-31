@@ -1638,6 +1638,28 @@ pub fn apply_async_socializing(
     target_id: u64,
     minutes: u64,
 ) -> Result<(), String> {
+    apply_async_socializing_with_familiarity(ctx, actor_id, target_id, minutes, true)
+}
+
+/// Party familiarity is owned by the shared-clock settlement path. Scheduled
+/// Socializing with a party member still grants directed affinity, while this
+/// entry point avoids counting the same colocated minutes a second time.
+pub fn apply_async_socializing_without_familiarity(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    minutes: u64,
+) -> Result<(), String> {
+    apply_async_socializing_with_familiarity(ctx, actor_id, target_id, minutes, false)
+}
+
+fn apply_async_socializing_with_familiarity(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    minutes: u64,
+    record_familiarity: bool,
+) -> Result<(), String> {
     if actor_id == target_id || minutes == 0 {
         return Ok(());
     }
@@ -1656,6 +1678,9 @@ pub fn apply_async_socializing(
         actor_id,
         current + realized_affinity_delta(current, requested),
     );
+    if !record_familiarity {
+        return Ok(());
+    }
     let Some((low_id, high_id)) = canonical_pair(actor_id, target_id) else {
         return Ok(());
     };

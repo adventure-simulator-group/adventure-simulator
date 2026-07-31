@@ -7,7 +7,8 @@ use adventuresim_core::courtship::{
     FORMAL_FATHER_APPROVAL_AFFINITY, GESTATION_MINUTES, LeisureInterval,
     SPOUSE_LEISURE_MORALE_SPEC, WEDDING_NOTICE_MINUTES, conception_quantum_plan,
     deterministic_child_seeds, informal_affinity_threshold, joint_leisure_minutes, refresh_morale,
-    spouse_leisure_earned_milli, stable_lifecycle_hash, succeeds_daily_trial,
+    select_daily_location_target, spouse_leisure_earned_milli, stable_lifecycle_hash,
+    succeeds_daily_trial,
 };
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
@@ -119,7 +120,8 @@ pub struct HouseholdMember {
     pub id: String,
     #[index(btree)]
     pub household_id: String,
-    #[index(btree)]
+    /// A character has one authoritative active household at a time.
+    #[unique]
     pub character_id: u64,
     pub joined_minute: u64,
 }
@@ -263,6 +265,8 @@ pub struct CourtshipRecord {
     pub status: CourtshipStatus,
     pub secrecy_reason: Option<CourtshipSecrecyReason>,
     pub started_minute: u64,
+    /// First relationship-day whose observer checks have not been resolved.
+    pub next_discovery_day: u64,
     pub resolved_minute: Option<u64>,
     pub terminal_reason: Option<CourtshipTerminalReason>,
 }
@@ -416,6 +420,17 @@ pub struct BackendCharacterRelationshipStatus {
     pub pregnancy_child_id: Option<u64>,
 }
 
+/// Observer-scoped knowledge of a discovered facade. The gateway may return a
+/// row only to `observer_character_id`; partners and unrelated characters do
+/// not learn which family member discovered the relationship.
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendCourtshipDiscoveryStatus {
+    pub observer_character_id: u64,
+    pub first_character_id: u64,
+    pub second_character_id: u64,
+    pub discovered_minute: u64,
+}
+
 fn is_strategic_gateway(ctx: &ViewContext) -> bool {
     ctx.db
         .strategic_gateway_authority()
@@ -554,6 +569,36 @@ pub fn backend_character_relationship_statuses(
                     }),
                 }
             })
+        })
+        .collect()
+}
+
+#[view(accessor = backend_courtship_discoveries, public)]
+pub fn backend_courtship_discoveries(ctx: &ViewContext) -> Vec<BackendCourtshipDiscoveryStatus> {
+    if !is_strategic_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .courtship_discovery()
+        .observer_id()
+        .filter(0u64..)
+        .filter(|receipt| receipt.succeeded)
+        .filter_map(|receipt| {
+            let observer_minute = ctx
+                .db
+                .character_time()
+                .character_id()
+                .find(receipt.observer_id)
+                .map_or(0, |time| time.minutes);
+            (receipt.attempted_minute <= observer_minute)
+                .then(|| ctx.db.courtship().id().find(&receipt.courtship_id))
+                .flatten()
+                .map(|courtship| BackendCourtshipDiscoveryStatus {
+                    observer_character_id: receipt.observer_id,
+                    first_character_id: courtship.first_character_id,
+                    second_character_id: courtship.second_character_id,
+                    discovered_minute: receipt.attempted_minute,
+                })
         })
         .collect()
 }
@@ -833,6 +878,31 @@ fn ensure_kinship(
     }
 }
 
+fn leave_household(ctx: &ReducerContext, character_id: u64) {
+    if let Some(member) = ctx.db.household_member().character_id().find(character_id) {
+        ctx.db.household_member().id().delete(&member.id);
+    }
+}
+
+fn join_household(ctx: &ReducerContext, household_id: &str, character_id: u64, minute: u64) {
+    if ctx
+        .db
+        .household_member()
+        .character_id()
+        .find(character_id)
+        .is_some_and(|member| member.household_id == household_id)
+    {
+        return;
+    }
+    leave_household(ctx, character_id);
+    ctx.db.household_member().insert(HouseholdMember {
+        id: format!("household:{household_id}:{character_id}"),
+        household_id: household_id.to_owned(),
+        character_id,
+        joined_minute: minute,
+    });
+}
+
 fn father_of(ctx: &ReducerContext, child_id: u64) -> Option<u64> {
     ctx.db.character_kinship().iter().find_map(|edge| {
         (edge.subject_id == child_id && edge.kind == KinshipKind::Parent)
@@ -965,16 +1035,13 @@ pub fn settle_due_weddings(
             });
         }
         for character_id in [first.id, second.id] {
-            let member_id = format!("household:{household_id}:{character_id}");
-            if ctx.db.household_member().id().find(&member_id).is_none() {
-                ctx.db.household_member().insert(HouseholdMember {
-                    id: member_id,
-                    household_id: household_id.clone(),
-                    character_id,
-                    joined_minute: commitment.effective_minute,
-                });
-            }
-            crate::residence::admit_residence_occupant(
+            join_household(
+                ctx,
+                &household_id,
+                character_id,
+                commitment.effective_minute,
+            );
+            crate::residence::move_residence_occupant_internal(
                 ctx,
                 residence_character_id,
                 character_id,
@@ -1617,25 +1684,15 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
             .db
             .household_member()
             .character_id()
-            .filter(mother.id)
-            .next()
-            .or_else(|| {
-                ctx.db
-                    .household_member()
-                    .character_id()
-                    .filter(father.id)
-                    .next()
-            })
+            .find(mother.id)
+            .or_else(|| ctx.db.household_member().character_id().find(father.id))
         {
-            let id = format!("household:{}:{child_id}", household_member.household_id);
-            if ctx.db.household_member().id().find(&id).is_none() {
-                ctx.db.household_member().insert(HouseholdMember {
-                    id,
-                    household_id: household_member.household_id,
-                    character_id: child_id,
-                    joined_minute: pregnancy.due_minute,
-                });
-            }
+            join_household(
+                ctx,
+                &household_member.household_id,
+                child_id,
+                pregnancy.due_minute,
+            );
         }
         if let Some(residence_character_id) = [mother.id, father.id].into_iter().find_map(|id| {
             ctx.db
@@ -1644,7 +1701,7 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 .find(id)
                 .map(|occupant| occupant.residence_character_id)
         }) {
-            crate::residence::admit_residence_occupant(
+            crate::residence::move_residence_occupant_internal(
                 ctx,
                 residence_character_id,
                 child_id,
@@ -1696,8 +1753,8 @@ pub fn settle_due_births_global(
     Ok(count)
 }
 
-fn socializing_id(actor_id: u64, start_minute: u64, end_minute: u64) -> String {
-    format!("socializing:{actor_id}:{start_minute}:{end_minute}")
+fn socializing_id(actor_id: u64, day: u64) -> String {
+    format!("socializing:{actor_id}:{day}")
 }
 
 fn active_romantic_partner(ctx: &ReducerContext, actor_id: u64) -> Option<u64> {
@@ -1719,11 +1776,19 @@ fn socializing_target(ctx: &ReducerContext, actor_id: u64, day: u64) -> Option<u
             && candidate.id != actor_id
             && candidate.current_settlement_id == actor.current_settlement_id
     };
+    let location_id = actor.current_settlement_id.as_deref()?;
     let choose = |mut candidates: Vec<u64>| {
         candidates.sort_unstable();
         candidates.dedup();
-        (!candidates.is_empty())
-            .then(|| candidates[((actor_id ^ day.rotate_left(17)) as usize) % candidates.len()])
+        let candidate_strings: Vec<_> = candidates.iter().map(u64::to_string).collect();
+        let actor = actor_id.to_string();
+        select_daily_location_target(
+            &actor,
+            location_id,
+            day,
+            candidate_strings.iter().map(String::as_str),
+        )
+        .and_then(|selected| selected.parse().ok())
     };
     if let Some(partner) = active_romantic_partner(ctx, actor_id)
         && ctx
@@ -1797,29 +1862,62 @@ pub fn apply_scheduled_socializing(
                 .saturating_mul(u64::from(schedule_minutes_per_day))
                 / MINUTES_PER_DAY
         };
-        let minutes = allocation(end).saturating_sub(allocation(start));
+        let id = socializing_id(actor_id, day);
+        let existing = ctx.db.socializing_receipt().id().find(&id);
+        let applied_through = existing
+            .as_ref()
+            .map_or(start, |receipt| receipt.end_minute.max(start));
+        let minutes = allocation(end).saturating_sub(allocation(applied_through));
         if minutes == 0 {
             continue;
         }
-        let id = socializing_id(actor_id, start, end);
-        if ctx.db.socializing_receipt().id().find(&id).is_some() {
-            continue;
-        }
-        let Some(target_id) = socializing_target(ctx, actor_id, day) else {
-            continue;
+        let target_id = if let Some(receipt) = existing.as_ref() {
+            receipt.target_id
+        } else {
+            let Some(target_id) = socializing_target(ctx, actor_id, day) else {
+                continue;
+            };
+            target_id
         };
         let _ =
             enforce_temporal_scope(ctx, actor_id, Some(target_id), TemporalScope::PairwiseSoft)?;
-        crate::social::apply_async_socializing(ctx, actor_id, target_id, minutes)?;
-        settle_secret_courtship_discovery_for_pair(ctx, actor_id, target_id, day)?;
-        ctx.db.socializing_receipt().insert(SocializingReceipt {
+        let actor_party_id = ctx
+            .db
+            .character()
+            .id()
+            .find(actor_id)
+            .and_then(|character| character.party_id);
+        let target_is_party_member = actor_party_id.is_some()
+            && ctx
+                .db
+                .character()
+                .id()
+                .find(target_id)
+                .is_some_and(|character| character.party_id == actor_party_id);
+        if target_is_party_member {
+            crate::social::apply_async_socializing_without_familiarity(
+                ctx, actor_id, target_id, minutes,
+            )?;
+        } else {
+            crate::social::apply_async_socializing(ctx, actor_id, target_id, minutes)?;
+        }
+        let receipt = SocializingReceipt {
             id,
             actor_id,
             target_id,
-            start_minute: start,
+            start_minute: existing
+                .as_ref()
+                .map_or(start, |receipt| receipt.start_minute.min(start)),
             end_minute: end,
-            minutes,
-        });
+            minutes: existing
+                .as_ref()
+                .map_or(minutes, |receipt| receipt.minutes.saturating_add(minutes)),
+        };
+        if existing.is_some() {
+            ctx.db.socializing_receipt().id().update(receipt);
+        } else {
+            ctx.db.socializing_receipt().insert(receipt);
+        }
     }
     Ok(())
 }
@@ -1838,7 +1936,7 @@ pub fn settle_secret_courtship_discovery_for_pair(
     let Some(courtship) = ctx.db.courtship().id().find(&courtship_id) else {
         return Ok(());
     };
-    if courtship.kind != CourtshipKind::Informal || courtship.status == CourtshipStatus::Ended {
+    if courtship.kind != CourtshipKind::Informal || courtship.status != CourtshipStatus::Active {
         return Ok(());
     }
     let first_person = ctx
@@ -1875,8 +1973,8 @@ pub fn settle_secret_courtship_discovery_for_pair(
         };
         if !observer.alive
             || observer.age_years < ADULT_AGE_YEARS
-            || (observer.current_settlement_id != first_person.current_settlement_id
-                && observer.current_settlement_id != second_person.current_settlement_id)
+            || first_person.current_settlement_id != second_person.current_settlement_id
+            || observer.current_settlement_id != first_person.current_settlement_id
         {
             continue;
         }
@@ -1900,7 +1998,9 @@ pub fn settle_secret_courtship_discovery_for_pair(
             ((first ^ second ^ observer_id ^ day.rotate_left(19)) % 10_000) as f32 / 10_000.0;
         let discovery_chance = ((insight - deception) * 0.08 + 0.15).clamp(0.02, 0.85);
         let succeeded = entropy < discovery_chance;
-        let attempted_minute = day.saturating_mul(MINUTES_PER_DAY);
+        let attempted_minute = day
+            .saturating_mul(MINUTES_PER_DAY)
+            .max(courtship.started_minute);
         ctx.db.courtship_discovery().insert(CourtshipDiscovery {
             id,
             courtship_id: courtship_id.clone(),
@@ -1945,6 +2045,61 @@ pub fn settle_secret_courtship_discovery_for_pair(
                     ctx.db.character_affinity().insert(row);
                 }
             }
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Advance all active secret relationships involving this character through
+/// the current relationship day. This is independent of whom the character
+/// happened to socialize with: every eligible family observer gets one
+/// receipt per day until the first successful exposure.
+pub fn settle_secret_courtship_discovery_for_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Result<(), String> {
+    let current_day = minute / MINUTES_PER_DAY;
+    let mut courtship_ids: Vec<_> = ctx
+        .db
+        .courtship()
+        .iter()
+        .filter(|row| {
+            row.kind == CourtshipKind::Informal
+                && row.status == CourtshipStatus::Active
+                && (row.first_character_id == character_id
+                    || row.second_character_id == character_id)
+                && row.started_minute <= minute
+        })
+        .map(|row| row.id)
+        .collect();
+    courtship_ids.sort();
+    for courtship_id in courtship_ids {
+        loop {
+            let Some(courtship) = ctx.db.courtship().id().find(&courtship_id) else {
+                break;
+            };
+            if courtship.status != CourtshipStatus::Active
+                || courtship.next_discovery_day > current_day
+            {
+                break;
+            }
+            let day = courtship.next_discovery_day;
+            settle_secret_courtship_discovery_for_pair(
+                ctx,
+                courtship.first_character_id,
+                courtship.second_character_id,
+                day,
+            )?;
+            let Some(mut updated) = ctx.db.courtship().id().find(&courtship_id) else {
+                break;
+            };
+            if updated.status != CourtshipStatus::Active {
+                break;
+            }
+            updated.next_discovery_day = day.saturating_add(1);
+            ctx.db.courtship().id().update(updated);
         }
     }
     Ok(())
@@ -2067,8 +2222,16 @@ fn establish_courtship(
 ) -> Result<(), String> {
     let (first_character_id, second_character_id) = canonical_pair(suitor_id, partner_id);
     let id = format!("courtship:{first_character_id}:{second_character_id}");
-    if ctx.db.courtship().id().find(&id).is_some() {
-        return Ok(());
+    if let Some(existing) = ctx.db.courtship().id().find(&id) {
+        return match (existing.status, existing.kind == kind) {
+            (CourtshipStatus::Active | CourtshipStatus::Exposed, true) => Ok(()),
+            (CourtshipStatus::Active | CourtshipStatus::Exposed, false) => {
+                Err("This pair already has an active courtship of another kind".into())
+            }
+            (CourtshipStatus::Ended, _) => {
+                Err("Ended courtship history is final for this pair".into())
+            }
+        };
     }
     ctx.db.courtship().insert(CourtshipRecord {
         id,
@@ -2078,6 +2241,7 @@ fn establish_courtship(
         status: CourtshipStatus::Active,
         secrecy_reason,
         started_minute: minute,
+        next_discovery_day: minute / MINUTES_PER_DAY,
         resolved_minute: None,
         terminal_reason: None,
     });
@@ -2110,23 +2274,8 @@ pub fn begin_formal_courtship(
     if crate::social::current_affinity(ctx, partner_id, suitor_id) < FORMAL_COURTSHIP_AFFINITY {
         return Err("The prospective partner does not yet have enough affinity".into());
     }
-    let father = ctx
-        .db
-        .character_kinship()
-        .iter()
-        .find_map(|edge| {
-            (edge.subject_id == partner_id && edge.kind == KinshipKind::Parent)
-                .then(|| {
-                    ctx.db
-                        .character_personality()
-                        .character_id()
-                        .find(edge.related_id)
-                        .filter(|p| p.sex == Sex::Male)
-                        .map(|_| edge.related_id)
-                })
-                .flatten()
-        })
-        .ok_or("Formal courtship requires a known living father")?;
+    let father =
+        father_of(ctx, partner_id).ok_or("Formal courtship requires a known living father")?;
     if crate::social::current_affinity(ctx, father, suitor_id) < FORMAL_FATHER_APPROVAL_AFFINITY {
         return Err("Her father does not approve of this suitor".into());
     }
@@ -2278,6 +2427,26 @@ fn resolve_marriage(
     marriage.status = status;
     marriage.resolved_minute = Some(minute);
     ctx.db.marriage().id().update(marriage.clone());
+    for character_id in [marriage.first_character_id, marriage.second_character_id] {
+        if ctx
+            .db
+            .household_member()
+            .character_id()
+            .find(character_id)
+            .is_some_and(|member| member.household_id == marriage.household_id)
+        {
+            leave_household(ctx, character_id);
+        }
+        if ctx
+            .db
+            .residence_occupant()
+            .character_id()
+            .find(character_id)
+            .is_some_and(|occupant| occupant.residence_character_id != character_id)
+        {
+            crate::residence::remove_occupant_at(ctx, character_id, minute);
+        }
+    }
     for (subject_id, related_id) in [
         (marriage.first_character_id, marriage.second_character_id),
         (marriage.second_character_id, marriage.first_character_id),
@@ -2503,7 +2672,7 @@ mod tests {
         assert!(wedding.contains("ParticipantUnderage"));
         assert!(wedding.contains("CeremonyLocationUnavailable"));
         assert!(wedding.contains("active_primary_residence"));
-        assert!(wedding.contains("admit_residence_occupant"));
+        assert!(wedding.contains("move_residence_occupant_internal"));
         assert!(wedding.contains("dowry_outcome()"));
         assert!(wedding.contains("commitment_id()"));
         assert!(wedding.contains("MarriageParticipant"));
@@ -2587,5 +2756,105 @@ mod tests {
             .unwrap();
         assert!(wedding.contains("let effective_minute = commitment.effective_minute"));
         assert!(!wedding.contains("WeddingCompleted,\n            now"));
+    }
+
+    #[test]
+    fn secret_facade_is_daily_independent_and_stops_on_exposure() {
+        let source = include_str!("relationship.rs");
+        let daily = source
+            .split("pub fn settle_secret_courtship_discovery_for_character")
+            .nth(1)
+            .unwrap()
+            .split("fn personality_disposition")
+            .next()
+            .unwrap();
+        assert!(daily.contains("next_discovery_day"));
+        assert!(daily.contains("CourtshipStatus::Active"));
+        assert!(daily.contains("settle_secret_courtship_discovery_for_pair"));
+        let lifecycle = include_str!("time.rs")
+            .split("settle_lifecycle_after_character_time_write")
+            .nth(1)
+            .unwrap()
+            .split("pub fn advance_character_time")
+            .next()
+            .unwrap();
+        assert!(lifecycle.contains("settle_secret_courtship_discovery_for_character"));
+        let socializing = source
+            .split("pub fn apply_scheduled_socializing")
+            .nth(1)
+            .unwrap()
+            .split("pub fn settle_secret_courtship_discovery_for_pair")
+            .next()
+            .unwrap();
+        assert!(!socializing.contains("settle_secret_courtship_discovery_for_pair"));
+    }
+
+    #[test]
+    fn socializing_receipts_are_actor_day_cumulative_and_party_safe() {
+        let source = include_str!("relationship.rs");
+        let socializing = source
+            .split("pub fn apply_scheduled_socializing")
+            .nth(1)
+            .unwrap()
+            .split("pub fn settle_secret_courtship_discovery_for_pair")
+            .next()
+            .unwrap();
+        assert!(source.contains("format!(\"socializing:{actor_id}:{day}\")"));
+        assert!(socializing.contains("receipt.end_minute.max(start)"));
+        assert!(socializing.contains("receipt.minutes.saturating_add(minutes)"));
+        assert!(socializing.contains("apply_async_socializing_without_familiarity"));
+        assert!(socializing.contains("select_daily_location_target"));
+    }
+
+    #[test]
+    fn formal_route_uses_living_father_and_retry_is_explicit() {
+        let source = include_str!("relationship.rs");
+        let formal = source
+            .split("pub fn begin_formal_courtship")
+            .nth(1)
+            .unwrap()
+            .split("#[reducer]\npub fn begin_informal_courtship")
+            .next()
+            .unwrap();
+        assert!(formal.contains("father_of(ctx, partner_id)"));
+        let establishment = source
+            .split("fn establish_courtship")
+            .nth(1)
+            .unwrap()
+            .split("#[reducer]\npub fn begin_formal_courtship")
+            .next()
+            .unwrap();
+        assert!(establishment.contains("active courtship of another kind"));
+        assert!(establishment.contains("Ended courtship history is final"));
+    }
+
+    #[test]
+    fn marriage_cleanup_releases_household_and_guest_occupancy() {
+        let source = include_str!("relationship.rs");
+        let resolution = source
+            .split("fn resolve_marriage")
+            .nth(1)
+            .unwrap()
+            .split("#[reducer]\npub fn end_marriage")
+            .next()
+            .unwrap();
+        assert!(resolution.contains("leave_household"));
+        assert!(resolution.contains("remove_occupant_at"));
+        assert!(source.contains("#[unique]\n    pub character_id: u64"));
+    }
+
+    #[test]
+    fn discovery_projection_is_gateway_and_observer_scoped() {
+        let source = include_str!("relationship.rs");
+        let projection = source
+            .split("pub fn backend_courtship_discoveries")
+            .nth(1)
+            .unwrap()
+            .split("pub struct SocializingReceipt")
+            .next()
+            .unwrap();
+        assert!(projection.contains("is_strategic_gateway"));
+        assert!(projection.contains("observer_character_id"));
+        assert!(projection.contains("receipt.attempted_minute <= observer_minute"));
     }
 }

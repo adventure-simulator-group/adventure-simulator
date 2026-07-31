@@ -76,7 +76,11 @@ Leisure and Carousing. One deterministic companion receives all of a daily
 allocation, selected in priority order: a romantic partner, a co-located party
 member, a positive-affinity acquaintance, then another co-located person.
 Socializing records asynchronous directed affinity and symmetric familiarity;
-it does not assert that the selected NPC lost finite canonical time.
+it does not assert that the selected NPC lost finite canonical time. Party
+familiarity is the exception: the shared-clock presence path already owns
+those minutes, so Socializing grants affinity and training without adding the
+same familiarity twice. One cumulative actor/day receipt fixes the target and
+applied frontier, making retries and time-advance chunks equivalent.
 Ambiguous targets are scored by a stable hash of actor, absolute calendar day,
 location, and target; character ID is the final tie break. Iteration or table
 insertion order therefore cannot change the selected companion.
@@ -103,6 +107,16 @@ pair, but requires substantially more affinity; Amorous partners lower that
 threshold and Proper partners raise it. A wedding can only be scheduled from
 an active courtship. Scheduling creates an immediate exclusive engagement for
 both people and fixes the ceremony one year later.
+
+While an informal courtship remains secret and Active, every living adult
+parent or sibling co-located with the couple makes one Insight-versus-weaker-
+Deception check per relationship day. These checks run from the canonical
+lifecycle boundary independently of that day's Socializing target. Every
+success and failure has an immutable receipt; the first success exposes the
+facade and stops later checks. Discovery knowledge is available only through a
+gateway projection scoped to the discovering observer. An active retry of the
+same courtship kind is idempotent, a different active kind is rejected, and an
+ended pair is final in this first-pass history model.
 
 Opposite-sex adult spouses who are co-located can conceive from qualifying
 spouse Leisure. Only the integer intersection of their realized Leisure

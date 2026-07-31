@@ -16,7 +16,6 @@ use crate::condition::{character_condition as _, character_strategic_condition a
 use crate::disease::character_illness_status as _;
 use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
 use crate::organization::organization_membership as _;
-use crate::residence::character_residence as _;
 use crate::strategic::{
     party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
 };
@@ -336,6 +335,11 @@ pub(crate) fn settle_lifecycle_after_character_time_write(
     crate::residence::settle_residence_billing(ctx, character_id)?;
     crate::relationship::settle_due_weddings(ctx, character_id, minute)?;
     crate::relationship::settle_due_births(ctx, character_id, minute)?;
+    crate::relationship::settle_secret_courtship_discovery_for_character(
+        ctx,
+        character_id,
+        minute,
+    )?;
     crate::relationship::settle_marriage_lifecycle_for_character(ctx, character_id, minute);
     Ok(())
 }
@@ -2048,15 +2052,10 @@ fn require_character_residence_rest(ctx: &ReducerContext, character_id: u64) -> 
         .current_settlement_id
         .as_deref()
         .ok_or("Settlement rest requires the character to be at a settlement")?;
-    let residence = ctx
-        .db
-        .character_residence()
-        .character_id()
-        .find(character_id)
-        .ok_or("You do not have a residence")?;
-    if !residence.active || residence.settlement_id != settlement_id {
-        return Err("You do not have an active residence in this settlement".into());
-    }
+    let residence =
+        crate::residence::active_residence_for_occupant(ctx, character_id, settlement_id)
+            .ok_or("You do not have a residence")?;
+    debug_assert!(residence.active && residence.settlement_id == settlement_id);
     Ok(())
 }
 

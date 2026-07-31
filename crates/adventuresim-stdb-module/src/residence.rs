@@ -9,6 +9,7 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::character::character;
 use crate::condition::{MoraleEvent, morale_event};
+use crate::relationship::{character_kinship, household_member};
 use crate::strategic::settlement;
 use crate::time::character_time;
 
@@ -65,7 +66,7 @@ pub enum ResidenceTenure {
 /// Current designated residence. Replacing or relinquishing it first resolves
 /// all occupancy and writes an immutable transition receipt.
 #[derive(Clone, Debug)]
-#[table(accessor = character_residence, public)]
+#[table(accessor = character_residence)]
 pub struct CharacterResidence {
     #[primary_key]
     pub character_id: u64,
@@ -246,7 +247,23 @@ pub fn active_primary_residence(
         .filter(|row| row.active && row.settlement_id == settlement_id)
 }
 
-fn remove_occupant_at(
+/// Resolve the active home an occupant is entitled to use. A residence is
+/// owned or rented by its holder, so every benefit must follow the occupancy
+/// edge rather than assuming the beneficiary is also the holder.
+pub fn active_residence_for_occupant(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+) -> Option<CharacterResidence> {
+    let occupant = ctx
+        .db
+        .residence_occupant()
+        .character_id()
+        .find(character_id)?;
+    active_primary_residence(ctx, occupant.residence_character_id, settlement_id)
+}
+
+pub(crate) fn remove_occupant_at(
     ctx: &ReducerContext,
     character_id: u64,
     minute: u64,
@@ -270,7 +287,10 @@ fn remove_occupant_at(
     Some(occupant)
 }
 
-pub fn admit_residence_occupant(
+/// Canonical internal move used by atomic wedding and birth settlement. Those
+/// reducers establish the household or kinship authority in the same
+/// transaction before moving the character.
+pub(crate) fn move_residence_occupant_internal(
     ctx: &ReducerContext,
     residence_character_id: u64,
     character_id: u64,
@@ -306,6 +326,72 @@ pub fn admit_residence_occupant(
         minute,
         ResidenceTransitionKind::OccupantAdmitted,
     );
+    Ok(())
+}
+
+fn admission_relationship_authorized(
+    ctx: &ReducerContext,
+    residence_character_id: u64,
+    occupant_id: u64,
+) -> bool {
+    use crate::relationship::KinshipKind;
+
+    if residence_character_id == occupant_id {
+        return true;
+    }
+    let same_household = ctx
+        .db
+        .household_member()
+        .character_id()
+        .find(residence_character_id)
+        .zip(ctx.db.household_member().character_id().find(occupant_id))
+        .is_some_and(|(holder, occupant)| holder.household_id == occupant.household_id);
+    let family = ctx.db.character_kinship().iter().any(|edge| {
+        edge.subject_id == residence_character_id
+            && edge.related_id == occupant_id
+            && matches!(
+                edge.kind,
+                KinshipKind::Spouse | KinshipKind::Parent | KinshipKind::Child
+            )
+    });
+    same_household || family
+}
+
+fn validate_public_admission(
+    ctx: &ReducerContext,
+    residence: &CharacterResidence,
+    occupant_id: u64,
+) -> Result<(), String> {
+    use crate::relationship::KinshipKind;
+    use adventuresim_core::courtship::ADULT_AGE_YEARS;
+
+    let holder = crate::character::require_living_character(ctx, residence.character_id)?;
+    let occupant = crate::character::require_living_character(ctx, occupant_id)?;
+    if holder.current_settlement_id.as_deref() != Some(&residence.settlement_id)
+        || occupant.current_settlement_id.as_deref() != Some(&residence.settlement_id)
+    {
+        return Err("Residence admission requires both characters to be co-located".into());
+    }
+    let dependent = ctx.db.character_kinship().iter().any(|edge| {
+        edge.subject_id == residence.character_id
+            && edge.related_id == occupant_id
+            && matches!(edge.kind, KinshipKind::Parent | KinshipKind::Child)
+    });
+    if occupant.age_years < ADULT_AGE_YEARS && !dependent {
+        return Err("Only an adult or dependent child may occupy a residence".into());
+    }
+    if !admission_relationship_authorized(ctx, residence.character_id, occupant_id) {
+        return Err("Only an active household member or immediate family may be admitted".into());
+    }
+    if ctx
+        .db
+        .residence_occupant()
+        .character_id()
+        .find(occupant_id)
+        .is_some_and(|existing| existing.residence_character_id != residence.character_id)
+    {
+        return Err("Character already occupies a different residence".into());
+    }
     Ok(())
 }
 
@@ -438,21 +524,19 @@ pub fn apply_residence_leisure_morale(
     if baseline_morale <= 0.0 || !baseline_morale.is_finite() {
         return Ok(());
     }
-    let Some(residence) = ctx
-        .db
-        .character_residence()
-        .character_id()
-        .find(character_id)
-        .filter(|row| row.active)
-    else {
-        return Ok(());
-    };
     let character = ctx
         .db
         .character()
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
+    let Some(residence) = character
+        .current_settlement_id
+        .as_deref()
+        .and_then(|settlement_id| active_residence_for_occupant(ctx, character_id, settlement_id))
+    else {
+        return Ok(());
+    };
     if character.current_settlement_id.as_deref() != Some(&residence.settlement_id) {
         return Ok(());
     }
@@ -537,7 +621,7 @@ fn acquire_residence(
         now,
         ResidenceTransitionKind::Acquired,
     );
-    admit_residence_occupant(ctx, character_id, character_id, now)?;
+    move_residence_occupant_internal(ctx, character_id, character_id, now)?;
     Ok(())
 }
 
@@ -642,7 +726,7 @@ pub fn recover_owned_residence(ctx: &ReducerContext, character_id: u64) -> Resul
         .find(character_id)
         .is_some_and(|row| row.active)
     {
-        admit_residence_occupant(ctx, character_id, character_id, now)?;
+        move_residence_occupant_internal(ctx, character_id, character_id, now)?;
         record_transition(
             ctx,
             character_id,
@@ -662,7 +746,15 @@ pub fn admit_household_occupant(
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, residence_character_id)?;
     let now = residence_now(ctx, residence_character_id)?;
-    admit_residence_occupant(ctx, residence_character_id, occupant_id, now)
+    let residence = ctx
+        .db
+        .character_residence()
+        .character_id()
+        .find(residence_character_id)
+        .filter(|row| row.active)
+        .ok_or("Active residence not found")?;
+    validate_public_admission(ctx, &residence, occupant_id)?;
+    move_residence_occupant_internal(ctx, residence_character_id, occupant_id, now)
 }
 
 #[reducer]
@@ -732,5 +824,52 @@ mod tests {
             acquisition.find("relinquish_current_residence_at").unwrap()
                 < acquisition.find("CharacterResidence {").unwrap()
         );
+    }
+
+    #[test]
+    fn public_admission_is_authorized_and_never_steals_occupancy() {
+        let source = include_str!("residence.rs");
+        let public = source
+            .split("fn validate_public_admission")
+            .nth(1)
+            .unwrap()
+            .split("fn relinquish_current_residence_at")
+            .next()
+            .unwrap();
+        assert!(public.contains("require_living_character"));
+        assert!(public.contains("co-located"));
+        assert!(public.contains("ADULT_AGE_YEARS"));
+        assert!(public.contains("admission_relationship_authorized"));
+        assert!(public.contains("already occupies a different residence"));
+        assert!(!public.contains("remove_occupant_at"));
+    }
+
+    #[test]
+    fn occupant_benefits_resolve_through_the_holder() {
+        let source = include_str!("residence.rs");
+        let resolver = source
+            .split("pub fn active_residence_for_occupant")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn remove_occupant_at")
+            .next()
+            .unwrap();
+        assert!(resolver.contains("residence_occupant()"));
+        assert!(resolver.contains("active_primary_residence"));
+        let morale = source
+            .split("pub fn apply_residence_leisure_morale")
+            .nth(1)
+            .unwrap()
+            .split("fn acquire_residence")
+            .next()
+            .unwrap();
+        assert!(morale.contains("active_residence_for_occupant"));
+    }
+
+    #[test]
+    fn residence_authority_is_private() {
+        let source = include_str!("residence.rs");
+        assert!(source.contains("#[table(accessor = character_residence)]"));
+        assert!(!source.contains("#[table(accessor = character_residence, public)]"));
     }
 }
