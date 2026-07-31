@@ -76,54 +76,99 @@ test("wake slider uses the travel rail's solid time-period colors", () => {
   }
 });
 
-test("controls remount after replacement and keep independent days state", () => {
+test("controls remount when raw DOM patches repeatedly replace only their descendants", () => {
   const fs = require("node:fs");
   const vm = require("node:vm");
   const source = fs.readFileSync("crates/strategic-web/static/rest-duration.js", "utf8");
   const documentListeners = {};
+  let mutationCallback;
   let liveControls = [];
 
   const eventTarget = (properties = {}) => {
     const listeners = {};
     return {
       ...properties,
-      addEventListener(type, listener) { (listeners[type] ||= []).push(listener); },
-      dispatchEvent(event) { (listeners[event.type] || []).forEach((listener) => listener(event)); },
+      addEventListener(type, listener, options = {}) {
+        (listeners[type] ||= []).push({ listener, signal: options.signal });
+      },
+      dispatchEvent(event) {
+        (listeners[event.type] || []).forEach(({ listener, signal }) => {
+          if (!signal?.aborted) listener(event);
+        });
+      },
       setAttribute(name, value) { this[name] = String(value); },
     };
   };
   const makeControl = (unit, value, dataset = {}) => {
-    const submit = { disabled: false };
-    const form = { querySelector: () => submit };
-    const labels = [{ classList: { toggle() {} } }, { classList: { toggle() {} } }];
-    const radios = ["hours", "days"].map((radioUnit, index) => eventTarget({
-      checked: radioUnit === unit,
-      value: radioUnit,
-      closest: () => labels[index],
-    }));
-    const duration = eventTarget({ value: String(value), min: "", max: "", step: "" });
-    const exact = { value: "", disabled: false };
-    const slider = eventTarget({ value: "480", step: "60", disabled: false });
-    const output = { value: "", textContent: "" };
-    const panel = { setAttribute(name, panelValue) { this[name] = String(panelValue); } };
-    const buttons = [eventTarget({ dataset: { restStep: "-1" } }), eventTarget({ dataset: { restStep: "1" } })];
-    const bySelector = new Map([
-      ["[data-rest-duration-input]", duration], ["[data-rest-exact-minutes]", exact],
-      ["[data-wake-time-slider]", slider], ["[data-wake-time-output]", output],
-      ["[data-wake-time-panel]", panel], ["[data-rest-unit-label]", { textContent: "" }],
-    ]);
-    const control = {
-      dataset,
-      closest: () => form,
-      querySelector: (selector) => bySelector.get(selector),
-      querySelectorAll: (selector) => selector.includes("radio") ? radios : buttons,
+    let submit;
+    let control;
+    const form = {
+      querySelector: () => submit,
+      querySelectorAll: (selector) => selector === "[data-wake-time]" ? [control] : [],
     };
-    return { buttons, control, duration, exact, radios, slider, submit };
+    let bySelector;
+    let radios;
+    let buttons;
+    control = {
+      dataset,
+      closest: (selector) => selector === "form" ? form : null,
+      matches: (selector) => selector === "[data-wake-time]",
+      querySelector: (selector) => bySelector.get(selector),
+      querySelectorAll: (selector) => {
+        if (selector.includes("radio")) return radios;
+        if (selector === "[data-rest-step]") return buttons;
+        return [];
+      },
+    };
+    const fixture = { control };
+    fixture.replaceSubmit = () => {
+      submit = { disabled: false, closest: (selector) => selector === "form" ? form : null };
+      fixture.submit = submit;
+    };
+    fixture.replaceChildren = (nextUnit, nextValue) => {
+      const labels = [{ classList: { toggle() {} } }, { classList: { toggle() {} } }];
+      const owner = (selector) => selector === "[data-wake-time]" ? control : null;
+      radios = ["hours", "days"].map((radioUnit, index) => eventTarget({
+        checked: radioUnit === nextUnit,
+        value: radioUnit,
+        closest: (selector) => selector === "label" ? labels[index] : owner(selector),
+      }));
+      const duration = eventTarget({
+        value: String(nextValue), min: "", max: "", step: "", closest: owner,
+      });
+      const exact = { value: "", disabled: false };
+      const slider = eventTarget({
+        value: "480", step: "60", disabled: false, closest: owner,
+      });
+      const output = { value: "", textContent: "" };
+      const panel = { setAttribute(name, panelValue) { this[name] = String(panelValue); } };
+      buttons = ["-1", "1"].map((restStep) => eventTarget({
+        dataset: { restStep }, closest: owner,
+      }));
+      bySelector = new Map([
+        ["[data-rest-duration-input]", duration], ["[data-rest-exact-minutes]", exact],
+        ["[data-wake-time-slider]", slider], ["[data-wake-time-output]", output],
+        ["[data-wake-time-panel]", panel], ["[data-rest-unit-label]", { textContent: "" }],
+      ]);
+      Object.assign(fixture, { buttons, duration, exact, radios, slider });
+    };
+    fixture.replaceSubmit();
+    fixture.replaceChildren(unit, value);
+    return fixture;
   };
   const document = {
+    documentElement: {},
     querySelectorAll: () => liveControls.map(({ control }) => control),
     addEventListener(type, listener) { (documentListeners[type] ||= []).push(listener); },
   };
+  class MutationObserver {
+    constructor(callback) { mutationCallback = callback; }
+    observe() {}
+  }
+  class AbortController {
+    constructor() { this.signal = { aborted: false }; }
+    abort() { this.signal.aborted = true; }
+  }
   const window = { strategicCharacterMinutes: 480 };
   class Event {
     constructor(type, options = {}) { this.type = type; Object.assign(this, options); }
@@ -131,7 +176,9 @@ test("controls remount after replacement and keep independent days state", () =>
   }
   const first = makeControl("hours", "24:00");
   liveControls = [first];
-  vm.runInNewContext(source, { document, window, Event, Number, Math, String, WeakMap, WeakSet });
+  vm.runInNewContext(source, {
+    AbortController, document, window, Event, MutationObserver, Number, Math, String, WeakMap, WeakSet,
+  });
 
   first.radios[0].checked = false;
   first.radios[1].checked = true;
@@ -140,29 +187,63 @@ test("controls remount after replacement and keep independent days state", () =>
   assert.equal(first.exact.disabled, true);
   assert.equal(window.strategicRestDuration.isDirty(document), true);
 
-  const replacement = makeControl("hours", "24:00");
-  liveControls = [replacement];
-  documentListeners["strategic-live-regions-refreshed"][0](new Event("strategic-live-regions-refreshed"));
-  assert.equal(replacement.duration.value, "24:00");
-  assert.equal(replacement.submit.disabled, false);
-  assert.equal(replacement.control.dataset.wakeTimeMounted, undefined);
+  const exerciseReplacement = () => {
+    first.replaceChildren("hours", "24:00");
+    const record = [{ addedNodes: [first.duration] }];
+    mutationCallback(record);
+    mutationCallback(record);
+    assert.equal(first.duration.value, "24:00");
+    assert.equal(first.submit.disabled, false);
 
-  replacement.duration.value = "25:30";
-  replacement.duration.dispatchEvent(new Event("input"));
-  assert.equal(replacement.exact.value, "1530");
-  assert.equal(replacement.slider.value, 570);
-  assert.equal(replacement.slider.step, "1");
+    first.duration.value = "25:30";
+    first.duration.dispatchEvent(new Event("input"));
+    assert.equal(first.exact.value, "1530");
+    assert.equal(first.slider.value, 570);
 
-  replacement.slider.dispatchEvent(new Event("keydown", { key: "ArrowRight" }));
-  assert.equal(replacement.slider.value, 600);
-  assert.equal(replacement.duration.value, "26:00");
+    first.buttons[1].dispatchEvent(new Event("click"));
+    assert.equal(first.duration.value, "26:30", "one click has one handler");
+    first.buttons[0].dispatchEvent(new Event("click"));
+    assert.equal(first.duration.value, "25:30");
 
-  replacement.slider.dispatchEvent(new Event("pointerdown"));
-  assert.equal(replacement.slider.step, "60");
+    first.radios[0].checked = false;
+    first.radios[1].checked = true;
+    first.radios[1].dispatchEvent(new Event("change"));
+    first.duration.value = "5";
+    first.duration.dispatchEvent(new Event("input"));
+    first.buttons[1].dispatchEvent(new Event("click"));
+    assert.equal(first.duration.value, "6", "days increment once");
+    first.buttons[0].dispatchEvent(new Event("click"));
+    assert.equal(first.duration.value, "5");
 
-  replacement.buttons[1].dispatchEvent(new Event("click"));
-  assert.equal(replacement.duration.value, "27:00");
-  assert.equal(replacement.exact.value, "1620");
+    first.radios[0].checked = true;
+    first.radios[1].checked = false;
+    first.radios[0].dispatchEvent(new Event("change"));
+    assert.equal(first.duration.value, "25:30");
+    first.slider.dispatchEvent(new Event("keydown", { key: "ArrowRight" }));
+    assert.equal(first.slider.value, 600);
+    assert.equal(first.duration.value, "26:00");
+  };
+
+  exerciseReplacement();
+  exerciseReplacement();
+
+  first.replaceSubmit();
+  mutationCallback([{ type: "childList", addedNodes: [first.submit] }]);
+  first.duration.value = "invalid";
+  first.duration.dispatchEvent(new Event("input"));
+  assert.equal(first.submit.disabled, true, "replacement submit receives invalid state");
+  first.duration.value = "26:00";
+  first.duration.dispatchEvent(new Event("input"));
+  assert.equal(first.submit.disabled, false, "replacement submit receives valid state");
+
+  first.control.dataset.restMinimumMinutes = "2880";
+  mutationCallback([{ type: "attributes", target: first.control }]);
+  first.duration.value = "25:00";
+  first.duration.dispatchEvent(new Event("input"));
+  assert.equal(first.submit.disabled, true, "updated minimum applies after attribute-only morph");
+  first.duration.value = "48:00";
+  first.duration.dispatchEvent(new Event("input"));
+  assert.equal(first.submit.disabled, false);
 
   const scheduled = makeControl("hours", "16:00", {
     restDefaultMinutes: "960",
