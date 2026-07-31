@@ -1968,8 +1968,9 @@ mod developer_quest_source_tests {
 
     #[test]
     fn developer_witness_projection_matches_core_for_every_presentation() {
+        use crate::personality::{Presentation, Sex};
         use crate::settlement_population::{
-            NpcAgeBand, NpcPresentation, NpcSex, SettlementResidentPresence,
+            NpcAgeBand, ResolvedSettlementResident, SettlementResidentPresence,
             SettlementResidentProfile,
         };
         use adventuresim_core::quest_generation::{
@@ -1977,7 +1978,7 @@ mod developer_quest_source_tests {
         };
 
         let presence = SettlementResidentPresence {
-            character_id: "npc:visible".into(),
+            character_id: 42,
             settlement_id: "settlement:visible".into(),
             location_id: "market".into(),
             start_minute: 480,
@@ -1985,36 +1986,38 @@ mod developer_quest_source_tests {
             is_default: true,
         };
         for presentation in [
-            NpcPresentation::Man,
-            NpcPresentation::Woman,
-            NpcPresentation::Ambiguous,
+            Presentation::Man,
+            Presentation::Woman,
+            Presentation::Ambiguous,
         ] {
-            let npc = SettlementResidentProfile {
-                id: "npc:visible".into(),
-                projection_id: 42,
-                home_settlement_id: "settlement:visible".into(),
+            let npc = ResolvedSettlementResident {
+                profile: SettlementResidentProfile {
+                    character_id: 42,
+                    projection_id: 42,
+                    home_settlement_id: "settlement:visible".into(),
+                    height: "average height".into(),
+                    build: "sturdy".into(),
+                    hair: "brown hair".into(),
+                    facial_hair: "none visible".into(),
+                    complexion: "weathered".into(),
+                    visible_features: "a scar".into(),
+                    clothing: "a wool coat".into(),
+                    profession: "laborer".into(),
+                    household: "market household".into(),
+                    local_role: "resident".into(),
+                    service_id: String::new(),
+                    organization_id: String::new(),
+                    conversation_id: "local-resident".into(),
+                },
                 name: "Visible Witness".into(),
                 age_band: NpcAgeBand::Adult,
-                sex: NpcSex::Female,
+                sex: Sex::Female,
                 presentation,
-                height: "average height".into(),
-                build: "sturdy".into(),
-                hair: "brown hair".into(),
-                facial_hair: "none visible".into(),
-                complexion: "weathered".into(),
-                visible_features: "a scar".into(),
-                clothing: "a wool coat".into(),
-                profession: "laborer".into(),
-                household: "market household".into(),
-                local_role: "resident".into(),
-                service_id: String::new(),
-                organization_id: String::new(),
-                conversation_id: "local-resident".into(),
             };
             let age_band = format!("{:?}", npc.age_band);
             let presentation = format!("{:?}", npc.presentation);
             let direct = visible_witness_candidate(VisibleWitnessCandidateInput {
-                resident_character_id: &npc.character_id,
+                resident_character_id: npc.character_id,
                 display_name: &npc.name,
                 age_band: &age_band,
                 presentation: &presentation,

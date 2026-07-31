@@ -231,7 +231,7 @@ mod durable_custody_tests {
         };
         assert!(clothing.repairable);
 
-        let source = STRATEGIC_SOURCE;
+        let source = crate::strategic::STRATEGIC_SOURCE;
         let durable_policy = source
             .split("fn item_is_durable")
             .nth(1)
@@ -271,7 +271,7 @@ mod durable_custody_tests {
 mod medication_custody_tests {
     #[test]
     fn medication_stays_in_quantity_one_rows_across_custody_paths() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::strategic::STRATEGIC_SOURCE;
         let direct_transfer = source
             .split("pub fn transfer_party_item")
             .nth(1)

@@ -129,7 +129,7 @@ fn generated_pattern_actions_require_the_exact_earned_clue() {
     assert!(
         !source.contains("#[table(accessor = investigation_pattern_target_authority, public)]")
     );
-    let generated_client = include_str!("../../adventuresim-stdb-client/src/mod.rs");
+    let generated_client = include_str!("../../../../adventuresim-stdb-client/src/mod.rs");
     assert!(!generated_client.contains("investigation_pattern_target_authority_table"));
     let performer = source
         .split("pub(crate) fn perform_investigation_action_authorized")

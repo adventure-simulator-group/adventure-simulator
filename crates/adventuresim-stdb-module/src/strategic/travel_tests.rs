@@ -43,7 +43,7 @@ mod departure_invariant_tests {
 
     #[test]
     fn settlement_travel_requests_the_bypass_only_for_case_site_origins() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::strategic::STRATEGIC_SOURCE;
         let travel = source
             .split("fn travel_to_settlement_impl")
             .nth(1)

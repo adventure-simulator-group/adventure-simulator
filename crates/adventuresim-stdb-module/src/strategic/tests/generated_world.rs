@@ -58,7 +58,7 @@ fn generated_return_and_expose_bind_only_the_authored_case_and_recipient() {
             GeneratedDialogueAction::ReturnAsset => InvestigationAction::ReturnAsset,
             GeneratedDialogueAction::Expose => InvestigationAction::Expose,
         };
-        let present = HashSet::from([producer.recipient_resident_character_id.clone()]);
+        let present = HashSet::from([producer.recipient_resident_character_id.to_string()]);
         assert_eq!(
             generated_dialogue_producer_recipient(
                 &generated,
@@ -66,7 +66,7 @@ fn generated_return_and_expose_bind_only_the_authored_case_and_recipient() {
                 &action,
                 &present,
             ),
-            Some(producer.recipient_resident_character_id.clone())
+            Some(producer.recipient_resident_character_id.to_string())
         );
         assert!(
             generated_dialogue_producer_recipient(
@@ -647,9 +647,9 @@ fn generated_truth_and_replay_authority_have_no_public_subscription_surface() {
     assert!(strategic.contains("#[table(accessor = quest_generation_authority)]"));
     assert!(!strategic.contains("#[table(accessor = quest_generation_authority, public)]"));
 
-    let generated_client = include_str!("../../adventuresim-stdb-client/src/mod.rs");
+    let generated_client = include_str!("../../../../adventuresim-stdb-client/src/mod.rs");
     assert!(!generated_client.contains("quest_generation_authority_table"));
-    let web_types = include_str!("../../strategic-web/src/spacetimedb/types.rs");
+    let web_types = include_str!("../../../../strategic-web/src/spacetimedb/types.rs");
     let contract = web_types
         .split("pub struct ContractPresentation")
         .nth(1)

@@ -427,7 +427,7 @@ fn explicit_secondary_referral_and_context_are_exact() {
         grant_kind: "initial_rumor".into(),
         source_receipt_id: "receipt:primary".into(),
         source_witness_id: String::new(),
-        source_witness_resident_character_id: "npc:rumor-source".into(),
+        source_witness_resident_character_id: 9_007_199_254_740_991,
         source_testimony_index: 0,
         source_proposition_id: String::new(),
         witness_resident_character_id: primary.resident_character_id.clone(),
@@ -542,7 +542,7 @@ fn root_rumor_then_every_referred_witness_pipeline_is_valid_in_both_families() {
             witness_candidates: test_witnesses(),
         };
         for (index, witness) in context.witness_candidates.iter_mut().enumerate() {
-            witness.resident_character_id = format!("npc:riverdale:residences:{index}");
+            witness.resident_character_id = 9_007_199_254_740_993 + index as u64;
         }
         let generated = generate(&context).expect("root rumor should materialize a case");
         validate(&generated).expect("generated action graph should remain valid");

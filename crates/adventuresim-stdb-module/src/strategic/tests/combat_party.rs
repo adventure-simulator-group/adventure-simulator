@@ -55,8 +55,8 @@ fn persistent_npc_chat_authority_accepts_generated_ids_without_trusting_their_pr
     assert!(npc_conversation_authority_matches(
         "riverdale",
         "riverdale",
-        "npc:riverdale:inn:0",
-        "npc:riverdale:inn:0",
+        41,
+        41,
         "riverdale",
         "inn",
         "inn",
@@ -67,8 +67,8 @@ fn persistent_npc_chat_authority_accepts_generated_ids_without_trusting_their_pr
     assert!(!npc_conversation_authority_matches(
         "riverdale",
         "ironforge",
-        "npc:riverdale:inn:0",
-        "npc:riverdale:inn:0",
+        41,
+        41,
         "riverdale",
         "inn",
         "inn",
@@ -79,8 +79,8 @@ fn persistent_npc_chat_authority_accepts_generated_ids_without_trusting_their_pr
     assert!(!npc_conversation_authority_matches(
         "riverdale",
         "riverdale",
-        "npc:riverdale:inn:0",
-        "npc:riverdale:inn:1",
+        41,
+        42,
         "riverdale",
         "inn",
         "inn",
@@ -91,8 +91,8 @@ fn persistent_npc_chat_authority_accepts_generated_ids_without_trusting_their_pr
     assert!(!npc_conversation_authority_matches(
         "riverdale",
         "riverdale",
-        "npc:riverdale:inn:0",
-        "npc:riverdale:inn:0",
+        41,
+        41,
         "riverdale",
         "inn",
         "inn",
@@ -103,8 +103,8 @@ fn persistent_npc_chat_authority_accepts_generated_ids_without_trusting_their_pr
     assert!(!npc_conversation_authority_matches(
         "riverdale",
         "riverdale",
-        "npc:riverdale:inn:0",
-        "npc:riverdale:inn:0",
+        41,
+        41,
         "riverdale",
         "inn",
         "market",
@@ -121,7 +121,7 @@ fn private_chat_projection_only_emits_rows_for_the_two_parties() {
         gateway_bucket: 0,
         audience_party_id: "party:a".into(),
         other_party_id: "party:b".into(),
-        resident_character_id: u64::new(),
+        resident_character_id: Some(41),
         sender_id: 10,
         sender_name: "Ada".into(),
         body: "Meet by the well.".into(),
@@ -358,7 +358,7 @@ fn recovery_direction_is_delegated_only_to_a_ready_member_for_an_unready_leader(
     assert!(direction.contains("party.current_settlement_id.is_none()"));
     assert!(direction.contains("ready_companion_may_direct_recovery"));
 
-    let time = include_str!("time.rs");
+    let time = include_str!("../../time.rs");
     let camp = time
         .split("pub fn rest_at_camp")
         .nth(1)
@@ -558,7 +558,7 @@ fn recruitment_offer_requires_every_authoritative_location_binding() {
         },
         recruiting_party_id: "party".into(),
         settlement_id: "lubeck".into(),
-        settlement_resident_id: "npc".into(),
+        settlement_resident_id: 41,
         location_id: "inn".into(),
         leader_id: 7,
         status: RecruitmentOfferStatus::Open,
@@ -648,7 +648,7 @@ fn all_dead_party_teardown_clears_only_strategic_ghost_state() {
         assert!(!teardown.contains(preserved), "must preserve {preserved}");
     }
 
-    let time = include_str!("time.rs");
+    let time = include_str!("../../time.rs");
     let camp = time
         .split("pub fn rest_at_camp")
         .nth(1)

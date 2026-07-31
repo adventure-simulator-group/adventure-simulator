@@ -149,7 +149,7 @@ mod referral_variant_tests {
 
     #[test]
     fn referral_renderer_uses_the_current_speaker_not_discovery_provenance() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::strategic::STRATEGIC_SOURCE;
         let start = source
             .split("pub fn start_dialogue")
             .nth(1)

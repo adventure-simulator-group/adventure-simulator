@@ -89,8 +89,6 @@ pub fn run_npc_causal_tick(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn scheduler_has_hard_bounded_batches_and_one_day_steps() {
         let source = include_str!("npc_causal.rs");
