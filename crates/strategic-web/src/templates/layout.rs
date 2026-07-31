@@ -169,7 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=developer-visibility-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1-equipment-slots-7";
+                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1-equipment-slots-7-weather-status-2";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -203,7 +203,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/developer-quest-editor.js?v=typed-editor-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
-                    script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
+                    script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
                     script src="/static/building-state.js?v=non-service-building-tabs-2" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
                     script src="/static/strategic-map.js?v=population-culling-3" defer {}

@@ -582,6 +582,8 @@ mod tests {
             interval_start_minute: 0,
             cell_latitude: 0,
             cell_longitude: 0,
+            temperature_deci_c: 120,
+            wind_speed_bps: 1_000,
             precipitation: adventuresim_core::weather::Precipitation::Clear,
             intensity_bps: 0,
             ground_moisture_bps: 0,

@@ -135,6 +135,6 @@ use service_quests::{
 pub(crate) use camp::travel_provision_forecast;
 pub(crate) use encumbrance::{get_active_party_members, get_combat_training_profile};
 pub(crate) use party::medical_presentation;
-pub(crate) use rest::{RestForm, travel_rest_minutes};
+pub(crate) use rest::{RestForm, field_shelter_argument, travel_rest_minutes};
 pub(crate) use rest_preview::soap_rest_preview;
 pub(crate) use service_quests::living_party_members;

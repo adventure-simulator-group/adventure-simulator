@@ -408,11 +408,15 @@ pub(super) async fn rest_at_camp(
         Ok(minutes) => minutes,
         Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
+    let shelter = match field_shelter_argument(&form) {
+        Ok(shelter) => shelter,
+        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
+    };
     match state
         .db
         .call(
             "rest_at_camp",
-            &[json!(character_id), json!(requested_minutes)],
+            &[json!(character_id), json!(requested_minutes), shelter],
         )
         .await
     {

@@ -144,6 +144,8 @@ pub mod character_death_type;
 pub mod character_equipped_item_table;
 pub mod character_equipped_item_type;
 pub mod character_estate_basis_type;
+pub mod character_exposure_table;
+pub mod character_exposure_type;
 pub mod character_familiarity_type;
 pub mod character_filth_table;
 pub mod character_filth_type;
@@ -278,6 +280,7 @@ pub mod fallback_historical_vegetation_type;
 pub mod fallback_industry_type;
 pub mod ferry_route_type;
 pub mod ferry_waterway_type;
+pub mod field_shelter_type;
 pub mod filth_disease_snapshot_type;
 pub mod filth_origin_type;
 pub mod filth_provenance_type;
@@ -858,6 +861,8 @@ pub use character_death_type::CharacterDeath;
 pub use character_equipped_item_table::*;
 pub use character_equipped_item_type::CharacterEquippedItem;
 pub use character_estate_basis_type::CharacterEstateBasis;
+pub use character_exposure_table::*;
+pub use character_exposure_type::CharacterExposure;
 pub use character_familiarity_type::CharacterFamiliarity;
 pub use character_filth_table::*;
 pub use character_filth_type::CharacterFilth;
@@ -992,6 +997,7 @@ pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
 pub use fallback_industry_type::FallbackIndustry;
 pub use ferry_route_type::FerryRoute;
 pub use ferry_waterway_type::FerryWaterway;
+pub use field_shelter_type::FieldShelter;
 pub use filth_disease_snapshot_type::FilthDiseaseSnapshot;
 pub use filth_origin_type::FilthOrigin;
 pub use filth_provenance_type::FilthProvenance;
@@ -1907,6 +1913,7 @@ pub enum Reducer {
     RestAtCamp {
         character_id: u64,
         requested_minutes: u64,
+        shelter: FieldShelter,
     },
     RestAtSettlement {
         character_id: u64,
@@ -3142,9 +3149,11 @@ Reducer::BeginWorldDataImport{
             Reducer::RestAtCamp{
                 character_id,
                 requested_minutes,
+                shelter,
 }             => __sats::bsatn::to_vec(&rest_at_camp_reducer::RestAtCampArgs {
                 character_id: character_id.clone(),
                 requested_minutes: requested_minutes.clone(),
+                shelter: shelter.clone(),
 }),
             Reducer::RestAtSettlement{
                 character_id,
@@ -3631,6 +3640,7 @@ pub struct DbUpdate {
     character_condition: __sdk::TableUpdate<CharacterCondition>,
     character_death: __sdk::TableUpdate<CharacterDeath>,
     character_equipped_item: __sdk::TableUpdate<CharacterEquippedItem>,
+    character_exposure: __sdk::TableUpdate<CharacterExposure>,
     character_filth: __sdk::TableUpdate<CharacterFilth>,
     character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
@@ -3872,6 +3882,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_equipped_item" => db_update.character_equipped_item.append(
                     character_equipped_item_table::parse_table_update(table_update)?,
                 ),
+                "character_exposure" => db_update
+                    .character_exposure
+                    .append(character_exposure_table::parse_table_update(table_update)?),
                 "character_filth" => db_update
                     .character_filth
                     .append(character_filth_table::parse_table_update(table_update)?),
@@ -4134,6 +4147,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_equipped_item,
             )
             .with_updates_by_pk(|row| &row.inventory_item_id);
+        diff.character_exposure = cache
+            .apply_diff_to_table::<CharacterExposure>(
+                "character_exposure",
+                &self.character_exposure,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.character_filth = cache
             .apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth)
             .with_updates_by_pk(|row| &row.id);
@@ -4687,6 +4706,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_equipped_item" => db_update
                     .character_equipped_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_exposure" => db_update
+                    .character_exposure
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -5021,6 +5043,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_equipped_item" => db_update
                     .character_equipped_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_exposure" => db_update
+                    .character_exposure
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -5269,6 +5294,7 @@ pub struct AppliedDiff<'r> {
     character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
     character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
     character_equipped_item: __sdk::TableAppliedDiff<'r, CharacterEquippedItem>,
+    character_exposure: __sdk::TableAppliedDiff<'r, CharacterExposure>,
     character_filth: __sdk::TableAppliedDiff<'r, CharacterFilth>,
     character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
@@ -5571,6 +5597,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterEquippedItem>(
             "character_equipped_item",
             &self.character_equipped_item,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterExposure>(
+            "character_exposure",
+            &self.character_exposure,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterFilth>(
@@ -6544,6 +6575,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_condition_table::register_table(client_cache);
         character_death_table::register_table(client_cache);
         character_equipped_item_table::register_table(client_cache);
+        character_exposure_table::register_table(client_cache);
         character_filth_table::register_table(client_cache);
         character_illness_status_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
@@ -6653,6 +6685,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_condition",
         "character_death",
         "character_equipped_item",
+        "character_exposure",
         "character_filth",
         "character_illness_status",
         "character_limbs",

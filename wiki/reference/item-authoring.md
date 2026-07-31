@@ -124,6 +124,11 @@ supported alongside books. Executable effects, physiology profile versions,
 currency assignment, and other mechanics remain typed Rust and are
 cross-validated against catalog membership.
 
+The `field_shelter` tag identifies a non-consumed item that can satisfy the
+typed Tent choice for field rest; the canonical definition is `field_tent`.
+It remains `kind: simple`, so a general storefront can sell it, and its
+authored positive weight is counted normally in shared party inventory.
+
 There are no inferred quality, durability, damage types, weapon skills, or
 unit conversions. Optional capability sections are absent when inapplicable;
 fields within a present section are required unless documented otherwise.

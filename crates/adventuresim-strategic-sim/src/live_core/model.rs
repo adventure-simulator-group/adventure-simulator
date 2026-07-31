@@ -53,7 +53,7 @@ use adventuresim_stdb_client::{
     create_named_character_with_id_reducer::create_named_character_with_id,
     ensure_settlement_activity_reducer::ensure_settlement_activity,
     equip_item_at_placement_reducer::equip_item_at_placement, equip_item_reducer::equip_item,
-    equipment_occupancy_table::EquipmentOccupancyTableAccess,
+    equipment_occupancy_table::EquipmentOccupancyTableAccess, field_shelter_type::FieldShelter,
     finalize_merchant_trade_reducer::finalize_merchant_trade, food_lot_table::FoodLotTableAccess,
     inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,

@@ -10,7 +10,7 @@ use crate::{
     alcohol::alcohol_consumption,
     capability::character_capability,
     condition::{
-        character_condition, character_morale_source, character_needs,
+        character_condition, character_exposure, character_morale_source, character_needs,
         character_strategic_condition, morale_event, religious_demand,
     },
     disease::{
@@ -975,6 +975,10 @@ fn delete_character_data(
         .character_id()
         .delete(character.id);
     ctx.db.character_needs().character_id().delete(character.id);
+    ctx.db
+        .character_exposure()
+        .character_id()
+        .delete(character.id);
     ctx.db
         .character_strategic_condition()
         .character_id()

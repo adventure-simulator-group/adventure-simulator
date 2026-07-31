@@ -594,7 +594,10 @@ fn cooking_method(
     }
 }
 
-pub(super) fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) -> Markup {
+pub(super) fn filth_status_bar(
+    deposits: &[crate::spacetimedb::CharacterFilth],
+    wetness_bps: u16,
+) -> Markup {
     use crate::spacetimedb::{FilthOrigin, FilthSubstance};
     let dirt: u16 = deposits
         .iter()
@@ -626,23 +629,36 @@ pub(super) fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) 
         "Current: {total}/100 — {dirt} dirt, {blood} blood ({own_blood} own, {foreign_blood} foreign, {unknown_blood} unknown)."
     );
     let details = format!(
-        "Filth accumulates from travel, combat, and medical treatment. Dirt and blood fill this bar. Foreign blood can transmit bloodborne disease, with greater risk through open cuts and lesser risk through bandaged cuts. Soap is used automatically before rest to wash filth away.\n\n{summary}"
+        "Filth accumulates from travel, combat, and medical treatment. Dirt and blood fill the inner bar. Foreign blood can transmit bloodborne disease, with greater risk through open cuts and lesser risk through bandaged cuts. Soap is used automatically before rest to wash filth away.\n\nWetness is the blue outer bar behind filth. Rain and immersion add water; warmth and wind dry it. Wetness increases cold exposure. Current wetness: {}%.\n\n{summary}",
+        wetness_bps / 100
     );
     html! {
-        div class="filth-status" tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"
-            aria-valuenow=(total) aria-label=(format!("Filth {total} out of 100"))
-            data-strategic-tooltip=(&details) {
-            strong class="metric-label filth-status-label" { "Filth" }
-            span class="filth-track" aria-hidden="true" {
-                @if dirt > 0 {
-                    span class="filth-segment filth-dirt" style=(format!("width:{dirt_width}%"))
-                        data-strategic-tooltip=(format!("Dirt\n{dirt}")) {}
-                }
-                @if blood > 0 {
-                    span class="filth-segment filth-blood" style=(format!("width:{blood_width}%"))
-                        data-strategic-tooltip=(format!("Blood\n{blood}")) {}
-                }
+        div class="coating-status" role="group" aria-label="Coatings" {
+          strong class="metric-label filth-status-label" { "Filth" }
+          div class="coating-track-stack" {
+            div class="wetness-status" role="meter"
+                aria-valuemin="0" aria-valuemax="100"
+                aria-valuenow=(wetness_bps / 100)
+                aria-label=(format!("Wetness {} out of 100", wetness_bps / 100)) {
+              span class="wetness-track" aria-hidden="true" {
+                  span style=(format!("width:{}%", wetness_bps / 100)) {}
+              }
             }
+            div class="filth-status" tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"
+                aria-valuenow=(total) aria-label=(format!("Filth {total} out of 100"))
+                data-strategic-tooltip=(&details) {
+              span class="filth-track" aria-hidden="true" {
+                  @if dirt > 0 {
+                      span class="filth-segment filth-dirt" style=(format!("width:{dirt_width}%"))
+                          data-strategic-tooltip=(format!("Dirt\n{dirt}")) {}
+                  }
+                  @if blood > 0 {
+                      span class="filth-segment filth-blood" style=(format!("width:{blood_width}%"))
+                          data-strategic-tooltip=(format!("Blood\n{blood}")) {}
+                  }
+              }
+            }
+          }
         }
     }
 }

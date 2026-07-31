@@ -712,7 +712,12 @@ impl LiveRunner {
             let result = reducer_call!(self, "wait_for_investigation_window_camp", |cb| self
                 .connection
                 .reducers
-                .rest_at_camp_then(owner_character_id, u64::from(wait_minutes), cb));
+                .rest_at_camp_then(
+                    owner_character_id,
+                    u64::from(wait_minutes),
+                    FieldShelter::Bivouac,
+                    cb,
+                ));
             self.call(result)?;
             "field_rest"
         };

@@ -1759,6 +1759,7 @@ pub struct LimbInjury {
     pub limb: LimbRegion,
     pub cut_damage: f32,
     pub bruise_damage: f32,
+    pub frostbite_damage: f32,
     pub fracture_damage: f32,
     pub bandaged: bool,
     pub stitched: bool,
@@ -1796,6 +1797,14 @@ pub struct CharacterCondition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterExposure {
+    pub character_id: u64,
+    pub wetness_bps: u16,
+    pub thermal_strain: i32,
+    pub frostbite_progress_minutes: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStrategicCondition {
     pub character_id: u64,
     pub morale: f32,
@@ -1808,6 +1817,10 @@ pub struct CharacterStrategicCondition {
     pub fatigue: f32,
     pub hunger: f32,
     pub thirst: f32,
+    pub thermal: f32,
+    pub wetness_bps: u16,
+    /// Signed: negative is cold, positive is hot.
+    pub thermal_strain: i32,
     /// Positive physiological food reserve in travel days; excludes inventory.
     pub food_days: f32,
     /// Positive physiological hydration reserve in travel days; excludes carried water.
