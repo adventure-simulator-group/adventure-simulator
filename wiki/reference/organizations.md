@@ -153,9 +153,10 @@ the large Viabundus dataset.
 ### Social estate basis
 
 Private SpacetimeDB tables materialize organization instances and actor-role
-assignments. Every durable `Character` and persistent `SettlementNpc` receives
-exactly one estate-bearing assignment selected as its exclusive estate basis;
-transient tactical enemies do not. The basis tables use actor IDs as primary
+assignments. Every durable `Character`, including persistent settlement
+residents, receives exactly one estate-bearing assignment selected as its
+exclusive estate basis; transient tactical enemies do not. The basis tables use
+character IDs as primary
 keys, while authoritative insertion verifies that the assignment belongs to
 the actor, the instance references a known definition, and the role belongs to
 that definition. Actor deletion removes the basis before its assignments.

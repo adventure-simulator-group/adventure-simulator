@@ -1017,7 +1017,7 @@ async fn render_quest_location(
     let living_party_members = living_party_members(&party_members);
     let stats: Vec<CharacterStats> = state
         .db
-        .query("SELECT * FROM character_stats")
+        .query("SELECT * FROM backend_character_stats")
         .await
         .unwrap_or_default();
     let default_rest_minutes = living_party_members
@@ -1035,22 +1035,22 @@ async fn render_quest_location(
     if let Some(party) = party.as_ref() {
         let attributes: Vec<CharacterAttributes> = state
             .db
-            .query("SELECT * FROM character_attributes")
+            .query("SELECT * FROM backend_character_attributes")
             .await
             .unwrap_or_default();
         let limbs: Vec<CharacterLimbs> = state
             .db
-            .query("SELECT * FROM character_limbs")
+            .query("SELECT * FROM backend_character_limbs")
             .await
             .unwrap_or_default();
         let times: Vec<CharacterTime> = state
             .db
-            .query("SELECT * FROM character_time")
+            .query("SELECT * FROM backend_character_times")
             .await
             .unwrap_or_default();
         let schedules: Vec<CharacterTrainingSchedule> = state
             .db
-            .query("SELECT * FROM character_training_schedule")
+            .query("SELECT * FROM backend_character_training_schedules")
             .await
             .unwrap_or_default();
         let member_ids: Vec<_> = living_party_members
@@ -1240,7 +1240,7 @@ async fn party_readiness(
         let condition = state
             .db
             .query_one::<CharacterStrategicCondition>(&format!(
-                "SELECT * FROM character_strategic_condition WHERE character_id = {}",
+                "SELECT * FROM backend_character_strategic_conditions WHERE character_id = {}",
                 member.id
             ))
             .await;
@@ -1396,7 +1396,7 @@ mod quest_route_tests {
             xp_reward: 10,
             settlement_id: "settlement".into(),
             service_id: "tavern".into(),
-            issuer_npc_id: "npc:issuer".into(),
+            issuer_resident_character_id: "npc:issuer".into(),
             status: ContractPresentationStatus::Accepted,
             accepted_by: Some("party".into()),
             opposition_wording: "unknown opposition".into(),

@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-#[table(accessor = character_capability, public)]
+#[table(accessor = character_capability)]
 pub struct CharacterCapability {
     #[primary_key]
     pub character_id: u64,

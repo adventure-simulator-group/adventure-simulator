@@ -14,7 +14,7 @@ pub struct PublicThreatDisclosure {
     pub exact_site_id: String,
     pub approximate_count: String,
     pub source_kind: String,
-    pub source_npc_id: String,
+    pub source_resident_character_id: u64,
     pub learned_at: u64,
 }
 
@@ -33,7 +33,7 @@ pub struct PublicThreatDisclosureCols {
     pub exact_site_id: __sdk::__query_builder::Col<PublicThreatDisclosure, String>,
     pub approximate_count: __sdk::__query_builder::Col<PublicThreatDisclosure, String>,
     pub source_kind: __sdk::__query_builder::Col<PublicThreatDisclosure, String>,
-    pub source_npc_id: __sdk::__query_builder::Col<PublicThreatDisclosure, String>,
+    pub source_resident_character_id: __sdk::__query_builder::Col<PublicThreatDisclosure, u64>,
     pub learned_at: __sdk::__query_builder::Col<PublicThreatDisclosure, u64>,
 }
 
@@ -48,7 +48,10 @@ impl __sdk::__query_builder::HasCols for PublicThreatDisclosure {
             exact_site_id: __sdk::__query_builder::Col::new(table_name, "exact_site_id"),
             approximate_count: __sdk::__query_builder::Col::new(table_name, "approximate_count"),
             source_kind: __sdk::__query_builder::Col::new(table_name, "source_kind"),
-            source_npc_id: __sdk::__query_builder::Col::new(table_name, "source_npc_id"),
+            source_resident_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "source_resident_character_id",
+            ),
             learned_at: __sdk::__query_builder::Col::new(table_name, "learned_at"),
         }
     }

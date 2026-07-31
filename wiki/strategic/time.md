@@ -53,7 +53,47 @@ The server stores official time as an absolute number of game minutes rather tha
 
 The server stores an epoch rather than updating the clock table continuously. When a browser opens a page, it requests one snapshot of the character and official clocks and renders that snapshot without a wall-clock timer. The character snapshot also determines the interpolated location sky, the edge-to-edge sun or moon position, and building illumination until an explicit action returns a newer time. Authoritative reducers derive the current official minute from the epoch when gameplay needs it.
 
+In browser-local developer mode, an explicit rest also moves the disposable
+world epoch forward to the resting character's new personal date. Active NPC
+partners, household members, and immediate kin are advanced to that same date
+through the ordinary lifecycle settlement path, allowing wedding, pregnancy,
+birth, and dependent-aging UI flows to be exercised without waiting for the
+real-time world clock. This acceleration is scoped to developer-mode rest and
+does not fast-forward unrelated world NPCs.
+
 Each character has their own absolute minute. Character time advances lazily when their strategic page is accessed or their daily schedule is saved. If they are more than a year behind official time, the server advances them in one transaction to exactly one year behind and does not apply the triggering schedule change; the player can try again after the catch-up. Characters may remain out of sync while idle. At departure every living party member advances forward to the latest compatible party minute; nobody is rewound, dead members are unchanged, and excessive skew is rejected. Journeys persist that absolute departure minute plus separate movement and elapsed coordinates, so camp rest advances progress without changing distance.
+
+Persistent NPCs use this same `CharacterTime` row as their authoritative
+personal date. An `NpcPolicy` is authority over an ordinary full Character,
+not a parallel clock. NPC policy advancement rejects retroactive targets and
+atomically settles due residence billing, weddings, and births after writing
+the new frontier; a failed settlement rolls back the clock write with it.
+The module seeds one private recurring causal processor. Each invocation first
+settles one bounded queue containing both weddings and births, ordered by
+`(effective minute, event-kind precedence, event identity)` without waiting
+for a participant login. Weddings precede births when they share an exact
+minute. Indexed due-minute scans are capped before merging, and a malformed
+gameplay event is terminalized with a durable failure receipt so it cannot
+stall later events or the recurring schedule. The processor then selects the
+earliest exact-`CharacterTime` cohort, ordered by character ID and capped at
+64. Every member records the day's policy decisions before any member
+advances, after which each advances through at most one day of its ordinary
+stationary schedule. A private character/day/phase receipt makes retries
+idempotent. The first policy pass initializes an otherwise untouched NPC
+schedule with six hours of Labor and a stable one-to-two hours of Socializing
+in 15-minute units; any existing plan is preserved, and later passes never
+overwrite it. Dead characters remain frozen. Scheduler jitter therefore
+changes catch-up latency, not durable ordering, choices, or step size.
+Actor-local dialogue, trade, guild, quest, and rest interactions may remain
+asynchronous when they do not mutate that canonical NPC state. Those reducers
+declare their temporal scope and never move the target's personal clock.
+Autonomous trade, travel, and guild decisions are intentionally outside this
+first lifecycle parity gate; future policies must use the same cohort and
+receipt contract rather than adding another NPC clock.
+Authoritative travel and stationary time paths split an actor interval at the
+next wedding, birth, or marriage boundary. Globally materialized future facts
+are filtered by effective minute, so pre-ceremony leisure and household actions
+cannot observe a future marriage.
 
 Every character saves one global 24-hour downtime plan with integer-minute allocations for activities; moving never edits that plan. At each execution boundary the server makes an effective copy. Every 15-minute segment assigned to an unavailable activity is independently reassigned to another available non-Leisure activity already present in the plan, with selection probability proportional to that activity's saved minutes. If there is no such activity, the segment remains unallocated Leisure. The character ID seeds these draws so authoritative execution and the schedule preview agree without persisting a second plan. Thievery is available only inside settlements, Raiding only at stationary named locations outside settlements (currently positive-distance case sites that are not incident sites), and Carousing only in settlements whose economy provides an inn. Training, income, Morale, reputation, fatigue, restorative Leisure, and incident risk all use this effective copy. Walking advances personal time and travel condition but never trains skills or performs scheduled activities. Journey-camp rest retains its existing camp-safe rules and offers no immediate activity controls. The pure training and activity calculations are shared with the native strategic simulation harness; the harness uses repeated one-day actions as its canonical cadence. A live bulk rest evaluates one aggregate outcome and at most one incident interruption, so rounded activity income and incidents can differ from an otherwise equivalent sequence of one-day rests; bulk-rest strategy parity remains follow-up work.
 

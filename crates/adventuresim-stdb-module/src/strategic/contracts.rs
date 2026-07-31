@@ -48,15 +48,15 @@ fn record_contract_issuer_interaction(
     }
     let issuer = ctx
         .db
-        .settlement_npc()
-        .id()
-        .find(&contract.issuer_npc_id)
+        .settlement_resident_profile()
+        .character_id()
+        .find(contract.issuer_resident_character_id)
         .ok_or("Contract issuer is not persistent")?;
     let presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&issuer.id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(issuer.character_id)
         .ok_or("Contract issuer has no presence")?;
     let minute = ctx
         .db
@@ -78,7 +78,7 @@ fn record_contract_issuer_interaction(
         contract_id,
         party_id,
         stage,
-        issuer_npc_id: issuer.id,
+        issuer_resident_character_id: issuer.character_id,
         interacting_character_id: character_id,
         interacted_at_minute: crate::time::refresh_clock(ctx)?,
         dialogue_session_id,
@@ -123,7 +123,7 @@ fn record_dialogue_contract_issuer_interaction(
         .id()
         .find(&contract_id)
         .ok_or("Contract not found")?;
-    if issuer.id != contract.issuer_npc_id
+    if issuer.character_id != contract.issuer_resident_character_id
         || issuer.service_id != contract.service_id
         || session.settlement_id != contract.settlement_id
     {
@@ -163,9 +163,9 @@ pub fn simulate_contract_issuer_interaction(
         .ok_or("Contract not found")?;
     let presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&contract.issuer_npc_id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(contract.issuer_resident_character_id)
         .ok_or("Contract issuer has no presence")?;
     record_contract_issuer_interaction(
         ctx,

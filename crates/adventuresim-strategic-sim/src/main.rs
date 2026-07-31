@@ -121,6 +121,14 @@ enum Command {
         #[arg(long)]
         failure_output: Option<PathBuf>,
     },
+    /// Run the deterministic offline lifecycle acceptance scenario.
+    Lifecycle {
+        /// New directory which will receive immutable whole/daily reports.
+        #[arg(long)]
+        output_dir: PathBuf,
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -258,6 +266,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         command => command,
     };
+    if let Command::Lifecycle { output_dir, seed } = command {
+        let bundle = write_lifecycle_acceptance(&output_dir, seed)?;
+        eprintln!(
+            "offline lifecycle acceptance: passed={} digest={} output={}",
+            bundle.comparison.passed,
+            bundle.comparison.normalized_digest,
+            output_dir.display()
+        );
+        if !bundle.comparison.passed {
+            return Err("lifecycle acceptance comparison failed".into());
+        }
+        return Ok(());
+    }
     if let Command::CoreLoop {
         host,
         database,
@@ -383,7 +404,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::CoreLoop { .. }
         | Command::QuestAnalyze { .. }
         | Command::QuestAnalyzeReplay { .. }
-        | Command::QuestAnalyzePromote { .. } => unreachable!(),
+        | Command::QuestAnalyzePromote { .. }
+        | Command::Lifecycle { .. } => unreachable!(),
     };
     eprintln!("{}", human_summary(&report));
     Ok(())

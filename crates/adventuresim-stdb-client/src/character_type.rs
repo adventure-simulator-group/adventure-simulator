@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct Character {
     pub id: u64,
+    pub scan_id: u64,
     pub name: String,
     pub xp: u32,
     pub level: u32,
@@ -30,6 +31,7 @@ impl __sdk::InModule for Character {
 /// Provides typed access to columns for query building.
 pub struct CharacterCols {
     pub id: __sdk::__query_builder::Col<Character, u64>,
+    pub scan_id: __sdk::__query_builder::Col<Character, u64>,
     pub name: __sdk::__query_builder::Col<Character, String>,
     pub xp: __sdk::__query_builder::Col<Character, u32>,
     pub level: __sdk::__query_builder::Col<Character, u32>,
@@ -48,6 +50,7 @@ impl __sdk::__query_builder::HasCols for Character {
     fn cols(table_name: &'static str) -> Self::Cols {
         CharacterCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            scan_id: __sdk::__query_builder::Col::new(table_name, "scan_id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             xp: __sdk::__query_builder::Col::new(table_name, "xp"),
             level: __sdk::__query_builder::Col::new(table_name, "level"),
@@ -71,6 +74,7 @@ impl __sdk::__query_builder::HasCols for Character {
 /// Provides typed access to indexed columns for query building.
 pub struct CharacterIxCols {
     pub id: __sdk::__query_builder::IxCol<Character, u64>,
+    pub scan_id: __sdk::__query_builder::IxCol<Character, u64>,
     pub server: __sdk::__query_builder::IxCol<Character, __sdk::Identity>,
 }
 
@@ -79,6 +83,7 @@ impl __sdk::__query_builder::HasIxCols for Character {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            scan_id: __sdk::__query_builder::IxCol::new(table_name, "scan_id"),
             server: __sdk::__query_builder::IxCol::new(table_name, "server"),
         }
     }

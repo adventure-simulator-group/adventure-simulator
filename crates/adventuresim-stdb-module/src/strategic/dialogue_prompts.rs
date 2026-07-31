@@ -55,7 +55,10 @@ pub fn choose_dialogue_topic(
             ctx,
             character_id,
             corpse_id,
-            &npc_participant.actor_id,
+            npc_participant
+                .actor_id
+                .parse::<u64>()
+                .map_err(|_| "Dialogue NPC identity is invalid")?,
             scope,
             approach,
         )?;
@@ -81,7 +84,10 @@ pub fn choose_dialogue_topic(
             gateway_bucket: 0,
             session_id: session_id.clone(),
             sequence,
-            response_id: format!("corpse-permission-{}", if granted { "granted" } else { "refused" }),
+            response_id: format!(
+                "corpse-permission-{}",
+                if granted { "granted" } else { "refused" }
+            ),
             speaker_role: npc_participant.role,
             fragments_json: serde_json::to_string(&fragments)
                 .map_err(|_| "Could not encode corpse permission response")?,

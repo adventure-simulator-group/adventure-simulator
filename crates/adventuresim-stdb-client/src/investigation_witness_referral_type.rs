@@ -11,13 +11,13 @@ pub struct InvestigationWitnessReferral {
     pub owner_character_id: u64,
     pub canonical_case_id: String,
     pub public_case_id: String,
-    pub witness_npc_id: String,
+    pub witness_resident_character_id: u64,
     pub expected_settlement_id: String,
     pub expected_location_id: String,
     pub grant_kind: String,
     pub source_receipt_id: String,
     pub source_witness_id: String,
-    pub source_witness_npc_id: String,
+    pub source_witness_resident_character_id: u64,
     pub source_testimony_index: u32,
     pub source_proposition_id: String,
     pub catalog_revision: String,
@@ -36,13 +36,15 @@ pub struct InvestigationWitnessReferralCols {
     pub owner_character_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, u64>,
     pub canonical_case_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
     pub public_case_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
-    pub witness_npc_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
+    pub witness_resident_character_id:
+        __sdk::__query_builder::Col<InvestigationWitnessReferral, u64>,
     pub expected_settlement_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
     pub expected_location_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
     pub grant_kind: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
     pub source_receipt_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
     pub source_witness_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
-    pub source_witness_npc_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
+    pub source_witness_resident_character_id:
+        __sdk::__query_builder::Col<InvestigationWitnessReferral, u64>,
     pub source_testimony_index: __sdk::__query_builder::Col<InvestigationWitnessReferral, u32>,
     pub source_proposition_id: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
     pub catalog_revision: __sdk::__query_builder::Col<InvestigationWitnessReferral, String>,
@@ -57,7 +59,10 @@ impl __sdk::__query_builder::HasCols for InvestigationWitnessReferral {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
             canonical_case_id: __sdk::__query_builder::Col::new(table_name, "canonical_case_id"),
             public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
-            witness_npc_id: __sdk::__query_builder::Col::new(table_name, "witness_npc_id"),
+            witness_resident_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "witness_resident_character_id",
+            ),
             expected_settlement_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "expected_settlement_id",
@@ -69,9 +74,9 @@ impl __sdk::__query_builder::HasCols for InvestigationWitnessReferral {
             grant_kind: __sdk::__query_builder::Col::new(table_name, "grant_kind"),
             source_receipt_id: __sdk::__query_builder::Col::new(table_name, "source_receipt_id"),
             source_witness_id: __sdk::__query_builder::Col::new(table_name, "source_witness_id"),
-            source_witness_npc_id: __sdk::__query_builder::Col::new(
+            source_witness_resident_character_id: __sdk::__query_builder::Col::new(
                 table_name,
-                "source_witness_npc_id",
+                "source_witness_resident_character_id",
             ),
             source_testimony_index: __sdk::__query_builder::Col::new(
                 table_name,

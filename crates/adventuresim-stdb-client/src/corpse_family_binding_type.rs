@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct CorpseFamilyBinding {
     pub id: String,
     pub corpse_id: String,
-    pub npc_id: String,
+    pub resident_character_id: u64,
 }
 
 impl __sdk::InModule for CorpseFamilyBinding {
@@ -22,7 +22,7 @@ impl __sdk::InModule for CorpseFamilyBinding {
 pub struct CorpseFamilyBindingCols {
     pub id: __sdk::__query_builder::Col<CorpseFamilyBinding, String>,
     pub corpse_id: __sdk::__query_builder::Col<CorpseFamilyBinding, String>,
-    pub npc_id: __sdk::__query_builder::Col<CorpseFamilyBinding, String>,
+    pub resident_character_id: __sdk::__query_builder::Col<CorpseFamilyBinding, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for CorpseFamilyBinding {
@@ -31,7 +31,10 @@ impl __sdk::__query_builder::HasCols for CorpseFamilyBinding {
         CorpseFamilyBindingCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             corpse_id: __sdk::__query_builder::Col::new(table_name, "corpse_id"),
-            npc_id: __sdk::__query_builder::Col::new(table_name, "npc_id"),
+            resident_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "resident_character_id",
+            ),
         }
     }
 }
@@ -42,7 +45,7 @@ impl __sdk::__query_builder::HasCols for CorpseFamilyBinding {
 pub struct CorpseFamilyBindingIxCols {
     pub corpse_id: __sdk::__query_builder::IxCol<CorpseFamilyBinding, String>,
     pub id: __sdk::__query_builder::IxCol<CorpseFamilyBinding, String>,
-    pub npc_id: __sdk::__query_builder::IxCol<CorpseFamilyBinding, String>,
+    pub resident_character_id: __sdk::__query_builder::IxCol<CorpseFamilyBinding, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for CorpseFamilyBinding {
@@ -51,7 +54,10 @@ impl __sdk::__query_builder::HasIxCols for CorpseFamilyBinding {
         CorpseFamilyBindingIxCols {
             corpse_id: __sdk::__query_builder::IxCol::new(table_name, "corpse_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            npc_id: __sdk::__query_builder::IxCol::new(table_name, "npc_id"),
+            resident_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "resident_character_id",
+            ),
         }
     }
 }

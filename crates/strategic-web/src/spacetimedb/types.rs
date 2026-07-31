@@ -256,7 +256,7 @@ pub struct BackendCorpse {
 pub struct BackendOutbreakPatient {
     pub owner_character_id: u64,
     pub patient_ref: String,
-    pub presentation_npc_id: String,
+    pub presentation_resident_character_id: String,
     pub display_name: String,
     pub case_id: String,
     pub source_site_id: String,
@@ -266,6 +266,201 @@ pub struct BackendOutbreakPatient {
 }
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
+
+pub use adventuresim_stdb_client::{
+    AffinityBand, ChildActivityFocus, ChildStage, CourtshipKind, FamiliarityBand, MoraleBand,
+    SocialChatOutcome, SocialChatTargetKind,
+};
+
+fn unit_variant_name<E>(value: Value) -> Result<String, E>
+where
+    E: serde::de::Error,
+{
+    match value {
+        Value::String(name) => Ok(name),
+        Value::Object(variant) if variant.len() == 1 => {
+            Ok(variant.into_iter().next().expect("one variant").0)
+        }
+        _ => Err(E::custom("expected a unit enum variant")),
+    }
+}
+
+pub(crate) fn deserialize_affinity_band<'de, D>(deserializer: D) -> Result<AffinityBand, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Hostile" => Ok(AffinityBand::Hostile),
+        "Reserved" => Ok(AffinityBand::Reserved),
+        "Warm" => Ok(AffinityBand::Warm),
+        "Trusted" => Ok(AffinityBand::Trusted),
+        _ => Err(D::Error::custom("unknown affinity band")),
+    }
+}
+
+pub(crate) fn deserialize_familiarity_band<'de, D>(
+    deserializer: D,
+) -> Result<FamiliarityBand, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "New" => Ok(FamiliarityBand::New),
+        "Known" => Ok(FamiliarityBand::Known),
+        "Familiar" => Ok(FamiliarityBand::Familiar),
+        "WellKnown" => Ok(FamiliarityBand::WellKnown),
+        _ => Err(D::Error::custom("unknown familiarity band")),
+    }
+}
+
+pub(crate) fn deserialize_morale_band<'de, D>(deserializer: D) -> Result<MoraleBand, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Uncertain" => Ok(MoraleBand::Uncertain),
+        "Distressed" => Ok(MoraleBand::Distressed),
+        "Guarded" => Ok(MoraleBand::Guarded),
+        "Settled" => Ok(MoraleBand::Settled),
+        _ => Err(D::Error::custom("unknown morale band")),
+    }
+}
+
+pub(crate) fn deserialize_social_chat_outcome<'de, D>(
+    deserializer: D,
+) -> Result<SocialChatOutcome, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Positive" => Ok(SocialChatOutcome::Positive),
+        "Mixed" => Ok(SocialChatOutcome::Mixed),
+        "Negative" => Ok(SocialChatOutcome::Negative),
+        _ => Err(D::Error::custom("unknown social chat outcome")),
+    }
+}
+
+pub(crate) fn deserialize_social_chat_target_kind<'de, D>(
+    deserializer: D,
+) -> Result<SocialChatTargetKind, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "SettlementResident" => Ok(SocialChatTargetKind::SettlementResident),
+        "PartyMember" => Ok(SocialChatTargetKind::PartyMember),
+        _ => Err(D::Error::custom("unknown social chat target kind")),
+    }
+}
+
+pub(crate) fn deserialize_optional_courtship_kind<'de, D>(
+    deserializer: D,
+) -> Result<Option<CourtshipKind>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    match unit_variant_name::<D::Error>(value)?.as_str() {
+        "Formal" => Ok(Some(CourtshipKind::Formal)),
+        "Informal" => Ok(Some(CourtshipKind::Informal)),
+        _ => Err(D::Error::custom("unknown courtship kind")),
+    }
+}
+
+pub(crate) fn deserialize_child_stage<'de, D>(deserializer: D) -> Result<ChildStage, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "EarlyChildhood" => Ok(ChildStage::EarlyChildhood),
+        "MiddleChildhood" => Ok(ChildStage::MiddleChildhood),
+        "Adolescence" => Ok(ChildStage::Adolescence),
+        "Adult" => Ok(ChildStage::Adult),
+        _ => Err(D::Error::custom("unknown child stage")),
+    }
+}
+
+pub(crate) fn deserialize_child_activity_focus<'de, D>(
+    deserializer: D,
+) -> Result<ChildActivityFocus, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Play" => Ok(ChildActivityFocus::Play),
+        "Study" => Ok(ChildActivityFocus::Study),
+        "HouseholdHelp" => Ok(ChildActivityFocus::HouseholdHelp),
+        "SocialLearning" => Ok(ChildActivityFocus::SocialLearning),
+        _ => Err(D::Error::custom("unknown child activity focus")),
+    }
+}
+
+#[cfg(test)]
+mod typed_social_transport_tests {
+    use super::*;
+
+    #[derive(Deserialize)]
+    struct AffinityWire {
+        #[serde(deserialize_with = "deserialize_affinity_band")]
+        affinity: AffinityBand,
+    }
+
+    #[derive(Deserialize)]
+    struct CourtshipWire {
+        #[serde(deserialize_with = "deserialize_optional_courtship_kind")]
+        courtship: Option<CourtshipKind>,
+    }
+
+    #[derive(Deserialize)]
+    struct ChildWire {
+        #[serde(deserialize_with = "deserialize_child_stage")]
+        stage: ChildStage,
+        #[serde(deserialize_with = "deserialize_child_activity_focus")]
+        focus: ChildActivityFocus,
+    }
+
+    #[test]
+    fn social_enum_adapters_accept_sql_unit_variant_encodings() {
+        assert_eq!(
+            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": "Trusted"}))
+                .unwrap()
+                .affinity,
+            AffinityBand::Trusted
+        );
+        assert_eq!(
+            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": {"Warm": []}}))
+                .unwrap()
+                .affinity,
+            AffinityBand::Warm
+        );
+        assert_eq!(
+            serde_json::from_value::<CourtshipWire>(serde_json::json!({"courtship": "Formal"}))
+                .unwrap()
+                .courtship,
+            Some(CourtshipKind::Formal)
+        );
+        assert!(
+            serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": "invented"}))
+                .is_err()
+        );
+        let child = serde_json::from_value::<ChildWire>(serde_json::json!({
+            "stage": {"Adolescence": []},
+            "focus": "HouseholdHelp"
+        }))
+        .unwrap();
+        assert_eq!(child.stage, ChildStage::Adolescence);
+        assert_eq!(child.focus, ChildActivityFocus::HouseholdHelp);
+        assert!(
+            serde_json::from_value::<ChildWire>(serde_json::json!({
+                "stage": "SchoolAge",
+                "focus": "Crime"
+            }))
+            .is_err()
+        );
+    }
+}
 
 /// Response from SpacetimeDB SQL query (array of result sets)
 pub type QueryResponse = Vec<QueryResult>;
@@ -509,6 +704,89 @@ pub struct Settlement {
     pub source_node_id: Option<u64>,
 }
 
+/// Public residence-offer projection generated from the strategic schema.
+/// These transport structs intentionally mirror only public tables/views; the
+/// browser never receives private relationship or pregnancy records.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ResidenceTier {
+    Cheap,
+    Moderate,
+    Fancy,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ResidenceTenure {
+    Renter,
+    Owner,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementResidenceOffer {
+    pub id: String,
+    pub settlement_id: String,
+    pub tier: ResidenceTier,
+    pub purchase_price: u32,
+    pub rent_per_period: u32,
+    pub owner_maintenance_per_period: u32,
+    pub property_tax_per_period: u32,
+    pub leisure_morale_basis_points: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendCharacterResidenceStatus {
+    pub character_id: u64,
+    pub holding_id: String,
+    pub owner_character_id: u64,
+    pub settlement_id: String,
+    pub tier: ResidenceTier,
+    pub tenure: ResidenceTenure,
+    pub active: bool,
+    pub primary: bool,
+    pub occupied: bool,
+    pub last_billed_minute: u64,
+    pub next_due_minute: u64,
+    pub acquired_minute: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BackendCharacterRelationshipStatus {
+    pub character_id: u64,
+    pub spouse_id: Option<u64>,
+    pub courtship_partner_id: Option<u64>,
+    #[serde(deserialize_with = "deserialize_optional_courtship_kind")]
+    pub courtship_kind: Option<CourtshipKind>,
+    pub courtship_exposed: bool,
+    pub wedding_commitment_id: Option<String>,
+    pub wedding_partner_id: Option<u64>,
+    pub wedding_effective_minute: Option<u64>,
+    pub wedding_settlement_id: Option<String>,
+    pub pregnancy_due_minute: Option<u64>,
+    pub pregnancy_child_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BackendFamilyChild {
+    pub owner_key: String,
+    pub observer_character_id: u64,
+    pub child_id: u64,
+    pub child_name: String,
+    #[serde(deserialize_with = "deserialize_child_stage")]
+    pub stage: ChildStage,
+    #[serde(deserialize_with = "deserialize_child_activity_focus")]
+    pub focus: ChildActivityFocus,
+    pub maturity_basis_points: u16,
+    pub adult_playable: bool,
+    pub alive: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BackendCourtshipDiscoveryStatus {
+    pub observer_character_id: u64,
+    pub first_character_id: u64,
+    pub second_character_id: u64,
+    pub discovered_minute: u64,
+}
+
 fn deserialize_settlement_religious_status<'de, D>(
     deserializer: D,
 ) -> Result<adventuresim_world_schema::SettlementReligiousStatus, D::Error>
@@ -628,7 +906,7 @@ pub struct ContractPresentation {
     pub xp_reward: i32,
     pub settlement_id: String,
     pub service_id: String,
-    pub issuer_npc_id: String,
+    pub issuer_resident_character_id: String,
     pub status: ContractPresentationStatus,
     pub accepted_by: Option<String>,
     pub opposition_wording: String,
@@ -668,7 +946,7 @@ pub struct RecruitmentOffer {
     pub source_id: RecruitmentSourceId,
     pub recruiting_party_id: String,
     pub settlement_id: String,
-    pub settlement_npc_id: String,
+    pub settlement_resident_id: String,
     pub location_id: String,
     pub leader_id: u64,
     pub status: RecruitmentOfferStatus,
@@ -934,7 +1212,7 @@ pub struct BackendLocalChatMessage {
     pub owner_character_id: u64,
     pub conversation_kind: String,
     pub subject_party_id: String,
-    pub subject_npc_id: String,
+    pub subject_resident_character_id: String,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -1736,6 +2014,7 @@ pub struct ScheduleAllocation {
     pub reading_minutes: u16,
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
+    pub socializing_minutes: u16,
     pub apprenticeship_minutes: u16,
     pub apprenticeship_organization_id: Option<String>,
     pub profession_practice_minutes: u16,

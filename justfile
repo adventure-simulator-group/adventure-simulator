@@ -359,6 +359,11 @@ quest-analyze-replay-fixture:
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim
 
+# Offline lifecycle acceptance tier over the same deterministic pure rules used
+# by reducers. The output directory must not already exist.
+strategic-sim-lifecycle output_dir seed="42":
+    @cargo run -p adventuresim-strategic-sim -- lifecycle --output-dir {{ quote(output_dir) }} --seed {{ seed }}
+
 # LLM-only, end-to-end browser evaluator. output_dir must be new because the
 # screenshot record never overwrites an earlier run.
 quest-web-eval output_dir base_url="http://127.0.0.1:24301" start_path="/characters" api_key_env="OPENAI_API_KEY" model="gpt-4.1-mini":

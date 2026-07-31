@@ -18,6 +18,18 @@ use adventuresim_stdb_client::*;
 use adventuresim_stdb_client::{
     DbConnection, autoresolve_report_table::AutoresolveReportTableAccess,
     backend_case_battles_table::BackendCaseBattlesTableAccess,
+    backend_character_attributes_table::BackendCharacterAttributesTableAccess,
+    backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
+    backend_character_conditions_table::BackendCharacterConditionsTableAccess,
+    backend_character_deaths_table::BackendCharacterDeathsTableAccess,
+    backend_character_limbs_table::BackendCharacterLimbsTableAccess,
+    backend_character_morale_sources_table::BackendCharacterMoraleSourcesTableAccess,
+    backend_character_needs_table::BackendCharacterNeedsTableAccess,
+    backend_character_skills_table::BackendCharacterSkillsTableAccess,
+    backend_character_stats_table::BackendCharacterStatsTableAccess,
+    backend_character_strategic_conditions_table::BackendCharacterStrategicConditionsTableAccess,
+    backend_character_training_schedules_table::BackendCharacterTrainingSchedulesTableAccess,
+    backend_characters_table::BackendCharactersTableAccess,
     backend_contracts_table::BackendContractsTableAccess,
     backend_dialogue_events_table::BackendDialogueEventsTableAccess,
     backend_dialogue_participants_table::BackendDialogueParticipantsTableAccess,
@@ -29,20 +41,9 @@ use adventuresim_stdb_client::{
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
-    character_attributes_table::CharacterAttributesTableAccess,
-    character_capability_table::CharacterCapabilityTableAccess,
-    character_condition_table::CharacterConditionTableAccess,
     character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_filth_table::CharacterFilthTableAccess,
-    character_limbs_table::CharacterLimbsTableAccess,
-    character_morale_source_table::CharacterMoraleSourceTableAccess,
-    character_needs_table::CharacterNeedsTableAccess,
     character_settlement_reputation_table::CharacterSettlementReputationTableAccess,
-    character_skills_table::CharacterSkillsTableAccess,
-    character_stats_table::CharacterStatsTableAccess,
-    character_strategic_condition_table::CharacterStrategicConditionTableAccess,
-    character_table::CharacterTableAccess,
-    character_training_schedule_table::CharacterTrainingScheduleTableAccess,
     equipment_occupancy_table::EquipmentOccupancyTableAccess, food_lot_table::FoodLotTableAccess,
     inventory_item_amount_table::InventoryItemAmountTableAccess,
     inventory_item_table::InventoryItemTableAccess,
@@ -97,15 +98,15 @@ use crate::{
 /// Tables subscribed by the strategic read cache. Keep this list explicit:
 /// large immutable world/import tables and item definitions are read on demand.
 pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
-    "character",
+    "backend_characters",
     "backend_character_case_site_locations",
-    "character_attributes",
-    "character_stats",
-    "character_skills",
-    "character_limbs",
+    "backend_character_attributes",
+    "backend_character_stats",
+    "backend_character_skills",
+    "backend_character_limbs",
     "limb_injury",
     "retained_projectile",
-    "character_training_schedule",
+    "backend_character_training_schedules",
     "organization_membership",
     "organization_presentation",
     "party",
@@ -125,7 +126,7 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "item_condition",
     "repair_order",
     "settlement_smith",
-    "character_time",
+    "backend_character_times",
     "inventory_quantity_target",
     "party_inventory_item",
     "party_item_amount",
@@ -134,11 +135,12 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "character_equipped_item",
     "equipment_occupancy",
     "character_filth",
-    "character_capability",
-    "character_condition",
-    "character_needs",
-    "character_strategic_condition",
-    "character_morale_source",
+    "backend_character_capabilities",
+    "backend_character_conditions",
+    "backend_character_needs",
+    "backend_character_strategic_conditions",
+    "backend_character_deaths",
+    "backend_character_morale_sources",
     "character_settlement_reputation",
     "morale_event",
     "religious_demand",
@@ -267,7 +269,7 @@ impl LiveState {
         }
         // These tables cover location/navigation, party state and requests,
         // recruitment, quest state, local conversations, and mission readiness.
-        invalidate_on_changes!(state.0._connection.db.character());
+        invalidate_on_view_changes!(state.0._connection.db.backend_characters());
         invalidate_on_view_changes!(
             state
                 .0
@@ -275,13 +277,19 @@ impl LiveState {
                 .db
                 .backend_character_case_site_locations()
         );
-        invalidate_on_changes!(state.0._connection.db.character_attributes());
-        invalidate_on_changes!(state.0._connection.db.character_stats());
-        invalidate_on_changes!(state.0._connection.db.character_skills());
-        invalidate_on_changes!(state.0._connection.db.character_limbs());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_attributes());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_stats());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_skills());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_limbs());
         invalidate_on_changes!(state.0._connection.db.limb_injury());
         invalidate_on_changes!(state.0._connection.db.retained_projectile());
-        invalidate_on_changes!(state.0._connection.db.character_training_schedule());
+        invalidate_on_view_changes!(
+            state
+                .0
+                ._connection
+                .db
+                .backend_character_training_schedules()
+        );
         invalidate_on_changes!(state.0._connection.db.organization_membership());
         invalidate_on_changes!(state.0._connection.db.organization_presentation());
         invalidate_on_view_changes!(state.0._connection.db.party());
@@ -301,7 +309,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.item_condition());
         invalidate_on_changes!(state.0._connection.db.repair_order());
         invalidate_on_changes!(state.0._connection.db.settlement_smith());
-        invalidate_on_changes!(state.0._connection.db.character_time());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_times());
         invalidate_on_changes!(state.0._connection.db.inventory_quantity_target());
         invalidate_on_changes!(state.0._connection.db.party_inventory_item());
         invalidate_on_changes!(state.0._connection.db.party_item_amount());
@@ -310,11 +318,18 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_equipped_item());
         invalidate_on_changes!(state.0._connection.db.equipment_occupancy());
         invalidate_on_changes!(state.0._connection.db.character_filth());
-        invalidate_on_changes!(state.0._connection.db.character_capability());
-        invalidate_on_changes!(state.0._connection.db.character_condition());
-        invalidate_on_changes!(state.0._connection.db.character_needs());
-        invalidate_on_changes!(state.0._connection.db.character_strategic_condition());
-        invalidate_on_changes!(state.0._connection.db.character_morale_source());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_capabilities());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_conditions());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_needs());
+        invalidate_on_view_changes!(
+            state
+                .0
+                ._connection
+                .db
+                .backend_character_strategic_conditions()
+        );
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_deaths());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_morale_sources());
         invalidate_on_changes!(state.0._connection.db.character_settlement_reputation());
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
@@ -345,7 +360,7 @@ impl LiveState {
                 let live = state.clone();
                 move |ctx| {
                     let rows = [
-                        ctx.db().character().count(),
+                        ctx.db().backend_characters().count(),
                         ctx.db().backend_character_case_site_locations().count(),
                         ctx.db().party().count(),
                         ctx.db().party_member().count(),
@@ -372,25 +387,26 @@ impl LiveState {
             .add_query(|query| query.from.backend_case_battles())
             .add_query(|query| query.from.autoresolve_report())
             .add_query(|query| query.from.strategic_encounter())
-            .add_query(|query| query.from.character())
+            .add_query(|query| query.from.backend_characters())
             .add_query(|query| query.from.backend_character_case_site_locations())
-            .add_query(|query| query.from.character_attributes())
-            .add_query(|query| query.from.character_capability())
-            .add_query(|query| query.from.character_condition())
+            .add_query(|query| query.from.backend_character_attributes())
+            .add_query(|query| query.from.backend_character_capabilities())
+            .add_query(|query| query.from.backend_character_conditions())
             .add_query(|query| query.from.character_equipped_item())
             .add_query(|query| query.from.equipment_occupancy())
             .add_query(|query| query.from.character_filth())
-            .add_query(|query| query.from.character_limbs())
+            .add_query(|query| query.from.backend_character_limbs())
+            .add_query(|query| query.from.backend_character_deaths())
             .add_query(|query| query.from.limb_injury())
             .add_query(|query| query.from.retained_projectile())
-            .add_query(|query| query.from.character_morale_source())
-            .add_query(|query| query.from.character_needs())
+            .add_query(|query| query.from.backend_character_morale_sources())
+            .add_query(|query| query.from.backend_character_needs())
             .add_query(|query| query.from.character_settlement_reputation())
-            .add_query(|query| query.from.character_skills())
-            .add_query(|query| query.from.character_stats())
-            .add_query(|query| query.from.character_strategic_condition())
-            .add_query(|query| query.from.character_time())
-            .add_query(|query| query.from.character_training_schedule())
+            .add_query(|query| query.from.backend_character_skills())
+            .add_query(|query| query.from.backend_character_stats())
+            .add_query(|query| query.from.backend_character_strategic_conditions())
+            .add_query(|query| query.from.backend_character_times())
+            .add_query(|query| query.from.backend_character_training_schedules())
             .add_query(|query| query.from.organization_membership())
             .add_query(|query| query.from.organization_presentation())
             .add_query(|query| query.from.party_journey())
@@ -469,7 +485,7 @@ impl LiveState {
             self.0
                 ._connection
                 .db
-                .character()
+                .backend_characters()
                 .iter()
                 .map(character_from_sdk)
                 .collect()
@@ -481,9 +497,9 @@ impl LiveState {
             self.0
                 ._connection
                 .db
-                .character()
-                .id()
-                .find(&id)
+                .backend_characters()
+                .iter()
+                .find(|character| character.id == id)
                 .map(character_from_sdk)
         })
     }
@@ -584,7 +600,7 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
         let character = state
             .db
             .query::<Character>(&format!(
-                "SELECT * FROM character WHERE id = {character_id}"
+                "SELECT * FROM backend_characters WHERE id = {character_id}"
             ))
             .await
             .ok()

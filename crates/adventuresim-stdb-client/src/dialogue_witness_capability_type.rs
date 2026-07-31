@@ -10,7 +10,7 @@ pub struct DialogueWitnessCapability {
     pub id: String,
     pub session_id: String,
     pub observer_character_id: u64,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub has_bound_concern: bool,
     pub bound_released: bool,
 }
@@ -26,7 +26,7 @@ pub struct DialogueWitnessCapabilityCols {
     pub id: __sdk::__query_builder::Col<DialogueWitnessCapability, String>,
     pub session_id: __sdk::__query_builder::Col<DialogueWitnessCapability, String>,
     pub observer_character_id: __sdk::__query_builder::Col<DialogueWitnessCapability, u64>,
-    pub npc_id: __sdk::__query_builder::Col<DialogueWitnessCapability, String>,
+    pub resident_character_id: __sdk::__query_builder::Col<DialogueWitnessCapability, u64>,
     pub has_bound_concern: __sdk::__query_builder::Col<DialogueWitnessCapability, bool>,
     pub bound_released: __sdk::__query_builder::Col<DialogueWitnessCapability, bool>,
 }
@@ -41,7 +41,10 @@ impl __sdk::__query_builder::HasCols for DialogueWitnessCapability {
                 table_name,
                 "observer_character_id",
             ),
-            npc_id: __sdk::__query_builder::Col::new(table_name, "npc_id"),
+            resident_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "resident_character_id",
+            ),
             has_bound_concern: __sdk::__query_builder::Col::new(table_name, "has_bound_concern"),
             bound_released: __sdk::__query_builder::Col::new(table_name, "bound_released"),
         }

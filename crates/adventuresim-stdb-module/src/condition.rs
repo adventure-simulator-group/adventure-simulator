@@ -41,7 +41,7 @@ fn enemy_fear_multiplier(enemy_type: &str) -> Result<f32, String> {
 
 /// Durable strategic inputs for blood loss and religious morale relationships.
 #[derive(Clone, Debug)]
-#[table(accessor = character_condition, public)]
+#[table(accessor = character_condition)]
 pub struct CharacterCondition {
     #[primary_key]
     pub character_id: u64,
@@ -54,7 +54,7 @@ pub struct CharacterCondition {
 /// Durable strategic food and water state. Positive balances are short-term
 /// physiological reserves; negative balances represent unsupported need.
 #[derive(Clone, Debug)]
-#[table(accessor = character_needs, public)]
+#[table(accessor = character_needs)]
 pub struct CharacterNeeds {
     #[primary_key]
     pub character_id: u64,
@@ -67,7 +67,7 @@ pub struct CharacterNeeds {
 /// separate from filth: water changes exposure but carries no dirt/blood
 /// provenance and washing never consumes it.
 #[derive(Clone, Debug, PartialEq)]
-#[table(accessor = character_exposure, public)]
+#[table(accessor = character_exposure)]
 pub struct CharacterExposure {
     #[primary_key]
     pub character_id: u64,
@@ -96,7 +96,7 @@ pub struct MoraleEvent {
 
 /// Refreshable server-authoritative projection used by strategic clients.
 #[derive(Clone, Debug, PartialEq)]
-#[table(accessor = character_strategic_condition, public)]
+#[table(accessor = character_strategic_condition)]
 pub struct CharacterStrategicCondition {
     #[primary_key]
     pub character_id: u64,
@@ -128,7 +128,7 @@ pub struct CharacterStrategicCondition {
 
 /// A signed contribution to the character's current projected morale.
 #[derive(Clone, Debug)]
-#[table(accessor = character_morale_source, public)]
+#[table(accessor = character_morale_source)]
 pub struct CharacterMoraleSource {
     #[primary_key]
     pub id: String,
@@ -1718,6 +1718,40 @@ pub fn upsert_refreshable_morale_event_at_without_refresh(
     Ok(())
 }
 
+/// Replace a bounded morale source with rules-owned magnitude and duration.
+/// Lifecycle systems use this when personality must not alter a contractual
+/// effect's retention window.
+pub(crate) fn upsert_fixed_morale_event_without_refresh(
+    ctx: &ReducerContext,
+    character_id: u64,
+    kind: &str,
+    magnitude: f32,
+    occurred_at_minute: u64,
+    expires_at_minute: u64,
+    source_id: &str,
+) {
+    let existing = ctx
+        .db
+        .morale_event()
+        .character_id()
+        .filter(character_id)
+        .find(|event| event.source_id.as_deref() == Some(source_id));
+    let event = MoraleEvent {
+        id: existing.as_ref().map_or(0, |event| event.id),
+        character_id,
+        kind: kind.into(),
+        magnitude,
+        occurred_at_minute,
+        expires_at_minute,
+        source_id: Some(source_id.into()),
+    };
+    if existing.is_some() {
+        ctx.db.morale_event().id().update(event);
+    } else {
+        ctx.db.morale_event().insert(event);
+    }
+}
+
 fn insert_morale_event_without_refresh(
     ctx: &ReducerContext,
     character_id: u64,
@@ -2017,6 +2051,12 @@ pub fn apply_settlement_leisure_condition(
         outcome.morale_earning_minutes,
         interval_end_minute,
     );
+    crate::residence::apply_residence_leisure_morale(
+        ctx,
+        character_id,
+        outcome.morale,
+        interval_end_minute,
+    )?;
     Ok(())
 }
 

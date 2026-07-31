@@ -333,11 +333,15 @@ fn validate_action_position(
 ) -> Result<(), String> {
     match capability.target_kind.as_str() {
         "contact" => {
+            let resident_character_id = capability
+                .target_id
+                .parse::<u64>()
+                .map_err(|_| "Referred contact identity is invalid")?;
             let presence = ctx
                 .db
-                .settlement_npc_presence()
-                .npc_id()
-                .find(&capability.target_id)
+                .settlement_resident_presence()
+                .character_id()
+                .find(resident_character_id)
                 .ok_or("Referred contact no longer has an authoritative presence")?;
             if actor.current_settlement_id.as_deref() != Some(presence.settlement_id.as_str()) {
                 return Err("The referred contact is in another settlement".into());
@@ -369,9 +373,9 @@ fn validate_action_position(
             }
             let presence = ctx
                 .db
-                .settlement_npc_presence()
-                .npc_id()
-                .find(&target.npc_id)
+                .settlement_resident_presence()
+                .character_id()
+                .find(target.resident_character_id)
                 .ok_or("Victim cohort target is unavailable")?;
             if actor.current_settlement_id.as_deref() != Some(presence.settlement_id.as_str())
                 || presence.settlement_id != target.expected_settlement_id
@@ -508,21 +512,20 @@ fn validate_generated_pattern_condition(
             {
                 return Err("Victim cohort profile no longer matches its authority".into());
             }
-            let npc = ctx
-                .db
-                .settlement_npc()
-                .id()
-                .find(&target.npc_id)
-                .ok_or("Victim cohort NPC no longer exists")?;
+            let npc = crate::settlement_population::resolve_settlement_resident(
+                ctx,
+                target.resident_character_id,
+            )
+            .ok_or("Victim cohort NPC no longer exists")?;
             let presence = ctx
                 .db
-                .settlement_npc_presence()
-                .npc_id()
-                .find(&target.npc_id)
+                .settlement_resident_presence()
+                .character_id()
+                .find(target.resident_character_id)
                 .ok_or("Victim cohort target is unavailable")?;
             let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
                 cohort_id: target.cohort_id.clone(),
-                npc_id: target.npc_id.clone(),
+                resident_character_id: target.resident_character_id.clone(),
                 demographic: *demographic,
                 age_band: target.age_band.clone(),
                 sex: target.sex.clone(),
@@ -537,7 +540,7 @@ fn validate_generated_pattern_condition(
                     .ok_or("Victim cohort NPC no longer has a visible demographic")?
             } else {
                 adventuresim_core::quest_generation::WitnessCandidate {
-                    npc_id: npc.id.clone(),
+                    resident_character_id: npc.character_id.clone(),
                     display_name: npc.name.clone(),
                     demographic: crate::strategic::generated_npc_demographic(&npc),
                     age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
@@ -914,11 +917,10 @@ fn commit_generated_remediation(
     else {
         return Ok(());
     };
-    let outputs =
-        serde_json::from_str::<Vec<adventuresim_core::quest_generation::GeneratedActionOutput>>(
-            &output.outputs_json,
-        )
-        .map_err(|_| "Generated action output authority is invalid")?;
+    let outputs = serde_json::from_str::<
+        Vec<adventuresim_core::quest_generation::GeneratedActionOutput>,
+    >(&output.outputs_json)
+    .map_err(|_| "Generated action output authority is invalid")?;
     let remediation_ids = outputs
         .iter()
         .filter_map(|output| match output {

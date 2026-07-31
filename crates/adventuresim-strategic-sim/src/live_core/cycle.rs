@@ -553,7 +553,7 @@ impl LiveRunner {
         let character = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
             .ok_or("missing upgrade character")?;

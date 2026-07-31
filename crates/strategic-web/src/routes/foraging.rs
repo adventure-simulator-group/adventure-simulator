@@ -89,7 +89,7 @@ async fn advisory_privileges(
     let minute = state
         .db
         .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
         ))
         .await
         .ok()
@@ -366,7 +366,7 @@ fn forage_receipt_status(receipt: &BackendForageReceipt) -> Markup {
 async fn character(state: &AppState, id: u64) -> Result<Character, String> {
     state
         .db
-        .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+        .query_one::<Character>(&format!("SELECT * FROM backend_characters WHERE id = {id}"))
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Character not found".into())

@@ -11,6 +11,50 @@ pub(super) fn parse_surgery_limb(slug: &str) -> Option<LimbRegion> {
     })
 }
 
+#[derive(Default, Deserialize)]
+pub(super) struct ResidencePageQuery {
+    residence_notice: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+pub(super) struct ResidenceActionForm {
+    holding_id: Option<String>,
+}
+
+fn residence_notice(code: Option<&str>) -> Option<&'static str> {
+    match code {
+        Some("rented") => Some("The residence is now rented and ready to use."),
+        Some("bought") => Some("You bought the residence."),
+        Some("relinquished") => Some("You relinquished the residence."),
+        Some("designated") => Some("This residence is now your designated home."),
+        Some("recovered") => Some("The owned residence is active again."),
+        Some("funds") => Some("You do not have enough coin for that."),
+        Some("location") => Some("You must be in this settlement to do that."),
+        Some("overdue") => Some("Settle the overdue housing cost before doing that."),
+        Some("unavailable") => Some("That housing change is not available."),
+        _ => None,
+    }
+}
+
+fn relationship_date_label(minute: u64) -> String {
+    let day = minute / adventuresim_core::strategic_time::MINUTES_PER_DAY;
+    let year = 1544 + day / 365;
+    let day_of_year = day % 365 + 1;
+    format!("year {year}, day {day_of_year}")
+}
+
+fn housing_error_code(error: &str) -> &'static str {
+    if error.contains("coin") || error.contains("fund") {
+        "funds"
+    } else if error.contains("settlement") || error.contains("co-location") {
+        "location"
+    } else if error.contains("dormant") || error.contains("due") {
+        "overdue"
+    } else {
+        "unavailable"
+    }
+}
+
 pub(super) async fn required_surgery_rows<T>(
     state: &AppState,
     sql: &str,
@@ -437,9 +481,10 @@ pub(super) async fn show_settlement(Path(id): Path<String>) -> Redirect {
     Redirect::to(&format!("/locations/settlement/{id}"))
 }
 
-pub(super) async fn settlement_npc_place(
+pub(super) async fn settlement_resident_place(
     State(state): State<AppState>,
     Path((id, place)): Path<(String, String)>,
+    Query(page_query): Query<ResidencePageQuery>,
     session: Session,
 ) -> Html<String> {
     let organization_chapter =
@@ -488,8 +533,149 @@ pub(super) async fn settlement_npc_place(
         return Html("<h1>This settlement has no keep</h1>".into());
     }
     let party_members = get_active_party_members(&state, Some(character)).await;
+    if place == "residences" {
+        let settlement_literal = sql_string_literal(&settlement.id);
+        let offers_sql = format!(
+            "SELECT * FROM settlement_residence_offer WHERE settlement_id = {settlement_literal}"
+        );
+        let residence_sql = format!(
+            "SELECT * FROM backend_character_residence_statuses WHERE character_id = {}",
+            character.id,
+        );
+        let relationship_sql = format!(
+            "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {}",
+            character.id,
+        );
+        let owner_key = session.owner_key().unwrap_or_default();
+        let family_sql = format!(
+            "SELECT * FROM backend_family_children WHERE owner_key = {} AND observer_character_id = {}",
+            sql_string_literal(owner_key),
+            character.id,
+        );
+        let (offers, residences, relationship, children) = tokio::join!(
+            state.db.query::<SettlementResidenceOffer>(&offers_sql),
+            state.db.query::<BackendCharacterResidenceStatus>(&residence_sql),
+            state
+                .db
+                .query_one::<BackendCharacterRelationshipStatus>(&relationship_sql),
+            state.db.query::<BackendFamilyChild>(&family_sql),
+        );
+        let mut offers = offers.unwrap_or_default();
+        offers.sort_by_key(|offer| match offer.tier {
+            ResidenceTier::Cheap => 0,
+            ResidenceTier::Moderate => 1,
+            ResidenceTier::Fancy => 2,
+        });
+        let mut residences = residences.unwrap_or_default();
+        residences.retain(|holding| holding.character_id == character.id);
+        residences.sort_by(|left, right| {
+            (
+                !left.primary,
+                left.settlement_id != settlement.id,
+                left.holding_id.as_str(),
+            )
+                .cmp(&(
+                    !right.primary,
+                    right.settlement_id != settlement.id,
+                    right.holding_id.as_str(),
+                ))
+        });
+        let can_rest_at_home = residences.iter().any(|home| {
+            home.active && home.occupied && home.settlement_id == settlement.id
+        });
+        let relationship = relationship.ok().flatten();
+        let mut children = children.unwrap_or_default();
+        children.retain(|child| {
+            child.owner_key == owner_key && child.observer_character_id == character.id
+        });
+        children.sort_by_key(|child| child.child_id);
+        let related_ids = relationship
+            .iter()
+            .flat_map(|status| {
+                [status.spouse_id, status.courtship_partner_id]
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        let mut related_characters = Vec::new();
+        for related_id in related_ids {
+            if let Ok(Some(related)) = state
+                .db
+                .query_one::<Character>(&format!(
+                    "SELECT * FROM backend_characters WHERE id = {related_id}"
+                ))
+                .await
+            {
+                related_characters.push(related);
+            }
+        }
+        let character_minute = state
+            .db
+            .query_one::<CharacterTime>(&format!(
+                "SELECT * FROM backend_character_times WHERE character_id = {}",
+                character.id
+            ))
+            .await
+            .ok()
+            .flatten()
+            .map_or(0, |time| time.minutes);
+        let wedding = relationship
+            .as_ref()
+            .and_then(|row| row.wedding_effective_minute)
+            .map(|effective_minute| WeddingPresentation {
+                days_remaining: effective_minute
+                    .saturating_sub(character_minute)
+                    .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY),
+                date_label: relationship_date_label(effective_minute),
+            });
+        let presentation = relationship.as_ref().map(|status| {
+            let name = |id: Option<u64>| {
+                id.and_then(|id| {
+                    related_characters
+                        .iter()
+                        .find(|character| character.id == id)
+                        .map(|character| character.name.clone())
+                })
+            };
+            RelationshipPresentation {
+                spouse_name: name(status.spouse_id),
+                courtship_partner_name: name(status.courtship_partner_id),
+                courtship_kind: status.courtship_kind.clone(),
+                courtship_exposed: status.courtship_exposed,
+                wedding,
+                pregnancy_due_days: status.pregnancy_due_minute.map(|due| {
+                    due.saturating_sub(character_minute)
+                        .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY)
+                }),
+                children: children
+                    .iter()
+                    .map(|child| ChildPresentation {
+                        name: child.child_name.clone(),
+                        stage: child.stage,
+                        focus: child.focus,
+                        maturity_basis_points: child.maturity_basis_points,
+                        adult_playable: child.adult_playable,
+                        alive: child.alive,
+                    })
+                    .collect(),
+            }
+        });
+        return Html(
+            settlement_residence_page(
+                &settlement,
+                character,
+                &party_members,
+                Some(&character.name),
+                &offers,
+                &residences,
+                presentation.as_ref(),
+                can_rest_at_home,
+                residence_notice(page_query.residence_notice.as_deref()),
+            )
+            .into_string(),
+        );
+    }
     Html(
-        settlement_npc_location_page(
+        settlement_resident_location_page(
             &settlement,
             character,
             &party_members,
@@ -498,6 +684,139 @@ pub(super) async fn settlement_npc_place(
         )
         .into_string(),
     )
+}
+
+pub(super) async fn change_residence(
+    State(state): State<AppState>,
+    Path((id, action, tier)): Path<(String, String, String)>,
+    session: Session,
+    Form(form): Form<ResidenceActionForm>,
+) -> Redirect {
+    let fallback = format!("/settlements/{id}/places/residences");
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    let tier_argument = match tier.as_str() {
+        "cheap" => json!({ "cheap": [] }),
+        "moderate" => json!({ "moderate": [] }),
+        "fancy" => json!({ "fancy": [] }),
+        "current" => serde_json::Value::Null,
+        _ => return Redirect::to(&format!("{fallback}?residence_notice=unavailable")),
+    };
+    let selected_holding = form
+        .holding_id
+        .filter(|holding_id| !holding_id.trim().is_empty());
+    let (reducer, args, success) = match action.as_str() {
+        "rent" => (
+            "rent_residence",
+            vec![json!(character_id), json!(id), tier_argument],
+            "rented",
+        ),
+        "buy" => (
+            "buy_residence",
+            vec![json!(character_id), json!(id), tier_argument],
+            "bought",
+        ),
+        "relinquish" => (
+            "relinquish_residence",
+            vec![
+                json!(character_id),
+                json!(match selected_holding.as_ref() {
+                    Some(holding_id) if tier == "current" => holding_id,
+                    _ => {
+                        return Redirect::to(&format!(
+                            "{fallback}?residence_notice=unavailable"
+                        ));
+                    }
+                }),
+            ],
+            "relinquished",
+        ),
+        "designate" => (
+            "designate_residence",
+            vec![
+                json!(character_id),
+                json!(match selected_holding.as_ref() {
+                    Some(holding_id) if tier == "current" => holding_id,
+                    _ => {
+                        return Redirect::to(&format!(
+                            "{fallback}?residence_notice=unavailable"
+                        ));
+                    }
+                }),
+            ],
+            "designated",
+        ),
+        "recover" => (
+            "recover_owned_residence",
+            vec![
+                json!(character_id),
+                json!(match selected_holding.as_ref() {
+                    Some(holding_id) if tier == "current" => holding_id,
+                    _ => {
+                        return Redirect::to(&format!(
+                            "{fallback}?residence_notice=unavailable"
+                        ));
+                    }
+                }),
+            ],
+            "recovered",
+        ),
+        _ => return Redirect::to(&format!("{fallback}?residence_notice=unavailable")),
+    };
+    match state.db.call(reducer, &args).await {
+        Ok(()) => Redirect::to(&format!("{fallback}?residence_notice={success}")),
+        Err(error) => {
+            tracing::warn!(character_id, action, tier, %error, "residence acquisition rejected");
+            Redirect::to(&format!(
+                "{fallback}?residence_notice={}",
+                housing_error_code(&error.to_string())
+            ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod residence_route_tests {
+    #[test]
+    fn portfolio_reads_and_management_mutations_keep_explicit_holding_ids() {
+        let source = include_str!("medical.rs");
+        let residence_page = source
+            .split("if place == \"residences\"")
+            .nth(1)
+            .unwrap()
+            .split("pub(super) async fn change_residence")
+            .next()
+            .unwrap();
+        assert!(residence_page.contains("query::<BackendCharacterResidenceStatus>"));
+        assert!(residence_page.contains("residences.retain"));
+        assert!(residence_page.contains("home.active && home.occupied"));
+        assert!(residence_page.contains("query::<BackendFamilyChild>"));
+        assert!(residence_page.contains("WHERE owner_key = {} AND observer_character_id = {}"));
+        assert!(residence_page.contains(
+            "child.owner_key == owner_key && child.observer_character_id == character.id"
+        ));
+
+        let change = source
+            .split("pub(super) async fn change_residence")
+            .nth(1)
+            .unwrap()
+            .split("pub(super) async fn show_settlement_location")
+            .next()
+            .unwrap();
+        assert!(change.contains("Form(form): Form<ResidenceActionForm>"));
+        assert!(change.contains("let selected_holding = form"));
+        assert!(change.contains(".holding_id"));
+        for reducer in [
+            "relinquish_residence",
+            "designate_residence",
+            "recover_owned_residence",
+        ] {
+            assert!(change.contains(reducer));
+        }
+        assert!(change.matches("json!(character_id)").count() >= 5);
+        assert!(change.matches("json!(match selected_holding.as_ref()").count() == 3);
+    }
 }
 
 pub(super) async fn show_settlement_location(

@@ -6,6 +6,8 @@ pub(crate) struct RestForm {
     pub(crate) requested_minutes: Option<u64>,
     #[serde(default = "default_field_shelter")]
     pub(crate) shelter: String,
+    #[serde(default)]
+    pub(crate) advance_development_clock: bool,
 }
 
 fn default_field_shelter() -> String {
@@ -110,9 +112,10 @@ pub(super) async fn rest(
     session: Session,
     form: Result<Form<RestForm>, FormRejection>,
 ) -> Response {
-    let at_inn = match kind.as_str() {
-        "inn" => true,
-        "temple" => false,
+    let (at_inn, at_residence) = match kind.as_str() {
+        "inn" => (true, false),
+        "temple" => (false, false),
+        "residence" => (false, true),
         _ => return Html("<h1>Rest service not found</h1>".to_string()).into_response(),
     };
     let Some(character_id) = session.character_id_u64() else {
@@ -148,7 +151,7 @@ pub(super) async fn rest(
     } else {
         adventuresim_core::settlement_economy::SettlementActionService::Temple
     };
-    if !settlement_action_service_available(&settlement.economy, service) {
+    if !at_residence && !settlement_action_service_available(&settlement.economy, service) {
         return Html("<h1>Rest service unavailable</h1>".to_string()).into_response();
     }
     let requested_minutes = match settlement_rest_minutes(&form) {
@@ -191,25 +194,28 @@ pub(super) async fn rest(
     };
     let before_character = get_active_character(&state, Some(character_id)).await;
     let before_limbs =
-        query_single::<CharacterLimbs>(&state, "character_limbs", character_id).await;
+        query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
     let before_skills =
-        query_single::<CharacterSkills>(&state, "character_skills", character_id).await;
+        query_single::<CharacterSkills>(&state, "backend_character_skills", character_id).await;
     let before_time =
-        query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
+        query_single::<crate::spacetimedb::CharacterTime>(&state, "backend_character_times", character_id)
             .await;
     let before_reputation = query_local_reputation(&state, character_id, &id).await;
     let character_settlement_id = before_character
         .as_ref()
         .and_then(|(character, _)| character.current_settlement_id.as_deref())
         .unwrap_or("<none>");
-    if let Err(error) = state
-        .db
-        .call(
-            "rest_at_settlement_hours",
-            &[json!(character_id), json!(requested_minutes), json!(at_inn)],
-        )
-        .await
-    {
+    let reducer = if at_residence {
+        "rest_at_residence_hours"
+    } else {
+        "rest_at_settlement_hours"
+    };
+    let reducer_arguments = if at_residence {
+        vec![json!(character_id), json!(requested_minutes)]
+    } else {
+        vec![json!(character_id), json!(requested_minutes), json!(at_inn)]
+    };
+    if let Err(error) = state.db.call(reducer, &reducer_arguments).await {
         tracing::warn!(
             character_id,
             requested_settlement_id = %id,
@@ -228,7 +234,13 @@ pub(super) async fn rest(
                     safe_rest_error(&error.to_string()),
                     &format!(
                         "/settlements/{id}/{}",
-                        if at_inn { "inn" } else { "religion" }
+                        if at_inn {
+                            "inn"
+                        } else if at_residence {
+                            "places/residences"
+                        } else {
+                            "religion"
+                        }
                     ),
                     "Return to rest service",
                     None,
@@ -251,12 +263,24 @@ pub(super) async fn rest(
         active_character.as_ref().map(|(character, _)| character),
     )
     .await;
-    let after_limbs = query_single::<CharacterLimbs>(&state, "character_limbs", character_id).await;
+    let after_limbs = query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
     let after_skills =
-        query_single::<CharacterSkills>(&state, "character_skills", character_id).await;
+        query_single::<CharacterSkills>(&state, "backend_character_skills", character_id).await;
     let after_time =
-        query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
+        query_single::<crate::spacetimedb::CharacterTime>(&state, "backend_character_times", character_id)
             .await;
+    if form.advance_development_clock
+        && let Err(error) = state
+            .db
+            .call("sync_development_clock_to_character", &[json!(character_id)])
+            .await
+    {
+        tracing::warn!(
+            %error,
+            character_id,
+            "developer clock synchronization failed after settlement rest"
+        );
+    }
     let after_reputation = query_local_reputation(&state, character_id, &id).await;
     let summary = rest_summary(
         before_character
@@ -311,6 +335,7 @@ pub(super) async fn rest(
             &party_members,
             logged_in_as.as_deref(),
             at_inn,
+            at_residence,
             &summary,
             soap_preview,
         )
@@ -722,7 +747,7 @@ mod service_availability_tests {
         assert!(handler.contains("organizations_for_chapter(&id)"));
         assert!(handler.contains("organization.service_id"));
         assert!(handler.contains("exact_apprenticeship_representative_present"));
-        assert!(handler.contains("settlement_npc_presence"));
+        assert!(handler.contains("settlement_resident_presence"));
         assert!(handler.contains("chapter_effective_location_id"));
         assert!(handler.contains("Speak to the local organization representative"));
         assert!(handler.contains("\"join_organization\""));

@@ -89,17 +89,17 @@ impl EncumbranceRows {
                 // buffer is a bound on actual in-flight database calls.
                 let attributes = query_single::<CharacterAttributes>(
                     state,
-                    "character_attributes",
+                    "backend_character_attributes",
                     character_id,
                 )
                 .await;
                 let limbs =
-                    query_single::<CharacterLimbs>(state, "character_limbs", character_id).await;
+                    query_single::<CharacterLimbs>(state, "backend_character_limbs", character_id).await;
                 let condition =
-                    query_single::<CharacterCondition>(state, "character_condition", character_id)
+                    query_single::<CharacterCondition>(state, "backend_character_conditions", character_id)
                         .await;
                 let needs =
-                    query_single::<CharacterNeeds>(state, "character_needs", character_id).await;
+                    query_single::<CharacterNeeds>(state, "backend_character_needs", character_id).await;
                 (attributes, limbs, condition, needs)
             })
             .buffer_unordered(ENCUMBRANCE_QUERY_CONCURRENCY)
@@ -217,7 +217,7 @@ pub(super) async fn get_active_character(
     let character_id = character_id?;
     let inventory_sql = format!("SELECT * FROM inventory_item WHERE character_id = {character_id}");
     let (character, inventory) = tokio::join!(
-        super::super::data::character(state, character_id),
+        super::super::data::character_as_observed(state, character_id, character_id),
         state.db.query::<InventoryItem>(&inventory_sql),
     );
     let character = character.ok().flatten()?;
@@ -252,7 +252,7 @@ pub(super) async fn get_character_capability(
     state
         .db
         .query(&format!(
-            "SELECT * FROM character_capability WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_capabilities WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default()
@@ -334,7 +334,7 @@ pub(crate) async fn get_active_party_members(
         state
             .db
             .query::<Character>(&format!(
-                "SELECT * FROM character WHERE id = {}",
+                "SELECT * FROM backend_characters WHERE id = {}",
                 membership.character_id
             ))
             .await
@@ -344,6 +344,40 @@ pub(crate) async fn get_active_party_members(
     });
     let mut members: Vec<Character> = join_all(lookups).await.into_iter().flatten().collect();
     if let Some(actor) = active_character {
+        // Party membership and Character are mutable current projections. A
+        // member whose personal frontier is ahead of the viewer would expose
+        // future location, party, progression, and wealth through this model,
+        // so omit that row until the viewer catches up.
+        let visibility = join_all(members.iter().map(|member| async move {
+            (
+                member.id,
+                super::super::data::character_not_ahead_of_observer(
+                    state, member.id, actor.id,
+                )
+                .await
+                .unwrap_or(false),
+            )
+        }))
+        .await;
+        let visible_ids = visibility
+            .into_iter()
+            .filter_map(|(id, visible)| visible.then_some(id))
+            .collect::<HashSet<_>>();
+        members.retain(|member| visible_ids.contains(&member.id));
+        if let Err(error) = super::super::data::project_alive_as_observed(
+            state,
+            actor.id,
+            &mut members,
+        )
+        .await
+        {
+            // A failed chronology read must not disclose or act on broad
+            // current death state from beyond the selected character's date.
+            tracing::warn!(%error, "could not project party life state at observer date");
+            for member in members.iter_mut().filter(|member| !member.alive) {
+                member.alive = true;
+            }
+        }
         let addresses_sql = format!(
             "SELECT * FROM backend_social_addresses WHERE actor_id = {}",
             actor.id
@@ -356,7 +390,7 @@ pub(crate) async fn get_active_party_members(
             state
                 .db
                 .query::<CharacterMoraleSource>(&format!(
-                    "SELECT * FROM character_morale_source WHERE character_id = {}",
+                    "SELECT * FROM backend_character_morale_sources WHERE character_id = {}",
                     member.id
                 ))
                 .await

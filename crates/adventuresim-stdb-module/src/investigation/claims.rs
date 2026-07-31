@@ -178,12 +178,16 @@ fn record_action(
         });
 }
 
-fn witness_referral_id(character_id: u64, canonical_case_id: &str, witness_npc_id: &str) -> String {
+fn witness_referral_id(
+    character_id: u64,
+    canonical_case_id: &str,
+    witness_resident_character_id: u64,
+) -> String {
     inv::compound_id(&[
         "generated-witness-referral",
         &character_id.to_string(),
         canonical_case_id,
-        witness_npc_id,
+        &witness_resident_character_id.to_string(),
     ])
 }
 
@@ -191,13 +195,13 @@ fn witness_referral_context_matches(
     referral: &InvestigationWitnessReferral,
     character_id: u64,
     canonical_case_id: &str,
-    witness_npc_id: &str,
+    witness_resident_character_id: u64,
     settlement_id: &str,
     location_id: &str,
 ) -> bool {
     referral.owner_character_id == character_id
         && referral.canonical_case_id == canonical_case_id
-        && referral.witness_npc_id == witness_npc_id
+        && referral.witness_resident_character_id == witness_resident_character_id
         && referral.expected_settlement_id == settlement_id
         && referral.expected_location_id == location_id
 }
@@ -227,7 +231,8 @@ fn validate_referral_manifest_provenance(
                 .iter()
                 .find(|candidate| {
                     candidate.id.0 == referral.source_witness_id
-                        && candidate.npc_id == referral.source_witness_npc_id
+                        && candidate.resident_character_id
+                            == referral.source_witness_resident_character_id
                 })
                 .ok_or("Testimony witness referral source disappeared")?;
             let source_draft = source
@@ -304,7 +309,7 @@ fn grant_generated_witness_referral(
         grant_kind,
         source_receipt_id,
         source_witness_id,
-        source_witness_npc_id,
+        source_witness_resident_character_id,
         source_testimony_index,
         source_proposition_id,
     ) = match provenance {
@@ -314,7 +319,7 @@ fn grant_generated_witness_referral(
                 || receipt.opaque_case_ref != generated.canonical_case_id
                 || receipt.problem_id != generated.problem_id
                 || receipt.settlement_id != expected_settlement_id
-                || receipt.contact_npc_id != witness.npc_id
+                || receipt.contact_resident_character_id != witness.resident_character_id
                 || receipt.expected_location_id != witness.expected_location
             {
                 return Err("Initial rumor does not grant the exact primary witness".into());
@@ -323,7 +328,7 @@ fn grant_generated_witness_referral(
                 "initial_rumor".to_owned(),
                 receipt.id.clone(),
                 String::new(),
-                receipt.source_npc_id.clone(),
+                receipt.source_resident_character_id.clone(),
                 0,
                 String::new(),
             )
@@ -362,26 +367,30 @@ fn grant_generated_witness_referral(
                 "testimony".to_owned(),
                 source_receipt_id.to_owned(),
                 source_witness.id.0.clone(),
-                source_witness.npc_id.clone(),
+                source_witness.resident_character_id.clone(),
                 u32::try_from(testimony_index)
                     .map_err(|_| "Testimony referral index is too large")?,
                 source_draft.proposition_id.clone(),
             )
         }
     };
-    let id = witness_referral_id(character_id, &generated.canonical_case_id, &witness.npc_id);
+    let id = witness_referral_id(
+        character_id,
+        &generated.canonical_case_id,
+        witness.resident_character_id,
+    );
     let row = InvestigationWitnessReferral {
         id: id.clone(),
         owner_character_id: character_id,
         canonical_case_id: generated.canonical_case_id.clone(),
         public_case_id: generated.public_case_id.clone(),
-        witness_npc_id: witness.npc_id.clone(),
+        witness_resident_character_id: witness.resident_character_id.clone(),
         expected_settlement_id: expected_settlement_id.into(),
         expected_location_id: witness.expected_location.clone(),
         grant_kind,
         source_receipt_id,
         source_witness_id,
-        source_witness_npc_id,
+        source_witness_resident_character_id,
         source_testimony_index,
         source_proposition_id,
         catalog_revision: generated.catalog_revision.clone(),
@@ -391,13 +400,14 @@ fn grant_generated_witness_referral(
         return if existing.owner_character_id == row.owner_character_id
             && existing.canonical_case_id == row.canonical_case_id
             && existing.public_case_id == row.public_case_id
-            && existing.witness_npc_id == row.witness_npc_id
+            && existing.witness_resident_character_id == row.witness_resident_character_id
             && existing.expected_settlement_id == row.expected_settlement_id
             && existing.expected_location_id == row.expected_location_id
             && existing.grant_kind == row.grant_kind
             && existing.source_receipt_id == row.source_receipt_id
             && existing.source_witness_id == row.source_witness_id
-            && existing.source_witness_npc_id == row.source_witness_npc_id
+            && existing.source_witness_resident_character_id
+                == row.source_witness_resident_character_id
             && existing.source_testimony_index == row.source_testimony_index
             && existing.source_proposition_id == row.source_proposition_id
             && existing.catalog_revision == row.catalog_revision
@@ -408,12 +418,11 @@ fn grant_generated_witness_referral(
         };
     }
     ctx.db.investigation_witness_referral().insert(row);
-    let npc = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&witness.npc_id)
-        .ok_or("Referred generated witness is no longer persistent")?;
+    let npc = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        witness.resident_character_id,
+    )
+    .ok_or("Referred generated witness is no longer persistent")?;
     let lead_id = inv::compound_id(&["lead", "generated-witness-referral", &id]);
     if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
         let location =
@@ -434,9 +443,9 @@ fn grant_generated_witness_referral(
             exact_location_id: String::new(),
             latitude_e7: 0,
             longitude_e7: 0,
-            witness_name: npc.name,
+            witness_name: npc.name.clone(),
             witness_description: witness.visible_description.clone(),
-            witness_occupation_or_relationship: npc.profession,
+            witness_occupation_or_relationship: npc.profession.clone(),
             expected_location: location,
             current_learned_location: String::new(),
             contradiction_group: String::new(),
@@ -451,7 +460,7 @@ pub(crate) fn referred_generated_witness(
     ctx: &ReducerContext,
     character_id: u64,
     canonical_case_id: &str,
-    witness_npc_id: &str,
+    witness_resident_character_id: u64,
     settlement_id: &str,
     location_id: &str,
 ) -> Result<
@@ -461,7 +470,11 @@ pub(crate) fn referred_generated_witness(
     )>,
     String,
 > {
-    let id = witness_referral_id(character_id, canonical_case_id, witness_npc_id);
+    let id = witness_referral_id(
+        character_id,
+        canonical_case_id,
+        witness_resident_character_id,
+    );
     let Some(referral) = ctx.db.investigation_witness_referral().id().find(&id) else {
         return Ok(None);
     };
@@ -469,7 +482,7 @@ pub(crate) fn referred_generated_witness(
         &referral,
         character_id,
         canonical_case_id,
-        witness_npc_id,
+        witness_resident_character_id,
         settlement_id,
         location_id,
     ) {
@@ -493,7 +506,7 @@ pub(crate) fn referred_generated_witness(
         .witnesses
         .iter()
         .find(|witness| {
-            witness.npc_id == referral.witness_npc_id
+            witness.resident_character_id == referral.witness_resident_character_id
                 && witness.expected_location == referral.expected_location_id
         })
         .cloned()
@@ -511,9 +524,10 @@ pub(crate) fn referred_generated_witness(
                 || receipt.opaque_case_ref != referral.canonical_case_id
                 || receipt.problem_id != validated.manifest.problem_id
                 || receipt.settlement_id != referral.expected_settlement_id
-                || receipt.contact_npc_id != referral.witness_npc_id
+                || receipt.contact_resident_character_id != referral.witness_resident_character_id
                 || receipt.expected_location_id != referral.expected_location_id
-                || receipt.source_npc_id != referral.source_witness_npc_id
+                || receipt.source_resident_character_id
+                    != referral.source_witness_resident_character_id
             {
                 return Err("Initial witness referral no longer matches its receipt".into());
             }
@@ -545,7 +559,7 @@ pub(crate) fn referred_generated_witness(
 pub(crate) fn known_outbreak_witness(
     ctx: &ReducerContext,
     character_id: u64,
-    witness_npc_id: &str,
+    witness_resident_character_id: u64,
     settlement_id: &str,
     location_id: &str,
 ) -> Result<
@@ -578,8 +592,8 @@ pub(crate) fn known_outbreak_witness(
             continue;
         };
         let has_explicit_relationship = outbreak.exposure_chronology.iter().any(|patient| {
-            patient.presentation_npc_id == witness_npc_id
-                || patient.family_npc_id.as_deref() == Some(witness_npc_id)
+            patient.presentation_resident_character_id == witness_resident_character_id
+                || patient.family_resident_character_id == Some(witness_resident_character_id)
         });
         if !has_explicit_relationship {
             continue;
@@ -588,7 +602,7 @@ pub(crate) fn known_outbreak_witness(
             .witnesses
             .iter()
             .find(|witness| {
-                witness.npc_id == witness_npc_id
+                witness.resident_character_id == witness_resident_character_id
                     && witness.expected_location == location_id
                     && validated.context.settlement_id == settlement_id
             })
@@ -628,7 +642,10 @@ pub fn receive_local_problem_rumor(
     if receipt.character_id != character_id {
         return Err("Rumor receipt belongs to another observer".into());
     }
-    let contact = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id);
+    let contact = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        receipt.contact_resident_character_id,
+    );
     let visible_description = contact.as_ref().map_or_else(String::new, |npc| {
         format!(
             "{}, {}, {}, with {}; {}",
@@ -649,7 +666,7 @@ pub fn receive_local_problem_rumor(
         .witnesses
         .iter()
         .find(|witness| {
-            witness.npc_id == receipt.contact_npc_id
+            witness.resident_character_id == receipt.contact_resident_character_id
                 && witness.expected_location == receipt.expected_location_id
         })
         .ok_or("Generated rumor referral has no authoritative witness")?;
@@ -692,7 +709,7 @@ pub fn receive_local_problem_rumor(
                 .map_or_else(String::new, |npc| npc.name.clone()),
             witness_description: visible_description,
             witness_occupation_or_relationship: contact
-                .map_or_else(String::new, |npc| npc.profession),
+                .map_or_else(String::new, |npc| npc.profession.clone()),
             expected_location: referral_location_label,
             current_learned_location: String::new(),
             contradiction_group: String::new(),
@@ -706,7 +723,7 @@ pub fn receive_local_problem_rumor(
         &canonical_case_id,
         &lead_id,
         &receipt.settlement_id,
-        &receipt.contact_npc_id,
+        &receipt.contact_resident_character_id.to_string(),
         &receipt.safe_summary,
     )?;
     crate::outbreak::discover_case_corpses(
@@ -1091,12 +1108,11 @@ pub(crate) fn persist_generated_testimony(
             &index.to_string(),
         ]);
         if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
-            let npc = ctx
-                .db
-                .settlement_npc()
-                .id()
-                .find(&witness.npc_id)
-                .ok_or("Generated witness is no longer persistent")?;
+            let npc = crate::settlement_population::resolve_settlement_resident(
+                ctx,
+                witness.resident_character_id,
+            )
+            .ok_or("Generated witness is no longer persistent")?;
             ctx.db.investigation_lead().insert(InvestigationLead {
                 id: lead_id.clone(),
                 owner_character_id: character_id,
@@ -1126,9 +1142,9 @@ pub(crate) fn persist_generated_testimony(
                     .as_ref()
                     .filter(|_| exact)
                     .map_or(0, |site| site.longitude_e7),
-                witness_name: npc.name,
+                witness_name: npc.name.clone(),
                 witness_description: witness.visible_description.clone(),
-                witness_occupation_or_relationship: npc.profession,
+                witness_occupation_or_relationship: npc.profession.clone(),
                 expected_location: adventuresim_core::quest_generation::referral_display_location(
                     witness,
                 )
@@ -1186,7 +1202,7 @@ pub(crate) fn persist_generated_testimony(
         ctx,
         character_id,
         &generated.canonical_case_id,
-        &witness.npc_id,
+        witness.resident_character_id,
         dialogue_action_id,
     )
 }

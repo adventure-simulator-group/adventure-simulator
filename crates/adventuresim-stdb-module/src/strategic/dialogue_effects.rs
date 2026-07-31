@@ -96,7 +96,7 @@ fn apply_dialogue_effect(
                 .filter(&service)
                 .find(|contract| {
                     contract.settlement_id == session.settlement_id
-                        && contract.issuer_npc_id == live_npc.id
+                        && contract.issuer_resident_character_id == live_npc.character_id
                         && contract.status == ContractStatus::Offered
                 })
                 .map(|contract| contract.id)
@@ -136,7 +136,7 @@ fn apply_dialogue_effect(
                 .is_some_and(|contract| {
                     contract.service_id == service
                         && contract.settlement_id == session.settlement_id
-                        && contract.issuer_npc_id == live_npc.id
+                        && contract.issuer_resident_character_id == live_npc.character_id
                 });
             if !local_issuer {
                 return Err("This NPC did not issue the active contract".into());
@@ -173,7 +173,7 @@ fn apply_dialogue_effect(
 /// exact authored chapter. Dialogue content and clients never supply this ID.
 pub(crate) fn exact_organization_representative(
     ctx: &ReducerContext,
-    npc: &crate::settlement_population::SettlementNpc,
+    npc: &crate::settlement_population::SettlementResidentProfile,
     settlement_id: &str,
     location_id: &str,
 ) -> Option<String> {
@@ -193,8 +193,8 @@ pub(crate) fn exact_organization_representative(
         &organization.id,
     );
     if !adventuresim_core::organization::exact_representative_fields_match(
-        &npc.id,
-        &expected_id,
+        npc.character_id,
+        expected_id,
         &npc.home_settlement_id,
         settlement_id,
         &npc.organization_id,
@@ -209,7 +209,7 @@ pub(crate) fn exact_organization_representative(
 fn dialogue_organization_id(
     ctx: &ReducerContext,
     session: &DialogueSession,
-    npc: &crate::settlement_population::SettlementNpc,
+    npc: &crate::settlement_population::SettlementResidentProfile,
 ) -> Result<String, String> {
     exact_organization_representative(ctx, npc, &session.settlement_id, &session.location_id)
         .ok_or_else(|| "Dialogue NPC is not the representative of this chapter".into())
@@ -225,10 +225,11 @@ fn dialogue_service_id(ctx: &ReducerContext, session: &DialogueSession) -> Resul
                 .character_id
                 .is_none()
                 .then(|| {
+                    let resident_character_id = participant.actor_id.parse::<u64>().ok()?;
                     ctx.db
-                        .settlement_npc()
-                        .id()
-                        .find(&participant.actor_id)
+                        .settlement_resident_profile()
+                        .character_id()
+                        .find(resident_character_id)
                         .map(|npc| npc.service_id)
                 })
                 .flatten()
@@ -281,7 +282,7 @@ fn apply_dialogue_investigation_action(
     {
         return Err("Dialogue investigation binding is stale, replayed, or conflicting".into());
     }
-    let npc_ids: HashSet<_> = ctx
+    let resident_character_ids: HashSet<_> = ctx
         .db
         .dialogue_participant()
         .session_id()
@@ -289,7 +290,7 @@ fn apply_dialogue_investigation_action(
         .filter(|row| row.character_id.is_none())
         .map(|row| row.actor_id)
         .collect();
-    if !npc_ids.contains(&binding.intended_recipient_id) {
+    if !resident_character_ids.contains(&binding.intended_recipient_id) {
         return Err("Dialogue investigation recipient is no longer in this session".into());
     }
     let active_contract = party
@@ -321,7 +322,7 @@ fn apply_dialogue_investigation_action(
         &case,
         &objective.requirement,
         action,
-        &npc_ids,
+        &resident_character_ids,
         &binding.intended_recipient_id,
         active_contract.as_ref(),
     )
@@ -331,7 +332,7 @@ fn apply_dialogue_investigation_action(
         &case,
         objective.id.as_str(),
         action,
-        &npc_ids,
+        &resident_character_ids,
         recipient,
     )?
     .ok_or("Generated dialogue producer is no longer authorized")?;
@@ -507,8 +508,8 @@ fn player_conversation_parties(
 fn npc_conversation_authority_matches(
     settlement_id: &str,
     npc_home_settlement_id: &str,
-    npc_id: &str,
-    presence_npc_id: &str,
+    resident_character_id: u64,
+    presence_resident_character_id: u64,
     presence_settlement_id: &str,
     presence_location_id: &str,
     requested_location_id: &str,
@@ -518,7 +519,7 @@ fn npc_conversation_authority_matches(
 ) -> bool {
     let minute = (minute % 1_440) as u16;
     npc_home_settlement_id == settlement_id
-        && presence_npc_id == npc_id
+        && presence_resident_character_id == resident_character_id
         && presence_settlement_id == settlement_id
         && presence_location_id == requested_location_id
         && !requested_location_id.is_empty()
@@ -538,23 +539,20 @@ fn npc_conversation_party(
         .as_deref()
         .ok_or("NPC conversations require a settlement")?;
     require_navigable_npc_location(ctx, settlement_id, location_id)?;
-    if subject_id.is_empty()
-        || subject_id.chars().count() > 160
-        || subject_id.chars().any(char::is_control)
-    {
-        return Err("NPC is not at the sender's settlement".into());
-    }
+    let resident_character_id = subject_id
+        .parse::<u64>()
+        .map_err(|_| "NPC is not at the sender's settlement")?;
     let npc = ctx
         .db
-        .settlement_npc()
-        .id()
-        .find(&subject_id.to_string())
+        .settlement_resident_profile()
+        .character_id()
+        .find(resident_character_id)
         .ok_or("NPC is not at the sender's settlement")?;
     let presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&subject_id.to_string())
+        .settlement_resident_presence()
+        .character_id()
+        .find(resident_character_id)
         .ok_or("NPC is not at the sender's settlement")?;
     let minute = ctx
         .db
@@ -565,8 +563,8 @@ fn npc_conversation_party(
     if !npc_conversation_authority_matches(
         settlement_id,
         &npc.home_settlement_id,
-        &npc.id,
-        &presence.npc_id,
+        npc.character_id,
+        presence.character_id,
         &presence.settlement_id,
         &presence.location_id,
         location_id,

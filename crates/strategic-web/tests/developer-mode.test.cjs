@@ -11,10 +11,15 @@ const componentsCss = fs.readFileSync(path.join(root, "static", "css", "componen
 const strategicCss = fs.readFileSync(path.join(root, "static", "css", "strategic.css"), "utf8");
 const layout = fs.readFileSync(path.join(root, "src", "templates", "layout.rs"), "utf8");
 const settlement = fs.readFileSync(path.join(root, "src", "templates", "settlement", "social.rs"), "utf8");
+const rest = fs.readFileSync(path.join(root, "src", "templates", "settlement", "rest.rs"), "utf8");
 
-test("developer mode is persisted off by default and controls only source links", () => {
+test("developer mode is persisted off by default and enables explicit developer inputs", () => {
   assert.match(script, /localStorage\.getItem\(STORAGE_KEY\) === "on"/);
   assert.match(script, /link\.hidden = !enabled/);
+  assert.match(script, /input\.disabled = !enabled/);
+  assert.match(script, /new MutationObserver/);
+  assert.match(rest, /name="advance_development_clock" value="true" disabled/);
+  assert.match(rest, /data-developer-mode-input/);
   assert.match(dialogue, /target = "_blank"/);
   assert.match(dialogue, /noopener noreferrer/);
   assert.match(dialogue, /dialogue-source-icon/);

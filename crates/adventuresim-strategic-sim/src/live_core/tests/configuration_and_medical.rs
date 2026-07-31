@@ -162,7 +162,7 @@
         for public_input in [
             "personal_gold(patient_id)",
             ".party_member()",
-            ".character()",
+            ".backend_characters()",
             "current_settlement_id",
             "observable_medical_reserve",
             ".party_inventory_item()",

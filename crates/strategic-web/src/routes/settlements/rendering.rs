@@ -67,7 +67,7 @@ pub(super) async fn merchant_shop(
         character.id
     );
     let time_sql = format!(
-        "SELECT * FROM character_time WHERE character_id = {}",
+        "SELECT * FROM backend_character_times WHERE character_id = {}",
         character.id
     );
     let consequence_sql = format!(
@@ -114,9 +114,9 @@ pub(super) async fn merchant_shop(
     .await;
     let (inn_rest_default, inn_soap_preview) = if matches!(shop, MerchantShop::Inn) {
         let (limbs, stats, condition) = tokio::join!(
-            query_single::<CharacterLimbs>(&state, "character_limbs", character.id),
-            query_single::<CharacterStats>(&state, "character_stats", character.id),
-            query_single::<CharacterCondition>(&state, "character_condition", character.id),
+            query_single::<CharacterLimbs>(&state, "backend_character_limbs", character.id),
+            query_single::<CharacterStats>(&state, "backend_character_stats", character.id),
+            query_single::<CharacterCondition>(&state, "backend_character_conditions", character.id),
         );
         let (field_repair_minutes, smith_wait_minutes) =
             equipment_rest_recommendation(&state, character.id, &id, inventory).await;
@@ -139,11 +139,11 @@ pub(super) async fn merchant_shop(
     } else {
         (None, SoapRestPreview::default())
     };
-    let speaker = query_single::<CharacterSkills>(&state, "character_skills", character.id)
+    let speaker = query_single::<CharacterSkills>(&state, "backend_character_skills", character.id)
         .await
         .map_or_default(|skills| skills.oral_languages);
     let speaker_cap =
-        query_single::<CharacterAttributes>(&state, "character_attributes", character.id)
+        query_single::<CharacterAttributes>(&state, "backend_character_attributes", character.id)
             .await
             .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
     let mut merchant_languages = adventuresim_world_schema::OralLanguageHours::default();
@@ -291,7 +291,7 @@ pub(super) async fn render_service_page(
     let limbs_lookup = async {
         match active_character_ref {
             Some(character) => {
-                query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
+                query_single::<CharacterLimbs>(&state, "backend_character_limbs", character.id).await
             }
             None => None,
         }
@@ -299,7 +299,7 @@ pub(super) async fn render_service_page(
     let stats_lookup = async {
         match active_character_ref {
             Some(character) => {
-                query_single::<CharacterStats>(&state, "character_stats", character.id).await
+                query_single::<CharacterStats>(&state, "backend_character_stats", character.id).await
             }
             None => None,
         }
@@ -307,7 +307,7 @@ pub(super) async fn render_service_page(
     let condition_lookup = async {
         match active_character_ref {
             Some(character) => {
-                query_single::<CharacterCondition>(&state, "character_condition", character.id)
+                query_single::<CharacterCondition>(&state, "backend_character_conditions", character.id)
                     .await
             }
             None => None,
@@ -369,14 +369,14 @@ pub(super) async fn equipment_rest_recommendation(
     settlement_id: &str,
     inventory: &[InventoryItem],
 ) -> (u64, u64) {
-    let skills_sql = format!("SELECT * FROM character_skills WHERE character_id = {character_id}");
+    let skills_sql = format!("SELECT * FROM backend_character_skills WHERE character_id = {character_id}");
     let attributes_sql =
-        format!("SELECT * FROM character_attributes WHERE character_id = {character_id}");
+        format!("SELECT * FROM backend_character_attributes WHERE character_id = {character_id}");
     let settlement_literal = sql_string_literal(settlement_id);
     let orders_sql = format!(
         "SELECT * FROM repair_order WHERE owner_character_id = {character_id} AND settlement_id = {settlement_literal}"
     );
-    let time_sql = format!("SELECT * FROM character_time WHERE character_id = {character_id}");
+    let time_sql = format!("SELECT * FROM backend_character_times WHERE character_id = {character_id}");
     let (conditions, skills, attributes, orders, times) = tokio::join!(
         state
             .db

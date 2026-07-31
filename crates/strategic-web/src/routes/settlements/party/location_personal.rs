@@ -118,28 +118,28 @@ pub(super) async fn render_party_personal(
     let attributes: Vec<CharacterAttributes> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_attributes WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_attributes WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let skills: Vec<CharacterSkills> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_skills WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let limbs: Vec<CharacterLimbs> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_limbs WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_limbs WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let schedule: Vec<CharacterTrainingSchedule> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_training_schedule WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_training_schedules WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
@@ -158,13 +158,13 @@ pub(super) async fn render_party_personal(
         .await
         .ok()
         .flatten();
-    let character_minute = query_single::<CharacterTime>(&state, "character_time", character_id)
+    let character_minute = query_single::<CharacterTime>(&state, "backend_character_times", character_id)
         .await
         .map_or(0, |time| time.minutes);
     let capability = get_character_capability(&state, character_id).await;
     let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = false;
-    let stats = query_single::<CharacterStats>(&state, "character_stats", character_id).await;
+    let stats = query_single::<CharacterStats>(&state, "backend_character_stats", character_id).await;
     let case_site = if location.kind == LocationKind::CaseSite {
         state
             .db
@@ -242,7 +242,7 @@ pub(super) async fn render_party_personal(
     };
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
-    let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
+    let religion = query_single::<CharacterCondition>(&state, "backend_character_conditions", character_id)
         .await
         .and_then(|condition| condition.religion_id);
     let prayer_religion_check = match religion.as_deref() {

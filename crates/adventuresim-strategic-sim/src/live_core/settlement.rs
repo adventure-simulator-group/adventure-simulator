@@ -24,7 +24,7 @@ impl LiveRunner {
         let patient = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == patient_id && row.alive)?;
         let party_id = patient.party_id.as_deref()?;
@@ -53,11 +53,16 @@ impl LiveRunner {
             .iter()
             .filter(|member| member.party_id == party_id && member.character_id != patient_id)
             .filter_map(|member| {
-                let payer = self.connection.db.character().iter().find(|row| {
+                let payer = self
+                    .connection
+                    .db
+                    .backend_characters()
+                    .iter()
+                    .find(|row| {
                     row.id == member.character_id
                         && row.alive
                         && row.current_settlement_id.as_deref() == Some(settlement_id)
-                })?;
+                    })?;
                 let payer_agent_id =
                     self.character_ids.iter().position(|id| *id == payer.id)? as u32;
                 let purse = self.personal_gold(payer.id);
@@ -98,14 +103,14 @@ impl LiveRunner {
         let condition = self
             .connection
             .db
-            .character_strategic_condition()
+            .backend_character_strategic_conditions()
             .iter()
             .find(|row| row.character_id == character_id)
             .ok_or("missing activity condition")?;
         let elapsed_minutes = self
             .connection
             .db
-            .character_time()
+            .backend_character_times()
             .iter()
             .find(|row| row.character_id == character_id)
             .ok_or("missing activity clock")?
@@ -131,7 +136,7 @@ impl LiveRunner {
         let Some(character) = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
         else {
@@ -172,7 +177,7 @@ impl LiveRunner {
         let needs = self
             .connection
             .db
-            .character_needs()
+            .backend_character_needs()
             .iter()
             .find(|row| row.character_id == character_id);
         let physiological_food = needs
@@ -298,7 +303,7 @@ impl LiveRunner {
         let installed = self
             .connection
             .db
-            .character_training_schedule()
+            .backend_character_training_schedules()
             .iter()
             .find(|row| row.character_id == character_id)
             .is_some_and(|row| row.downtime == schedule);
@@ -328,7 +333,7 @@ impl LiveRunner {
         let restored = self
             .connection
             .db
-            .character_training_schedule()
+            .backend_character_training_schedules()
             .iter()
             .find(|row| row.character_id == character_id)
             .is_some_and(|row| row.downtime == schedule);
@@ -347,7 +352,7 @@ impl LiveRunner {
         let already_installed = self
             .connection
             .db
-            .character_training_schedule()
+            .backend_character_training_schedules()
             .iter()
             .find(|row| row.character_id == character_id)
             .is_some_and(|row| row.downtime == *schedule);
@@ -366,7 +371,7 @@ impl LiveRunner {
         let installed = self
             .connection
             .db
-            .character_training_schedule()
+            .backend_character_training_schedules()
             .iter()
             .find(|row| row.character_id == character_id)
             .is_some_and(|row| row.downtime == *schedule);
@@ -385,7 +390,7 @@ impl LiveRunner {
             let character = self
                 .connection
                 .db
-                .character()
+                .backend_characters()
                 .iter()
                 .find(|row| row.id == character_id)
                 .ok_or("missing medical character")?;
@@ -395,7 +400,7 @@ impl LiveRunner {
                     let source = self
                         .connection
                         .db
-                        .character_death()
+                        .backend_character_deaths()
                         .iter()
                         .find(|row| row.character_id == character_id)
                         .map(|row| row.source);
@@ -413,7 +418,7 @@ impl LiveRunner {
             let condition = self
                 .connection
                 .db
-                .character_strategic_condition()
+                .backend_character_strategic_conditions()
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .ok_or("missing medical condition")?;
@@ -565,7 +570,7 @@ impl LiveRunner {
                 let rest_started_at = self
                     .connection
                     .db
-                    .character_time()
+                    .backend_character_times()
                     .iter()
                     .find(|row| row.character_id == character_id)
                     .ok_or("missing patient clock before natural recovery rest")?
@@ -594,7 +599,7 @@ impl LiveRunner {
                     let rest_ended_at = self
                         .connection
                         .db
-                        .character_time()
+                        .backend_character_times()
                         .iter()
                         .find(|row| row.character_id == character_id)
                         .ok_or("missing patient clock after sponsored recovery rest")?
@@ -608,7 +613,7 @@ impl LiveRunner {
                     let condition_after = self
                         .connection
                         .db
-                        .character_strategic_condition()
+                        .backend_character_strategic_conditions()
                         .iter()
                         .find(|row| row.character_id == character_id)
                         .map_or_else(|| "unavailable".into(), |row| row.status);
@@ -657,7 +662,7 @@ impl LiveRunner {
                     let rest_ended_at = self
                         .connection
                         .db
-                        .character_time()
+                        .backend_character_times()
                         .iter()
                         .find(|row| row.character_id == character_id)
                         .ok_or("missing patient clock after natural recovery rest")?
@@ -753,7 +758,7 @@ impl LiveRunner {
             let after = self
                 .connection
                 .db
-                .character()
+                .backend_characters()
                 .iter()
                 .find(|row| row.id == character_id)
                 .ok_or("missing patient after medical rest")?;
@@ -763,7 +768,7 @@ impl LiveRunner {
             let status = self
                 .connection
                 .db
-                .character_strategic_condition()
+                .backend_character_strategic_conditions()
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .ok_or("missing condition after medical rest")?
@@ -809,7 +814,7 @@ impl LiveRunner {
             let settlement_id = self
                 .connection
                 .db
-                .character()
+                .backend_characters()
                 .iter()
                 .find(|row| row.id == character_id)
                 .and_then(|row| row.current_settlement_id)
@@ -882,7 +887,7 @@ impl LiveRunner {
         let character = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
             .ok_or("missing maintenance character")?;
@@ -915,7 +920,7 @@ impl LiveRunner {
         let now = self
             .connection
             .db
-            .character_time()
+            .backend_character_times()
             .iter()
             .find(|row| row.character_id == character_id)
             .ok_or("missing maintenance clock")?
@@ -1092,7 +1097,7 @@ impl LiveRunner {
                 let alive = self
                     .connection
                     .db
-                    .character()
+                    .backend_characters()
                     .iter()
                     .find(|row| row.id == character_id)
                     .is_some_and(|row| row.alive);
@@ -1105,7 +1110,7 @@ impl LiveRunner {
                 let current = self
                     .connection
                     .db
-                    .character_time()
+                    .backend_character_times()
                     .iter()
                     .find(|row| row.character_id == character_id)
                     .ok_or("missing repair wait clock")?
@@ -1117,7 +1122,7 @@ impl LiveRunner {
             let retrieval_character = self
                 .connection
                 .db
-                .character()
+                .backend_characters()
                 .iter()
                 .find(|row| row.id == character_id)
                 .ok_or("missing repair retrieval character")?;

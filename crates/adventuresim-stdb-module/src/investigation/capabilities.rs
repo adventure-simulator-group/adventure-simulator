@@ -640,7 +640,7 @@ fn validate_referred_contact_authority(
     ctx: &ReducerContext,
     owner_character_id: u64,
     canonical_case_id: &str,
-    witness_npc_id: &str,
+    witness_resident_character_id: u64,
 ) -> Result<bool, String> {
     let roots = ctx
         .db
@@ -651,7 +651,7 @@ fn validate_referred_contact_authority(
             capability.case_id == canonical_case_id
                 && capability.method == "locate_contact"
                 && capability.target_kind == "contact"
-                && capability.target_id == witness_npc_id
+                && capability.target_id == witness_resident_character_id.to_string()
         })
         .collect::<Vec<_>>();
     if roots.len() > 1 {
@@ -739,7 +739,7 @@ fn complete_referred_contact_action(
     ctx: &ReducerContext,
     owner_character_id: u64,
     canonical_case_id: &str,
-    witness_npc_id: &str,
+    witness_resident_character_id: u64,
     dialogue_action_id: &str,
 ) -> Result<(), String> {
     use adventuresim_core::quest_generation::{
@@ -749,7 +749,7 @@ fn complete_referred_contact_action(
         ctx,
         owner_character_id,
         canonical_case_id,
-        witness_npc_id,
+        witness_resident_character_id,
     )? {
         return Ok(());
     }
@@ -784,7 +784,7 @@ fn complete_referred_contact_action(
         &mut states,
         owner_character_id,
         canonical_case_id,
-        witness_npc_id,
+        witness_resident_character_id,
     )?;
     let ReferredContactTransition::Applied {
         root_id,
@@ -937,7 +937,7 @@ fn issue_rumor_action_graph(
             let row = InvestigationPatternTargetAuthority {
                 cohort_id: target.cohort_id.clone(),
                 case_id: case_id.to_string(),
-                npc_id: target.npc_id.clone(),
+                resident_character_id: target.resident_character_id.clone(),
                 demographic: format!("{:?}", target.demographic).to_ascii_lowercase(),
                 age_band: target.age_band.clone(),
                 sex: target.sex.clone(),
@@ -953,7 +953,7 @@ fn issue_rumor_action_graph(
                 .find(&row.cohort_id)
             {
                 if existing.case_id != row.case_id
-                    || existing.npc_id != row.npc_id
+                    || existing.resident_character_id != row.resident_character_id
                     || existing.demographic != row.demographic
                     || existing.age_band != row.age_band
                     || existing.sex != row.sex

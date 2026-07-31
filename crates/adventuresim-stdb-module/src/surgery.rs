@@ -532,12 +532,10 @@ pub fn settle_injuries_with_rest_minutes(
         store_injury(ctx, injury.clone());
     }
     refresh_all_limb_projections(ctx, character_id);
-    if interval.terminal {
-        if let Some(mut time) = ctx.db.character_time().character_id().find(character_id) {
-            time.minutes = time.minutes.saturating_add(interval.elapsed);
-            ctx.db.character_time().character_id().update(time);
-        }
-    }
+    // The strategic time owner commits the elapsed frontier exactly once.
+    // Surgery settles injury state only; writing CharacterTime here used to
+    // double-advance terminal intervals when the caller committed the same
+    // elapsed span.
     crate::condition::set_blood_fraction(ctx, character_id, interval.blood_fraction)?;
     let alive = ctx
         .db

@@ -121,16 +121,16 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.backend_local_problem_trade_effects())
         .add_query(|query| query.from.battle_loot_item())
         .add_query(|query| query.from.battle_result())
-        .add_query(|query| query.from.character())
-        .add_query(|query| query.from.character_capability())
-        .add_query(|query| query.from.character_death())
+        .add_query(|query| query.from.backend_characters())
+        .add_query(|query| query.from.backend_character_capabilities())
+        .add_query(|query| query.from.backend_character_deaths())
         .add_query(|query| query.from.character_equipped_item())
         .add_query(|query| query.from.equipment_occupancy())
         .add_query(|query| query.from.character_illness_status())
-        .add_query(|query| query.from.character_needs())
-        .add_query(|query| query.from.character_strategic_condition())
-        .add_query(|query| query.from.character_time())
-        .add_query(|query| query.from.character_training_schedule())
+        .add_query(|query| query.from.backend_character_needs())
+        .add_query(|query| query.from.backend_character_strategic_conditions())
+        .add_query(|query| query.from.backend_character_times())
+        .add_query(|query| query.from.backend_character_training_schedules())
         .add_query(|query| query.from.inventory_item())
         .add_query(|query| query.from.food_lot())
         .add_query(|query| query.from.item())
@@ -144,11 +144,11 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.party_member())
         .add_query(|query| query.from.party_stake())
         .add_query(|query| query.from.backend_contracts())
-        .add_query(|query| query.from.backend_settlement_npcs())
+        .add_query(|query| query.from.backend_settlement_residents())
         .add_query(|query| query.from.strategic_encounter())
         .add_query(|query| query.from.repair_order())
         .add_query(|query| query.from.settlement())
-        .add_query(|query| query.from.settlement_npc_presence())
+        .add_query(|query| query.from.settlement_resident_presence())
         .add_query(|query| query.from.settlement_smith())
         .add_query(|query| query.from.simulation_run())
         .add_query(|query| query.from.world_clock())
@@ -195,9 +195,8 @@ fn run_core_loop_inner(
         .iter()
         .next()
         .is_some()
-        || runner.connection.db.character().iter().next().is_some()
     {
-        return Err("refusing reused or populated simulation database".into());
+        return Err("refusing reused simulation database".into());
     }
     let world_import = runner.connection.db.world_data_import().iter().next();
     if config.use_imported_world {
@@ -265,9 +264,15 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.backend_investigation_journal())
         .add_query(|query| query.from.backend_investigation_leads())
         .add_query(|query| query.from.backend_local_problem_trade_effects())
-        .add_query(|query| query.from.backend_settlement_npcs())
+        .add_query(|query| query.from.backend_characters())
+        .add_query(|query| query.from.backend_character_capabilities())
+        .add_query(|query| query.from.backend_character_needs())
+        .add_query(|query| query.from.backend_character_strategic_conditions())
+        .add_query(|query| query.from.backend_character_times())
+        .add_query(|query| query.from.backend_character_training_schedules())
+        .add_query(|query| query.from.backend_settlement_residents())
         .add_query(|query| query.from.party())
-        .add_query(|query| query.from.settlement_npc_presence())
+        .add_query(|query| query.from.settlement_resident_presence())
         .subscribe();
     gateway_subscription_rx
         .recv_timeout(ACTION_TIMEOUT)
@@ -424,7 +429,7 @@ fn run_core_loop_inner(
             let recovery_started_in_budget = runner
                 .connection
                 .db
-                .character_time()
+                .backend_character_times()
                 .iter()
                 .find(|row| row.character_id == pre_recovery_leader)
                 .ok_or("missing pre-recovery leader clock")?
@@ -465,7 +470,7 @@ fn run_core_loop_inner(
             let elapsed = runner
                 .connection
                 .db
-                .character_time()
+                .backend_character_times()
                 .iter()
                 .find(|row| row.character_id == leader)
                 .ok_or("missing leader clock")?
@@ -659,7 +664,7 @@ fn run_core_loop_inner(
         let at_settlement = runner
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
             .is_some_and(|row| row.alive && row.current_settlement_id.is_some());
@@ -677,7 +682,7 @@ fn run_core_loop_inner(
             let character = runner
                 .connection
                 .db
-                .character()
+                .backend_characters()
                 .iter()
                 .find(|row| row.id == *character_id)
                 .ok_or("missing final character")?;
@@ -702,21 +707,21 @@ fn run_core_loop_inner(
             let capability = runner
                 .connection
                 .db
-                .character_capability()
+                .backend_character_capabilities()
                 .iter()
                 .find(|row| row.character_id == *character_id)
                 .ok_or("missing final capability")?;
             let condition = runner
                 .connection
                 .db
-                .character_strategic_condition()
+                .backend_character_strategic_conditions()
                 .iter()
                 .find(|row| row.character_id == *character_id)
                 .ok_or("missing final condition")?;
             let elapsed_minutes = runner
                 .connection
                 .db
-                .character_time()
+                .backend_character_times()
                 .iter()
                 .find(|row| row.character_id == *character_id)
                 .ok_or("missing final clock")?

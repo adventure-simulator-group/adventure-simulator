@@ -51,21 +51,6 @@ struct BuildingQuery {
     social_feedback: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct MerchantProviderRow {
-    id: String,
-    home_settlement_id: String,
-    service_id: String,
-}
-
-#[derive(Deserialize)]
-struct MerchantProviderPresenceRow {
-    npc_id: String,
-    settlement_id: String,
-    location_id: String,
-    is_default: bool,
-}
-
 impl BuildingQuery {
     fn herbalism(&self) -> bool {
         self.herbalism.unwrap_or(false)
@@ -166,7 +151,6 @@ mod building_query_tests {
     }
 }
 
-use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
 use super::inventory_forms::{
     DiscardInventoryForm, MerchantOfferForm, PartyOfferForm, PartyPoolTransferForm,
 };
@@ -175,33 +159,39 @@ use super::travel::{
     CaseSiteKnowledgePresentation, TravelDestination, TravelForm, TravelProvisionForecast,
     active_contract_tooltip, connected_destinations, populate_itinerary_forecasts,
 };
+use super::{
+    AppState, PartyAction, PartyActionOutcome, SocialActionId, SocialDuration,
+    execute_or_request_party_action,
+};
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge, BackendCorpse,
-    BackendRoadChallenge,
-    BackendLocalProblemTradeEffect,
-    BackendPhysiologyAdministration, BackendPhysiologyChart, Character, CharacterAffinity,
-    CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquipmentGraph,
-    CharacterEquippedItem, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
-    CharacterMoraleSource, CharacterNeeds, CharacterPersonality, CharacterSettlementReputation,
-    CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
-    CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
+    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge,
+    BackendCharacterRelationshipStatus, BackendCharacterResidenceStatus, BackendCorpse,
+    BackendFamilyChild,
+    BackendLocalProblemTradeEffect, BackendPhysiologyAdministration, BackendPhysiologyChart,
+    BackendRoadChallenge, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
+    CharacterCondition, CharacterEquipmentGraph, CharacterEquippedItem, CharacterFamiliarity,
+    CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterPersonality,
+    CharacterSettlementReputation, CharacterSkills, CharacterStats, CharacterStrategicCondition,
+    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
     EquipmentAnchorKind, EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
     InventoryItemAmount, InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind,
     ItemSlot, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake,
     RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand,
-    RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementSmith, SocialAddress, SocialBelief, StrategicEncounter,
-    TravelEdge,
+    RepairOrder, ResidenceTier, RetainedProjectile, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementDescription, SettlementResidenceOffer, SettlementSmith,
+    SocialAddress, SocialBelief, SocialChatOutcome, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
-    ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
-    RestSummary, SoapRestPreview, SocialPresentation, camp_page, live_merchant_shop_page,
-    merchants_page, party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
-    party_social_dialog, party_stats_page, religion_page, rest_default_minutes, rest_result_page,
-    settlement_map_page, settlement_npc_location_page, settlement_overview_page, surgery_dialog,
+    ActivityPreviewRates, CampTravelDestination, ChildPresentation, LocationKind, LocationView,
+    MerchantShop, RelationshipPresentation, RestSummary, SoapRestPreview, SocialPresentation,
+    WeddingPresentation, camp_page, live_merchant_shop_page, merchants_page, party_discard_page,
+    party_inventory_page, party_personal_page, party_pool_page, party_social_dialog,
+    party_stats_page, religion_page, rest_default_minutes, rest_result_page, settlement_map_page,
+    settlement_overview_page, settlement_residence_page, settlement_resident_location_page,
+    surgery_dialog,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -209,7 +199,11 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}", get(show_settlement))
         .route(
             "/settlements/{id}/places/{place}",
-            get(settlement_npc_place),
+            get(settlement_resident_place),
+        )
+        .route(
+            "/settlements/{id}/residences/{action}/{tier}",
+            post(change_residence),
         )
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/map", get(settlement_map))

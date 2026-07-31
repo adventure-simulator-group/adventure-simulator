@@ -21,18 +21,17 @@ pub(crate) mod travel;
 use axum::{
     Router,
     extract::{Request, State},
-    http::Uri,
+    http::{Method, StatusCode, Uri, header},
     middleware::{self, Next},
     response::{IntoResponse, Json, Redirect, Response},
     routing::get,
 };
-use axum_extra::extract::CookieJar;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::live::LiveState;
-use crate::session::{CHARACTER_COOKIE, Session};
+use crate::session::{Session, SessionCodec};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     BackendCaseSitePin, BackendCharacterCaseSiteLocation, Character, CharacterAttributes,
@@ -48,15 +47,16 @@ pub struct AppState {
     pub live: LiveState,
     pub strategic_map: Option<std::sync::Arc<crate::strategic_map::StrategicMap>>,
     pub terrain: Option<std::sync::Arc<travel::TerrainPlanner>>,
+    pub session_codec: std::sync::Arc<SessionCodec>,
 }
 
 /// Serde transport for the gateway's player-visible settlement NPC projection.
 ///
-/// This deliberately mirrors `BackendSettlementNpc` instead of the private
+/// This deliberately mirrors `BackendSettlementResident` instead of the private
 /// authoritative settlement population row.
 #[derive(Clone, Deserialize)]
-pub(crate) struct BackendSettlementNpcRow {
-    pub id: String,
+pub(crate) struct BackendSettlementResidentRow {
+    pub character_id: u64,
     pub home_settlement_id: String,
     pub name: String,
     pub age_band: String,
@@ -84,6 +84,74 @@ pub(crate) use party_actions::PartyAction;
 pub(crate) enum PartyActionOutcome {
     Executed,
     Requested,
+}
+
+/// A validated ordinary-conversation duration. Parsing at the HTTP boundary
+/// prevents invalid minute counts from entering route logic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SocialDuration(u16);
+
+impl SocialDuration {
+    pub(crate) const fn minutes(self) -> u64 {
+        self.0 as u64
+    }
+}
+
+impl TryFrom<u64> for SocialDuration {
+    type Error = &'static str;
+
+    fn try_from(minutes: u64) -> Result<Self, Self::Error> {
+        if (15..=8 * 60).contains(&minutes) && minutes.is_multiple_of(15) {
+            Ok(Self(minutes as u16))
+        } else {
+            Err("choose 15 minutes to 8 hours in 15-minute increments")
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SocialDuration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::try_from(u64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Opaque idempotency key accepted from the browser after validation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SocialActionId(String);
+
+impl SocialActionId {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for SocialActionId {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !value.is_empty()
+            && value.len() <= 96
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            Ok(Self(value))
+        } else {
+            Err("invalid conversation action ID")
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SocialActionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Accept a return destination only when it is a local absolute-path URL.
@@ -191,7 +259,9 @@ pub(crate) async fn execute_or_request_party_action(
 ) -> Result<PartyActionOutcome, String> {
     let character = state
         .db
-        .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query_one::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {actor_id}"
+        ))
         .await
         .map_err(|e| e.to_string())?
         .ok_or("Character not found")?;
@@ -220,12 +290,7 @@ pub(crate) async fn execute_or_request_party_action(
             .await
             .map_err(|error| error.to_string())?;
         for membership in members {
-            let member = state
-                .db
-                .query_one::<Character>(&format!(
-                    "SELECT * FROM character WHERE id = {}",
-                    membership.character_id
-                ))
+            let member = data::character_as_observed(state, membership.character_id, actor_id)
                 .await
                 .map_err(|error| error.to_string())?
                 .ok_or("Party member not found")?;
@@ -240,7 +305,7 @@ pub(crate) async fn execute_or_request_party_action(
             let condition = state
                 .db
                 .query_one::<CharacterStrategicCondition>(&format!(
-                    "SELECT * FROM character_strategic_condition WHERE character_id = {}",
+                    "SELECT * FROM backend_character_strategic_conditions WHERE character_id = {}",
                     member.id
                 ))
                 .await
@@ -284,7 +349,7 @@ pub(crate) async fn execute_or_request_party_action(
     let leader = state
         .db
         .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {}",
+            "SELECT * FROM backend_characters WHERE id = {}",
             party.leader_id
         ))
         .await
@@ -342,9 +407,7 @@ pub(crate) async fn party_terrain_profile(
         Vec::new(),
     ];
     for id in member_ids {
-        let Some(character) = state
-            .db
-            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+        let Some(character) = data::character_as_observed(state, id, actor.id)
             .await
             .map_err(|e| e.to_string())?
         else {
@@ -356,7 +419,7 @@ pub(crate) async fn party_terrain_profile(
         let Some(attributes) = state
             .db
             .query_one::<CharacterAttributes>(&format!(
-                "SELECT * FROM character_attributes WHERE character_id = {id}"
+                "SELECT * FROM backend_character_attributes WHERE character_id = {id}"
             ))
             .await
             .map_err(|e| e.to_string())?
@@ -366,7 +429,7 @@ pub(crate) async fn party_terrain_profile(
         let Some(limbs) = state
             .db
             .query_one::<CharacterLimbs>(&format!(
-                "SELECT * FROM character_limbs WHERE character_id = {id}"
+                "SELECT * FROM backend_character_limbs WHERE character_id = {id}"
             ))
             .await
             .map_err(|e| e.to_string())?
@@ -376,7 +439,7 @@ pub(crate) async fn party_terrain_profile(
         let Some(skills) = state
             .db
             .query_one::<CharacterSkills>(&format!(
-                "SELECT * FROM character_skills WHERE character_id = {id}"
+                "SELECT * FROM backend_character_skills WHERE character_id = {id}"
             ))
             .await
             .map_err(|e| e.to_string())?
@@ -460,9 +523,7 @@ async fn authoritative_party_departure_minute(
     };
     let mut departure = 0;
     for id in member_ids {
-        let living = state
-            .db
-            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+        let living = data::character_as_observed(state, id, actor.id)
             .await
             .map_err(|error| error.to_string())?
             .is_some_and(|character| character.alive);
@@ -472,7 +533,7 @@ async fn authoritative_party_departure_minute(
         if let Some(time) = state
             .db
             .query_one::<CharacterTime>(&format!(
-                "SELECT * FROM character_time WHERE character_id = {id}"
+                "SELECT * FROM backend_character_times WHERE character_id = {id}"
             ))
             .await
             .map_err(|error| error.to_string())?
@@ -493,7 +554,9 @@ async fn planned_travel_call(
     };
     let character = state
         .db
-        .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query_one::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {actor_id}"
+        ))
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Character not found")?;
@@ -879,6 +942,7 @@ pub(crate) async fn approve_party_action(
 
 /// Build the complete router
 pub fn build_router(state: AppState) -> Router {
+    let middleware_state = state.clone();
     Router::new()
         .route(
             crate::strategic_map::DATA_LICENSE_PATH,
@@ -888,7 +952,7 @@ pub fn build_router(state: AppState) -> Router {
             "/map/tiles/{theme}/{zoom}/{x}/{tile}",
             get(crate::strategic_map::world_tile),
         )
-        .merge(characters::routes())
+        .merge(characters::routes().layer(middleware::from_fn(require_same_origin_mutation)))
         .merge(home::routes())
         .merge(
             Router::new()
@@ -905,7 +969,11 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(missions::routes())
                 .merge(crate::live::routes())
                 .route("/time", get(current_time))
-                .layer(middleware::from_fn(require_active_character)),
+                .layer(middleware::from_fn(require_same_origin_mutation))
+                .layer(middleware::from_fn_with_state(
+                    middleware_state,
+                    require_active_character,
+                )),
         )
         .with_state(state)
 }
@@ -925,7 +993,7 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
         .into_response();
     };
     let character_time_sql =
-        format!("SELECT * FROM character_time WHERE character_id = {character_id}");
+        format!("SELECT * FROM backend_character_times WHERE character_id = {character_id}");
     let (character_time, world_clock) = tokio::join!(
         state.db.query::<CharacterTime>(&character_time_sql),
         state
@@ -973,24 +1041,158 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
 
 /// Strategic screens have no anonymous mode. Character creation and selection
 /// remain public entry screens; every other route requires a selected character.
-async fn require_active_character(request: Request, next: Next) -> Response {
-    let cookies = CookieJar::from_headers(request.headers());
-    if cookies.get(CHARACTER_COOKIE).is_none() {
+async fn require_active_character(session: Session, request: Request, next: Next) -> Response {
+    if session.character_id_u64().is_none() {
         return Redirect::to("/characters").into_response();
     }
     next.run(request).await
 }
 
+/// The opaque browser session is bearer authority, so every browser mutation
+/// in the onboarding or active-character route groups must originate from this
+/// exact web origin. SameSite cookies alone do not stop a different service on
+/// the same site (for example, another localhost port) from submitting a form.
+///
+/// Non-mutating internal strategic navigation remains unaffected. There are no
+/// non-browser mutation endpoints in this protected router; any future one
+/// must receive a separately authenticated route rather than bypass this
+/// browser-origin boundary.
+async fn require_same_origin_mutation(request: Request, next: Next) -> Response {
+    if is_browser_mutation(request.method()) && !has_same_origin(&request) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Cross-origin strategic mutation rejected",
+        )
+            .into_response();
+    }
+    next.run(request).await
+}
+
+fn is_browser_mutation(method: &Method) -> bool {
+    method == Method::POST
+        || method == Method::PUT
+        || method == Method::PATCH
+        || method == Method::DELETE
+}
+
+fn has_same_origin(request: &Request) -> bool {
+    let Some(origin) = request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| *value != "null")
+    else {
+        return false;
+    };
+    let Ok(origin) = origin.parse::<Uri>() else {
+        return false;
+    };
+    if origin.path() != "/" || origin.query().is_some() {
+        return false;
+    }
+    let Some(origin_scheme) = origin.scheme_str() else {
+        return false;
+    };
+    if !matches!(origin_scheme, "http" | "https") {
+        return false;
+    }
+    let Some(origin_authority) = origin.authority().map(|value| value.as_str()) else {
+        return false;
+    };
+    let Some(host) = request
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    let request_scheme = request
+        .uri()
+        .scheme_str()
+        .or_else(|| {
+            request
+                .headers()
+                .get("x-forwarded-proto")
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| !value.contains(','))
+        })
+        .unwrap_or("http");
+    origin_scheme.eq_ignore_ascii_case(request_scheme)
+        && origin_authority.eq_ignore_ascii_case(host)
+}
+
 #[cfg(test)]
 mod onboarding_route_tests {
+    use axum::{
+        body::Body,
+        extract::Request,
+        http::{Method, header},
+    };
+
+    use super::has_same_origin;
+
     #[test]
     fn home_route_is_merged_before_the_active_character_guard() {
         let source = include_str!("mod.rs");
         let home = source.find(".merge(home::routes())").unwrap();
         let protected = source.find(".merge(dialogue::routes())").unwrap();
         let guard = source
-            .find(".layer(middleware::from_fn(require_active_character))")
+            .find(".layer(middleware::from_fn_with_state(")
             .unwrap();
         assert!(home < protected && protected < guard);
+    }
+
+    fn mutation(
+        origin: Option<&str>,
+        host: Option<&str>,
+        forwarded_proto: Option<&str>,
+    ) -> Request {
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri("/settlements/lubeck/residences/rent/cheap");
+        if let Some(origin) = origin {
+            builder = builder.header(header::ORIGIN, origin);
+        }
+        if let Some(host) = host {
+            builder = builder.header(header::HOST, host);
+        }
+        if let Some(proto) = forwarded_proto {
+            builder = builder.header("x-forwarded-proto", proto);
+        }
+        builder.body(Body::empty()).unwrap()
+    }
+
+    #[test]
+    fn browser_mutations_require_an_exact_same_origin() {
+        assert!(has_same_origin(&mutation(
+            Some("http://127.0.0.1:8080"),
+            Some("127.0.0.1:8080"),
+            None,
+        )));
+        assert!(has_same_origin(&mutation(
+            Some("https://game.example.test"),
+            Some("game.example.test"),
+            Some("https"),
+        )));
+        assert!(!has_same_origin(&mutation(
+            Some("http://localhost:9000"),
+            Some("localhost:8080"),
+            None,
+        )));
+        assert!(!has_same_origin(&mutation(
+            Some("null"),
+            Some("127.0.0.1:8080"),
+            None,
+        )));
+        assert!(!has_same_origin(&mutation(
+            None,
+            Some("127.0.0.1:8080"),
+            None,
+        )));
+        assert!(!has_same_origin(&mutation(
+            Some("https://game.example.test"),
+            Some("game.example.test"),
+            Some("http"),
+        )));
     }
 }

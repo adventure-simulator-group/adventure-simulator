@@ -1,11 +1,12 @@
 use adventuresim_core::activity::{ActivityLocation, LocationActivity};
 use adventuresim_core::strategic_schedule::{
-    ActivityOutcomeInputs, DailySchedule, SkillHours, apply_organization_training,
-    apply_religion_training, apply_schedule_training, settlement_activity_outcome,
+    ActivityOutcomeInputs, DailySchedule, SkillHours, SocializingSociability,
+    apply_organization_training, apply_religion_training, apply_schedule_training_for_personality,
+    settlement_activity_outcome,
 };
 use adventuresim_core::strategic_time::{
     MINUTES_PER_DAY, MINUTES_PER_YEAR, WORLD_START_MINUTE, allocated_schedule_minutes,
-    official_minutes as calculate_official_minutes,
+    epoch_micros_for_official_minute, official_minutes as calculate_official_minutes,
 };
 use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
 use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, table};
@@ -16,6 +17,15 @@ use crate::condition::{character_condition as _, character_strategic_condition a
 use crate::disease::character_illness_status as _;
 use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
 use crate::organization::organization_membership as _;
+use crate::personality::{
+    Sociability as CharacterSociability, Transparency as CharacterTransparency,
+    character_personality,
+};
+use crate::relationship::{
+    CommitmentStatus, CourtshipStatus, MarriageStatus, character_kinship as _, courtship as _,
+    exclusive_commitment as _, household_member as _, marriage as _, npc_policy as _,
+    socializing_receipt as _,
+};
 use crate::strategic::{
     party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
 };
@@ -58,7 +68,7 @@ pub struct WorldClockSchedule {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = character_time, public)]
+#[table(accessor = character_time)]
 pub struct CharacterTime {
     #[primary_key]
     pub character_id: u64,
@@ -72,6 +82,9 @@ pub struct ScheduleAllocation {
     pub reading_minutes: u16,
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
+    /// Allocated relationship time.  Unlike Carousing this neither requires
+    /// an inn nor grants its incidental morale/incident outcome.
+    pub socializing_minutes: u16,
     pub apprenticeship_minutes: u16,
     pub apprenticeship_organization_id: Option<String>,
     pub profession_practice_minutes: u16,
@@ -118,7 +131,7 @@ pub enum ImmediateActivity {
 /// Daily settlement plan. The empty travel allocation is retained temporarily
 /// for database/client compatibility; travel never applies it.
 #[derive(Clone, Debug)]
-#[table(accessor = character_training_schedule, public)]
+#[table(accessor = character_training_schedule)]
 pub struct CharacterTrainingSchedule {
     #[primary_key]
     pub character_id: u64,
@@ -136,6 +149,7 @@ impl ScheduleAllocation {
             self.raiding_minutes,
             self.combat_training_minutes,
             self.carousing_minutes,
+            self.socializing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
             self.reading_minutes,
@@ -150,6 +164,7 @@ impl ScheduleAllocation {
             self.raiding_minutes,
             self.combat_training_minutes,
             self.carousing_minutes,
+            self.socializing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
             self.reading_minutes,
@@ -236,6 +251,7 @@ pub(crate) fn effective_location_schedule(
         [
             schedule.combat_training_minutes,
             schedule.carousing_minutes,
+            schedule.socializing_minutes,
             schedule.apprenticeship_minutes,
             schedule.profession_practice_minutes,
             schedule.labor_minutes,
@@ -250,6 +266,7 @@ pub(crate) fn effective_location_schedule(
             true,
             true,
             true,
+            true,
             location.allows(LocationActivity::Thievery),
             location.allows(LocationActivity::Raiding),
         ],
@@ -257,12 +274,13 @@ pub(crate) fn effective_location_schedule(
     );
     effective.combat_training_minutes = redistributed[0];
     effective.carousing_minutes = redistributed[1];
-    effective.apprenticeship_minutes = redistributed[2];
-    effective.profession_practice_minutes = redistributed[3];
-    effective.labor_minutes = redistributed[4];
-    effective.prayer_minutes = redistributed[5];
-    effective.thievery_minutes = redistributed[6];
-    effective.raiding_minutes = redistributed[7];
+    effective.socializing_minutes = redistributed[2];
+    effective.apprenticeship_minutes = redistributed[3];
+    effective.profession_practice_minutes = redistributed[4];
+    effective.labor_minutes = redistributed[5];
+    effective.prayer_minutes = redistributed[6];
+    effective.thievery_minutes = redistributed[7];
+    effective.raiding_minutes = redistributed[8];
     effective
 }
 
@@ -297,6 +315,120 @@ pub fn refresh_clock(ctx: &ReducerContext) -> Result<u64, String> {
     Ok(official_minutes)
 }
 
+fn development_related_npc_ids(ctx: &ReducerContext, character_id: u64) -> Vec<u64> {
+    let mut related = std::collections::BTreeSet::new();
+    for row in ctx.db.courtship().iter().filter(|row| {
+        row.status != CourtshipStatus::Ended
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
+    }
+    for row in ctx.db.exclusive_commitment().iter().filter(|row| {
+        row.status == CommitmentStatus::Reserved
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
+    }
+    for row in ctx.db.marriage().iter().filter(|row| {
+        row.status == MarriageStatus::Active
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
+    }
+    if let Some(member) = ctx.db.household_member().character_id().find(character_id) {
+        related.extend(
+            ctx.db
+                .household_member()
+                .household_id()
+                .filter(&member.household_id)
+                .map(|row| row.character_id),
+        );
+    }
+    related.extend(
+        ctx.db
+            .character_kinship()
+            .subject_id()
+            .filter(character_id)
+            .map(|row| row.related_id),
+    );
+    related.remove(&character_id);
+    related
+        .into_iter()
+        .filter(|related_id| {
+            ctx.db
+                .npc_policy()
+                .character_id()
+                .find(*related_id)
+                .is_some()
+        })
+        .take(32)
+        .collect()
+}
+
+/// Developer-mode acceleration for disposable browser profiles. The target is
+/// derived from the authenticated character rather than caller-supplied time.
+/// Only their active partner, household, and immediate kin NPCs are advanced;
+/// ordinary world NPCs retain the bounded causal scheduler.
+#[reducer]
+pub fn sync_development_clock_to_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    let character_target_minutes = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time record not found")?
+        .minutes;
+    let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
+    let current_minutes = refresh_clock(ctx)?;
+    let development_slice = MINUTES_PER_YEAR;
+    let target_minutes =
+        character_target_minutes.min(current_minutes.saturating_add(development_slice));
+    if target_minutes > current_minutes {
+        let mut clock = ctx
+            .db
+            .world_clock()
+            .id()
+            .find(0)
+            .ok_or("World clock is not initialized")?;
+        clock.official_minutes = target_minutes;
+        clock.epoch_micros = epoch_micros_for_official_minute(now_micros, target_minutes)
+            .ok_or("Developer clock target is out of range")?;
+        ctx.db.world_clock().id().update(clock);
+    }
+
+    // A wedding or birth can introduce a new household member, so perform two
+    // bounded passes. This developer-only path writes the small related cohort
+    // directly; simulating years of survival ticks can exceed a reducer budget.
+    for _ in 0..2 {
+        for related_id in development_related_npc_ids(ctx, character_id) {
+            if let Some(mut time) = ctx.db.character_time().character_id().find(related_id)
+                && time.minutes < target_minutes
+            {
+                time.minutes = target_minutes;
+                ctx.db.character_time().character_id().update(time);
+                settle_lifecycle_after_character_time_write(ctx, related_id, target_minutes)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 #[reducer]
 fn refresh_world_clock(ctx: &ReducerContext, schedule: WorldClockSchedule) -> Result<(), String> {
     if ctx.sender() != ctx.database_identity() {
@@ -316,6 +448,28 @@ pub fn initialize_character_time(ctx: &ReducerContext, character_id: u64) -> Res
     ensure_character_time(ctx, character_id)
 }
 
+/// The single lifecycle boundary for an authoritative personal-clock write.
+/// Callers finish injury/disease settlement first so wedding cancellation and
+/// widowhood observe the final alive state at this frontier.
+pub(crate) fn settle_lifecycle_after_character_time_write(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Result<(), String> {
+    crate::relationship::settle_character_age(ctx, character_id, minute);
+    crate::continuity::settle_continuity_for_character(ctx, character_id, minute)?;
+    crate::residence::settle_residence_billing(ctx, character_id)?;
+    crate::relationship::settle_due_weddings(ctx, character_id, minute)?;
+    crate::relationship::settle_due_births(ctx, character_id, minute)?;
+    crate::relationship::settle_secret_courtship_discovery_for_character(
+        ctx,
+        character_id,
+        minute,
+    )?;
+    crate::relationship::settle_marriage_lifecycle_for_character(ctx, character_id, minute);
+    Ok(())
+}
+
 /// Record time spent travelling without applying recovery, activities, or
 /// training. Travel time belongs only to the character's personal clock.
 pub fn advance_character_time(
@@ -332,6 +486,19 @@ pub fn advance_character_time(
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
     let starting_minute = character_time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_time(ctx, character_id, first)? {
+            return Ok(false);
+        }
+        return advance_character_time(ctx, character_id, minutes.saturating_sub(first));
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) =
@@ -354,6 +521,11 @@ pub fn advance_character_time(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -377,6 +549,24 @@ fn advance_character_time_in_plan(
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
     let starting_minute = character_time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_time_in_plan(ctx, character_id, first, plan)? {
+            return Ok(false);
+        }
+        return advance_character_time_in_plan(
+            ctx,
+            character_id,
+            minutes.saturating_sub(first),
+            plan,
+        );
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
@@ -396,6 +586,11 @@ fn advance_character_time_in_plan(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -598,6 +793,19 @@ pub fn advance_character_wait_time(
         .find(character_id)
         .ok_or("Character time record not found")?;
     let starting_minute = time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_wait_time(ctx, character_id, first)? {
+            return Ok(false);
+        }
+        return advance_character_wait_time(ctx, character_id, minutes.saturating_sub(first));
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) =
@@ -626,6 +834,11 @@ pub fn advance_character_wait_time(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -653,6 +866,25 @@ pub fn advance_character_wait_time_in_plan(
         .character_id()
         .find(character_id)
         .ok_or("Character time record not found")?;
+    let starting_minute = time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_wait_time_in_plan(ctx, character_id, first, plan)? {
+            return Ok(false);
+        }
+        return advance_character_wait_time_in_plan(
+            ctx,
+            character_id,
+            minutes.saturating_sub(first),
+            plan,
+        );
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
@@ -668,6 +900,11 @@ pub fn advance_character_wait_time_in_plan(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -876,11 +1113,36 @@ fn apply_training(
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
-    let mut excess = apply_schedule_training(
+    let personality = ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(character_id);
+    let sociability =
+        personality.as_ref().map_or(
+            SocializingSociability::Neutral,
+            |personality| match personality.sociability {
+                CharacterSociability::Neutral => SocializingSociability::Neutral,
+                CharacterSociability::Gregarious => SocializingSociability::Gregarious,
+                CharacterSociability::Solitary => SocializingSociability::Solitary,
+            },
+        );
+    let transparency = personality
+        .as_ref()
+        .map_or(Transparency::Neutral, |personality| {
+            match personality.transparency {
+                CharacterTransparency::Neutral => Transparency::Neutral,
+                CharacterTransparency::Open => Transparency::Open,
+                CharacterTransparency::Guarded => Transparency::Guarded,
+            }
+        });
+    let mut excess = apply_schedule_training_for_personality(
         &mut hours,
         core_schedule(schedule),
         elapsed,
         activities,
+        sociability,
+        transparency,
         &attributes,
     );
     let prayer_religion = ctx
@@ -998,6 +1260,16 @@ fn apply_training(
         excess += apply_reading_training(ctx, character_id, skills, reading_hours, &attributes);
     }
     excess
+}
+
+fn total_socializing_receipt_minutes(ctx: &ReducerContext, actor_id: u64) -> u64 {
+    ctx.db
+        .socializing_receipt()
+        .actor_id()
+        .filter(actor_id)
+        .fold(0_u64, |total, receipt| {
+            total.saturating_add(receipt.minutes)
+        })
 }
 
 fn terrain_book_skill(terrain: &str) -> Option<Skill> {
@@ -1299,6 +1571,7 @@ pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         reading_minutes: schedule.reading_minutes,
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
+        socializing_minutes: schedule.socializing_minutes,
         apprenticeship_minutes: schedule.apprenticeship_minutes,
         profession_practice_minutes: schedule.profession_practice_minutes,
         labor: schedule.labor_minutes,
@@ -1465,6 +1738,23 @@ fn apply_activity_outcomes_inner(
             elapsed,
             interval_end_minute,
         )?;
+        crate::relationship::apply_spouse_leisure_conception(
+            ctx,
+            character_id,
+            interval_end_minute.saturating_sub(elapsed),
+            interval_end_minute,
+            core_schedule(schedule),
+        )?;
+        crate::relationship::apply_spouse_leisure_morale(
+            ctx,
+            character_id,
+            interval_end_minute,
+            adventuresim_core::strategic_schedule::restorative_leisure_minutes(
+                core_schedule(schedule),
+                interval_end_minute.saturating_sub(elapsed),
+                elapsed,
+            ),
+        )?;
     }
     Ok(ActivityRisks {
         thievery_discovery: outcome.thievery_discovery_chance,
@@ -1592,6 +1882,7 @@ pub fn perform_immediate_activity(
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(ctx, character_id, interval_end)?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(());
@@ -1769,6 +2060,17 @@ fn convalescence_minutes(ctx: &ReducerContext, character_id: u64, physiology_che
 
 /// Spend completed game days at a settlement. Injuries receive all selected
 /// rest first; only the remaining time is eligible for scheduled training.
+///
+/// The boolean entry points predate residences and remain for existing clients.
+/// New callers that need a home should use `rest_at_residence_hours`, which
+/// carries an explicit provision rather than pretending a residence is an inn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettlementRestProvision {
+    Temple,
+    Inn,
+    Residence,
+}
+
 #[reducer]
 pub fn rest_at_settlement(
     ctx: &ReducerContext,
@@ -1782,7 +2084,11 @@ pub fn rest_at_settlement(
         ctx,
         character_id,
         u64::from(requested_days) * MINUTES_PER_DAY,
-        at_inn,
+        if at_inn {
+            SettlementRestProvision::Inn
+        } else {
+            SettlementRestProvision::Temple
+        },
         true,
         true,
         None,
@@ -1806,7 +2112,34 @@ pub fn rest_at_settlement_hours(
         ctx,
         character_id,
         requested_minutes,
-        at_inn,
+        if at_inn {
+            SettlementRestProvision::Inn
+        } else {
+            SettlementRestProvision::Temple
+        },
+        true,
+        true,
+        None,
+    )
+    .map(|_| ())
+}
+
+/// Rest at an active primary residence in the character's current settlement.
+/// A residence supplies the same full board as an inn, but its recurring costs
+/// are settled through the residence ledger rather than a per-stay fee.
+#[reducer]
+pub fn rest_at_residence_hours(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested_minutes: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    require_character_residence_rest(ctx, character_id)?;
+    rest_for_minutes(
+        ctx,
+        character_id,
+        requested_minutes,
+        SettlementRestProvision::Residence,
         true,
         true,
         None,
@@ -1888,7 +2221,7 @@ pub fn sponsor_party_member_inn_rest(
         ctx,
         patient_id,
         MINUTES_PER_DAY,
-        true,
+        SettlementRestProvision::Inn,
         true,
         true,
         Some(payer_id),
@@ -1932,11 +2265,27 @@ fn require_character_rest_service(
     require_settlement_rest_service(&settlement.economy, at_inn)
 }
 
+fn require_character_residence_rest(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .as_deref()
+        .ok_or("Settlement rest requires the character to be at a settlement")?;
+    let residence =
+        crate::residence::active_residence_for_occupant(ctx, character_id, settlement_id)
+            .ok_or("You do not have a residence")?;
+    debug_assert!(
+        residence.status == crate::residence::ResidenceHoldingStatus::Active
+            && residence.settlement_id == settlement_id
+    );
+    Ok(())
+}
+
 fn rest_for_minutes(
     ctx: &ReducerContext,
     character_id: u64,
     requested_minutes: u64,
-    at_inn: bool,
+    provision: SettlementRestProvision,
     explicit: bool,
     automatic_social: bool,
     inn_sponsor_id: Option<u64>,
@@ -1994,7 +2343,7 @@ fn rest_for_minutes(
     validate_settlement_rest_minutes(requested_minutes)?;
 
     let requested_cost = inn_stay_cost(requested_minutes)?;
-    if at_inn {
+    if provision == SettlementRestProvision::Inn {
         let patient_funds = crate::item::personal_currency_total(ctx, character_id);
         let sponsor_gap = requested_cost.saturating_sub(patient_funds);
         let payment_available = if sponsor_gap == 0 {
@@ -2059,7 +2408,7 @@ fn rest_for_minutes(
         false,
         adventuresim_core::survival::FieldShelter::Tent,
     )?;
-    if at_inn {
+    if provision == SettlementRestProvision::Inn {
         let elapsed_cost = inn_stay_cost(elapsed)?;
         let patient_contribution =
             crate::item::personal_currency_total(ctx, character_id).min(elapsed_cost);
@@ -2073,8 +2422,25 @@ fn rest_for_minutes(
         }
     }
     crate::social::settle_shared_party_time(ctx, character_id);
-    crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
+    crate::condition::apply_settlement_rest_elapsed_needs(
+        ctx,
+        character_id,
+        elapsed,
+        provision != SettlementRestProvision::Temple,
+    )?;
+    crate::condition::apply_settlement_leisure_condition(
+        ctx,
+        character_id,
+        core_schedule(&effective_schedule),
+        elapsed,
+        starting_minute.saturating_add(elapsed),
+    )?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(0);
@@ -2200,7 +2566,7 @@ pub(crate) fn spend_private_settlement_downtime(
         ctx,
         character_id,
         requested_minutes,
-        false,
+        SettlementRestProvision::Temple,
         explicit,
         true,
         None,
@@ -2217,7 +2583,7 @@ fn spend_private_settlement_downtime_deferred_social(
         ctx,
         character_id,
         requested_minutes,
-        false,
+        SettlementRestProvision::Temple,
         false,
         false,
         None,
@@ -2339,6 +2705,11 @@ fn advance_personal_camp_time(
     crate::social::settle_shared_party_time(ctx, member_id);
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        member_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(0);
     }
@@ -2584,6 +2955,7 @@ pub fn rest_at_camp(
         crate::social::settle_shared_party_time(ctx, member_id);
         crate::condition::apply_elapsed_needs(ctx, member_id, member_elapsed)?;
         crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
+        settle_lifecycle_after_character_time_write(ctx, member_id, interval_end_minute)?;
         if terminal.is_some() || !settled.alive {
             continue;
         }
@@ -2737,9 +3109,15 @@ fn party_fatigue_summary(ctx: &ReducerContext, members: &[u64]) -> Result<(f32, 
     Ok((total / members.len() as f32, maximum))
 }
 
-/// Advance through elapsed time. Returns true when a character was forced to
-/// catch up from more than a year behind; callers should skip their action.
-pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
+/// Advance one stationary character through their ordinary saved schedule to
+/// an explicit personal frontier. This is shared by lazy player catch-up and
+/// bounded autonomous NPC policy; callers choose the target, never the
+/// character being observed.
+pub(crate) fn advance_stationary_character_to(
+    ctx: &ReducerContext,
+    character_id: u64,
+    target_minutes: u64,
+) -> Result<(), String> {
     ensure_character_time(ctx, character_id)?;
     let character = ctx
         .db
@@ -2750,25 +3128,51 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     if !character.alive {
         // A corpse's strategic minute remains the death minute. Lazy reads must
         // not train, recover, consume provisions, or advance it.
-        return Ok(false);
+        return Ok(());
     }
-    let official_minutes = refresh_clock(ctx)?;
     let mut character_time = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
-    let forced_catch_up =
-        official_minutes.saturating_sub(character_time.minutes) > MINUTES_PER_YEAR;
-    let target_minutes = if forced_catch_up {
-        official_minutes.saturating_sub(MINUTES_PER_YEAR)
-    } else {
-        official_minutes
-    };
+    if target_minutes < character_time.minutes {
+        return Err("Character time cannot be advanced retroactively".into());
+    }
     let requested_elapsed = target_minutes.saturating_sub(character_time.minutes);
     if requested_elapsed == 0 {
-        return Ok(forced_catch_up);
+        return Ok(());
+    }
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        character_time.minutes,
+        target_minutes,
+    ) {
+        let was_npc_controlled = ctx
+            .db
+            .npc_policy()
+            .character_id()
+            .find(character_id)
+            .is_some();
+        advance_stationary_character_to(ctx, character_id, boundary)?;
+        let alive = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .is_some_and(|row| row.alive);
+        let npc_authority_transferred = was_npc_controlled
+            && ctx
+                .db
+                .npc_policy()
+                .character_id()
+                .find(character_id)
+                .is_none();
+        if !alive || npc_authority_transferred {
+            return Ok(());
+        }
+        return advance_stationary_character_to(ctx, character_id, target_minutes);
     }
     let starting_minute = character_time.minutes;
     let saved_schedule = ctx
@@ -2822,9 +3226,33 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
-        return Ok(forced_catch_up);
+        return Ok(());
+    }
+    let training_elapsed = elapsed.saturating_sub(convalescing);
+    let socializing_before = total_socializing_receipt_minutes(ctx, character_id);
+    if at_settlement && training_elapsed > 0 {
+        crate::relationship::apply_scheduled_socializing(
+            ctx,
+            character_id,
+            effective_schedule.socializing_minutes,
+            target_minutes.saturating_sub(training_elapsed),
+            target_minutes,
+        )?;
+    }
+    let realized_socializing_minutes =
+        total_socializing_receipt_minutes(ctx, character_id).saturating_sub(socializing_before);
+    let mut realized_training_schedule = effective_schedule.clone();
+    if realized_socializing_minutes == 0 {
+        // An unavailable Socializing allocation is downtime/Leisure, not
+        // imaginary practice of Charm, Insight, or Deception.
+        realized_training_schedule.socializing_minutes = 0;
     }
     let mut skills = ctx
         .db
@@ -2833,12 +3261,11 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .find(character_id)
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
-    let training_elapsed = elapsed.saturating_sub(convalescing);
     let excess = apply_training(
         ctx,
         character_id,
         &mut skills,
-        &effective_schedule,
+        &realized_training_schedule,
         training_elapsed,
         activities,
     );
@@ -2861,6 +3288,29 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     }
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::organization::settle_membership_dues(ctx, character_id)?;
+    Ok(())
+}
+
+/// Advance through elapsed wall-clock time. Returns true when a character was
+/// forced to catch up from more than a year behind; callers should skip their
+/// action.
+pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
+    ensure_character_time(ctx, character_id)?;
+    let official_minutes = refresh_clock(ctx)?;
+    let current_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character time record not found".to_string())?
+        .minutes;
+    let forced_catch_up = official_minutes.saturating_sub(current_minute) > MINUTES_PER_YEAR;
+    let target_minutes = if forced_catch_up {
+        official_minutes.saturating_sub(MINUTES_PER_YEAR)
+    } else {
+        official_minutes
+    };
+    advance_stationary_character_to(ctx, character_id, target_minutes)?;
     Ok(forced_catch_up)
 }
 
@@ -2924,8 +3374,8 @@ mod tests {
             ),
             ("pub fn rest_at_camp", "fn party_fatigue_summary"),
             (
-                "fn synchronize_character",
-                "pub fn synchronize_character_time",
+                "pub(crate) fn advance_stationary_character_to",
+                "pub fn synchronize_character",
             ),
         ] {
             let body = source
@@ -3242,8 +3692,8 @@ mod tests {
         for (start, end) in [
             ("fn rest_for_minutes", "fn inn_stay_cost"),
             (
-                "pub fn synchronize_character(",
-                "/// Explicitly synchronize",
+                "pub(crate) fn advance_stationary_character_to(",
+                "/// Advance through elapsed wall-clock time",
             ),
         ] {
             let interval = source
@@ -3301,7 +3751,7 @@ mod tests {
             ..Default::default()
         };
         let mut hours = SkillHours::default();
-        apply_schedule_training(
+        adventuresim_core::strategic_schedule::apply_schedule_training(
             &mut hours,
             core_schedule(&allocation),
             MINUTES_PER_DAY * 2,
@@ -3329,5 +3779,53 @@ mod tests {
         assert!((health_recovered_per_day(2.5) - 0.035).abs() < f32::EPSILON);
         assert!((health_recovered_per_day(5.0) - 0.06).abs() < f32::EPSILON);
         assert!((health_recovered_per_day(8.0) - 0.06).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn authoritative_time_paths_split_at_lifecycle_boundaries() {
+        let source = include_str!("time.rs");
+        for (start, end) in [
+            (
+                "pub fn advance_character_time",
+                "fn advance_character_time_in_plan",
+            ),
+            (
+                "fn advance_character_time_in_plan",
+                "/// Actual strategic movement",
+            ),
+            (
+                "pub fn advance_character_wait_time",
+                "pub fn advance_character_wait_time_in_plan",
+            ),
+            (
+                "pub fn advance_character_wait_time_in_plan",
+                "fn default_schedule",
+            ),
+        ] {
+            let path = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect("time advancement path");
+            assert!(path.contains("next_lifecycle_boundary"));
+            assert!(path.contains("minutes.saturating_sub(first)"));
+            assert!(path.contains("settle_lifecycle_after_character_time_write"));
+        }
+    }
+
+    #[test]
+    fn stationary_social_training_requires_realized_conversation_time() {
+        let source = include_str!("time.rs");
+        let stationary = source
+            .split("pub(crate) fn advance_stationary_character_to")
+            .nth(1)
+            .expect("stationary advancement");
+        let socializing = stationary
+            .find("apply_scheduled_socializing")
+            .expect("scheduled Socializing");
+        let training = stationary.find("apply_training").expect("training");
+        assert!(socializing < training);
+        assert!(stationary.contains("realized_socializing_minutes == 0"));
+        assert!(stationary.contains("realized_training_schedule.socializing_minutes = 0"));
     }
 }

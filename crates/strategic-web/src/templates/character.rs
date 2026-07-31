@@ -906,6 +906,7 @@ mod creation_tests {
         .into_iter()
         .find(|candidate| candidate.profession == Some(StartingProfession::Herbalist))
         .unwrap();
+        adult.skills.physiology = 100.0;
         let preview = CandidatePresentation::from(&adult);
         assert!(preview.capability.physiology > 0.0);
         assert_eq!(preview.capability.surgery, 0.0);

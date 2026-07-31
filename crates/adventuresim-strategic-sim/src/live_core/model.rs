@@ -33,17 +33,18 @@ use adventuresim_stdb_client::{
     backend_investigation_cases_table::BackendInvestigationCasesTableAccess,
     backend_investigation_leads_table::BackendInvestigationLeadsTableAccess,
     backend_local_problem_trade_effects_table::BackendLocalProblemTradeEffectsTableAccess,
-    backend_settlement_npcs_table::BackendSettlementNpcsTableAccess,
+    backend_settlement_residents_table::BackendSettlementResidentsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
-    character_capability_table::CharacterCapabilityTableAccess,
-    character_death_table::CharacterDeathTableAccess,
+    backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
+    backend_character_deaths_table::BackendCharacterDeathsTableAccess,
     character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_illness_status_table::CharacterIllnessStatusTableAccess,
-    character_needs_table::CharacterNeedsTableAccess,
-    character_strategic_condition_table::CharacterStrategicConditionTableAccess,
-    character_table::CharacterTableAccess, character_time_table::CharacterTimeTableAccess,
-    character_training_schedule_table::CharacterTrainingScheduleTableAccess,
+    backend_character_needs_table::BackendCharacterNeedsTableAccess,
+    backend_character_strategic_conditions_table::BackendCharacterStrategicConditionsTableAccess,
+    backend_characters_table::BackendCharactersTableAccess,
+    backend_character_times_table::BackendCharacterTimesTableAccess,
+    backend_character_training_schedules_table::BackendCharacterTrainingSchedulesTableAccess,
     choose_dialogue_topic_reducer::choose_dialogue_topic,
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
@@ -74,7 +75,7 @@ use adventuresim_stdb_client::{
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_simulation_world_reducer::seed_simulation_world,
-    settlement_npc_presence_table::SettlementNpcPresenceTableAccess,
+    settlement_resident_presence_table::SettlementResidentPresenceTableAccess,
     settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
     settlement_table::SettlementTableAccess,
     simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction,
@@ -778,7 +779,7 @@ fn format_quest_decision_detail(
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PublicNpcCandidate {
-    npc_id: String,
+    resident_character_id: u64,
     name: String,
     profession: String,
     conversation_id: String,
@@ -790,7 +791,7 @@ const PUBLIC_DISCOVERY_BACKOFF_MINUTES: u64 = 2 * 1_440;
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PublicDiscoveryFingerprint {
     settlement_id: String,
-    contacts: Vec<(String, String, String)>,
+    contacts: Vec<(u64, String, String)>,
     active_symptoms: Vec<(String, String, u64, u64)>,
 }
 
@@ -889,7 +890,7 @@ fn stable_public_npc_candidates(
             candidate.location_id != "inn",
             candidate.name.to_ascii_lowercase(),
             candidate.profession.to_ascii_lowercase(),
-            candidate.npc_id.clone(),
+            candidate.resident_character_id.clone(),
         )
     });
     candidates

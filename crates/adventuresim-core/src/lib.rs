@@ -11,6 +11,7 @@ pub mod capability;
 pub mod case;
 pub mod combat;
 pub mod composite;
+pub mod courtship;
 pub mod developer_quest;
 pub mod disease;
 pub mod durability;
@@ -35,6 +36,7 @@ pub mod life_simulation;
 pub mod local_problem;
 pub mod mission;
 pub mod morale;
+pub mod npc_policy;
 pub mod organization;
 #[cfg(test)]
 mod organization_catalog_validation;

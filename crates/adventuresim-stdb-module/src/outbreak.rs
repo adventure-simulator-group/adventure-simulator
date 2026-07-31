@@ -8,7 +8,7 @@ use crate::{
     character::{character, character__view},
     corpse::strategic_corpse,
     local_problem::{local_problem_receipt, local_problem_receipt__view},
-    settlement_population::{settlement_npc, settlement_npc__view},
+    settlement_population::settlement_resident_profile,
     strategic::strategic_gateway_authority__view,
     time::{character_time, character_time__view},
 };
@@ -30,7 +30,7 @@ pub struct OutbreakAuthority {
     pub source_json: String,
     pub physical_source_site_id: String,
     pub patient_presentation_site_id: String,
-    pub responsible_npc_id: Option<String>,
+    pub responsible_resident_character_id: Option<u64>,
     pub culpability: Option<String>,
     pub carrier_threat_id: Option<String>,
     pub chronology_json: String,
@@ -51,8 +51,8 @@ pub struct OutbreakPatientAuthority {
     #[index(btree)]
     pub case_id: String,
     #[index(btree)]
-    pub presentation_npc_id: String,
-    pub family_npc_id: Option<String>,
+    pub presentation_resident_character_id: u64,
+    pub family_resident_character_id: Option<u64>,
     pub patient_key: u64,
     #[unique]
     pub episode_id: u64,
@@ -98,7 +98,7 @@ pub struct OutbreakSourcePresenceSpan {
 pub struct BackendOutbreakPatient {
     pub owner_character_id: u64,
     pub patient_ref: String,
-    pub presentation_npc_id: String,
+    pub presentation_resident_character_id: u64,
     pub display_name: String,
     pub case_id: String,
     pub source_site_id: String,
@@ -153,12 +153,10 @@ pub fn backend_outbreak_patients(ctx: &ViewContext) -> Vec<BackendOutbreakPatien
         let Some(authority) = ctx.db.outbreak_authority().case_id().find(&patient.case_id) else {
             continue;
         };
-        let Some(npc) = ctx
-            .db
-            .settlement_npc()
-            .id()
-            .find(&patient.presentation_npc_id)
-        else {
+        let Some(npc) = crate::settlement_population::resolve_settlement_resident_view(
+            ctx,
+            patient.presentation_resident_character_id,
+        ) else {
             continue;
         };
         for receipt in ctx
@@ -203,7 +201,9 @@ pub fn backend_outbreak_patients(ctx: &ViewContext) -> Vec<BackendOutbreakPatien
             result.push(BackendOutbreakPatient {
                 owner_character_id: actor.id,
                 patient_ref: patient.id.clone(),
-                presentation_npc_id: patient.presentation_npc_id.clone(),
+                presentation_resident_character_id: patient
+                    .presentation_resident_character_id
+                    .clone(),
                 display_name: npc.name.clone(),
                 case_id: authority.case_id.clone(),
                 source_site_id: authority.patient_presentation_site_id.clone(),
@@ -435,12 +435,12 @@ fn materialize_patient_corpse(
             wasting: symptoms.contains(&Symptom::Wasting),
         },
     )?;
-    if let Some(family_npc_id) = &exposure.family_npc_id {
+    if let Some(family_resident_character_id) = &exposure.family_resident_character_id {
         crate::corpse::materialize_corpse_family_bindings(
             ctx,
             &corpse_id,
             settlement_id,
-            std::slice::from_ref(family_npc_id),
+            std::slice::from_ref(family_resident_character_id),
         )?;
     }
     Ok(corpse_id)
@@ -511,7 +511,8 @@ pub(crate) fn materialize_generated_outbreak(
             .map_err(|_| "Could not encode outbreak source")?,
         physical_source_site_id: outbreak.physical_source_site.0.clone(),
         patient_presentation_site_id: outbreak.patient_presentation_site.0.clone(),
-        responsible_npc_id: responsible.map(|value| value.npc_id.clone()),
+        responsible_resident_character_id: responsible
+            .map(|value| value.resident_character_id.clone()),
         culpability: responsible
             .map(|value| format!("{:?}", value.culpability).to_ascii_lowercase()),
         carrier_threat_id: carrier.map(str::to_owned),
@@ -544,21 +545,20 @@ pub(crate) fn materialize_generated_outbreak(
                 exposure.patient_ref
             ));
         }
-        let npc = ctx
-            .db
-            .settlement_npc()
-            .id()
-            .find(&exposure.presentation_npc_id)
-            .ok_or("Outbreak patient NPC no longer exists")?;
+        let npc = crate::settlement_population::resolve_settlement_resident(
+            ctx,
+            exposure.presentation_resident_character_id,
+        )
+        .ok_or("Outbreak patient NPC no longer exists")?;
         if npc.home_settlement_id != settlement_id {
             return Err("Outbreak presentation NPC is not local to its patient".into());
         }
-        if let Some(family_npc_id) = &exposure.family_npc_id {
+        if let Some(family_resident_character_id) = &exposure.family_resident_character_id {
             let family = ctx
                 .db
-                .settlement_npc()
-                .id()
-                .find(family_npc_id)
+                .settlement_resident_profile()
+                .character_id()
+                .find(*family_resident_character_id)
                 .ok_or("Explicit outbreak family NPC no longer exists")?;
             if family.home_settlement_id != settlement_id {
                 return Err("Explicit outbreak family NPC is not local".into());
@@ -568,8 +568,8 @@ pub(crate) fn materialize_generated_outbreak(
             id: exposure.patient_ref.clone(),
             gateway_bucket: 0,
             case_id: generated.canonical_case_id.clone(),
-            presentation_npc_id: exposure.presentation_npc_id.clone(),
-            family_npc_id: exposure.family_npc_id.clone(),
+            presentation_resident_character_id: exposure.presentation_resident_character_id.clone(),
+            family_resident_character_id: exposure.family_resident_character_id.clone(),
             patient_key: exposure.patient_key,
             episode_id: exposure.episode_id,
             disease_id: crate::disease::disease_key(outbreak.disease).into(),
@@ -660,8 +660,10 @@ pub(crate) fn materialize_generated_outbreak(
                 id: row_id,
                 gateway_bucket: 0,
                 case_id: generated.canonical_case_id.clone(),
-                presentation_npc_id: exposure.presentation_npc_id.clone(),
-                family_npc_id: exposure.family_npc_id.clone(),
+                presentation_resident_character_id: exposure
+                    .presentation_resident_character_id
+                    .clone(),
+                family_resident_character_id: exposure.family_resident_character_id.clone(),
                 patient_key: exposure.patient_key,
                 episode_id: exposure.episode_id,
                 disease_id: crate::disease::disease_key(outbreak.disease).into(),

@@ -4,6 +4,7 @@ pub(super) struct TrainingScheduleForm {
     reading_minutes: u16,
     combat_training_minutes: u16,
     carousing_minutes: u16,
+    socializing_minutes: u16,
     apprenticeship_minutes: u16,
     apprenticeship_organization_id: Option<String>,
     profession_practice_minutes: u16,
@@ -35,7 +36,7 @@ mod training_schedule_form_tests {
     fn immediate_route_checks_resolved_location_before_calling_reducer() {
         let source = include_str!("training_activity.rs");
         let handler = source
-            .split_once("pub(super) async fn perform_immediate_activity(\n")
+            .rsplit_once("pub(super) async fn perform_immediate_activity(")
             .map(|(_, tail)| tail)
             .and_then(|tail| tail.split("pub(super) async fn party_member").next())
             .expect("immediate activity handler");
@@ -64,6 +65,7 @@ pub(super) async fn update_training_schedule(
         reading_minutes: form.reading_minutes,
         combat_training_minutes: form.combat_training_minutes,
         carousing_minutes: form.carousing_minutes,
+        socializing_minutes: form.socializing_minutes,
         apprenticeship_minutes: form.apprenticeship_minutes,
         apprenticeship_organization_id: form.apprenticeship_organization_id,
         profession_practice_minutes: form.profession_practice_minutes,
@@ -224,14 +226,15 @@ pub(super) async fn party_member(
     let selected = if character_id == active_character.id {
         active_character.clone()
     } else {
-        let characters: Vec<Character> = state
-            .db
-            .query(&format!(
-                "SELECT * FROM character WHERE id = {character_id}"
-            ))
+        let character = crate::routes::data::character_as_observed(
+            &state,
+            character_id,
+            active_character.id,
+        )
             .await
-            .unwrap_or_default();
-        match characters.into_iter().next() {
+            .ok()
+            .flatten();
+        match character {
             Some(character) => character,
             None => return Html("<h1>Party member not found</h1>".to_string()),
         }

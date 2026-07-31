@@ -56,7 +56,7 @@ fn render_quest_referral_variant(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
-    current_speaker_npc_id: &str,
+    current_speaker_resident_character_id: u64,
     delivery: &crate::local_problem::LocalProblemRumorDelivery,
 ) -> Result<(String, String), String> {
     let facts = dialogue_fact_context(ctx, session, character_id)?;
@@ -65,22 +65,25 @@ fn render_quest_referral_variant(
     else {
         return Err("Quest referral is not a local-problem delivery".into());
     };
-    let contact = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&receipt.contact_npc_id)
-        .ok_or("Rumor referral contact is unavailable")?;
-    let source = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&current_speaker_npc_id.to_owned());
+    let contact = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        receipt.contact_resident_character_id,
+    )
+    .ok_or("Rumor referral contact is unavailable")?;
+    let source = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        current_speaker_resident_character_id,
+    );
+    let contact_id = contact.character_id.to_string();
+    let source_id = source
+        .as_ref()
+        .map(|source| source.character_id.to_string());
     if !referral_variant_can_replace_authoritative_wording(
         source
             .as_ref()
-            .map(|source| (source.id.as_str(), source.name.as_str())),
-        &contact.id,
+            .zip(source_id.as_deref())
+            .map(|(source, id)| (id, source.name.as_str())),
+        &contact_id,
         &contact.name,
     ) {
         // The authoritative presentation distinguishes self-referrals and
@@ -97,10 +100,13 @@ fn render_quest_referral_variant(
         return Ok((delivery.fragments_json.clone(), "[]".into()));
     };
     let mut values = std::collections::BTreeMap::new();
-    values.insert("summary".into(), receipt.safe_summary);
-    values.insert("contact_name".into(), contact.name);
-    values.insert("contact_profession".into(), contact.profession);
-    values.insert("contact_location".into(), receipt.expected_location_id);
+    values.insert("summary".into(), receipt.safe_summary.clone());
+    values.insert("contact_name".into(), contact.name.clone());
+    values.insert("contact_profession".into(), contact.profession.clone());
+    values.insert(
+        "contact_location".into(),
+        receipt.expected_location_id.clone(),
+    );
     let text = variant.render(&values)?;
     let fragments = vec![adventuresim_dialogue::Fragment::Text { value: text }];
     let json = serde_json::to_string(&fragments)
@@ -143,7 +149,7 @@ mod referral_variant_tests {
 
     #[test]
     fn referral_renderer_uses_the_current_speaker_not_discovery_provenance() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::strategic::STRATEGIC_SOURCE;
         let start = source
             .split("pub fn start_dialogue")
             .nth(1)
@@ -156,8 +162,8 @@ mod referral_variant_tests {
             .nth(1)
             .and_then(|tail| tail.split("#[cfg(test)]").next())
             .expect("referral renderer");
-        assert!(renderer.contains("current_speaker_npc_id"));
-        assert!(!renderer.contains("receipt.source_npc_id"));
+        assert!(renderer.contains("current_speaker_resident_character_id"));
+        assert!(!renderer.contains("receipt.source_resident_character_id"));
     }
 }
 
@@ -312,7 +318,7 @@ fn local_service_organization_representative(
     settlement_id: &str,
     location_id: &str,
     service_id: &str,
-) -> Option<crate::settlement_population::SettlementNpc> {
+) -> Option<crate::settlement_population::ResolvedSettlementResident> {
     adventuresim_core::organization::organizations_for_chapter(settlement_id)
         .filter(|organization| organization.service_id.as_deref() == Some(service_id))
         .find_map(|organization| {
@@ -329,16 +335,16 @@ fn local_service_organization_representative(
                         &organization.id,
                     )
                 })
-                .and_then(|id| ctx.db.settlement_npc().id().find(&id))
+                .and_then(|id| crate::settlement_population::resolve_settlement_resident(ctx, id))
                 .filter(|npc| {
                     exact_organization_representative(ctx, npc, settlement_id, location_id)
                         .as_deref()
                         == Some(organization.id.as_str())
                         && ctx
                             .db
-                            .settlement_npc_presence()
-                            .npc_id()
-                            .find(&npc.id)
+                            .settlement_resident_presence()
+                            .character_id()
+                            .find(npc.character_id)
                             .is_some_and(|presence| {
                                 presence.settlement_id == settlement_id
                                     && presence.location_id == location_id
@@ -383,8 +389,11 @@ fn dialogue_fact_context(
             ),
         );
         if participant.character_id.is_none() {
-            if let Some(npc) = ctx.db.settlement_npc().id().find(&participant.actor_id) {
-                let estate = crate::social_estate::settlement_npc_estate(ctx, &npc.id)?;
+            if let Ok(npc_character_id) = participant.actor_id.parse::<u64>()
+                && let Some(npc) =
+                    crate::settlement_population::resolve_settlement_resident(ctx, npc_character_id)
+            {
+                let estate = crate::social_estate::character_estate(ctx, npc.character_id)?;
                 result.facts.insert(
                     FactKey::ParticipantEstate {
                         role: participant.role.clone(),
@@ -448,7 +457,12 @@ fn dialogue_fact_context(
                         .into(),
                     ),
                 );
-                if let Some(presence) = ctx.db.settlement_npc_presence().npc_id().find(&npc.id) {
+                if let Some(presence) = ctx
+                    .db
+                    .settlement_resident_presence()
+                    .character_id()
+                    .find(npc.character_id)
+                {
                     result
                         .facts
                         .insert(FactKey::LocationRole, FactValue::Text(presence.location_id));
@@ -594,7 +608,15 @@ fn dialogue_fact_context(
             .iter()
             .filter(|participant| participant.character_id.is_none())
         {
-            let Some(npc) = ctx.db.settlement_npc().id().find(&representative.actor_id) else {
+            let Ok(resident_character_id) = representative.actor_id.parse::<u64>() else {
+                continue;
+            };
+            let Some(npc) = ctx
+                .db
+                .settlement_resident_profile()
+                .character_id()
+                .find(resident_character_id)
+            else {
                 continue;
             };
             let Ok(organization_id) = dialogue_organization_id(ctx, session, &npc) else {
@@ -677,8 +699,16 @@ fn dialogue_fact_context(
             },
             FactValue::Bool(delivery_receipt.is_some() || has_public_delivery),
         );
-        let exact_referral =
-            dialogue_referred_witness(ctx, character_id, session, &npc.actor_id)?.is_some();
+        let exact_referral = npc
+            .actor_id
+            .parse::<u64>()
+            .ok()
+            .map(|resident_character_id| {
+                dialogue_referred_witness(ctx, character_id, session, resident_character_id)
+            })
+            .transpose()?
+            .flatten()
+            .is_some();
         result.facts.insert(
             FactKey::ParticipantReferralContact {
                 role: npc.role.clone(),
@@ -908,7 +938,7 @@ fn bind_organization_business_terms(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
-    npc: &crate::settlement_population::SettlementNpc,
+    npc: &crate::settlement_population::SettlementResidentProfile,
     bindings: &mut adventuresim_dialogue::RuntimeBindings,
 ) -> Result<(), String> {
     use adventuresim_dialogue::RuntimeSlot as S;
@@ -1013,11 +1043,11 @@ fn dialogue_runtime_bindings(
         .filter(&session.id)
         .find(|participant| participant.character_id.is_none() && participant.role == speaker_role)
         .ok_or("Dialogue has no NPC speaker")?;
-    let npc = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&participant.actor_id)
+    let npc_character_id = participant
+        .actor_id
+        .parse::<u64>()
+        .map_err(|_| "Dialogue NPC identity is invalid")?;
+    let npc = crate::settlement_population::resolve_settlement_resident(ctx, npc_character_id)
         .ok_or("Dialogue NPC is no longer authoritative")?;
     let mut bindings = adventuresim_dialogue::RuntimeBindings::default();
     bindings.bind(S::SpeakerName, npc.name.clone());
@@ -1038,10 +1068,7 @@ fn dialogue_runtime_bindings(
             &npc.service_id,
         )
     {
-        bindings.bind(
-            S::OrganizationRepresentativeName,
-            representative.name,
-        );
+        bindings.bind(S::OrganizationRepresentativeName, representative.name);
     }
     if !npc.organization_id.is_empty() {
         bind_organization_business_terms(ctx, session, character_id, &npc, &mut bindings)?;
@@ -1121,12 +1148,11 @@ fn dialogue_runtime_bindings(
         && let ReferralDeliveryAuthority::LocalProblem(receipt) =
             referral_delivery_authority(ctx, &delivery)?
     {
-        let contact = ctx
-            .db
-            .settlement_npc()
-            .id()
-            .find(&receipt.contact_npc_id)
-            .ok_or("Rumor referral contact is unavailable")?;
+        let contact = crate::settlement_population::resolve_settlement_resident(
+            ctx,
+            receipt.contact_resident_character_id,
+        )
+        .ok_or("Rumor referral contact is unavailable")?;
         let authority = ctx
             .db
             .quest_generation_authority()
@@ -1138,14 +1164,14 @@ fn dialogue_runtime_bindings(
             .witnesses
             .iter()
             .find(|witness| {
-                witness.npc_id == receipt.contact_npc_id
+                witness.resident_character_id == receipt.contact_resident_character_id
                     && witness.expected_location == receipt.expected_location_id
             })
             .ok_or("Referral contact is not the generated witness")?;
         bindings.bind(S::Symptom, receipt.safe_summary.clone());
         bindings.bind(S::Claim, receipt.safe_summary);
         bindings.bind(S::Uncertainty, "an unconfirmed local account");
-        bindings.bind(S::ReferralName, contact.name);
+        bindings.bind(S::ReferralName, contact.name.clone());
         bindings.bind(
             S::ReferralDescription,
             format!(
@@ -1157,14 +1183,14 @@ fn dialogue_runtime_bindings(
                 contact.visible_features
             ),
         );
-        bindings.bind(S::ReferralRole, contact.profession);
+        bindings.bind(S::ReferralRole, contact.profession.clone());
         let referral_location =
             adventuresim_core::quest_generation::referral_display_location(witness);
         bindings.bind(S::ReferralLocation, referral_location.to_owned());
         bindings.bind(S::DescribedLocation, referral_location.to_owned());
     }
     if let Some((_, selected_witness)) =
-        dialogue_referred_witness(ctx, character_id, session, &npc.id)?
+        dialogue_referred_witness(ctx, character_id, session, npc.character_id)?
     {
         let testimony =
             adventuresim_core::quest_generation::initial_testimony_projection(&selected_witness)

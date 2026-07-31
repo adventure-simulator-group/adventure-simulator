@@ -519,20 +519,22 @@ pub fn chapter_has_standalone_building(
 
 /// Stable representative identity is deliberately independent of provider
 /// ordinals and physical venue so co-location cannot collide with service NPCs.
-pub fn organization_representative_id(settlement_id: &str, organization_id: &str) -> String {
-    format!("npc:organization-representative:{settlement_id}:{organization_id}")
+pub fn organization_representative_id(settlement_id: &str, organization_id: &str) -> u64 {
+    crate::settlement_population::stable_hash(&format!(
+        "resident:organization-representative:{settlement_id}:{organization_id}"
+    )) | (1u64 << 63)
 }
 
 pub fn exact_representative_fields_match(
-    npc_id: &str,
-    expected_id: &str,
+    resident_character_id: u64,
+    expected_id: u64,
     home_settlement_id: &str,
     settlement_id: &str,
     organization_id: &str,
     expected_organization_id: &str,
     conversation_id: &str,
 ) -> bool {
-    npc_id == expected_id
+    resident_character_id == expected_id
         && home_settlement_id == settlement_id
         && organization_id == expected_organization_id
         && conversation_id == "organization-representative"
@@ -899,7 +901,7 @@ mod tests {
     }
 
     #[test]
-    fn social_persistence_hooks_cover_both_durable_actor_types() {
+    fn social_persistence_hooks_cover_residents_as_full_characters() {
         let social =
             include_str!("../../adventuresim-stdb-module/src/social_estate.rs").replace('\r', "");
         let character =
@@ -915,8 +917,8 @@ mod tests {
                 .replace('\r', "");
         assert!(social.contains("#[table(accessor = character_estate_basis)]"));
         assert!(social.contains("#[primary_key]\n    pub character_id: u64"));
-        assert!(social.contains("#[table(accessor = settlement_npc_estate_basis)]"));
-        assert!(social.contains("#[primary_key]\n    pub npc_id: String"));
+        assert!(!social.contains("settlement_resident_estate_basis"));
+        assert!(!social.contains("resident_character_id"));
         assert!(!social.contains("ctx.random"));
         assert!(social.contains("Estate roles require the exclusive estate-assignment path"));
         assert!(social.contains("already has an estate-bearing role"));
@@ -925,17 +927,21 @@ mod tests {
         assert!(character.contains("ensure_character_social_roles("));
         assert!(character.contains("ensure_character_professional_role("));
         assert!(character.contains("delete_character_social_roles(ctx, character.id)"));
-        assert!(population.contains("ensure_settlement_npc_social_roles("));
+        assert!(population.contains("pub struct SettlementResidentProfile"));
+        assert!(population.contains("ensure_character_social_roles("));
         assert!(population.contains("ensure_settlement_social_organizations(ctx, settlement_id)"));
-        assert!(world_import.contains("delete_settlement_npc_social_roles(ctx, &npc.id)"));
+        assert!(world_import.contains("delete_character_for_world_import(ctx, character)"));
         assert!(world_import.contains("delete_unreferenced_settlement_social_organizations("));
         let mission =
             include_str!("../../adventuresim-stdb-module/src/strategic/mission_bootstrap.rs")
                 .replace('\r', "");
-        assert!(mission.contains("copy_settlement_npc_social_roles_to_character("));
+        assert!(!mission.contains("copy_settlement_resident_social_roles_to_character("));
+        assert!(mission.contains("let leader_id = npc.character_id"));
+        assert!(mission.contains("settlement_resident_id: npc.character_id"));
         assert!(dialogue.matches("FactKey::ParticipantEstate").count() >= 2);
         assert!(dialogue.contains("character_estate(ctx, id)?"));
-        assert!(dialogue.contains("settlement_npc_estate(ctx, &npc.id)?"));
+        assert!(dialogue.contains("character_estate(ctx, npc.character_id)?"));
+        assert!(!dialogue.contains("settlement_resident_estate("));
     }
 
     #[test]
@@ -986,8 +992,8 @@ mod tests {
     #[test]
     fn exact_representative_requires_identity_home_and_conversation() {
         let valid = (
-            "npc:goslar:ranger-lodge:0",
-            "npc:goslar:ranger-lodge:0",
+            9_007_199_254_740_993,
+            9_007_199_254_740_993,
             "goslar",
             "goslar",
             "ranger_lodge",
@@ -998,7 +1004,7 @@ mod tests {
             valid.0, valid.1, valid.2, valid.3, valid.4, valid.5, valid.6
         ));
         assert!(!exact_representative_fields_match(
-            "npc:goslar:ranger-lodge:1",
+            9_007_199_254_740_994,
             valid.1,
             valid.2,
             valid.3,
@@ -1095,6 +1101,7 @@ mod tests {
             merchant,
             organization_representative_id("viabundus-0", "weaponsmith_guild")
         );
-        assert!(!merchant.ends_with(":0"));
+        assert_ne!(merchant, 0);
+        assert!(merchant >= 1u64 << 63);
     }
 }

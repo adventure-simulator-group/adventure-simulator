@@ -118,22 +118,22 @@ test("track authoring defaults preserve typed segment authority", () => {
 
 test("NPC selection atomically hydrates locked witness and pattern bindings", () => {
   const binding = {
-    npc_id: "npc:two", display_name: "Else", demographic: "merchant",
+    resident_character_id: "npc:two", display_name: "Else", demographic: "merchant",
     age_band: "adult", sex: "female", profession: "merchant",
     visible_description: "tall", expected_location: "market",
     expected_location_label: "Market", presence_version: 42,
     allowed_circumstances: ["road"],
   };
-  const witness = { npc_id: "npc:one", circumstance: "night_window" };
+  const witness = { resident_character_id: "npc:one", circumstance: "night_window" };
   hydrateWitnessBinding(witness, binding);
   assert.deepEqual(
     {
-      npc_id: witness.npc_id, name: witness.display_name,
+      resident_character_id: witness.resident_character_id, name: witness.display_name,
       demographic: witness.demographic, circumstance: witness.circumstance,
       location: witness.expected_location, description: witness.visible_description,
     },
     {
-      npc_id: "npc:two", name: "Else", demographic: "merchant",
+      resident_character_id: "npc:two", name: "Else", demographic: "merchant",
       circumstance: "road", location: "market", description: "tall",
     },
   );
@@ -141,7 +141,7 @@ test("NPC selection atomically hydrates locked witness and pattern bindings", ()
   hydratePatternBinding(pattern, binding, "riverdale");
   assert.equal(pattern.expected_settlement_id, "riverdale");
   assert.equal(pattern.presence_version, 42);
-  assert.equal(pattern.npc_id, "npc:two");
+  assert.equal(pattern.resident_character_id, "npc:two");
 });
 
 test("open YAML content IDs are supplied by schema rather than JavaScript", () => {

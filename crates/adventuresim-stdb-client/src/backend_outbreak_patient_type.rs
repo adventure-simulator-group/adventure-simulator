@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct BackendOutbreakPatient {
     pub owner_character_id: u64,
     pub patient_ref: String,
-    pub presentation_npc_id: String,
+    pub presentation_resident_character_id: u64,
     pub display_name: String,
     pub case_id: String,
     pub source_site_id: String,
@@ -28,7 +28,8 @@ impl __sdk::InModule for BackendOutbreakPatient {
 pub struct BackendOutbreakPatientCols {
     pub owner_character_id: __sdk::__query_builder::Col<BackendOutbreakPatient, u64>,
     pub patient_ref: __sdk::__query_builder::Col<BackendOutbreakPatient, String>,
-    pub presentation_npc_id: __sdk::__query_builder::Col<BackendOutbreakPatient, String>,
+    pub presentation_resident_character_id:
+        __sdk::__query_builder::Col<BackendOutbreakPatient, u64>,
     pub display_name: __sdk::__query_builder::Col<BackendOutbreakPatient, String>,
     pub case_id: __sdk::__query_builder::Col<BackendOutbreakPatient, String>,
     pub source_site_id: __sdk::__query_builder::Col<BackendOutbreakPatient, String>,
@@ -43,9 +44,9 @@ impl __sdk::__query_builder::HasCols for BackendOutbreakPatient {
         BackendOutbreakPatientCols {
             owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
             patient_ref: __sdk::__query_builder::Col::new(table_name, "patient_ref"),
-            presentation_npc_id: __sdk::__query_builder::Col::new(
+            presentation_resident_character_id: __sdk::__query_builder::Col::new(
                 table_name,
-                "presentation_npc_id",
+                "presentation_resident_character_id",
             ),
             display_name: __sdk::__query_builder::Col::new(table_name, "display_name"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),

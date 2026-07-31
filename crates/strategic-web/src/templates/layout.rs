@@ -169,13 +169,13 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=developer-visibility-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1-equipment-slots-7-weather-status-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1-equipment-slots-7-weather-status-2-residences-1-continuity-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
-                script src="/static/developer-mode.js?v=dialogue-sources-1" defer {}
+                script src="/static/developer-mode.js?v=development-clock-2" defer {}
                 script src="/static/tooltips.js?v=pinnable-lifecycle-3" defer {}
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
@@ -197,8 +197,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=counterparty-portraits-1-claim-challenges-2-errantry-retry-1" defer {}
-                    script src="/static/social-menu.js?v=timed-chat-1" defer {}
+                    script src="/static/dialogue-client.js?v=contextual-social-topics-1-errantry-retry-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
                     script src="/static/developer-quest-editor.js?v=typed-editor-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}

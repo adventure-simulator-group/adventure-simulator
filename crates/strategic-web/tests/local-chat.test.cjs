@@ -79,6 +79,18 @@ test("Local reconciliation preserves private one-shot dialogue absent from durab
   assert.deepEqual(merged, [request, failure, diagnosis]);
 });
 
+test("Local reconciliation preserves contextual social dialogue presentation", () => {
+  const playerResponse = row("local", undefined);
+  playerResponse.dataset.dialogueContextual = "true";
+  const npcResponse = row("local", undefined);
+  npcResponse.dataset.dialogueContextual = "true";
+
+  const pending = pendingLocalRows([playerResponse, npcResponse], []);
+  const merged = mergeChannelRows([playerResponse, npcResponse], "local", [], pending);
+
+  assert.deepEqual(merged, [playerResponse, npcResponse]);
+});
+
 const fakeDocument = () => {
   const ownerDocument = {
     createElement: (tagName) => ({

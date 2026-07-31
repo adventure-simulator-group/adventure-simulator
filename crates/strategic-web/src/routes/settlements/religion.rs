@@ -70,7 +70,7 @@ pub(super) async fn religion_dialogue(
     let condition = state
         .db
         .query::<CharacterCondition>(&format!(
-            "SELECT * FROM character_condition WHERE character_id = {}",
+            "SELECT * FROM backend_character_conditions WHERE character_id = {}",
             character.id
         ))
         .await

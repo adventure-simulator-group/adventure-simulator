@@ -9,7 +9,7 @@
   };
   const hydrateWitnessBinding = (target, binding) => {
     Object.assign(target, {
-      npc_id: binding.npc_id,
+      resident_character_id: binding.resident_character_id,
       display_name: binding.display_name,
       demographic: binding.demographic,
       expected_location: binding.expected_location,
@@ -23,7 +23,7 @@
   };
   const hydratePatternBinding = (target, binding, settlementId) => {
     Object.assign(target, {
-      npc_id: binding.npc_id,
+      resident_character_id: binding.resident_character_id,
       demographic: binding.demographic,
       age_band: binding.age_band,
       sex: binding.sex,
@@ -95,8 +95,8 @@
     if (path === "cause.hostile" || /^hostile_groups\.\d+\.2$/.test(path)) return "threats";
     if (/^sites\.\d+\.kind$/.test(path)) return "sites";
     if (/^evidence\.\d+\.kind$/.test(path)) return "evidence";
-    if (/^witnesses\.\d+\.npc_id$/.test(path)) return "witnesses";
-    if (/^pattern_targets\.\d+\.npc_id$/.test(path)) return "witnesses";
+    if (/^witnesses\.\d+\.resident_character_id$/.test(path)) return "witnesses";
+    if (/^pattern_targets\.\d+\.resident_character_id$/.test(path)) return "witnesses";
     if (path.endsWith(".demographic")) return "witness_demographics";
     if (path.endsWith(".circumstance")) return "circumstances";
     if (path.endsWith(".description")) return "descriptions";
@@ -128,8 +128,8 @@
     canonical_events: { id: "event:new", proposition_id: "proposition:new", subject: "subject", predicate: "affected", object: "object", occurred_at: 0 },
     sites: { id: "site:new", kind: null, role: "evidence", terrain: "underground", safe_label: "Place a witness described", exact_location_initially_known: false, is_true_location: false },
     areas: { id: "area:new", safe_label: "Nearby search area", terrain: "forest", contains_site_ids: [] },
-    witnesses: { id: "witness:new", npc_id: "", display_name: "", demographic: null, circumstance: null, description: null, expected_location: "", expected_location_label: "", visible_description: "", testimony: [] },
-    pattern_targets: { cohort_id: "cohort:new", npc_id: "", demographic: null, age_band: "adult", sex: "female", profession: "", expected_settlement_id: "", expected_location: "", expected_location_label: "", presence_version: 0 },
+    witnesses: { id: "witness:new", resident_character_id: "", display_name: "", demographic: null, circumstance: null, description: null, expected_location: "", expected_location_label: "", visible_description: "", testimony: [] },
+    pattern_targets: { cohort_id: "cohort:new", resident_character_id: "", demographic: null, age_band: "adult", sex: "female", profession: "", expected_settlement_id: "", expected_location: "", expected_location_label: "", presence_version: 0 },
     evidence: { id: "evidence:new", kind: null, proposition_id: "proposition:new", site_id: "site:new", portrait_label: "Physical evidence", portrait_icon: "footprint", base_description: "You inspect the evidence.", inspection_topics: [], safe_description: "Physical evidence", corrects_proposition_id: null },
     track_trails: { id: "track-trail:new", segment_ids: [] },
     track_segments: { id: "track-segment:new", trail_id: "track-trail:new", ordinal: 0, terrain: "settlement", safe_finding: "The trail continues across this ground.", predecessor: null, next: null },
@@ -137,7 +137,7 @@
     custody: ["asset:new", "site:new"],
     hostile_groups: ["group:new", "site:new", null, 1],
     finales: { id: "finale:new", kind: null, site_id: "site:new", hostile_group_id: "group:new", subject_id: null, asset_id: null, strategic_outcome_compatible: true },
-    dialogue_producers: { action: "expose", objective_id: "objective:new", recipient_npc_id: "", subject_ref: null, asset_id: null },
+    dialogue_producers: { action: "expose", objective_id: "objective:new", recipient_resident_character_id: "", subject_ref: null, asset_id: null },
     bridges: { id: "bridge:new", explanation: "", event_id: "event:new", evidence_id: "evidence:new", action_id: "action:new", lead_summary: "" },
     testimony: { proposition_id: "proposition:new", reliability: "truthful", truthful_text: "", spoken_text: "", destination_stage: "unknown", site_id: null, corrects_proposition_id: null, referred_witness_ids: [] },
     inspection_topics: { id: "topic:new", label: "Inspect", inspection_description: "", check: null },
@@ -186,10 +186,10 @@
   function hydrateNpcPath(path, npcId) {
     const binding = witnessOption(npcId)?.binding;
     if (!binding) return;
-    if (/^witnesses\.\d+\.npc_id$/.test(path)) {
+    if (/^witnesses\.\d+\.resident_character_id$/.test(path)) {
       const witness = getAt(path.split(".").slice(0, 2).join("."));
       hydrateWitnessBinding(witness, binding);
-    } else if (/^pattern_targets\.\d+\.npc_id$/.test(path)) {
+    } else if (/^pattern_targets\.\d+\.resident_character_id$/.test(path)) {
       hydratePatternObject(getAt(path.split(".").slice(0, 2).join(".")), binding);
     }
   }
@@ -204,7 +204,7 @@
       let choices = normalizedOptions(group);
       if (group === "circumstances" && /^witnesses\.\d+\.circumstance$/.test(path)) {
         const witness = getAt(path.split(".").slice(0, 2).join("."));
-        const allowed = witnessOption(witness.npc_id)?.binding.allowed_circumstances || [];
+        const allowed = witnessOption(witness.resident_character_id)?.binding.allowed_circumstances || [];
         choices = choices.filter((option) => allowed.includes(option.value));
       }
       for (const option of choices) {
@@ -359,7 +359,7 @@
       const fieldset = document.createElement("fieldset");
       const legend = document.createElement("legend"); legend.textContent = label(name); fieldset.append(legend);
       if (/^witnesses\.\d+$/.test(path)) {
-        const binding = witnessOption(value.npc_id)?.binding;
+        const binding = witnessOption(value.resident_character_id)?.binding;
         if (binding) {
           const snapshot = document.createElement("p");
           snapshot.className = "developer-quest-binding-snapshot";

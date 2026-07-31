@@ -530,6 +530,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     crate::time::initialize_time(ctx);
+    crate::npc_causal::initialize_npc_causal_schedule(ctx);
     crate::disease::initialize_physiology_key(ctx);
     log::info!(
         "Populating items from catalog revision {}",
@@ -737,6 +738,18 @@ pub fn credit_personal_currency(
         add_inventory_item(ctx, character_id, &currency_id, amount);
     }
     Ok(())
+}
+
+pub fn validate_personal_currency_credit(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    amount: u32,
+) -> Result<(), String> {
+    if amount == 0 {
+        Ok(())
+    } else {
+        currency_id_for_settlement(ctx, settlement_id).map(|_| ())
+    }
 }
 
 fn merged_currency_quantity(existing: u32, credit: u32) -> Option<u32> {

@@ -41,9 +41,9 @@ server-private entropy and stored; public NPC IDs do not determine them. Named
 morale-event rows preserve why morale changes. Current settled morale,
 relationship affinity, familiarity, personality, and the chosen approach all
 affect resolution, while browser projections remain qualitative.
-Ordinary timed chat is available from the normal social menu rather than the
-quest transcript. It may improve or strain morale and affinity and always
-builds familiarity, but it never diagnoses pressure or releases testimony.
+Ordinary timed chat is a contextual topic in the selected resident's dialogue.
+It may improve or strain morale and affinity and always builds familiarity,
+but it never diagnoses pressure or releases testimony.
 Claim-specific Charm, Command, and Bluff responses remain available only in
 the active dialogue session where that observer heard the claim.
 
@@ -291,11 +291,14 @@ has no public table accessor. Gateway projections expose only symptoms and
 observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
-Persistent settlement NPCs also cross that boundary through a dedicated
-`BackendSettlementNpc` projection. The projected row contains the NPC's stable
-identity, home settlement, player-visible appearance, profession, household,
-local role, service, and conversation identity. It deliberately excludes the
-authoritative NPC's private `sex` and internal `projection_id`. Gateway-side
+Persistent settlement residents also cross that boundary through a dedicated
+`BackendSettlementResident` projection. The projected row joins the ordinary
+Character identity and age, private personality presentation, and
+`SettlementResidentProfile` metadata. It contains the resident's stable decimal
+character ID, home settlement, player-visible appearance, profession,
+household, local role, service, and conversation identity. It deliberately
+excludes private `sex` and the profile's internal `projection_id`; missing
+Character or personality authority fails closed. Gateway-side
 developer quest previews use visible age, presentation, profession, and role
 for witness discovery. Preview, authoritative developer compilation, and later
 victim-profile target validation share one visible-field candidate and

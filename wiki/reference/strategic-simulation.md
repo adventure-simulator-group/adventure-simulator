@@ -494,10 +494,49 @@ Current limitations are:
 cargo run -p adventuresim-strategic-sim -- run --seed 42 --population 100 --days 1095 --output report.json
 cargo run -p adventuresim-strategic-sim -- replay --report report.json
 cargo run -p adventuresim-strategic-sim -- matched --seed 42 --days 365
+# Offline lifecycle rule-composition and cadence acceptance:
+just strategic-sim-lifecycle target/sim-runs/lifecycle-001 42
 # Safe disposable integration run (requires local SpacetimeDB 2.6.1):
 just strategic-sim-core-loop target/sim-runs/fixture-001 42 8 20 30 2
 just strategic-sim-core-loop-world target/sim-runs/world-001 42 8 20 30 2
 ```
+
+## Lifecycle acceptance tier
+
+`strategic-sim-lifecycle` is a credential-free offline acceptance scenario for
+housing, Socializing, courtship, marriage, spouse Leisure, conception, birth,
+and bounded NPC causal work. It composes the authoritative pure lifecycle rules
+used by the strategic module and runs the same three-year scenario through a
+single whole-horizon request and through daily requests.
+
+The explicit output directory must not already exist. A successful run creates
+three immutable, observer-safe artifacts:
+
+- `whole.json` and `daily.json` contain identical normalized lifecycle metrics;
+- `comparison.json` records both artifact digests, the normalized digest,
+  pass/fail state, exact differences, and a privacy-canary audit.
+
+The reports use public role labels rather than character, relationship, or
+settlement authority IDs. They do not expose raw affinity values, father
+approval values, check difficulty, or other hidden relationship authority.
+They assert the formal/informal route boundaries and secrecy outcomes without
+serializing those inputs.
+
+The scenario covers the exactly-three-tier housing catalog; renter and owner
+partial-funds billing; bounded residence and spouse morale; deterministic
+Socializing priority and personality training; formal and informal courtship;
+family secrecy checks; one-year wedding notice and one-time dowry settlement;
+conserved joint Leisure with 40-in-10,000 hourly conception trials; 280-day
+gestation, deterministic newborn identity and dependent status; and a bounded
+NPC work queue. Whole-versus-daily equality is measured over the complete
+normalized result.
+
+This is explicitly the `offline_authoritative_pure_rules` evidence tier. It
+does not invoke SpacetimeDB reducers, exercise persistence or concurrent
+reservations, subscribe to projections, or drive the browser. Reducer access,
+database concurrency, clock wakeups, and UI privacy remain responsibilities of
+the strategic module integration and web suites; this command must not be
+reported as evidence for those seams.
 
 ## Quest evaluators
 

@@ -337,12 +337,43 @@ pub fn random_personality(
     result
 }
 
+/// Generate an NPC personality from an identity-stable seed.
+///
+/// Reducer RNG is intentionally not involved. The same NPC therefore receives
+/// the same demographic axes and sparse traits regardless of bootstrap order,
+/// retries, or unrelated random draws in the surrounding transaction.
+pub fn personality_from_stable_seed(character_id: u64, stable_seed: u64) -> CharacterPersonality {
+    let mut state = stable_seed ^ character_id.rotate_left(29) ^ 0x7065_7273_6f6e_616c;
+    random_personality(character_id, || {
+        // SplitMix64 is small, deterministic, and has no ambient/global state.
+        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut value = state;
+        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        value ^ (value >> 31)
+    })
+}
+
 pub fn personality_or_neutral(ctx: &ReducerContext, character_id: u64) -> CharacterPersonality {
     ctx.db
         .character_personality()
         .character_id()
         .find(character_id)
         .unwrap_or_else(|| CharacterPersonality::neutral(character_id))
+}
+
+pub fn initialize_npc_personality(ctx: &ReducerContext, character_id: u64, stable_seed: u64) {
+    if ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        ctx.db
+            .character_personality()
+            .insert(personality_from_stable_seed(character_id, stable_seed));
+    }
 }
 
 pub fn initialize_personality(ctx: &ReducerContext, character_id: u64, npc: bool) {
@@ -354,7 +385,7 @@ pub fn initialize_personality(ctx: &ReducerContext, character_id: u64, npc: bool
         .is_none()
     {
         let row = if npc {
-            random_personality(character_id, || ctx.random())
+            personality_from_stable_seed(character_id, character_id)
         } else {
             // Non-candidate characters remain behaviorally neutral, but the
             // always-assigned demographic axes must still have real values.
@@ -515,6 +546,31 @@ mod tests {
             });
             assert!((2..=4).contains(&personality.non_neutral_count()));
         }
+    }
+
+    #[test]
+    fn stable_npc_profiles_ignore_generation_order_and_ambient_randomness() {
+        let first = personality_from_stable_seed(77, 0xabc);
+        let _unrelated = personality_from_stable_seed(91, 0xdef);
+        let repeated = personality_from_stable_seed(77, 0xabc);
+        assert_eq!(first.character_id, repeated.character_id);
+        assert_eq!(first.nerve, repeated.nerve);
+        assert_eq!(first.drive, repeated.drive);
+        assert_eq!(first.outlook, repeated.outlook);
+        assert_eq!(first.sociability, repeated.sociability);
+        assert_eq!(first.conscience, repeated.conscience);
+        assert_eq!(first.self_regard, repeated.self_regard);
+        assert_eq!(first.conviction, repeated.conviction);
+        assert_eq!(first.hygiene, repeated.hygiene);
+        assert_eq!(first.temperance, repeated.temperance);
+        assert_eq!(first.mirth, repeated.mirth);
+        assert_eq!(first.courtship, repeated.courtship);
+        assert_eq!(first.transparency, repeated.transparency);
+        assert_eq!(first.self_knowledge, repeated.self_knowledge);
+        assert_eq!(first.sex, repeated.sex);
+        assert_eq!(first.presentation, repeated.presentation);
+        assert_eq!(first.inclination, repeated.inclination);
+        assert_eq!(first.non_neutral_count(), repeated.non_neutral_count());
     }
 
     #[test]

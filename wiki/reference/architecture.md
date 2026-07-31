@@ -107,8 +107,10 @@ The current deployment boundary is intentionally narrow:
 - `strategic-web` holds the registered strategic-gateway identity;
 - browsers submit ordinary HTTP actions to `strategic-web` and never receive a
   SpacetimeDB credential;
-- a selected-character cookie chooses presentation context but is not yet a
-  complete player-to-character authorization model;
+- one signed, opaque `adventuresim_session` bearer cookie identifies a
+  pseudonymous browser owner; character IDs and rosters never enter cookies;
+- private grants bind each generated character to exactly one browser owner,
+  and a private selection row chooses presentation context;
 - non-loopback use therefore requires the explicit insecure-development
   opt-in until account ownership is implemented;
 - tactical dispatch claims are one-use, digest-bound capabilities rather than
@@ -119,14 +121,40 @@ views of contracts, dialogue, investigations, evidence, physiology, and
 case-site knowledge. A public or subscribed row is not automatically safe to
 use as an authorization decision.
 
-The gateway settlement-NPC roster is likewise an explicit player-visible
-projection rather than the authoritative population row. It includes stable
-identity, home settlement, visible description, occupation, household, local
-role, service, and conversation routing. It omits private demographic sex and
-the internal projection traversal key. Browser quest discovery builds its
-candidate and commitment from visible age, presentation, profession, role, and
-presence. Presentation is committed as seen but is not interpreted as private
-sex; the public developer flow leaves that selector empty.
+Every persistent settlement resident is an ordinary full `Character` with one
+authoritative `u64` character ID, the usual component rows, one
+`CharacterTime`, and an `NpcPolicy`. There is no parallel NPC person record or
+string identity. `SettlementResidentProfile`, keyed by that character ID,
+contains only settlement-specific appearance, vocation, service, and
+conversation metadata; presence is keyed by the same ID. Recruitment adds that
+same Character to a party rather than materializing a replacement.
+
+The canonical `Character` table and its identity-bearing durable component
+tables are private. Only the registered strategic gateway may subscribe
+broadly through `BackendCharacters` and the corresponding backend component
+views; tactical servers continue to receive only their `ConnectedPlayer`
+view. This prevents a direct client from enumerating a globally exclusive NPC,
+or detecting a future birth through an otherwise ordinary time, physiology,
+skill, or needs row, while that lifecycle fact is still beyond the selected
+character's personal date. Death receipts and derived morale-source labels are
+private for the same reason: only gateway projections may read them broadly,
+and player-facing death presentation must apply the selected observer's
+personal-date boundary. Strategic web therefore reconstructs `Character.alive`
+for party, remembered-character, and settlement-resident presentation from the
+private death receipt and the selected observer's `CharacterTime`; a missing
+observer frontier is treated as insufficient authority to reveal the broad
+current death state.
+
+The gateway resident roster is an explicit player-visible join over Character,
+private personality, resident profile, and presence authority. It includes the
+decimal character ID, home settlement, visible description, occupation,
+household, local role, service, and conversation routing. It omits private
+demographic sex and the internal projection traversal key. A missing Character
+or private personality component fails closed rather than falling back to
+duplicated profile data. Browser quest discovery builds its candidate and
+commitment from visible age, presentation, profession, role, and presence.
+Presentation is committed as seen but is not interpreted as private sex; the
+public developer flow leaves that selector empty.
 
 ## Strategic web
 
@@ -150,11 +178,27 @@ First-character onboarding is a separate entry surface. The browser tab holds
 a private seed for deterministic candidate previews keyed by life stage.
 Confirmation sends only the generator version, seed, selected age tier, and
 slot; strategic authority regenerates and persists that exact candidate.
-Confirmed or selected character IDs are remembered in a bounded,
-browser-scoped roster cookie. The strategic header resolves only remembered,
-non-temporary rows into its character switcher. Both the roster and
-selected-character cookies are local selectors, not authentication or
-ownership proof.
+Confirmation atomically grants the generated character to the pseudonymous
+browser owner. The strategic header resolves its selected character and roster
+only through the gateway-only `BackendBrowserCharacterAccess` projection.
+Replaying the same deterministic candidate coordinates is idempotent for that
+owner and rejected for every other owner. Switching clears only the server-side
+selection; it does not discard grants or expose IDs in the cookie.
+
+The cookie is
+`v2.<random 32-byte base64url ID>.<issued Unix seconds>.<HMAC-SHA256>` and is
+`HttpOnly`, `SameSite=Lax`, and optionally `Secure`. The signature covers both
+the ID and issue time; the server rejects sessions older than 30 days and issue
+times more than five minutes in the future. The web server derives a
+domain-separated SHA-256 owner key from the verified random ID and never stores
+the raw token in SpacetimeDB. Invalid signatures and expired sessions are
+anonymous; backend resolution failures fail closed.
+
+All browser POST, PUT, PATCH, and DELETE routes in both onboarding and the
+selected-character application require an exact same-origin `Origin` matching
+the request Host and effective HTTP scheme. Missing, opaque (`null`),
+cross-port, cross-scheme, and otherwise foreign origins fail closed. Internal
+strategic navigation is read-only and does not bypass this mutation boundary.
 
 ### First-character authority
 

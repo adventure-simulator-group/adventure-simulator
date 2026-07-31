@@ -16,7 +16,7 @@ pub struct RecruitmentOffer {
     pub source_id: RecruitmentSourceId,
     pub recruiting_party_id: String,
     pub settlement_id: String,
-    pub settlement_npc_id: String,
+    pub settlement_resident_id: u64,
     pub location_id: String,
     pub leader_id: u64,
     pub status: RecruitmentOfferStatus,
@@ -37,7 +37,7 @@ pub struct RecruitmentOfferCols {
     pub source_id: __sdk::__query_builder::Col<RecruitmentOffer, RecruitmentSourceId>,
     pub recruiting_party_id: __sdk::__query_builder::Col<RecruitmentOffer, String>,
     pub settlement_id: __sdk::__query_builder::Col<RecruitmentOffer, String>,
-    pub settlement_npc_id: __sdk::__query_builder::Col<RecruitmentOffer, String>,
+    pub settlement_resident_id: __sdk::__query_builder::Col<RecruitmentOffer, u64>,
     pub location_id: __sdk::__query_builder::Col<RecruitmentOffer, String>,
     pub leader_id: __sdk::__query_builder::Col<RecruitmentOffer, u64>,
     pub status: __sdk::__query_builder::Col<RecruitmentOffer, RecruitmentOfferStatus>,
@@ -57,7 +57,10 @@ impl __sdk::__query_builder::HasCols for RecruitmentOffer {
                 "recruiting_party_id",
             ),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
-            settlement_npc_id: __sdk::__query_builder::Col::new(table_name, "settlement_npc_id"),
+            settlement_resident_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "settlement_resident_id",
+            ),
             location_id: __sdk::__query_builder::Col::new(table_name, "location_id"),
             leader_id: __sdk::__query_builder::Col::new(table_name, "leader_id"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
@@ -74,7 +77,7 @@ pub struct RecruitmentOfferIxCols {
     pub id_key: __sdk::__query_builder::IxCol<RecruitmentOffer, String>,
     pub recruiting_party_id: __sdk::__query_builder::IxCol<RecruitmentOffer, String>,
     pub settlement_id: __sdk::__query_builder::IxCol<RecruitmentOffer, String>,
-    pub settlement_npc_id: __sdk::__query_builder::IxCol<RecruitmentOffer, String>,
+    pub settlement_resident_id: __sdk::__query_builder::IxCol<RecruitmentOffer, u64>,
     pub source_id: __sdk::__query_builder::IxCol<RecruitmentOffer, RecruitmentSourceId>,
 }
 
@@ -88,7 +91,10 @@ impl __sdk::__query_builder::HasIxCols for RecruitmentOffer {
                 "recruiting_party_id",
             ),
             settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
-            settlement_npc_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_npc_id"),
+            settlement_resident_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "settlement_resident_id",
+            ),
             source_id: __sdk::__query_builder::IxCol::new(table_name, "source_id"),
         }
     }

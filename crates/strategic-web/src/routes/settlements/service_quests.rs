@@ -39,7 +39,7 @@ pub(super) struct ApprenticeshipResult {
 
 #[derive(Deserialize)]
 struct ApprenticeshipRepresentativeRow {
-    id: String,
+    character_id: u64,
     home_settlement_id: String,
     organization_id: String,
     conversation_id: String,
@@ -47,7 +47,7 @@ struct ApprenticeshipRepresentativeRow {
 
 #[derive(Deserialize)]
 struct ApprenticeshipRepresentativePresenceRow {
-    npc_id: String,
+    character_id: u64,
     settlement_id: String,
     location_id: String,
 }
@@ -55,14 +55,14 @@ struct ApprenticeshipRepresentativePresenceRow {
 fn exact_apprenticeship_representative_present(
     representative: Option<&ApprenticeshipRepresentativeRow>,
     presences: &[ApprenticeshipRepresentativePresenceRow],
-    expected_id: &str,
+    expected_id: u64,
     settlement_id: &str,
     organization_id: &str,
     effective_location_id: &str,
 ) -> bool {
     representative.is_some_and(|representative| {
         adventuresim_core::organization::exact_representative_fields_match(
-            &representative.id,
+            representative.character_id,
             expected_id,
             &representative.home_settlement_id,
             settlement_id,
@@ -70,7 +70,7 @@ fn exact_apprenticeship_representative_present(
             organization_id,
             &representative.conversation_id,
         ) && presences.iter().any(|presence| {
-            presence.npc_id == representative.id
+            presence.character_id == representative.character_id
                 && presence.settlement_id == settlement_id
                 && presence.location_id == effective_location_id
         })
@@ -112,21 +112,18 @@ pub(super) async fn begin_service_apprenticeship(
     let chapter = organization
         .chapter(&id)
         .expect("chapter iterator guarantees a local chapter");
-    let effective_location_id =
-        adventuresim_core::organization::chapter_effective_location_id(
-            organization,
-            chapter,
-            &settlement.economy,
-        );
-    let representative_id = adventuresim_core::organization::organization_representative_id(
-        &id,
-        &organization.id,
+    let effective_location_id = adventuresim_core::organization::chapter_effective_location_id(
+        organization,
+        chapter,
+        &settlement.economy,
     );
+    let representative_id =
+        adventuresim_core::organization::organization_representative_id(&id, &organization.id);
     let representative = match state
         .db
         .query_one::<ApprenticeshipRepresentativeRow>(&format!(
-            "SELECT * FROM backend_settlement_npcs WHERE id = {}",
-            sql_string_literal(&representative_id)
+            "SELECT * FROM backend_settlement_residents WHERE character_id = {}",
+            representative_id
         ))
         .await
     {
@@ -142,8 +139,8 @@ pub(super) async fn begin_service_apprenticeship(
     let presences = match state
         .db
         .query::<ApprenticeshipRepresentativePresenceRow>(&format!(
-            "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
-            sql_string_literal(&representative_id)
+            "SELECT * FROM settlement_resident_presence WHERE character_id = {}",
+            representative_id
         ))
         .await
     {
@@ -159,7 +156,7 @@ pub(super) async fn begin_service_apprenticeship(
     if exact_apprenticeship_representative_present(
         representative.as_ref(),
         &presences,
-        &representative_id,
+        representative_id,
         &id,
         &organization.id,
         effective_location_id,
@@ -209,12 +206,12 @@ mod apprenticeship_representative_tests {
     use super::*;
 
     fn representative(
-        id: &str,
+        id: u64,
         settlement_id: &str,
         organization_id: &str,
     ) -> ApprenticeshipRepresentativeRow {
         ApprenticeshipRepresentativeRow {
-            id: id.into(),
+            character_id: id,
             home_settlement_id: settlement_id.into(),
             organization_id: organization_id.into(),
             conversation_id: "organization-representative".into(),
@@ -222,12 +219,12 @@ mod apprenticeship_representative_tests {
     }
 
     fn presence(
-        id: &str,
+        id: u64,
         settlement_id: &str,
         location_id: &str,
     ) -> ApprenticeshipRepresentativePresenceRow {
         ApprenticeshipRepresentativePresenceRow {
-            npc_id: id.into(),
+            character_id: id,
             settlement_id: settlement_id.into(),
             location_id: location_id.into(),
         }
@@ -239,16 +236,16 @@ mod apprenticeship_representative_tests {
             "viabundus-0",
             "physicians_college",
         );
-        let representative = representative(&id, "viabundus-0", "physicians_college");
+        let representative = representative(id, "viabundus-0", "physicians_college");
         let presences = [presence(
-            &id,
+            id,
             "viabundus-0",
             "organization-physicians-college",
         )];
         assert!(exact_apprenticeship_representative_present(
             Some(&representative),
             &presences,
-            &id,
+            id,
             "viabundus-0",
             "physicians_college",
             "organization-physicians-college",
@@ -261,19 +258,19 @@ mod apprenticeship_representative_tests {
             "viabundus-0",
             "merchant_guild",
         );
-        let representative = representative(&id, "viabundus-0", "merchant_guild");
+        let representative = representative(id, "viabundus-0", "merchant_guild");
         assert!(!exact_apprenticeship_representative_present(
             Some(&representative),
             &[],
-            &id,
+            id,
             "viabundus-0",
             "merchant_guild",
             "market",
         ));
         assert!(!exact_apprenticeship_representative_present(
             Some(&representative),
-            &[presence(&id, "viabundus-0", "forge")],
-            &id,
+            &[presence(id, "viabundus-0", "forge")],
+            id,
             "viabundus-0",
             "merchant_guild",
             "market",
@@ -431,7 +428,7 @@ pub(super) async fn service_quest_offers(
         .unwrap_or_default();
     let characters: Vec<Character> = state
         .db
-        .query("SELECT * FROM character")
+        .query("SELECT * FROM backend_characters")
         .await
         .unwrap_or_default();
     let viewer_party_id = active_party.as_ref().map(|party| party.id.as_str());
@@ -453,7 +450,7 @@ pub(super) async fn service_quest_offers(
         if let Some(capability) = state
             .db
             .query::<CharacterCapability>(&format!(
-                "SELECT * FROM character_capability WHERE character_id = {character_id}"
+                "SELECT * FROM backend_character_capabilities WHERE character_id = {character_id}"
             ))
             .await
             .unwrap_or_default()
@@ -657,7 +654,7 @@ mod bestiary_quest_presentation_tests {
             xp_reward: 20,
             settlement_id: "s".into(),
             service_id: "inn".into(),
-            issuer_npc_id: String::new(),
+            issuer_resident_character_id: String::new(),
             status: ContractPresentationStatus::Offered,
             accepted_by: None,
             opposition_wording: opposition_wording.into(),

@@ -9,7 +9,7 @@ pub struct LocalChatMessage {
     #[index(btree)]
     pub audience_party_id: String,
     pub other_party_id: String,
-    pub npc_id: String,
+    pub resident_character_id: Option<u64>,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -22,7 +22,7 @@ pub struct BackendLocalChatMessage {
     pub owner_character_id: u64,
     pub conversation_kind: String,
     pub subject_party_id: String,
-    pub subject_npc_id: String,
+    pub subject_resident_character_id: Option<u64>,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -44,26 +44,27 @@ fn project_local_chat_message(
     other_viewers: &[u64],
 ) -> Vec<BackendLocalChatMessage> {
     let mut projections = Vec::new();
-    let mut push = |owner_character_id, conversation_kind, subject_party_id, subject_npc_id| {
-        projections.push(BackendLocalChatMessage {
-            id: row.id,
-            owner_character_id,
-            conversation_kind,
-            subject_party_id,
-            subject_npc_id,
-            sender_id: row.sender_id,
-            sender_name: row.sender_name.clone(),
-            body: row.body.clone(),
-            created_micros: row.created_micros,
-        });
-    };
-    if row.npc_id.is_empty() {
+    let mut push =
+        |owner_character_id, conversation_kind, subject_party_id, subject_resident_character_id| {
+            projections.push(BackendLocalChatMessage {
+                id: row.id,
+                owner_character_id,
+                conversation_kind,
+                subject_party_id,
+                subject_resident_character_id,
+                sender_id: row.sender_id,
+                sender_name: row.sender_name.clone(),
+                body: row.body.clone(),
+                created_micros: row.created_micros,
+            });
+        };
+    if row.resident_character_id.is_none() {
         for &owner_character_id in audience_viewers {
             push(
                 owner_character_id,
                 "player".into(),
                 row.other_party_id.clone(),
-                String::new(),
+                None,
             );
         }
         if row.other_party_id != row.audience_party_id {
@@ -72,7 +73,7 @@ fn project_local_chat_message(
                     owner_character_id,
                     "player".into(),
                     row.audience_party_id.clone(),
-                    String::new(),
+                    None,
                 );
             }
         }
@@ -82,7 +83,7 @@ fn project_local_chat_message(
                 owner_character_id,
                 "npc".into(),
                 String::new(),
-                row.npc_id.clone(),
+                row.resident_character_id,
             );
         }
     }
@@ -100,7 +101,7 @@ pub fn backend_local_chat_messages(ctx: &ViewContext) -> Vec<BackendLocalChatMes
         .filter(0u8)
         .flat_map(|row| {
             let audience_viewers = local_chat_party_viewer_ids(ctx, &row.audience_party_id);
-            let other_viewers = if row.npc_id.is_empty() {
+            let other_viewers = if row.resident_character_id.is_none() {
                 local_chat_party_viewer_ids(ctx, &row.other_party_id)
             } else {
                 Vec::new()
@@ -483,7 +484,7 @@ fn require_live_dialogue_presence(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
-) -> Result<crate::settlement_population::SettlementNpc, String> {
+) -> Result<crate::settlement_population::SettlementResidentProfile, String> {
     require_navigable_npc_location(ctx, &session.settlement_id, &session.location_id)?;
     let character = ctx
         .db
@@ -515,17 +516,21 @@ fn require_live_dialogue_presence(
         .map_or(720, |time| time.minutes);
     let mut primary = None;
     for participant in npc_participants {
+        let npc_character_id = participant
+            .actor_id
+            .parse::<u64>()
+            .map_err(|_| "Dialogue NPC identity is invalid")?;
         let npc = ctx
             .db
-            .settlement_npc()
-            .id()
-            .find(&participant.actor_id)
+            .settlement_resident_profile()
+            .character_id()
+            .find(npc_character_id)
             .ok_or("Dialogue NPC is no longer authoritative")?;
         let presence = ctx
             .db
-            .settlement_npc_presence()
-            .npc_id()
-            .find(&npc.id)
+            .settlement_resident_presence()
+            .character_id()
+            .find(npc.character_id)
             .ok_or("Dialogue NPC has no authoritative presence")?;
         if npc.home_settlement_id != session.settlement_id
             || presence.settlement_id != session.settlement_id
@@ -534,8 +539,7 @@ fn require_live_dialogue_presence(
         {
             return Err("Dialogue NPC is not present at the session location and time".into());
         }
-        if (npc.organization_id.is_empty()
-            && npc.conversation_id == "organization-representative")
+        if (npc.organization_id.is_empty() && npc.conversation_id == "organization-representative")
             || (!npc.organization_id.is_empty()
                 && exact_organization_representative(
                     ctx,

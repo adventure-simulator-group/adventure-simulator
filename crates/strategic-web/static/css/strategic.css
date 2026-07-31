@@ -2406,45 +2406,203 @@ body.character-action-dialog-open { overflow: hidden; }
   display: inline-grid;
 }
 
-.settlement-npc-social-button {
-  position: absolute;
-  z-index: 2;
-  right: -.35rem;
-  bottom: .85rem;
-  display: grid;
-  width: 1.8rem;
-  height: 1.8rem;
-  padding: .25rem;
-  border: 1px solid var(--border-light);
+.dialogue-context-topics {
+  display: flex;
+  gap: .45rem;
+  justify-content: center;
+  margin: .45rem 0;
+}
+
+.dialogue-context-topic,
+.residence-icon-action {
+  display: inline-grid;
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: .42rem;
+  border: 1px solid var(--border-accent);
   border-radius: 50%;
   place-items: center;
   background: var(--tactile-background);
   box-shadow: var(--tactile-shadow);
   color: inherit;
   cursor: pointer;
-  opacity: 0;
-  transform: translateY(.2rem);
-  transition: opacity .12s ease, transform .12s ease;
 }
 
-.settlement-npc-portrait-shell:hover .settlement-npc-social-button,
-.settlement-npc-portrait-shell:focus-within .settlement-npc-social-button {
-  opacity: 1;
-  transform: translateY(0);
+.dialogue-context-topic:hover,
+.residence-icon-action:hover { border-color: var(--accent-gold-light); }
+
+.dialogue-context-topic:focus-visible,
+.dialogue-context-response:focus-visible,
+.residence-icon-action:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
 }
 
-.settlement-npc-social-button .stat-icon { width: 1rem; height: 1rem; }
-.settlement-npc-social-button:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.dialogue-context-topic .game-icon,
+.residence-icon-action .game-icon { width: 1.1rem; height: 1.1rem; }
+.dialogue-context-topic-romance { color: #e9a6ad; }
 
-.npc-social-summary {
-  justify-self: center;
-  padding: .35rem .65rem;
+.dialogue-context-prompt {
+  margin: .35rem 0 .6rem;
+  padding: .55rem;
   border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 14%);
+}
+
+.dialogue-context-responses { display: grid; gap: .4rem; }
+
+.dialogue-context-response {
+  display: grid;
+  grid-template-columns: 1.35rem 1fr;
+  gap: .5rem;
+  align-items: center;
+  width: 100%;
+  padding: .45rem .6rem;
+  border: 1px solid var(--border-light);
   border-radius: var(--radius);
   background: var(--tactile-background);
   color: inherit;
   cursor: pointer;
+  text-align: left;
 }
+
+.dialogue-context-response:hover { border-color: var(--accent-gold-light); }
+.dialogue-context-response .game-icon { width: 1.15rem; height: 1.15rem; }
+
+.npc-relationship-vitals {
+  display: flex;
+  gap: .55rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: .45rem;
+}
+
+.npc-relationship-vital {
+  --relationship-color: var(--accent-gold-light);
+  display: inline-grid;
+  grid-template-columns: 1rem 2.75rem;
+  gap: .3rem;
+  align-items: center;
+}
+
+.npc-relationship-affinity { --relationship-color: #cf707b; }
+.npc-relationship-familiarity { --relationship-color: #6ca5cf; }
+.npc-relationship-morale { --relationship-color: #d7b650; }
+.npc-relationship-vital .game-icon { width: .95rem; height: .95rem; color: var(--relationship-color); }
+
+.npc-relationship-meter,
+.residence-meter-track,
+.household-progress-track {
+  display: block;
+  height: .38rem;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 28%);
+}
+
+.npc-relationship-meter > span,
+.residence-meter-fill,
+.household-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--relationship-color, var(--accent-gold-light));
+}
+
+.npc-relationship-state {
+  display: inline-grid;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: .28rem;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  place-items: center;
+  color: #e9a6ad;
+}
+
+.npc-relationship-state .game-icon { width: .9rem; height: .9rem; }
+.npc-wedding-progress { background: linear-gradient(90deg, rgb(212 170 83 / 32%) var(--wedding-progress), transparent var(--wedding-progress)); }
+
+.residence-offer-grid {
+  display: grid;
+  gap: .65rem;
+  margin-top: .75rem;
+}
+
+.residence-offer {
+  display: grid;
+  gap: .35rem;
+  padding: .65rem;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 12%);
+}
+
+.residence-offer-heading {
+  display: flex;
+  gap: .45rem;
+  align-items: center;
+}
+
+.residence-offer-heading .game-icon { width: 1.2rem; height: 1.2rem; }
+
+.residence-meter-list { display: grid; gap: .35rem; }
+.residence-meter {
+  --relationship-color: var(--accent-gold-light);
+  display: grid;
+  grid-template-columns: 1.1rem 1fr;
+  gap: .4rem;
+  align-items: center;
+  min-height: 1.15rem;
+}
+
+.residence-meter-rent { --relationship-color: #79a9d1; }
+.residence-meter-purchase { --relationship-color: #d8b355; }
+.residence-meter-upkeep { --relationship-color: #c98367; }
+.residence-meter-leisure { --relationship-color: #73b987; }
+.residence-meter .game-icon { width: 1rem; height: 1rem; color: var(--relationship-color); }
+.residence-meter-actions,
+.residence-holding-actions { display: flex; gap: .35rem; margin: 0; }
+.residence-icon-action-danger { color: #e18484; }
+
+.residence-holding-list,
+.household-visual { display: grid; gap: .5rem; }
+.residence-holding { display: grid; gap: .4rem; padding: .5rem; border-bottom: 1px solid var(--border-light); }
+.residence-holding-heading,
+.household-member { display: flex; gap: .4rem; align-items: center; }
+.residence-holding-heading .game-icon,
+.household-member > .game-icon { width: 1.05rem; height: 1.05rem; flex: 0 0 auto; }
+.residence-holding-states { display: flex; gap: .3rem; align-items: center; margin-left: auto; }
+.residence-holding-state { display: inline-grid; width: 1.35rem; height: 1.35rem; place-items: center; }
+.residence-holding-state .game-icon { width: .9rem; height: .9rem; }
+.residence-holding-state-inactive { color: #e18484; }
+
+.household-visual {
+  margin-top: .7rem;
+  padding: .6rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 10%);
+}
+
+.household-member-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.household-member-state { margin-left: auto; }
+.household-member-state .game-icon { width: 1rem; height: 1rem; }
+.household-progress { display: grid; grid-template-columns: 1rem 1fr; gap: .4rem; align-items: center; flex: 1 1 7rem; }
+.household-progress > .game-icon { width: 1rem; height: 1rem; }
+.household-wedding { --relationship-color: #d8b355; }
+.household-pregnancy { --relationship-color: #cf707b; }
+.household-child { display: grid; gap: .3rem; }
+.household-maturity { --relationship-color: #73b987; }
+.household-child-stage-early .household-maturity { --relationship-color: #79a9d1; }
+.household-child-stage-middle .household-maturity { --relationship-color: #73b987; }
+.household-child-stage-adolescent .household-maturity { --relationship-color: #d8b355; }
+.household-child-stage-adult .household-maturity { --relationship-color: #b58bd0; }
+
+.residence-offer form { margin: 0; }
+.residence-notice { color: var(--accent-gold-light); }
 
 .settlement-npc-portrait:is(.active, [aria-pressed="true"]) .party-portrait-initial {
   box-shadow:

@@ -81,11 +81,11 @@ pub(super) async fn party_religion_knowledge_check(
     };
     let mut checks = Vec::with_capacity(party_members.len());
     for member in living_party_member_refs(party_members) {
-        let skills = query_single::<CharacterSkills>(state, "character_skills", member.id).await;
+        let skills = query_single::<CharacterSkills>(state, "backend_character_skills", member.id).await;
         let attributes =
-            query_single::<CharacterAttributes>(state, "character_attributes", member.id).await;
-        let limbs = query_single::<CharacterLimbs>(state, "character_limbs", member.id).await;
-        let stats = query_single::<CharacterStats>(state, "character_stats", member.id).await;
+            query_single::<CharacterAttributes>(state, "backend_character_attributes", member.id).await;
+        let limbs = query_single::<CharacterLimbs>(state, "backend_character_limbs", member.id).await;
+        let stats = query_single::<CharacterStats>(state, "backend_character_stats", member.id).await;
         if let (Some(skills), Some(attributes), Some(limbs), Some(stats)) =
             (skills, attributes, limbs, stats)
         {

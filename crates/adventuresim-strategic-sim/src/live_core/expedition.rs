@@ -10,7 +10,7 @@ impl LiveRunner {
             .filter(|member| {
                 self.connection
                     .db
-                    .character()
+                    .backend_characters()
                     .iter()
                     .find(|row| row.id == member.character_id)
                     .is_some_and(|row| row.alive)
@@ -35,14 +35,14 @@ impl LiveRunner {
                 let alive = self
                     .connection
                     .db
-                    .character()
+                    .backend_characters()
                     .iter()
                     .find(|row| row.id == id)
                     .is_some_and(|row| row.alive);
                 let ready = self
                     .connection
                     .db
-                    .character_strategic_condition()
+                    .backend_character_strategic_conditions()
                     .iter()
                     .find(|row| row.character_id == id)
                     .is_some_and(|row| row.status == "ready")
@@ -85,14 +85,14 @@ impl LiveRunner {
                 let character = self
                     .connection
                     .db
-                    .character()
+                    .backend_characters()
                     .iter()
                     .find(|row| row.id == character_id)
                     .ok_or("expedition member projection is unavailable")?;
                 let condition = self
                     .connection
                     .db
-                    .character_strategic_condition()
+                    .backend_character_strategic_conditions()
                     .iter()
                     .find(|row| row.character_id == character_id);
                 let illness = self
@@ -104,7 +104,7 @@ impl LiveRunner {
                 let elapsed_minutes = self
                     .connection
                     .db
-                    .character_time()
+                    .backend_character_times()
                     .iter()
                     .find(|row| row.character_id == character_id)
                     .map_or(0, |row| row.minutes);
@@ -169,7 +169,7 @@ impl LiveRunner {
         let carried_water_ml = self
             .connection
             .db
-            .character_needs()
+            .backend_character_needs()
             .iter()
             .filter(|needs| member_ids.contains(&needs.character_id))
             .map(|needs| needs.carried_water_ml.max(0.0))

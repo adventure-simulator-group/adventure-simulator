@@ -27,6 +27,16 @@ pub struct Config {
     #[arg(long, env = "SPACETIMEDB_TOKEN")]
     pub spacetimedb_token: Option<String>,
 
+    /// Exactly 32 random bytes encoded as unpadded base64url. Required because
+    /// browser ownership must never fall back to unsigned character IDs.
+    #[arg(long, env = "STRATEGIC_SESSION_SECRET")]
+    pub strategic_session_secret: String,
+
+    /// Add the Secure attribute to the opaque browser-session cookie. Enable
+    /// this whenever the gateway is served over HTTPS.
+    #[arg(long, env = "STRATEGIC_SESSION_COOKIE_SECURE", default_value_t = false)]
+    pub strategic_session_cookie_secure: bool,
+
     /// Address to bind the web server to. Loopback is the safe default because
     /// character selection is not user authentication.
     #[arg(long, env = "BIND_ADDRESS", default_value = "127.0.0.1:8080")]
@@ -90,6 +100,8 @@ mod tests {
             spacetimedb_host: String::new(),
             spacetimedb_database: String::new(),
             spacetimedb_token: None,
+            strategic_session_secret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+            strategic_session_cookie_secure: false,
             bind_address: bind_address.into(),
             allow_insecure_non_loopback_bind: allow,
             static_dir: String::new(),

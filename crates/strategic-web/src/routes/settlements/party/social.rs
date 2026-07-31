@@ -18,9 +18,7 @@ pub(super) async fn party_social(
     let selected = if target_id == active.id {
         active.clone()
     } else {
-        match state
-            .db
-            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {target_id}"))
+        match crate::routes::data::character_as_observed(&state, target_id, active.id)
             .await
             .ok()
             .flatten()
@@ -56,7 +54,7 @@ pub(super) async fn party_social(
     let target_condition_result = state
         .db
         .query_one::<CharacterCondition>(&format!(
-            "SELECT * FROM character_condition WHERE character_id = {target_id}"
+            "SELECT * FROM backend_character_conditions WHERE character_id = {target_id}"
         ))
         .await;
     let religion_id = target_condition_result
@@ -71,7 +69,7 @@ pub(super) async fn party_social(
     let infamy = reputation
         .as_ref()
         .map_or(0.0, |value| value.infamy as f32 / 100.0);
-    let target_minute = query_single::<CharacterTime>(&state, "character_time", target_id)
+    let target_minute = query_single::<CharacterTime>(&state, "backend_character_times", target_id)
         .await
         .map_or(0, |v| v.minutes);
     let affinity_id = format!("{target_id}:{}", active.id);
@@ -169,7 +167,7 @@ pub(super) async fn party_social(
     let actor_skills_result = state
         .db
         .query_one::<CharacterSkills>(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {}",
+            "SELECT * FROM backend_character_skills WHERE character_id = {}",
             active.id
         ))
         .await;
@@ -283,13 +281,14 @@ pub(super) struct SocialActionForm {
 
 #[derive(Deserialize)]
 pub(super) struct CasualChatForm {
-    requested_minutes: u64,
-    action_id: String,
+    requested_minutes: SocialDuration,
+    action_id: SocialActionId,
 }
 
 #[derive(Deserialize)]
 pub(super) struct BackendSocialChatReceiptRow {
-    outcome: String,
+    #[serde(deserialize_with = "crate::spacetimedb::deserialize_social_chat_outcome")]
+    outcome: SocialChatOutcome,
 }
 
 #[derive(Deserialize)]
@@ -378,18 +377,6 @@ pub(super) async fn perform_social_action(
     .into_response()
 }
 
-pub(super) fn valid_casual_chat_minutes(minutes: u64) -> bool {
-    (15..=8 * 60).contains(&minutes) && minutes % 15 == 0
-}
-
-pub(super) fn valid_casual_chat_action_id(action_id: &str) -> bool {
-    !action_id.is_empty()
-        && action_id.len() <= 96
-        && action_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-}
-
 pub(super) async fn chat_with_party_member(
     State(state): State<AppState>,
     Path((kind, id, target_id)): Path<(String, String, u64)>,
@@ -400,16 +387,6 @@ pub(super) async fn chat_with_party_member(
     let Some(actor_id) = session.character_id_u64() else {
         return (StatusCode::UNAUTHORIZED, "Choose a character first").into_response();
     };
-    if !valid_casual_chat_minutes(form.requested_minutes) {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Choose 15 minutes to 8 hours in 15-minute increments",
-        )
-            .into_response();
-    }
-    if !valid_casual_chat_action_id(&form.action_id) {
-        return (StatusCode::BAD_REQUEST, "Invalid conversation action ID").into_response();
-    }
     let result = state
         .db
         .call(
@@ -417,8 +394,8 @@ pub(super) async fn chat_with_party_member(
             &[
                 json!(actor_id),
                 json!(target_id),
-                json!(form.requested_minutes),
-                json!(&form.action_id),
+                json!(form.requested_minutes.minutes()),
+                json!(form.action_id.as_str()),
             ],
         )
         .await;
@@ -427,16 +404,15 @@ pub(super) async fn chat_with_party_member(
             .db
             .query_one::<BackendSocialChatReceiptRow>(&format!(
                 "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {actor_id}",
-                sql_string_literal(&format!("{actor_id}:{}", form.action_id))
+                sql_string_literal(&format!("{actor_id}:{}", form.action_id.as_str()))
             ))
             .await
             .ok()
             .flatten()
-            .map_or("chat_unavailable", |row| match row.outcome.as_str() {
-                "positive" => "chat_positive",
-                "mixed" => "chat_mixed",
-                "negative" => "chat_negative",
-                _ => "chat_unavailable",
+            .map_or("chat_unavailable", |row| match row.outcome {
+                SocialChatOutcome::Positive => "chat_positive",
+                SocialChatOutcome::Mixed => "chat_mixed",
+                SocialChatOutcome::Negative => "chat_negative",
             }),
         Err(error) => {
             tracing::warn!(%error, actor_id, target_id, "casual party chat rejected");

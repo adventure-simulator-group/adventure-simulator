@@ -50,7 +50,7 @@ use crate::{
     organization::organization_presentation,
     repair::{item_condition, settlement_smith},
     settlement_population::{
-        settlement_npc, settlement_npc_presence, settlement_npc_seed_explanation,
+        settlement_resident_profile, settlement_resident_presence, settlement_resident_seed_explanation,
     },
     tactical::{
         tactical_server_authority, tactical_server_claim, tactical_server_request_authority,

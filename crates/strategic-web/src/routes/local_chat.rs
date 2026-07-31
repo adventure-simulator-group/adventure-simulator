@@ -69,13 +69,13 @@ struct LocationQuery {
 
 #[derive(Deserialize)]
 struct LocalNpcRow {
-    id: String,
+    character_id: u64,
     home_settlement_id: String,
 }
 
 #[derive(Deserialize)]
 struct LocalNpcPresenceRow {
-    npc_id: String,
+    character_id: u64,
     settlement_id: String,
     location_id: String,
     start_minute: u16,
@@ -90,7 +90,7 @@ fn npc_authority_matches(
     minute: u64,
 ) -> bool {
     let minute = (minute % 1_440) as u16;
-    npc.id == presence.npc_id
+    npc.character_id == presence.character_id
         && npc.home_settlement_id == settlement_id
         && presence.settlement_id == settlement_id
         && presence.location_id == requested_location_id
@@ -131,7 +131,9 @@ async fn actor_and_selector(
 ) -> Result<(Character, ConversationSelector), String> {
     let actor = state
         .db
-        .query::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {actor_id}"
+        ))
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -161,17 +163,12 @@ async fn actor_and_selector(
             ) {
                 return Err("NPC is not local".into());
             }
-            if subject_id.chars().count() > 160
-                || subject_id.chars().any(char::is_control)
-                || subject_id.is_empty()
-            {
-                return Err("NPC is not local".into());
-            }
+            let resident_character_id =
+                subject_id.parse::<u64>().map_err(|_| "NPC is not local")?;
             let npc = state
                 .db
                 .query_one::<LocalNpcRow>(&format!(
-                    "SELECT * FROM backend_settlement_npcs WHERE id = {}",
-                    sql_string_literal(subject_id)
+                    "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
                 ))
                 .await
                 .map_err(|error| error.to_string())?
@@ -179,8 +176,7 @@ async fn actor_and_selector(
             let presence = state
                 .db
                 .query_one::<LocalNpcPresenceRow>(&format!(
-                    "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
-                    sql_string_literal(subject_id)
+                    "SELECT * FROM settlement_resident_presence WHERE character_id = {resident_character_id}"
                 ))
                 .await
                 .map_err(|error| error.to_string())?
@@ -188,7 +184,7 @@ async fn actor_and_selector(
             let minute = state
                 .db
                 .query_one::<CharacterTime>(&format!(
-                    "SELECT * FROM character_time WHERE character_id = {}",
+                    "SELECT * FROM backend_character_times WHERE character_id = {}",
                     actor.id
                 ))
                 .await
@@ -204,14 +200,16 @@ async fn actor_and_selector(
                 return Err("Player conversations do not accept an NPC location".into());
             }
             let id: u64 = subject_id.parse().map_err(|_| "Invalid player")?;
-            let subject = state
-                .db
-                .query::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+            let subject = super::data::character_as_observed(state, id, actor.id)
                 .await
                 .map_err(|e| e.to_string())?
-                .into_iter()
-                .next()
-                .ok_or("Player not found")?;
+                .ok_or("Player is not available at your personal date")?;
+            if !super::data::characters_share_frontier(state, actor.id, subject.id)
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                return Err("Player is not at this location".into());
+            }
             let actor_site = character_case_site_id(state, actor.id).await?;
             let subject_site = character_case_site_id(state, subject.id).await?;
             if actor.current_settlement_id != subject.current_settlement_id
@@ -242,9 +240,9 @@ async fn messages(
             .await
             .map_err(|e| (StatusCode::FORBIDDEN, e))?;
     let selector_filter = match &selector {
-        ConversationSelector::Npc(npc_id) => format!(
-            "conversation_kind = 'npc' AND subject_npc_id = {}",
-            sql_string_literal(npc_id)
+        ConversationSelector::Npc(resident_character_id) => format!(
+            "conversation_kind = 'npc' AND subject_resident_character_id = {}",
+            sql_string_literal(resident_character_id)
         ),
         ConversationSelector::PlayerParty(party_id) => format!(
             "conversation_kind = 'player' AND subject_party_id = {}",
@@ -315,7 +313,9 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
     };
     let Some(actor) = state
         .db
-        .query::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {actor_id}"
+        ))
         .await
         .ok()
         .and_then(|characters| characters.into_iter().next())
@@ -335,11 +335,6 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
         .unwrap_or_default();
     let own: std::collections::HashSet<u64> =
         memberships.into_iter().map(|m| m.character_id).collect();
-    let characters = state
-        .db
-        .query::<Character>("SELECT * FROM character")
-        .await
-        .unwrap_or_default();
     let all_messages = state
         .db
         .query::<BackendLocalChatMessage>(&format!(
@@ -361,21 +356,30 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
     for id in ids.iter().copied().take(MAX_INCOMING_PLAYERS) {
         candidate_sites.insert(id, character_case_site_id(&state, id).await.ok().flatten());
     }
-    Json(
-        characters
-            .into_iter()
-            .filter(|c| {
-                ids.contains(&c.id)
-                    && c.current_settlement_id == actor.current_settlement_id
-                    && candidate_sites.get(&c.id) == Some(&actor_site)
-            })
-            .take(MAX_INCOMING_PLAYERS)
-            .map(|c| IncomingPlayer {
-                id: c.id.to_string(),
-                name: c.name,
-            })
-            .collect(),
-    )
+    let mut visible = Vec::new();
+    for id in ids.into_iter().take(MAX_INCOMING_PLAYERS) {
+        let synchronized = super::data::characters_share_frontier(&state, actor.id, id)
+            .await
+            .unwrap_or(false);
+        let candidate = if synchronized {
+            super::data::character_as_observed(&state, id, actor.id)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        if let Some(candidate) = candidate
+            && candidate.current_settlement_id == actor.current_settlement_id
+            && candidate_sites.get(&candidate.id) == Some(&actor_site)
+        {
+            visible.push(IncomingPlayer {
+                id: candidate.id.to_string(),
+                name: candidate.name,
+            });
+        }
+    }
+    Json(visible)
 }
 
 #[cfg(test)]
@@ -384,6 +388,30 @@ mod tests {
         LocalNpcPresenceRow, LocalNpcRow, npc_authority_matches, npc_history_location_is_navigable,
     };
     use crate::spacetimedb::SettlementCategory;
+
+    #[test]
+    fn player_chat_co_location_requires_equal_personal_frontiers() {
+        let source = include_str!("local_chat.rs");
+        let selector = source
+            .split("async fn actor_and_selector")
+            .nth(1)
+            .unwrap()
+            .split("async fn messages")
+            .next()
+            .unwrap();
+        assert!(selector.contains("character_as_observed(state, id, actor.id)"));
+        assert!(selector.contains("characters_share_frontier(state, actor.id, subject.id)"));
+
+        let incoming = source
+            .split("async fn incoming")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(incoming.contains("characters_share_frontier(&state, actor.id, id)"));
+        assert!(!incoming.contains(".query::<Character>(\"SELECT * FROM backend_characters\")"));
+    }
 
     #[test]
     fn hidden_npc_locations_cannot_authorize_chat_history() {
@@ -438,11 +466,11 @@ mod tests {
     #[test]
     fn riverdale_inn_npc_chain_uses_authority_not_encoded_id_shape() {
         let npc = LocalNpcRow {
-            id: "npc:riverdale:inn:0".into(),
+            character_id: 41,
             home_settlement_id: "riverdale".into(),
         };
         let mut presence = LocalNpcPresenceRow {
-            npc_id: npc.id.clone(),
+            character_id: npc.character_id,
             settlement_id: "riverdale".into(),
             location_id: "inn".into(),
             start_minute: 0,
@@ -495,8 +523,12 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("async fn messages").next())
             .expect("local chat authority handler");
-        assert!(local_route.contains("SELECT * FROM backend_settlement_npcs WHERE id = {}"));
-        assert!(local_route.contains("SELECT * FROM settlement_npc_presence WHERE npc_id = {}"));
+        assert!(local_route.contains(
+            "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
+        ));
+        assert!(local_route.contains(
+            "SELECT * FROM settlement_resident_presence WHERE character_id = {resident_character_id}"
+        ));
         assert!(
             include_str!("local_chat.rs").contains("presence.location_id == requested_location_id")
         );

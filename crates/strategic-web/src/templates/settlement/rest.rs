@@ -128,14 +128,33 @@ pub fn rest_result_page(
     party_members: &[Character],
     logged_in_as: Option<&str>,
     at_inn: bool,
+    at_residence: bool,
     summary: &RestSummary,
     soap_preview: SoapRestPreview,
 ) -> Markup {
     service_page(
         settlement,
-        if at_inn { "inn" } else { "religion" },
-        if at_inn { "The Inn" } else { "Church" },
-        if at_inn { "Innkeeper" } else { "Priest" },
+        if at_inn {
+            "inn"
+        } else if at_residence {
+            "residences"
+        } else {
+            "religion"
+        },
+        if at_inn {
+            "The Inn"
+        } else if at_residence {
+            "Home"
+        } else {
+            "Church"
+        },
+        if at_inn {
+            "Innkeeper"
+        } else if at_residence {
+            "Household"
+        } else {
+            "Priest"
+        },
         "",
         active_character,
         inventory,
@@ -149,7 +168,7 @@ pub fn rest_result_page(
     )
 }
 
-pub(super) fn rest_service_menu(
+pub(crate) fn rest_service_menu(
     location: &str,
     settlement_id: &str,
     kind: &str,
@@ -161,12 +180,14 @@ pub(super) fn rest_service_menu(
     section class="rest-service-menu" aria-label=(format!("{} rest service", location))
         data-live-refresh-url=(format!(
             "/settlements/{settlement_id}/{}",
-            if kind == "inn" { "inn" } else { "religion" }
+            if kind == "inn" { "inn" } else if kind == "residence" { "places/residences" } else { "religion" }
         ))
-        title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
+        title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else if kind == "residence" { "An active local residence provides full board through its recurring upkeep." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
             p class="rest-service-copy" { "2 coin / day · meals + water + treatment included" }
+        } @else if kind == "residence" {
+            p class="rest-service-copy" { "Home provides meals, water, and treatment." }
         } @else {
             p class="rest-service-copy" { "Free · treatment included" }
         }
@@ -285,6 +306,8 @@ fn wake_time_rest_duration_control(
                 button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration" data-rest-step="1" { "+" }
             }
             input type="hidden" name="requested_minutes" disabled[!hours_active] data-rest-exact-minutes;
+            input type="hidden" name="advance_development_clock" value="true" disabled
+                data-developer-mode-input;
         }
     }
 }

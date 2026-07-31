@@ -46,7 +46,7 @@ pub struct ErrantryAuthority {
     pub case_id: String,
     pub contract_id: String,
     pub issuer_organization_id: String,
-    pub issuer_npc_id: String,
+    pub issuer_resident_character_id: u64,
     pub issuer_settlement_id: String,
     pub issuer_location_id: String,
     pub finale_case_site_id: String,
@@ -801,9 +801,9 @@ pub fn submit_ordered_sigil_challenge(
     }
     let issuer = ctx
         .db
-        .settlement_npc()
-        .id()
-        .find(&errantry.issuer_npc_id)
+        .settlement_resident_profile()
+        .character_id()
+        .find(errantry.issuer_resident_character_id)
         .ok_or("Errantry issuer is no longer a live representative")?;
     let issuer_organization = adventuresim_core::organization::organization(
         &errantry.issuer_organization_id,
@@ -1115,7 +1115,7 @@ fn errantry_suffix(character_id: u64, ordinal: u64, launch: ErrantryLaunch) -> S
 fn order_errantry_issuer(
     ctx: &ReducerContext,
 ) -> Option<(
-    crate::settlement_population::SettlementNpc,
+    crate::settlement_population::SettlementResidentProfile,
     String,
     String,
 )> {
@@ -1133,7 +1133,11 @@ fn order_errantry_issuer(
             &chapter.settlement_id,
             ERRANTRY_ISSUER_ORGANIZATION_ID,
         );
-        let npc = ctx.db.settlement_npc().id().find(&expected_id)?;
+        let npc = ctx
+            .db
+            .settlement_resident_profile()
+            .character_id()
+            .find(expected_id)?;
         (exact_organization_representative(
             ctx,
             &npc,
@@ -1239,7 +1243,7 @@ fn materialize_order_errantry(
     ctx: &ReducerContext,
     character_id: u64,
     issuer_override: Option<(
-        crate::settlement_population::SettlementNpc,
+        crate::settlement_population::SettlementResidentProfile,
         String,
         String,
     )>,
@@ -1355,7 +1359,7 @@ fn materialize_order_errantry(
         xp_reward: 0,
         settlement_id: issuer_settlement_id.clone(),
         service_id: "errantry:order_saint_george".into(),
-        issuer_npc_id: issuer.id.clone(),
+        issuer_resident_character_id: issuer.character_id,
         status: ContractStatus::Accepted,
         accepted_by: Some(party_id.clone()),
         opposition_wording: "an enchanted gate".into(),
@@ -1453,7 +1457,7 @@ fn materialize_order_errantry(
         case_id: case_id.clone(),
         contract_id: contract_id.clone(),
         issuer_organization_id: ERRANTRY_ISSUER_ORGANIZATION_ID.into(),
-        issuer_npc_id: issuer.id,
+        issuer_resident_character_id: issuer.character_id,
         issuer_settlement_id,
         issuer_location_id,
         finale_case_site_id: case_site_id.clone(),

@@ -4,6 +4,7 @@ use crate::attribute::PlayerAttributes;
 use crate::equipment::WeaponSkillDistribution;
 use crate::organization::{OrganizationDefinition, TrainingTarget};
 use crate::skill::{Skill, apply_direct_training};
+use crate::social::Transparency;
 use crate::{
     activity::*,
     strategic_time::{MINUTES_PER_DAY, training_hours_increment},
@@ -122,6 +123,10 @@ pub struct DailySchedule {
     pub combat_training_minutes: u16,
     /// Social recreation which trains Charm at the activity rate.
     pub carousing_minutes: u16,
+    /// Deliberate conversation with one selected relationship target. Its
+    /// relationship resolution is strategic-module state, but it consumes
+    /// discretionary time and therefore cannot also be restorative Leisure.
+    pub socializing_minutes: u16,
     /// Supervised work in an unlocked profession.
     pub apprenticeship_minutes: u16,
     /// Independent paid professional work, available at Journeyman rank.
@@ -141,6 +146,7 @@ impl DailySchedule {
             self.raiding,
             self.combat_training_minutes,
             self.carousing_minutes,
+            self.socializing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
             self.reading_minutes,
@@ -168,6 +174,52 @@ pub fn restorative_leisure_minutes(
     };
     cumulative(interval_start_minute.saturating_add(elapsed_minutes))
         .saturating_sub(cumulative(interval_start_minute))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RestorativeLeisureSpan {
+    pub start_minute: u64,
+    pub end_minute: u64,
+}
+
+/// Enumerate the canonical realized Leisure portions of an absolute interval.
+///
+/// A daily allocation does not prescribe an order for its named activities,
+/// so relationship time gives it one: named activities occupy the beginning
+/// of each absolute calendar day and unallocated Leisure occupies its end.
+/// Splitting at day boundaries makes independently checkpointed characters
+/// describe the same spans instead of each claiming its checkpoint's prefix.
+pub fn restorative_leisure_spans(
+    schedule: DailySchedule,
+    interval_start_minute: u64,
+    elapsed_minutes: u64,
+) -> Vec<RestorativeLeisureSpan> {
+    let interval_end = interval_start_minute.saturating_add(elapsed_minutes);
+    let allocated = schedule.allocated_minutes().min(MINUTES_PER_DAY);
+    if interval_end <= interval_start_minute || allocated == MINUTES_PER_DAY {
+        return Vec::new();
+    }
+    let mut spans = Vec::new();
+    let mut day = interval_start_minute / MINUTES_PER_DAY;
+    loop {
+        let day_start = day.saturating_mul(MINUTES_PER_DAY);
+        if day_start >= interval_end {
+            break;
+        }
+        let start = interval_start_minute.max(day_start.saturating_add(allocated));
+        let end = interval_end.min(day_start.saturating_add(MINUTES_PER_DAY));
+        if end > start {
+            spans.push(RestorativeLeisureSpan {
+                start_minute: start,
+                end_minute: end,
+            });
+        }
+        if day == u64::MAX / MINUTES_PER_DAY {
+            break;
+        }
+        day += 1;
+    }
+    spans
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -230,6 +282,58 @@ pub fn settlement_leisure_outcome(
 #[serde(deny_unknown_fields)]
 pub struct ActivityTrainingProfile {
     pub combat: CombatTrainingProfile,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SocializingTrainingWeights {
+    pub charm_basis_points: u16,
+    pub insight_basis_points: u16,
+    pub deception_basis_points: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SocializingSociability {
+    #[default]
+    Neutral,
+    Gregarious,
+    Solitary,
+}
+
+impl SocializingTrainingWeights {
+    pub const TOTAL_BASIS_POINTS: u16 = 10_000;
+
+    pub const fn values(self) -> [u16; 3] {
+        [
+            self.charm_basis_points,
+            self.insight_basis_points,
+            self.deception_basis_points,
+        ]
+    }
+}
+
+/// Socializing conserves one training budget. Sociability determines how much
+/// is active Charm practice; Transparency directs the remaining observational
+/// budget between Insight and Deception.
+pub const fn socializing_training_weights(
+    sociability: SocializingSociability,
+    transparency: Transparency,
+) -> SocializingTrainingWeights {
+    let charm = match sociability {
+        SocializingSociability::Gregarious => 6_000,
+        SocializingSociability::Neutral => 5_000,
+        SocializingSociability::Solitary => 4_000,
+    };
+    let remaining = SocializingTrainingWeights::TOTAL_BASIS_POINTS - charm;
+    let (insight, deception) = match transparency {
+        Transparency::Open => (remaining, 0),
+        Transparency::Neutral => (remaining / 2, remaining - remaining / 2),
+        Transparency::Guarded => (0, remaining),
+    };
+    SocializingTrainingWeights {
+        charm_basis_points: charm,
+        insight_basis_points: insight,
+        deception_basis_points: deception,
+    }
 }
 
 /// Relative training demand for equipped weapon leaves and the four Defense leaves.
@@ -338,6 +442,29 @@ pub fn apply_schedule_training(
     profile: ActivityTrainingProfile,
     attributes: &impl PlayerAttributes,
 ) -> f32 {
+    apply_schedule_training_for_personality(
+        skills,
+        schedule,
+        elapsed_minutes,
+        profile,
+        SocializingSociability::Neutral,
+        Transparency::Neutral,
+        attributes,
+    )
+}
+
+/// Apply schedule training with the actor's immutable social personality.
+/// The compatibility entry point above uses neutral axes, while authoritative
+/// character callers can supply their exact profile.
+pub fn apply_schedule_training_for_personality(
+    skills: &mut SkillHours,
+    schedule: DailySchedule,
+    elapsed_minutes: u64,
+    profile: ActivityTrainingProfile,
+    sociability: SocializingSociability,
+    transparency: Transparency,
+    attributes: &impl PlayerAttributes,
+) -> f32 {
     let mut excess = 0.0;
     let mut award = |stored: &mut f32, skill: Skill, real_hours: f32| {
         excess +=
@@ -349,6 +476,23 @@ pub fn apply_schedule_training(
         Skill::Charm,
         increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE,
     );
+    let socializing_hours = increment(schedule.socializing_minutes) * ACTIVITY_TRAINING_RATE;
+    let socializing = socializing_training_weights(sociability, transparency);
+    for ((stored, skill), basis_points) in [
+        (&mut skills.charm, Skill::Charm),
+        (&mut skills.insight, Skill::Insight),
+        (&mut skills.deception, Skill::Deception),
+    ]
+    .into_iter()
+    .zip(socializing.values())
+    {
+        award(
+            stored,
+            skill,
+            socializing_hours * f32::from(basis_points)
+                / f32::from(SocializingTrainingWeights::TOTAL_BASIS_POINTS),
+        );
+    }
     award(
         &mut skills.will,
         Skill::Will,
@@ -655,6 +799,114 @@ mod tests {
     }
 
     #[test]
+    fn socializing_personality_weights_always_conserve_the_budget() {
+        for sociability in [
+            SocializingSociability::Gregarious,
+            SocializingSociability::Neutral,
+            SocializingSociability::Solitary,
+        ] {
+            for transparency in [
+                Transparency::Open,
+                Transparency::Neutral,
+                Transparency::Guarded,
+            ] {
+                let weights = socializing_training_weights(sociability, transparency);
+                assert_eq!(
+                    weights.values().into_iter().sum::<u16>(),
+                    SocializingTrainingWeights::TOTAL_BASIS_POINTS
+                );
+            }
+        }
+        assert!(
+            socializing_training_weights(SocializingSociability::Gregarious, Transparency::Neutral)
+                .charm_basis_points
+                > socializing_training_weights(
+                    SocializingSociability::Solitary,
+                    Transparency::Neutral
+                )
+                .charm_basis_points
+        );
+        assert_eq!(
+            socializing_training_weights(SocializingSociability::Neutral, Transparency::Open)
+                .deception_basis_points,
+            0
+        );
+        assert_eq!(
+            socializing_training_weights(SocializingSociability::Neutral, Transparency::Guarded)
+                .insight_basis_points,
+            0
+        );
+    }
+
+    #[test]
+    fn socializing_trains_charm_insight_and_deception_without_losing_hours() {
+        let schedule = DailySchedule {
+            socializing_minutes: 240,
+            ..Default::default()
+        };
+        let mut neutral = SkillHours::default();
+        apply_schedule_training(
+            &mut neutral,
+            schedule,
+            MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+            &NeutralAttributes,
+        );
+        assert!((neutral.charm - 0.5).abs() < 0.001);
+        assert!((neutral.insight - 0.25).abs() < 0.001);
+        assert!((neutral.deception - 0.25).abs() < 0.001);
+        assert!((neutral.charm + neutral.insight + neutral.deception - 1.0).abs() < 0.001);
+
+        let mut guarded = SkillHours::default();
+        apply_schedule_training_for_personality(
+            &mut guarded,
+            schedule,
+            MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+            SocializingSociability::Solitary,
+            Transparency::Guarded,
+            &NeutralAttributes,
+        );
+        assert!((guarded.charm - 0.4).abs() < 0.001);
+        assert_eq!(guarded.insight, 0.0);
+        assert!((guarded.deception - 0.6).abs() < 0.001);
+        assert!((guarded.charm + guarded.insight + guarded.deception - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn socializing_training_is_bulk_chunk_equivalent() {
+        let schedule = DailySchedule {
+            socializing_minutes: 315,
+            ..Default::default()
+        };
+        let mut whole = SkillHours::default();
+        apply_schedule_training_for_personality(
+            &mut whole,
+            schedule,
+            30 * MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+            SocializingSociability::Gregarious,
+            Transparency::Open,
+            &NeutralAttributes,
+        );
+        let mut chunked = SkillHours::default();
+        for _ in 0..30 {
+            apply_schedule_training_for_personality(
+                &mut chunked,
+                schedule,
+                MINUTES_PER_DAY,
+                ActivityTrainingProfile::default(),
+                SocializingSociability::Gregarious,
+                Transparency::Open,
+                &NeutralAttributes,
+            );
+        }
+        for (left, right) in whole.values().into_iter().zip(chunked.values()) {
+            assert!((left - right).abs() < 0.002, "{left} != {right}");
+        }
+    }
+
+    #[test]
     fn restorative_leisure_is_proportional_and_chunk_invariant() {
         let none = DailySchedule::default();
         assert_eq!(restorative_leisure_minutes(none, 0, 1_440), 1_440);
@@ -672,6 +924,43 @@ mod tests {
         let first = restorative_leisure_minutes(half, 17, 333);
         let second = restorative_leisure_minutes(half, 350, 667);
         assert_eq!(bulk, first + second);
+    }
+
+    #[test]
+    fn restorative_leisure_spans_are_absolute_under_mixed_partitions() {
+        let schedule = DailySchedule {
+            labor: 8 * 60,
+            ..Default::default()
+        };
+        let whole = restorative_leisure_spans(schedule, 0, 2 * MINUTES_PER_DAY);
+        let mut mixed = restorative_leisure_spans(schedule, 0, 700);
+        mixed.extend(restorative_leisure_spans(schedule, 700, 1_113));
+        mixed.extend(restorative_leisure_spans(
+            schedule,
+            1_813,
+            2 * MINUTES_PER_DAY - 1_813,
+        ));
+        let minutes = |spans: &[RestorativeLeisureSpan]| {
+            spans
+                .iter()
+                .map(|span| span.end_minute - span.start_minute)
+                .sum::<u64>()
+        };
+        assert_eq!(minutes(&whole), 2 * (MINUTES_PER_DAY - 8 * 60));
+        assert_eq!(minutes(&whole), minutes(&mixed));
+        assert_eq!(
+            whole,
+            vec![
+                RestorativeLeisureSpan {
+                    start_minute: 480,
+                    end_minute: 1_440,
+                },
+                RestorativeLeisureSpan {
+                    start_minute: 1_920,
+                    end_minute: 2_880,
+                },
+            ]
+        );
     }
 
     fn item(melee: bool, ranged: bool, shield: bool, balance: f32) -> EquippedCombatItem {

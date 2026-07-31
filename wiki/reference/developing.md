@@ -144,6 +144,13 @@ gameplay evaluation. Both recipes create, claim, and delete their own
   nonce-named loopback database, compile a one-run bootstrap capability in
   memory, and accepts no host, database, or capability override.
 
+For a fast, credential-free lifecycle rule-composition check, run
+`just strategic-sim-lifecycle <new-output-dir> <seed>`. It refuses an existing
+directory and writes immutable whole-cadence, daily-cadence, and comparison
+reports. This is an offline pure-rule tier; see
+[`strategic-simulation.md`](strategic-simulation.md#lifecycle-acceptance-tier)
+for its exact coverage and limits.
+
 The current strategic/tactical boundaries and tactical lifecycle are documented
 in [Architecture](architecture.md). This page is the canonical home for local
 commands, prerequisites, and operator-safe development workflows.
@@ -462,11 +469,14 @@ receive live state through the web server rather than connecting directly to
 SpacetimeDB. Current rendering and transport boundaries are documented in
 [Architecture](architecture.md).
 
-The local strategic UI is anonymous and single-user. Its cookie selects the
-active character; it does not establish a user identity. The default
-`127.0.0.1:8080` bind is therefore intentional. A non-loopback development bind
-must set `ALLOW_INSECURE_NON_LOOPBACK_BIND=true` and must remain on an isolated,
-trusted network.
+The strategic UI uses a pseudonymous browser owner, not an account. Set
+`STRATEGIC_SESSION_SECRET` to exactly 32 cryptographically random bytes encoded
+as unpadded base64url before startup; a missing or malformed secret fails
+closed. The signed opaque cookie contains no character IDs. Set
+`STRATEGIC_SESSION_COOKIE_SECURE=true` whenever the browser reaches the gateway
+over HTTPS. The default `127.0.0.1:8080` bind remains intentional; a
+non-loopback development bind must set
+`ALLOW_INSECURE_NON_LOOPBACK_BIND=true` and remain on an isolated network.
 
 Test the server-rendered strategic browser through `https://localhost:8443`
 using `just web-secure`. Caddy terminates TLS and negotiates HTTP/2 or HTTP/3

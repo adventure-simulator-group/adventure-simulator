@@ -82,7 +82,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             context.seed.rotate_left(41),
             &format!(
                 "victim-target:{}",
-                context.witness_candidates[*index].npc_id
+                context.witness_candidates[*index].resident_character_id
             ),
         )
     });
@@ -99,7 +99,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             .expect("victim pattern hard-zeroed without a target")];
         GeneratedPatternTarget {
             cohort_id: scoped_id(&prefix, "cohort", "victim-profile"),
-            npc_id: candidate.npc_id.clone(),
+            resident_character_id: candidate.resident_character_id.clone(),
             demographic: candidate.demographic,
             age_band: candidate.age_band.clone(),
             sex: candidate.sex.clone(),
@@ -124,8 +124,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let decoy_site = SiteId::new(scoped_id(&prefix, "site", "decoy"));
     let witness1 = WitnessId::new(scoped_id(&prefix, "witness", "primary"));
     let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "corroborating"));
-    let npc1 = primary.npc_id.clone();
-    let npc2 = secondary.npc_id.clone();
+    let npc1 = primary.resident_character_id.clone();
+    let npc2 = secondary.resident_character_id.clone();
     let presented_site_kind = if reliability == Reliability::Truthful {
         site
     } else {
@@ -378,7 +378,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let witnesses = vec![
         WitnessBinding {
             id: witness1.clone(),
-            npc_id: npc1,
+            resident_character_id: npc1,
             display_name: primary.display_name.clone(),
             demographic,
             circumstance,
@@ -390,7 +390,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         },
         WitnessBinding {
             id: witness2.clone(),
-            npc_id: npc2,
+            resident_character_id: npc2,
             display_name: secondary.display_name.clone(),
             demographic: secondary.demographic,
             circumstance: secondary_circumstance,
@@ -489,7 +489,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         family,
         &finale_site,
         &area_id,
-        &primary.npc_id,
+        primary.resident_character_id,
         route_variant,
         attack_pattern,
         pattern_target.as_ref(),
@@ -500,7 +500,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         .witness_candidates
         .get(2)
         .unwrap_or(secondary)
-        .npc_id
+        .resident_character_id
         .clone();
     let (objectives, finales, custody, dialogue_producers) = match family {
         TemplateFamily::RecurringDepredation => (
@@ -621,7 +621,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                                 id: return_id.clone(),
                                 requirement: ObjectiveRequirement::Return {
                                     asset_id: asset.clone(),
-                                    custodian_id: issuer.clone(),
+                                    custodian_id: issuer.to_string(),
                                 },
                             },
                         ],
@@ -640,7 +640,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     vec![GeneratedDialogueProducer {
                         action: GeneratedDialogueAction::ReturnAsset,
                         objective_id: return_id,
-                        recipient_npc_id: issuer.clone(),
+                        recipient_resident_character_id: issuer.clone(),
                         subject_ref: None,
                         asset_id: Some(asset.as_str().into()),
                     }],
@@ -672,7 +672,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     vec![GeneratedDialogueProducer {
                         action: GeneratedDialogueAction::Expose,
                         objective_id,
-                        recipient_npc_id: issuer.clone(),
+                        recipient_resident_character_id: issuer.clone(),
                         subject_ref: Some(description_prop.clone()),
                         asset_id: None,
                     }],
@@ -882,7 +882,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 action: OutbreakSanitationAction::LaunderBedding,
             },
             Some(ResponsibleOutbreakNpc {
-                npc_id: context.witness_candidates[1].npc_id.clone(),
+                resident_character_id: context.witness_candidates[1].resident_character_id.clone(),
                 culpability: OutbreakCulpability::Negligent,
             }),
             None,
@@ -896,7 +896,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 action: OutbreakBehaviorAction::SeparateSleepers,
             },
             Some(ResponsibleOutbreakNpc {
-                npc_id: context.witness_candidates[1].npc_id.clone(),
+                resident_character_id: context.witness_candidates[1].resident_character_id.clone(),
                 culpability: OutbreakCulpability::Innocent,
             }),
             None,
@@ -976,39 +976,39 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                      corroborating: bool|
      -> TestimonyDraft {
         TestimonyDraft {
-        proposition_id: proposition_id.into(),
-        reliability: Reliability::Truthful,
-        delivery: TestimonyDelivery::Volunteered,
-        truthful_text: format!("{common_claim}."),
-        spoken_text: format!("{common_claim}."),
-        challenge_text: common_claim.into(),
-        challenge_responses: TestimonyChallengeResponses {
-            charm: Some(if corroborating {
-                "Tell me which visit you remember most clearly.".into()
-            } else {
-                "Help me set the order of those illnesses carefully.".into()
-            }),
-            command: Some(if corroborating {
-                "Give the visits in order, omitting no household.".into()
-            } else {
-                "Name each household and the day its sickness began.".into()
-            }),
-            bluff: Some(if corroborating {
-                "The household marks disagree with your order; account for it.".into()
-            } else {
-                "Another account puts the first fever elsewhere; explain that.".into()
-            }),
-        },
-        destination_stage: "textual".into(),
-        site_id: None,
-        corrects_proposition_id: None,
-        referred_witness_ids,
+            proposition_id: proposition_id.into(),
+            reliability: Reliability::Truthful,
+            delivery: TestimonyDelivery::Volunteered,
+            truthful_text: format!("{common_claim}."),
+            spoken_text: format!("{common_claim}."),
+            challenge_text: common_claim.into(),
+            challenge_responses: TestimonyChallengeResponses {
+                charm: Some(if corroborating {
+                    "Tell me which visit you remember most clearly.".into()
+                } else {
+                    "Help me set the order of those illnesses carefully.".into()
+                }),
+                command: Some(if corroborating {
+                    "Give the visits in order, omitting no household.".into()
+                } else {
+                    "Name each household and the day its sickness began.".into()
+                }),
+                bluff: Some(if corroborating {
+                    "The household marks disagree with your order; account for it.".into()
+                } else {
+                    "Another account puts the first fever elsewhere; explain that.".into()
+                }),
+            },
+            destination_stage: "textual".into(),
+            site_id: None,
+            corrects_proposition_id: None,
+            referred_witness_ids,
         }
     };
     let witnesses = vec![
         WitnessBinding {
             id: witness1.clone(),
-            npc_id: primary.npc_id.clone(),
+            resident_character_id: primary.resident_character_id.clone(),
             display_name: primary.display_name.clone(),
             demographic: primary.demographic,
             circumstance: primary
@@ -1029,7 +1029,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         },
         WitnessBinding {
             id: witness2,
-            npc_id: secondary.npc_id.clone(),
+            resident_character_id: secondary.resident_character_id.clone(),
             display_name: secondary.display_name.clone(),
             demographic: secondary.demographic,
             circumstance: secondary
@@ -1124,7 +1124,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             kind: InvestigationActionKind::LocateContact,
             route: RouteClass::SocialInquiry,
             target_kind: "contact".into(),
-            target_id: primary.npc_id.clone(),
+            target_id: primary.resident_character_id.to_string(),
             prerequisite: None,
             alternate: physical_action,
             active_initially: true,
@@ -1146,44 +1146,43 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         }
         .to_ascii_lowercase()
     );
-    let physical_remediation =
-        ActionId::new(scoped_id(&prefix, "action", "remediate-physical"));
+    let physical_remediation = ActionId::new(scoped_id(&prefix, "action", "remediate-physical"));
     let social_remediation = ActionId::new(scoped_id(&prefix, "action", "remediate-social"));
     if !matches!(
         &remediation,
         OutbreakRemediation::ResolveCarrierThreat { .. }
     ) {
         actions.extend([
-        GeneratedAction {
-            id: physical_remediation.clone(),
-            kind: InvestigationActionKind::InspectSite,
-            route: RouteClass::PhysicalTrail,
-            target_kind: "site".into(),
-            target_id: source_site.0.clone(),
-            prerequisite: Some(actions[0].id.clone()),
-            alternate: social_remediation.clone(),
-            active_initially: false,
-            safe_summary: "Apply the supported physical source intervention.".into(),
-            track_segment_id: None,
-            outputs: vec![GeneratedActionOutput::Remediation {
-                remediation_id: remediation_ref.clone(),
-            }],
-        },
-        GeneratedAction {
-            id: social_remediation,
-            kind: InvestigationActionKind::InspectSite,
-            route: RouteClass::SocialInquiry,
-            target_kind: "site".into(),
-            target_id: source_site.0.clone(),
-            prerequisite: Some(actions[1].id.clone()),
-            alternate: physical_remediation,
-            active_initially: false,
-            safe_summary: "Apply the supported physical source intervention.".into(),
-            track_segment_id: None,
-            outputs: vec![GeneratedActionOutput::Remediation {
-                remediation_id: remediation_ref.clone(),
-            }],
-        },
+            GeneratedAction {
+                id: physical_remediation.clone(),
+                kind: InvestigationActionKind::InspectSite,
+                route: RouteClass::PhysicalTrail,
+                target_kind: "site".into(),
+                target_id: source_site.0.clone(),
+                prerequisite: Some(actions[0].id.clone()),
+                alternate: social_remediation.clone(),
+                active_initially: false,
+                safe_summary: "Apply the supported physical source intervention.".into(),
+                track_segment_id: None,
+                outputs: vec![GeneratedActionOutput::Remediation {
+                    remediation_id: remediation_ref.clone(),
+                }],
+            },
+            GeneratedAction {
+                id: social_remediation,
+                kind: InvestigationActionKind::InspectSite,
+                route: RouteClass::SocialInquiry,
+                target_kind: "site".into(),
+                target_id: source_site.0.clone(),
+                prerequisite: Some(actions[1].id.clone()),
+                alternate: physical_remediation,
+                active_initially: false,
+                safe_summary: "Apply the supported physical source intervention.".into(),
+                track_segment_id: None,
+                outputs: vec![GeneratedActionOutput::Remediation {
+                    remediation_id: remediation_ref.clone(),
+                }],
+            },
         ]);
     }
     let objective = Objective {
@@ -1194,81 +1193,83 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         },
     };
     let patient_ref = |name: &str| scoped_id(&prefix, "patient", name);
-    let patient_course = |name: &str, npc_id: &str, immunity_milli: u16, carrier_death: bool| {
-        let patient_ref = patient_ref(name);
-        let patient_key = hash(context.seed, &patient_ref);
-        let definition = crate::disease::definition(disease);
-        let course_duration = definition
-            .incubation_minutes
-            .saturating_add(definition.rise_minutes)
-            .saturating_add(definition.peak_minutes)
-            .saturating_add(definition.recovery_minutes);
-        let exposed_at = context.now_minute.saturating_sub(course_duration);
-        let episode_id = crate::disease::outbreak_exposure_seed(
-            patient_key,
-            &format!("{}:{patient_ref}", problem_id),
-        );
-        let episode = crate::disease::InfectionEpisode {
-            id: episode_id,
-            character_id: patient_key,
-            disease_id: disease,
-            contracted_at: exposed_at,
-            ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
-            phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
-        };
-        let became_symptomatic_at = exposed_at.saturating_add(definition.incubation_minutes);
-        let immunity = f32::from(immunity_milli) / 1_000.0;
-        let terminal = crate::disease::first_combined_terminal(
-            &[episode],
-            exposed_at,
-            exposed_at
-                .saturating_add(definition.incubation_minutes)
+    let patient_course =
+        |name: &str, resident_character_id: u64, immunity_milli: u16, carrier_death: bool| {
+            let patient_ref = patient_ref(name);
+            let patient_key = hash(context.seed, &patient_ref);
+            let definition = crate::disease::definition(disease);
+            let course_duration = definition
+                .incubation_minutes
                 .saturating_add(definition.rise_minutes)
                 .saturating_add(definition.peak_minutes)
-                .saturating_add(definition.recovery_minutes),
-            immunity,
-        );
-        let (died_at, death_kind, terminal_failure) = if carrier_death {
-            let attack_at = context
-                .now_minute
-                .saturating_sub(1_440)
-                .max(became_symptomatic_at);
-            let attack_precedes_terminal =
-                terminal.is_none_or(|(terminal_at, _)| attack_at < terminal_at);
-            if attack_at <= context.now_minute && attack_precedes_terminal {
-                (
-                    Some(attack_at),
-                    Some(OutbreakPatientDeathKind::CarrierAttack),
-                    None,
-                )
+                .saturating_add(definition.recovery_minutes);
+            let exposed_at = context.now_minute.saturating_sub(course_duration);
+            let episode_id = crate::disease::outbreak_exposure_seed(
+                patient_key,
+                &format!("{}:{patient_ref}", problem_id),
+            );
+            let episode = crate::disease::InfectionEpisode {
+                id: episode_id,
+                character_id: patient_key,
+                disease_id: disease,
+                contracted_at: exposed_at,
+                ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
+                phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
+            };
+            let became_symptomatic_at = exposed_at.saturating_add(definition.incubation_minutes);
+            let immunity = f32::from(immunity_milli) / 1_000.0;
+            let terminal = crate::disease::first_combined_terminal(
+                &[episode],
+                exposed_at,
+                exposed_at
+                    .saturating_add(definition.incubation_minutes)
+                    .saturating_add(definition.rise_minutes)
+                    .saturating_add(definition.peak_minutes)
+                    .saturating_add(definition.recovery_minutes),
+                immunity,
+            );
+            let (died_at, death_kind, terminal_failure) = if carrier_death {
+                let attack_at = context
+                    .now_minute
+                    .saturating_sub(1_440)
+                    .max(became_symptomatic_at);
+                let attack_precedes_terminal =
+                    terminal.is_none_or(|(terminal_at, _)| attack_at < terminal_at);
+                if attack_at <= context.now_minute && attack_precedes_terminal {
+                    (
+                        Some(attack_at),
+                        Some(OutbreakPatientDeathKind::CarrierAttack),
+                        None,
+                    )
+                } else {
+                    (None, None, None)
+                }
             } else {
-                (None, None, None)
+                let past_terminal =
+                    terminal.filter(|(terminal_at, _)| *terminal_at <= context.now_minute);
+                (
+                    past_terminal.map(|value| value.0),
+                    past_terminal.map(|_| OutbreakPatientDeathKind::Disease),
+                    past_terminal.map(|value| value.1),
+                )
+            };
+            OutbreakExposure {
+                patient_ref,
+                presentation_resident_character_id: resident_character_id,
+                family_resident_character_id: (name == "first")
+                    .then(|| secondary.resident_character_id.clone()),
+                patient_key,
+                episode_id,
+                immunity_milli,
+                phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
+                exposed_at,
+                became_symptomatic_at,
+                died_at,
+                death_kind,
+                terminal_failure,
             }
-        } else {
-            let past_terminal = terminal.filter(|(terminal_at, _)| *terminal_at <= context.now_minute);
-            (
-                past_terminal.map(|value| value.0),
-                past_terminal.map(|_| OutbreakPatientDeathKind::Disease),
-                past_terminal.map(|value| value.1),
-            )
         };
-        OutbreakExposure {
-            patient_ref,
-            presentation_npc_id: npc_id.into(),
-            family_npc_id: (name == "first").then(|| secondary.npc_id.clone()),
-            patient_key,
-            episode_id,
-            immunity_milli,
-            phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
-            exposed_at,
-            became_symptomatic_at,
-            died_at,
-            death_kind,
-            terminal_failure,
-        }
-    };
-    let first_patient_killed_by_carrier =
-        matches!(&source, OutbreakSource::ThreatVector { .. });
+    let first_patient_killed_by_carrier = matches!(&source, OutbreakSource::ThreatVector { .. });
     let outbreak = GeneratedOutbreak {
         disease,
         transmission_route,
@@ -1280,11 +1281,11 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         exposure_chronology: vec![
             patient_course(
                 "first",
-                &primary.npc_id,
+                primary.resident_character_id,
                 0,
                 first_patient_killed_by_carrier,
             ),
-            patient_course("living", &secondary.npc_id, 5_000, false),
+            patient_course("living", secondary.resident_character_id, 5_000, false),
         ],
         remediation,
     };
