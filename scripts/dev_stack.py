@@ -39,6 +39,9 @@ class ProfileMode(str, Enum):
 
 
 def cargo_target_dir() -> Path:
+    configured = os.environ.get("CARGO_TARGET_DIR")
+    if configured:
+        return Path(configured)
     try:
         result = subprocess.run(
             ["cargo", "-Z", "unstable-options", "config", "get", "build.target-dir"],

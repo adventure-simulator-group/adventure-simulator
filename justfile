@@ -75,6 +75,10 @@ web-isolated-strategic profile="renderer-demo" base_port="23100": preflight veri
 autopsy-demo base_port="23100": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic autopsy-demo {{ quote(base_port) }}
 
+# Start a disposable strategic stack for the one-click generated outbreak demo.
+outbreak-demo base_port="23100": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic outbreak-demo {{ quote(base_port) }}
+
 # Canonical database deletion is deliberately unavailable. Use web-isolated.
 web-reset:
     @{{ python_bin }} scripts/just_tasks.py refuse "Refusing to reset the canonical database. Use: just web-isolated renderer-demo 23100"

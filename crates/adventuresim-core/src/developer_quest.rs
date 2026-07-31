@@ -62,6 +62,7 @@ pub struct DeveloperQuestDefinition {
     pub cause: CanonicalCause,
     pub canonical_events: Vec<CanonicalEvent>,
     pub consequence: ConsequenceProfile,
+    pub outbreak: Option<qg::GeneratedOutbreak>,
     pub sites: Vec<GeneratedSite>,
     pub areas: Vec<GeneratedArea>,
     pub witnesses: Vec<WitnessBinding>,
@@ -90,6 +91,7 @@ impl DeveloperQuestDefinition {
             cause: case.cause,
             canonical_events: case.canonical_events,
             consequence: case.consequence,
+            outbreak: case.outbreak,
             sites: case.sites,
             areas: case.areas,
             witnesses: case.witnesses,
@@ -497,6 +499,14 @@ impl DeclaredIdSets {
                 .iter()
                 .map(|item| item.cohort_id.clone()),
         );
+        if let Some(outbreak) = &definition.outbreak {
+            ids.all.extend(
+                outbreak
+                    .exposure_chronology
+                    .iter()
+                    .map(|exposure| exposure.patient_ref.clone()),
+            );
+        }
         for path in &definition.objectives.alternatives {
             for objective in &path.objectives {
                 ids.objectives.insert(objective.id.as_str().to_owned());
@@ -819,7 +829,8 @@ fn validate_references(
                         );
                     }
                 },
-                qg::GeneratedActionOutput::AmbushReady => {}
+                qg::GeneratedActionOutput::AmbushReady
+                | qg::GeneratedActionOutput::Remediation { .. } => {}
             }
         }
     }
@@ -862,6 +873,7 @@ fn validate_references(
                     &ids.all,
                     "internal subject",
                 ),
+                ObjectiveRequirement::RemediateSource { .. } => {}
                 ObjectiveRequirement::PresentProof { evidence_id, .. } => missing_reference(
                     diagnostics,
                     format!("{base}.evidence_id"),
@@ -1151,6 +1163,20 @@ fn namespace_definition(
         .collect::<BTreeMap<_, _>>();
     let mut materialized = definition.clone();
 
+    if let Some(outbreak) = &mut materialized.outbreak {
+        remap(&mut outbreak.physical_source_site.0, &replacements);
+        remap(&mut outbreak.patient_presentation_site.0, &replacements);
+        for exposure in &mut outbreak.exposure_chronology {
+            remap(&mut exposure.patient_ref, &replacements);
+        }
+        if let qg::OutbreakRemediation::ResolveCarrierThreat {
+            hostile_group_id, ..
+        } = &mut outbreak.remediation
+        {
+            remap(hostile_group_id, &replacements);
+        }
+    }
+
     for event in &mut materialized.canonical_events {
         remap(&mut event.id, &replacements);
         remap(&mut event.proposition_id, &replacements);
@@ -1258,6 +1284,9 @@ fn namespace_definition(
                     }
                 },
                 qg::GeneratedActionOutput::AmbushReady => {}
+                qg::GeneratedActionOutput::Remediation { remediation_id } => {
+                    remap(remediation_id, &replacements);
+                }
             }
         }
     }
@@ -1329,6 +1358,9 @@ fn namespace_definition(
                 | ObjectiveRequirement::Expose { subject_ref }
                 | ObjectiveRequirement::Negotiate { subject_ref } => {
                     remap(subject_ref, &replacements);
+                }
+                ObjectiveRequirement::RemediateSource { remediation_id } => {
+                    remap(remediation_id, &replacements);
                 }
                 ObjectiveRequirement::PresentProof { evidence_id, .. } => {
                     remap(evidence_id, &replacements);
@@ -1414,6 +1446,7 @@ pub fn compile(
     let family_id = match definition.family {
         qg::TemplateFamily::RecurringDepredation => "recurring_depredation",
         qg::TemplateFamily::DisappearanceOrLoss => "disappearance_or_loss",
+        qg::TemplateFamily::Outbreak => "outbreak",
     };
     let cause_id = match &definition.cause {
         CanonicalCause::Hostile(threat) => threat.as_str(),
@@ -1681,6 +1714,7 @@ pub fn compile(
         cause: materialized.cause,
         canonical_events: materialized.canonical_events,
         consequence: materialized.consequence,
+        outbreak: materialized.outbreak,
         sites: materialized.sites,
         areas: materialized.areas,
         witnesses: materialized.witnesses,
@@ -1789,7 +1823,7 @@ pub fn schema_json(witness_candidates: &[qg::WitnessCandidate]) -> Value {
             "witness_demographics": options(demographics.iter().map(|x| (x.id.clone(), x.label.clone())).collect()),
             "circumstances": options(circumstances.map(|x| (x.id.clone(), x.statement.clone())).collect()),
             "descriptions": options(descriptions.map(|x| (x.id.clone(), x.text.clone())).collect()),
-            "template_families": ["recurring_depredation", "disappearance_or_loss"],
+            "template_families": ["recurring_depredation", "disappearance_or_loss", "outbreak"],
             "site_roles": ["finale", "evidence", "decoy", "last_known"],
             "reliabilities": ["truthful", "mistaken", "evasive", "deceptive", "partly_truthful"],
             "evidence_check_stats": ["eyesight", "intelligence", "instinct"],

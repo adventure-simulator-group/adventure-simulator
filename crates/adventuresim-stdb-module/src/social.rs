@@ -2220,7 +2220,7 @@ fn conviction_code(value: crate::personality::Conviction) -> i8 {
     }
 }
 
-fn target_religion(
+pub(crate) fn target_religion(
     ctx: &ReducerContext,
     target_id: u64,
 ) -> Result<adventuresim_world_schema::OfficialReligion, String> {
@@ -2236,7 +2236,7 @@ fn target_religion(
         .ok_or_else(|| "Target religion is unknown".into())
 }
 
-fn target_religion_check(
+pub(crate) fn target_religion_check(
     ctx: &ReducerContext,
     actor_id: u64,
     religion: adventuresim_world_schema::OfficialReligion,

@@ -1010,6 +1010,7 @@ pub fn golden_suite(seed: u64, cases_per_family: u32) -> Vec<EvalCaseConfig> {
     [
         TemplateFamily::RecurringDepredation,
         TemplateFamily::DisappearanceOrLoss,
+        TemplateFamily::Outbreak,
     ]
     .into_iter()
     .enumerate()
@@ -1054,6 +1055,28 @@ mod tests {
                     .unwrap()
                     .contains("canonical_case_id")
             );
+        }
+    }
+
+    #[test]
+    fn outbreak_fixture_is_solvable_through_the_generic_evaluator() {
+        let limits = EvalLimits {
+            max_cases: 1,
+            max_steps_per_case: 128,
+            ..EvalLimits::default()
+        };
+        for mut policy in [
+            Box::new(ScriptedPolicy::default()) as Box<dyn QuestPolicy>,
+            Box::new(MockLlmPolicy) as Box<dyn QuestPolicy>,
+        ] {
+            let bundle = evaluate_cases(
+                &[EvalCaseConfig::fixture(97, TemplateFamily::Outbreak)],
+                policy.as_mut(),
+                &limits,
+            )
+            .unwrap();
+            assert_eq!(bundle.public.metrics.cases, 1);
+            assert_eq!(bundle.public.metrics.solved, 1);
         }
     }
 
@@ -1348,7 +1371,7 @@ mod tests {
     #[test]
     fn artifact_byte_budgets_cover_pretty_json_and_markdown() {
         let limits = EvalLimits {
-            max_cases: 2,
+            max_cases: 3,
             max_output_bytes: 64,
             max_total_output_bytes: 192,
             ..EvalLimits::default()
@@ -1360,7 +1383,7 @@ mod tests {
         );
 
         let limits = EvalLimits {
-            max_cases: 2,
+            max_cases: 3,
             max_output_bytes: 100 * 1024 * 1024,
             max_total_output_bytes: 128,
             ..EvalLimits::default()

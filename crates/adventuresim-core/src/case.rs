@@ -148,6 +148,10 @@ pub enum ObjectiveRequirement {
     Identify {
         subject_ref: String,
     },
+    /// The exact physical intervention required by private outbreak authority.
+    RemediateSource {
+        remediation_id: String,
+    },
     Expose {
         subject_ref: String,
     },
@@ -224,6 +228,9 @@ pub enum OutcomeFactKind {
     },
     Identified {
         subject_ref: String,
+    },
+    SourceRemediated {
+        remediation_id: String,
     },
     Exposed {
         subject_ref: String,
@@ -454,6 +461,11 @@ fn match_fact(requirement: &ObjectiveRequirement, fact: &OutcomeFactKind) -> Opt
         | (R::Identify { subject_ref: a }, F::Identified { subject_ref: b })
         | (R::Expose { subject_ref: a }, F::Exposed { subject_ref: b })
         | (R::Negotiate { subject_ref: a }, F::Negotiated { subject_ref: b })
+            if a == b =>
+        {
+            true
+        }
+        (R::RemediateSource { remediation_id: a }, F::SourceRemediated { remediation_id: b })
             if a == b =>
         {
             true

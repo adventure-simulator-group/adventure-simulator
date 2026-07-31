@@ -1,4 +1,9 @@
 pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, GenerationError> {
+    if context.requested_family == Some(TemplateFamily::Outbreak)
+        || (context.requested_family.is_none() && context.seed % 7 == 0)
+    {
+        return generate_outbreak(context);
+    }
     let mut trace = Vec::new();
     let solved = solve_variables(context, &mut trace)?;
     let SolvedVariables {
@@ -677,10 +682,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 "voluntary disappearance is excluded until locate/report producers exist"
             ),
         },
+        TemplateFamily::Outbreak => unreachable!("outbreak uses its dedicated typed assembler"),
     };
     let template_id = match family {
         TemplateFamily::RecurringDepredation => "recurring_depredation",
         TemplateFamily::DisappearanceOrLoss => "disappearance_or_loss",
+        TemplateFamily::Outbreak => "outbreak",
     };
     let cause_key = match cause {
         CanonicalCause::Hostile(_) => "hostile",
@@ -818,6 +825,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         cause,
         canonical_events,
         consequence: consequence(cause, template),
+        outbreak: None,
         sites,
         areas: vec![GeneratedArea {
             id: area_id,
@@ -841,6 +849,526 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         dialogue_producers,
         bridges,
         factor_trace: trace,
+    };
+    validate(&manifest).map_err(GenerationError::InvalidManifest)?;
+    Ok(manifest)
+}
+
+fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, GenerationError> {
+    use crate::disease::DiseaseId;
+
+    if context.witness_candidates.len() < 2 {
+        return Err(GenerationError::InvalidManifest(vec![
+            "outbreak generation requires two persistent witnesses".into(),
+        ]));
+    }
+    let prefix = observer_scope(context);
+    let disease = [
+        DiseaseId::Influenza,
+        DiseaseId::Mahrdruck,
+        DiseaseId::ShroudFever,
+        DiseaseId::Bilwisschuss,
+        DiseaseId::Kobeldunst,
+    ][context.seed as usize % 5];
+    let transmission_route = crate::disease::definition(disease).primary_community_vector;
+    let carrier = ThreatId::Alp;
+    let (site_kind, source, remediation, responsible_npc, carrier_threat) = match disease {
+        DiseaseId::Influenza if (context.seed / 5) % 2 == 0 => (
+            SiteKind::OccupiedHouse,
+            OutbreakSource::Sanitation {
+                practice: OutbreakSanitationPractice::UnwashedSharedBedding,
+            },
+            OutbreakRemediation::Sanitation {
+                action: OutbreakSanitationAction::LaunderBedding,
+            },
+            Some(ResponsibleOutbreakNpc {
+                npc_id: context.witness_candidates[1].npc_id.clone(),
+                culpability: OutbreakCulpability::Negligent,
+            }),
+            None,
+        ),
+        DiseaseId::Influenza => (
+            SiteKind::OccupiedHouse,
+            OutbreakSource::Behavior {
+                practice: OutbreakBehaviorPractice::CrowdedSleeping,
+            },
+            OutbreakRemediation::Behavior {
+                action: OutbreakBehaviorAction::SeparateSleepers,
+            },
+            Some(ResponsibleOutbreakNpc {
+                npc_id: context.witness_candidates[1].npc_id.clone(),
+                culpability: OutbreakCulpability::Innocent,
+            }),
+            None,
+        ),
+        DiseaseId::Mahrdruck => (
+            SiteKind::OccupiedHouse,
+            OutbreakSource::ThreatVector { threat: carrier },
+            OutbreakRemediation::ResolveCarrierThreat {
+                hostile_group_id: scoped_id(&prefix, "hostile", "carrier"),
+                accepted_outcomes: vec![
+                    OutbreakCarrierOutcome::Defeated,
+                    OutbreakCarrierOutcome::DrivenOff,
+                ],
+            },
+            None,
+            Some(carrier),
+        ),
+        DiseaseId::ShroudFever => (
+            SiteKind::Graveyard,
+            OutbreakSource::Environmental {
+                reservoir: OutbreakEnvironmentalReservoir::GraveMould,
+            },
+            OutbreakRemediation::RemoveEnvironmentalSource {
+                reservoir: OutbreakEnvironmentalReservoir::GraveMould,
+            },
+            None,
+            None,
+        ),
+        DiseaseId::Bilwisschuss => (
+            SiteKind::AbandonedFarm,
+            OutbreakSource::Environmental {
+                reservoir: OutbreakEnvironmentalReservoir::RyeGalls,
+            },
+            OutbreakRemediation::RemoveEnvironmentalSource {
+                reservoir: OutbreakEnvironmentalReservoir::RyeGalls,
+            },
+            None,
+            None,
+        ),
+        DiseaseId::Kobeldunst => (
+            SiteKind::Cave,
+            OutbreakSource::Environmental {
+                reservoir: OutbreakEnvironmentalReservoir::OreBiofilm,
+            },
+            OutbreakRemediation::RemoveEnvironmentalSource {
+                reservoir: OutbreakEnvironmentalReservoir::OreBiofilm,
+            },
+            None,
+            None,
+        ),
+        _ => unreachable!("bounded outbreak disease catalog"),
+    };
+    debug_assert!(crate::disease::definition(disease).supports(transmission_route));
+
+    let canonical_case_id = format!(
+        "case:{:016x}",
+        hash(
+            context.seed,
+            &format!("outbreak:{}:{}", context.settlement_id, context.ordinal)
+        )
+    );
+    let public_case_id = scoped_id(&prefix, "journal", "case");
+    let problem_id = scoped_id(&prefix, "problem", "outbreak");
+    let source_site = SiteId::new(scoped_id(&prefix, "site", "source"));
+    let patient_site = SiteId::new(scoped_id(&prefix, "site", "patient"));
+    let evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "pattern"));
+    let pathology_evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "pathology"));
+    let physical_action = ActionId::new(scoped_id(&prefix, "action", "inspect-source"));
+    let social_action = ActionId::new(scoped_id(&prefix, "action", "compare-patients"));
+    let primary = &context.witness_candidates[0];
+    let secondary = &context.witness_candidates[1];
+    let witness1 = WitnessId::new(scoped_id(&prefix, "witness", "patient-carer"));
+    let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "family-member"));
+    let common_claim = "Several households became feverish within the same few days";
+    let testimony = |proposition_id: &str,
+                     referred_witness_ids: Vec<WitnessId>,
+                     corroborating: bool|
+     -> TestimonyDraft {
+        TestimonyDraft {
+        proposition_id: proposition_id.into(),
+        reliability: Reliability::Truthful,
+        delivery: TestimonyDelivery::Volunteered,
+        truthful_text: format!("{common_claim}."),
+        spoken_text: format!("{common_claim}."),
+        challenge_text: common_claim.into(),
+        challenge_responses: TestimonyChallengeResponses {
+            charm: Some(if corroborating {
+                "Tell me which visit you remember most clearly.".into()
+            } else {
+                "Help me set the order of those illnesses carefully.".into()
+            }),
+            command: Some(if corroborating {
+                "Give the visits in order, omitting no household.".into()
+            } else {
+                "Name each household and the day its sickness began.".into()
+            }),
+            bluff: Some(if corroborating {
+                "The household marks disagree with your order; account for it.".into()
+            } else {
+                "Another account puts the first fever elsewhere; explain that.".into()
+            }),
+        },
+        destination_stage: "textual".into(),
+        site_id: None,
+        corrects_proposition_id: None,
+        referred_witness_ids,
+        }
+    };
+    let witnesses = vec![
+        WitnessBinding {
+            id: witness1.clone(),
+            npc_id: primary.npc_id.clone(),
+            display_name: primary.display_name.clone(),
+            demographic: primary.demographic,
+            circumstance: primary
+                .allowed_circumstances
+                .iter()
+                .next()
+                .copied()
+                .unwrap_or(Circumstance::NightWindow),
+            description: ReportDescription::UnseenNightVisitor,
+            expected_location: primary.expected_location.clone(),
+            expected_location_label: primary.expected_location_label.clone(),
+            visible_description: primary.visible_description.clone(),
+            testimony: vec![testimony(
+                "outbreak:early-pattern",
+                vec![witness2.clone()],
+                false,
+            )],
+        },
+        WitnessBinding {
+            id: witness2,
+            npc_id: secondary.npc_id.clone(),
+            display_name: secondary.display_name.clone(),
+            demographic: secondary.demographic,
+            circumstance: secondary
+                .allowed_circumstances
+                .iter()
+                .next()
+                .copied()
+                .unwrap_or(Circumstance::NightWindow),
+            description: ReportDescription::UnseenNightVisitor,
+            expected_location: secondary.expected_location.clone(),
+            expected_location_label: secondary.expected_location_label.clone(),
+            visible_description: secondary.visible_description.clone(),
+            testimony: vec![testimony("outbreak:second-pattern", Vec::new(), true)],
+        },
+    ];
+    let sites = vec![
+        GeneratedSite {
+            id: source_site.clone(),
+            kind: site_kind,
+            role: SiteRole::Finale,
+            terrain: Terrain::Settlement,
+            safe_label: "a place associated with several afflicted households".into(),
+            exact_location_initially_known: false,
+            is_true_location: true,
+        },
+        GeneratedSite {
+            id: patient_site.clone(),
+            kind: SiteKind::OccupiedHouse,
+            role: SiteRole::Evidence,
+            terrain: Terrain::Settlement,
+            safe_label: "the household where the first patient was reported".into(),
+            exact_location_initially_known: true,
+            is_true_location: false,
+        },
+    ];
+    let evidence = vec![
+        GeneratedEvidence {
+            id: evidence_id.clone(),
+            kind: EvidenceKind::LedgerEntry,
+            proposition_id: "outbreak:exposure-order".into(),
+            site_id: patient_site.clone(),
+            portrait_label: "household sickness notes".into(),
+            portrait_icon: "ledger".into(),
+            base_description: "Dates and household marks record when illness was first noticed."
+                .into(),
+            inspection_topics: Vec::new(),
+            safe_description:
+                "The sequence links cases by place and time, but does not by itself name a disease."
+                    .into(),
+            corrects_proposition_id: None,
+        },
+        GeneratedEvidence {
+            id: pathology_evidence_id,
+            kind: EvidenceKind::BloodlessCorpse,
+            proposition_id: "outbreak:systemic-pathology".into(),
+            site_id: patient_site.clone(),
+            portrait_label: "systemic changes in a victim".into(),
+            portrait_icon: "corpse".into(),
+            base_description:
+                "A physician may preserve bounded systemic observations from the body.".into(),
+            inspection_topics: Vec::new(),
+            safe_description:
+                "The observed systemic pattern supports several illnesses or exposures.".into(),
+            corrects_proposition_id: None,
+        },
+    ];
+    let exact = GeneratedActionOutput::Destination {
+        stage: GeneratedDestinationStage::Exact,
+        site_id: Some(source_site.clone()),
+    };
+    let mut actions = vec![
+        GeneratedAction {
+            id: physical_action.clone(),
+            kind: InvestigationActionKind::InspectSite,
+            route: RouteClass::PhysicalTrail,
+            target_kind: "site".into(),
+            target_id: patient_site.0.clone(),
+            prerequisite: None,
+            alternate: social_action.clone(),
+            active_initially: true,
+            safe_summary: "Inspect shared places and material traces.".into(),
+            track_segment_id: None,
+            outputs: vec![
+                GeneratedActionOutput::Evidence {
+                    evidence_id: evidence_id.clone(),
+                },
+                exact.clone(),
+            ],
+        },
+        GeneratedAction {
+            id: social_action.clone(),
+            kind: InvestigationActionKind::LocateContact,
+            route: RouteClass::SocialInquiry,
+            target_kind: "contact".into(),
+            target_id: primary.npc_id.clone(),
+            prerequisite: None,
+            alternate: physical_action,
+            active_initially: true,
+            safe_summary: "Compare household accounts and the order of symptoms.".into(),
+            track_segment_id: None,
+            outputs: vec![exact],
+        },
+    ];
+    let remediation_ref = format!(
+        "outbreak-remediation:{}",
+        match &remediation {
+            OutbreakRemediation::Sanitation { action } => format!("sanitation:{action:?}"),
+            OutbreakRemediation::Behavior { action } => format!("behavior:{action:?}"),
+            OutbreakRemediation::RemoveEnvironmentalSource { reservoir } =>
+                format!("environment:{reservoir:?}"),
+            OutbreakRemediation::ResolveCarrierThreat {
+                hostile_group_id, ..
+            } => format!("carrier:{hostile_group_id}"),
+        }
+        .to_ascii_lowercase()
+    );
+    let physical_remediation =
+        ActionId::new(scoped_id(&prefix, "action", "remediate-physical"));
+    let social_remediation = ActionId::new(scoped_id(&prefix, "action", "remediate-social"));
+    if !matches!(
+        &remediation,
+        OutbreakRemediation::ResolveCarrierThreat { .. }
+    ) {
+        actions.extend([
+        GeneratedAction {
+            id: physical_remediation.clone(),
+            kind: InvestigationActionKind::InspectSite,
+            route: RouteClass::PhysicalTrail,
+            target_kind: "site".into(),
+            target_id: source_site.0.clone(),
+            prerequisite: Some(actions[0].id.clone()),
+            alternate: social_remediation.clone(),
+            active_initially: false,
+            safe_summary: "Apply the supported physical source intervention.".into(),
+            track_segment_id: None,
+            outputs: vec![GeneratedActionOutput::Remediation {
+                remediation_id: remediation_ref.clone(),
+            }],
+        },
+        GeneratedAction {
+            id: social_remediation,
+            kind: InvestigationActionKind::InspectSite,
+            route: RouteClass::SocialInquiry,
+            target_kind: "site".into(),
+            target_id: source_site.0.clone(),
+            prerequisite: Some(actions[1].id.clone()),
+            alternate: physical_remediation,
+            active_initially: false,
+            safe_summary: "Apply the supported physical source intervention.".into(),
+            track_segment_id: None,
+            outputs: vec![GeneratedActionOutput::Remediation {
+                remediation_id: remediation_ref.clone(),
+            }],
+        },
+        ]);
+    }
+    let objective = Objective {
+        id: ObjectiveId::new(scoped_id(&prefix, "objective", "remediate"))
+            .expect("scoped objective id"),
+        requirement: ObjectiveRequirement::RemediateSource {
+            remediation_id: remediation_ref,
+        },
+    };
+    let patient_ref = |name: &str| scoped_id(&prefix, "patient", name);
+    let patient_course = |name: &str, npc_id: &str, immunity_milli: u16, carrier_death: bool| {
+        let patient_ref = patient_ref(name);
+        let patient_key = hash(context.seed, &patient_ref);
+        let definition = crate::disease::definition(disease);
+        let course_duration = definition
+            .incubation_minutes
+            .saturating_add(definition.rise_minutes)
+            .saturating_add(definition.peak_minutes)
+            .saturating_add(definition.recovery_minutes);
+        let exposed_at = context.now_minute.saturating_sub(course_duration);
+        let episode_id = crate::disease::outbreak_exposure_seed(
+            patient_key,
+            &format!("{}:{patient_ref}", problem_id),
+        );
+        let episode = crate::disease::InfectionEpisode {
+            id: episode_id,
+            character_id: patient_key,
+            disease_id: disease,
+            contracted_at: exposed_at,
+            ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
+            phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
+        };
+        let became_symptomatic_at = exposed_at.saturating_add(definition.incubation_minutes);
+        let immunity = f32::from(immunity_milli) / 1_000.0;
+        let terminal = crate::disease::first_combined_terminal(
+            &[episode],
+            exposed_at,
+            exposed_at
+                .saturating_add(definition.incubation_minutes)
+                .saturating_add(definition.rise_minutes)
+                .saturating_add(definition.peak_minutes)
+                .saturating_add(definition.recovery_minutes),
+            immunity,
+        );
+        let (died_at, death_kind, terminal_failure) = if carrier_death {
+            let attack_at = context
+                .now_minute
+                .saturating_sub(1_440)
+                .max(became_symptomatic_at);
+            let attack_precedes_terminal =
+                terminal.is_none_or(|(terminal_at, _)| attack_at < terminal_at);
+            if attack_at <= context.now_minute && attack_precedes_terminal {
+                (
+                    Some(attack_at),
+                    Some(OutbreakPatientDeathKind::CarrierAttack),
+                    None,
+                )
+            } else {
+                (None, None, None)
+            }
+        } else {
+            let past_terminal = terminal.filter(|(terminal_at, _)| *terminal_at <= context.now_minute);
+            (
+                past_terminal.map(|value| value.0),
+                past_terminal.map(|_| OutbreakPatientDeathKind::Disease),
+                past_terminal.map(|value| value.1),
+            )
+        };
+        OutbreakExposure {
+            patient_ref,
+            presentation_npc_id: npc_id.into(),
+            family_npc_id: (name == "first").then(|| secondary.npc_id.clone()),
+            patient_key,
+            episode_id,
+            immunity_milli,
+            phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
+            exposed_at,
+            became_symptomatic_at,
+            died_at,
+            death_kind,
+            terminal_failure,
+        }
+    };
+    let first_patient_killed_by_carrier =
+        matches!(&source, OutbreakSource::ThreatVector { .. });
+    let outbreak = GeneratedOutbreak {
+        disease,
+        transmission_route,
+        source,
+        physical_source_site: source_site.clone(),
+        patient_presentation_site: patient_site.clone(),
+        responsible_npc,
+        carrier_threat,
+        exposure_chronology: vec![
+            patient_course(
+                "first",
+                &primary.npc_id,
+                0,
+                first_patient_killed_by_carrier,
+            ),
+            patient_course("living", &secondary.npc_id, 5_000, false),
+        ],
+        remediation,
+    };
+    let hostile_groups = outbreak
+        .carrier_threat
+        .map(|threat| {
+            let group_id = match &outbreak.remediation {
+                OutbreakRemediation::ResolveCarrierThreat {
+                    hostile_group_id, ..
+                } => hostile_group_id.clone(),
+                _ => unreachable!(),
+            };
+            vec![(group_id, source_site.clone(), threat, 2)]
+        })
+        .unwrap_or_default();
+    let template = crate::quest_catalog::catalog()
+        .template("outbreak")
+        .expect("validated outbreak template");
+    let manifest = GeneratedCase {
+        catalog_revision: CATALOG_REVISION.into(),
+        generation_seed: context.seed,
+        template_id: template.id.clone(),
+        configured_routes: template.routes.clone(),
+        configured_objectives: template.objectives.clone(),
+        incident_interval_minutes: template.incident_interval_minutes,
+        maximum_incidents: u16::from(template.maximum_incidents),
+        family: TemplateFamily::Outbreak,
+        canonical_case_id,
+        public_case_id,
+        problem_id,
+        cause: outbreak
+            .carrier_threat
+            .map_or(CanonicalCause::IncidentalLoss, CanonicalCause::Hostile),
+        canonical_events: vec![CanonicalEvent {
+            id: scoped_id(&prefix, "event", "first-cluster"),
+            proposition_id: "outbreak:cluster-began".into(),
+            subject: "several households".into(),
+            predicate: "became ill during".into(),
+            object: "the same few days".into(),
+            occurred_at: context.now_minute.saturating_sub(3 * 1_440),
+        }],
+        consequence: ConsequenceProfile {
+            symptom: Symptom::SickLocals,
+            effects: Effects {
+                buy_bps: 300,
+                sell_penalty_bps: 150,
+                encounter_frequency_bps: 0,
+                encounter_archetype: None,
+                disease_intensity: 360,
+            },
+            public_summary:
+                "Several households report similar fevers, but their cause is uncertain.".into(),
+        },
+        outbreak: Some(outbreak),
+        sites,
+        areas: Vec::new(),
+        witnesses,
+        pattern_targets: Vec::new(),
+        evidence,
+        track_trails: Vec::new(),
+        track_segments: Vec::new(),
+        actions,
+        objectives: ObjectiveExpression {
+            alternatives: vec![ObjectivePath {
+                objectives: vec![objective],
+            }],
+        },
+        custody: Vec::new(),
+        hostile_groups,
+        finales: Vec::new(),
+        dialogue_producers: Vec::new(),
+        bridges: Vec::new(),
+        factor_trace: vec![FactorTrace {
+            module_id: ModuleId::new("module.outbreak"),
+            relation_id: RelationId::new("relation.outbreak.disease-source"),
+            factor_ids: vec![FactorId::new("factor.outbreak.compatibility")],
+            candidate_id: format!("{disease:?}:{transmission_route:?}"),
+            plausibility: 100,
+            curation: 100,
+            accepted: true,
+            hard_zero_reason: None,
+            required_bridge: None,
+            decision: TraceDecision::Bound,
+        }],
     };
     validate(&manifest).map_err(GenerationError::InvalidManifest)?;
     Ok(manifest)

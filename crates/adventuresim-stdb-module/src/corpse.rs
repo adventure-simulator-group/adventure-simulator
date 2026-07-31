@@ -15,13 +15,16 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 
 use crate::{
     capability::character_capability,
-    character::{character, character__view, character_limbs, character_skills},
+    character::{
+        character, character__view, character_attributes, character_limbs, character_skills,
+    },
     condition::character_condition,
     investigation::character_case_site_occupancy,
     item::inventory_item,
+    outbreak::outbreak_patient_authority,
     settlement_population::{SettlementNpc, settlement_npc},
     social::settlement_npc_relationship,
-    strategic::{strategic_encounter, strategic_gateway_authority__view},
+    strategic::{settlement, strategic_encounter, strategic_gateway_authority__view},
     surgery::{limb_injury, retained_projectile},
     time::{advance_character_wait_time, character_time, character_time__view},
 };
@@ -40,6 +43,7 @@ pub enum CorpsePermissionKind {
     Family,
     Priest,
     SecularAuthority,
+    GuildAuthority,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -82,6 +86,16 @@ pub struct CorpseBodyState {
     pub corpse_id: String,
     pub health: Vec<f32>,
     pub blood_loss_fraction: f32,
+}
+
+/// Generic bounded systemic observables fixed at death. No disease or
+/// generated-case truth is stored here.
+#[derive(Clone, Debug)]
+#[table(accessor = corpse_pathology)]
+pub struct CorpsePathology {
+    #[primary_key]
+    pub corpse_id: String,
+    pub snapshot_json: String,
 }
 
 #[derive(Clone, Debug)]
@@ -137,6 +151,7 @@ pub struct CorpsePermissionAttempt {
     pub party_id: String,
     pub npc_id: String,
     pub scope: CorpsePermissionScope,
+    pub approach: String,
     pub granted: bool,
     pub attempted_minute: u64,
 }
@@ -402,8 +417,8 @@ fn realized_finding(
     internal: bool,
 ) -> String {
     use adventuresim_core::autopsy::{
-        AutopsyEvidenceContext, BodyInjury, PostCombatBody, bestiary_finding, physiology_finding,
-        surgery_finding,
+        AutopsyEvidenceContext, BodyInjury, PostCombatBody, SystemicPathologySnapshot,
+        bestiary_finding, physiology_finding, physiology_pathology_finding, surgery_finding,
     };
     let injuries = ctx
         .db
@@ -461,9 +476,19 @@ fn realized_finding(
     };
     let finding = match discipline {
         "surgery" => surgery_finding(&injuries, check, context, internal),
-        "physiology" => body
-            .as_ref()
-            .and_then(|body| physiology_finding(body, check, context, internal)),
+        "physiology" => ctx
+            .db
+            .corpse_pathology()
+            .corpse_id()
+            .find(&corpse.id)
+            .and_then(|row| {
+                serde_json::from_str::<SystemicPathologySnapshot>(&row.snapshot_json).ok()
+            })
+            .and_then(|snapshot| physiology_pathology_finding(&snapshot, check, context, internal))
+            .or_else(|| {
+                body.as_ref()
+                    .and_then(|body| physiology_finding(body, check, context, internal))
+            }),
         "bestiary" => bestiary_finding(&injuries, check, context, internal),
         _ => None,
     };
@@ -542,6 +567,7 @@ pub fn backend_corpses(ctx: &ViewContext) -> Vec<BackendCorpse> {
                     CorpsePermissionKind::Family => "family",
                     CorpsePermissionKind::Priest => "priest",
                     CorpsePermissionKind::SecularAuthority => "authority",
+                    CorpsePermissionKind::GuildAuthority => "guild",
                 });
             let findings = if buried {
                 Vec::new()
@@ -662,7 +688,7 @@ pub(crate) fn persist_autoresolve_enemy_corpses(
     Ok(inserted)
 }
 
-fn persist_body(
+pub(crate) fn persist_body(
     ctx: &ReducerContext,
     corpse: StrategicCorpse,
     body: PostCombatBody,
@@ -686,6 +712,28 @@ fn persist_body(
             contact_stress: injury.contact_stress,
         });
     }
+    Ok(())
+}
+
+pub(crate) fn persist_pathology_snapshot(
+    ctx: &ReducerContext,
+    corpse_id: &str,
+    snapshot: &adventuresim_core::autopsy::SystemicPathologySnapshot,
+) -> Result<(), String> {
+    if ctx
+        .db
+        .corpse_pathology()
+        .corpse_id()
+        .find(&corpse_id.to_owned())
+        .is_some()
+    {
+        return Ok(());
+    }
+    ctx.db.corpse_pathology().insert(CorpsePathology {
+        corpse_id: corpse_id.into(),
+        snapshot_json: serde_json::to_string(snapshot)
+            .map_err(|_| "Could not encode corpse pathology snapshot")?,
+    });
     Ok(())
 }
 
@@ -1148,6 +1196,23 @@ pub fn examine_corpse(
     } else {
         summarize_internal(ctx, &corpse, &discipline, check, completed_minute)
     };
+    if discipline == "physiology"
+        && finding.starts_with("Systemic examination finds")
+        && let Some(patient) = ctx
+            .db
+            .outbreak_patient_authority()
+            .iter()
+            .find(|patient| patient.corpse_id.as_deref() == Some(corpse.id.as_str()))
+        && let Some(evidence_id) = patient.autopsy_evidence_id.as_deref()
+    {
+        crate::investigation::record_evidence_knowledge(
+            ctx,
+            actor_id,
+            &patient.case_id,
+            evidence_id,
+            &receipt_id,
+        )?;
+    }
     ctx.db
         .autopsy_action_receipt()
         .insert(AutopsyActionReceipt {
@@ -1523,7 +1588,12 @@ pub(crate) fn grant_permission_from_dialogue(
     corpse_id: &str,
     npc_id: &str,
     scope: CorpsePermissionScope,
+    approach: &str,
 ) -> Result<bool, String> {
+    use adventuresim_core::social::{
+        PermissionPetitionApproach as Approach, PermissionPetitionInput,
+        resolve_permission_petition,
+    };
     let party_id = observer_party(ctx, actor_id)?;
     let corpse = ctx
         .db
@@ -1542,24 +1612,109 @@ pub(crate) fn grant_permission_from_dialogue(
         .ok_or("NPC not found")?;
     let kind = permission_kind_for_npc(ctx, &corpse, &npc)
         .ok_or("NPC cannot grant permission for this corpse")?;
+    let approach = match approach {
+        "personal" => Approach::PersonalAppeal,
+        "command" => Approach::Command,
+        "professional" => Approach::ProfessionalOpinion,
+        "religious" => Approach::ReligiousPetition,
+        "guild" => Approach::GuildPetition,
+        _ => return Err("Unknown corpse permission approach".into()),
+    };
+    let approach_label = match approach {
+        Approach::PersonalAppeal => "personal",
+        Approach::Command => "command",
+        Approach::ProfessionalOpinion => "professional",
+        Approach::ReligiousPetition => "religious",
+        Approach::GuildPetition => "guild",
+    };
     let scope_label = permission_scope_label(scope);
-    let attempt_id = format!("{corpse_id}:{party_id}:{npc_id}:{scope_label}");
+    let attempt_id = format!("{corpse_id}:{party_id}:{npc_id}:{scope_label}:{approach_label}");
     if let Some(attempt) = ctx.db.corpse_permission_attempt().id().find(&attempt_id) {
         return Ok(attempt.granted);
     }
-    let affinity = ctx
+    let relationship = ctx
         .db
         .settlement_npc_relationship()
         .id()
-        .find(&format!("{actor_id}:{npc_id}"))
-        .map_or(0.0, |row| row.affinity_anchor);
-    let charm = crate::condition::mental_check(ctx, actor_id, Skill::Charm)?;
+        .find(&format!("{actor_id}:{npc_id}"));
+    let affinity = relationship.as_ref().map_or(0.0, |row| row.affinity_anchor);
+    let familiarity_bps = relationship.as_ref().map_or(0, |row| {
+        ((row.shared_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16
+    });
+    let (fame, infamy) = crate::reputation::local_reputation(ctx, actor_id, &corpse.settlement_id);
+    let reputation_modifier =
+        adventuresim_core::reputation::npc_reaction_modifier(fame, infamy, familiarity_bps);
+    let skill_check = match approach {
+        Approach::PersonalAppeal | Approach::GuildPetition => {
+            crate::condition::mental_check(ctx, actor_id, Skill::Charm)?
+        }
+        Approach::Command => crate::condition::mental_check(ctx, actor_id, Skill::Command)?,
+        Approach::ProfessionalOpinion => {
+            crate::condition::mental_check(ctx, actor_id, Skill::Physiology)?
+        }
+        Approach::ReligiousPetition => {
+            let religion_id = ctx
+                .db
+                .settlement()
+                .id()
+                .find(&corpse.settlement_id)
+                .ok_or("Corpse settlement not found")?
+                .religion_id;
+            let religion = adventuresim_world_schema::OfficialReligion::from_id(&religion_id)
+                .ok_or("Settlement religion is unknown")?;
+            crate::social::target_religion_check(ctx, actor_id, religion)?
+        }
+    };
+    let language_coefficient = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&corpse.settlement_id)
+        .and_then(|settlement| {
+            let skills = ctx.db.character_skills().character_id().find(actor_id)?;
+            let attributes = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(actor_id)?;
+            let hours = skills
+                .oral_languages
+                .effective(settlement.languages.dominant_german());
+            Some(
+                hours.min(attributes.instinct.max(0.0) * 1_000.0)
+                    / adventuresim_world_schema::ORAL_FLUENCY_HOURS,
+            )
+        })
+        .unwrap_or(0.0);
     let difficulty = permission_difficulty(kind, scope);
     let entropy = adventuresim_core::settlement_population::stable_hash(&format!(
         "corpse-permission:{attempt_id}"
     ));
-    let circumstance = (entropy % 101) as f32 / 100.0 - 0.5;
-    let granted = charm + affinity.clamp(-25.0, 25.0) / 25.0 + circumstance >= difficulty;
+    let roll = (entropy % 10_001) as f32 / 10_000.0;
+    let professional_fit = matches!(
+        npc.profession.as_str(),
+        "cleric" | "physician" | "surgeon" | "local healer"
+    );
+    let authority_fit = match approach {
+        Approach::ReligiousPetition => kind == CorpsePermissionKind::Priest,
+        Approach::Command => kind == CorpsePermissionKind::SecularAuthority,
+        Approach::GuildPetition => kind == CorpsePermissionKind::GuildAuthority,
+        _ => true,
+    };
+    let granted = resolve_permission_petition(PermissionPetitionInput {
+        approach,
+        skill_check,
+        language_coefficient,
+        affinity,
+        familiarity_hours: relationship
+            .as_ref()
+            .map_or(0.0, |row| row.shared_minutes as f32 / 60.0),
+        reputation_modifier,
+        professional_fit,
+        authority_fit,
+        difficulty,
+        roll,
+    });
     let attempted_minute = now(ctx, actor_id)?;
     ctx.db
         .corpse_permission_attempt()
@@ -1569,6 +1724,7 @@ pub(crate) fn grant_permission_from_dialogue(
             party_id: party_id.clone(),
             npc_id: npc_id.into(),
             scope,
+            approach: approach_label.into(),
             granted,
             attempted_minute,
         });
@@ -1611,9 +1767,11 @@ fn permission_difficulty(kind: CorpsePermissionKind, scope: CorpsePermissionScop
         (CorpsePermissionKind::Family, CorpsePermissionScope::Examination) => 1.0,
         (CorpsePermissionKind::Priest, CorpsePermissionScope::Examination) => 2.0,
         (CorpsePermissionKind::SecularAuthority, CorpsePermissionScope::Examination) => 2.5,
+        (CorpsePermissionKind::GuildAuthority, CorpsePermissionScope::Examination) => 3.0,
         (CorpsePermissionKind::Family, CorpsePermissionScope::Exhumation) => 3.5,
         (CorpsePermissionKind::Priest, CorpsePermissionScope::Exhumation) => 4.0,
         (CorpsePermissionKind::SecularAuthority, CorpsePermissionScope::Exhumation) => 4.5,
+        (CorpsePermissionKind::GuildAuthority, CorpsePermissionScope::Exhumation) => 5.0,
     }
 }
 
@@ -1623,6 +1781,7 @@ fn titled_permission_kind(
     profession: &str,
     local_role: &str,
     service_id: &str,
+    organization_id: &str,
 ) -> Option<CorpsePermissionKind> {
     if !same_settlement {
         None
@@ -1632,6 +1791,8 @@ fn titled_permission_kind(
         Some(CorpsePermissionKind::Priest)
     } else if matches!(local_role, "reeve" | "local lord" | "magistrate") {
         Some(CorpsePermissionKind::SecularAuthority)
+    } else if !organization_id.is_empty() && local_role.starts_with("master ") {
+        Some(CorpsePermissionKind::GuildAuthority)
     } else {
         None
     }
@@ -1654,6 +1815,7 @@ fn permission_kind_for_npc(
         &npc.profession,
         &npc.local_role,
         &npc.service_id,
+        &npc.organization_id,
     )
 }
 
@@ -1675,9 +1837,30 @@ pub(crate) fn permission_topics_for_npc(
         .filter(&party_id)
         .filter(|corpse| !corpse.burned)
         .flat_map(|corpse| {
-            if permission_kind_for_npc(ctx, &corpse, &npc).is_none() {
+            let Some(kind) = permission_kind_for_npc(ctx, &corpse, &npc) else {
                 return Vec::new();
-            }
+            };
+            let approaches: &[(&str, &str)] = match kind {
+                CorpsePermissionKind::Family => &[
+                    ("personal", "Make a personal appeal"),
+                    ("professional", "Explain the medical necessity"),
+                ],
+                CorpsePermissionKind::Priest => &[
+                    ("religious", "Petition on religious grounds"),
+                    ("professional", "Explain the medical necessity"),
+                    ("personal", "Make a personal appeal"),
+                ],
+                CorpsePermissionKind::SecularAuthority => &[
+                    ("command", "Invoke civic necessity"),
+                    ("professional", "Give a professional opinion"),
+                    ("personal", "Make a personal appeal"),
+                ],
+                CorpsePermissionKind::GuildAuthority => &[
+                    ("guild", "Petition through guild responsibility"),
+                    ("professional", "Give a professional opinion"),
+                    ("personal", "Make a personal appeal"),
+                ],
+            };
             let mut topics = Vec::new();
             for scope in [
                 CorpsePermissionScope::Examination,
@@ -1695,34 +1878,38 @@ pub(crate) fn permission_topics_for_npc(
                 } else {
                     location != CorpseLocation::Interred
                 };
-                let attempted = ctx
-                    .db
-                    .corpse_permission_attempt()
-                    .id()
-                    .find(&format!(
-                        "{}:{}:{}:{}",
-                        corpse.id,
-                        party_id,
-                        npc_id,
-                        permission_scope_label(scope)
-                    ))
-                    .is_some();
-                if eligible_location
-                    && permission_for(ctx, &corpse.id, &party_id, scope).is_none()
-                    && !attempted
+                if eligible_location && permission_for(ctx, &corpse.id, &party_id, scope).is_none()
                 {
-                    topics.push((
-                        format!(
-                            "corpse-permission:{}:{}",
-                            permission_scope_label(scope),
-                            corpse.id
-                        ),
-                        if is_exhumation {
-                            "Ask permission to exhume a buried body".into()
-                        } else {
-                            format!("Ask permission to examine {}", corpse.display_name)
-                        },
-                    ));
+                    for (approach, approach_label) in approaches {
+                        let attempted = ctx
+                            .db
+                            .corpse_permission_attempt()
+                            .id()
+                            .find(&format!(
+                                "{}:{}:{}:{}:{}",
+                                corpse.id,
+                                party_id,
+                                npc_id,
+                                permission_scope_label(scope),
+                                approach
+                            ))
+                            .is_some();
+                        if !attempted {
+                            topics.push((
+                                format!(
+                                    "corpse-permission:{}:{}:{}",
+                                    permission_scope_label(scope),
+                                    approach,
+                                    corpse.id
+                                ),
+                                if is_exhumation {
+                                    format!("{approach_label} to exhume the buried body")
+                                } else {
+                                    format!("{approach_label} to examine {}", corpse.display_name)
+                                },
+                            ));
+                        }
+                    }
                 }
             }
             topics
@@ -1779,23 +1966,23 @@ mod tests {
     #[test]
     fn permission_authority_is_exact_and_shared() {
         assert_eq!(
-            titled_permission_kind(true, true, "laborer", "neighbor", ""),
+            titled_permission_kind(true, true, "laborer", "neighbor", "", ""),
             Some(CorpsePermissionKind::Family)
         );
         assert_eq!(
-            titled_permission_kind(true, false, "cleric", "parish priest", "religion"),
+            titled_permission_kind(true, false, "cleric", "parish priest", "religion", "church"),
             Some(CorpsePermissionKind::Priest)
         );
         assert_eq!(
-            titled_permission_kind(true, false, "retainer", "reeve", "keep"),
+            titled_permission_kind(true, false, "retainer", "reeve", "keep", ""),
             Some(CorpsePermissionKind::SecularAuthority)
         );
         assert_eq!(
-            titled_permission_kind(true, false, "servant", "keep servant", "keep"),
+            titled_permission_kind(true, false, "servant", "keep servant", "keep", ""),
             None
         );
         assert_eq!(
-            titled_permission_kind(false, true, "laborer", "neighbor", ""),
+            titled_permission_kind(false, true, "laborer", "neighbor", "", ""),
             None
         );
 
@@ -1811,12 +1998,23 @@ mod tests {
             CorpsePermissionKind::Family,
             CorpsePermissionKind::Priest,
             CorpsePermissionKind::SecularAuthority,
+            CorpsePermissionKind::GuildAuthority,
         ] {
             assert!(
                 permission_difficulty(kind, CorpsePermissionScope::Exhumation)
                     > permission_difficulty(kind, CorpsePermissionScope::Examination)
             );
         }
+    }
+
+    #[test]
+    fn permission_uses_relationship_and_local_reputation_inputs() {
+        let source = include_str!("corpse.rs");
+        assert!(source.contains("local_reputation(ctx, actor_id, &corpse.settlement_id)"));
+        assert!(source.contains("npc_reaction_modifier(fame, infamy, familiarity_bps)"));
+        assert!(source.contains("resolve_permission_petition"));
+        assert!(source.contains("language_coefficient"));
+        assert!(source.contains("target_religion_check"));
     }
 
     #[test]

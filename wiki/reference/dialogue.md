@@ -1,5 +1,12 @@
 # Dialogue architecture
 
+Outbreak witnesses use ordinary proposition-granular quest dialogue for
+chronology, practices, responsibility, and vector accounts. Permission to
+examine or exhume an outbreak victim remains generic corpse-permission
+dialogue: family, the local priest, or a secular authority may grant it, with
+the established family-bypass consequences. See
+[Outbreak investigations](outbreaks.md).
+
 Settlement dialogue is the markerless discovery boundary for local problems.
 Inns surface unknown unresolved symptoms; overview is fallback only when no inn
 NPC is available. Locals repeat referrals. Hidden causes and destinations stay private.

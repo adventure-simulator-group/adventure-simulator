@@ -900,6 +900,65 @@ fn commit_action_consequence(
     }
 }
 
+fn commit_generated_remediation(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+    party_id: &str,
+    attempt_id: &str,
+) -> Result<(), String> {
+    let Some(output) = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id)
+    else {
+        return Ok(());
+    };
+    let outputs =
+        serde_json::from_str::<Vec<adventuresim_core::quest_generation::GeneratedActionOutput>>(
+            &output.outputs_json,
+        )
+        .map_err(|_| "Generated action output authority is invalid")?;
+    let remediation_ids = outputs
+        .iter()
+        .filter_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::Remediation {
+                remediation_id,
+            } => Some(remediation_id.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if remediation_ids.is_empty() {
+        return Ok(());
+    }
+    if remediation_ids.len() != 1
+        || capability.provenance_kind != "generated"
+        || capability.target_kind != "site"
+        || capability.generated_case_id.is_empty()
+    {
+        return Err("Generated remediation capability is incoherent".into());
+    }
+    let at_minute = crate::time::refresh_clock(ctx)?;
+    crate::outbreak::commit_source_remediation(
+        ctx,
+        &capability.generated_case_id,
+        party_id,
+        attempt_id,
+        remediation_ids[0],
+        &capability.target_id,
+        at_minute,
+    )?;
+    crate::strategic::ingest_case_outcome_fact(
+        ctx,
+        &format!("outcome:{attempt_id}:remediation"),
+        &capability.generated_case_id,
+        party_id,
+        adventuresim_core::case::OutcomeFactKind::SourceRemediated {
+            remediation_id: remediation_ids[0].into(),
+        },
+    )
+}
+
 fn generated_progress_kind(kind: action::InvestigationActionKind) -> bool {
     use action::InvestigationActionKind as K;
     match kind {
@@ -1215,6 +1274,7 @@ pub(crate) fn perform_investigation_action_authorized(
     crate::strategic::reconcile_party_objective_continuity(ctx, &party_id)?;
     if resolution.success {
         commit_action_consequence(ctx, &capability, &party_id, &attempt_id)?;
+        commit_generated_remediation(ctx, &capability, &party_id, &attempt_id)?;
     }
     persist_action_result_lead(ctx, &capability, &attempt_id, &resolution)?;
     let completed_at = ctx

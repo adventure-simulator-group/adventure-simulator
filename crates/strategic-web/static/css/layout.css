@@ -109,7 +109,7 @@
   mask: url("/static/icons/game/hammer-nails.svg") center / contain no-repeat;
 }
 
-[data-developer-only] { display: none; }
+html:not([data-developer-mode]) [data-developer-only] { display: none; }
 
 html[data-developer-mode] [data-developer-only] { display: inline-grid; }
 html[data-developer-mode] .location-stat-list > div[data-developer-only] { display: flex; }

@@ -1068,6 +1068,11 @@ pub(crate) fn set_character_case_site(
     character_id: u64,
     case_site_id: Option<String>,
 ) {
+    crate::outbreak::record_case_site_presence_transition(
+        ctx,
+        character_id,
+        case_site_id.as_deref(),
+    );
     if ctx
         .db
         .character_case_site_occupancy()

@@ -677,19 +677,8 @@ fn dialogue_fact_context(
             },
             FactValue::Bool(delivery_receipt.is_some() || has_public_delivery),
         );
-        let exact_referral = if let Some(receipt) = delivery_receipt.as_ref() {
-            referred_generated_witness(
-                ctx,
-                character_id,
-                &receipt.opaque_case_ref,
-                &npc.actor_id,
-                &session.settlement_id,
-                &session.location_id,
-            )?
-            .is_some()
-        } else {
-            false
-        };
+        let exact_referral =
+            dialogue_referred_witness(ctx, character_id, session, &npc.actor_id)?.is_some();
         result.facts.insert(
             FactKey::ParticipantReferralContact {
                 role: npc.role.clone(),
@@ -1173,29 +1162,23 @@ fn dialogue_runtime_bindings(
             adventuresim_core::quest_generation::referral_display_location(witness);
         bindings.bind(S::ReferralLocation, referral_location.to_owned());
         bindings.bind(S::DescribedLocation, referral_location.to_owned());
-        if let Some((_, selected_witness)) = referred_generated_witness(
-            ctx,
-            character_id,
-            &receipt.opaque_case_ref,
-            &npc.id,
-            &session.settlement_id,
-            &session.location_id,
-        )? {
-            let testimony = adventuresim_core::quest_generation::initial_testimony_projection(
-                &selected_witness,
-            )
-            .into_iter()
-            .map(|(_, draft)| adventuresim_dialogue::TestimonyLine {
-                spoken_text: draft.spoken_text.trim().to_owned(),
-                claim_text: draft.challenge_text.clone(),
-            })
-            .filter(|line| !line.spoken_text.is_empty())
-            .collect::<Vec<_>>();
-            if testimony.is_empty() {
-                return Err("Generated witness testimony is unavailable or too large".into());
-            }
-            bindings.bind_testimony(testimony);
+    }
+    if let Some((_, selected_witness)) =
+        dialogue_referred_witness(ctx, character_id, session, &npc.id)?
+    {
+        let testimony =
+            adventuresim_core::quest_generation::initial_testimony_projection(&selected_witness)
+                .into_iter()
+                .map(|(_, draft)| adventuresim_dialogue::TestimonyLine {
+                    spoken_text: draft.spoken_text.trim().to_owned(),
+                    claim_text: draft.challenge_text.clone(),
+                })
+                .filter(|line| !line.spoken_text.is_empty())
+                .collect::<Vec<_>>();
+        if testimony.is_empty() {
+            return Err("Generated witness testimony is unavailable or too large".into());
         }
+        bindings.bind_testimony(testimony);
     }
     Ok(bindings)
 }

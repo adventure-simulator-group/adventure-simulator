@@ -1,5 +1,13 @@
 # Autopsies
 
+Generated disease fatalities use their exact terminal disease state and carry
+no invented combat injuries. Only a modeled carrier attack uses bounded
+strategic autoresolve and post-combat trauma. Discovery follows the normal rumor
+path. Permission offers typed personal, command, professional, religious, and
+guild petitions using language, relationship, familiarity, profession,
+Religion, and local fame/infamy; exhumation remains harder than examination.
+See [Outbreak investigations](outbreaks.md).
+
 Autopsies use durable strategic body state produced by ordinary combat
 autoresolve. The corpse boundary stores final regional health, blood loss, and a
 bounded sequence of physical injuries. It does not store tactical ticks,

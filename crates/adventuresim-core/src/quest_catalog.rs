@@ -437,6 +437,7 @@ impl Catalog {
                         &["physical_trail", "social_inquiry"],
                         &["rescue", "retrieve_return", "expose"],
                     ),
+                    "outbreak" => (&["physical_trail", "social_inquiry"], &["remediate_source"]),
                     _ => return Err(format!("template {} has no typed graph assembler", item.id)),
                 };
                 if item.routes.iter().map(String::as_str).collect::<Vec<_>>() != supported_routes
