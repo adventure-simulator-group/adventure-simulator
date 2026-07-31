@@ -134,6 +134,7 @@ enum EvalPolicyArg {
 enum EvalFamilyArg {
     RecurringDepredation,
     DisappearanceOrLoss,
+    Outbreak,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -175,7 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })?),
             };
             let case_count = cases_per_template
-                .checked_mul(2)
+                .checked_mul(3)
                 .ok_or("case count overflow")?;
             let limits = EvalLimits {
                 max_cases: case_count,
@@ -231,6 +232,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 EvalFamilyArg::DisappearanceOrLoss => {
                     adventuresim_core::quest_generation::TemplateFamily::DisappearanceOrLoss
+                }
+                EvalFamilyArg::Outbreak => {
+                    adventuresim_core::quest_generation::TemplateFamily::Outbreak
                 }
             };
             let limits = EvalLimits {

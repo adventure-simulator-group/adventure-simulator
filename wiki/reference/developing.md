@@ -1,5 +1,22 @@
 # Development Workflow
 
+## Outbreak demo
+
+Start a disposable strategic-only stack with `just outbreak-demo`. Create or
+select an adventurer, enable browser-local developer mode, and choose
+**Outbreak demo** in the settlement top bar. The loader creates a deterministic
+generated outbreak with private progressing patients, an optional exact-course
+disease victim or carrier-autoresolve victim, and an ordinary remediation path.
+It prepares the selected character
+with Physiology, Surgery, Bestiary, social and urban-investigation skills plus a
+surgery kit.
+
+The loader intentionally does not reveal the case or write a journal entry.
+Ask local NPCs for rumors, then investigate through the normal quest,
+physiology, surgery, bestiary, and dialogue surfaces. Repeated loading is
+idempotent for the same character and settlement. The reducer is available only
+in a development-bootstrap module.
+
 ## Autopsy demo
 
 Start a disposable strategic-only stack:
@@ -492,6 +509,10 @@ For a self-contained tactical database and request, prefer
   $env:CARGO_TARGET_DIR = "$PWD\target\verification"
   just test
   ```
+
+  Isolated profiles started with `scripts/dev_stack.py run-profile` also honor
+  `CARGO_TARGET_DIR`, which lets multiple worktrees reuse an existing build
+  directory instead of compiling the same stack into each worktree.
 
 `strategic-web` logs every HTTP request at `info` level with a request ID,
 method, URI, response status, and elapsed milliseconds. The same request ID is

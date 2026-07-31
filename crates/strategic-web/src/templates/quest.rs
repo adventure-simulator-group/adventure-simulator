@@ -7,7 +7,8 @@ use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
     AutoresolveReport, BackendCaseSitePin, BackendCorpse, BackendInvestigationAction,
-    BattleLootItem, FoodLot, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
+    BackendOutbreakPatient, BattleLootItem, FoodLot, InventoryQuantityTarget, ItemDefinition,
+    PartyInventoryItem,
 };
 use crate::{
     spacetimedb::Character,
@@ -52,6 +53,8 @@ pub fn quest_location_map_page(
     logged_in_as: Option<&str>,
     corpses: &[BackendCorpse],
     selected_corpse: Option<(&BackendCorpse, &str)>,
+    outbreak_patients: &[BackendOutbreakPatient],
+    selected_patient: Option<&BackendOutbreakPatient>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.id == id));
     let content = html! {
@@ -90,6 +93,8 @@ pub fn quest_location_map_page(
             true,
             corpses,
             selected_corpse,
+            outbreak_patients,
+            selected_patient,
         ))
         (map_destination_detail(
             selected,
@@ -129,6 +134,8 @@ fn quest_location_center(
     map_tab: bool,
     corpses: &[BackendCorpse],
     selected_corpse: Option<(&BackendCorpse, &str)>,
+    outbreak_patients: &[BackendOutbreakPatient],
+    selected_patient: Option<&BackendOutbreakPatient>,
 ) -> Markup {
     let autoresolve_messages = autoresolve_info_messages(autoresolve_report);
     html! {
@@ -202,6 +209,44 @@ fn quest_location_center(
                     div class="quest-combat-actions corpse-medical-actions" aria-label="Corpse medical windows" {
                         a class="btn btn-secondary" href=(format!("/locations/case-site/{}/enemy?corpse={}&medical=physiology", site.case_site_id, corpse.corpse_id)) { "Physiology" }
                         a class="btn btn-secondary" href=(format!("/locations/case-site/{}/enemy?corpse={}&medical=surgery", site.case_site_id, corpse.corpse_id)) { "Surgery" }
+                    }
+                }
+            }
+            @if !outbreak_patients.is_empty() {
+                nav class="settlement-npc-strip outbreak-patient-strip"
+                    aria-label="Afflicted patients here" {
+                    @for patient in outbreak_patients {
+                        a class="npc-portrait outbreak-patient-portrait"
+                            href=(format!("/locations/case-site/{}/enemy?patient={}", site.case_site_id, patient.patient_ref))
+                            aria-label=(format!("Examine {} with Physiology", patient.display_name)) {
+                            span class="npc-portrait-image" aria-hidden="true" { "♙" }
+                            span class="npc-portrait-name" { (&patient.display_name) }
+                        }
+                    }
+                }
+                @if let Some(patient) = selected_patient {
+                    section class="corpse-medical-window physiology-window"
+                        aria-label=(format!("Physiology examination of {}", patient.display_name)) {
+                        h2 { (&patient.display_name) }
+                        @if patient.findings.is_empty() {
+                            p { "No physiological examination has been recorded." }
+                        } @else {
+                            @for finding in &patient.findings {
+                                p { (finding) }
+                            }
+                        }
+                        @if patient.alive {
+                            form method="post"
+                                action=(format!("/outbreak-patients/{}/physiology", patient.patient_ref)) {
+                                input type="hidden" name="return_to"
+                                    value=(format!("/locations/case-site/{}/enemy?patient={}", site.case_site_id, patient.patient_ref));
+                                button class="btn btn-secondary" type="submit" {
+                                    "Examine with Physiology"
+                                }
+                            }
+                        } @else {
+                            p class="text-muted" { "This patient is dead; examine the discovered body instead." }
+                        }
                     }
                 }
             }
@@ -297,6 +342,8 @@ pub fn quest_location_enemy_page(
     logged_in_as: Option<&str>,
     corpses: &[BackendCorpse],
     selected_corpse: Option<(&BackendCorpse, &str)>,
+    outbreak_patients: &[BackendOutbreakPatient],
+    selected_patient: Option<&BackendOutbreakPatient>,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -362,6 +409,8 @@ pub fn quest_location_enemy_page(
             false,
             corpses,
             selected_corpse,
+            outbreak_patients,
+            selected_patient,
         ))
 
         aside class=(if resolved { "right-sidebar" } else { "right-sidebar travel-preferences-only-sidebar" })
@@ -536,6 +585,8 @@ mod tests {
             false,
             &[],
             None,
+            &[],
+            None,
         )
         .into_string();
         assert!(markup.contains("action=\"/quests/actions\""));
@@ -583,6 +634,8 @@ mod tests {
             true,
             None,
             false,
+            &[],
+            None,
             &[],
             None,
         )
@@ -633,6 +686,8 @@ mod tests {
             true,
             None,
             false,
+            &[],
+            None,
             &[],
             None,
         )
@@ -692,6 +747,8 @@ mod tests {
             false,
             &[],
             None,
+            &[],
+            None,
         )
         .into_string();
         assert!(enemy.contains("Lukas"));
@@ -719,6 +776,8 @@ mod tests {
             false,
             Some(&notice),
             true,
+            &[],
+            None,
             &[],
             None,
         )

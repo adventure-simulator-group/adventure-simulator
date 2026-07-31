@@ -1223,6 +1223,7 @@ pub fn plan_party_disease_interval(
                         row.start_minute,
                         row.end_minute,
                         row.intensity,
+                        false,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -1251,31 +1252,39 @@ pub fn plan_party_disease_interval(
                     f32::from(row.disease_intensity)
                         * f32::from(10_000_u16.saturating_sub(row.mitigation_bps))
                         / 10_000_000.0,
+                    true,
                 )
             }));
-            for (source_id, disease_key, source_start, source_end, intensity) in sources {
+            for (source_id, disease_key, source_start, source_end, intensity, scoped) in sources {
                 let disease_id = parse_id(&disease_key)?;
                 let from = start.max(source_start);
                 let to = end.min(source_end);
                 let definition = disease::definition(disease_id);
-                if let Some(source) = disease::protected_presence_exposure_source(
-                    disease_id,
-                    *id,
-                    &source_id,
-                    from,
-                    to,
-                    intensity,
-                    definition.base_acquisition,
-                    definition.primary_community_vector,
-                ) {
-                    if environmental.len()
-                        >= MAX_PARTY_INTERVAL_CANDIDATES.saturating_sub(scheduled.len())
-                    {
-                        return Err(
-                            "Disease interval exceeds bounded acquisition candidates".into()
-                        );
+                let windows = if scoped {
+                    crate::outbreak::exposure_windows(ctx, &source_id, *id, from, to)
+                } else {
+                    vec![(source_id.clone(), from, to)]
+                };
+                for (window_source_id, window_from, window_to) in windows {
+                    if let Some(source) = disease::protected_presence_exposure_source(
+                        disease_id,
+                        *id,
+                        &window_source_id,
+                        window_from,
+                        window_to,
+                        intensity,
+                        definition.base_acquisition,
+                        definition.primary_community_vector,
+                    ) {
+                        if environmental.len()
+                            >= MAX_PARTY_INTERVAL_CANDIDATES.saturating_sub(scheduled.len())
+                        {
+                            return Err(
+                                "Disease interval exceeds bounded acquisition candidates".into()
+                            );
+                        }
+                        environmental.push(source);
                     }
-                    environmental.push(source);
                 }
             }
         }
@@ -1621,31 +1630,42 @@ fn outbreak_episodes_through(
         let intensity = f32::from(problem.disease_intensity)
             * f32::from(10_000_u16.saturating_sub(problem.mitigation_bps))
             / 10_000_000.0;
-        let Some(at) = first_protected_presence_exposure_minute(
+        for (source_id, window_from, window_to) in crate::outbreak::exposure_windows(
             ctx,
-            &episodes,
-            disease_id,
-            character_id,
             &problem.id,
+            character_id,
             overlap_from,
             overlap_to,
-            intensity,
-            immunity,
-        ) else {
-            continue;
-        };
-        if !episodes
-            .iter()
-            .any(|episode| episode.disease_id == disease_id && episode.contracted_at == at)
-        {
-            episodes.push(InfectionEpisode {
-                id: disease::outbreak_exposure_seed(character_id, &format!("{}:{at}", problem.id)),
-                character_id,
+        ) {
+            let Some(at) = first_protected_presence_exposure_minute(
+                ctx,
+                &episodes,
                 disease_id,
-                contracted_at: at,
-                ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
-                phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
-            });
+                character_id,
+                &source_id,
+                window_from,
+                window_to,
+                intensity,
+                immunity,
+            ) else {
+                continue;
+            };
+            if !episodes
+                .iter()
+                .any(|episode| episode.disease_id == disease_id && episode.contracted_at == at)
+            {
+                episodes.push(InfectionEpisode {
+                    id: disease::outbreak_exposure_seed(
+                        character_id,
+                        &format!("{}:{at}", problem.id),
+                    ),
+                    character_id,
+                    disease_id,
+                    contracted_at: at,
+                    ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+                    phenotype_key_version: physiology::PHENOTYPE_KEY_VERSION,
+                });
+            }
         }
     }
     Ok(episodes.split_off(existing_len))
@@ -1699,7 +1719,7 @@ fn merge_acquisition_proposals(
     proposals
 }
 
-fn physiology_key(ctx: &ReducerContext) -> Result<PhysiologyKeyMaterial, String> {
+pub(crate) fn physiology_key(ctx: &ReducerContext) -> Result<PhysiologyKeyMaterial, String> {
     let key = ctx
         .db
         .physiology_key_material()
@@ -1785,7 +1805,7 @@ fn terminal_failure_for_meter(meter: physiology::Meter) -> TerminalFailure {
     }
 }
 
-fn first_private_terminal(
+pub(crate) fn first_private_terminal(
     ctx: &ReducerContext,
     character_id: u64,
     episodes: &[InfectionEpisode],

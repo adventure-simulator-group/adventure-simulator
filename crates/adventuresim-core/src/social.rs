@@ -15,6 +15,108 @@ pub const SOCIAL_COOLDOWN_MINUTES: u64 = 24 * 60;
 pub const SOCIAL_RESPONSE_MINUTES: u64 = 5;
 pub const DISCOVERY_TRAINING_HOURS: f32 = 0.25;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionPetitionApproach {
+    PersonalAppeal,
+    Command,
+    ProfessionalOpinion,
+    ReligiousPetition,
+    GuildPetition,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PermissionPetitionInput {
+    pub approach: PermissionPetitionApproach,
+    pub skill_check: f32,
+    pub language_coefficient: f32,
+    pub affinity: f32,
+    pub familiarity_hours: f32,
+    pub reputation_modifier: i16,
+    pub professional_fit: bool,
+    pub authority_fit: bool,
+    pub difficulty: f32,
+    pub roll: f32,
+}
+
+/// Generic permission petition used by legal, medical, religious, and guild
+/// dialogue. Domain authority remains the caller's responsibility.
+pub fn resolve_permission_petition(input: PermissionPetitionInput) -> bool {
+    if !input.skill_check.is_finite()
+        || !input.language_coefficient.is_finite()
+        || !input.affinity.is_finite()
+        || !input.familiarity_hours.is_finite()
+        || !input.difficulty.is_finite()
+        || !input.roll.is_finite()
+    {
+        return false;
+    }
+    let fit = match input.approach {
+        PermissionPetitionApproach::PersonalAppeal => 0.0,
+        PermissionPetitionApproach::Command => {
+            if input.authority_fit {
+                0.65
+            } else {
+                -0.8
+            }
+        }
+        PermissionPetitionApproach::ProfessionalOpinion => {
+            if input.professional_fit {
+                0.75
+            } else {
+                -0.9
+            }
+        }
+        PermissionPetitionApproach::ReligiousPetition => {
+            if input.authority_fit {
+                0.8
+            } else {
+                -0.7
+            }
+        }
+        PermissionPetitionApproach::GuildPetition => {
+            if input.authority_fit {
+                0.55
+            } else {
+                -0.8
+            }
+        }
+    };
+    let score = input.skill_check.clamp(0.0, 5.0) * input.language_coefficient.clamp(0.0, 1.0)
+        + input.affinity.clamp(-25.0, 25.0) / 25.0
+        + (input.familiarity_hours / 100.0).clamp(0.0, 1.0)
+        + f32::from(input.reputation_modifier) / 25.0
+        + fit
+        + (0.5 - input.roll.clamp(0.0, 1.0));
+    score >= input.difficulty
+}
+
+#[cfg(test)]
+mod permission_petition_tests {
+    use super::*;
+
+    #[test]
+    fn language_and_typed_fit_materially_govern_permission() {
+        let input = PermissionPetitionInput {
+            approach: PermissionPetitionApproach::ReligiousPetition,
+            skill_check: 4.0,
+            language_coefficient: 1.0,
+            affinity: 10.0,
+            familiarity_hours: 10.0,
+            reputation_modifier: 5,
+            professional_fit: false,
+            authority_fit: true,
+            difficulty: 3.0,
+            roll: 0.5,
+        };
+        assert!(resolve_permission_petition(input));
+        assert!(!resolve_permission_petition(PermissionPetitionInput {
+            language_coefficient: 0.0,
+            authority_fit: false,
+            ..input
+        }));
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SocialTopic {
     Defeat,

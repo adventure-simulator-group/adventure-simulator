@@ -23,9 +23,12 @@ pub fn choose_dialogue_topic(
         return Err("Dialogue action used a stale session revision".into());
     }
     if let Some(permission_coordinate) = topic_id.strip_prefix("corpse-permission:") {
-        let (scope, corpse_id) = permission_coordinate
+        let (scope, remainder) = permission_coordinate
             .split_once(':')
             .ok_or("Malformed corpse permission topic")?;
+        let (approach, corpse_id) = remainder
+            .split_once(':')
+            .ok_or("Malformed corpse permission approach")?;
         let scope = match scope {
             "examination" => crate::corpse::CorpsePermissionScope::Examination,
             "exhumation" => crate::corpse::CorpsePermissionScope::Exhumation,
@@ -54,6 +57,7 @@ pub fn choose_dialogue_topic(
             corpse_id,
             &npc_participant.actor_id,
             scope,
+            approach,
         )?;
         let scope_label = if scope == crate::corpse::CorpsePermissionScope::Exhumation {
             "exhume the body"

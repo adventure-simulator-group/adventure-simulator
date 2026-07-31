@@ -1,7 +1,8 @@
 {
   "templates": [
     {"id":"recurring_depredation","label":"Recurring depredation","routes":["physical_trail","pattern_surveillance","social_inquiry"],"objectives":["defeat","drive_off"],"cause_finales":{"*":["defeat","drive_off"]},"consequence_profile":"recurring_depredation","incident_interval_minutes":2880,"maximum_incidents":5},
-    {"id":"disappearance_or_loss","label":"Disappearance or loss","routes":["physical_trail","social_inquiry"],"objectives":["rescue","retrieve_return","expose"],"cause_finales":{"hostile":["rescue"],"concealment":["rescue"],"incidental_loss":["retrieve_return"],"fabricated":["expose"]},"consequence_profile":"disappearance_or_loss","incident_interval_minutes":2880,"maximum_incidents":5}
+    {"id":"disappearance_or_loss","label":"Disappearance or loss","routes":["physical_trail","social_inquiry"],"objectives":["rescue","retrieve_return","expose"],"cause_finales":{"hostile":["rescue"],"concealment":["rescue"],"incidental_loss":["retrieve_return"],"fabricated":["expose"]},"consequence_profile":"disappearance_or_loss","incident_interval_minutes":2880,"maximum_incidents":5},
+    {"id":"outbreak","label":"Disease outbreak","routes":["physical_trail","social_inquiry"],"objectives":["remediate_source"],"cause_finales":{"*":["remediate_source"]},"consequence_profile":"outbreak","incident_interval_minutes":1440,"maximum_incidents":8}
   ],
   "consequences": [
     {"id":"recurring_undead","family":"recurring_depredation","causes":["ghoul","skeleton"],"symptom":"night_screams","buy_bps":400,"sell_penalty_bps":200,"encounter_frequency_bps":700,"encounter_archetype":"undead","disease_intensity":180,"public_summary":"Locals report troubling sounds and disappearances after dark."},
@@ -9,12 +10,46 @@
     {"id":"recurring_goblins","family":"recurring_depredation","causes":["goblin"],"symptom":"vanished_livestock","buy_bps":700,"sell_penalty_bps":300,"encounter_frequency_bps":1000,"encounter_archetype":"goblins","disease_intensity":0,"public_summary":"Livestock have been disappearing from nearby holdings."},
     {"id":"recurring_wolves","family":"recurring_depredation","causes":["wolf"],"symptom":"vanished_livestock","buy_bps":700,"sell_penalty_bps":300,"encounter_frequency_bps":1000,"encounter_archetype":null,"disease_intensity":0,"public_summary":"Livestock have been disappearing from nearby holdings."},
     {"id":"recurring_bandits","family":"recurring_depredation","causes":["bandit","smuggler"],"symptom":"missing_caravans","buy_bps":1200,"sell_penalty_bps":500,"encounter_frequency_bps":1500,"encounter_archetype":"bandits","disease_intensity":0,"public_summary":"Several expected caravans have not arrived."},
-    {"id":"loss_default","family":"disappearance_or_loss","causes":["*"],"symptom":"empty_stalls","buy_bps":900,"sell_penalty_bps":400,"encounter_frequency_bps":500,"encounter_archetype":null,"disease_intensity":0,"public_summary":"A disappearance has disrupted work and trade, but nobody agrees on the cause."}
+    {"id":"loss_default","family":"disappearance_or_loss","causes":["*"],"symptom":"empty_stalls","buy_bps":900,"sell_penalty_bps":400,"encounter_frequency_bps":500,"encounter_archetype":null,"disease_intensity":0,"public_summary":"A disappearance has disrupted work and trade, but nobody agrees on the cause."},
+    {"id":"outbreak_default","family":"outbreak","causes":["*"],"symptom":"sick_locals","buy_bps":300,"sell_penalty_bps":150,"encounter_frequency_bps":0,"encounter_archetype":null,"disease_intensity":360,"public_summary":"Several households report similar fevers, but their cause is uncertain."}
   ],
   "relations": [
     {"id":"family","candidates":[
       {"id":"recurring_depredation","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["family_rotation"]},
       {"id":"disappearance_or_loss","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["family_rotation"]}
+      ,{"id":"outbreak","plausibility":80,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["family_rotation"]}
+    ]},
+    {"id":"cause.outbreak","candidates":[
+      {"id":"sanitation","plausibility":70,"curation":80,"hard_zero_reason":null,"required_bridge":null,"factors":["community_practice"]},
+      {"id":"behavior","plausibility":60,"curation":75,"hard_zero_reason":null,"required_bridge":null,"factors":["household_contact"]},
+      {"id":"threat_vector","plausibility":45,"curation":90,"hard_zero_reason":null,"required_bridge":null,"factors":["carrier_ecology"]},
+      {"id":"environmental","plausibility":55,"curation":90,"hard_zero_reason":null,"required_bridge":null,"factors":["physical_reservoir"]}
+    ]},
+    {"id":"disease.outbreak","candidates":[
+      {"id":"influenza","plausibility":100,"curation":60,"hard_zero_reason":null,"required_bridge":null,"factors":["close_contact"]},
+      {"id":"mahrdruck","plausibility":35,"curation":90,"hard_zero_reason":null,"required_bridge":null,"factors":["vermin_vector"]},
+      {"id":"shroud_fever","plausibility":30,"curation":90,"hard_zero_reason":null,"required_bridge":null,"factors":["grave_mould"]},
+      {"id":"bilwisschuss","plausibility":30,"curation":90,"hard_zero_reason":null,"required_bridge":null,"factors":["rye_galls"]},
+      {"id":"kobeldunst","plausibility":30,"curation":90,"hard_zero_reason":null,"required_bridge":null,"factors":["ore_biofilm"]}
+    ]},
+    {"id":"source.influenza","candidates":[
+      {"id":"sanitation","plausibility":65,"curation":80,"hard_zero_reason":null,"required_bridge":null,"factors":["shared_bedding"]},
+      {"id":"behavior","plausibility":65,"curation":80,"hard_zero_reason":null,"required_bridge":null,"factors":["crowded_sleeping"]},
+      {"id":"environmental","plausibility":0,"curation":0,"hard_zero_reason":"Influenza requires close-contact exposure in this catalog.","required_bridge":null,"factors":["route_mismatch"]}
+    ]},
+    {"id":"source.mahrdruck","candidates":[
+      {"id":"threat_vector","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["sylph_castings"]},
+      {"id":"sanitation","plausibility":0,"curation":0,"hard_zero_reason":"Mahrdruck requires its vermin-like elemental vector.","required_bridge":null,"factors":["route_mismatch"]}
+    ]},
+    {"id":"source.shroud_fever","candidates":[{"id":"environmental","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["grave_mould"]}]},
+    {"id":"source.bilwisschuss","candidates":[{"id":"environmental","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["rye_galls"]}]},
+    {"id":"source.kobeldunst","candidates":[{"id":"environmental","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["ore_biofilm"]}]},
+    {"id":"route.outbreak","candidates":[
+      {"id":"direct","plausibility":60,"curation":80,"hard_zero_reason":null,"required_bridge":null},
+      {"id":"cautious","plausibility":60,"curation":80,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"pattern.outbreak","candidates":[
+      {"id":"irregular","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null}
     ]},
     {"id":"cause.recurring_depredation","candidates":[
       {"id":"bandit","plausibility":75,"curation":80,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},

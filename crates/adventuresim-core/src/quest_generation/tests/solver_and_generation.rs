@@ -468,7 +468,9 @@
                 ));
                 assert!(!exact.outputs.iter().any(|output| matches!(
                     output,
-                    GeneratedActionOutput::Consequence { .. } | GeneratedActionOutput::AmbushReady
+                    GeneratedActionOutput::Consequence { .. }
+                        | GeneratedActionOutput::AmbushReady
+                        | GeneratedActionOutput::Remediation { .. }
                 )));
             }
         }

@@ -8,6 +8,7 @@ use crate::autoresolve::{
     BattleLogEntry, BattleOpening, BattleOutcome, Combatant, CombatantOutcome, resolve_battle,
 };
 use crate::prelude::BodyPart;
+use serde::{Deserialize, Serialize};
 
 pub const SCENE_MINUTES: u64 = 90;
 pub const LOCAL_CUSTODY_MINUTES: u64 = 24 * 60;
@@ -45,6 +46,19 @@ pub struct PostCombatBody {
     pub health: [f32; 7],
     pub blood_loss_fraction: f32,
     pub injuries: Vec<BodyInjury>,
+}
+
+/// Durable, bounded systemic state captured at death. It contains no disease,
+/// source, attacker, or canonical cause identity.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SystemicPathologySnapshot {
+    pub respiratory_bps: u16,
+    pub circulatory_bps: u16,
+    pub homeostatic_bps: u16,
+    pub neurologic_bps: u16,
+    pub feverish: bool,
+    pub air_hunger: bool,
+    pub wasting: bool,
 }
 
 pub fn corpse_location(
@@ -299,6 +313,45 @@ pub fn physiology_finding(
     Some(format!("{systemic}{detail}."))
 }
 
+pub fn physiology_pathology_finding(
+    pathology: &SystemicPathologySnapshot,
+    skill_check: f32,
+    context: AutopsyEvidenceContext,
+    internal: bool,
+) -> Option<String> {
+    let quality = evidence_quality_bps(skill_check, context, internal);
+    if quality < 2_500 {
+        return None;
+    }
+    let systems = [
+        (pathology.respiratory_bps, "respiratory"),
+        (pathology.circulatory_bps, "circulatory"),
+        (pathology.homeostatic_bps, "whole-body regulatory"),
+        (pathology.neurologic_bps, "neurologic"),
+    ];
+    let (severity, system) = systems.into_iter().max_by_key(|(severity, _)| *severity)?;
+    if severity < 1_000 {
+        return None;
+    }
+    let accompanying = if pathology.air_hunger {
+        " Signs of sustained air hunger accompany it."
+    } else if pathology.feverish {
+        " General heat-related tissue stress accompanies it."
+    } else if pathology.wasting {
+        " Long-running loss of tissue condition accompanies it."
+    } else {
+        ""
+    };
+    let caveat = if quality < 5_500 {
+        " Decomposition prevents a narrower interpretation."
+    } else {
+        " This pattern supports several different illnesses or exposures."
+    };
+    Some(format!(
+        "Systemic examination finds a pronounced {system} failure pattern.{accompanying}{caveat}"
+    ))
+}
+
 /// Bestiary interprets an already-observed signature into broad candidates.
 /// It deliberately receives no subject species or attacker identity.
 pub fn bestiary_finding(
@@ -496,5 +549,33 @@ mod tests {
             .unwrap()
             .contains("undisturbed scene")
         );
+    }
+
+    #[test]
+    fn systemic_pathology_is_useful_without_becoming_a_diagnosis() {
+        let finding = physiology_pathology_finding(
+            &SystemicPathologySnapshot {
+                respiratory_bps: 7_500,
+                circulatory_bps: 1_000,
+                homeostatic_bps: 2_000,
+                neurologic_bps: 500,
+                feverish: true,
+                air_hunger: true,
+                wasting: false,
+            },
+            4.0,
+            AutopsyEvidenceContext {
+                decomposition: DecompositionBand::Fresh,
+                at_scene: true,
+                opening_obscuration_bps: 0,
+            },
+            true,
+        )
+        .unwrap();
+        assert!(finding.contains("respiratory"));
+        assert!(finding.contains("several different illnesses or exposures"));
+        for forbidden in ["influenza", "shroud", "source", "elemental"] {
+            assert!(!finding.to_ascii_lowercase().contains(forbidden));
+        }
     }
 }

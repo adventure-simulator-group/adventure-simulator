@@ -1,5 +1,11 @@
 # Quests
 
+Outbreak quests give sanitation, behavior, environmental, and monster-vector
+causes the same early symptom: ill locals. They support physical and social
+investigation routes and complete only after the exact source is remediated;
+diagnosis alone is not completion. See
+[Outbreak investigations](../reference/outbreaks.md).
+
 Quests begin as problems in the world, not tasks waiting for a player to
 activate them. A settlement may already be suffering thefts, disappearances,
 dangerous creatures, disease, or disrupted trade before any character hears

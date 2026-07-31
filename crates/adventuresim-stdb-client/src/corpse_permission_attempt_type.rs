@@ -14,6 +14,7 @@ pub struct CorpsePermissionAttempt {
     pub party_id: String,
     pub npc_id: String,
     pub scope: CorpsePermissionScope,
+    pub approach: String,
     pub granted: bool,
     pub attempted_minute: u64,
 }
@@ -31,6 +32,7 @@ pub struct CorpsePermissionAttemptCols {
     pub party_id: __sdk::__query_builder::Col<CorpsePermissionAttempt, String>,
     pub npc_id: __sdk::__query_builder::Col<CorpsePermissionAttempt, String>,
     pub scope: __sdk::__query_builder::Col<CorpsePermissionAttempt, CorpsePermissionScope>,
+    pub approach: __sdk::__query_builder::Col<CorpsePermissionAttempt, String>,
     pub granted: __sdk::__query_builder::Col<CorpsePermissionAttempt, bool>,
     pub attempted_minute: __sdk::__query_builder::Col<CorpsePermissionAttempt, u64>,
 }
@@ -44,6 +46,7 @@ impl __sdk::__query_builder::HasCols for CorpsePermissionAttempt {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             npc_id: __sdk::__query_builder::Col::new(table_name, "npc_id"),
             scope: __sdk::__query_builder::Col::new(table_name, "scope"),
+            approach: __sdk::__query_builder::Col::new(table_name, "approach"),
             granted: __sdk::__query_builder::Col::new(table_name, "granted"),
             attempted_minute: __sdk::__query_builder::Col::new(table_name, "attempted_minute"),
         }

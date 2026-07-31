@@ -969,6 +969,9 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                     &["physical_trail", "social_inquiry"],
                                     &["rescue", "retrieve_return", "expose"],
                                 ),
+                                "outbreak" => {
+                                    (&["physical_trail", "social_inquiry"], &["remediate_source"])
+                                }
                                 _ => return Err(format!("{at}.id: no typed graph assembler")),
                             };
                         if routes.iter().map(String::as_str).collect::<Vec<_>>() != supported_routes
@@ -1020,6 +1023,10 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                     vec!["retrieve_return".to_owned()],
                                 ),
                             ]),
+                            "outbreak" => BTreeMap::from([(
+                                "*".to_owned(),
+                                vec!["remediate_source".to_owned()],
+                            )]),
                             _ => unreachable!(),
                         };
                         if parsed_plans != expected_plans {
@@ -1041,6 +1048,7 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                 "vanished_livestock",
                                 "missing_caravans",
                                 "empty_stalls",
+                                "sick_locals",
                             ],
                             &format!("{at}.symptom"),
                         )?;
@@ -1261,6 +1269,36 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                 }
                 None
             }
+            "disease" => {
+                let template = context.ok_or_else(|| {
+                    format!("catalog.relations.{relation_id}: missing template suffix")
+                })?;
+                if template != "outbreak" {
+                    return Err(format!(
+                        "catalog.relations.{relation_id}: disease relations are supported only for outbreak"
+                    ));
+                }
+                None
+            }
+            "source" => {
+                let disease = context.ok_or_else(|| {
+                    format!("catalog.relations.{relation_id}: missing disease suffix")
+                })?;
+                if ![
+                    "influenza",
+                    "mahrdruck",
+                    "shroud_fever",
+                    "bilwisschuss",
+                    "kobeldunst",
+                ]
+                .contains(&disease)
+                {
+                    return Err(format!(
+                        "catalog.relations.{relation_id}: dangling outbreak disease {disease}"
+                    ));
+                }
+                None
+            }
             "site" => {
                 let monster = context.ok_or_else(|| {
                     format!("catalog.relations.{relation_id}: missing monster suffix")
@@ -1311,9 +1349,22 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                 ));
             }
             let closed = match namespace {
+                "cause" if context == Some("outbreak") => {
+                    Some(&["sanitation", "behavior", "threat_vector", "environmental"][..])
+                }
                 "cause" if !monsters.contains(candidate) => {
                     Some(&["concealment", "incidental_loss", "fabricated"][..])
                 }
+                "disease" => Some(
+                    &[
+                        "influenza",
+                        "mahrdruck",
+                        "shroud_fever",
+                        "bilwisschuss",
+                        "kobeldunst",
+                    ][..],
+                ),
+                "source" => Some(&["sanitation", "behavior", "threat_vector", "environmental"][..]),
                 "reliability" => Some(
                     &[
                         "truthful",
@@ -1390,12 +1441,21 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
         "family",
         "cause.recurring_depredation",
         "cause.disappearance_or_loss",
+        "cause.outbreak",
+        "disease.outbreak",
+        "source.influenza",
+        "source.mahrdruck",
+        "source.shroud_fever",
+        "source.bilwisschuss",
+        "source.kobeldunst",
         "reliability.baseline",
         "account.baseline",
         "route.recurring_depredation",
         "route.disappearance_or_loss",
+        "route.outbreak",
         "pattern.recurring_depredation",
         "pattern.disappearance_or_loss",
+        "pattern.outbreak",
         "evidence.baseline",
     ] {
         if !relations.contains_key(required) {

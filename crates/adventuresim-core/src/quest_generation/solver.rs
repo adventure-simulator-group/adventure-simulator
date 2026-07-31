@@ -40,7 +40,10 @@ fn solve_variables(
     {
         return Err(GenerationError::CandidateLimit);
     }
-    let families = family_candidates();
+    let mut families = family_candidates();
+    if context.requested_family != Some(TemplateFamily::Outbreak) {
+        families.retain(|candidate| candidate.value != TemplateFamily::Outbreak);
+    }
     let family_indices = if let Some(requested) = context.requested_family {
         families
             .iter()
@@ -218,11 +221,13 @@ fn family_candidates() -> Vec<Candidate<TemplateFamily>> {
             id: match candidate.id.as_str() {
                 "recurring_depredation" => "family.recurring_depredation",
                 "disappearance_or_loss" => "family.disappearance_or_loss",
+                "outbreak" => "family.outbreak",
                 _ => unreachable!("startup validation rejects unknown family"),
             },
             value: match candidate.id.as_str() {
                 "recurring_depredation" => TemplateFamily::RecurringDepredation,
                 "disappearance_or_loss" => TemplateFamily::DisappearanceOrLoss,
+                "outbreak" => TemplateFamily::Outbreak,
                 _ => unreachable!("startup validation rejects unknown family"),
             },
             weight: Weight::new(candidate.plausibility, candidate.curation),
@@ -240,6 +245,7 @@ fn cause_candidates(family: TemplateFamily) -> Vec<Candidate<CanonicalCause>> {
     let relation = match family {
         TemplateFamily::RecurringDepredation => "cause.recurring_depredation",
         TemplateFamily::DisappearanceOrLoss => "cause.disappearance_or_loss",
+        TemplateFamily::Outbreak => "cause.outbreak",
     };
     crate::quest_catalog::catalog()
         .relation(relation)
@@ -527,6 +533,7 @@ fn bridge(id: &str, prefix: &str, family: TemplateFamily, _now: u64) -> CausalBr
     let family_id = match family {
         TemplateFamily::RecurringDepredation => "recurring_depredation",
         TemplateFamily::DisappearanceOrLoss => "disappearance_or_loss",
+        TemplateFamily::Outbreak => "outbreak",
     };
     let action_id = authored
         .action_ids
@@ -562,6 +569,7 @@ fn consequence(
             "vanished_livestock" => Symptom::VanishedLivestock,
             "missing_caravans" => Symptom::MissingCaravans,
             "empty_stalls" => Symptom::EmptyStalls,
+            "sick_locals" => Symptom::SickLocals,
             _ => unreachable!("validated consequence symptom"),
         },
         effects: Effects {
@@ -944,6 +952,7 @@ fn build_actions(
                 vec![],
             ),
         ],
+        TemplateFamily::Outbreak => Vec::new(),
     };
     let early = actions
         .iter_mut()

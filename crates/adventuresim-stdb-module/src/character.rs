@@ -1610,7 +1610,7 @@ pub(crate) fn shared_language_coefficient(
     .1
 }
 
-fn insert_character_with_origin(
+pub(crate) fn insert_character_with_origin(
     ctx: &ReducerContext,
     name: String,
     id: u64,

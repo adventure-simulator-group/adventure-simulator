@@ -361,6 +361,12 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
+                    button type="button" class="btn btn-small developer-outbreak-demo-button"
+                        data-developer-outbreak-demo data-developer-only
+                        aria-label="Load the outbreak demo"
+                        title="Create a real outbreak and discover it through an ordinary rumor" {
+                        "Outbreak demo"
+                    }
                     button type="button" class="btn btn-small developer-autopsy-demo-button"
                         data-developer-autopsy-demo data-developer-only
                         aria-label="Load the autopsy demo"

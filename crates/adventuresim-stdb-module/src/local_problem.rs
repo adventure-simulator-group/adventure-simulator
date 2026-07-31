@@ -383,11 +383,16 @@ pub(crate) fn materialize_generated_problem(
             encounter_frequency_bps: consequence.effects.encounter_frequency_bps,
             encounter_archetype: archetype_name(consequence.effects.encounter_archetype).into(),
             disease_intensity: consequence.effects.disease_intensity,
-            disease_id: if consequence.effects.disease_intensity > 0 {
-                "influenza".into()
-            } else {
-                String::new()
-            },
+            disease_id: case.outbreak.as_ref().map_or_else(
+                || {
+                    if consequence.effects.disease_intensity > 0 {
+                        "influenza".into()
+                    } else {
+                        String::new()
+                    }
+                },
+                |outbreak| crate::disease::disease_key(outbreak.disease).into(),
+            ),
             starts_at,
             ends_at,
             mitigation_bps: 0,

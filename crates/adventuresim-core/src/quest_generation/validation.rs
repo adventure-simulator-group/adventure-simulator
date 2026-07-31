@@ -15,8 +15,21 @@ fn validate_track_trails(case: &GeneratedCase, errors: &mut Vec<String>) {
     if segment_ids.len() != case.track_segments.len() {
         errors.push("track segments require unique identities".into());
     }
-    if case.track_trails.is_empty() {
+    let uses_tracking = case.actions.iter().any(|action| {
+        action.track_segment_id.is_some()
+            || matches!(
+                action.kind,
+                InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks
+            )
+            || action.outputs.iter().any(|output| {
+                matches!(output, GeneratedActionOutput::TrackFinding { .. })
+            })
+    });
+    if uses_tracking && case.track_trails.is_empty() {
         errors.push("generated case requires an immutable physical trail".into());
+    }
+    if !uses_tracking && (!case.track_trails.is_empty() || !case.track_segments.is_empty()) {
+        errors.push("non-tracking case carries unbound immutable trail authority".into());
     }
     for segment in &case.track_segments {
         if !trail_ids.contains(&segment.trail_id) {
@@ -293,6 +306,251 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 );
             }
         }
+        TemplateFamily::Outbreak => {
+            let physical = initial_actions.iter().find(|action| {
+                action.route == RouteClass::PhysicalTrail
+                    && action.kind == InvestigationActionKind::InspectSite
+            });
+            let social = initial_actions.iter().any(|action| {
+                action.route == RouteClass::SocialInquiry
+                    && action.kind == InvestigationActionKind::LocateContact
+            });
+            if initial_actions.len() < 2 || physical.is_none() || !social {
+                errors.push(
+                    "outbreak cases require independent physical and non-corpse social routes"
+                        .into(),
+                );
+            }
+            let Some(outbreak) = &case.outbreak else {
+                errors.push("outbreak family lacks private typed outbreak truth".into());
+                return Err(errors);
+            };
+            if !crate::disease::definition(outbreak.disease)
+                .supports(outbreak.transmission_route)
+            {
+                errors.push("outbreak disease does not support its transmission route".into());
+            }
+            if !case
+                .sites
+                .iter()
+                .any(|site| site.id == outbreak.physical_source_site)
+            {
+                errors.push("outbreak physical source site is not materialized".into());
+            }
+            if !case.sites.iter().any(|site| {
+                site.id == outbreak.patient_presentation_site
+                    && site.exact_location_initially_known
+            }) {
+                errors.push("outbreak patient presentation site is not initially reachable".into());
+            }
+            let physical_path_is_complete = physical.is_some_and(|inspection| {
+                let reachable_root = case.sites.iter().any(|site| {
+                    site.id.0 == inspection.target_id && site.exact_location_initially_known
+                });
+                let observed = inspection.outputs.iter().find_map(|output| match output {
+                    GeneratedActionOutput::Evidence { evidence_id } => Some(evidence_id),
+                    _ => None,
+                });
+                let source_lead = inspection.outputs.iter().any(|output| matches!(
+                    output,
+                    GeneratedActionOutput::Destination {
+                        stage: GeneratedDestinationStage::Exact,
+                        site_id: Some(site_id),
+                    } if site_id == &outbreak.physical_source_site
+                ));
+                reachable_root && source_lead && observed.is_some_and(|evidence_id| {
+                    case.evidence.iter().any(|evidence| {
+                        &evidence.id == evidence_id
+                            && evidence.site_id.0 == inspection.target_id
+                    })
+                })
+            });
+            if !physical_path_is_complete {
+                errors.push(
+                    "outbreak physical inspection route must start at a known patient/material site and reach evidence plus the exact source lead"
+                        .into(),
+                );
+            }
+            let patient_refs = outbreak
+                .exposure_chronology
+                .iter()
+                .map(|exposure| exposure.patient_ref.as_str())
+                .collect::<BTreeSet<_>>();
+            if outbreak.exposure_chronology.len() < 2
+                || patient_refs.len() != outbreak.exposure_chronology.len()
+                || outbreak.exposure_chronology.iter().any(|exposure| {
+                    let episode = crate::disease::InfectionEpisode {
+                        id: exposure.episode_id,
+                        character_id: exposure.patient_key,
+                        disease_id: outbreak.disease,
+                        contracted_at: exposure.exposed_at,
+                        ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
+                        phenotype_key_version: exposure.phenotype_key_version,
+                    };
+                    let definition = crate::disease::definition(outbreak.disease);
+                    let course_end = exposure
+                        .exposed_at
+                        .saturating_add(definition.incubation_minutes)
+                        .saturating_add(definition.rise_minutes)
+                        .saturating_add(definition.peak_minutes)
+                        .saturating_add(definition.recovery_minutes);
+                    let terminal = crate::disease::first_combined_terminal(
+                        &[episode],
+                        exposure.exposed_at,
+                        course_end,
+                        f32::from(exposure.immunity_milli) / 1_000.0,
+                    );
+                    let death_is_coherent = match exposure.death_kind {
+                        Some(OutbreakPatientDeathKind::Disease) => {
+                            terminal == exposure.died_at.zip(exposure.terminal_failure)
+                        }
+                        Some(OutbreakPatientDeathKind::CarrierAttack) => {
+                            matches!(&outbreak.source, OutbreakSource::ThreatVector { .. })
+                                && exposure.died_at.is_some_and(|died_at| {
+                                    terminal.is_none_or(|(terminal_at, _)| died_at < terminal_at)
+                                })
+                                && exposure.terminal_failure.is_none()
+                        }
+                        None => exposure.died_at.is_none()
+                            && exposure.terminal_failure.is_none(),
+                    };
+                    exposure.patient_ref.is_empty()
+                        || exposure.presentation_npc_id.is_empty()
+                        || exposure.family_npc_id.as_deref()
+                            == Some(exposure.presentation_npc_id.as_str())
+                        || exposure.family_npc_id.as_ref().is_some_and(|family_npc_id| {
+                            !case
+                                .witnesses
+                                .iter()
+                                .any(|witness| &witness.npc_id == family_npc_id)
+                        })
+                        || exposure.became_symptomatic_at
+                            != exposure
+                                .exposed_at
+                                .saturating_add(definition.incubation_minutes)
+                        || !death_is_coherent
+                        ||
+                    exposure.exposed_at > exposure.became_symptomatic_at
+                        || exposure
+                            .died_at
+                            .is_some_and(|died| died < exposure.became_symptomatic_at)
+                })
+                || outbreak
+                    .exposure_chronology
+                    .windows(2)
+                    .any(|pair| pair[0].exposed_at > pair[1].exposed_at)
+            {
+                errors.push("outbreak exposure chronology is incoherent".into());
+            }
+            let source_is_compatible = match (&outbreak.source, outbreak.transmission_route) {
+                (
+                    OutbreakSource::Sanitation {
+                        practice: OutbreakSanitationPractice::UnwashedSharedBedding,
+                    },
+                    crate::disease::TransmissionVector::CloseContact,
+                )
+                | (
+                    OutbreakSource::Behavior {
+                        practice:
+                            OutbreakBehaviorPractice::CrowdedSleeping
+                            | OutbreakBehaviorPractice::HandlingTheSick
+                            | OutbreakBehaviorPractice::ReusingSoiledLinen,
+                    },
+                    crate::disease::TransmissionVector::CloseContact,
+                )
+                | (
+                    OutbreakSource::Sanitation {
+                        practice:
+                            OutbreakSanitationPractice::ContaminatedWell
+                            | OutbreakSanitationPractice::WasteNearWater
+                            | OutbreakSanitationPractice::TaintedFoodStorage,
+                    },
+                    crate::disease::TransmissionVector::FoodWater,
+                )
+                | (
+                    OutbreakSource::ThreatVector { .. },
+                    crate::disease::TransmissionVector::Vermin,
+                )
+                | (
+                    OutbreakSource::Environmental { .. },
+                    crate::disease::TransmissionVector::Environmental,
+                ) => true,
+                _ => false,
+            };
+            if !source_is_compatible {
+                errors.push("outbreak source is incompatible with its transmission route".into());
+            }
+            let remediation_matches = match (&outbreak.source, &outbreak.remediation) {
+                (
+                    OutbreakSource::Sanitation {
+                        practice: OutbreakSanitationPractice::UnwashedSharedBedding,
+                    },
+                    OutbreakRemediation::Sanitation {
+                        action: OutbreakSanitationAction::LaunderBedding,
+                    },
+                )
+                | (
+                    OutbreakSource::Behavior {
+                        practice: OutbreakBehaviorPractice::CrowdedSleeping,
+                    },
+                    OutbreakRemediation::Behavior {
+                        action: OutbreakBehaviorAction::SeparateSleepers,
+                    },
+                ) => true,
+                (
+                    OutbreakSource::Environmental { reservoir: left },
+                    OutbreakRemediation::RemoveEnvironmentalSource { reservoir: right },
+                ) if left == right => true,
+                (
+                    OutbreakSource::ThreatVector { threat },
+                    OutbreakRemediation::ResolveCarrierThreat {
+                        hostile_group_id,
+                        accepted_outcomes,
+                    },
+                ) => {
+                    outbreak.carrier_threat == Some(*threat)
+                        && !hostile_group_id.is_empty()
+                        && !accepted_outcomes.is_empty()
+                        && case.hostile_groups.iter().any(|(id, site, kind, _)| {
+                            id == hostile_group_id
+                                && site == &outbreak.physical_source_site
+                                && kind == threat
+                        })
+                }
+                _ => false,
+            };
+            if !remediation_matches {
+                errors.push("outbreak remediation does not match its exact source".into());
+            }
+            let direct_remediations = case.actions.iter().filter(|action| {
+                action.outputs.iter().any(|output| {
+                    matches!(output, GeneratedActionOutput::Remediation { .. })
+                })
+            });
+            if matches!(
+                &outbreak.remediation,
+                OutbreakRemediation::ResolveCarrierThreat { .. }
+            ) {
+                if direct_remediations.count() != 0 {
+                    errors.push(
+                        "carrier outbreaks must resolve only through accepted hostile outcomes"
+                            .into(),
+                    );
+                }
+            } else if !case.actions.iter().any(|action| {
+                action.outputs.iter().any(|output| {
+                    matches!(output, GeneratedActionOutput::Remediation { .. })
+                })
+            }) {
+                errors.push("non-carrier outbreak has no direct source intervention".into());
+            }
+            if case.actions.iter().any(|action| action.target_kind == "corpse") {
+                errors.push("outbreak graph has no complete non-corpse route".into());
+            }
+        }
+    }
+    if case.family != TemplateFamily::Outbreak && case.outbreak.is_some() {
+        errors.push("non-outbreak case carries private outbreak truth".into());
     }
     let action_ids: BTreeSet<_> = case.actions.iter().map(|a| a.id.clone()).collect();
     let mut reachable: BTreeSet<ActionId> = case
@@ -783,6 +1041,33 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                         && producer.subject_ref.as_deref() == Some(subject_ref)
                 })
             }
+            ObjectiveRequirement::RemediateSource { remediation_id }
+                if case.family == TemplateFamily::Outbreak =>
+            {
+                case.outbreak.as_ref().is_some_and(|outbreak| match &outbreak.remediation {
+                    OutbreakRemediation::ResolveCarrierThreat {
+                        hostile_group_id,
+                        accepted_outcomes,
+                    } => {
+                        !accepted_outcomes.is_empty()
+                            && case.hostile_groups.iter().any(|(id, site, threat, _)| {
+                                id == hostile_group_id
+                                    && site == &outbreak.physical_source_site
+                                    && Some(*threat) == outbreak.carrier_threat
+                            })
+                    }
+                    _ => case.actions.iter().any(|action| {
+                        action.outputs.iter().any(|output| {
+                            matches!(
+                                output,
+                                GeneratedActionOutput::Remediation {
+                                    remediation_id: produced
+                                } if produced == remediation_id
+                            )
+                        })
+                    }),
+                })
+            }
             _ => false,
         };
         if !produced {
@@ -815,6 +1100,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         (TemplateFamily::DisappearanceOrLoss, CanonicalCause::FabricatedClaim) => {
             case.finales.len() == 1 && case.finales[0].kind == FinaleKind::Expose
         }
+        (TemplateFamily::Outbreak, _) => case.outbreak.is_some() && case.finales.is_empty(),
         _ => false,
     };
     if !expected_finale {

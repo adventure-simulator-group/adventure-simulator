@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1480)
+## Files (1494)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -100,6 +100,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/quest_generation/projection.rs` — Rust source module.
 - `crates/adventuresim-core/src/quest_generation/solver.rs` — Rust source module.
 - `crates/adventuresim-core/src/quest_generation/tests.rs` — Rust source module.
+- `crates/adventuresim-core/src/quest_generation/tests/outbreak.rs` — Rust source module.
 - `crates/adventuresim-core/src/quest_generation/tests/projection_and_limits.rs` — Rust source module.
 - `crates/adventuresim-core/src/quest_generation/tests/routes_and_evidence.rs` — Rust source module.
 - `crates/adventuresim-core/src/quest_generation/tests/solver_and_generation.rs` — Rust source module.
@@ -199,6 +200,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_local_problem_rumors_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_local_problem_trade_effect_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_local_problem_trade_effects_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_outbreak_patient_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_outbreak_patients_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_physical_evidence_inspection_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_physical_evidence_inspections_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_physical_evidence_table.rs` — Generated SpacetimeDB table interface.
@@ -317,6 +320,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/corpse_body_state_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_family_binding_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_injury_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/corpse_pathology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_permission_attempt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_permission_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/corpse_permission_scope_type.rs` — Generated SpacetimeDB data type.
@@ -389,6 +393,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/equipment_placement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/evidence_presentation_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/examine_corpse_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/examine_outbreak_patient_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/exhume_corpse_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/fallback_historical_vegetation_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fallback_historical_vegetation_method_type.rs` — Generated SpacetimeDB data type.
@@ -520,6 +525,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/limb_region_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/liquidate_party_inventory_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/load_autopsy_demo_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/load_outbreak_demo_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/local_chat_message_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/local_problem_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/local_problem_generation_explanation_type.rs` — Generated SpacetimeDB data type.
@@ -566,6 +572,10 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/organization_presentation_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/organization_presentation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/other_non_textured_soil_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/outbreak_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/outbreak_patient_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/outbreak_patient_examination_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/outbreak_source_presence_span_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/outcome_source_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/outlook_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/palmer_drought_severity_index_type.rs` — Generated SpacetimeDB data type.
@@ -866,6 +876,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/local_problem.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/npc_adventurer.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/organization.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/outbreak.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/personality.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/repair.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/reputation.rs` — Rust source module for this component.
@@ -1457,6 +1468,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/llm/project-map-maintenance.md` — Project documentation.
 - `wiki/reference/measured-inventory.md` — Project documentation.
 - `wiki/reference/organizations.md` — Project documentation.
+- `wiki/reference/outbreaks.md` — Project documentation.
 - `wiki/reference/physiology.md` — Project documentation.
 - `wiki/reference/potential-vegetation.md` — Project documentation.
 - `wiki/reference/quest-authority.md` — Project documentation.

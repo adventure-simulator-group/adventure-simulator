@@ -1,5 +1,10 @@
 # Bestiary authority
 
+In an outbreak investigation, Bestiary can connect physical or testimonial
+vector evidence to the kind of creature capable of carrying it. It does not
+substitute for Surgery's preservation of tissue evidence or Physiology's
+interpretation of bodily effects. See [Outbreak investigations](outbreaks.md).
+
 Canonical authoring records live in `content/quests/bestiary.yaml`. They are
 sorted, validated, embedded and content-hashed at build time; see
 [Quest generation and investigation](quest-generation-and-investigation.md).

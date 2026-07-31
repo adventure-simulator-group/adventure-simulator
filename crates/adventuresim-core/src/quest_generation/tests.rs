@@ -6,4 +6,5 @@ mod tests {
     include!("tests/routes_and_evidence.rs");
     include!("tests/solver_and_generation.rs");
     include!("tests/projection_and_limits.rs");
+    include!("tests/outbreak.rs");
 }

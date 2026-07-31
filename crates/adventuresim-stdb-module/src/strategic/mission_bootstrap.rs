@@ -348,6 +348,23 @@ pub fn load_autopsy_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), 
     crate::corpse::seed_autopsy_demo(ctx, character_id)
 }
 
+/// Load one deterministic, fully materialized outbreak without bypassing the
+/// ordinary rumor and journal discovery path.
+#[reducer]
+pub fn load_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    let enabled = COMPILED_DEV_BOOTSTRAP_TOKEN.is_some_and(|token| {
+        adventuresim_core::simulation_security::simulation_bootstrap_authorized(
+            COMPILED_DEV_BOOTSTRAP_TOKEN,
+            token,
+        )
+    });
+    if !enabled {
+        return Err("Outbreak demo loading is disabled in this module build".into());
+    }
+    seed_outbreak_demo(ctx, character_id)
+}
+
 /// Seed a standalone tactical mission: a solo party occupying a typed case
 /// site with a bound hostile group, mission, and tactical-server request.
 ///
@@ -1369,6 +1386,93 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     materialize_generated_quest(ctx, &settlement, &context, &generated, None)
 }
 
+fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    use adventuresim_core::quest_generation as qg;
+
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .clone()
+        .ok_or("Load the outbreak demo while in a settlement")?;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .ok_or("Current settlement not found")?;
+
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Outbreak demo character has no skills")?;
+    skills.physiology_hours = skills.physiology_hours.max(20_000.0);
+    skills.surgery_hours = skills.surgery_hours.max(20_000.0);
+    skills.knife_hours = skills.knife_hours.max(20_000.0);
+    skills.insight_hours = skills.insight_hours.max(8_000.0);
+    skills.charm_hours = skills.charm_hours.max(8_000.0);
+    skills.terrain_urban_hours = skills.terrain_urban_hours.max(8_000.0);
+    skills.bestiary_hours = adventuresim_world_schema::BestiaryHours {
+        beast: 8_000.0,
+        undead: 8_000.0,
+        human: 8_000.0,
+        werekin: 8_000.0,
+        elf: 8_000.0,
+        dwarf: 8_000.0,
+        fey: 8_000.0,
+        spirit: 8_000.0,
+        greenskin: 8_000.0,
+        insectoid: 8_000.0,
+        draconid: 8_000.0,
+        construct: 8_000.0,
+        wildmen: 8_000.0,
+    };
+    ctx.db.character_skills().character_id().update(skills);
+    crate::capability::refresh_character_capability(ctx, character_id)?;
+    if !ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .any(|row| row.item_id == "surgery_kit")
+    {
+        crate::add_inventory_item(ctx, character_id, "surgery_kit", 1);
+    }
+
+    let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
+    let entropy = character_id ^ 0x4f55_5442_5245_414b;
+    let context = qg::GenerationContext {
+        seed: entropy.rotate_left(11),
+        observer_entropy_hi: entropy.rotate_left(23),
+        observer_entropy_lo: entropy.rotate_right(17),
+        settlement_id: settlement_id.clone(),
+        settlement_name: settlement.name.clone(),
+        scope: adventuresim_core::local_problem::Scope::Settlement {
+            settlement_id: settlement_id.clone(),
+        },
+        ordinal: u16::MAX,
+        now_minute,
+        incident_weather: adventuresim_core::weather::Precipitation::Clear,
+        requested_family: Some(qg::TemplateFamily::Outbreak),
+        witness_candidates: generated_witness_candidates(ctx, &settlement_id),
+    };
+    let generated = qg::generate(&context)
+        .map_err(|error| format!("Outbreak demo generation failed: {error:?}"))?;
+    if ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&generated.canonical_case_id)
+        .is_some()
+    {
+        return Ok(());
+    }
+    qg::validate(&generated)
+        .map_err(|errors| format!("Outbreak demo manifest is invalid: {}", errors.join("; ")))?;
+    materialize_generated_quest(ctx, &settlement, &context, &generated, None)
+}
+
 fn materialize_generated_quest(
     ctx: &ReducerContext,
     settlement: &Settlement,
@@ -1378,6 +1482,18 @@ fn materialize_generated_quest(
 ) -> Result<(), String> {
     let settlement_id = context.settlement_id.as_str();
     let seed = context.seed;
+    if ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&generated.canonical_case_id)
+        .is_some()
+    {
+        return Err(format!(
+            "Generated case ID collision: {}",
+            generated.canonical_case_id
+        ));
+    }
     ctx.db.case_authority().insert(CaseAuthority {
         id: generated.canonical_case_id.clone(),
         investigation_case_id: generated.canonical_case_id.clone(),
@@ -1400,6 +1516,15 @@ fn materialize_generated_quest(
         },
     );
     for event in &generated.canonical_events {
+        if ctx
+            .db
+            .investigation_event_authority()
+            .id()
+            .find(&event.id)
+            .is_some()
+        {
+            return Err(format!("Generated event ID collision: {}", event.id));
+        }
         ctx.db.investigation_event_authority().insert(
             crate::investigation::InvestigationEventAuthority {
                 id: event.id.clone(),
@@ -1447,10 +1572,34 @@ fn materialize_generated_quest(
             coordinates_are_geographic: geographic,
             distance_m,
         };
+        if let Some(existing) = ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&row.id_key)
+        {
+            return Err(format!(
+                "Generated case-site ID collision: {} for {} ({}) already belongs to {} ({})",
+                row.id_key,
+                generated.canonical_case_id,
+                row.name,
+                existing.case_id,
+                existing.name
+            ));
+        }
         ctx.db.case_site_authority().insert(row.clone());
         site_rows.insert(site.id.clone(), row);
     }
     for area in &generated.areas {
+        if ctx
+            .db
+            .investigation_area_authority()
+            .id()
+            .find(&area.id)
+            .is_some()
+        {
+            return Err(format!("Generated area ID collision: {}", area.id));
+        }
         ctx.db.investigation_area_authority().insert(
             crate::investigation::InvestigationAreaAuthority {
                 id: area.id.clone(),
@@ -1469,6 +1618,18 @@ fn materialize_generated_quest(
         );
     }
     for evidence in &generated.evidence {
+        if ctx
+            .db
+            .investigation_evidence_authority()
+            .id()
+            .find(&evidence.id.0)
+            .is_some()
+        {
+            return Err(format!(
+                "Generated evidence ID collision: {}",
+                evidence.id.0
+            ));
+        }
         ctx.db.investigation_evidence_authority().insert(
             crate::investigation::InvestigationEvidenceAuthority {
                 id: evidence.id.0.clone(),
@@ -1483,6 +1644,18 @@ fn materialize_generated_quest(
         );
     }
     for witness in &generated.witnesses {
+        if ctx
+            .db
+            .investigation_testimony_bundle()
+            .id()
+            .find(&witness.id.0)
+            .is_some()
+        {
+            return Err(format!(
+                "Generated testimony ID collision: {}",
+                witness.id.0
+            ));
+        }
         ctx.db.investigation_testimony_bundle().insert(
             crate::investigation::InvestigationTestimonyBundle {
                 id: witness.id.0.clone(),
@@ -1534,6 +1707,12 @@ fn materialize_generated_quest(
         status: FinaleStatus::Available,
     });
     crate::local_problem::materialize_generated_problem(ctx, &generated, settlement_id)?;
+    crate::outbreak::materialize_generated_outbreak(
+        ctx,
+        generated,
+        settlement_id,
+        context.now_minute,
+    )?;
     let context_snapshot_json = context_snapshot_override.map(str::to_owned).map_or_else(
         || serde_json::to_string(&context).map_err(|_| "Could not encode quest generation context"),
         Ok,

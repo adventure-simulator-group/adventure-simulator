@@ -13,6 +13,8 @@ pub enum CorpsePermissionKind {
     Priest,
 
     SecularAuthority,
+
+    GuildAuthority,
 }
 
 impl __sdk::InModule for CorpsePermissionKind {

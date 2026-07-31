@@ -48,6 +48,7 @@ pub struct InvestigationEnvironment {
     visible_witnesses: BTreeSet<usize>,
     interviewed: BTreeSet<usize>,
     completed_actions: BTreeSet<usize>,
+    completed_remediations: BTreeSet<String>,
     exact_sites: BTreeSet<String>,
     visited_sites: BTreeSet<String>,
     prepared: BTreeSet<String>,
@@ -116,6 +117,7 @@ impl InvestigationEnvironment {
             visible_witnesses: BTreeSet::new(),
             interviewed: BTreeSet::new(),
             completed_actions: BTreeSet::new(),
+            completed_remediations: BTreeSet::new(),
             exact_sites: BTreeSet::new(),
             visited_sites: BTreeSet::new(),
             prepared: BTreeSet::new(),
@@ -368,6 +370,34 @@ impl InvestigationEnvironment {
                                 "The site investigation produced a recoverable result.".into(),
                             );
                         }
+                        GeneratedActionOutput::Remediation { remediation_id } => {
+                            let exact_objective = self
+                                .generated
+                                .objectives
+                                .alternatives
+                                .iter()
+                                .flat_map(|path| &path.objectives)
+                                .any(|objective| {
+                                    matches!(
+                                        &objective.requirement,
+                                        adventuresim_core::case::ObjectiveRequirement::RemediateSource {
+                                            remediation_id: required
+                                        } if required == remediation_id
+                                    )
+                                });
+                            if !exact_objective {
+                                return Err(
+                                    "action remediation does not match the generated objective"
+                                        .into(),
+                                );
+                            }
+                            self.completed_remediations.insert(remediation_id.clone());
+                            self.route = Some(route);
+                            self.solved = true;
+                            learned.push(
+                                "The supported intervention removes the outbreak source.".into(),
+                            );
+                        }
                     }
                 }
                 (format!("Completed: {}", action.safe_summary), 60, 1)
@@ -408,6 +438,48 @@ impl InvestigationEnvironment {
                 self.solved = true;
                 (
                     "The generated case's earned finale is resolved.".into(),
+                    120,
+                    2,
+                )
+            }
+            Capability::ResolveCarrier(route) => {
+                let remediation_id = self
+                    .generated
+                    .objectives
+                    .alternatives
+                    .iter()
+                    .flat_map(|path| &path.objectives)
+                    .find_map(|objective| match &objective.requirement {
+                        adventuresim_core::case::ObjectiveRequirement::RemediateSource {
+                            remediation_id,
+                        } => Some(remediation_id.clone()),
+                        _ => None,
+                    })
+                    .ok_or("carrier outbreak has no exact remediation objective")?;
+                let accepted = self
+                    .generated
+                    .outbreak
+                    .as_ref()
+                    .and_then(|outbreak| match &outbreak.remediation {
+                        qg::OutbreakRemediation::ResolveCarrierThreat {
+                            accepted_outcomes, ..
+                        } => Some(accepted_outcomes),
+                        _ => None,
+                    })
+                    .is_some_and(|outcomes| {
+                        outcomes.contains(&qg::OutbreakCarrierOutcome::Defeated)
+                    });
+                if !accepted {
+                    return Err(
+                        "carrier outbreak does not accept the modeled hostile outcome".into(),
+                    );
+                }
+                self.completed_remediations.insert(remediation_id);
+                self.route = Some(route);
+                self.solved = true;
+                (
+                    "The identified carrier group is defeated through the normal hostile outcome."
+                        .into(),
                     120,
                     2,
                 )
@@ -614,6 +686,14 @@ impl InvestigationEnvironment {
                     break;
                 }
             }
+            if let Some(route) = self.admissible_carrier_route() {
+                self.push_choice(
+                    &mut choices,
+                    ChoiceKind::Conclude,
+                    "Confront the identified carrier group.",
+                    Capability::ResolveCarrier(route),
+                );
+            }
         }
         self.frame.legal_choices = choices;
     }
@@ -663,6 +743,33 @@ impl InvestigationEnvironment {
                     && self.action_chain_complete(completed.action_index))
                 .then_some(completed.route)
             })
+    }
+
+    fn admissible_carrier_route(&self) -> Option<RouteClass> {
+        let outbreak = self.generated.outbreak.as_ref()?;
+        if !matches!(
+            &outbreak.remediation,
+            qg::OutbreakRemediation::ResolveCarrierThreat { .. }
+        ) || !self
+            .visited_sites
+            .contains(&outbreak.physical_source_site.0)
+        {
+            return None;
+        }
+        self.completed_actions.iter().rev().find_map(|index| {
+            let action = &self.generated.actions[*index];
+            (self.action_chain_complete(*index)
+                && action.outputs.iter().any(|output| {
+                    matches!(
+                        output,
+                        GeneratedActionOutput::Destination {
+                            stage: GeneratedDestinationStage::Exact,
+                            site_id: Some(site_id),
+                        } if site_id == &outbreak.physical_source_site
+                    )
+                }))
+            .then_some(action.route)
+        })
     }
 
     fn action_chain_complete(&self, index: usize) -> bool {
@@ -1067,5 +1174,66 @@ mod tests {
             target_id,
         });
         assert_eq!(env.admissible_finale_route(&finale_site), None);
+    }
+
+    #[test]
+    fn exact_outbreak_remediation_output_solves_the_generated_objective() {
+        let mut env = InvestigationEnvironment::generate(EvalCaseConfig::fixture(
+            0,
+            TemplateFamily::Outbreak,
+        ))
+        .unwrap();
+        env.tavern_entered = true;
+        env.interviewed.insert(0);
+        let action_index = env
+            .generated
+            .actions
+            .iter()
+            .position(|action| {
+                action
+                    .outputs
+                    .iter()
+                    .any(|output| matches!(output, GeneratedActionOutput::Remediation { .. }))
+            })
+            .unwrap();
+        let action = env.generated.actions[action_index].clone();
+        if let Some(required) = &action.prerequisite {
+            let prior = env
+                .generated
+                .actions
+                .iter()
+                .position(|candidate| &candidate.id == required)
+                .unwrap();
+            env.completed_actions.insert(prior);
+        }
+        env.visited_sites.insert(action.target_id.clone());
+        env.refresh_choices();
+        let choice_id = env
+            .capabilities
+            .iter()
+            .find_map(|(choice_id, capability)| {
+                matches!(capability, Capability::Action(index, _, _) if *index == action_index)
+                    .then(|| choice_id.clone())
+            })
+            .unwrap();
+        env.apply(&PolicyDecision {
+            version: EVAL_FORMAT_VERSION,
+            choice_id,
+            arguments: DecisionArguments::default(),
+        })
+        .unwrap();
+        let remediation_id = action
+            .outputs
+            .iter()
+            .find_map(|output| match output {
+                GeneratedActionOutput::Remediation { remediation_id } => {
+                    Some(remediation_id.as_str())
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert!(env.is_solved());
+        assert_eq!(env.route, Some(action.route));
+        assert!(env.completed_remediations.contains(remediation_id));
     }
 }

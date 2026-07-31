@@ -1,5 +1,11 @@
 # Physiology system
 
+During an outbreak, Physiology can examine living or dead patients through the
+existing window and contribute systemic findings. It does not read outbreak
+truth, identify the source, or complete the quest; those conclusions require
+the investigation evidence graph and exact remediation. See
+[Outbreak investigations](outbreaks.md).
+
 Dead subjects remain available to the medical interface. External and internal
 post-mortem interpretation, its separation from Surgery and Bestiary, and
 observer-safe corpse findings are documented in [Autopsies](autopsies.md).

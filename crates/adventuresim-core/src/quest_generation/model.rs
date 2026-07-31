@@ -59,6 +59,7 @@ id_type!(TrackSegmentId);
 pub enum TemplateFamily {
     RecurringDepredation,
     DisappearanceOrLoss,
+    Outbreak,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -480,6 +481,152 @@ pub struct ConsequenceProfile {
     pub public_summary: String,
 }
 
+/// Private canonical truth for an outbreak case.
+///
+/// This payload is persisted only inside generated-case authority. Public
+/// projections must derive observer-owned claims from evidence and testimony
+/// rather than exposing any field here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GeneratedOutbreak {
+    pub disease: crate::disease::DiseaseId,
+    pub transmission_route: crate::disease::TransmissionVector,
+    pub source: OutbreakSource,
+    pub physical_source_site: SiteId,
+    pub patient_presentation_site: SiteId,
+    pub responsible_npc: Option<ResponsibleOutbreakNpc>,
+    pub carrier_threat: Option<ThreatId>,
+    pub exposure_chronology: Vec<OutbreakExposure>,
+    pub remediation: OutbreakRemediation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutbreakCulpability {
+    Innocent,
+    Negligent,
+    Reckless,
+    Deliberate,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResponsibleOutbreakNpc {
+    pub npc_id: String,
+    pub culpability: OutbreakCulpability,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OutbreakSource {
+    Sanitation {
+        practice: OutbreakSanitationPractice,
+    },
+    Behavior {
+        practice: OutbreakBehaviorPractice,
+    },
+    ThreatVector {
+        threat: ThreatId,
+    },
+    Environmental {
+        reservoir: OutbreakEnvironmentalReservoir,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutbreakSanitationPractice {
+    ContaminatedWell,
+    WasteNearWater,
+    TaintedFoodStorage,
+    UnwashedSharedBedding,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutbreakBehaviorPractice {
+    CrowdedSleeping,
+    HandlingTheSick,
+    ReusingSoiledLinen,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutbreakEnvironmentalReservoir {
+    GraveMould,
+    RyeGalls,
+    OreBiofilm,
+    HouseDust,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutbreakExposure {
+    pub patient_ref: String,
+    /// Existing settlement NPC whose portrait and public identity present this
+    /// private medical subject after observer discovery.
+    pub presentation_npc_id: String,
+    /// Explicit authoritative kinship only. `None` means clergy/civic custody;
+    /// generation must never infer family from witness adjacency.
+    pub family_npc_id: Option<String>,
+    /// Stable private disease inputs retained for replay and pathology.
+    pub patient_key: u64,
+    pub episode_id: u64,
+    pub immunity_milli: u16,
+    pub phenotype_key_version: u16,
+    pub exposed_at: u64,
+    pub became_symptomatic_at: u64,
+    pub died_at: Option<u64>,
+    pub death_kind: Option<OutbreakPatientDeathKind>,
+    pub terminal_failure: Option<crate::disease::TerminalFailure>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutbreakPatientDeathKind {
+    Disease,
+    CarrierAttack,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OutbreakRemediation {
+    Sanitation {
+        action: OutbreakSanitationAction,
+    },
+    Behavior {
+        action: OutbreakBehaviorAction,
+    },
+    RemoveEnvironmentalSource {
+        reservoir: OutbreakEnvironmentalReservoir,
+    },
+    ResolveCarrierThreat {
+        hostile_group_id: String,
+        accepted_outcomes: Vec<OutbreakCarrierOutcome>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutbreakSanitationAction {
+    CloseWell,
+    MoveWasteDownstream,
+    DestroyTaintedStores,
+    LaunderBedding,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutbreakBehaviorAction {
+    SeparateSleepers,
+    IsolatePatients,
+    BoilLinen,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutbreakCarrierOutcome {
+    Defeated,
+    DrivenOff,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneratedSite {
     pub id: SiteId,
@@ -857,6 +1004,12 @@ pub enum GeneratedActionOutput {
         finding: String,
     },
     AmbushReady,
+    /// Grants an authoritative attempt at one exact physical source
+    /// intervention. The intervention reducer still verifies current source
+    /// state before emitting `SourceRemediated`.
+    Remediation {
+        remediation_id: String,
+    },
     Consequence {
         consequence: GeneratedActionConsequence,
     },
@@ -937,6 +1090,7 @@ pub struct GeneratedCase {
     pub cause: CanonicalCause,
     pub canonical_events: Vec<CanonicalEvent>,
     pub consequence: ConsequenceProfile,
+    pub outbreak: Option<GeneratedOutbreak>,
     pub sites: Vec<GeneratedSite>,
     pub areas: Vec<GeneratedArea>,
     pub witnesses: Vec<WitnessBinding>,

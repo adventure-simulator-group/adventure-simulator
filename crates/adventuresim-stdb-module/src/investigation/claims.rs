@@ -643,6 +643,12 @@ pub fn receive_local_problem_rumor(
         &receipt.contact_npc_id,
         &receipt.safe_summary,
     )?;
+    crate::outbreak::discover_case_corpses(
+        ctx,
+        &canonical_case_id,
+        character_id,
+        receipt.learned_at,
+    )?;
     record_action(ctx, action_id, character_id, "receive_rumor", payload);
     Ok(())
 }

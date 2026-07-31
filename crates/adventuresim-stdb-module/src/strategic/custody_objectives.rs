@@ -931,7 +931,7 @@ pub(crate) fn ingest_case_outcome_fact(
     source_id: &str,
     case_id: &str,
     party_id: &str,
-    kind: adventuresim_core::case::OutcomeFactKind,
+    mut kind: adventuresim_core::case::OutcomeFactKind,
 ) -> Result<(), String> {
     let mut case = ctx
         .db
@@ -940,6 +940,21 @@ pub(crate) fn ingest_case_outcome_fact(
         .find(&case_id.to_string())
         .ok_or("Case not found")?;
     let generated_provenance = validated_case_outcome_provenance(ctx, &case)?;
+    if let Some(validated) = generated_provenance.as_ref()
+        && let Some(remediation_id) =
+            crate::outbreak::accepted_hostile_remediation(&validated.manifest, &kind)
+    {
+        let now = crate::time::refresh_clock(ctx)?;
+        crate::outbreak::commit_carrier_remediation(
+            ctx,
+            &case.id,
+            party_id,
+            source_id,
+            &remediation_id,
+            now,
+        )?;
+        kind = adventuresim_core::case::OutcomeFactKind::SourceRemediated { remediation_id };
+    }
     let expression: adventuresim_core::case::ObjectiveExpression =
         serde_json::from_str(&case.objective_expression_json)
             .map_err(|_| "Case objective authority is invalid")?;
