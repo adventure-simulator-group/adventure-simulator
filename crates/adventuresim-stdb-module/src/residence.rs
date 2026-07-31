@@ -3,7 +3,8 @@
 
 use adventuresim_core::courtship::{
     HOUSING_BILLING_PERIOD_MINUTES, HousingTier as CoreHousingTier, RESIDENCE_MORALE_SPEC,
-    RefreshableMorale, plan_due_period_settlement, refresh_morale, residence_leisure_bonus_milli,
+    RefreshableMorale, plan_due_period_settlement, refresh_bounded_leisure_morale,
+    residence_leisure_bonus_milli,
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -552,13 +553,29 @@ pub fn apply_residence_leisure_morale(
         .character_id()
         .filter(character_id)
         .find(|event| event.source_id.as_deref() == Some(&source));
-    let refreshed = refresh_morale(
+    let spouse = ctx
+        .db
+        .morale_event()
+        .character_id()
+        .filter(character_id)
+        .find(|event| {
+            event
+                .source_id
+                .as_deref()
+                .is_some_and(|source| source.starts_with("spouse-leisure:"))
+        })
+        .map_or(RefreshableMorale::default(), |event| RefreshableMorale {
+            milli_points: (event.magnitude.max(0.0) * 1_000.0).round() as u32,
+            expires_at_minute: event.expires_at_minute,
+        });
+    let refreshed = refresh_bounded_leisure_morale(
         existing
             .as_ref()
             .map_or(RefreshableMorale::default(), |event| RefreshableMorale {
                 milli_points: (event.magnitude.max(0.0) * 1_000.0).round() as u32,
                 expires_at_minute: event.expires_at_minute,
             }),
+        spouse,
         now,
         earned_milli,
         RESIDENCE_MORALE_SPEC,

@@ -1520,11 +1520,7 @@ fn apply_activity_outcomes_inner(
             character_id,
             interval_end_minute.saturating_sub(elapsed),
             interval_end_minute,
-            adventuresim_core::strategic_schedule::restorative_leisure_minutes(
-                core_schedule(schedule),
-                interval_end_minute.saturating_sub(elapsed),
-                elapsed,
-            ),
+            core_schedule(schedule),
         )?;
         crate::relationship::apply_spouse_leisure_morale(
             ctx,

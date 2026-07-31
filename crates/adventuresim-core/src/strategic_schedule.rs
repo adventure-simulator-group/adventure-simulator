@@ -3,11 +3,11 @@
 use crate::attribute::PlayerAttributes;
 use crate::equipment::WeaponSkillDistribution;
 use crate::organization::{OrganizationDefinition, TrainingTarget};
-use crate::skill::{apply_direct_training, Skill};
+use crate::skill::{Skill, apply_direct_training};
 use crate::social::Transparency;
 use crate::{
     activity::*,
-    strategic_time::{training_hours_increment, MINUTES_PER_DAY},
+    strategic_time::{MINUTES_PER_DAY, training_hours_increment},
 };
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
@@ -174,6 +174,52 @@ pub fn restorative_leisure_minutes(
     };
     cumulative(interval_start_minute.saturating_add(elapsed_minutes))
         .saturating_sub(cumulative(interval_start_minute))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RestorativeLeisureSpan {
+    pub start_minute: u64,
+    pub end_minute: u64,
+}
+
+/// Enumerate the canonical realized Leisure portions of an absolute interval.
+///
+/// A daily allocation does not prescribe an order for its named activities,
+/// so relationship time gives it one: named activities occupy the beginning
+/// of each absolute calendar day and unallocated Leisure occupies its end.
+/// Splitting at day boundaries makes independently checkpointed characters
+/// describe the same spans instead of each claiming its checkpoint's prefix.
+pub fn restorative_leisure_spans(
+    schedule: DailySchedule,
+    interval_start_minute: u64,
+    elapsed_minutes: u64,
+) -> Vec<RestorativeLeisureSpan> {
+    let interval_end = interval_start_minute.saturating_add(elapsed_minutes);
+    let allocated = schedule.allocated_minutes().min(MINUTES_PER_DAY);
+    if interval_end <= interval_start_minute || allocated == MINUTES_PER_DAY {
+        return Vec::new();
+    }
+    let mut spans = Vec::new();
+    let mut day = interval_start_minute / MINUTES_PER_DAY;
+    loop {
+        let day_start = day.saturating_mul(MINUTES_PER_DAY);
+        if day_start >= interval_end {
+            break;
+        }
+        let start = interval_start_minute.max(day_start.saturating_add(allocated));
+        let end = interval_end.min(day_start.saturating_add(MINUTES_PER_DAY));
+        if end > start {
+            spans.push(RestorativeLeisureSpan {
+                start_minute: start,
+                end_minute: end,
+            });
+        }
+        if day == u64::MAX / MINUTES_PER_DAY {
+            break;
+        }
+        day += 1;
+    }
+    spans
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -880,6 +926,43 @@ mod tests {
         assert_eq!(bulk, first + second);
     }
 
+    #[test]
+    fn restorative_leisure_spans_are_absolute_under_mixed_partitions() {
+        let schedule = DailySchedule {
+            labor: 8 * 60,
+            ..Default::default()
+        };
+        let whole = restorative_leisure_spans(schedule, 0, 2 * MINUTES_PER_DAY);
+        let mut mixed = restorative_leisure_spans(schedule, 0, 700);
+        mixed.extend(restorative_leisure_spans(schedule, 700, 1_113));
+        mixed.extend(restorative_leisure_spans(
+            schedule,
+            1_813,
+            2 * MINUTES_PER_DAY - 1_813,
+        ));
+        let minutes = |spans: &[RestorativeLeisureSpan]| {
+            spans
+                .iter()
+                .map(|span| span.end_minute - span.start_minute)
+                .sum::<u64>()
+        };
+        assert_eq!(minutes(&whole), 2 * (MINUTES_PER_DAY - 8 * 60));
+        assert_eq!(minutes(&whole), minutes(&mixed));
+        assert_eq!(
+            whole,
+            vec![
+                RestorativeLeisureSpan {
+                    start_minute: 480,
+                    end_minute: 1_440,
+                },
+                RestorativeLeisureSpan {
+                    start_minute: 1_920,
+                    end_minute: 2_880,
+                },
+            ]
+        );
+    }
+
     fn item(melee: bool, ranged: bool, shield: bool, balance: f32) -> EquippedCombatItem {
         EquippedCombatItem {
             weapons: WeaponSkillDistribution {
@@ -900,11 +983,15 @@ mod tests {
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([item(false, true, false, 0.1)]).weights(),
-            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0]
+            [
+                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0
+            ]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([item(true, true, false, 0.0)]).weights(),
-            [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0]
+            [
+                0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0
+            ]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([
@@ -912,7 +999,9 @@ mod tests {
                 item(true, false, false, 0.3)
             ])
             .weights(),
-            [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.7, 1.0, 1.0]
+            [
+                0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.7, 1.0, 1.0
+            ]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([

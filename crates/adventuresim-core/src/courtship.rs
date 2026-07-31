@@ -17,6 +17,7 @@ pub const GESTATION_MINUTES: u64 = 280 * MINUTES_PER_DAY;
 pub const SOCIALIZING_QUANTUM_MINUTES: u16 = 15;
 pub const HOUSING_BILLING_PERIOD_MINUTES: u64 = 30 * MINUTES_PER_DAY;
 pub const CONCEPTION_QUANTUM_MINUTES: u64 = 60;
+pub const CONCEPTION_CHANCE_PER_TEN_THOUSAND: u16 = 40;
 
 /// Residence Leisure is one refreshable source which lasts for one week.
 pub const RESIDENCE_MORALE_CAP_MILLI: u32 = 8_000;
@@ -223,19 +224,11 @@ pub const SPOUSE_LEISURE_MORALE_SPEC: RefreshableMoraleSpec = RefreshableMoraleS
 };
 
 const fn min_u32(left: u32, right: u32) -> u32 {
-    if left < right {
-        left
-    } else {
-        right
-    }
+    if left < right { left } else { right }
 }
 
 const fn min_u64(left: u64, right: u64) -> u64 {
-    if left < right {
-        left
-    } else {
-        right
-    }
+    if left < right { left } else { right }
 }
 
 /// Add realized morale to one durable refreshable source. Expired value never
@@ -280,6 +273,34 @@ pub const fn bounded_leisure_morale_total(
         residence.saturating_add(spouse),
         LEISURE_MORALE_STACK_CAP_MILLI,
     )
+}
+
+/// Refresh one Leisure source while reserving room for the other source's
+/// still-live value. Calling this from either source updater gives the same
+/// combined cap and ignores expired counterpart value.
+pub const fn refresh_bounded_leisure_morale(
+    current: RefreshableMorale,
+    other: RefreshableMorale,
+    now_minute: u64,
+    earned_milli: u32,
+    spec: RefreshableMoraleSpec,
+) -> RefreshableMorale {
+    let refreshed = refresh_morale(current, now_minute, earned_milli, spec);
+    if earned_milli == 0 {
+        return refreshed;
+    }
+    let other_live = if other.expires_at_minute > now_minute {
+        other.milli_points
+    } else {
+        0
+    };
+    RefreshableMorale {
+        milli_points: min_u32(
+            refreshed.milli_points,
+            LEISURE_MORALE_STACK_CAP_MILLI.saturating_sub(other_live),
+        ),
+        expires_at_minute: refreshed.expires_at_minute,
+    }
 }
 
 /// Residence comfort is the tier's premium over baseline realized Leisure.
@@ -340,6 +361,57 @@ pub fn joint_leisure_minutes_in(
             location_id: right.location_id,
         },
     )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MinuteSpan {
+    pub start_minute: u64,
+    pub end_minute: u64,
+}
+
+/// Return candidate coverage not already represented by existing spans.
+/// Existing spans may be unordered, overlapping, or duplicated; the result is
+/// sorted and disjoint so retries cannot create additional Leisure.
+pub fn uncovered_minute_spans(
+    candidate: MinuteSpan,
+    existing: impl IntoIterator<Item = MinuteSpan>,
+) -> Vec<MinuteSpan> {
+    if candidate.end_minute <= candidate.start_minute {
+        return Vec::new();
+    }
+    let mut covered: Vec<_> = existing
+        .into_iter()
+        .filter_map(|span| {
+            let start = candidate.start_minute.max(span.start_minute);
+            let end = candidate.end_minute.min(span.end_minute);
+            (end > start).then_some(MinuteSpan {
+                start_minute: start,
+                end_minute: end,
+            })
+        })
+        .collect();
+    covered.sort_by_key(|span| (span.start_minute, span.end_minute));
+    let mut result = Vec::new();
+    let mut cursor = candidate.start_minute;
+    for span in covered {
+        if span.start_minute > cursor {
+            result.push(MinuteSpan {
+                start_minute: cursor,
+                end_minute: span.start_minute,
+            });
+        }
+        cursor = cursor.max(span.end_minute);
+        if cursor >= candidate.end_minute {
+            break;
+        }
+    }
+    if cursor < candidate.end_minute {
+        result.push(MinuteSpan {
+            start_minute: cursor,
+            end_minute: candidate.end_minute,
+        });
+    }
+    result
 }
 
 /// Stable FNV-1a domain-separated hash. Unlike `DefaultHasher`, this result is
@@ -644,6 +716,51 @@ mod tests {
             spouse_leisure_earned_milli(17) + spouse_leisure_earned_milli(43),
             spouse_leisure_earned_milli(60)
         );
+
+        let residence_first = refresh_bounded_leisure_morale(
+            RefreshableMorale::default(),
+            RefreshableMorale::default(),
+            100,
+            8_000,
+            RESIDENCE_MORALE_SPEC,
+        );
+        let spouse_second = refresh_bounded_leisure_morale(
+            RefreshableMorale::default(),
+            residence_first,
+            100,
+            12_000,
+            SPOUSE_LEISURE_MORALE_SPEC,
+        );
+        let spouse_first = refresh_bounded_leisure_morale(
+            RefreshableMorale::default(),
+            RefreshableMorale::default(),
+            100,
+            12_000,
+            SPOUSE_LEISURE_MORALE_SPEC,
+        );
+        let residence_second = refresh_bounded_leisure_morale(
+            RefreshableMorale::default(),
+            spouse_first,
+            100,
+            8_000,
+            RESIDENCE_MORALE_SPEC,
+        );
+        assert_eq!(
+            residence_first.milli_points + spouse_second.milli_points,
+            LEISURE_MORALE_STACK_CAP_MILLI
+        );
+        assert_eq!(
+            spouse_first.milli_points + residence_second.milli_points,
+            LEISURE_MORALE_STACK_CAP_MILLI
+        );
+        let after_spouse_expiry = refresh_bounded_leisure_morale(
+            residence_second,
+            spouse_first,
+            spouse_first.expires_at_minute,
+            8_000,
+            RESIDENCE_MORALE_SPEC,
+        );
+        assert_eq!(after_spouse_expiry.milli_points, RESIDENCE_MORALE_CAP_MILLI);
     }
 
     #[test]
@@ -719,6 +836,42 @@ mod tests {
     }
 
     #[test]
+    fn retries_and_alternative_slices_only_return_uncovered_time() {
+        let candidate = MinuteSpan {
+            start_minute: 100,
+            end_minute: 300,
+        };
+        let existing = [
+            MinuteSpan {
+                start_minute: 180,
+                end_minute: 240,
+            },
+            MinuteSpan {
+                start_minute: 120,
+                end_minute: 200,
+            },
+            MinuteSpan {
+                start_minute: 120,
+                end_minute: 200,
+            },
+        ];
+        assert_eq!(
+            uncovered_minute_spans(candidate, existing),
+            vec![
+                MinuteSpan {
+                    start_minute: 100,
+                    end_minute: 120,
+                },
+                MinuteSpan {
+                    start_minute: 240,
+                    end_minute: 300,
+                },
+            ]
+        );
+        assert!(uncovered_minute_spans(candidate, [candidate]).is_empty());
+    }
+
+    #[test]
     fn conception_quantum_preserves_remainder_ordinal_and_exact_offsets() {
         let initial = ConceptionQuantumState {
             conserved_joint_minutes: 20,
@@ -755,6 +908,11 @@ mod tests {
         }));
         assert_eq!(whole.trials, chunked);
         assert_eq!(whole.state, late.state);
+        assert!(succeeds_daily_trial(39, CONCEPTION_CHANCE_PER_TEN_THOUSAND));
+        assert!(!succeeds_daily_trial(
+            40,
+            CONCEPTION_CHANCE_PER_TEN_THOUSAND
+        ));
     }
 
     #[test]
