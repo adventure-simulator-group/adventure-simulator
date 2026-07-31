@@ -178,7 +178,8 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendCorpse,
+    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge, BackendCorpse,
+    BackendRoadChallenge,
     BackendLocalProblemTradeEffect,
     BackendPhysiologyAdministration, BackendPhysiologyChart, Character, CharacterAffinity,
     CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquipmentGraph,
@@ -227,6 +228,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/camp", get(camp))
         .route("/camp/rest", post(rest_at_camp))
+        .route(
+            "/camp/errantry-road-challenge",
+            post(resolve_errantry_road_challenge),
+        )
         .route(
             "/camp/travel-configuration",
             post(update_camp_travel_configuration),

@@ -16,6 +16,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/dialogue/{session_id}", get(view))
         .route("/api/dialogue/topic", post(topic))
         .route("/api/dialogue/answer", post(answer))
+        .route(
+            "/api/dialogue/accept-order-errantry",
+            post(accept_order_errantry),
+        )
         .route("/api/dialogue/join", post(join))
         .route("/api/dialogue/claim-response", post(witness_approach))
         .route(
@@ -31,6 +35,8 @@ pub fn routes() -> Router<AppState> {
 #[derive(Deserialize)]
 struct SessionRow {
     id: String,
+    conversation_id: String,
+    settlement_id: String,
     catalog_revision: String,
     revision: u64,
 }
@@ -143,6 +149,44 @@ struct ConversationView {
     events: Vec<EventView>,
     topics: Vec<TopicView>,
     open_prompt: Option<PromptView>,
+    order_errantry_offer: bool,
+}
+
+#[derive(Deserialize)]
+struct AcceptOrderErrantryRequest {
+    session_id: String,
+    action_id: String,
+}
+
+#[derive(Serialize)]
+struct AcceptOrderErrantryResponse {
+    redirect: &'static str,
+}
+
+async fn accept_order_errantry(
+    State(state): State<AppState>,
+    session: Session,
+    Json(request): Json<AcceptOrderErrantryRequest>,
+) -> Result<Json<AcceptOrderErrantryResponse>, StatusCode> {
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
+    state
+        .db
+        .call(
+            "accept_order_errantry",
+            &[
+                json!(character_id),
+                json!(request.session_id),
+                json!(request.action_id),
+            ],
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, character_id, "Order errantry acceptance rejected");
+            StatusCode::UNPROCESSABLE_ENTITY
+        })?;
+    Ok(Json(AcceptOrderErrantryResponse {
+        redirect: "/quests",
+    }))
 }
 #[derive(Serialize)]
 struct EventView {
@@ -922,6 +966,16 @@ async fn build_view(
                 .collect(),
         }
     });
+    let expected_order_representative =
+        adventuresim_core::organization::organization_representative_id(
+            &session.settlement_id,
+            "order_saint_george",
+        );
+    let order_errantry_offer = session.conversation_id == "organization-representative"
+        && participants.iter().any(|participant| {
+            participant.character_id.is_none()
+                && participant.actor_id == expected_order_representative
+        });
     Ok(ConversationView {
         session_id: session.id,
         revision: session.revision,
@@ -930,6 +984,7 @@ async fn build_view(
         events,
         topics,
         open_prompt,
+        order_errantry_offer,
     })
 }
 

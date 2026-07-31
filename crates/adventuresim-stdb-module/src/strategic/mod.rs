@@ -32,6 +32,7 @@ pub(crate) const STRATEGIC_SOURCE: &str = concat!(
     include_str!("travel_reducers.rs"),
     include_str!("custody_objectives.rs"),
     include_str!("mission_bootstrap.rs"),
+    include_str!("challenges.rs"),
 );
 
 include!("autoresolve.rs");
@@ -55,4 +56,5 @@ include!("travel_tests.rs");
 include!("travel_reducers.rs");
 include!("custody_objectives.rs");
 include!("mission_bootstrap.rs");
+include!("challenges.rs");
 include!("tests.rs");

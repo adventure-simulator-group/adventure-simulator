@@ -52,6 +52,7 @@ pub struct TacticalServerRequest {
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
     pub normalized_combat_power: u32,
 }
 
@@ -73,6 +74,7 @@ pub struct TacticalServer {
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
     pub normalized_combat_power: u32,
 }
 
@@ -594,6 +596,7 @@ pub fn request_tactical_server(
             required_enemy_kills: mission.enemy_count,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
+            countermeasure_multiplier_bps: mission.countermeasure_multiplier_bps,
             normalized_combat_power: mission.normalized_combat_power,
         });
 
@@ -658,6 +661,7 @@ pub fn create_tactical_server_for_request(
         request.required_enemy_kills,
         request.enemy_difficulty,
         request.enemy_combat_scale_bps,
+        request.countermeasure_multiplier_bps,
         request.normalized_combat_power,
         addr,
         cert_digest,
@@ -676,6 +680,7 @@ fn insert_tactical_server(
     required_enemy_kills: u32,
     enemy_difficulty: i32,
     enemy_combat_scale_bps: u32,
+    countermeasure_multiplier_bps: u32,
     normalized_combat_power: u32,
     addr: String,
     cert_digest: String,
@@ -713,6 +718,7 @@ fn insert_tactical_server(
         required_enemy_kills,
         enemy_difficulty,
         enemy_combat_scale_bps,
+        countermeasure_multiplier_bps,
         normalized_combat_power,
     };
     ctx.db.tactical_server_authority().insert(server);

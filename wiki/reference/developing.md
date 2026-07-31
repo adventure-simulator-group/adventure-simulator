@@ -1,5 +1,25 @@
 # Development Workflow
 
+## Puzzle demo
+
+Start a disposable strategic-only stack with `just puzzle-demo`. Create or
+select an adventurer in a settlement, enable browser-local developer mode, and
+choose **Puzzle demo**. It creates or reuses a deterministic Order-sourced
+quest, active journey, persisted road camp, finale hostile, and ordered-sigil
+trial, then redirects immediately to the playable chat challenge. This skips
+ordinary dialogue acceptance and travel setup. The no-JavaScript form uses
+POST/redirect/GET and preserves safe wrong/correct feedback. Solving awards
+the Favor of the Thorn Lady and returns to camp; the optional trial never
+blocks **Continue travel**. Rest for at least one hour at that bound camp to
+exercise the optional wounded-courier road trial. Aiding him adds his captured
+dispatch to party inventory; leaving him or continuing the journey remains
+valid.
+
+The loader is idempotent while its puzzle remains open and is disabled in
+ordinary module builds. The redirect is read from the safe
+challenge projection rather than reconstructed by the HTTP adapter. See
+[Errantry and modular challenges](errantry-and-challenges.md).
+
 ## Outbreak demo
 
 Start a disposable strategic-only stack with `just outbreak-demo`. Create or

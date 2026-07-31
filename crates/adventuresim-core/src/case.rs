@@ -152,6 +152,9 @@ pub enum ObjectiveRequirement {
     RemediateSource {
         remediation_id: String,
     },
+    SolveChallenge {
+        challenge_id: String,
+    },
     Expose {
         subject_ref: String,
     },
@@ -231,6 +234,9 @@ pub enum OutcomeFactKind {
     },
     SourceRemediated {
         remediation_id: String,
+    },
+    ChallengeSolved {
+        challenge_id: String,
     },
     Exposed {
         subject_ref: String,
@@ -470,6 +476,11 @@ fn match_fact(requirement: &ObjectiveRequirement, fact: &OutcomeFactKind) -> Opt
         {
             true
         }
+        (R::SolveChallenge { challenge_id: a }, F::ChallengeSolved { challenge_id: b })
+            if a == b =>
+        {
+            true
+        }
         (
             R::PresentProof {
                 evidence_id: a,
@@ -649,6 +660,76 @@ mod tests {
         assert_eq!(
             expression
                 .evaluate(&cid("case:wolves"), "party:a", &negotiated)
+                .state,
+            EvaluationState::Satisfied
+        );
+    }
+
+    #[test]
+    fn challenge_fact_satisfies_only_its_typed_challenge_objective() {
+        let expression = ObjectiveExpression::new(vec![ObjectivePath {
+            objectives: vec![Objective {
+                id: oid("objective:solve"),
+                requirement: ObjectiveRequirement::SolveChallenge {
+                    challenge_id: "challenge:five-signs".into(),
+                },
+            }],
+        }])
+        .unwrap();
+        let wrong = fact(
+            "fact:wrong",
+            "case:trial",
+            "party:knights",
+            OutcomeFactKind::Negotiated {
+                subject_ref: "challenge:five-signs".into(),
+            },
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:trial"), "party:knights", &[wrong])
+                .state,
+            EvaluationState::Pending
+        );
+        let solved = fact(
+            "fact:solved",
+            "case:trial",
+            "party:knights",
+            OutcomeFactKind::ChallengeSolved {
+                challenge_id: "challenge:five-signs".into(),
+            },
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:trial"), "party:knights", &[solved])
+                .state,
+            EvaluationState::Satisfied
+        );
+    }
+
+    #[test]
+    fn optional_preliminary_challenge_does_not_gate_finale_defeat() {
+        let expression = ObjectiveExpression::new(vec![ObjectivePath {
+            objectives: vec![Objective {
+                id: oid("objective:finale"),
+                requirement: ObjectiveRequirement::Defeat {
+                    hostile_group_id: "hostile-group:errantry-finale".into(),
+                    count: 4,
+                },
+            }],
+        }])
+        .unwrap();
+        let finale = fact(
+            "fact:finale",
+            "case:errantry",
+            "party:knights",
+            OutcomeFactKind::HostilesDefeated {
+                hostile_group_id: "hostile-group:errantry-finale".into(),
+                count: 4,
+            },
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:errantry"), "party:knights", &[finale])
                 .state,
             EvaluationState::Satisfied
         );

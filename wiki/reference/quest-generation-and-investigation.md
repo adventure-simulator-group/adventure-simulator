@@ -116,6 +116,13 @@ schema options. Tactical encounter execution and tactical enemy authoring are
 outside this editor; hostile identity, count, and site are configurable while
 the existing tactical/autoresolve systems consume them.
 
+`SolveChallenge` is a generic case objective but is not an investigation-editor
+surface yet. The editor schema does not offer it, and compilation rejects a
+manually supplied `SolveChallenge` requirement with a structural diagnostic at
+the exact objective requirement path. First-class authored challenges require
+challenge declarations, presenter binding, and authority materialization
+before this restriction can be removed.
+
 ## Authoring catalog
 
 Modular quest and bestiary content is authored in the strict JSON-compatible

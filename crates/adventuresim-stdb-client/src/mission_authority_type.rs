@@ -25,7 +25,11 @@ pub struct MissionAuthority {
     pub hostile_version: u16,
     pub enemy_count: u32,
     pub enemy_difficulty: i32,
+    pub base_enemy_combat_scale_bps: u32,
     pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
+    pub countermeasure_source_challenge_id: Option<String>,
+    pub errantry_approach_snapshot_json: String,
     pub normalized_combat_power: u32,
     pub drop_item_id: Option<String>,
     pub drop_quantity: u32,
@@ -54,7 +58,12 @@ pub struct MissionAuthorityCols {
     pub hostile_version: __sdk::__query_builder::Col<MissionAuthority, u16>,
     pub enemy_count: __sdk::__query_builder::Col<MissionAuthority, u32>,
     pub enemy_difficulty: __sdk::__query_builder::Col<MissionAuthority, i32>,
+    pub base_enemy_combat_scale_bps: __sdk::__query_builder::Col<MissionAuthority, u32>,
     pub enemy_combat_scale_bps: __sdk::__query_builder::Col<MissionAuthority, u32>,
+    pub countermeasure_multiplier_bps: __sdk::__query_builder::Col<MissionAuthority, u32>,
+    pub countermeasure_source_challenge_id:
+        __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
+    pub errantry_approach_snapshot_json: __sdk::__query_builder::Col<MissionAuthority, String>,
     pub normalized_combat_power: __sdk::__query_builder::Col<MissionAuthority, u32>,
     pub drop_item_id: __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
     pub drop_quantity: __sdk::__query_builder::Col<MissionAuthority, u32>,
@@ -87,9 +96,25 @@ impl __sdk::__query_builder::HasCols for MissionAuthority {
             hostile_version: __sdk::__query_builder::Col::new(table_name, "hostile_version"),
             enemy_count: __sdk::__query_builder::Col::new(table_name, "enemy_count"),
             enemy_difficulty: __sdk::__query_builder::Col::new(table_name, "enemy_difficulty"),
+            base_enemy_combat_scale_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "base_enemy_combat_scale_bps",
+            ),
             enemy_combat_scale_bps: __sdk::__query_builder::Col::new(
                 table_name,
                 "enemy_combat_scale_bps",
+            ),
+            countermeasure_multiplier_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "countermeasure_multiplier_bps",
+            ),
+            countermeasure_source_challenge_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "countermeasure_source_challenge_id",
+            ),
+            errantry_approach_snapshot_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "errantry_approach_snapshot_json",
             ),
             normalized_combat_power: __sdk::__query_builder::Col::new(
                 table_name,

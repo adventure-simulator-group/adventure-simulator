@@ -1593,6 +1593,25 @@ pub(crate) fn ensure_bound_mission_authority(
         .id()
         .find(&hostile_group_id)
         .ok_or("Bound hostile group disappeared")?;
+    let (
+        enemy_combat_scale_bps,
+        countermeasure_multiplier_bps,
+        countermeasure_source_challenge_id,
+        errantry_approach_snapshot_json,
+    ) =
+        errantry_mission_scale_snapshot(
+            ctx,
+            party_id,
+            &case.id,
+            case_site.id.as_str(),
+            &hostile_group_id,
+            hostile_group.combat_scale_bps,
+        );
+    let normalized_combat_power = u64::from(hostile_group.normalized_combat_power)
+        .saturating_mul(u64::from(enemy_combat_scale_bps))
+        .checked_div(u64::from(hostile_group.combat_scale_bps.max(1)))
+        .unwrap_or_default()
+        .min(u64::from(u32::MAX)) as u32;
     let authority = MissionAuthority {
         id: mission_id.to_string(),
         party_id: party_id.to_string(),
@@ -1608,8 +1627,12 @@ pub(crate) fn ensure_bound_mission_authority(
         hostile_version: hostile_group.escalation_incident_ordinal,
         enemy_count: hostile_group.enemy_count,
         enemy_difficulty: hostile_group.base_difficulty,
-        enemy_combat_scale_bps: hostile_group.combat_scale_bps,
-        normalized_combat_power: hostile_group.normalized_combat_power,
+        base_enemy_combat_scale_bps: hostile_group.combat_scale_bps,
+        enemy_combat_scale_bps,
+        countermeasure_multiplier_bps,
+        countermeasure_source_challenge_id,
+        errantry_approach_snapshot_json,
+        normalized_combat_power,
         drop_item_id: hostile_group.drop_item_id.clone(),
         drop_quantity: hostile_group.drop_quantity,
     };

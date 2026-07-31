@@ -1128,6 +1128,29 @@ fn validate_custody(
     }
 }
 
+fn reject_unsupported_challenge_objectives(
+    definition: &DeveloperQuestDefinition,
+    diagnostics: &mut Vec<DeveloperQuestDiagnostic>,
+) {
+    for (path_index, path) in definition.objectives.alternatives.iter().enumerate() {
+        for (objective_index, objective) in path.objectives.iter().enumerate() {
+            if matches!(
+                &objective.requirement,
+                ObjectiveRequirement::SolveChallenge { .. }
+            ) {
+                diagnostics.push(diagnostic(
+                    format!(
+                        "objectives.alternatives.{path_index}.objectives.{objective_index}.requirement"
+                    ),
+                    "unsupported_challenge_objective",
+                    "Investigation developer quests cannot author challenge objectives until challenge declarations and materialization are supported",
+                    DiagnosticTier::Structural,
+                ));
+            }
+        }
+    }
+}
+
 fn namespace_definition(
     base: &GenerationContext,
     definition: &DeveloperQuestDefinition,
@@ -1362,6 +1385,9 @@ fn namespace_definition(
                 ObjectiveRequirement::RemediateSource { remediation_id } => {
                     remap(remediation_id, &replacements);
                 }
+                // Rejected structurally before materialization: developer
+                // investigation definitions cannot declare challenge authority.
+                ObjectiveRequirement::SolveChallenge { .. } => {}
                 ObjectiveRequirement::PresentProof { evidence_id, .. } => {
                     remap(evidence_id, &replacements);
                 }
@@ -1437,6 +1463,7 @@ pub fn compile(
     );
     validate_recursive_bounds(definition, &mut diagnostics);
     validate_custody(definition, &mut diagnostics);
+    reject_unsupported_challenge_objectives(definition, &mut diagnostics);
     let supplied_bridges: BTreeSet<_> = definition
         .bridges
         .iter()
@@ -2092,6 +2119,26 @@ mod tests {
         assert!(diagnostics.iter().any(|item| {
             item.code == "duplicate_local_id"
                 && item.path == "sites.1.id"
+                && item.tier == DiagnosticTier::Structural
+        }));
+    }
+
+    #[test]
+    fn challenge_objectives_are_rejected_until_the_editor_can_materialize_them() {
+        let mut definition = generated_definition();
+        definition.objectives.alternatives[0].objectives[0].requirement =
+            ObjectiveRequirement::SolveChallenge {
+                challenge_id: "challenge:not-declared".into(),
+            };
+        let diagnostics = compile(&DeveloperGenerationContext {
+            base: context(),
+            definition,
+            allow_implausible: true,
+        })
+        .unwrap_err();
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "unsupported_challenge_objective"
+                && item.path == "objectives.alternatives.0.objectives.0.requirement"
                 && item.tier == DiagnosticTier::Structural
         }));
     }

@@ -50,9 +50,29 @@
     && binding.sessionId === currentView?.session_id
     && binding.revision === currentView?.revision
   );
+  const createRetriableAction = (createId) => {
+    let pendingActionId = null;
+    return {
+      run(send) {
+        pendingActionId ||= createId();
+        const attemptedActionId = pendingActionId;
+        return Promise.resolve()
+          .then(() => send(attemptedActionId))
+          .then((result) => {
+            pendingActionId = null;
+            return result;
+          })
+          .catch((error) => {
+            if (error?.status === 409 || error?.status === 422) pendingActionId = null;
+            throw error;
+          });
+      },
+    };
+  };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
+      createRetriableAction,
       dialogueCompletion,
       dialogueSubmission,
       dialogueResponseIsCurrent,
@@ -82,7 +102,11 @@
   const actionId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const request = async (path, payload) => {
     const response = await window.strategicFetch(path, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(payload) });
-    if (!response.ok) throw new Error(`Dialogue action failed (${response.status})`);
+    if (!response.ok) {
+      const error = new Error(`Dialogue action failed (${response.status})`);
+      error.status = response.status;
+      throw error;
+    }
     return response.json();
   };
   const sourceLink = (source) => {
@@ -247,6 +271,31 @@
       if (expanded) row.append(claimResponsePanel(expanded, binding));
     });
     renderPrompt(view.open_prompt);
+    if (view.order_errantry_offer) {
+      const row = document.createElement("div");
+      row.className = "chat-system-message";
+      row.dataset.chatChannel = "info";
+      row.dataset.dialogueScripted = "true";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-primary";
+      button.textContent = "Accept the Order's errantry";
+      const acceptance = createRetriableAction(actionId);
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        acceptance.run((acceptanceActionId) => request("/api/dialogue/accept-order-errantry", {
+          session_id: view.session_id,
+          action_id: acceptanceActionId,
+        })).then((result) => {
+          window.location.assign(result.redirect);
+        }).catch((error) => {
+          button.disabled = false;
+          window.reportStrategicError(error, "accept Order errantry");
+        });
+      }, { signal });
+      row.append(button);
+      messages.append(row);
+    }
     refreshCompletion();
     messages.scrollTop = messages.scrollHeight;
   };

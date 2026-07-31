@@ -202,11 +202,12 @@ pub fn autoresolve_mission(
         .collect::<Result<Vec<_>, String>>()?;
     let enemies = (0..u64::from(mission.enemy_count))
         .map(|index| {
-            autoresolve_enemy(
+            autoresolve_enemy_with_countermeasure(
                 u64::MAX.saturating_sub(index),
                 &hostile_group.enemy_type,
                 mission.enemy_difficulty,
                 mission.enemy_combat_scale_bps,
+                mission.countermeasure_multiplier_bps,
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -317,7 +318,7 @@ pub fn bootstrap_development_world(
     ) {
         return Err("Development bootstrap is disabled or unauthorized".into());
     }
-    seed_world(ctx)?;
+    seed_world(ctx, include_visual_demos)?;
     crate::disease::seed_sick_character(ctx)?;
     if include_visual_demos {
         crate::character::seed_damaged_character(ctx)?;
@@ -561,6 +562,25 @@ pub fn seed_standalone_tactical_mission(
     let mission = if let Some(existing) = ctx.db.mission_authority().id().find(&mission_id) {
         existing
     } else {
+        let (
+            enemy_combat_scale_bps,
+            countermeasure_multiplier_bps,
+            countermeasure_source_challenge_id,
+            errantry_approach_snapshot_json,
+        ) =
+            errantry_mission_scale_snapshot(
+                ctx,
+                &party_id,
+                &case_id,
+                case_site.id.as_str(),
+                &hostile_group_id,
+                group.combat_scale_bps,
+            );
+        let normalized_combat_power = u64::from(group.normalized_combat_power)
+            .saturating_mul(u64::from(enemy_combat_scale_bps))
+            .checked_div(u64::from(group.combat_scale_bps.max(1)))
+            .unwrap_or_default()
+            .min(u64::from(u32::MAX)) as u32;
         ctx.db.mission_authority().insert(MissionAuthority {
             id: mission_id.clone(),
             party_id: party_id.clone(),
@@ -576,8 +596,12 @@ pub fn seed_standalone_tactical_mission(
             hostile_version: group.escalation_incident_ordinal,
             enemy_count: group.enemy_count,
             enemy_difficulty: group.base_difficulty,
-            enemy_combat_scale_bps: group.combat_scale_bps,
-            normalized_combat_power: group.normalized_combat_power,
+            base_enemy_combat_scale_bps: group.combat_scale_bps,
+            enemy_combat_scale_bps,
+            countermeasure_multiplier_bps,
+            countermeasure_source_challenge_id,
+            errantry_approach_snapshot_json,
+            normalized_combat_power,
             drop_item_id: group.drop_item_id.clone(),
             drop_quantity: group.drop_quantity,
         })
@@ -621,6 +645,7 @@ pub fn seed_standalone_tactical_mission(
             required_enemy_kills,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
+            countermeasure_multiplier_bps: mission.countermeasure_multiplier_bps,
             normalized_combat_power: mission.normalized_combat_power,
         });
     ctx.db
@@ -632,7 +657,10 @@ pub fn seed_standalone_tactical_mission(
     Ok(())
 }
 
-pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
+pub(crate) fn seed_world(
+    ctx: &ReducerContext,
+    include_errantry_demo_chapter: bool,
+) -> Result<(), String> {
     const DEMO_SOURCES: &str = "- **Adventure Simulator renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
 
     for (id, latitude, longitude) in [
@@ -673,7 +701,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
         });
     }
 
-    let settlements = [
+    let mut settlements = vec![
         (
             "riverdale",
             "Riverdale",
@@ -711,6 +739,27 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             },
         ),
     ];
+    if include_errantry_demo_chapter {
+        let errantry_chapter_settlement_id = adventuresim_core::organization::organization(
+            ERRANTRY_ISSUER_ORGANIZATION_ID,
+        )
+        .filter(|organization| organization.errantry_issuance)
+        .and_then(|organization| organization.chapters.first())
+        .map(|chapter| chapter.settlement_id.as_str())
+        .ok_or("Order errantry demo has no canonical authored chapter")?;
+        settlements.push((
+            errantry_chapter_settlement_id,
+            "St. George Chapter (Development Demo)",
+            10.10,
+            53.55,
+            None,
+            3,
+            "hills",
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::RomanCatholic,
+            },
+        ));
+    }
 
     for (id, name, x, y, source_node_id, pop, scene, religious_status) in settlements {
         if ctx.db.settlement().id().find(&id.to_string()).is_none() {
@@ -1850,6 +1899,90 @@ pub fn spawn_developer_quest(
 #[cfg(test)]
 mod developer_quest_source_tests {
     use super::*;
+
+    #[test]
+    fn fresh_development_world_seeds_an_exact_order_errantry_issuer() {
+        let order = adventuresim_core::organization::organization(
+            ERRANTRY_ISSUER_ORGANIZATION_ID,
+        )
+        .expect("Order catalog entry");
+        assert!(order.errantry_issuance);
+        let chapter = order.chapters.first().expect("authored Order chapter");
+        let expected_representative =
+            adventuresim_core::organization::organization_representative_id(
+                &chapter.settlement_id,
+                ERRANTRY_ISSUER_ORGANIZATION_ID,
+            );
+        assert!(expected_representative.contains(&chapter.settlement_id));
+
+        let source = include_str!("mission_bootstrap.rs");
+        let seed = source
+            .split("pub(crate) fn seed_world")
+            .nth(1)
+            .unwrap()
+            .split("pub fn ensure_settlement_activity")
+            .next()
+            .unwrap();
+        let canonical_chapter = seed
+            .find("organization.chapters.first()")
+            .expect("canonical Order chapter lookup");
+        let settlement_insert = seed
+            .find("ctx.db.settlement().insert")
+            .expect("demo settlement insertion");
+        let population = seed
+            .find("ensure_settlement_activity_inner")
+            .expect("canonical representative population seeding");
+        assert!(canonical_chapter < settlement_insert && settlement_insert < population);
+        let population_source = include_str!("../settlement_population.rs");
+        let representative_seed = population_source
+            .split("for organization in adventuresim_core::organization::organizations_for_chapter")
+            .nth(1)
+            .unwrap()
+            .split("pub fn npc_is_present")
+            .next()
+            .unwrap();
+        assert!(representative_seed.contains("organization_representative_id"));
+        assert!(representative_seed.contains("representative.organization_id = organization.id"));
+        assert!(representative_seed.contains("\"organization-representative\""));
+
+        let bootstrap = source
+            .split("pub fn bootstrap_development_world")
+            .nth(1)
+            .unwrap()
+            .split("/// Load the one-shot autopsy")
+            .next()
+            .unwrap();
+        assert!(
+            bootstrap
+                .find("seed_world(ctx, include_visual_demos)")
+                .unwrap()
+                < bootstrap.find("seed_social_demo(ctx)").unwrap()
+        );
+        assert!(
+            include_str!("../simulation.rs").contains("crate::strategic::seed_world(ctx, false)")
+        );
+
+        let challenges = include_str!("challenges.rs");
+        let demo = challenges
+            .split("pub fn load_puzzle_demo")
+            .nth(1)
+            .unwrap()
+            .split("/// Narrow production issuance")
+            .next()
+            .unwrap();
+        assert!(demo.contains("ErrantryLaunch::DirectDemoCamp"));
+        let materializer = challenges
+            .split("fn materialize_order_errantry")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(materializer.contains("order_errantry_issuer(ctx)"));
+        assert!(materializer.contains(
+            "issuer_organization_id: ERRANTRY_ISSUER_ORGANIZATION_ID.into()"
+        ));
+    }
 
     #[test]
     fn debug_and_automatic_generation_share_materialization_without_disclosure() {

@@ -223,6 +223,32 @@ pub fn combat_training_multiplier(combat_scale_bps: u32) -> f32 {
     combat_scale_bps.clamp(COMBAT_SCALE_BPS, MAX_COMBAT_SCALE_BPS) as f32 / COMBAT_SCALE_BPS as f32
 }
 
+/// A separately audited bounded modifier for a mission-specific
+/// countermeasure. Unlike escalation scale, values below baseline are
+/// meaningful here and therefore must not be clamped back to 10_000.
+pub fn combat_countermeasure_physical_multiplier(multiplier_bps: u32) -> f32 {
+    (multiplier_bps.clamp(5_000, 10_000) as f32 / 10_000.0).sqrt()
+}
+
+pub fn combat_countermeasure_training_multiplier(multiplier_bps: u32) -> f32 {
+    multiplier_bps.clamp(5_000, 10_000) as f32 / 10_000.0
+}
+
+/// The paired multipliers consumed by both tactical and autoresolve enemies.
+/// Keeping them together prevents training from accidentally inheriting the
+/// square-root physical multiplier.
+pub fn combat_scaling_multipliers(
+    combat_scale_bps: u32,
+    countermeasure_multiplier_bps: u32,
+) -> (f32, f32) {
+    (
+        combat_physical_multiplier(combat_scale_bps)
+            * combat_countermeasure_physical_multiplier(countermeasure_multiplier_bps),
+        combat_training_multiplier(combat_scale_bps)
+            * combat_countermeasure_training_multiplier(countermeasure_multiplier_bps),
+    )
+}
+
 /// Investigability 50 is neutral. The bounded modifier is used consistently
 /// by route, physical-inspection, and lore checks.
 pub fn check_modifier_milli(investigability: u8) -> i16 {
@@ -405,6 +431,12 @@ mod tests {
     fn tactical_and_autoresolve_multipliers_consume_scale_once_and_monotonically() {
         assert_eq!(combat_physical_multiplier(10_000), 1.0);
         assert_eq!(combat_training_multiplier(10_000), 1.0);
+        assert_eq!(combat_countermeasure_training_multiplier(10_000), 1.0);
+        assert_eq!(combat_countermeasure_training_multiplier(7_500), 0.75);
+        assert!(combat_countermeasure_physical_multiplier(7_500) < 1.0);
+        let (physical, training) = combat_scaling_multipliers(20_000, 7_500);
+        assert!((physical - 1.5_f32.sqrt()).abs() < 0.000_01);
+        assert!((training - 1.5).abs() < 0.000_01);
         let earlier = combat_for_incident(2, 2, 2, ORC_MOB);
         let later = combat_for_incident(2, 2, 3, ORC_MOB);
         assert!(

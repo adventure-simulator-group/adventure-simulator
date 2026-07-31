@@ -1,5 +1,6 @@
 //! Route handlers
 
+pub mod challenges;
 pub mod characters;
 mod data;
 pub mod developer_quests;
@@ -892,6 +893,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(
             Router::new()
                 .merge(investigation::routes())
+                .merge(challenges::routes())
                 .merge(dialogue::routes())
                 .merge(developer_quests::routes())
                 .merge(evidence::routes())

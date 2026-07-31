@@ -197,7 +197,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=counterparty-portraits-1-claim-challenges-2" defer {}
+                    script src="/static/dialogue-client.js?v=counterparty-portraits-1-claim-challenges-2-errantry-retry-1" defer {}
                     script src="/static/social-menu.js?v=timed-chat-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
                     script src="/static/developer-quest-editor.js?v=typed-editor-1" defer {}
@@ -361,6 +361,12 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
+                    button type="button" class="btn btn-small developer-puzzle-demo-button"
+                        data-developer-puzzle-demo data-developer-only
+                        aria-label="Load the ordered sigil puzzle demo"
+                        title="Create an accepted errantry quest and open its puzzle immediately" {
+                        "Puzzle demo"
+                    }
                     button type="button" class="btn btn-small developer-outbreak-demo-button"
                         data-developer-outbreak-demo data-developer-only
                         aria-label="Load the outbreak demo"
@@ -1075,6 +1081,7 @@ mod tests {
         assert!(markup.contains("aria-pressed=\"false\""));
         assert!(markup.contains("data-developer-outbreak-demo data-developer-only"));
         assert!(markup.contains("data-developer-autopsy-demo data-developer-only"));
+        assert!(markup.contains("data-developer-puzzle-demo data-developer-only"));
         let layout_css = include_str!("../../static/css/layout.css");
         assert!(
             layout_css.contains(

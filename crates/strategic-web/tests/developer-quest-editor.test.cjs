@@ -64,6 +64,16 @@ test("outbreak demo uses real server materialization and ordinary rumor discover
   assert.match(route, /"discovery":"normal_rumor"/);
 });
 
+test("puzzle demo creates a real quest and redirects straight to its challenge", () => {
+  assert.match(layout, /data-developer-puzzle-demo/);
+  assert.match(script, /fetch\("\/api\/developer\/puzzle-demo"/);
+  assert.match(script, /window\.location\.assign\(body\.redirect_to\)/);
+  assert.match(route, /\.route\("\/api\/developer\/puzzle-demo"/);
+  assert.match(route, /query::<BackendChallenge>/);
+  assert.match(route, /row\.id\.starts_with\(&demo_prefix\)/);
+  assert.match(route, /challenge\.case_id, challenge\.id/);
+});
+
 test("HTTP adapter derives settlement and leaves discovery to normal rumors", () => {
   const productionRoute = route.split("#[cfg(test)]")[0];
   assert.match(productionRoute, /current_settlement_id/);

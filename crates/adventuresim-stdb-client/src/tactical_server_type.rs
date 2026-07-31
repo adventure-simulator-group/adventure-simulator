@@ -17,6 +17,7 @@ pub struct TacticalServer {
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
     pub normalized_combat_power: u32,
 }
 
@@ -38,6 +39,7 @@ pub struct TacticalServerCols {
     pub required_enemy_kills: __sdk::__query_builder::Col<TacticalServer, u32>,
     pub enemy_difficulty: __sdk::__query_builder::Col<TacticalServer, i32>,
     pub enemy_combat_scale_bps: __sdk::__query_builder::Col<TacticalServer, u32>,
+    pub countermeasure_multiplier_bps: __sdk::__query_builder::Col<TacticalServer, u32>,
     pub normalized_combat_power: __sdk::__query_builder::Col<TacticalServer, u32>,
 }
 
@@ -60,6 +62,10 @@ impl __sdk::__query_builder::HasCols for TacticalServer {
             enemy_combat_scale_bps: __sdk::__query_builder::Col::new(
                 table_name,
                 "enemy_combat_scale_bps",
+            ),
+            countermeasure_multiplier_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "countermeasure_multiplier_bps",
             ),
             normalized_combat_power: __sdk::__query_builder::Col::new(
                 table_name,
