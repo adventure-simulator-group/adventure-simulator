@@ -13,10 +13,13 @@ const MAX_REFLEX_WINDOW: f32 = 0.5;
 
 /// Stores the defender's most recent dodge/parry choice along with the
 /// server timestamp when it was received. Consumed on each attack resolution.
+///
+/// Set either by [`on_defender_response`] for a real player's key press, or by
+/// [`crate::bot`]'s AI standing in for a bot's reaction.
 #[derive(Component)]
-struct PendingDefenderResponse {
-    choice: DefendRequest,
-    set_at: f32,
+pub struct PendingDefenderResponse {
+    pub choice: DefendRequest,
+    pub set_at: f32,
 }
 
 pub struct CombatPlugin;
@@ -172,6 +175,7 @@ fn on_attack_action_triggered(
             body_part: event.body_part,
             result,
             flanking,
+            defender_response,
         },
     });
 }

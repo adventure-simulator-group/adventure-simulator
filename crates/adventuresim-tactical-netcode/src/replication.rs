@@ -5,7 +5,8 @@ use bevy_replicon::prelude::*;
 
 use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
-    AttackRequest, DefendRequest, JoinRequest, PlayerInputRequest, SuccessfulAttackResponse,
+    AttackRequest, AttackStartedRequest, DefendRequest, JoinRequest, PlayerInputRequest,
+    SuccessfulAttackResponse,
 };
 
 #[derive(Default)]
@@ -39,6 +40,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
             .add_client_event::<DefendRequest>(Channel::Unreliable)
+            .add_client_event::<AttackStartedRequest>(Channel::Unreliable)
             .add_mapped_client_event::<AttackRequest>(Channel::Ordered)
             .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered);
 

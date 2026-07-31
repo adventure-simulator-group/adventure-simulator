@@ -321,12 +321,16 @@ pub fn bootstrap_development_world(
 }
 
 /// Seed a standalone tactical mission: a solo party occupying a typed case
-/// site with a bound hostile group, mission, and tactical-server request.
+/// site with a bound hostile group, mission, tactical-server request, and
+/// its authorized claim.
 ///
 /// Lets an isolated, strategic-layer-free SpacetimeDB instance host a
 /// standalone tactical server/client test without hand-authoring party and
-/// quest state. Gated by the same development capability as
-/// [`bootstrap_development_world`].
+/// quest state, or running the trusted dispatcher to authorize a claim.
+/// `tactical_claim` is the plaintext one-use secret the caller will later
+/// launch the tactical server with (as `ADVENTURESIM_TACTICAL_CLAIM`); only
+/// its hash is stored, mirroring [`crate::tactical::authorize_tactical_server_claim`].
+/// Gated by the same development capability as [`bootstrap_development_world`].
 #[reducer]
 pub fn seed_standalone_tactical_mission(
     ctx: &ReducerContext,
@@ -335,6 +339,7 @@ pub fn seed_standalone_tactical_mission(
     mission_id: String,
     scene_key: String,
     required_enemy_kills: u32,
+    tactical_claim: String,
 ) -> Result<(), String> {
     if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
         COMPILED_DEV_BOOTSTRAP_TOKEN,
@@ -563,7 +568,7 @@ pub fn seed_standalone_tactical_mission(
     ctx.db
         .tactical_server_request_authority()
         .insert(crate::tactical::TacticalServerRequest {
-            mission_id,
+            mission_id: mission_id.clone(),
             gateway_bucket: 0,
             scene_key,
             party_id,
@@ -572,6 +577,12 @@ pub fn seed_standalone_tactical_mission(
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
             normalized_combat_power: mission.normalized_combat_power,
+        });
+    ctx.db
+        .tactical_server_claim()
+        .insert(crate::tactical::TacticalServerClaim {
+            mission_id,
+            claim_hash: Sha256::digest(tactical_claim.as_bytes()).to_vec(),
         });
     Ok(())
 }

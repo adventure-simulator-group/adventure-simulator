@@ -12,6 +12,7 @@ pub(super) struct SeedStandaloneTacticalMissionArgs {
     pub mission_id: String,
     pub scene_key: String,
     pub required_enemy_kills: u32,
+    pub tactical_claim: String,
 }
 
 impl From<SeedStandaloneTacticalMissionArgs> for super::Reducer {
@@ -22,6 +23,7 @@ impl From<SeedStandaloneTacticalMissionArgs> for super::Reducer {
             mission_id: args.mission_id,
             scene_key: args.scene_key,
             required_enemy_kills: args.required_enemy_kills,
+            tactical_claim: args.tactical_claim,
         }
     }
 }
@@ -48,6 +50,7 @@ pub trait seed_standalone_tactical_mission {
         mission_id: String,
         scene_key: String,
         required_enemy_kills: u32,
+        tactical_claim: String,
     ) -> __sdk::Result<()> {
         self.seed_standalone_tactical_mission_then(
             bootstrap_token,
@@ -55,6 +58,7 @@ pub trait seed_standalone_tactical_mission {
             mission_id,
             scene_key,
             required_enemy_kills,
+            tactical_claim,
             |_, _| {},
         )
     }
@@ -72,6 +76,7 @@ pub trait seed_standalone_tactical_mission {
         mission_id: String,
         scene_key: String,
         required_enemy_kills: u32,
+        tactical_claim: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -89,6 +94,7 @@ impl seed_standalone_tactical_mission for super::RemoteReducers {
         mission_id: String,
         scene_key: String,
         required_enemy_kills: u32,
+        tactical_claim: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -103,6 +109,7 @@ impl seed_standalone_tactical_mission for super::RemoteReducers {
                 mission_id,
                 scene_key,
                 required_enemy_kills,
+                tactical_claim,
             },
             callback,
         )

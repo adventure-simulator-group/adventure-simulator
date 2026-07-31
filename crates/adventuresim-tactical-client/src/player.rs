@@ -1,6 +1,8 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
-    bevy_replicon::prelude::ClientTriggerExt, message::DefendRequest, prelude::AttackRequest,
+    bevy_replicon::prelude::ClientTriggerExt,
+    message::{AttackStartedRequest, DefendRequest},
+    prelude::AttackRequest,
 };
 use bevy::prelude::*;
 
@@ -297,6 +299,7 @@ fn on_attack_fired_hook(
 
     cmd.entity(event.context)
         .insert(AttackState::new(PRE_HIT_DELAY, reach));
+    cmd.client_trigger(AttackStartedRequest);
 }
 
 fn update_character_look_rotation(
