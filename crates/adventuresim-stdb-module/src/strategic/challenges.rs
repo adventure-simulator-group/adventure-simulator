@@ -199,6 +199,20 @@ fn journey_destination_matches(endpoint: &JourneyEndpoint, case_site_id: &str) -
     )
 }
 
+fn journey_at_bound_trial_camp(
+    journey: &PartyJourney,
+    challenge: &ChallengeAuthority,
+) -> bool {
+    adventuresim_core::errantry::journey_camp_identity_matches(
+        journey.departure_minute,
+        journey.completed_minutes,
+        &journey.camp_stop_minutes,
+        challenge.journey_departure_minute,
+        challenge.camp_movement_minute,
+    )
+        && journey_destination_matches(&journey.destination, &challenge.finale_case_site_id)
+}
+
 fn party_at_bound_trial_camp_view(
     ctx: &ViewContext,
     party: &Party,
@@ -212,18 +226,7 @@ fn party_at_bound_trial_camp_view(
             .party_journey_authority()
             .party_id()
             .find(&party.id)
-            .is_some_and(|journey| {
-                journey.departure_minute == challenge.journey_departure_minute
-                    && journey.completed_minutes == challenge.camp_movement_minute
-                    && journey.completed_elapsed_minutes == challenge.camp_elapsed_minute
-                    && journey
-                        .camp_stop_minutes
-                        .contains(&challenge.camp_movement_minute)
-                    && journey_destination_matches(
-                        &journey.destination,
-                        &challenge.finale_case_site_id,
-                    )
-            })
+            .is_some_and(|journey| journey_at_bound_trial_camp(&journey, challenge))
         && !ctx
             .db
             .strategic_encounter()
@@ -245,18 +248,7 @@ fn party_at_bound_trial_camp(
             .party_journey_authority()
             .party_id()
             .find(&party.id)
-            .is_some_and(|journey| {
-                journey.departure_minute == challenge.journey_departure_minute
-                    && journey.completed_minutes == challenge.camp_movement_minute
-                    && journey.completed_elapsed_minutes == challenge.camp_elapsed_minute
-                    && journey
-                        .camp_stop_minutes
-                        .contains(&challenge.camp_movement_minute)
-                    && journey_destination_matches(
-                        &journey.destination,
-                        &challenge.finale_case_site_id,
-                    )
-            })
+            .is_some_and(|journey| journey_at_bound_trial_camp(&journey, challenge))
         && !ctx
             .db
             .strategic_encounter()
@@ -1191,8 +1183,15 @@ mod challenge_source_boundary_tests {
     #[test]
     fn trial_is_optional_camp_authority_and_boon_is_snapshot_only() {
         let source = include_str!("challenges.rs");
-        assert!(source.contains("journey.completed_minutes == challenge.camp_movement_minute"));
-        assert!(source.contains("journey.completed_elapsed_minutes == challenge.camp_elapsed_minute"));
+        let camp_match = source
+            .split("fn journey_at_bound_trial_camp")
+            .nth(1)
+            .unwrap()
+            .split("fn party_at_bound_trial_camp_view")
+            .next()
+            .unwrap();
+        assert!(camp_match.contains("journey_camp_identity_matches"));
+        assert!(!camp_match.contains("completed_elapsed_minutes"));
         assert!(source.contains("encounter.status == \"awaiting_choice\""));
         assert!(!source.contains("insert(StrategicEncounter"));
         assert!(source.contains("ErrantryCountermeasure"));
@@ -1234,6 +1233,19 @@ mod challenge_source_boundary_tests {
         .unwrap();
         assert!(aided.attributes.endurance < base.attributes.endurance);
         assert!(aided.skills.sword_hours < base.skills.sword_hours);
+        let (expected_physical, expected_training) =
+            adventuresim_core::threat_escalation::combat_scaling_multipliers(
+                7_500,
+                FEY_COUNTERMEASURE_MULTIPLIER_BPS,
+            );
+        assert!(
+            (aided.attributes.endurance / base.attributes.endurance - expected_physical).abs()
+                < 0.000_01
+        );
+        assert!(
+            (aided.skills.sword_hours / base.skills.sword_hours - expected_training).abs()
+                < 0.000_01
+        );
 
         let source = include_str!("challenges.rs");
         assert!(source.contains("ERRANTRY_FINALE_THREAT_ID.into()"));

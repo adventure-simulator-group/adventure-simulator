@@ -46,6 +46,20 @@ pub enum TrialKind {
     Ordeal,
 }
 
+/// A camp's stable identity within one journey. Elapsed time is deliberately
+/// absent: resting advances elapsed time without moving the camp.
+pub fn journey_camp_identity_matches(
+    journey_departure_minute: u64,
+    completed_movement_minute: u64,
+    camp_stop_minutes: &[u64],
+    bound_departure_minute: u64,
+    bound_movement_minute: u64,
+) -> bool {
+    journey_departure_minute == bound_departure_minute
+        && completed_movement_minute == bound_movement_minute
+        && camp_stop_minutes.contains(&bound_movement_minute)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Sigil {
     Crown,
@@ -760,6 +774,17 @@ const RUIN_ADJACENT: [[&str; 5]; 5] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camp_identity_survives_rest_but_not_movement_or_a_new_journey() {
+        let stops = [60, 120];
+        assert!(journey_camp_identity_matches(40, 60, &stops, 40, 60));
+        // Rest is not an input: only stable journey and movement coordinates
+        // identify the persisted camp.
+        assert!(!journey_camp_identity_matches(40, 120, &stops, 40, 60));
+        assert!(!journey_camp_identity_matches(41, 60, &stops, 40, 60));
+        assert!(!journey_camp_identity_matches(40, 60, &[120], 40, 60));
+    }
 
     #[test]
     fn every_solution_gets_a_globally_minimum_bounded_necessary_clue_set() {

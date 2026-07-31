@@ -656,16 +656,13 @@ fn scale_temporary_enemy(
     countermeasure_multiplier_bps: u32,
 ) -> Result<(), String> {
     let authored = 1.0 + (base_difficulty.clamp(1, 20) - 1) as f32 * 0.1;
-    let physical = authored
-        * adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps)
-        * adventuresim_core::threat_escalation::combat_countermeasure_physical_multiplier(
+    let (physical_scale, training_scale) =
+        adventuresim_core::threat_escalation::combat_scaling_multipliers(
+            combat_scale_bps,
             countermeasure_multiplier_bps,
         );
-    let training = authored
-        * adventuresim_core::threat_escalation::combat_training_multiplier(combat_scale_bps)
-        * adventuresim_core::threat_escalation::combat_countermeasure_training_multiplier(
-            countermeasure_multiplier_bps,
-        );
+    let physical = authored * physical_scale;
+    let training = authored * training_scale;
     let mut attributes = ctx
         .db
         .character_attributes()

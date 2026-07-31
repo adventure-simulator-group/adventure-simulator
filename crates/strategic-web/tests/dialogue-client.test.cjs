@@ -5,11 +5,54 @@ const test = require("node:test");
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "dialogue-client.js"), "utf8");
 const dialogueCss = fs.readFileSync(path.join(__dirname, "..", "static", "css", "strategic.css"), "utf8");
 const {
+  createRetriableAction,
   dialogueCompletion,
   dialogueResponseIsCurrent,
   dialogueSubmission,
   dialogueTopicPayload,
 } = require("../static/dialogue-client.js");
+
+test("errantry acceptance reuses its action ID after a lost response", async () => {
+  const generated = ["acceptance-1", "acceptance-2"];
+  const acceptance = createRetriableAction(() => generated.shift());
+  const sent = [];
+  await assert.rejects(
+    acceptance.run(async (actionId) => {
+      sent.push(actionId);
+      throw new TypeError("fetch failed after commit");
+    }),
+  );
+  const result = await acceptance.run(async (actionId) => {
+    sent.push(actionId);
+    return { redirect: "/quests" };
+  });
+  assert.deepEqual(sent, ["acceptance-1", "acceptance-1"]);
+  assert.equal(result.redirect, "/quests");
+  await acceptance.run(async (actionId) => {
+    sent.push(actionId);
+    return { redirect: "/quests" };
+  });
+  assert.deepEqual(sent, ["acceptance-1", "acceptance-1", "acceptance-2"]);
+});
+
+test("errantry acceptance replaces its action ID after a definitive conflict", async () => {
+  const generated = ["conflict-1", "conflict-2"];
+  const acceptance = createRetriableAction(() => generated.shift());
+  const sent = [];
+  await assert.rejects(
+    acceptance.run(async (actionId) => {
+      sent.push(actionId);
+      const error = new Error("conflict");
+      error.status = 422;
+      throw error;
+    }),
+  );
+  await acceptance.run(async (actionId) => {
+    sent.push(actionId);
+    return { redirect: "/quests" };
+  });
+  assert.deepEqual(sent, ["conflict-1", "conflict-2"]);
+});
 
 test("dialogue client is schema-driven with stable authoritative actions", () => {
   assert.match(source, /api\/dialogue\/start/);

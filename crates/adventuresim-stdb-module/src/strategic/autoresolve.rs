@@ -128,38 +128,35 @@ pub(crate) fn autoresolve_enemy_with_countermeasure(
     countermeasure_multiplier_bps: u32,
 ) -> Result<Combatant, String> {
     use adventuresim_core::bestiary::{AttackStyle, Protection};
-    let scale = adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps)
-        * adventuresim_core::threat_escalation::combat_countermeasure_physical_multiplier(
+    let (physical_scale, training_scale) =
+        adventuresim_core::threat_escalation::combat_scaling_multipliers(
+            combat_scale_bps,
             countermeasure_multiplier_bps,
         );
-    let rating = (1.2 + difficulty.max(1) as f32 * 0.35) * scale;
+    let base_rating = 1.2 + difficulty.max(1) as f32 * 0.35;
+    let physical_rating = base_rating * physical_scale;
     let threat_profile = parse_threat(enemy_type)?.profile();
     let profile = threat_profile.combat;
     let mut combatant = Combatant::new(id);
     combatant.bestiary_categories = threat_profile.categories().collect();
     combatant.attributes = CombatAttributes {
-        endurance: rating,
-        immunity: rating,
-        gut: rating,
-        intelligence: rating * 0.7,
-        instinct: rating,
-        eyesight: rating,
-        hearing: rating,
-        left_arm_strength: rating,
-        right_arm_strength: rating,
-        left_leg_strength: rating,
-        right_leg_strength: rating,
-        left_arm_agility: rating,
-        right_arm_agility: rating,
-        left_leg_agility: rating,
-        right_leg_agility: rating,
+        endurance: physical_rating,
+        immunity: physical_rating,
+        gut: physical_rating,
+        intelligence: physical_rating * 0.7,
+        instinct: physical_rating,
+        eyesight: physical_rating,
+        hearing: physical_rating,
+        left_arm_strength: physical_rating,
+        right_arm_strength: physical_rating,
+        left_leg_strength: physical_rating,
+        right_leg_strength: physical_rating,
+        left_arm_agility: physical_rating,
+        right_arm_agility: physical_rating,
+        left_leg_agility: physical_rating,
+        right_leg_agility: physical_rating,
     };
-    let training = rating
-        * 1_500.0
-        * profile.training_multiplier
-        * adventuresim_core::threat_escalation::combat_countermeasure_training_multiplier(
-            countermeasure_multiplier_bps,
-        );
+    let training = base_rating * 1_500.0 * profile.training_multiplier * training_scale;
     combatant.skills = CombatSkills {
         sword_hours: training,
         bow_hours: if profile.ranged { training * 2.0 } else { 0.0 },
