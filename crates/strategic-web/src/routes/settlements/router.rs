@@ -179,7 +179,7 @@ use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge, BackendCorpse,
-    BackendRoadChallenge,
+    BackendCharacterRelationshipStatus, BackendRoadChallenge,
     BackendLocalProblemTradeEffect,
     BackendPhysiologyAdministration, BackendPhysiologyChart, Character, CharacterAffinity,
     CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquipmentGraph,
@@ -187,21 +187,21 @@ use crate::spacetimedb::{
     CharacterMoraleSource, CharacterNeeds, CharacterPersonality, CharacterSettlementReputation,
     CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
     CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    EquipmentAnchorKind, EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
+    CharacterResidence, EquipmentAnchorKind, EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
     InventoryItemAmount, InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind,
     ItemSlot, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake,
-    RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand,
+    RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand, ResidenceTier,
     RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
     SettlementDescription, SettlementSmith, SocialAddress, SocialBelief, StrategicEncounter,
-    TravelEdge,
+    SettlementResidenceOffer, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
     RestSummary, SoapRestPreview, SocialPresentation, camp_page, live_merchant_shop_page,
     merchants_page, party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
     party_social_dialog, party_stats_page, religion_page, rest_default_minutes, rest_result_page,
-    settlement_map_page, settlement_npc_location_page, settlement_overview_page, surgery_dialog,
+    settlement_map_page, settlement_npc_location_page, settlement_overview_page, settlement_residence_page, surgery_dialog,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -210,6 +210,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/settlements/{id}/places/{place}",
             get(settlement_npc_place),
+        )
+        .route(
+            "/settlements/{id}/residences/{action}/{tier}",
+            post(change_residence),
         )
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/map", get(settlement_map))

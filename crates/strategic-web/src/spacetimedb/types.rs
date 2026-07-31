@@ -509,6 +509,55 @@ pub struct Settlement {
     pub source_node_id: Option<u64>,
 }
 
+/// Public residence-offer projection generated from the strategic schema.
+/// These transport structs intentionally mirror only public tables/views; the
+/// browser never receives private relationship or pregnancy records.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ResidenceTier {
+    Cheap,
+    Moderate,
+    Fancy,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ResidenceTenure {
+    Renter,
+    Owner,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementResidenceOffer {
+    pub id: String,
+    pub settlement_id: String,
+    pub tier: ResidenceTier,
+    pub purchase_price: u32,
+    pub rent_per_period: u32,
+    pub owner_maintenance_per_period: u32,
+    pub property_tax_per_period: u32,
+    pub leisure_morale_basis_points: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterResidence {
+    pub character_id: u64,
+    pub settlement_id: String,
+    pub tier: ResidenceTier,
+    pub tenure: ResidenceTenure,
+    pub active: bool,
+    pub last_billed_minute: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendCharacterRelationshipStatus {
+    pub character_id: u64,
+    pub spouse_id: Option<u64>,
+    pub courtship_partner_id: Option<u64>,
+    pub courtship_kind: Option<String>,
+    pub courtship_exposed: bool,
+    pub pregnancy_due_minute: Option<u64>,
+    pub pregnancy_child_id: Option<u64>,
+}
+
 fn deserialize_settlement_religious_status<'de, D>(
     deserializer: D,
 ) -> Result<adventuresim_world_schema::SettlementReligiousStatus, D::Error>

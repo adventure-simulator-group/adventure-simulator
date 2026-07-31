@@ -103,7 +103,7 @@ use encumbrance::{
     inventory_encumbrance_summaries, personal_encumbrance,
 };
 use medical::{
-    alchemy, perform_surgery, retrieve_repair, retrieve_repairs, schedule_allocation_reducer_arg,
+    alchemy, change_residence, perform_surgery, retrieve_repair, retrieve_repairs, schedule_allocation_reducer_arg,
     settlement_npc_place, show_settlement, show_settlement_location, submit_all_repairs,
     submit_repair, surgery,
 };

@@ -488,6 +488,43 @@ pub(super) async fn settlement_npc_place(
         return Html("<h1>This settlement has no keep</h1>".into());
     }
     let party_members = get_active_party_members(&state, Some(character)).await;
+    if place == "residences" {
+        let settlement_literal = sql_string_literal(&settlement.id);
+        let offers_sql = format!(
+            "SELECT * FROM settlement_residence_offer WHERE settlement_id = {settlement_literal}"
+        );
+        let residence_sql = format!(
+            "SELECT * FROM character_residence WHERE character_id = {}",
+            character.id,
+        );
+        let relationship_sql = format!(
+            "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {}",
+            character.id,
+        );
+        let (offers, residence, relationship) = tokio::join!(
+            state.db.query::<SettlementResidenceOffer>(&offers_sql),
+            state.db.query_one::<CharacterResidence>(&residence_sql),
+            state.db.query_one::<BackendCharacterRelationshipStatus>(&relationship_sql),
+        );
+        let mut offers = offers.unwrap_or_default();
+        offers.sort_by_key(|offer| match offer.tier {
+            ResidenceTier::Cheap => 0,
+            ResidenceTier::Moderate => 1,
+            ResidenceTier::Fancy => 2,
+        });
+        return Html(
+            settlement_residence_page(
+                &settlement,
+                character,
+                &party_members,
+                Some(&character.name),
+                &offers,
+                residence.ok().flatten().as_ref(),
+                relationship.ok().flatten().as_ref(),
+            )
+            .into_string(),
+        );
+    }
     Html(
         settlement_npc_location_page(
             &settlement,
@@ -498,6 +535,39 @@ pub(super) async fn settlement_npc_place(
         )
         .into_string(),
     )
+}
+
+pub(super) async fn change_residence(
+    State(state): State<AppState>,
+    Path((id, action, tier)): Path<(String, String, String)>,
+    session: Session,
+) -> Redirect {
+    let fallback = format!("/settlements/{id}/places/residences");
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    let tier_argument = match tier.as_str() {
+        "cheap" => json!({ "cheap": [] }),
+        "moderate" => json!({ "moderate": [] }),
+        "fancy" => json!({ "fancy": [] }),
+        _ => return Redirect::to(&fallback),
+    };
+    let reducer = match action.as_str() {
+        "rent" => "rent_residence",
+        "buy" => "buy_residence",
+        _ => return Redirect::to(&fallback),
+    };
+    match state
+        .db
+        .call(reducer, &[json!(character_id), json!(id), tier_argument])
+        .await
+    {
+        Ok(()) => Redirect::to(&fallback),
+        Err(error) => {
+            tracing::warn!(character_id, action, tier, %error, "residence acquisition rejected");
+            Redirect::to(&fallback)
+        }
+    }
 }
 
 pub(super) async fn show_settlement_location(

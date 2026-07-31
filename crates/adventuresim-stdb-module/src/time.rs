@@ -16,6 +16,7 @@ use crate::condition::{character_condition as _, character_strategic_condition a
 use crate::disease::character_illness_status as _;
 use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
 use crate::organization::organization_membership as _;
+use crate::residence::character_residence as _;
 use crate::strategic::{
     party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
 };
@@ -1488,6 +1489,16 @@ fn apply_activity_outcomes_inner(
                 elapsed,
             ),
         )?;
+        crate::relationship::apply_spouse_leisure_morale(
+            ctx,
+            character_id,
+            interval_end_minute,
+            adventuresim_core::strategic_schedule::restorative_leisure_minutes(
+                core_schedule(schedule),
+                interval_end_minute.saturating_sub(elapsed),
+                elapsed,
+            ),
+        )?;
     }
     Ok(ActivityRisks {
         thievery_discovery: outcome.thievery_discovery_chance,
@@ -1795,6 +1806,17 @@ fn convalescence_minutes(ctx: &ReducerContext, character_id: u64, physiology_che
 
 /// Spend completed game days at a settlement. Injuries receive all selected
 /// rest first; only the remaining time is eligible for scheduled training.
+///
+/// The boolean entry points predate residences and remain for existing clients.
+/// New callers that need a home should use `rest_at_residence_hours`, which
+/// carries an explicit provision rather than pretending a residence is an inn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettlementRestProvision {
+    Temple,
+    Inn,
+    Residence,
+}
+
 #[reducer]
 pub fn rest_at_settlement(
     ctx: &ReducerContext,
@@ -1808,7 +1830,7 @@ pub fn rest_at_settlement(
         ctx,
         character_id,
         u64::from(requested_days) * MINUTES_PER_DAY,
-        at_inn,
+        if at_inn { SettlementRestProvision::Inn } else { SettlementRestProvision::Temple },
         true,
         true,
         None,
@@ -1832,7 +1854,30 @@ pub fn rest_at_settlement_hours(
         ctx,
         character_id,
         requested_minutes,
-        at_inn,
+        if at_inn { SettlementRestProvision::Inn } else { SettlementRestProvision::Temple },
+        true,
+        true,
+        None,
+    )
+    .map(|_| ())
+}
+
+/// Rest at an active primary residence in the character's current settlement.
+/// A residence supplies the same full board as an inn, but its recurring costs
+/// are settled through the residence ledger rather than a per-stay fee.
+#[reducer]
+pub fn rest_at_residence_hours(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested_minutes: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    require_character_residence_rest(ctx, character_id)?;
+    rest_for_minutes(
+        ctx,
+        character_id,
+        requested_minutes,
+        SettlementRestProvision::Residence,
         true,
         true,
         None,
@@ -1914,7 +1959,7 @@ pub fn sponsor_party_member_inn_rest(
         ctx,
         patient_id,
         MINUTES_PER_DAY,
-        true,
+        SettlementRestProvision::Inn,
         true,
         true,
         Some(payer_id),
@@ -1958,11 +2003,29 @@ fn require_character_rest_service(
     require_settlement_rest_service(&settlement.economy, at_inn)
 }
 
+fn require_character_residence_rest(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .as_deref()
+        .ok_or("Settlement rest requires the character to be at a settlement")?;
+    let residence = ctx
+        .db
+        .character_residence()
+        .character_id()
+        .find(character_id)
+        .ok_or("You do not have a residence")?;
+    if !residence.active || residence.settlement_id != settlement_id {
+        return Err("You do not have an active residence in this settlement".into());
+    }
+    Ok(())
+}
+
 fn rest_for_minutes(
     ctx: &ReducerContext,
     character_id: u64,
     requested_minutes: u64,
-    at_inn: bool,
+    provision: SettlementRestProvision,
     explicit: bool,
     automatic_social: bool,
     inn_sponsor_id: Option<u64>,
@@ -2020,7 +2083,7 @@ fn rest_for_minutes(
     validate_settlement_rest_minutes(requested_minutes)?;
 
     let requested_cost = inn_stay_cost(requested_minutes)?;
-    if at_inn {
+    if provision == SettlementRestProvision::Inn {
         let patient_funds = crate::item::personal_currency_total(ctx, character_id);
         let sponsor_gap = requested_cost.saturating_sub(patient_funds);
         let payment_available = if sponsor_gap == 0 {
@@ -2085,7 +2148,7 @@ fn rest_for_minutes(
         false,
         adventuresim_core::survival::FieldShelter::Tent,
     )?;
-    if at_inn {
+    if provision == SettlementRestProvision::Inn {
         let elapsed_cost = inn_stay_cost(elapsed)?;
         let patient_contribution =
             crate::item::personal_currency_total(ctx, character_id).min(elapsed_cost);
@@ -2099,7 +2162,32 @@ fn rest_for_minutes(
         }
     }
     crate::social::settle_shared_party_time(ctx, character_id);
-    crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
+    crate::condition::apply_settlement_rest_elapsed_needs(
+        ctx,
+        character_id,
+        elapsed,
+        provision != SettlementRestProvision::Temple,
+    )?;
+    crate::condition::apply_settlement_leisure_condition(
+        ctx,
+        character_id,
+        core_schedule(&effective_schedule),
+        elapsed,
+        starting_minute.saturating_add(elapsed),
+    )?;
+    crate::relationship::apply_spouse_leisure_conception(
+        ctx,
+        character_id,
+        starting_minute,
+        starting_minute.saturating_add(elapsed),
+        recovery_elapsed,
+    )?;
+    crate::relationship::apply_spouse_leisure_morale(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+        recovery_elapsed,
+    )?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
@@ -2226,7 +2314,7 @@ pub(crate) fn spend_private_settlement_downtime(
         ctx,
         character_id,
         requested_minutes,
-        false,
+        SettlementRestProvision::Temple,
         explicit,
         true,
         None,
@@ -2243,7 +2331,7 @@ fn spend_private_settlement_downtime_deferred_social(
         ctx,
         character_id,
         requested_minutes,
-        false,
+        SettlementRestProvision::Temple,
         false,
         false,
         None,

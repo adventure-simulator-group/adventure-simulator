@@ -8,12 +8,14 @@ use adventuresim_core::courtship::{
     informal_affinity_threshold, succeeds_daily_trial,
 };
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
-use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
-use crate::character::character;
+use crate::character::{character, character__view};
 use crate::personality::{Courtship as PersonalityCourtship, Inclination, Presentation, Sex, character_personality};
 use crate::time::character_time;
 use crate::character_skills;
+use crate::strategic::strategic_gateway_authority__view;
+use std::collections::BTreeSet;
 
 /// Marks a normal full Character as being advanced by deterministic NPC policy
 /// rather than by an account owner.  It intentionally does not weaken the
@@ -176,10 +178,88 @@ pub struct CourtshipDiscovery {
 pub struct Pregnancy {
     #[primary_key]
     pub mother_id: u64,
+    #[index(btree)]
     pub father_id: u64,
     pub conceived_minute: u64,
     pub due_minute: u64,
     pub birth_character_id: Option<u64>,
+}
+
+/// A deliberately actor-scoped summary for the trusted strategic gateway.
+/// The underlying relationship, kinship, commitment, and pregnancy tables
+/// remain private: the gateway filters this projection to the signed-in
+/// character before presenting it to the browser.
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendCharacterRelationshipStatus {
+    pub character_id: u64,
+    pub spouse_id: Option<u64>,
+    pub courtship_partner_id: Option<u64>,
+    pub courtship_kind: Option<String>,
+    pub courtship_exposed: bool,
+    pub pregnancy_due_minute: Option<u64>,
+    pub pregnancy_child_id: Option<u64>,
+}
+
+fn is_strategic_gateway(ctx: &ViewContext) -> bool {
+    ctx.db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|authority| authority.identity == ctx.sender())
+}
+
+/// Do not make the private relationship tables public merely for UI work.
+/// The web gateway is the trust boundary and asks for the active character's
+/// one-row summary; direct clients receive no rows at all.
+#[view(accessor = backend_character_relationship_statuses, public)]
+pub fn backend_character_relationship_statuses(
+    ctx: &ViewContext,
+) -> Vec<BackendCharacterRelationshipStatus> {
+    if !is_strategic_gateway(ctx) {
+        return Vec::new();
+    }
+    let mut character_ids = BTreeSet::new();
+    for edge in ctx.db.character_kinship().subject_id().filter(0u64..) {
+        character_ids.insert(edge.subject_id);
+        character_ids.insert(edge.related_id);
+    }
+    for courtship in ctx.db.courtship().first_character_id().filter(0u64..) {
+        character_ids.insert(courtship.first_character_id);
+        character_ids.insert(courtship.second_character_id);
+    }
+    for pregnancy in ctx.db.pregnancy().father_id().filter(0u64..) {
+        character_ids.insert(pregnancy.mother_id);
+        character_ids.insert(pregnancy.father_id);
+    }
+    character_ids.into_iter().filter_map(|character_id| {
+        ctx.db.character().id().find(character_id).map(|character| {
+        let spouse_id = ctx.db.character_kinship().subject_id().filter(character.id)
+            .find_map(|edge| (edge.kind == KinshipKind::Spouse).then_some(edge.related_id));
+        let courtship = ctx.db.courtship().first_character_id().filter(character.id)
+            .find(|row| row.status != CourtshipStatus::Ended)
+            .or_else(|| ctx.db.courtship().second_character_id().filter(character.id)
+                .find(|row| row.status != CourtshipStatus::Ended));
+        let (courtship_partner_id, courtship_kind, courtship_exposed) = courtship.map_or(
+            (None, None, false),
+            |row| (
+                Some(if row.first_character_id == character.id { row.second_character_id } else { row.first_character_id }),
+                Some(match row.kind { CourtshipKind::Formal => "formal", CourtshipKind::Informal => "informal" }.into()),
+                row.status == CourtshipStatus::Exposed,
+            ),
+        );
+        let pregnancy = ctx.db.pregnancy().mother_id().find(character.id)
+            .or_else(|| ctx.db.pregnancy().father_id().filter(character.id).next());
+        BackendCharacterRelationshipStatus {
+            character_id: character.id,
+            spouse_id,
+            courtship_partner_id,
+            courtship_kind,
+            courtship_exposed,
+            pregnancy_due_minute: pregnancy.as_ref().map(|row| row.due_minute),
+            pregnancy_child_id: pregnancy.and_then(|row| row.birth_character_id),
+        }
+        })
+    }).collect()
 }
 
 /// A receipt applies a particular chronological slice only once.  Its target
@@ -418,6 +498,37 @@ pub fn apply_spouse_leisure_conception(
     for day in (interval_start / MINUTES_PER_DAY)..=(interval_end.saturating_sub(1) / MINUTES_PER_DAY) {
         let _ = attempt_spouse_conception(ctx, character_id, spouse_id, day)?;
     }
+    Ok(())
+}
+
+/// Colocated spouses refresh a durable morale benefit from qualifying Leisure.
+/// The source is pair-stable, so repeated leisure refreshes rather than stacks
+/// unbounded events and remains independent of a residence comfort bonus.
+pub fn apply_spouse_leisure_morale(
+    ctx: &ReducerContext,
+    character_id: u64,
+    interval_end: u64,
+    qualifying_leisure_minutes: u64,
+) -> Result<(), String> {
+    if qualifying_leisure_minutes == 0 { return Ok(()); }
+    let character = ctx.db.character().id().find(character_id).ok_or("Character not found")?;
+    let Some(spouse_id) = ctx.db.character_kinship().iter().find_map(|edge| {
+        (edge.subject_id == character_id && edge.kind == KinshipKind::Spouse).then_some(edge.related_id)
+    }) else { return Ok(()); };
+    let spouse = ctx.db.character().id().find(spouse_id).ok_or("Spouse not found")?;
+    if !character.alive || !spouse.alive || character.current_settlement_id != spouse.current_settlement_id {
+        return Ok(());
+    }
+    let source = format!("spouse-leisure:{}:{}", character_id.min(spouse_id), character_id.max(spouse_id));
+    crate::condition::upsert_refreshable_morale_event_at_without_refresh(
+        ctx,
+        character_id,
+        "spouse_leisure",
+        2.0,
+        interval_end,
+        &source,
+    )?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())
 }
 

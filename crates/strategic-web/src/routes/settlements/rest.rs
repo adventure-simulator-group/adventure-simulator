@@ -110,9 +110,10 @@ pub(super) async fn rest(
     session: Session,
     form: Result<Form<RestForm>, FormRejection>,
 ) -> Response {
-    let at_inn = match kind.as_str() {
-        "inn" => true,
-        "temple" => false,
+    let (at_inn, at_residence) = match kind.as_str() {
+        "inn" => (true, false),
+        "temple" => (false, false),
+        "residence" => (false, true),
         _ => return Html("<h1>Rest service not found</h1>".to_string()).into_response(),
     };
     let Some(character_id) = session.character_id_u64() else {
@@ -148,7 +149,7 @@ pub(super) async fn rest(
     } else {
         adventuresim_core::settlement_economy::SettlementActionService::Temple
     };
-    if !settlement_action_service_available(&settlement.economy, service) {
+    if !at_residence && !settlement_action_service_available(&settlement.economy, service) {
         return Html("<h1>Rest service unavailable</h1>".to_string()).into_response();
     }
     let requested_minutes = match settlement_rest_minutes(&form) {
@@ -202,12 +203,19 @@ pub(super) async fn rest(
         .as_ref()
         .and_then(|(character, _)| character.current_settlement_id.as_deref())
         .unwrap_or("<none>");
+    let reducer = if at_residence {
+        "rest_at_residence_hours"
+    } else {
+        "rest_at_settlement_hours"
+    };
+    let reducer_arguments = if at_residence {
+        vec![json!(character_id), json!(requested_minutes)]
+    } else {
+        vec![json!(character_id), json!(requested_minutes), json!(at_inn)]
+    };
     if let Err(error) = state
         .db
-        .call(
-            "rest_at_settlement_hours",
-            &[json!(character_id), json!(requested_minutes), json!(at_inn)],
-        )
+        .call(reducer, &reducer_arguments)
         .await
     {
         tracing::warn!(
@@ -228,7 +236,7 @@ pub(super) async fn rest(
                     safe_rest_error(&error.to_string()),
                     &format!(
                         "/settlements/{id}/{}",
-                        if at_inn { "inn" } else { "religion" }
+                        if at_inn { "inn" } else if at_residence { "places/residences" } else { "religion" }
                     ),
                     "Return to rest service",
                     None,
@@ -311,6 +319,7 @@ pub(super) async fn rest(
             &party_members,
             logged_in_as.as_deref(),
             at_inn,
+            at_residence,
             &summary,
             soap_preview,
         )
