@@ -1,5 +1,12 @@
 # Quests
 
+Not every quest is an investigation of a settlement threat. **Errantry**
+organizes a knightly journey around a chivalric purpose and ordered trials.
+Combat, social, temptation, and puzzle trials share the frame without becoming
+investigation template families. Puzzle rules are independent of the witch,
+fey, inscription, book, or mechanism presenting them. See
+[Errantry and modular challenges](../reference/errantry-and-challenges.md).
+
 Outbreak quests give sanitation, behavior, environmental, and monster-vector
 causes the same early symptom: ill locals. They support physical and social
 investigation routes and complete only after the exact source is remediated;

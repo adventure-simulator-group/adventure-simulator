@@ -49,6 +49,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/developer/quests", post(spawn))
         .route("/api/developer/autopsy-demo", post(load_autopsy_demo))
         .route("/api/developer/outbreak-demo", post(load_outbreak_demo))
+        .route("/api/developer/puzzle-demo", post(load_puzzle_demo))
 }
 
 async fn active_context(
@@ -395,6 +396,58 @@ async fn load_outbreak_demo(State(state): State<AppState>, session: Session) -> 
     }
 }
 
+async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"message":"Select a character before loading the puzzle demo"})),
+        )
+            .into_response();
+    };
+    let character = match state
+        .db
+        .query_one::<crate::spacetimedb::Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+    {
+        Ok(Some(character)) => character,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    let Some(settlement_id) = character.current_settlement_id else {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"message":"Load the puzzle demo while in a settlement"})),
+        )
+            .into_response();
+    };
+    match state
+        .db
+        .call("load_puzzle_demo", &[json!(character_id)])
+        .await
+    {
+        Ok(()) => {
+            let suffix = format!("{character_id}-{settlement_id}");
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "status":"loaded",
+                    "redirect_to":format!(
+                        "/quests/case:errantry-puzzle:{suffix}/challenges/challenge:ordered-sigils:{suffix}"
+                    )
+                })),
+            )
+                .into_response()
+        }
+        Err(error) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"message":error.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -444,5 +497,21 @@ mod tests {
         let loader = source.split("async fn load_outbreak_demo").nth(1).unwrap();
         assert!(loader.contains("\"discovery\":\"normal_rumor\""));
         assert!(!loader.contains("rumor_receipt"));
+    }
+
+    #[test]
+    fn puzzle_demo_redirects_directly_to_the_playable_challenge() {
+        let source = include_str!("developer_quests.rs");
+        assert!(source.contains("/api/developer/puzzle-demo"));
+        assert!(source.contains("\"load_puzzle_demo\", &[json!(character_id)]"));
+        assert!(source.contains("/challenges/challenge:ordered-sigils:"));
+        let loader = source
+            .split("async fn load_puzzle_demo")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!loader.contains("rumor"));
     }
 }

@@ -32,7 +32,8 @@ SpacetimeDB stores durable world and character facts such as:
 - separate character wetness and signed thermal strain, with sustained
   frostbite committed through the durable limb-injury authority;
 - inventory, equipment condition, currency, and custody;
-- settlements, organizations, journeys, cases, contracts, and investigations;
+- settlements, organizations, journeys, cases, contracts, investigations, and
+  private puzzle authority with observer-safe challenge projections;
 - mission requests, authenticated outcome receipts, final battle results, and
   finalized loot;
 - compiled world identity, source manifests, and strategic route facts.
@@ -75,6 +76,12 @@ The SpacetimeDB module owns authoritative mutations. Reducers validate the
 current party, character, location, time, custody, and source identity before
 changing state. Shared-core functions perform deterministic calculations, but
 do not grant authority by themselves.
+
+Errantry challenges follow this boundary. The private seed and canonical
+assignment remain in durable strategic authority; the gateway receives only
+formal clues, allowed interactions, presentation, revision, and safe feedback.
+Attempts are revisioned durable receipts. Solving emits a typed strategic case
+fact and never persists tactical positions, damage, HP, or enemies.
 
 Multi-character strategic time actions snapshot disease exposure before the
 first participant clock mutates. The reducer-local plan projects only the

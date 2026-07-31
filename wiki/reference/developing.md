@@ -1,5 +1,18 @@
 # Development Workflow
 
+## Puzzle demo
+
+Start a disposable strategic-only stack with `just puzzle-demo`. Create or
+select an adventurer in a settlement, enable browser-local developer mode, and
+choose **Puzzle demo**. It creates or reuses a deterministic accepted errantry
+quest and redirects immediately to its playable ordered-sigil challenge,
+skipping rumor, travel, and manual contract acceptance. The no-JavaScript form
+uses POST/redirect/GET and preserves safe wrong/correct feedback.
+
+The loader is idempotent for the selected character and settlement and is
+disabled in ordinary module builds. See
+[Errantry and modular challenges](errantry-and-challenges.md).
+
 ## Outbreak demo
 
 Start a disposable strategic-only stack with `just outbreak-demo`. Create or

@@ -4,6 +4,7 @@ mod components;
 mod inventory_browser;
 mod layout;
 
+pub mod challenge;
 pub mod character;
 pub mod investigation;
 pub mod mission;

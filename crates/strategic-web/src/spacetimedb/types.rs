@@ -1,5 +1,20 @@
 //! SpacetimeDB response types
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendChallenge {
+    pub id: String,
+    pub case_id: String,
+    pub party_id: String,
+    pub owner_character_id: u64,
+    pub site_id: String,
+    pub puzzle_projection_json: String,
+    pub presenter_json: String,
+    pub revision: u32,
+    pub open: bool,
+    pub solved: bool,
+    pub last_attempt_correct: Option<bool>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct BestiaryEnemyLoreView {
     pub id: String,

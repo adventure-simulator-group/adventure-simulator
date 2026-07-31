@@ -37,6 +37,8 @@ pub mod backend_case_battle_type;
 pub mod backend_case_battles_table;
 pub mod backend_case_site_pin_type;
 pub mod backend_case_site_pins_table;
+pub mod backend_challenge_type;
+pub mod backend_challenges_table;
 pub mod backend_character_affinities_table;
 pub mod backend_character_case_site_location_type;
 pub mod backend_character_case_site_locations_table;
@@ -130,6 +132,8 @@ pub mod case_site_id_type;
 pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
+pub mod challenge_attempt_receipt_type;
+pub mod challenge_authority_type;
 pub mod change_inventory_item_reducer;
 pub mod character_affinity_type;
 pub mod character_attributes_table;
@@ -405,6 +409,7 @@ pub mod limb_region_type;
 pub mod liquidate_party_inventory_reducer;
 pub mod load_autopsy_demo_reducer;
 pub mod load_outbreak_demo_reducer;
+pub mod load_puzzle_demo_reducer;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -670,6 +675,7 @@ pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_type;
 pub mod submit_all_repairable_items_reducer;
 pub mod submit_item_for_repair_reducer;
+pub mod submit_ordered_sigil_challenge_reducer;
 pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
@@ -754,6 +760,8 @@ pub use backend_case_battle_type::BackendCaseBattle;
 pub use backend_case_battles_table::*;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
 pub use backend_case_site_pins_table::*;
+pub use backend_challenge_type::BackendChallenge;
+pub use backend_challenges_table::*;
 pub use backend_character_affinities_table::*;
 pub use backend_character_case_site_location_type::BackendCharacterCaseSiteLocation;
 pub use backend_character_case_site_locations_table::*;
@@ -847,6 +855,8 @@ pub use case_site_id_type::CaseSiteId;
 pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
+pub use challenge_attempt_receipt_type::ChallengeAttemptReceipt;
+pub use challenge_authority_type::ChallengeAuthority;
 pub use change_inventory_item_reducer::change_inventory_item;
 pub use character_affinity_type::CharacterAffinity;
 pub use character_attributes_table::*;
@@ -1122,6 +1132,7 @@ pub use limb_region_type::LimbRegion;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use load_autopsy_demo_reducer::load_autopsy_demo;
 pub use load_outbreak_demo_reducer::load_outbreak_demo;
+pub use load_puzzle_demo_reducer::load_puzzle_demo;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -1387,6 +1398,7 @@ pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_type::StrategicIncident;
 pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
 pub use submit_item_for_repair_reducer::submit_item_for_repair;
+pub use submit_ordered_sigil_challenge_reducer::submit_ordered_sigil_challenge;
 pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
@@ -1788,6 +1800,9 @@ pub enum Reducer {
     LoadOutbreakDemo {
         character_id: u64,
     },
+    LoadPuzzleDemo {
+        character_id: u64,
+    },
     OpenCorpse {
         actor_id: u64,
         corpse_id: String,
@@ -2075,6 +2090,13 @@ pub enum Reducer {
         service: String,
         inventory_item_id: u64,
     },
+    SubmitOrderedSigilChallenge {
+        character_id: u64,
+        case_id: String,
+        challenge_id: String,
+        expected_revision: u32,
+        ordering_json: String,
+    },
     SurrenderToAuthority {
         character_id: u64,
         incident_id: String,
@@ -2236,6 +2258,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
             Reducer::LoadAutopsyDemo { .. } => "load_autopsy_demo",
             Reducer::LoadOutbreakDemo { .. } => "load_outbreak_demo",
+            Reducer::LoadPuzzleDemo { .. } => "load_puzzle_demo",
             Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
@@ -2293,6 +2316,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
+            Reducer::SubmitOrderedSigilChallenge { .. } => "submit_ordered_sigil_challenge",
             Reducer::SurrenderToAuthority { .. } => "surrender_to_authority",
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TrackCaseSite { .. } => "track_case_site",
@@ -2928,6 +2952,11 @@ Reducer::BeginWorldDataImport{
 }             => __sats::bsatn::to_vec(&load_outbreak_demo_reducer::LoadOutbreakDemoArgs {
                 character_id: character_id.clone(),
 }),
+            Reducer::LoadPuzzleDemo{
+                character_id,
+}             => __sats::bsatn::to_vec(&load_puzzle_demo_reducer::LoadPuzzleDemoArgs {
+                character_id: character_id.clone(),
+}),
             Reducer::OpenCorpse{
                 actor_id,
                 corpse_id,
@@ -3447,6 +3476,19 @@ Reducer::BeginWorldDataImport{
                 service: service.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
+            Reducer::SubmitOrderedSigilChallenge{
+                character_id,
+                case_id,
+                challenge_id,
+                expected_revision,
+                ordering_json,
+}             => __sats::bsatn::to_vec(&submit_ordered_sigil_challenge_reducer::SubmitOrderedSigilChallengeArgs {
+                character_id: character_id.clone(),
+                case_id: case_id.clone(),
+                challenge_id: challenge_id.clone(),
+                expected_revision: expected_revision.clone(),
+                ordering_json: ordering_json.clone(),
+}),
             Reducer::SurrenderToAuthority{
                 character_id,
                 incident_id,
@@ -3599,6 +3641,7 @@ pub struct DbUpdate {
     backend_bestiary_deductions: __sdk::TableUpdate<BackendBestiaryDeduction>,
     backend_case_battles: __sdk::TableUpdate<BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
+    backend_challenges: __sdk::TableUpdate<BackendChallenge>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
     backend_character_case_site_locations: __sdk::TableUpdate<BackendCharacterCaseSiteLocation>,
     backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
@@ -3729,6 +3772,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_case_site_pins" => db_update.backend_case_site_pins.append(
                     backend_case_site_pins_table::parse_table_update(table_update)?,
                 ),
+                "backend_challenges" => db_update
+                    .backend_challenges
+                    .append(backend_challenges_table::parse_table_update(table_update)?),
                 "backend_character_affinities" => db_update.backend_character_affinities.append(
                     backend_character_affinities_table::parse_table_update(table_update)?,
                 ),
@@ -4403,6 +4449,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_case_site_pins",
             &self.backend_case_site_pins,
         );
+        diff.backend_challenges = cache.apply_diff_to_table::<BackendChallenge>(
+            "backend_challenges",
+            &self.backend_challenges,
+        );
         diff.backend_character_affinities = cache.apply_diff_to_table::<CharacterAffinity>(
             "backend_character_affinities",
             &self.backend_character_affinities,
@@ -4582,6 +4632,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_case_site_pins" => db_update
                     .backend_case_site_pins
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_challenges" => db_update
+                    .backend_challenges
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
@@ -4920,6 +4973,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_case_site_pins" => db_update
                     .backend_case_site_pins
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_challenges" => db_update
+                    .backend_challenges
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -5247,6 +5303,7 @@ pub struct AppliedDiff<'r> {
     backend_bestiary_deductions: __sdk::TableAppliedDiff<'r, BackendBestiaryDeduction>,
     backend_case_battles: __sdk::TableAppliedDiff<'r, BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
+    backend_challenges: __sdk::TableAppliedDiff<'r, BackendChallenge>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
     backend_character_case_site_locations:
         __sdk::TableAppliedDiff<'r, BackendCharacterCaseSiteLocation>,
@@ -5396,6 +5453,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendCaseSitePin>(
             "backend_case_site_pins",
             &self.backend_case_site_pins,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendChallenge>(
+            "backend_challenges",
+            &self.backend_challenges,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
@@ -6534,6 +6596,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_bestiary_deductions_table::register_table(client_cache);
         backend_case_battles_table::register_table(client_cache);
         backend_case_site_pins_table::register_table(client_cache);
+        backend_challenges_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
         backend_character_case_site_locations_table::register_table(client_cache);
         backend_character_familiarities_table::register_table(client_cache);
@@ -6644,6 +6707,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_bestiary_deductions",
         "backend_case_battles",
         "backend_case_site_pins",
+        "backend_challenges",
         "backend_character_affinities",
         "backend_character_case_site_locations",
         "backend_character_familiarities",

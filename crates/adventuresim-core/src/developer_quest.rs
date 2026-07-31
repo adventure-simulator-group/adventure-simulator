@@ -1362,6 +1362,9 @@ fn namespace_definition(
                 ObjectiveRequirement::RemediateSource { remediation_id } => {
                     remap(remediation_id, &replacements);
                 }
+                ObjectiveRequirement::SolveChallenge { challenge_id } => {
+                    remap(challenge_id, &replacements);
+                }
                 ObjectiveRequirement::PresentProof { evidence_id, .. } => {
                     remap(evidence_id, &replacements);
                 }

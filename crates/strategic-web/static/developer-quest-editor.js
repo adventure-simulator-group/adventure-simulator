@@ -455,7 +455,29 @@
       button.textContent = original;
     }
   }
+  async function loadPuzzleDemo(button) {
+    if (!document.documentElement.hasAttribute("data-developer-mode")) return;
+    if (document.querySelector("[data-environment]")?.dataset.environment !== "settlement") return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Loading...";
+    try {
+      const response = await fetch("/api/developer/puzzle-demo", {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || `Puzzle demo failed (${response.status})`);
+      window.location.assign(body.redirect_to);
+    } catch (error) {
+      window.alert(error.message);
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
   document.addEventListener("click", (event) => {
+    const puzzleDemo = event.target.closest("[data-developer-puzzle-demo]");
+    if (puzzleDemo) loadPuzzleDemo(puzzleDemo);
     const outbreakDemo = event.target.closest("[data-developer-outbreak-demo]");
     if (outbreakDemo) loadOutbreakDemo(outbreakDemo);
     const autopsyDemo = event.target.closest("[data-developer-autopsy-demo]");

@@ -361,6 +361,12 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
+                    button type="button" class="btn btn-small developer-puzzle-demo-button"
+                        data-developer-puzzle-demo data-developer-only
+                        aria-label="Load the ordered sigil puzzle demo"
+                        title="Create an accepted errantry quest and open its puzzle immediately" {
+                        "Puzzle demo"
+                    }
                     button type="button" class="btn btn-small developer-outbreak-demo-button"
                         data-developer-outbreak-demo data-developer-only
                         aria-label="Load the outbreak demo"
@@ -1075,6 +1081,7 @@ mod tests {
         assert!(markup.contains("aria-pressed=\"false\""));
         assert!(markup.contains("data-developer-outbreak-demo data-developer-only"));
         assert!(markup.contains("data-developer-autopsy-demo data-developer-only"));
+        assert!(markup.contains("data-developer-puzzle-demo data-developer-only"));
         let layout_css = include_str!("../../static/css/layout.css");
         assert!(
             layout_css.contains(

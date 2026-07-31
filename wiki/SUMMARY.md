@@ -59,6 +59,7 @@
 - [Organizations](reference/organizations.md)
 - [Quest generation and investigation](reference/quest-generation-and-investigation.md)
 - [Quest authority](reference/quest-authority.md)
+- [Errantry and modular challenges](reference/errantry-and-challenges.md)
 
 # Tactical
 
