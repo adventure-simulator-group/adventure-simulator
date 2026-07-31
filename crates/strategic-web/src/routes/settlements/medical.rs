@@ -546,12 +546,19 @@ pub(super) async fn settlement_resident_place(
             "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {}",
             character.id,
         );
-        let (offers, residences, relationship) = tokio::join!(
+        let owner_key = session.owner_key().unwrap_or_default();
+        let family_sql = format!(
+            "SELECT * FROM backend_family_children WHERE owner_key = {} AND observer_character_id = {}",
+            sql_string_literal(owner_key),
+            character.id,
+        );
+        let (offers, residences, relationship, children) = tokio::join!(
             state.db.query::<SettlementResidenceOffer>(&offers_sql),
             state.db.query::<BackendCharacterResidenceStatus>(&residence_sql),
             state
                 .db
                 .query_one::<BackendCharacterRelationshipStatus>(&relationship_sql),
+            state.db.query::<BackendFamilyChild>(&family_sql),
         );
         let mut offers = offers.unwrap_or_default();
         offers.sort_by_key(|offer| match offer.tier {
@@ -577,14 +584,15 @@ pub(super) async fn settlement_resident_place(
             home.active && home.occupied && home.settlement_id == settlement.id
         });
         let relationship = relationship.ok().flatten();
+        let mut children = children.unwrap_or_default();
+        children.retain(|child| {
+            child.owner_key == owner_key && child.observer_character_id == character.id
+        });
+        children.sort_by_key(|child| child.child_id);
         let related_ids = relationship
             .iter()
             .flat_map(|status| {
-                [
-                    status.spouse_id,
-                    status.courtship_partner_id,
-                    status.pregnancy_child_id,
-                ]
+                [status.spouse_id, status.courtship_partner_id]
             })
             .flatten()
             .collect::<Vec<_>>();
@@ -638,7 +646,17 @@ pub(super) async fn settlement_resident_place(
                     due.saturating_sub(character_minute)
                         .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY)
                 }),
-                child_names: name(status.pregnancy_child_id).into_iter().collect(),
+                children: children
+                    .iter()
+                    .map(|child| ChildPresentation {
+                        name: child.child_name.clone(),
+                        stage: child.stage,
+                        focus: child.focus,
+                        maturity_basis_points: child.maturity_basis_points,
+                        adult_playable: child.adult_playable,
+                        alive: child.alive,
+                    })
+                    .collect(),
             }
         });
         return Html(
@@ -773,6 +791,11 @@ mod residence_route_tests {
         assert!(residence_page.contains("query::<BackendCharacterResidenceStatus>"));
         assert!(residence_page.contains("residences.retain"));
         assert!(residence_page.contains("home.active && home.occupied"));
+        assert!(residence_page.contains("query::<BackendFamilyChild>"));
+        assert!(residence_page.contains("WHERE owner_key = {} AND observer_character_id = {}"));
+        assert!(residence_page.contains(
+            "child.owner_key == owner_key && child.observer_character_id == character.id"
+        ));
 
         let change = source
             .split("pub(super) async fn change_residence")

@@ -4,13 +4,17 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::browser_character_grant_origin_type::BrowserCharacterGrantOrigin;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BrowserCharacterGrant {
     pub character_id: u64,
     pub character_scan_id: u64,
     pub owner_key: String,
-    pub starting_request_key: String,
+    pub origin: BrowserCharacterGrantOrigin,
+    pub starting_claim_request_key: Option<String>,
+    pub lineage_source_parent_id: Option<u64>,
     pub granted_micros: i64,
 }
 
@@ -25,7 +29,10 @@ pub struct BrowserCharacterGrantCols {
     pub character_id: __sdk::__query_builder::Col<BrowserCharacterGrant, u64>,
     pub character_scan_id: __sdk::__query_builder::Col<BrowserCharacterGrant, u64>,
     pub owner_key: __sdk::__query_builder::Col<BrowserCharacterGrant, String>,
-    pub starting_request_key: __sdk::__query_builder::Col<BrowserCharacterGrant, String>,
+    pub origin: __sdk::__query_builder::Col<BrowserCharacterGrant, BrowserCharacterGrantOrigin>,
+    pub starting_claim_request_key:
+        __sdk::__query_builder::Col<BrowserCharacterGrant, Option<String>>,
+    pub lineage_source_parent_id: __sdk::__query_builder::Col<BrowserCharacterGrant, Option<u64>>,
     pub granted_micros: __sdk::__query_builder::Col<BrowserCharacterGrant, i64>,
 }
 
@@ -36,9 +43,14 @@ impl __sdk::__query_builder::HasCols for BrowserCharacterGrant {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             character_scan_id: __sdk::__query_builder::Col::new(table_name, "character_scan_id"),
             owner_key: __sdk::__query_builder::Col::new(table_name, "owner_key"),
-            starting_request_key: __sdk::__query_builder::Col::new(
+            origin: __sdk::__query_builder::Col::new(table_name, "origin"),
+            starting_claim_request_key: __sdk::__query_builder::Col::new(
                 table_name,
-                "starting_request_key",
+                "starting_claim_request_key",
+            ),
+            lineage_source_parent_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "lineage_source_parent_id",
             ),
             granted_micros: __sdk::__query_builder::Col::new(table_name, "granted_micros"),
         }

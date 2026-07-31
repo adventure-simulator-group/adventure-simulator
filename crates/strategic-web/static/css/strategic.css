@@ -2594,6 +2594,12 @@ body.character-action-dialog-open { overflow: hidden; }
 .household-progress > .game-icon { width: 1rem; height: 1rem; }
 .household-wedding { --relationship-color: #d8b355; }
 .household-pregnancy { --relationship-color: #cf707b; }
+.household-child { display: grid; gap: .3rem; }
+.household-maturity { --relationship-color: #73b987; }
+.household-child-stage-early .household-maturity { --relationship-color: #79a9d1; }
+.household-child-stage-middle .household-maturity { --relationship-color: #73b987; }
+.household-child-stage-adolescent .household-maturity { --relationship-color: #d8b355; }
+.household-child-stage-adult .household-maturity { --relationship-color: #b58bd0; }
 
 .residence-offer form { margin: 0; }
 .residence-notice { color: var(--accent-gold-light); }

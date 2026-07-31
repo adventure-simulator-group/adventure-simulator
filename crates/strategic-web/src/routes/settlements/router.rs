@@ -168,6 +168,7 @@ use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge,
     BackendCharacterRelationshipStatus, BackendCharacterResidenceStatus, BackendCorpse,
+    BackendFamilyChild,
     BackendLocalProblemTradeEffect, BackendPhysiologyAdministration, BackendPhysiologyChart,
     BackendRoadChallenge, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
     CharacterCondition, CharacterEquipmentGraph, CharacterEquippedItem, CharacterFamiliarity,
@@ -184,8 +185,8 @@ use crate::spacetimedb::{
     SocialAddress, SocialBelief, SocialChatOutcome, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
-    ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
-    RelationshipPresentation, RestSummary, SoapRestPreview, SocialPresentation,
+    ActivityPreviewRates, CampTravelDestination, ChildPresentation, LocationKind, LocationView,
+    MerchantShop, RelationshipPresentation, RestSummary, SoapRestPreview, SocialPresentation,
     WeddingPresentation, camp_page, live_merchant_shop_page, merchants_page, party_discard_page,
     party_inventory_page, party_personal_page, party_pool_page, party_social_dialog,
     party_stats_page, religion_page, rest_default_minutes, rest_result_page, settlement_map_page,

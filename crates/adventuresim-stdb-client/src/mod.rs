@@ -84,6 +84,10 @@ pub mod backend_dialogue_topic_option_type;
 pub mod backend_dialogue_topic_options_table;
 pub mod backend_dialogue_witness_claim_type;
 pub mod backend_dialogue_witness_claims_table;
+pub mod backend_estate_disposition_type;
+pub mod backend_estate_dispositions_table;
+pub mod backend_family_child_type;
+pub mod backend_family_children_table;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
 pub mod backend_investigation_action_outcome_type;
@@ -137,6 +141,7 @@ pub mod belief_axis_type;
 pub mod bestiary_hours_type;
 pub mod blood_exposure_checkpoint_type;
 pub mod bootstrap_development_world_reducer;
+pub mod browser_character_grant_origin_type;
 pub mod browser_character_grant_type;
 pub mod browser_character_selection_type;
 pub mod built_settlement_cover_type;
@@ -195,7 +200,10 @@ pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod charcoal_burning_industry_type;
 pub mod chat_with_party_member_reducer;
+pub mod child_activity_focus_type;
+pub mod child_development_type;
 pub mod child_identity_reservation_type;
+pub mod child_stage_type;
 pub mod choose_dialogue_topic_reducer;
 pub mod claim_simulation_run_reducer;
 pub mod clear_browser_character_selection_reducer;
@@ -308,6 +316,9 @@ pub mod equipment_occupancy_table;
 pub mod equipment_occupancy_type;
 pub mod equipment_parent_requirement_type;
 pub mod equipment_placement_type;
+pub mod estate_disposition_status_type;
+pub mod estate_disposition_type;
+pub mod estate_heir_kind_type;
 pub mod evidence_presentation_kind_type;
 pub mod examine_corpse_reducer;
 pub mod examine_outbreak_patient_reducer;
@@ -450,6 +461,7 @@ pub mod lifecycle_event_kind_type;
 pub mod limb_injury_table;
 pub mod limb_injury_type;
 pub mod limb_region_type;
+pub mod lineage_control_claim_type;
 pub mod liquidate_party_inventory_reducer;
 pub mod load_autopsy_demo_reducer;
 pub mod load_outbreak_demo_reducer;
@@ -879,6 +891,10 @@ pub use backend_dialogue_topic_option_type::BackendDialogueTopicOption;
 pub use backend_dialogue_topic_options_table::*;
 pub use backend_dialogue_witness_claim_type::BackendDialogueWitnessClaim;
 pub use backend_dialogue_witness_claims_table::*;
+pub use backend_estate_disposition_type::BackendEstateDisposition;
+pub use backend_estate_dispositions_table::*;
+pub use backend_family_child_type::BackendFamilyChild;
+pub use backend_family_children_table::*;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
@@ -932,6 +948,7 @@ pub use belief_axis_type::BeliefAxis;
 pub use bestiary_hours_type::BestiaryHours;
 pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
+pub use browser_character_grant_origin_type::BrowserCharacterGrantOrigin;
 pub use browser_character_grant_type::BrowserCharacterGrant;
 pub use browser_character_selection_type::BrowserCharacterSelection;
 pub use built_settlement_cover_type::BuiltSettlementCover;
@@ -990,7 +1007,10 @@ pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
 pub use chat_with_party_member_reducer::chat_with_party_member;
+pub use child_activity_focus_type::ChildActivityFocus;
+pub use child_development_type::ChildDevelopment;
 pub use child_identity_reservation_type::ChildIdentityReservation;
+pub use child_stage_type::ChildStage;
 pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use clear_browser_character_selection_reducer::clear_browser_character_selection;
@@ -1103,6 +1123,9 @@ pub use equipment_occupancy_table::*;
 pub use equipment_occupancy_type::EquipmentOccupancy;
 pub use equipment_parent_requirement_type::EquipmentParentRequirement;
 pub use equipment_placement_type::EquipmentPlacement;
+pub use estate_disposition_status_type::EstateDispositionStatus;
+pub use estate_disposition_type::EstateDisposition;
+pub use estate_heir_kind_type::EstateHeirKind;
 pub use evidence_presentation_kind_type::EvidencePresentationKind;
 pub use examine_corpse_reducer::examine_corpse;
 pub use examine_outbreak_patient_reducer::examine_outbreak_patient;
@@ -1245,6 +1268,7 @@ pub use lifecycle_event_kind_type::LifecycleEventKind;
 pub use limb_injury_table::*;
 pub use limb_injury_type::LimbInjury;
 pub use limb_region_type::LimbRegion;
+pub use lineage_control_claim_type::LineageControlClaim;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use load_autopsy_demo_reducer::load_autopsy_demo;
 pub use load_outbreak_demo_reducer::load_outbreak_demo;
@@ -4010,6 +4034,8 @@ pub struct DbUpdate {
     backend_dialogue_sessions: __sdk::TableUpdate<BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableUpdate<BackendDialogueTopicOption>,
     backend_dialogue_witness_claims: __sdk::TableUpdate<BackendDialogueWitnessClaim>,
+    backend_estate_dispositions: __sdk::TableUpdate<BackendEstateDisposition>,
+    backend_family_children: __sdk::TableUpdate<BackendFamilyChild>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
@@ -4241,6 +4267,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         backend_dialogue_witness_claims_table::parse_table_update(table_update)?,
                     )
                 }
+                "backend_estate_dispositions" => db_update.backend_estate_dispositions.append(
+                    backend_estate_dispositions_table::parse_table_update(table_update)?,
+                ),
+                "backend_family_children" => db_update.backend_family_children.append(
+                    backend_family_children_table::parse_table_update(table_update)?,
+                ),
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
                     backend_forage_receipts_table::parse_table_update(table_update)?,
                 ),
@@ -4887,6 +4919,14 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_witness_claims",
                 &self.backend_dialogue_witness_claims,
             );
+        diff.backend_estate_dispositions = cache.apply_diff_to_table::<BackendEstateDisposition>(
+            "backend_estate_dispositions",
+            &self.backend_estate_dispositions,
+        );
+        diff.backend_family_children = cache.apply_diff_to_table::<BackendFamilyChild>(
+            "backend_family_children",
+            &self.backend_family_children,
+        );
         diff.backend_forage_receipts = cache.apply_diff_to_table::<BackendForageReceipt>(
             "backend_forage_receipts",
             &self.backend_forage_receipts,
@@ -5107,6 +5147,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_dialogue_witness_claims" => db_update
                     .backend_dialogue_witness_claims
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_estate_dispositions" => db_update
+                    .backend_estate_dispositions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_family_children" => db_update
+                    .backend_family_children
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
@@ -5457,6 +5503,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_witness_claims" => db_update
                     .backend_dialogue_witness_claims
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_estate_dispositions" => db_update
+                    .backend_estate_dispositions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_family_children" => db_update
+                    .backend_family_children
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -5738,6 +5790,8 @@ pub struct AppliedDiff<'r> {
     backend_dialogue_sessions: __sdk::TableAppliedDiff<'r, BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableAppliedDiff<'r, BackendDialogueTopicOption>,
     backend_dialogue_witness_claims: __sdk::TableAppliedDiff<'r, BackendDialogueWitnessClaim>,
+    backend_estate_dispositions: __sdk::TableAppliedDiff<'r, BackendEstateDisposition>,
+    backend_family_children: __sdk::TableAppliedDiff<'r, BackendFamilyChild>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
     backend_investigation_action_outcomes:
         __sdk::TableAppliedDiff<'r, BackendInvestigationActionOutcome>,
@@ -6014,6 +6068,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendDialogueWitnessClaim>(
             "backend_dialogue_witness_claims",
             &self.backend_dialogue_witness_claims,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendEstateDisposition>(
+            "backend_estate_dispositions",
+            &self.backend_estate_dispositions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendFamilyChild>(
+            "backend_family_children",
+            &self.backend_family_children,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
@@ -7052,6 +7116,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_dialogue_sessions_table::register_table(client_cache);
         backend_dialogue_topic_options_table::register_table(client_cache);
         backend_dialogue_witness_claims_table::register_table(client_cache);
+        backend_estate_dispositions_table::register_table(client_cache);
+        backend_family_children_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
@@ -7166,6 +7232,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_dialogue_sessions",
         "backend_dialogue_topic_options",
         "backend_dialogue_witness_claims",
+        "backend_estate_dispositions",
+        "backend_family_children",
         "backend_forage_receipts",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",

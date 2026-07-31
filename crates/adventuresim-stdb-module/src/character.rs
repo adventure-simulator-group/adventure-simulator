@@ -362,6 +362,9 @@ pub fn transition_character_to_dead(
     // combatants that died in transient tactical state.
     let party_id = character.party_id.clone();
     ctx.db.character().id().update(character);
+    crate::browser_session::clear_dead_character_selection(ctx, character_id);
+    crate::continuity::settle_pending_inheritances_for_heir(ctx, character_id, strategic_minute)?;
+    crate::continuity::record_estate_disposition_for_death(ctx, character_id, strategic_minute)?;
     crate::relationship::settle_relationship_lifecycle_for_death(
         ctx,
         character_id,

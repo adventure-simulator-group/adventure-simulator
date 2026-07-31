@@ -268,8 +268,8 @@ use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 
 pub use adventuresim_stdb_client::{
-    AffinityBand, CourtshipKind, FamiliarityBand, MoraleBand, SocialChatOutcome,
-    SocialChatTargetKind,
+    AffinityBand, ChildActivityFocus, ChildStage, CourtshipKind, FamiliarityBand, MoraleBand,
+    SocialChatOutcome, SocialChatTargetKind,
 };
 
 fn unit_variant_name<E>(value: Value) -> Result<String, E>
@@ -369,6 +369,34 @@ where
     }
 }
 
+pub(crate) fn deserialize_child_stage<'de, D>(deserializer: D) -> Result<ChildStage, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "EarlyChildhood" => Ok(ChildStage::EarlyChildhood),
+        "MiddleChildhood" => Ok(ChildStage::MiddleChildhood),
+        "Adolescence" => Ok(ChildStage::Adolescence),
+        "Adult" => Ok(ChildStage::Adult),
+        _ => Err(D::Error::custom("unknown child stage")),
+    }
+}
+
+pub(crate) fn deserialize_child_activity_focus<'de, D>(
+    deserializer: D,
+) -> Result<ChildActivityFocus, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Play" => Ok(ChildActivityFocus::Play),
+        "Study" => Ok(ChildActivityFocus::Study),
+        "HouseholdHelp" => Ok(ChildActivityFocus::HouseholdHelp),
+        "SocialLearning" => Ok(ChildActivityFocus::SocialLearning),
+        _ => Err(D::Error::custom("unknown child activity focus")),
+    }
+}
+
 #[cfg(test)]
 mod typed_social_transport_tests {
     use super::*;
@@ -383,6 +411,14 @@ mod typed_social_transport_tests {
     struct CourtshipWire {
         #[serde(deserialize_with = "deserialize_optional_courtship_kind")]
         courtship: Option<CourtshipKind>,
+    }
+
+    #[derive(Deserialize)]
+    struct ChildWire {
+        #[serde(deserialize_with = "deserialize_child_stage")]
+        stage: ChildStage,
+        #[serde(deserialize_with = "deserialize_child_activity_focus")]
+        focus: ChildActivityFocus,
     }
 
     #[test]
@@ -408,6 +444,20 @@ mod typed_social_transport_tests {
         assert!(
             serde_json::from_value::<AffinityWire>(serde_json::json!({"affinity": "invented"}))
                 .is_err()
+        );
+        let child = serde_json::from_value::<ChildWire>(serde_json::json!({
+            "stage": {"Adolescence": []},
+            "focus": "HouseholdHelp"
+        }))
+        .unwrap();
+        assert_eq!(child.stage, ChildStage::Adolescence);
+        assert_eq!(child.focus, ChildActivityFocus::HouseholdHelp);
+        assert!(
+            serde_json::from_value::<ChildWire>(serde_json::json!({
+                "stage": "SchoolAge",
+                "focus": "Crime"
+            }))
+            .is_err()
         );
     }
 }
@@ -712,6 +762,21 @@ pub struct BackendCharacterRelationshipStatus {
     pub wedding_settlement_id: Option<String>,
     pub pregnancy_due_minute: Option<u64>,
     pub pregnancy_child_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BackendFamilyChild {
+    pub owner_key: String,
+    pub observer_character_id: u64,
+    pub child_id: u64,
+    pub child_name: String,
+    #[serde(deserialize_with = "deserialize_child_stage")]
+    pub stage: ChildStage,
+    #[serde(deserialize_with = "deserialize_child_activity_focus")]
+    pub focus: ChildActivityFocus,
+    pub maturity_basis_points: u16,
+    pub adult_playable: bool,
+    pub alive: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

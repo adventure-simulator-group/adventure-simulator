@@ -21,7 +21,7 @@ use crate::personality::{
     Sociability as CharacterSociability, Transparency as CharacterTransparency,
     character_personality,
 };
-use crate::relationship::socializing_receipt as _;
+use crate::relationship::{npc_policy as _, socializing_receipt as _};
 use crate::strategic::{
     party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
 };
@@ -339,6 +339,7 @@ pub(crate) fn settle_lifecycle_after_character_time_write(
     minute: u64,
 ) -> Result<(), String> {
     crate::relationship::settle_character_age(ctx, character_id, minute);
+    crate::continuity::settle_continuity_for_character(ctx, character_id, minute)?;
     crate::residence::settle_residence_billing(ctx, character_id)?;
     crate::relationship::settle_due_weddings(ctx, character_id, minute)?;
     crate::relationship::settle_due_births(ctx, character_id, minute)?;
@@ -3023,6 +3024,37 @@ pub(crate) fn advance_stationary_character_to(
     let requested_elapsed = target_minutes.saturating_sub(character_time.minutes);
     if requested_elapsed == 0 {
         return Ok(());
+    }
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        character_time.minutes,
+        target_minutes,
+    ) {
+        let was_npc_controlled = ctx
+            .db
+            .npc_policy()
+            .character_id()
+            .find(character_id)
+            .is_some();
+        advance_stationary_character_to(ctx, character_id, boundary)?;
+        let alive = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .is_some_and(|row| row.alive);
+        let npc_authority_transferred = was_npc_controlled
+            && ctx
+                .db
+                .npc_policy()
+                .character_id()
+                .find(character_id)
+                .is_none();
+        if !alive || npc_authority_transferred {
+            return Ok(());
+        }
+        return advance_stationary_character_to(ctx, character_id, target_minutes);
     }
     let starting_minute = character_time.minutes;
     let saved_schedule = ctx

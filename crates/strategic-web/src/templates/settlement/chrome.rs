@@ -5,9 +5,9 @@ use maud::{Markup, html};
 use super::social::{npc_description_stage, npc_portrait_strip, settlement_resident_chat_area};
 use super::{SoapRestPreview, corpse_medical_dialog, rest_service_menu};
 use crate::spacetimedb::{
-    BackendCharacterResidenceStatus, BackendCorpse, Character, CourtshipKind, ResidenceTenure,
-    ResidenceTier, Settlement, SettlementAlias, SettlementCategory, SettlementDescription,
-    SettlementDescriptionKind, SettlementResidenceOffer,
+    BackendCharacterResidenceStatus, BackendCorpse, Character, ChildActivityFocus, ChildStage,
+    CourtshipKind, ResidenceTenure, ResidenceTier, Settlement, SettlementAlias, SettlementCategory,
+    SettlementDescription, SettlementDescriptionKind, SettlementResidenceOffer,
 };
 use crate::templates::{
     decorative_game_icon, game_icon, population_description, settlement_layout_with_session,
@@ -325,7 +325,50 @@ pub struct RelationshipPresentation {
     pub courtship_exposed: bool,
     pub wedding: Option<WeddingPresentation>,
     pub pregnancy_due_days: Option<u64>,
-    pub child_names: Vec<String>,
+    pub children: Vec<ChildPresentation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChildPresentation {
+    pub name: String,
+    pub stage: ChildStage,
+    pub focus: ChildActivityFocus,
+    pub maturity_basis_points: u16,
+    pub adult_playable: bool,
+    pub alive: bool,
+}
+
+fn child_stage_label(stage: ChildStage) -> &'static str {
+    match stage {
+        ChildStage::EarlyChildhood => "early childhood",
+        ChildStage::MiddleChildhood => "middle childhood",
+        ChildStage::Adolescence => "adolescence",
+        ChildStage::Adult => "adult",
+    }
+}
+
+fn child_stage_id(stage: ChildStage) -> &'static str {
+    match stage {
+        ChildStage::EarlyChildhood => "early",
+        ChildStage::MiddleChildhood => "middle",
+        ChildStage::Adolescence => "adolescent",
+        ChildStage::Adult => "adult",
+    }
+}
+
+fn child_activity_presentation(
+    stage: ChildStage,
+    focus: ChildActivityFocus,
+) -> (&'static str, &'static str) {
+    if stage == ChildStage::EarlyChildhood {
+        return ("bed", "care and rest");
+    }
+    match focus {
+        ChildActivityFocus::Play => ("sun", "play"),
+        ChildActivityFocus::Study => ("open-book", "study"),
+        ChildActivityFocus::HouseholdHelp => ("hammer-sickle", "household help"),
+        ChildActivityFocus::SocialLearning => ("person", "social learning"),
+    }
 }
 
 fn residence_meter(icon: &str, class_name: &str, label: &str, value: u32, maximum: u32) -> Markup {
@@ -497,9 +540,20 @@ fn residence_offer_panel(
                     @let pregnancy_progress = 270_u64.saturating_sub(days.min(270)) * 100 / 270;
                     (household_progress("stomach", "pregnancy", &pregnancy_label, pregnancy_progress))
                 }
-                @for child in &relationship.child_names {
-                    div class="household-member" aria-label=(format!("Child: {child}")) title=(format!("Child: {child}")) {
-                        (decorative_game_icon("person")) span class="household-member-name" { (child) }
+                @for child in &relationship.children {
+                    @let stage = child_stage_label(child.stage);
+                    @let stage_id = child_stage_id(child.stage);
+                    @let (focus_icon, focus) = child_activity_presentation(child.stage, child.focus);
+                    @let state = if !child.alive { "deceased" } else if child.adult_playable { "adult and available in the character roster" } else { stage };
+                    @let label = format!("Child: {}; {state}; focus: {focus}; maturity {} percent", child.name, child.maturity_basis_points / 100);
+                    div class=(format!("household-child household-child-stage-{stage_id}")) aria-label=(&label) title=(&label) data-strategic-tooltip=(&label) {
+                        div class="household-member" {
+                            (decorative_game_icon("person")) span class="household-member-name" { (&child.name) }
+                            span class="household-member-state" aria-hidden="true" {
+                                (decorative_game_icon(if !child.alive { "death-skull" } else if child.adult_playable { "crown" } else { focus_icon }))
+                            }
+                        }
+                        (household_progress("person", "maturity", &label, u64::from(child.maturity_basis_points) / 100))
                     }
                 }
                 }
@@ -1213,7 +1267,14 @@ mod tests {
                 date_label: "year 1546, day 120".into(),
             }),
             pregnancy_due_days: Some(270),
-            child_names: vec!["Elsa".into()],
+            children: vec![ChildPresentation {
+                name: "Elsa".into(),
+                stage: ChildStage::MiddleChildhood,
+                focus: ChildActivityFocus::Study,
+                maturity_basis_points: 4_000,
+                adult_playable: false,
+                alive: true,
+            }],
         };
         let holdings = vec![
             BackendCharacterResidenceStatus {
@@ -1289,6 +1350,11 @@ mod tests {
         assert!(markup.contains("Relinquish this property? This cannot be undone."));
         assert!(markup.contains("Spouse: Anna"));
         assert!(markup.contains("Child: Elsa"));
+        assert!(markup.contains("middle childhood; focus: study"));
+        assert!(markup.contains("household-child-stage-middle"));
+        assert!(markup.contains("household-progress household-maturity"));
+        assert!(markup.contains("role=\"meter\""));
+        assert!(!markup.contains("Elsa, age"));
         assert!(markup.contains("formal courtship with Bea; formal and public"));
         assert!(!markup.contains("formal courtship with Bea; private"));
         assert!(markup.contains("household-progress household-wedding"));
@@ -1297,9 +1363,23 @@ mod tests {
         assert!(markup.contains("aria-valuenow="));
         assert!(markup.contains("role=\"img\""));
         assert!(markup.contains("aria-label=\"Spouse: Anna\""));
-        assert!(markup.contains("aria-label=\"Child: Elsa\""));
+        assert!(markup.contains(
+            "aria-label=\"Child: Elsa; middle childhood; focus: study; maturity 40 percent\""
+        ));
         assert!(!markup.contains("character #"));
         assert!(!markup.contains("strategic minute"));
+    }
+
+    #[test]
+    fn early_child_activity_is_care_regardless_of_future_focus() {
+        assert_eq!(
+            child_activity_presentation(ChildStage::EarlyChildhood, ChildActivityFocus::Study),
+            ("bed", "care and rest")
+        );
+        assert_eq!(
+            child_activity_presentation(ChildStage::MiddleChildhood, ChildActivityFocus::Study),
+            ("open-book", "study")
+        );
     }
 
     #[test]

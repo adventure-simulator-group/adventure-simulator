@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct BrowserCharacterSelection {
     pub owner_key: String,
     pub character_id: u64,
+    pub character_scan_id: u64,
     pub selected_micros: i64,
 }
 
@@ -22,6 +23,7 @@ impl __sdk::InModule for BrowserCharacterSelection {
 pub struct BrowserCharacterSelectionCols {
     pub owner_key: __sdk::__query_builder::Col<BrowserCharacterSelection, String>,
     pub character_id: __sdk::__query_builder::Col<BrowserCharacterSelection, u64>,
+    pub character_scan_id: __sdk::__query_builder::Col<BrowserCharacterSelection, u64>,
     pub selected_micros: __sdk::__query_builder::Col<BrowserCharacterSelection, i64>,
 }
 
@@ -31,6 +33,7 @@ impl __sdk::__query_builder::HasCols for BrowserCharacterSelection {
         BrowserCharacterSelectionCols {
             owner_key: __sdk::__query_builder::Col::new(table_name, "owner_key"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            character_scan_id: __sdk::__query_builder::Col::new(table_name, "character_scan_id"),
             selected_micros: __sdk::__query_builder::Col::new(table_name, "selected_micros"),
         }
     }
@@ -41,6 +44,7 @@ impl __sdk::__query_builder::HasCols for BrowserCharacterSelection {
 /// Provides typed access to indexed columns for query building.
 pub struct BrowserCharacterSelectionIxCols {
     pub character_id: __sdk::__query_builder::IxCol<BrowserCharacterSelection, u64>,
+    pub character_scan_id: __sdk::__query_builder::IxCol<BrowserCharacterSelection, u64>,
     pub owner_key: __sdk::__query_builder::IxCol<BrowserCharacterSelection, String>,
 }
 
@@ -49,6 +53,7 @@ impl __sdk::__query_builder::HasIxCols for BrowserCharacterSelection {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         BrowserCharacterSelectionIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+            character_scan_id: __sdk::__query_builder::IxCol::new(table_name, "character_scan_id"),
             owner_key: __sdk::__query_builder::IxCol::new(table_name, "owner_key"),
         }
     }

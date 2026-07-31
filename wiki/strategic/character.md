@@ -185,8 +185,67 @@ town residents are arranged into deterministic households with parent/child
 and sibling edges without creating duplicate identities. Dependent NPCs keep
 an unallocated Leisure schedule; the autonomous adult labor and Socializing
 plan is installed only when authoritative birth chronology reaches adulthood.
-Childhood education and other age-specific behavior, inheritance, contraception,
-infertility, miscarriage, and childbirth risk remain follow-up systems.
+Naturally born children use the same persistent `Character`, identity,
+attributes, skills, needs, inventory, location, and personal-clock authority as
+everyone else. They are not rerun through the starting-character life
+simulation. Instead, a private child-development row freezes one of four safe
+activity focuses at birth: Play, Study, Household help, or Social learning.
+Before age six their time is care and rest and awards no skill training. From
+six through eleven and twelve through fifteen, the focus awards a small,
+aptitude-aware budget to ordinary skills. Childhood policy never invokes paid
+work, crime, combat training, incidents, or organization curricula. The clock
+splits exactly at the sixth, twelfth, and sixteenth birthdays, and a durable
+training cursor makes retries and different advancement chunks equivalent.
+Each curriculum track also records its own accepted effective-hour
+contribution. Only the interval after the cursor is evaluated with that
+interval's attributes, and its gain is added to independently earned skill
+hours under the ordinary aptitude cap.
+
+Birth also freezes at most one private lineage-control claim. If both parents
+have browser grants, the mother's owner wins; otherwise the one available
+owner is used, and a birth with no granted parent creates no claim. At the
+existing age-sixteen adulthood boundary, a living claimed descendant receives
+an idempotent browser grant whose typed provenance is `AdultDescendant`, leaves
+NPC clock policy, becomes an `AdultChild` in the household, and receives a solo
+party if needed. This preserves the same character ID, personal date, skills,
+inventory, and location and does not select the character automatically. Dead
+or underage descendants cannot be selected. Grant provenance is structural:
+adult descendants carry a typed source-parent ID while starting candidates
+carry a starting-claim request key, and the unused provenance arm must be
+empty. While a living character is selected, descendant roster visibility and
+selection use that character's personal date; with no valid living selection,
+the descendant's own adult frontier permits successor recovery.
+
+Mortal death creates one private, effective-dated estate disposition. The heir
+is frozen as the eldest living direct child already born at the death minute
+(birth minute, then character ID), otherwise the living spouse; with neither,
+the estate is unclaimed. Personal inventory is all that passes: currency and
+ordinary carried or equipped items retain their inventory IDs, amounts, food
+lots, and condition, while equipment authority is removed before ownership
+changes. `Character.gold` is legacy and non-authoritative. Residence holdings,
+party property, debts, items in repair custody, and organization assets are
+excluded. If the heir's personal frontier has not reached the death minute,
+the disposition remains pending and invisible at earlier dates. Settlement is
+retry-safe at the heir lifecycle hook. If later causal information shows the
+frozen heir died no later than the effective minute, the estate becomes
+unclaimed rather than selecting a replacement; if the heir dies after crossing
+the effective minute, the first estate settles before that heir's own estate is
+chosen. If an earlier estate materializes only after that later estate has
+already settled, its items follow the already-effective succession chain to
+the chronological owner exactly once. A later estate that is still pending or
+unclaimed remains the explicit staging or terminal point rather than leaving
+new property behind an already-completed transfer.
+
+The household projection is scoped to the selected browser owner and the
+selected parent's personal date. It presents every known child with a
+qualitative stage and focus, a maturity bar, and an adult-playable icon. Exact
+age/progress text is confined to accessible labels and tooltips. Estate
+projections apply the same owner and chronology boundary.
+
+Contraception, infertility, miscarriage, childbirth risk, parent-edited child
+activities, detailed education, multi-owner control, residence inheritance,
+debts, and inheritance law beyond the direct-child/spouse order remain future
+work.
 Child identity, name choice, sex, and home placement use separate stable seed
 domains based on the canonical parent pair, pregnancy ordinal, birth minute,
 and home location, so retries and insertion order cannot change the result.

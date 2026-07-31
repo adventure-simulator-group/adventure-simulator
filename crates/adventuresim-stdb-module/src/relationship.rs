@@ -19,6 +19,7 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 use crate::character::{character, character__view, character_death};
 use crate::character_skills;
 use crate::condition::morale_event as _;
+use crate::continuity::{EstateDispositionStatus, estate_disposition};
 use crate::corpse::strategic_corpse;
 use crate::personality::{
     Courtship as PersonalityCourtship, Inclination, Presentation, Sex, character_personality,
@@ -831,11 +832,24 @@ pub(crate) fn next_lifecycle_boundary(
         .flatten()
         .filter(|minute| start_minute < *minute && *minute < end_minute)
         .min();
+    let inheritance = ctx
+        .db
+        .estate_disposition()
+        .chosen_heir_id()
+        .filter(character_id)
+        .filter(|row| {
+            row.status == EstateDispositionStatus::Pending
+                && start_minute < row.effective_minute
+                && row.effective_minute < end_minute
+        })
+        .map(|row| row.effective_minute)
+        .min();
     wedding
         .into_iter()
         .chain(birth)
         .chain(marriage)
         .chain(birthday)
+        .chain(inheritance)
         .min()
 }
 
@@ -895,6 +909,18 @@ pub fn advance_npc_personal_time(
     if let Some(boundary) = next_lifecycle_boundary(ctx, character_id, time.minutes, target_minute)
     {
         advance_npc_personal_time(ctx, character_id, boundary)?;
+        if ctx
+            .db
+            .npc_policy()
+            .character_id()
+            .find(character_id)
+            .is_none()
+        {
+            // Adult promotion can transfer this clock to browser authority.
+            // Leave it at the exact birthday instead of applying the rest of
+            // an NPC-policy interval after that transfer.
+            return Ok(());
+        }
         return advance_npc_personal_time(ctx, character_id, target_minute);
     }
     // Delayed events are settled inside this transaction at the target
@@ -2391,6 +2417,14 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
             settlement_id.clone(),
             pregnancy.child_home_seed,
         )?;
+        crate::continuity::initialize_child_continuity(
+            ctx,
+            child_id,
+            mother.id,
+            father.id,
+            pregnancy.due_minute,
+            pregnancy.child_home_seed,
+        );
         ctx.db
             .child_identity_reservation()
             .character_id()
