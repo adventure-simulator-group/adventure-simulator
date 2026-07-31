@@ -149,6 +149,43 @@ pub(super) async fn camp(
             legacy.total_minutes
         };
     }
+    let direct_demo_contract_prefix = format!("contract:errantry-puzzle:demo:{}:", character.id);
+    let expects_direct_demo = party
+        .active_contract_id
+        .as_deref()
+        .is_some_and(|id| id.starts_with(&direct_demo_contract_prefix));
+    let direct_demo_challenge_prefix =
+        format!("challenge:ordered-sigils:demo:{}:", character.id);
+    let mut challenges = Vec::new();
+    for attempt in 0..4 {
+        match state
+            .db
+            .query::<BackendChallenge>(&format!(
+                "SELECT * FROM backend_challenges WHERE owner_character_id = {}",
+                character.id
+            ))
+            .await
+        {
+            Ok(rows) => challenges = rows,
+            Err(error) => tracing::warn!(
+                %error,
+                character_id = character.id,
+                "camp challenge state unavailable"
+            ),
+        }
+        if !expects_direct_demo
+            || challenges
+                .iter()
+                .any(|challenge| challenge.id.starts_with(&direct_demo_challenge_prefix))
+            || attempt == 3
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+    if let Some(path) = direct_demo_challenge_redirect(&challenges, character.id) {
+        return Redirect::to(&path).into_response();
+    }
     let itinerary = state
         .db
         .query_one::<PartyJourneyItinerary>(&format!(
@@ -263,15 +300,9 @@ pub(super) async fn camp(
     .flatten();
     let camp_destinations = camp_settlement_destinations(&state, &party, journey.as_ref()).await;
     let soap_preview = soap_rest_preview(&state, &party_members, Some(&party.id)).await;
-    let trial = state
-        .db
-        .query_one::<BackendChallenge>(&format!(
-            "SELECT * FROM backend_challenges WHERE owner_character_id = {} AND active = true",
-            character.id
-        ))
-        .await
-        .ok()
-        .flatten();
+    let trial = challenges
+        .iter()
+        .find(|challenge| challenge.active && challenge.open && !challenge.solved);
     let foraging_dialog = if query.forage.unwrap_or(false) {
         Some(
             crate::routes::foraging::activity_dialog(
@@ -302,21 +333,40 @@ pub(super) async fn camp(
             planned_wake_minute,
             continue_block_reason,
             encounter.as_ref(),
-            trial
-                .as_ref()
-                .map(|trial| {
-                    (
-                        trial.case_id.as_str(),
-                        trial.id.as_str(),
-                        trial.presenter_catalog_id,
-                    )
-                }),
+            trial.map(|trial| {
+                (
+                    trial.case_id.as_str(),
+                    trial.id.as_str(),
+                    trial.presenter_catalog_id,
+                )
+            }),
             foraging_dialog,
             Some(&character.name),
         )
         .into_string(),
     )
     .into_response()
+}
+
+fn direct_demo_challenge_redirect(
+    challenges: &[BackendChallenge],
+    character_id: u64,
+) -> Option<String> {
+    let expected_prefix = format!("challenge:ordered-sigils:demo:{character_id}:");
+    let mut playable = challenges.iter().filter(|challenge| {
+        challenge.owner_character_id == character_id
+            && challenge.active
+            && challenge.open
+            && !challenge.solved
+            && challenge.id.starts_with(&expected_prefix)
+    });
+    let challenge = playable.next()?;
+    playable.next().is_none().then(|| {
+        format!(
+            "/quests/{}/challenges/{}",
+            challenge.case_id, challenge.id
+        )
+    })
 }
 
 pub(super) fn camp_continue_block_reason(
@@ -329,6 +379,51 @@ pub(super) fn camp_continue_block_reason(
         Some("Rest until the planned walking window begins.")
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod direct_demo_redirect_tests {
+    use super::direct_demo_challenge_redirect;
+    use crate::spacetimedb::{BackendChallenge, ChallengePresenterCatalogId};
+
+    fn challenge(id: &str, active: bool, open: bool, solved: bool) -> BackendChallenge {
+        BackendChallenge {
+            id: id.into(),
+            case_id: "case:errantry-puzzle:demo:7:0".into(),
+            party_id: "party:7".into(),
+            owner_character_id: 7,
+            finale_case_site_id: "site:finale".into(),
+            puzzle_projection_json: "{}".into(),
+            presenter_catalog_id: ChallengePresenterCatalogId::LadyBeneathThornV1,
+            revision: 0,
+            open,
+            solved,
+            active,
+            last_attempt_correct: None,
+            boon_item_id: None,
+            boon_combat_scale_reduction_bps: None,
+        }
+    }
+
+    #[test]
+    fn camp_forwards_only_one_unsolved_active_direct_demo() {
+        let demo = challenge("challenge:ordered-sigils:demo:7:0", true, true, false);
+        assert_eq!(
+            direct_demo_challenge_redirect(std::slice::from_ref(&demo), 7).as_deref(),
+            Some(
+                "/quests/case:errantry-puzzle:demo:7:0/challenges/challenge:ordered-sigils:demo:7:0"
+            )
+        );
+
+        let production = challenge("challenge:ordered-sigils:order:7:0", true, true, false);
+        assert_eq!(direct_demo_challenge_redirect(&[production], 7), None);
+
+        let solved = challenge("challenge:ordered-sigils:demo:7:0", true, false, true);
+        assert_eq!(direct_demo_challenge_redirect(&[solved], 7), None);
+
+        let another = challenge("challenge:ordered-sigils:demo:7:1", true, true, false);
+        assert_eq!(direct_demo_challenge_redirect(&[demo, another], 7), None);
     }
 }
 
