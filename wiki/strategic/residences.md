@@ -21,6 +21,12 @@ occupants and primary designation while retaining its immutable history. A
 dormant purchased holding can be recovered and any eligible active holding can
 later be designated.
 
+The strategic gateway projects every legal holding back to its owner, including
+unoccupied nonprimary properties that still incur upkeep. The residence screen
+therefore lists the full portfolio and sends the selected holding ID explicitly
+when recovering, designating, or relinquishing property; private holding and
+occupancy tables are never queried directly by the browser-facing server.
+
 Subsequent bills settle lazily from the owner's personal clock in whole 30-day
 periods, so advancing a month once has the same result as advancing it in
 smaller chunks. Billing considers every active holding in chronological

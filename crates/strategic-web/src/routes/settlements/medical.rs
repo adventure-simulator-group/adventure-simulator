@@ -16,6 +16,11 @@ pub(super) struct ResidencePageQuery {
     residence_notice: Option<String>,
 }
 
+#[derive(Default, Deserialize)]
+pub(super) struct ResidenceActionForm {
+    holding_id: Option<String>,
+}
+
 fn residence_notice(code: Option<&str>) -> Option<&'static str> {
     match code {
         Some("rented") => Some("The residence is now rented and ready to use."),
@@ -541,11 +546,9 @@ pub(super) async fn settlement_resident_place(
             "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {}",
             character.id,
         );
-        let (offers, residence, relationship) = tokio::join!(
+        let (offers, residences, relationship) = tokio::join!(
             state.db.query::<SettlementResidenceOffer>(&offers_sql),
-            state
-                .db
-                .query_one::<BackendCharacterResidenceStatus>(&residence_sql),
+            state.db.query::<BackendCharacterResidenceStatus>(&residence_sql),
             state
                 .db
                 .query_one::<BackendCharacterRelationshipStatus>(&relationship_sql),
@@ -556,10 +559,23 @@ pub(super) async fn settlement_resident_place(
             ResidenceTier::Moderate => 1,
             ResidenceTier::Fancy => 2,
         });
-        let residence = residence.ok().flatten();
-        let can_rest_at_home = residence
-            .as_ref()
-            .is_some_and(|home| home.active && home.settlement_id == settlement.id);
+        let mut residences = residences.unwrap_or_default();
+        residences.retain(|holding| holding.character_id == character.id);
+        residences.sort_by(|left, right| {
+            (
+                !left.primary,
+                left.settlement_id != settlement.id,
+                left.holding_id.as_str(),
+            )
+                .cmp(&(
+                    !right.primary,
+                    right.settlement_id != settlement.id,
+                    right.holding_id.as_str(),
+                ))
+        });
+        let can_rest_at_home = residences.iter().any(|home| {
+            home.active && home.occupied && home.settlement_id == settlement.id
+        });
         let relationship = relationship.ok().flatten();
         let related_ids = relationship
             .iter()
@@ -632,7 +648,7 @@ pub(super) async fn settlement_resident_place(
                 &party_members,
                 Some(&character.name),
                 &offers,
-                residence.as_ref(),
+                &residences,
                 presentation.as_ref(),
                 can_rest_at_home,
                 residence_notice(page_query.residence_notice.as_deref()),
@@ -656,6 +672,7 @@ pub(super) async fn change_residence(
     State(state): State<AppState>,
     Path((id, action, tier)): Path<(String, String, String)>,
     session: Session,
+    Form(form): Form<ResidenceActionForm>,
 ) -> Redirect {
     let fallback = format!("/settlements/{id}/places/residences");
     let Some(character_id) = session.character_id_u64() else {
@@ -668,6 +685,9 @@ pub(super) async fn change_residence(
         "current" => serde_json::Value::Null,
         _ => return Redirect::to(&format!("{fallback}?residence_notice=unavailable")),
     };
+    let selected_holding = form
+        .holding_id
+        .filter(|holding_id| !holding_id.trim().is_empty());
     let (reducer, args, success) = match action.as_str() {
         "rent" => (
             "rent_residence",
@@ -681,17 +701,47 @@ pub(super) async fn change_residence(
         ),
         "relinquish" => (
             "relinquish_residence",
-            vec![json!(character_id)],
+            vec![
+                json!(character_id),
+                json!(match selected_holding.as_ref() {
+                    Some(holding_id) if tier == "current" => holding_id,
+                    _ => {
+                        return Redirect::to(&format!(
+                            "{fallback}?residence_notice=unavailable"
+                        ));
+                    }
+                }),
+            ],
             "relinquished",
         ),
         "designate" => (
             "designate_residence",
-            vec![json!(character_id)],
+            vec![
+                json!(character_id),
+                json!(match selected_holding.as_ref() {
+                    Some(holding_id) if tier == "current" => holding_id,
+                    _ => {
+                        return Redirect::to(&format!(
+                            "{fallback}?residence_notice=unavailable"
+                        ));
+                    }
+                }),
+            ],
             "designated",
         ),
         "recover" => (
             "recover_owned_residence",
-            vec![json!(character_id)],
+            vec![
+                json!(character_id),
+                json!(match selected_holding.as_ref() {
+                    Some(holding_id) if tier == "current" => holding_id,
+                    _ => {
+                        return Redirect::to(&format!(
+                            "{fallback}?residence_notice=unavailable"
+                        ));
+                    }
+                }),
+            ],
             "recovered",
         ),
         _ => return Redirect::to(&format!("{fallback}?residence_notice=unavailable")),
@@ -705,6 +755,44 @@ pub(super) async fn change_residence(
                 housing_error_code(&error.to_string())
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod residence_route_tests {
+    #[test]
+    fn portfolio_reads_and_management_mutations_keep_explicit_holding_ids() {
+        let source = include_str!("medical.rs");
+        let residence_page = source
+            .split("if place == \"residences\"")
+            .nth(1)
+            .unwrap()
+            .split("pub(super) async fn change_residence")
+            .next()
+            .unwrap();
+        assert!(residence_page.contains("query::<BackendCharacterResidenceStatus>"));
+        assert!(residence_page.contains("residences.retain"));
+        assert!(residence_page.contains("home.active && home.occupied"));
+
+        let change = source
+            .split("pub(super) async fn change_residence")
+            .nth(1)
+            .unwrap()
+            .split("pub(super) async fn show_settlement_location")
+            .next()
+            .unwrap();
+        assert!(change.contains("Form(form): Form<ResidenceActionForm>"));
+        assert!(change.contains("let selected_holding = form"));
+        assert!(change.contains(".holding_id"));
+        for reducer in [
+            "relinquish_residence",
+            "designate_residence",
+            "recover_owned_residence",
+        ] {
+            assert!(change.contains(reducer));
+        }
+        assert!(change.matches("json!(character_id)").count() >= 5);
+        assert!(change.matches("json!(match selected_holding.as_ref()").count() == 3);
     }
 }
 

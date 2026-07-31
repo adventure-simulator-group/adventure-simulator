@@ -21,7 +21,7 @@ pub(crate) mod travel;
 use axum::{
     Router,
     extract::{Request, State},
-    http::Uri,
+    http::{Method, StatusCode, Uri, header},
     middleware::{self, Next},
     response::{IntoResponse, Json, Redirect, Response},
     routing::get,
@@ -889,7 +889,7 @@ pub fn build_router(state: AppState) -> Router {
             "/map/tiles/{theme}/{zoom}/{x}/{tile}",
             get(crate::strategic_map::world_tile),
         )
-        .merge(characters::routes())
+        .merge(characters::routes().layer(middleware::from_fn(require_same_origin_mutation)))
         .merge(home::routes())
         .merge(
             Router::new()
@@ -906,6 +906,7 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(missions::routes())
                 .merge(crate::live::routes())
                 .route("/time", get(current_time))
+                .layer(middleware::from_fn(require_same_origin_mutation))
                 .layer(middleware::from_fn_with_state(
                     middleware_state,
                     require_active_character,
@@ -984,8 +985,89 @@ async fn require_active_character(session: Session, request: Request, next: Next
     next.run(request).await
 }
 
+/// The opaque browser session is bearer authority, so every browser mutation
+/// in the onboarding or active-character route groups must originate from this
+/// exact web origin. SameSite cookies alone do not stop a different service on
+/// the same site (for example, another localhost port) from submitting a form.
+///
+/// Non-mutating internal strategic navigation remains unaffected. There are no
+/// non-browser mutation endpoints in this protected router; any future one
+/// must receive a separately authenticated route rather than bypass this
+/// browser-origin boundary.
+async fn require_same_origin_mutation(request: Request, next: Next) -> Response {
+    if is_browser_mutation(request.method()) && !has_same_origin(&request) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Cross-origin strategic mutation rejected",
+        )
+            .into_response();
+    }
+    next.run(request).await
+}
+
+fn is_browser_mutation(method: &Method) -> bool {
+    method == Method::POST
+        || method == Method::PUT
+        || method == Method::PATCH
+        || method == Method::DELETE
+}
+
+fn has_same_origin(request: &Request) -> bool {
+    let Some(origin) = request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| *value != "null")
+    else {
+        return false;
+    };
+    let Ok(origin) = origin.parse::<Uri>() else {
+        return false;
+    };
+    if origin.path() != "/" || origin.query().is_some() {
+        return false;
+    }
+    let Some(origin_scheme) = origin.scheme_str() else {
+        return false;
+    };
+    if !matches!(origin_scheme, "http" | "https") {
+        return false;
+    }
+    let Some(origin_authority) = origin.authority().map(|value| value.as_str()) else {
+        return false;
+    };
+    let Some(host) = request
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    let request_scheme = request
+        .uri()
+        .scheme_str()
+        .or_else(|| {
+            request
+                .headers()
+                .get("x-forwarded-proto")
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| !value.contains(','))
+        })
+        .unwrap_or("http");
+    origin_scheme.eq_ignore_ascii_case(request_scheme)
+        && origin_authority.eq_ignore_ascii_case(host)
+}
+
 #[cfg(test)]
 mod onboarding_route_tests {
+    use axum::{
+        body::Body,
+        extract::Request,
+        http::{Method, header},
+    };
+
+    use super::has_same_origin;
+
     #[test]
     fn home_route_is_merged_before_the_active_character_guard() {
         let source = include_str!("mod.rs");
@@ -995,5 +1077,59 @@ mod onboarding_route_tests {
             .find(".layer(middleware::from_fn_with_state(")
             .unwrap();
         assert!(home < protected && protected < guard);
+    }
+
+    fn mutation(
+        origin: Option<&str>,
+        host: Option<&str>,
+        forwarded_proto: Option<&str>,
+    ) -> Request {
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri("/settlements/lubeck/residences/rent/cheap");
+        if let Some(origin) = origin {
+            builder = builder.header(header::ORIGIN, origin);
+        }
+        if let Some(host) = host {
+            builder = builder.header(header::HOST, host);
+        }
+        if let Some(proto) = forwarded_proto {
+            builder = builder.header("x-forwarded-proto", proto);
+        }
+        builder.body(Body::empty()).unwrap()
+    }
+
+    #[test]
+    fn browser_mutations_require_an_exact_same_origin() {
+        assert!(has_same_origin(&mutation(
+            Some("http://127.0.0.1:8080"),
+            Some("127.0.0.1:8080"),
+            None,
+        )));
+        assert!(has_same_origin(&mutation(
+            Some("https://game.example.test"),
+            Some("game.example.test"),
+            Some("https"),
+        )));
+        assert!(!has_same_origin(&mutation(
+            Some("http://localhost:9000"),
+            Some("localhost:8080"),
+            None,
+        )));
+        assert!(!has_same_origin(&mutation(
+            Some("null"),
+            Some("127.0.0.1:8080"),
+            None,
+        )));
+        assert!(!has_same_origin(&mutation(
+            None,
+            Some("127.0.0.1:8080"),
+            None,
+        )));
+        assert!(!has_same_origin(&mutation(
+            Some("https://game.example.test"),
+            Some("game.example.test"),
+            Some("http"),
+        )));
     }
 }

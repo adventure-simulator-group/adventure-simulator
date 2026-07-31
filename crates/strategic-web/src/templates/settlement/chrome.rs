@@ -185,12 +185,12 @@ pub fn settlement_residence_page(
     party_members: &[Character],
     logged_in_as: Option<&str>,
     offers: &[SettlementResidenceOffer],
-    current: Option<&BackendCharacterResidenceStatus>,
+    holdings: &[BackendCharacterResidenceStatus],
     relationship: Option<&RelationshipPresentation>,
     can_rest_at_home: bool,
     notice: Option<&str>,
 ) -> Markup {
-    let panel = residence_offer_panel(settlement, offers, current, relationship, notice);
+    let panel = residence_offer_panel(settlement, offers, holdings, relationship, notice);
     settlement_resident_location_page_with_panel(
         settlement,
         active_character,
@@ -339,7 +339,7 @@ fn residence_tier_id(tier: ResidenceTier) -> &'static str {
 fn residence_offer_panel(
     settlement: &Settlement,
     offers: &[SettlementResidenceOffer],
-    current: Option<&BackendCharacterResidenceStatus>,
+    holdings: &[BackendCharacterResidenceStatus],
     relationship: Option<&RelationshipPresentation>,
     notice: Option<&str>,
 ) -> Markup {
@@ -349,28 +349,43 @@ fn residence_offer_panel(
             @if let Some(notice) = notice {
                 p class="residence-notice" role="status" { (notice) }
             }
-            @if let Some(current) = current {
-                p { "Current: " (residence_tier_label(current.tier)) " " (match current.tenure { ResidenceTenure::Renter => "rental", ResidenceTenure::Owner => "owned" })
-                    @if !current.active { " (payment overdue)" }
-                }
-                p class="text-muted small-copy" {
-                    @if current.active { "Next payment: " } @else { "Overdue since " }
-                    (format_residence_date(current.next_due_minute)) "."
-                }
-                @if current.tenure == ResidenceTenure::Owner && !current.active {
-                    form action=(format!("/settlements/{}/residences/recover/current", settlement.id)) method="post" {
-                        button type="submit" class="btn btn-small" { "Recover owned home" }
+            @if holdings.is_empty() {
+                p { "No residence holdings." }
+            } @else {
+                div class="residence-holding-list" {
+                    @for holding in holdings {
+                        article class="residence-holding" data-holding-id=(&holding.holding_id) {
+                            p {
+                                strong { (residence_tier_label(holding.tier)) " " (match holding.tenure { ResidenceTenure::Renter => "rental", ResidenceTenure::Owner => "owned property" }) }
+                                " in " (&holding.settlement_id)
+                                @if holding.primary { " (designated home)" }
+                                @if holding.occupied { " (occupied)" }
+                                @if !holding.active { " (payment overdue)" }
+                            }
+                            p class="text-muted small-copy" {
+                                @if holding.active { "Next payment: " } @else { "Overdue since " }
+                                (format_residence_date(holding.next_due_minute)) "."
+                            }
+                            @if holding.tenure == ResidenceTenure::Owner && !holding.active {
+                                form action=(format!("/settlements/{}/residences/recover/current", settlement.id)) method="post" {
+                                    input type="hidden" name="holding_id" value=(&holding.holding_id);
+                                    button type="submit" class="btn btn-small" { "Recover owned home" }
+                                }
+                            }
+                            @if holding.active && !holding.primary && holding.settlement_id == settlement.id {
+                                form action=(format!("/settlements/{}/residences/designate/current", settlement.id)) method="post" {
+                                    input type="hidden" name="holding_id" value=(&holding.holding_id);
+                                    button type="submit" class="btn btn-small" { "Designate as home" }
+                                }
+                            }
+                            form action=(format!("/settlements/{}/residences/relinquish/current", settlement.id)) method="post" {
+                                input type="hidden" name="holding_id" value=(&holding.holding_id);
+                                button type="submit" class="btn btn-small btn-danger" { "Relinquish property" }
+                            }
+                        }
                     }
                 }
-                @if current.active {
-                    form action=(format!("/settlements/{}/residences/designate/current", settlement.id)) method="post" {
-                        button type="submit" class="btn btn-small" { "Designate as home" }
-                    }
-                }
-                form action=(format!("/settlements/{}/residences/relinquish/current", settlement.id)) method="post" {
-                    button type="submit" class="btn btn-small btn-danger" { "Relinquish home" }
-                }
-            } @else { p { "No primary residence." } }
+            }
             @if let Some(relationship) = relationship {
                 @if let Some(spouse_name) = &relationship.spouse_name { p { "Spouse: " (spouse_name) } }
                 @if let Some(partner_name) = &relationship.courtship_partner_name {
@@ -1083,10 +1098,45 @@ mod tests {
             pregnancy_due_label: Some("in about 270 days".into()),
             child_names: vec!["Elsa".into()],
         };
-        let markup = residence_offer_panel(&settlement, &offers, None, Some(&relationship), None)
-            .into_string();
+        let holdings = vec![
+            BackendCharacterResidenceStatus {
+                character_id: 1,
+                holding_id: "holding-primary".into(),
+                owner_character_id: 1,
+                settlement_id: settlement.id.clone(),
+                tier: ResidenceTier::Moderate,
+                tenure: ResidenceTenure::Owner,
+                active: true,
+                primary: true,
+                occupied: true,
+                acquired_minute: 0,
+                last_billed_minute: 0,
+                next_due_minute: 43_200,
+            },
+            BackendCharacterResidenceStatus {
+                character_id: 1,
+                holding_id: "holding-dormant".into(),
+                owner_character_id: 1,
+                settlement_id: "elsewhere".into(),
+                tier: ResidenceTier::Cheap,
+                tenure: ResidenceTenure::Owner,
+                active: false,
+                primary: false,
+                occupied: false,
+                acquired_minute: 0,
+                last_billed_minute: 0,
+                next_due_minute: 43_200,
+            },
+        ];
+        let markup =
+            residence_offer_panel(&settlement, &offers, &holdings, Some(&relationship), None)
+                .into_string();
 
         assert_eq!(markup.matches("class=\"residence-offer\"").count(), 3);
+        assert_eq!(markup.matches("class=\"residence-holding\"").count(), 2);
+        assert!(markup.contains("name=\"holding_id\" value=\"holding-primary\""));
+        assert!(markup.contains("name=\"holding_id\" value=\"holding-dormant\""));
+        assert!(markup.contains("Recover owned home"));
         for tier in ["cheap", "moderate", "fancy"] {
             assert!(markup.contains(&format!("data-residence-tier=\"{tier}\"")));
         }

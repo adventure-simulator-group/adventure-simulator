@@ -221,6 +221,11 @@ pub fn backend_character_residence_statuses(
                 .filter(&holding_id)
                 .map(|row| row.character_id)
                 .collect::<Vec<_>>();
+            // Legal ownership must remain visible to the owner even after a
+            // different holding becomes primary and moves their occupancy.
+            // Otherwise an unoccupied property continues billing privately
+            // but cannot be inspected or managed through the gateway.
+            character_ids.push(holding.owner_character_id);
             character_ids.extend(
                 ctx.db
                     .primary_residence()
@@ -655,26 +660,32 @@ fn supported_occupant_counts_at(
         if !admitted {
             continue;
         }
-        let household_dependent = ctx
-            .db
-            .household_member()
-            .character_id()
-            .find(character_id)
-            .is_some_and(|member| {
-                member.joined_minute <= due_minute && member.role == HouseholdRole::Dependent
+        let effective_age = crate::relationship::effective_age_years(ctx, character_id, due_minute)
+            .or_else(|| {
+                ctx.db
+                    .character()
+                    .id()
+                    .find(character_id)
+                    .map(|character| character.age_years)
             });
-        let underage = ctx
-            .db
-            .character()
-            .id()
-            .find(character_id)
-            .is_some_and(|character| {
-                character.age_years < adventuresim_core::courtship::ADULT_AGE_YEARS
-            });
-        if household_dependent || underage {
+        let underage =
+            effective_age.is_some_and(|age| age < adventuresim_core::courtship::ADULT_AGE_YEARS);
+        if underage {
             dependents = dependents.saturating_add(1);
         } else {
             adults = adults.saturating_add(1);
+            if let Some(mut member) = ctx
+                .db
+                .household_member()
+                .character_id()
+                .find(character_id)
+                .filter(|member| {
+                    member.joined_minute <= due_minute && member.role == HouseholdRole::Dependent
+                })
+            {
+                member.role = HouseholdRole::AdultChild;
+                ctx.db.household_member().id().update(member);
+            }
         }
     }
     (adults, dependents)
@@ -1310,6 +1321,36 @@ mod tests {
         assert!(source.contains("dependent_necessities_amount"));
         assert!(source.contains("supported_occupant_counts_at"));
         assert!(source.contains("next_due_minute = due_minute.saturating_add"));
+    }
+
+    #[test]
+    fn necessities_use_effective_age_and_promote_adult_children() {
+        let source = include_str!("residence.rs");
+        let counts = source
+            .split("fn supported_occupant_counts_at")
+            .nth(1)
+            .unwrap()
+            .split("fn period_charge")
+            .next()
+            .unwrap();
+        assert!(counts.contains("effective_age_years(ctx, character_id, due_minute)"));
+        assert!(counts.contains("age < adventuresim_core::courtship::ADULT_AGE_YEARS"));
+        assert!(counts.contains("member.role = HouseholdRole::AdultChild"));
+    }
+
+    #[test]
+    fn gateway_projection_keeps_nonprimary_owned_holdings_manageable() {
+        let source = include_str!("residence.rs");
+        let projection = source
+            .split("pub fn backend_character_residence_statuses")
+            .nth(1)
+            .unwrap()
+            .split("pub fn offer_id")
+            .next()
+            .unwrap();
+        assert!(projection.contains("character_ids.push(holding.owner_character_id)"));
+        assert!(projection.contains("residence_occupant()"));
+        assert!(projection.contains("primary_residence()"));
     }
 
     #[test]

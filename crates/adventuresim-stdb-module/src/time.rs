@@ -21,6 +21,7 @@ use crate::personality::{
     Sociability as CharacterSociability, Transparency as CharacterTransparency,
     character_personality,
 };
+use crate::relationship::socializing_receipt as _;
 use crate::strategic::{
     party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
 };
@@ -1140,6 +1141,16 @@ fn apply_training(
         excess += apply_reading_training(ctx, character_id, skills, reading_hours, &attributes);
     }
     excess
+}
+
+fn total_socializing_receipt_minutes(ctx: &ReducerContext, actor_id: u64) -> u64 {
+    ctx.db
+        .socializing_receipt()
+        .actor_id()
+        .filter(actor_id)
+        .fold(0_u64, |total, receipt| {
+            total.saturating_add(receipt.minutes)
+        })
 }
 
 fn terrain_book_skill(terrain: &str) -> Option<Skill> {
@@ -3074,6 +3085,25 @@ pub(crate) fn advance_stationary_character_to(
         crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(());
     }
+    let training_elapsed = elapsed.saturating_sub(convalescing);
+    let socializing_before = total_socializing_receipt_minutes(ctx, character_id);
+    if at_settlement && training_elapsed > 0 {
+        crate::relationship::apply_scheduled_socializing(
+            ctx,
+            character_id,
+            effective_schedule.socializing_minutes,
+            target_minutes.saturating_sub(training_elapsed),
+            target_minutes,
+        )?;
+    }
+    let realized_socializing_minutes =
+        total_socializing_receipt_minutes(ctx, character_id).saturating_sub(socializing_before);
+    let mut realized_training_schedule = effective_schedule.clone();
+    if realized_socializing_minutes == 0 {
+        // An unavailable Socializing allocation is downtime/Leisure, not
+        // imaginary practice of Charm, Insight, or Deception.
+        realized_training_schedule.socializing_minutes = 0;
+    }
     let mut skills = ctx
         .db
         .character_skills()
@@ -3081,12 +3111,11 @@ pub(crate) fn advance_stationary_character_to(
         .find(character_id)
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
-    let training_elapsed = elapsed.saturating_sub(convalescing);
     let excess = apply_training(
         ctx,
         character_id,
         &mut skills,
-        &effective_schedule,
+        &realized_training_schedule,
         training_elapsed,
         activities,
     );
@@ -3101,13 +3130,6 @@ pub(crate) fn advance_stationary_character_to(
     )?;
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     if at_settlement && training_elapsed > 0 {
-        crate::relationship::apply_scheduled_socializing(
-            ctx,
-            character_id,
-            effective_schedule.socializing_minutes,
-            target_minutes.saturating_sub(elapsed),
-            target_minutes,
-        )?;
         crate::social::apply_automatic_social_chats(ctx, character_id, training_elapsed)?;
     }
     if at_settlement {
@@ -3639,5 +3661,21 @@ mod tests {
             assert!(path.contains("minutes.saturating_sub(first)"));
             assert!(path.contains("settle_lifecycle_after_character_time_write"));
         }
+    }
+
+    #[test]
+    fn stationary_social_training_requires_realized_conversation_time() {
+        let source = include_str!("time.rs");
+        let stationary = source
+            .split("pub(crate) fn advance_stationary_character_to")
+            .nth(1)
+            .expect("stationary advancement");
+        let socializing = stationary
+            .find("apply_scheduled_socializing")
+            .expect("scheduled Socializing");
+        let training = stationary.find("apply_training").expect("training");
+        assert!(socializing < training);
+        assert!(stationary.contains("realized_socializing_minutes == 0"));
+        assert!(stationary.contains("realized_training_schedule.socializing_minutes = 0"));
     }
 }

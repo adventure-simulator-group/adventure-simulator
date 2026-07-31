@@ -11,6 +11,7 @@ use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, TimeDuration
 
 use crate::CharacterTime;
 use crate::character::character as _;
+use crate::personality::{Sex, character_personality as _};
 use crate::relationship::npc_policy;
 use crate::settlement_population::settlement_resident_presence;
 use crate::time::{ScheduleAllocation, character_time, character_training_schedule};
@@ -355,11 +356,28 @@ fn settle_romance_decision(
         candidates,
     );
     for candidate in candidates {
-        let outcome = crate::relationship::establish_npc_courtship_and_wedding(
-            ctx,
+        let actor_sex = ctx
+            .db
+            .character_personality()
+            .character_id()
+            .find(character_id)
+            .ok_or("NPC romance actor is missing personality")?
+            .sex;
+        let candidate_sex = ctx
+            .db
+            .character_personality()
+            .character_id()
+            .find(candidate.character_id)
+            .ok_or("NPC romance candidate is missing personality")?
+            .sex;
+        let (suitor_id, partner_id) = npc_courtship_roles(
             character_id,
+            actor_sex,
             candidate.character_id,
-        )?;
+            candidate_sex,
+        );
+        let outcome =
+            crate::relationship::establish_npc_courtship_and_wedding(ctx, suitor_id, partner_id)?;
         let receipt_outcome = match outcome {
             crate::relationship::NpcCourtshipOutcome::Formal => {
                 NpcPolicyDecisionOutcome::RomanceEstablishedFormal
@@ -390,6 +408,22 @@ fn settle_romance_decision(
         minute,
     );
     Ok(())
+}
+
+/// Formal eligibility is directional even though the autonomous candidate
+/// encounter is not. Normalize an opposite-sex pair so scheduler character
+/// order cannot turn a father-approved relationship informal. Same-sex and
+/// otherwise non-formal pairs retain the deterministic actor/candidate order.
+fn npc_courtship_roles(
+    actor_id: u64,
+    actor_sex: Sex,
+    candidate_id: u64,
+    candidate_sex: Sex,
+) -> (u64, u64) {
+    match (actor_sex, candidate_sex) {
+        (Sex::Female, Sex::Male) => (candidate_id, actor_id),
+        _ => (actor_id, candidate_id),
+    }
 }
 
 fn process_policy_decisions(ctx: &ReducerContext, time: &CharacterTime) -> Result<(), String> {
@@ -446,6 +480,10 @@ pub fn run_npc_causal_tick(
 
 #[cfg(test)]
 mod tests {
+    use crate::personality::Sex;
+
+    use super::npc_courtship_roles;
+
     #[test]
     fn scheduler_has_hard_bounded_batches_and_one_day_steps() {
         let source = include_str!("npc_causal.rs");
@@ -501,6 +539,27 @@ mod tests {
         assert!(romance.contains("npc_policy()"));
         assert!(romance.contains("stable_candidate_order"));
         assert!(romance.contains("establish_npc_courtship_and_wedding"));
+    }
+
+    #[test]
+    fn heterosexual_courtship_roles_are_independent_of_actor_order() {
+        assert_eq!(
+            npc_courtship_roles(10, Sex::Male, 20, Sex::Female),
+            (10, 20)
+        );
+        assert_eq!(
+            npc_courtship_roles(20, Sex::Female, 10, Sex::Male),
+            (10, 20)
+        );
+    }
+
+    #[test]
+    fn informal_pair_roles_preserve_deterministic_actor_order() {
+        assert_eq!(
+            npc_courtship_roles(20, Sex::Female, 10, Sex::Female),
+            (20, 10)
+        );
+        assert_eq!(npc_courtship_roles(20, Sex::Male, 10, Sex::Male), (20, 10));
     }
 
     #[test]

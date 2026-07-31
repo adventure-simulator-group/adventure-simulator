@@ -1,6 +1,10 @@
 //! Signed opaque browser sessions backed by server-side character grants.
 
-use std::{fmt, future::Future};
+use std::{
+    fmt,
+    future::Future,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use axum::{
     extract::FromRequestParts,
@@ -16,9 +20,11 @@ use sha2::{Digest, Sha256};
 use crate::{routes::AppState, spacetimedb::sql_string_literal};
 
 pub const SESSION_COOKIE: &str = "adventuresim_session";
-const SESSION_VERSION: &str = "v1";
+const SESSION_VERSION: &str = "v2";
 const SESSION_ID_BYTES: usize = 32;
 const OWNER_DOMAIN: &[u8] = b"adventuresim/browser-session-owner/v1\0";
+const SESSION_LIFETIME_SECONDS: u64 = 60 * 60 * 24 * 30;
+const SESSION_FUTURE_SKEW_SECONDS: u64 = 5 * 60;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -59,32 +65,48 @@ impl SessionCodec {
     pub fn issue(&self) -> Result<IssuedSession, SessionCodecError> {
         let mut id = [0u8; SESSION_ID_BYTES];
         getrandom::fill(&mut id).map_err(|_| SessionCodecError::Random)?;
+        let issued_at = unix_seconds();
+        Ok(self.issue_at(id, issued_at))
+    }
+
+    fn issue_at(&self, id: [u8; SESSION_ID_BYTES], issued_at: u64) -> IssuedSession {
         let encoded_id = URL_SAFE_NO_PAD.encode(id);
-        let signed = format!("{SESSION_VERSION}.{encoded_id}");
+        let signed = format!("{SESSION_VERSION}.{encoded_id}.{issued_at}");
         let signature = self.sign(signed.as_bytes());
-        Ok(IssuedSession {
+        IssuedSession {
             token: format!("{signed}.{}", URL_SAFE_NO_PAD.encode(signature)),
             owner_key: owner_key(&id),
-        })
+        }
     }
 
     /// Verify the HMAC before accepting the opaque ID. `verify_slice` performs
     /// a constant-time MAC comparison.
     pub fn verify(&self, token: &str) -> Option<String> {
+        self.verify_at(token, unix_seconds())
+    }
+
+    fn verify_at(&self, token: &str, now: u64) -> Option<String> {
         let mut parts = token.split('.');
         let version = parts.next()?;
         let encoded_id = parts.next()?;
+        let encoded_issued_at = parts.next()?;
         let encoded_signature = parts.next()?;
         if version != SESSION_VERSION || parts.next().is_some() {
             return None;
         }
         let id = URL_SAFE_NO_PAD.decode(encoded_id).ok()?;
         let id: [u8; SESSION_ID_BYTES] = id.try_into().ok()?;
+        let issued_at = encoded_issued_at.parse::<u64>().ok()?;
         let signature = URL_SAFE_NO_PAD.decode(encoded_signature).ok()?;
-        let signed = format!("{version}.{encoded_id}");
+        let signed = format!("{version}.{encoded_id}.{encoded_issued_at}");
         let mut mac = HmacSha256::new_from_slice(&self.secret).ok()?;
         mac.update(signed.as_bytes());
         mac.verify_slice(&signature).ok()?;
+        if issued_at > now.saturating_add(SESSION_FUTURE_SKEW_SECONDS)
+            || now.saturating_sub(issued_at) > SESSION_LIFETIME_SECONDS
+        {
+            return None;
+        }
         Some(owner_key(&id))
     }
 
@@ -99,10 +121,16 @@ impl SessionCodec {
         let secure = if self.secure_cookie { "; Secure" } else { "" };
         format!(
             "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{}",
-            60 * 60 * 24 * 30,
-            secure
+            SESSION_LIFETIME_SECONDS, secure
         )
     }
+}
+
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn owner_key(id: &[u8; SESSION_ID_BYTES]) -> String {
@@ -267,7 +295,7 @@ mod tests {
         let issued = codec.issue().unwrap();
         assert_eq!(codec.verify(&issued.token), Some(issued.owner_key));
         assert!(!issued.token.contains("character"));
-        assert_eq!(issued.token.split('.').count(), 3);
+        assert_eq!(issued.token.split('.').count(), 4);
     }
 
     #[test]
@@ -290,7 +318,7 @@ mod tests {
         assert!(SessionCodec::from_base64url(&URL_SAFE_NO_PAD.encode([0u8; 31]), true).is_err());
         let issued = test_codec(1, true).issue().unwrap();
         let cookie = test_codec(1, true).set_cookie_value(&issued.token);
-        assert!(cookie.starts_with("adventuresim_session=v1."));
+        assert!(cookie.starts_with("adventuresim_session=v2."));
         assert!(cookie.contains("; HttpOnly;"));
         assert!(cookie.contains("; SameSite=Lax;"));
         assert!(cookie.ends_with("; Secure"));
@@ -298,6 +326,31 @@ mod tests {
             !test_codec(1, false)
                 .set_cookie_value(&issued.token)
                 .contains("; Secure")
+        );
+    }
+
+    #[test]
+    fn sessions_expire_server_side_and_reject_excessive_future_skew() {
+        let codec = test_codec(7, false);
+        let issued = codec.issue_at([9; SESSION_ID_BYTES], 10_000);
+        assert_eq!(
+            codec.verify_at(&issued.token, 10_000 + SESSION_LIFETIME_SECONDS),
+            Some(issued.owner_key.clone())
+        );
+        assert!(
+            codec
+                .verify_at(&issued.token, 10_001 + SESSION_LIFETIME_SECONDS)
+                .is_none()
+        );
+        assert!(
+            codec
+                .verify_at(&issued.token, 10_000 - SESSION_FUTURE_SKEW_SECONDS)
+                .is_some()
+        );
+        assert!(
+            codec
+                .verify_at(&issued.token, 9_999 - SESSION_FUTURE_SKEW_SECONDS)
+                .is_none()
         );
     }
 }

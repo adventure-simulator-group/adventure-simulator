@@ -169,11 +169,20 @@ Replaying the same deterministic candidate coordinates is idempotent for that
 owner and rejected for every other owner. Switching clears only the server-side
 selection; it does not discard grants or expose IDs in the cookie.
 
-The cookie is `v1.<random 32-byte base64url ID>.<HMAC-SHA256>` and is
-`HttpOnly`, `SameSite=Lax`, and optionally `Secure`. The web server derives a
+The cookie is
+`v2.<random 32-byte base64url ID>.<issued Unix seconds>.<HMAC-SHA256>` and is
+`HttpOnly`, `SameSite=Lax`, and optionally `Secure`. The signature covers both
+the ID and issue time; the server rejects sessions older than 30 days and issue
+times more than five minutes in the future. The web server derives a
 domain-separated SHA-256 owner key from the verified random ID and never stores
-the raw token in SpacetimeDB. Invalid signatures are anonymous; backend
-resolution failures fail closed.
+the raw token in SpacetimeDB. Invalid signatures and expired sessions are
+anonymous; backend resolution failures fail closed.
+
+All browser POST, PUT, PATCH, and DELETE routes in both onboarding and the
+selected-character application require an exact same-origin `Origin` matching
+the request Host and effective HTTP scheme. Missing, opaque (`null`),
+cross-port, cross-scheme, and otherwise foreign origins fail closed. Internal
+strategic navigation is read-only and does not bypass this mutation boundary.
 
 ### First-character authority
 
