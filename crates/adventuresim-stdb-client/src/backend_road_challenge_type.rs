@@ -4,8 +4,10 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::chivalric_virtue_type::ChivalricVirtue;
 use super::errantry_finale_defense_kind_type::ErrantryFinaleDefenseKind;
 use super::road_challenge_catalog_id_type::RoadChallengeCatalogId;
+use super::road_challenge_deed_type::RoadChallengeDeed;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,6 +20,10 @@ pub struct BackendRoadChallenge {
     pub open: bool,
     pub active: bool,
     pub resolved_choice: Option<String>,
+    pub resolved_deed: Option<RoadChallengeDeed>,
+    pub virtue_exemplified: Option<ChivalricVirtue>,
+    pub command_route_available: bool,
+    pub faith_route_available: bool,
     pub boon_item_id: Option<String>,
     pub counters_defense: Option<ErrantryFinaleDefenseKind>,
 }
@@ -38,6 +44,11 @@ pub struct BackendRoadChallengeCols {
     pub open: __sdk::__query_builder::Col<BackendRoadChallenge, bool>,
     pub active: __sdk::__query_builder::Col<BackendRoadChallenge, bool>,
     pub resolved_choice: __sdk::__query_builder::Col<BackendRoadChallenge, Option<String>>,
+    pub resolved_deed: __sdk::__query_builder::Col<BackendRoadChallenge, Option<RoadChallengeDeed>>,
+    pub virtue_exemplified:
+        __sdk::__query_builder::Col<BackendRoadChallenge, Option<ChivalricVirtue>>,
+    pub command_route_available: __sdk::__query_builder::Col<BackendRoadChallenge, bool>,
+    pub faith_route_available: __sdk::__query_builder::Col<BackendRoadChallenge, bool>,
     pub boon_item_id: __sdk::__query_builder::Col<BackendRoadChallenge, Option<String>>,
     pub counters_defense:
         __sdk::__query_builder::Col<BackendRoadChallenge, Option<ErrantryFinaleDefenseKind>>,
@@ -55,6 +66,16 @@ impl __sdk::__query_builder::HasCols for BackendRoadChallenge {
             open: __sdk::__query_builder::Col::new(table_name, "open"),
             active: __sdk::__query_builder::Col::new(table_name, "active"),
             resolved_choice: __sdk::__query_builder::Col::new(table_name, "resolved_choice"),
+            resolved_deed: __sdk::__query_builder::Col::new(table_name, "resolved_deed"),
+            virtue_exemplified: __sdk::__query_builder::Col::new(table_name, "virtue_exemplified"),
+            command_route_available: __sdk::__query_builder::Col::new(
+                table_name,
+                "command_route_available",
+            ),
+            faith_route_available: __sdk::__query_builder::Col::new(
+                table_name,
+                "faith_route_available",
+            ),
             boon_item_id: __sdk::__query_builder::Col::new(table_name, "boon_item_id"),
             counters_defense: __sdk::__query_builder::Col::new(table_name, "counters_defense"),
         }

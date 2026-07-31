@@ -16,7 +16,16 @@ You aren't exactly spawning a character into the world; ostensibly, you are obta
 
 ## Personality
 
-Characters have an immutable sparse personality drawn from discrete axes. Generated NPCs receive two to four randomly selected non-neutral axes; first-character candidates preview and persist the same exact generated axes. Personality changes raw morale reactions rather than replacing Will, Social skills, or Religion knowledge. The hygiene axis is Slovenly/Cleanly: Slovenly characters ignore filth morale, while Cleanly characters strongly dislike filth and appreciate being completely clean. Other characters never see these authoritative tags directly.
+Characters have sparse visible personality traits derived from thirteen hidden,
+mutable continuous scores. Generated NPCs receive two to four randomly
+selected endpoint scores; first-character candidates preview and persist the
+same derived traits. Deeds move scores in either direction, with bounded
+potency changing before a discrete label appears or disappears at its
+threshold. Personality changes raw morale reactions rather than replacing
+Will, Social skills, or Religion knowledge. The hygiene axis remains
+Slovenly/Cleanly and Temperance remains alcohol preference rather than the
+broader chivalric virtue. Other characters never see authoritative scores or
+tags directly.
 
 Authoritative personality is private. Other characters instead keep durable,
 observer-specific beliefs with confidence and observation time. Beliefs may be
@@ -376,7 +385,7 @@ roster is browser-scoped and is not an account or authentication boundary.
 
 ## Mortal
 
-Character personality includes an immutable Temperance axis. **Temperate** and
+Character personality includes a mutable Temperance score whose visible axis is **Temperate** and
 **Drunkard** are visible non-neutral tags; the neutral state is omitted like
 other neutral axes. Random mortal/NPC profiles still activate exactly two to
 four distinct axes across the expanded thirteen-axis behavioral catalog.

@@ -3836,6 +3836,24 @@
       "tags": ["quest_token", "military_intelligence", "countermeasure"],
       "presentation": {"icon": "treasure-map"},
       "kind": "simple"
+    },
+    {
+      "id": "order_courier_oath_token",
+      "display_name": "Order courier's oath token",
+      "weight_kg": 0.05,
+      "base_value": 0,
+      "tags": ["quest_token", "order_of_saint_george", "countermeasure"],
+      "presentation": {"icon": "gothic-cross"},
+      "kind": "simple"
+    },
+    {
+      "id": "blessed_sword_knot",
+      "display_name": "Blessed sword-knot",
+      "weight_kg": 0.03,
+      "base_value": 0,
+      "tags": ["quest_token", "blessed", "countermeasure"],
+      "presentation": {"icon": "holy-symbol"},
+      "kind": "simple"
     }
   ]
 }

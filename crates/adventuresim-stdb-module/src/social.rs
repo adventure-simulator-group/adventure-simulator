@@ -3217,11 +3217,13 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     viewer_personality.sex = crate::personality::Sex::Male;
     viewer_personality.presentation = crate::personality::Presentation::Man;
     viewer_personality.inclination = crate::personality::Inclination::Women;
-    viewer_personality.conviction = crate::personality::Conviction::Neutral;
-    ctx.db
-        .character_personality()
-        .character_id()
-        .update(viewer_personality);
+    crate::personality::update_personality_demographics(
+        ctx,
+        VIEWER,
+        viewer_personality.sex,
+        viewer_personality.presentation,
+        viewer_personality.inclination,
+    )?;
     let mut personality = crate::personality::CharacterPersonality::neutral(TARGET);
     personality.drive = crate::personality::Drive::Ambitious;
     personality.self_regard = crate::personality::SelfRegard::Proud;
@@ -3231,10 +3233,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     personality.sex = crate::personality::Sex::Female;
     personality.presentation = crate::personality::Presentation::Woman;
     personality.inclination = crate::personality::Inclination::Men;
-    ctx.db
-        .character_personality()
-        .character_id()
-        .update(personality);
+    crate::personality::reset_personality_from_visible(ctx, personality);
     crate::condition::initialize_character_condition(ctx, TARGET)?;
     if let Some(mut condition) = ctx.db.character_condition().character_id().find(TARGET) {
         condition.religion_id = Some("lutheran".into());
@@ -3250,12 +3249,12 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         skills.religion_hours.roman_catholic = 600.0;
         ctx.db.character_skills().character_id().update(skills);
     }
-    let mut zealous_personality = crate::personality::personality_or_neutral(ctx, ZEALOUS_VIEWER);
-    zealous_personality.conviction = crate::personality::Conviction::Zealous;
-    ctx.db
-        .character_personality()
-        .character_id()
-        .update(zealous_personality);
+    crate::personality::set_personality_axis_score(
+        ctx,
+        ZEALOUS_VIEWER,
+        crate::personality::PersonalityAxis::Conviction,
+        crate::personality::PERSONALITY_SCORE_LIMIT,
+    )?;
     crate::condition::initialize_character_condition(ctx, ZEALOUS_TARGET)?;
     if let Some(mut condition) = ctx
         .db

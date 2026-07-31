@@ -3,7 +3,6 @@
 use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
 
 use crate::character::character;
-use crate::personality::character_personality;
 use crate::time::{character_time, world_clock};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
@@ -335,10 +334,7 @@ pub fn configure_simulation_character(
         run_id: run.id,
         agent_id,
     });
-    ctx.db
-        .character_personality()
-        .character_id()
-        .update(personality);
+    crate::personality::reset_personality_from_visible(ctx, personality);
     // A configured evaluation adventurer needs a small working purse so an
     // inn-only seed settlement does not deadlock before its first scheduled
     // labor day can be applied. All ordinary costs still go through the same

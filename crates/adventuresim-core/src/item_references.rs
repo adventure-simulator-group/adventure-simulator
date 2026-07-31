@@ -33,18 +33,22 @@ pub const SOFT_SOAP_ID: &str = "soft_soap";
 pub const FIELD_TENT_ID: &str = "field_tent";
 pub const FEY_COUNTERMEASURE_ITEM_ID: &str = "favor_of_the_thorn_lady";
 pub const CAPTURED_DISPATCH_ITEM_ID: &str = "captured_black_knight_dispatch";
+pub const ORDER_OATH_TOKEN_ITEM_ID: &str = "order_courier_oath_token";
+pub const BLESSED_SWORD_KNOT_ITEM_ID: &str = "blessed_sword_knot";
 pub const SURGERY_KIT_ID: &str = "surgery_kit";
 pub const TAVERN_DRINK_ITEM_ID: &str = "table_wine";
 
-pub const REQUIRED_GAMEPLAY_ITEM_IDS: [&str; 18] = [
+pub const REQUIRED_GAMEPLAY_ITEM_IDS: [&str; 20] = [
     "arrow",
     "bandage",
     "captured_black_knight_dispatch",
+    "blessed_sword_knot",
     "cooked_meal",
     "cooking_pan",
     "cooking_pot",
     "field_tent",
     "favor_of_the_thorn_lady",
+    "order_courier_oath_token",
     "portable_oven",
     "small_beer",
     "table_wine",

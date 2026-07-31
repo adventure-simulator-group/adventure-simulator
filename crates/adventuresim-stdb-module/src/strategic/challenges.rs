@@ -5,6 +5,8 @@ pub const FEY_COUNTERMEASURE_SCALE_FLOOR_BPS: u32 = 5_000;
 pub const FEY_COUNTERMEASURE_MULTIPLIER_BPS: u32 = 7_500;
 pub const DISPATCH_COUNTERMEASURE_REDUCTION_BPS: u32 = 1_500;
 pub const DISPATCH_COUNTERMEASURE_MULTIPLIER_BPS: u32 = 8_500;
+pub const OATH_TOKEN_COUNTERMEASURE_REDUCTION_BPS: u32 = 1_750;
+pub const BLESSED_WEAPON_COUNTERMEASURE_REDUCTION_BPS: u32 = 2_000;
 pub const COURIER_REST_DELAY_MINUTES: u64 = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -36,6 +38,80 @@ pub enum ErrantryCountermeasureKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum RoadChallengeCatalogId {
     WoundedOrderCourierV1,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum RoadChallengeDeed {
+    TendCourierAndCarryWarning,
+    RallyAndEscortCourierThroughFord,
+    ConsecrateCourierOath,
+    LeaveCourier,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RoadChallengeRequirement {
+    None,
+    Command,
+    RomanCatholicReligion,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RoadChallengePlan {
+    deed: RoadChallengeDeed,
+    virtue: Option<crate::personality::ChivalricVirtue>,
+    axis: Option<crate::personality::PersonalityAxis>,
+    item_id: Option<&'static str>,
+    countermeasure: Option<ErrantryCountermeasureKind>,
+    defense: Option<ErrantryFinaleDefenseKind>,
+    reduction_bps: u32,
+    requirement: RoadChallengeRequirement,
+}
+
+fn road_challenge_plan(choice: &str) -> Option<RoadChallengePlan> {
+    use crate::personality::{ChivalricVirtue as Virtue, PersonalityAxis as Axis};
+    Some(match choice {
+        "aid" => RoadChallengePlan {
+            deed: RoadChallengeDeed::TendCourierAndCarryWarning,
+            virtue: Some(Virtue::Mercy),
+            axis: Some(Axis::Conscience),
+            item_id: Some(adventuresim_core::item_references::CAPTURED_DISPATCH_ITEM_ID),
+            countermeasure: Some(ErrantryCountermeasureKind::CapturedDispatch),
+            defense: Some(ErrantryFinaleDefenseKind::Reinforcements),
+            reduction_bps: DISPATCH_COUNTERMEASURE_REDUCTION_BPS,
+            requirement: RoadChallengeRequirement::None,
+        },
+        "rally" => RoadChallengePlan {
+            deed: RoadChallengeDeed::RallyAndEscortCourierThroughFord,
+            virtue: Some(Virtue::Courage),
+            axis: Some(Axis::Nerve),
+            item_id: Some(adventuresim_core::item_references::ORDER_OATH_TOKEN_ITEM_ID),
+            countermeasure: Some(ErrantryCountermeasureKind::RescuedAlly),
+            defense: Some(ErrantryFinaleDefenseKind::Reinforcements),
+            reduction_bps: OATH_TOKEN_COUNTERMEASURE_REDUCTION_BPS,
+            requirement: RoadChallengeRequirement::Command,
+        },
+        "consecrate" => RoadChallengePlan {
+            deed: RoadChallengeDeed::ConsecrateCourierOath,
+            virtue: Some(Virtue::Faith),
+            axis: Some(Axis::Conviction),
+            item_id: Some(adventuresim_core::item_references::BLESSED_SWORD_KNOT_ITEM_ID),
+            countermeasure: Some(ErrantryCountermeasureKind::BlessedWeapon),
+            defense: Some(ErrantryFinaleDefenseKind::SupernaturalArmor),
+            reduction_bps: BLESSED_WEAPON_COUNTERMEASURE_REDUCTION_BPS,
+            requirement: RoadChallengeRequirement::RomanCatholicReligion,
+        },
+        "leave" => RoadChallengePlan {
+            deed: RoadChallengeDeed::LeaveCourier,
+            virtue: None,
+            axis: None,
+            item_id: None,
+            countermeasure: None,
+            defense: None,
+            reduction_bps: 0,
+            requirement: RoadChallengeRequirement::None,
+        },
+        _ => return None,
+    })
 }
 
 /// Private case-level authority for an Order-issued errantry.
@@ -96,6 +172,8 @@ pub struct RoadChallengeAuthority {
     pub revision: u32,
     pub open: bool,
     pub resolved_choice: Option<String>,
+    pub resolved_deed: Option<RoadChallengeDeed>,
+    pub virtue_exemplified: Option<crate::personality::ChivalricVirtue>,
 }
 
 #[derive(Clone, Debug)]
@@ -108,6 +186,8 @@ pub struct RoadChallengeResolutionReceipt {
     pub character_id: u64,
     pub action_id: String,
     pub choice: String,
+    pub deed: RoadChallengeDeed,
+    pub virtue_exemplified: Option<crate::personality::ChivalricVirtue>,
     pub resolved_at_minute: u64,
 }
 
@@ -121,6 +201,10 @@ pub struct BackendRoadChallenge {
     pub open: bool,
     pub active: bool,
     pub resolved_choice: Option<String>,
+    pub resolved_deed: Option<RoadChallengeDeed>,
+    pub virtue_exemplified: Option<crate::personality::ChivalricVirtue>,
+    pub command_route_available: bool,
+    pub faith_route_available: bool,
     pub boon_item_id: Option<String>,
     pub counters_defense: Option<ErrantryFinaleDefenseKind>,
 }
@@ -311,6 +395,25 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                 open: challenge.open,
                 active,
                 resolved_choice: challenge.resolved_choice,
+                resolved_deed: challenge.resolved_deed,
+                virtue_exemplified: challenge.virtue_exemplified,
+                command_route_available: ctx
+                    .db
+                    .character_skills()
+                    .character_id()
+                    .find(party.leader_id)
+                    .is_some_and(|skills| skills.command_hours.is_finite() && skills.command_hours > 0.0),
+                faith_route_available: ctx
+                    .db
+                    .character_skills()
+                    .character_id()
+                    .find(party.leader_id)
+                    .is_some_and(|skills| {
+                        let hours = skills.religion_hours.direct(
+                            adventuresim_world_schema::OfficialReligion::RomanCatholic,
+                        );
+                        hours.is_finite() && hours > 0.0
+                    }),
                 boon_item_id: boon.as_ref().map(|item| item.item_id.clone()),
                 counters_defense: boon.map(|item| item.counters_defense),
             })
@@ -947,9 +1050,7 @@ pub fn resolve_errantry_road_challenge(
     if action_id.is_empty() || action_id.len() > 160 {
         return Err("Road challenge action ID is invalid".into());
     }
-    if choice != "aid" && choice != "leave" {
-        return Err("Road challenge choice is invalid".into());
-    }
+    let plan = road_challenge_plan(&choice).ok_or("Road challenge choice is invalid")?;
     let receipt_id = format!("road-challenge:{challenge_id}:{action_id}");
     if let Some(existing) = ctx
         .db
@@ -1024,7 +1125,41 @@ pub fn resolve_errantry_road_challenge(
         return Err("Road challenge is stale".into());
     }
     let now = crate::time::refresh_clock(ctx)?;
-    if choice == "aid" {
+    match plan.requirement {
+        RoadChallengeRequirement::Command => {
+            let skills = ctx
+                .db
+                .character_skills()
+                .character_id()
+                .find(character_id)
+                .ok_or("Character skills not found")?;
+            if !skills.command_hours.is_finite() || skills.command_hours <= 0.0 {
+                return Err("Rallying the courier requires Command training".into());
+            }
+            let check = crate::condition::mental_check(
+                ctx,
+                character_id,
+                adventuresim_core::skill::Skill::Command,
+            )?;
+            if !check.is_finite() || check <= 0.0 {
+                return Err("The courier cannot be rallied by this command".into());
+            }
+        }
+        RoadChallengeRequirement::RomanCatholicReligion => {
+            let check = crate::social::target_religion_check(
+                ctx,
+                character_id,
+                adventuresim_world_schema::OfficialReligion::RomanCatholic,
+            )?;
+            if !check.is_finite() || check <= 0.0 {
+                return Err("Consecrating the oath requires knowledge of the courier's faith".into());
+            }
+        }
+        RoadChallengeRequirement::None => {}
+    }
+    if let (Some(item_id), Some(kind), Some(defense)) =
+        (plan.item_id, plan.countermeasure, plan.defense)
+    {
         award_errantry_countermeasure(
             ctx,
             &challenge.id,
@@ -1032,16 +1167,30 @@ pub fn resolve_errantry_road_challenge(
             &challenge.case_id,
             &challenge.finale_case_site_id,
             &challenge.finale_hostile_group_id,
-            adventuresim_core::item_references::CAPTURED_DISPATCH_ITEM_ID,
-            ErrantryCountermeasureKind::CapturedDispatch,
-            ErrantryFinaleDefenseKind::Reinforcements,
-            DISPATCH_COUNTERMEASURE_REDUCTION_BPS,
+            item_id,
+            kind,
+            defense,
+            plan.reduction_bps,
             DISPATCH_COUNTERMEASURE_MULTIPLIER_BPS,
+            now,
+        )?;
+    }
+    if let (Some(recognized_virtue), Some(axis)) = (plan.virtue, plan.axis) {
+        crate::personality::apply_personality_development(
+            ctx,
+            &format!("road-challenge:{}", challenge.id),
+            character_id,
+            axis,
+            crate::personality::CHIVALRIC_DEED_DELTA,
+            &format!("{:?}", plan.deed),
+            recognized_virtue,
             now,
         )?;
     }
     challenge.open = false;
     challenge.resolved_choice = Some(choice.clone());
+    challenge.resolved_deed = Some(plan.deed);
+    challenge.virtue_exemplified = plan.virtue;
     challenge.revision = challenge.revision.saturating_add(1);
     ctx.db.road_challenge_authority().id().update(challenge);
     ctx.db
@@ -1053,6 +1202,8 @@ pub fn resolve_errantry_road_challenge(
             character_id,
             action_id,
             choice,
+            deed: plan.deed,
+            virtue_exemplified: plan.virtue,
             resolved_at_minute: now,
         });
     Ok(())
@@ -1448,10 +1599,13 @@ fn materialize_order_errantry(
             revision: 0,
             open: true,
             resolved_choice: None,
+            resolved_deed: None,
+            virtue_exemplified: None,
         });
     let finale_defenses = vec![
         adventuresim_core::errantry::FinaleDefenseKind::UnnaturalProwess,
         adventuresim_core::errantry::FinaleDefenseKind::Reinforcements,
+        adventuresim_core::errantry::FinaleDefenseKind::SupernaturalArmor,
     ];
     ctx.db.errantry_authority().insert(ErrantryAuthority {
         case_id: case_id.clone(),
@@ -1677,12 +1831,43 @@ mod challenge_source_boundary_tests {
         assert!(reducer.contains("party.leader_id != character_id"));
         assert!(reducer.contains("party_at_bound_road_challenge"));
         assert!(source.contains("encounter.status == \"awaiting_choice\""));
-        assert!(reducer.contains("CAPTURED_DISPATCH_ITEM_ID"));
-        assert!(reducer.contains("ErrantryFinaleDefenseKind::Reinforcements"));
+        assert!(reducer.contains("Skill::Command"));
+        assert!(reducer.contains("target_religion_check"));
+        assert!(reducer.contains("OfficialReligion::RomanCatholic"));
+        assert!(reducer.contains("apply_personality_development"));
         assert!(!reducer.contains("ingest_case_outcome_fact"));
         assert!(source.contains("COURIER_REST_DELAY_MINUTES"));
         assert!(source.contains("preliminary_challenge_ids"));
         assert!(source.contains("finale_defenses_json"));
+    }
+
+    #[test]
+    fn courier_route_plans_bind_deeds_virtues_requirements_and_material_boons() {
+        use crate::personality::{ChivalricVirtue as Virtue, PersonalityAxis as Axis};
+        let aid = road_challenge_plan("aid").unwrap();
+        assert_eq!(aid.deed, RoadChallengeDeed::TendCourierAndCarryWarning);
+        assert_eq!((aid.virtue, aid.axis), (Some(Virtue::Mercy), Some(Axis::Conscience)));
+        assert_eq!(aid.item_id, Some(adventuresim_core::item_references::CAPTURED_DISPATCH_ITEM_ID));
+        assert_eq!(aid.countermeasure, Some(ErrantryCountermeasureKind::CapturedDispatch));
+
+        let rally = road_challenge_plan("rally").unwrap();
+        assert_eq!(rally.deed, RoadChallengeDeed::RallyAndEscortCourierThroughFord);
+        assert_eq!((rally.virtue, rally.axis), (Some(Virtue::Courage), Some(Axis::Nerve)));
+        assert_eq!(rally.requirement, RoadChallengeRequirement::Command);
+        assert_eq!(rally.item_id, Some(adventuresim_core::item_references::ORDER_OATH_TOKEN_ITEM_ID));
+        assert_eq!(rally.countermeasure, Some(ErrantryCountermeasureKind::RescuedAlly));
+
+        let faith = road_challenge_plan("consecrate").unwrap();
+        assert_eq!((faith.virtue, faith.axis), (Some(Virtue::Faith), Some(Axis::Conviction)));
+        assert_eq!(faith.requirement, RoadChallengeRequirement::RomanCatholicReligion);
+        assert_eq!(faith.item_id, Some(adventuresim_core::item_references::BLESSED_SWORD_KNOT_ITEM_ID));
+        assert_eq!(faith.countermeasure, Some(ErrantryCountermeasureKind::BlessedWeapon));
+        assert_eq!(faith.defense, Some(ErrantryFinaleDefenseKind::SupernaturalArmor));
+
+        let leave = road_challenge_plan("leave").unwrap();
+        assert_eq!(leave.deed, RoadChallengeDeed::LeaveCourier);
+        assert_eq!((leave.virtue, leave.axis, leave.item_id), (None, None, None));
+        assert!(road_challenge_plan("ignore").is_none());
     }
 
     #[test]

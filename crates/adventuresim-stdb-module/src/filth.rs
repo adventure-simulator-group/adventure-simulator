@@ -6,7 +6,6 @@ use adventuresim_core::filth::{
 use spacetimedb::{ReducerContext, SpacetimeType, Table, table};
 
 use crate::character::character;
-use crate::personality::character_personality;
 use crate::{
     character_attributes, character_time, infection_episode, inventory_item, limb_injury,
     party_inventory_item, retained_projectile,
@@ -842,18 +841,12 @@ pub(crate) fn seed_demo(
         27,
         86_200,
     )?;
-    if let Some(mut personality) = ctx
-        .db
-        .character_personality()
-        .character_id()
-        .find(character_id)
-    {
-        personality.hygiene = crate::personality::Hygiene::Cleanly;
-        ctx.db
-            .character_personality()
-            .character_id()
-            .update(personality);
-    }
+    crate::personality::set_personality_axis_score(
+        ctx,
+        character_id,
+        crate::personality::PersonalityAxis::Hygiene,
+        crate::personality::PERSONALITY_SCORE_LIMIT,
+    )?;
     let existing = ctx
         .db
         .inventory_item()

@@ -4,6 +4,9 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::chivalric_virtue_type::ChivalricVirtue;
+use super::road_challenge_deed_type::RoadChallengeDeed;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct RoadChallengeResolutionReceipt {
@@ -13,6 +16,8 @@ pub struct RoadChallengeResolutionReceipt {
     pub character_id: u64,
     pub action_id: String,
     pub choice: String,
+    pub deed: RoadChallengeDeed,
+    pub virtue_exemplified: Option<ChivalricVirtue>,
     pub resolved_at_minute: u64,
 }
 
@@ -30,6 +35,9 @@ pub struct RoadChallengeResolutionReceiptCols {
     pub character_id: __sdk::__query_builder::Col<RoadChallengeResolutionReceipt, u64>,
     pub action_id: __sdk::__query_builder::Col<RoadChallengeResolutionReceipt, String>,
     pub choice: __sdk::__query_builder::Col<RoadChallengeResolutionReceipt, String>,
+    pub deed: __sdk::__query_builder::Col<RoadChallengeResolutionReceipt, RoadChallengeDeed>,
+    pub virtue_exemplified:
+        __sdk::__query_builder::Col<RoadChallengeResolutionReceipt, Option<ChivalricVirtue>>,
     pub resolved_at_minute: __sdk::__query_builder::Col<RoadChallengeResolutionReceipt, u64>,
 }
 
@@ -43,6 +51,8 @@ impl __sdk::__query_builder::HasCols for RoadChallengeResolutionReceipt {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             action_id: __sdk::__query_builder::Col::new(table_name, "action_id"),
             choice: __sdk::__query_builder::Col::new(table_name, "choice"),
+            deed: __sdk::__query_builder::Col::new(table_name, "deed"),
+            virtue_exemplified: __sdk::__query_builder::Col::new(table_name, "virtue_exemplified"),
             resolved_at_minute: __sdk::__query_builder::Col::new(table_name, "resolved_at_minute"),
         }
     }

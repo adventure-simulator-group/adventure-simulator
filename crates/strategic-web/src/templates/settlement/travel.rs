@@ -915,9 +915,11 @@ pub fn camp_page(
                                             "Bind my wound and bear this warning onward."
                                         }
                                         div class="dialogue-actions" {
-                                            @for (choice, label) in [
-                                                ("aid", "Give aid and take the dispatch"),
-                                                ("leave", "Leave him by the road"),
+                                            @for (choice, label, available, requirement) in [
+                                                ("aid", "Bind his wound and carry the dispatch", true, "Always available"),
+                                                ("rally", "Rally him, then escort him through the threatened ford", road_trial.command_route_available, "Requires Command training"),
+                                                ("consecrate", "Consecrate his oath and sword-knot", road_trial.faith_route_available, "Requires direct study of Roman Catholicism"),
+                                                ("leave", "Leave him by the road", true, "No boon"),
                                             ] {
                                                 form action="/camp/errantry-road-challenge" method="post" {
                                                     input type="hidden" name="challenge_id" value=(&road_trial.id);
@@ -925,7 +927,10 @@ pub fn camp_page(
                                                     input type="hidden" name="choice" value=(choice);
                                                     input type="hidden" name="action_id"
                                                         value=(format!("road-choice:{}:{}:{choice}", road_trial.id, road_trial.revision));
-                                                    button type="submit" class="btn btn-primary" { (label) }
+                                                    button type="submit" class="btn btn-primary"
+                                                        disabled[!available]
+                                                        title=(requirement) { (label) }
+                                                    span class="text-muted small-copy" { (requirement) }
                                                 }
                                             }
                                         }
@@ -947,6 +952,21 @@ pub fn camp_page(
                                             "My thanks. Take the captured dispatch; it reveals where the Black Knight's reinforcements wait."
                                         }
                                         p class="text-muted" { "Captured Black Knight dispatch added to the party inventory." }
+                                        p { strong { "Virtue exemplified: Mercy." } " Your compassionate disposition has grown." }
+                                    }
+                                    "rally" => {
+                                        p { strong { "Wounded Order courier: " }
+                                            "Your courage recalls me to my oath. Take my token, and let us ride together through the threatened ford."
+                                        }
+                                        p class="text-muted" { "Order courier's oath token added to the party inventory." }
+                                        p { strong { "Virtue exemplified: Courage." } " Your brave disposition has grown." }
+                                    }
+                                    "consecrate" => {
+                                        p { strong { "Wounded Order courier: " }
+                                            "Your prayer renews my vow. Bind this blessed knot upon your sword against the Black Knight's armor."
+                                        }
+                                        p class="text-muted" { "Blessed sword-knot added to the party inventory." }
+                                        p { strong { "Virtue exemplified: Faith." } " Your zealous disposition has grown." }
                                     }
                                     "leave" => {
                                         p { strong { "Wounded Order courier: " }
