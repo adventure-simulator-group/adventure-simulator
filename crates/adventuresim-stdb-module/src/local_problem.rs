@@ -130,6 +130,20 @@ pub struct LocalProblemReceipt {
     pub official_learned_at: u64,
 }
 
+/// Private, one-shot discovery ordering used by explicit development demos.
+///
+/// The preference does not disclose the problem or create observer knowledge.
+/// It is consumed only when ordinary rumor dialogue successfully creates the
+/// corresponding receipt.
+#[derive(Clone, Debug)]
+#[table(accessor = local_problem_rumor_preference)]
+pub struct LocalProblemRumorPreference {
+    #[primary_key]
+    pub character_id: u64,
+    pub settlement_id: String,
+    pub problem_id: String,
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor=local_problem_rumor_delivery)]
 pub struct LocalProblemRumorDelivery {
@@ -336,6 +350,33 @@ fn official_minute(ctx: &ReducerContext) -> u64 {
         .id()
         .find(0)
         .map_or(0, |r| r.official_minutes)
+}
+
+pub(crate) fn prefer_next_rumor(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+    problem_id: &str,
+) {
+    let preference = LocalProblemRumorPreference {
+        character_id,
+        settlement_id: settlement_id.into(),
+        problem_id: problem_id.into(),
+    };
+    if ctx
+        .db
+        .local_problem_rumor_preference()
+        .character_id()
+        .find(character_id)
+        .is_some()
+    {
+        ctx.db
+            .local_problem_rumor_preference()
+            .character_id()
+            .update(preference);
+    } else {
+        ctx.db.local_problem_rumor_preference().insert(preference);
+    }
 }
 
 /// Materialize only symptom and consequence authority from a fully validated
@@ -1379,8 +1420,101 @@ fn surface_public_threat(
     Ok(true)
 }
 
-/// Surface at most one unknown active problem. Inns are preferred by callers;
-/// overview dialogue is the fallback. The return is safe authored text only.
+fn surface_new_problem(
+    ctx: &ReducerContext,
+    problem: &LocalProblemAuthority,
+    character_id: u64,
+    session_id: &str,
+    source_npc_id: &str,
+    source_npc: Option<&crate::settlement_population::SettlementNpc>,
+    settlement_id: &str,
+    observer_minute: u64,
+    official_world_minute: u64,
+) -> Result<bool, String> {
+    if ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&format!("{character_id}:{}", problem.id))
+        .is_some()
+    {
+        return Ok(false);
+    }
+    let Some(validated) = validated_problem_generation(ctx, problem, settlement_id) else {
+        return Ok(false);
+    };
+    let Some(witness) = validated.manifest.witnesses.first() else {
+        return Ok(false);
+    };
+    let Some(contact) = ctx.db.settlement_npc().id().find(&witness.npc_id) else {
+        return Ok(false);
+    };
+    let Some(presence) = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&witness.npc_id)
+        .filter(|presence| {
+            presence.settlement_id == settlement_id
+                && presence.location_id == witness.expected_location
+        })
+    else {
+        return Ok(false);
+    };
+    let Some(symptom) = ctx
+        .db
+        .local_problem_symptom()
+        .problem_id()
+        .find(&problem.id)
+    else {
+        return Ok(false);
+    };
+    let location_label = adventuresim_core::quest_generation::referral_display_location(witness);
+    if location_label.is_empty() {
+        return Ok(false);
+    }
+    let presentation = lp::referral_presentation(
+        &symptom.public_summary,
+        source_npc.map(|npc| (npc.id.as_str(), npc.name.as_str())),
+        &contact.id,
+        &contact.name,
+        &contact.profession,
+        &contact.height,
+        &contact.build,
+        &contact.hair,
+        location_label,
+    );
+    let receipt_id = format!("{character_id}:{}", problem.id);
+    ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
+        id: receipt_id.clone(),
+        character_id,
+        settlement_id: settlement_id.into(),
+        problem_id: problem.id.clone(),
+        opaque_case_ref: problem.opaque_case_ref.clone(),
+        source_npc_id: source_npc_id.into(),
+        discovery_session_id: session_id.into(),
+        contact_npc_id: contact.id,
+        expected_location_id: presence.location_id,
+        safe_summary: symptom.public_summary,
+        learned_at: observer_minute,
+        official_learned_at: official_world_minute,
+    });
+    ctx.db
+        .local_problem_rumor_delivery()
+        .insert(LocalProblemRumorDelivery {
+            id: format!("{session_id}:rumor"),
+            character_id,
+            settlement_id: settlement_id.into(),
+            session_id: session_id.into(),
+            receipt_id,
+            fragments_json: referral_fragments_json(presentation)?,
+        });
+    Ok(true)
+}
+
+/// Surface at most one active problem. A private one-shot preference may order
+/// an explicit development demo first, but disclosure still occurs through
+/// ordinary eligible rumor dialogue and creates the normal observer receipt.
 pub fn surface_problem(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1413,6 +1547,99 @@ pub fn surface_problem(
         .character_id()
         .find(character_id)
         .map_or(0, |t| t.minutes);
+    let scope = format!("settlement:{settlement_id}");
+    let active_problems = stable_eligible_candidates(
+        ctx.db
+            .local_problem_authority()
+            .scope_key()
+            .filter(&scope)
+            .filter(|problem| is_active(problem, official_world_minute)),
+        lp::MAX_ACTIVE_PER_SCOPE,
+        |problem| validated_problem_generation(ctx, problem, &settlement_id).is_some(),
+        |problem| (problem.id.clone(), problem.opaque_case_ref.clone()),
+    );
+    let inn_service = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .is_some_and(|s| {
+            s.economy
+                .has_service(adventuresim_world_schema::SettlementService::Inn)
+        });
+    let inn_available = inn_service
+        && ctx
+            .db
+            .settlement_npc_presence()
+            .settlement_id()
+            .filter(&settlement_id)
+            .any(|presence| {
+                let npc = ctx.db.settlement_npc().id().find(&presence.npc_id);
+                dialogue_capable_inn_contact(
+                    &presence.settlement_id,
+                    &settlement_id,
+                    &presence.location_id,
+                    crate::settlement_population::npc_is_present(&presence, observer_minute),
+                    npc.as_ref().is_some_and(|npc| {
+                        npc.home_settlement_id == settlement_id
+                            && crate::settlement_population::npc_is_dialogue_capable(npc)
+                    }),
+                )
+            });
+    let can_discover_new =
+        lp::discovery_action(location_id, inn_available, false) == lp::DiscoveryAction::NewRumor;
+    if can_discover_new
+        && let Some(preference) = ctx
+            .db
+            .local_problem_rumor_preference()
+            .character_id()
+            .find(character_id)
+        && preference.settlement_id == settlement_id
+    {
+        let preferred_problem = ctx
+            .db
+            .local_problem_authority()
+            .id()
+            .find(&preference.problem_id)
+            .filter(|problem| {
+                problem.scope_key == scope
+                    && is_active(problem, official_world_minute)
+                    && validated_problem_generation(ctx, problem, &settlement_id).is_some()
+            });
+        let already_known = preferred_problem.as_ref().is_some_and(|problem| {
+            ctx.db
+                .local_problem_receipt()
+                .id()
+                .find(&format!("{character_id}:{}", problem.id))
+                .is_some()
+        });
+        let surfaced = if let Some(problem) = preferred_problem.as_ref()
+            && !already_known
+        {
+            surface_new_problem(
+                ctx,
+                problem,
+                character_id,
+                session_id,
+                source_npc_id,
+                source_npc.as_ref(),
+                &settlement_id,
+                observer_minute,
+                official_world_minute,
+            )?
+        } else {
+            false
+        };
+        if surfaced || preferred_problem.is_none() || already_known {
+            ctx.db
+                .local_problem_rumor_preference()
+                .character_id()
+                .delete(character_id);
+        }
+        if surfaced {
+            return Ok(());
+        }
+    }
     if let Some(source_npc) = source_npc.as_ref()
         && surface_public_threat(
             ctx,
@@ -1427,17 +1654,6 @@ pub fn surface_problem(
     {
         return Ok(());
     }
-    let scope = format!("settlement:{settlement_id}");
-    let active_problems = stable_eligible_candidates(
-        ctx.db
-            .local_problem_authority()
-            .scope_key()
-            .filter(&scope)
-            .filter(|problem| is_active(problem, official_world_minute)),
-        lp::MAX_ACTIVE_PER_SCOPE,
-        |problem| validated_problem_generation(ctx, problem, &settlement_id).is_some(),
-        |problem| (problem.id.clone(), problem.opaque_case_ref.clone()),
-    );
     for problem in &active_problems {
         let Some(receipt) = ctx
             .db
@@ -1561,120 +1777,23 @@ pub fn surface_problem(
             });
         return Ok(());
     }
-    let inn_service = ctx
-        .db
-        .settlement()
-        .id()
-        .find(&settlement_id)
-        .is_some_and(|s| {
-            s.economy
-                .has_service(adventuresim_world_schema::SettlementService::Inn)
-        });
-    let inn_available = inn_service
-        && ctx
-            .db
-            .settlement_npc_presence()
-            .settlement_id()
-            .filter(&settlement_id)
-            .any(|presence| {
-                let npc = ctx.db.settlement_npc().id().find(&presence.npc_id);
-                dialogue_capable_inn_contact(
-                    &presence.settlement_id,
-                    &settlement_id,
-                    &presence.location_id,
-                    crate::settlement_population::npc_is_present(&presence, observer_minute),
-                    npc.as_ref().is_some_and(|npc| {
-                        npc.home_settlement_id == settlement_id
-                            && crate::settlement_population::npc_is_dialogue_capable(npc)
-                    }),
-                )
-            });
-    if lp::discovery_action(location_id, inn_available, false) != lp::DiscoveryAction::NewRumor {
+    if !can_discover_new {
         return Ok(());
     }
     for problem in active_problems {
-        if ctx
-            .db
-            .local_problem_receipt()
-            .id()
-            .find(&format!("{character_id}:{}", problem.id))
-            .is_some()
-        {
-            continue;
-        }
-        let Some(validated) = validated_problem_generation(ctx, &problem, &settlement_id) else {
-            continue;
-        };
-        let Some(witness) = validated.manifest.witnesses.first() else {
-            continue;
-        };
-        let Some(contact) = ctx.db.settlement_npc().id().find(&witness.npc_id) else {
-            continue;
-        };
-        let Some(presence) = ctx
-            .db
-            .settlement_npc_presence()
-            .npc_id()
-            .find(&witness.npc_id)
-            .filter(|presence| {
-                presence.settlement_id == settlement_id
-                    && presence.location_id == witness.expected_location
-            })
-        else {
-            continue;
-        };
-        let Some(symptom) = ctx
-            .db
-            .local_problem_symptom()
-            .problem_id()
-            .find(&problem.id)
-        else {
-            continue;
-        };
-        let location_label =
-            adventuresim_core::quest_generation::referral_display_location(witness);
-        if location_label.is_empty() {
-            continue;
-        }
-        let presentation = lp::referral_presentation(
-            &symptom.public_summary,
-            source_npc
-                .as_ref()
-                .map(|npc| (npc.id.as_str(), npc.name.as_str())),
-            &contact.id,
-            &contact.name,
-            &contact.profession,
-            &contact.height,
-            &contact.build,
-            &contact.hair,
-            location_label,
-        );
-        let receipt_id = format!("{character_id}:{}", problem.id);
-        ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
-            id: receipt_id.clone(),
+        if surface_new_problem(
+            ctx,
+            &problem,
             character_id,
-            settlement_id: settlement_id.clone(),
-            problem_id: problem.id,
-            opaque_case_ref: problem.opaque_case_ref,
-            source_npc_id: source_npc_id.into(),
-            discovery_session_id: session_id.into(),
-            contact_npc_id: contact.id,
-            expected_location_id: presence.location_id,
-            safe_summary: symptom.public_summary,
-            learned_at: observer_minute,
-            official_learned_at: official_world_minute,
-        });
-        ctx.db
-            .local_problem_rumor_delivery()
-            .insert(LocalProblemRumorDelivery {
-                id: format!("{session_id}:rumor"),
-                character_id,
-                settlement_id,
-                session_id: session_id.into(),
-                receipt_id,
-                fragments_json: referral_fragments_json(presentation)?,
-            });
-        return Ok(());
+            session_id,
+            source_npc_id,
+            source_npc.as_ref(),
+            &settlement_id,
+            observer_minute,
+            official_world_minute,
+        )? {
+            return Ok(());
+        }
     }
     Ok(())
 }
@@ -1955,6 +2074,44 @@ mod tests {
     }
 
     #[test]
+    fn preferred_demo_rumor_is_private_one_shot_and_preempts_existing_followups() {
+        let source = include_str!("local_problem.rs");
+        assert!(source.contains("#[table(accessor = local_problem_rumor_preference)]"));
+        assert!(!source.contains("#[table(accessor = local_problem_rumor_preference, public)]"));
+        let surface = source
+            .split("pub fn surface_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("fn dialogue_capable_inn_contact").next())
+            .expect("problem discovery implementation");
+        let preference = surface
+            .find("local_problem_rumor_preference()")
+            .expect("preferred rumor lookup");
+        let public_threat = surface
+            .find("surface_public_threat(")
+            .expect("public threat fallback");
+        let existing_followups = surface
+            .find("for problem in &active_problems")
+            .expect("existing problem followups");
+        assert!(preference < public_threat);
+        assert!(preference < existing_followups);
+        assert!(surface.contains("if can_discover_new"));
+        assert!(surface.contains("if surfaced || preferred_problem.is_none() || already_known"));
+        assert!(surface.contains(".delete(character_id);"));
+
+        let bootstrap = crate::strategic::STRATEGIC_SOURCE;
+        let demo = bootstrap
+            .split("fn seed_outbreak_demo")
+            .nth(1)
+            .and_then(|tail| tail.split("fn materialize_generated_quest").next())
+            .expect("outbreak demo materialization");
+        assert_eq!(demo.matches("prefer_next_rumor(").count(), 2);
+        assert!(
+            demo.find("materialize_generated_quest(").unwrap()
+                < demo.rfind("prefer_next_rumor(").unwrap()
+        );
+    }
+
+    #[test]
     fn overview_fallback_counts_only_present_dialogue_capable_inn_contacts() {
         assert!(dialogue_capable_inn_contact(
             "lubeck", "lubeck", "inn", true, true,
@@ -1991,6 +2148,11 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("#[cfg(test)]").next())
             .unwrap();
+        let new_problem = source
+            .split("fn surface_new_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .unwrap();
         assert!(authority.contains("validate_quest_generation_authority"));
         assert!(authority.contains("candidates.len() != 1"));
         assert!(authority.contains(".case_id()"));
@@ -2026,7 +2188,8 @@ mod tests {
             selector.find(".filter(").unwrap() < selector.find(".sort_by_key(").unwrap()
                 && selector.find(".sort_by_key(").unwrap() < selector.find(".truncate(").unwrap()
         );
-        assert!(surface.matches("continue;").count() >= 8);
+        assert!(surface.matches("continue;").count() >= 6);
+        assert!(new_problem.matches("return Ok(false);").count() >= 7);
         assert!(!surface.contains("case:opaque:"));
         assert!(!surface.contains("Manual problem"));
     }

@@ -68,6 +68,7 @@ developer mode, and choose **Outbreak demo** from a settlement. The gated loader
 raises useful investigation skills, supplies a surgery kit, and materializes
 one deterministic generated outbreak with private progressing patients and an
 optional exact-course disease or carrier-autoresolve corpse. It does not grant
-a journal entry or evidence. Ask
-around for local rumors to discover it normally, then follow either route to
-the exact remediation.
+a journal entry or evidence. Instead, it privately marks the generated
+outbreak as that character's next eligible ordinary rumor, so pre-existing
+settlement quests cannot hide the demo. Ask around for local rumors to discover
+it normally, then follow either route to the exact remediation.

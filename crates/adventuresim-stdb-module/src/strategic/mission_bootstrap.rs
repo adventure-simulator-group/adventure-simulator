@@ -1466,11 +1466,24 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), Str
         .find(&generated.canonical_case_id)
         .is_some()
     {
+        crate::local_problem::prefer_next_rumor(
+            ctx,
+            character_id,
+            &settlement_id,
+            &generated.problem_id,
+        );
         return Ok(());
     }
     qg::validate(&generated)
         .map_err(|errors| format!("Outbreak demo manifest is invalid: {}", errors.join("; ")))?;
-    materialize_generated_quest(ctx, &settlement, &context, &generated, None)
+    materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
+    crate::local_problem::prefer_next_rumor(
+        ctx,
+        character_id,
+        &settlement_id,
+        &generated.problem_id,
+    );
+    Ok(())
 }
 
 fn materialize_generated_quest(
