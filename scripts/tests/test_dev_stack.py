@@ -305,12 +305,19 @@ class WorkflowTests(unittest.TestCase):
     def test_just_recipe_shell_quotes_untrusted_parameters(self):
         source = Path(dev_stack.ROOT, "justfile").read_text()
         lines = [line for line in source.splitlines() if "run-profile" in line]
-        self.assertEqual(len(lines), 3)
-        for line in lines:
+        parameterized = [line for line in lines if "{{ quote(profile) }}" in line]
+        fixed_demos = [line for line in lines if line not in parameterized]
+        self.assertEqual(len(parameterized), 3)
+        self.assertEqual(len(fixed_demos), 3)
+        for line in parameterized:
             compact = line.replace(" ", "")
             self.assertIn("{{quote(profile)}}", compact)
             self.assertIn("{{quote(base_port)}}", compact)
             self.assertNotIn("'{{profile}}'", line)
+        for profile in ("autopsy-demo", "outbreak-demo", "puzzle-demo"):
+            matching = [line for line in fixed_demos if f" {profile} " in line]
+            self.assertEqual(len(matching), 1)
+            self.assertIn("{{quote(base_port)}}", matching[0].replace(" ", ""))
 
     def test_write_and_remove_tactical_env_file(self):
         with mock.patch.object(dev_stack, "TACTICAL_ENV_FILE", Path(tempfile.mkdtemp()) / ".env.tactical"):
