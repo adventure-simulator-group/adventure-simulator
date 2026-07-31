@@ -190,7 +190,14 @@ pub fn settlement_residence_page(
     can_rest_at_home: bool,
     notice: Option<&str>,
 ) -> Markup {
-    let panel = residence_offer_panel(settlement, offers, holdings, relationship, notice);
+    let panel = residence_offer_panel(
+        settlement,
+        active_character.id,
+        offers,
+        holdings,
+        relationship,
+        notice,
+    );
     settlement_resident_location_page_with_panel(
         settlement,
         active_character,
@@ -338,6 +345,7 @@ fn residence_tier_id(tier: ResidenceTier) -> &'static str {
 
 fn residence_offer_panel(
     settlement: &Settlement,
+    active_character_id: u64,
     offers: &[SettlementResidenceOffer],
     holdings: &[BackendCharacterResidenceStatus],
     relationship: Option<&RelationshipPresentation>,
@@ -354,9 +362,17 @@ fn residence_offer_panel(
             } @else {
                 div class="residence-holding-list" {
                     @for holding in holdings {
+                        @let owns_holding = holding.owner_character_id == active_character_id;
                         article class="residence-holding" data-holding-id=(&holding.holding_id) {
                             p {
-                                strong { (residence_tier_label(holding.tier)) " " (match holding.tenure { ResidenceTenure::Renter => "rental", ResidenceTenure::Owner => "owned property" }) }
+                                strong {
+                                    (residence_tier_label(holding.tier)) " "
+                                    @if owns_holding {
+                                        (match holding.tenure { ResidenceTenure::Renter => "rental", ResidenceTenure::Owner => "owned property" })
+                                    } @else {
+                                        "household home"
+                                    }
+                                }
                                 " in " (&holding.settlement_id)
                                 @if holding.primary { " (designated home)" }
                                 @if holding.occupied { " (occupied)" }
@@ -366,21 +382,23 @@ fn residence_offer_panel(
                                 @if holding.active { "Next payment: " } @else { "Overdue since " }
                                 (format_residence_date(holding.next_due_minute)) "."
                             }
-                            @if holding.tenure == ResidenceTenure::Owner && !holding.active {
+                            @if owns_holding && holding.tenure == ResidenceTenure::Owner && !holding.active {
                                 form action=(format!("/settlements/{}/residences/recover/current", settlement.id)) method="post" {
                                     input type="hidden" name="holding_id" value=(&holding.holding_id);
                                     button type="submit" class="btn btn-small" { "Recover owned home" }
                                 }
                             }
-                            @if holding.active && !holding.primary && holding.settlement_id == settlement.id {
+                            @if owns_holding && holding.active && !holding.primary && holding.settlement_id == settlement.id {
                                 form action=(format!("/settlements/{}/residences/designate/current", settlement.id)) method="post" {
                                     input type="hidden" name="holding_id" value=(&holding.holding_id);
                                     button type="submit" class="btn btn-small" { "Designate as home" }
                                 }
                             }
-                            form action=(format!("/settlements/{}/residences/relinquish/current", settlement.id)) method="post" {
-                                input type="hidden" name="holding_id" value=(&holding.holding_id);
-                                button type="submit" class="btn btn-small btn-danger" { "Relinquish property" }
+                            @if owns_holding {
+                                form action=(format!("/settlements/{}/residences/relinquish/current", settlement.id)) method="post" {
+                                    input type="hidden" name="holding_id" value=(&holding.holding_id);
+                                    button type="submit" class="btn btn-small btn-danger" { "Relinquish property" }
+                                }
                             }
                         }
                     }
@@ -1127,15 +1145,37 @@ mod tests {
                 last_billed_minute: 0,
                 next_due_minute: 43_200,
             },
+            BackendCharacterResidenceStatus {
+                character_id: 1,
+                holding_id: "holding-household".into(),
+                owner_character_id: 2,
+                settlement_id: settlement.id.clone(),
+                tier: ResidenceTier::Fancy,
+                tenure: ResidenceTenure::Owner,
+                active: true,
+                primary: false,
+                occupied: true,
+                acquired_minute: 0,
+                last_billed_minute: 0,
+                next_due_minute: 43_200,
+            },
         ];
-        let markup =
-            residence_offer_panel(&settlement, &offers, &holdings, Some(&relationship), None)
-                .into_string();
+        let markup = residence_offer_panel(
+            &settlement,
+            1,
+            &offers,
+            &holdings,
+            Some(&relationship),
+            None,
+        )
+        .into_string();
 
         assert_eq!(markup.matches("class=\"residence-offer\"").count(), 3);
-        assert_eq!(markup.matches("class=\"residence-holding\"").count(), 2);
+        assert_eq!(markup.matches("class=\"residence-holding\"").count(), 3);
         assert!(markup.contains("name=\"holding_id\" value=\"holding-primary\""));
         assert!(markup.contains("name=\"holding_id\" value=\"holding-dormant\""));
+        assert!(!markup.contains("name=\"holding_id\" value=\"holding-household\""));
+        assert!(markup.contains("Fancy household home"));
         assert!(markup.contains("Recover owned home"));
         for tier in ["cheap", "moderate", "fancy"] {
             assert!(markup.contains(&format!("data-residence-tier=\"{tier}\"")));

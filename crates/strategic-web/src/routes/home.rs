@@ -44,7 +44,11 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
     let character = match super::data::character(&state, character_id).await {
         Ok(Some(character)) => character,
         Ok(None) => {
-            let destination = match state.db.query::<Character>("SELECT * FROM character").await {
+            let destination = match state
+                .db
+                .query::<Character>("SELECT * FROM backend_characters")
+                .await
+            {
                 Ok(characters) if characters.is_empty() => "/characters/candidates",
                 _ => "/characters",
             };

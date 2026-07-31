@@ -19,7 +19,8 @@ pub(crate) async fn character(state: &AppState, character_id: u64) -> Result<Opt
     let mut character = match cached_character {
         Some(character) => Ok(prefer_complete_cache(Some(character), None)),
         None => {
-            let character_sql = format!("SELECT * FROM character WHERE id = {character_id}");
+            let character_sql =
+                format!("SELECT * FROM backend_characters WHERE id = {character_id}");
             state.db.query_one::<Character>(&character_sql).await
         }
     }?;

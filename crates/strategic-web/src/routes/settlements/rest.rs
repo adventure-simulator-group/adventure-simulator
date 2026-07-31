@@ -192,11 +192,11 @@ pub(super) async fn rest(
     };
     let before_character = get_active_character(&state, Some(character_id)).await;
     let before_limbs =
-        query_single::<CharacterLimbs>(&state, "character_limbs", character_id).await;
+        query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
     let before_skills =
-        query_single::<CharacterSkills>(&state, "character_skills", character_id).await;
+        query_single::<CharacterSkills>(&state, "backend_character_skills", character_id).await;
     let before_time =
-        query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
+        query_single::<crate::spacetimedb::CharacterTime>(&state, "backend_character_times", character_id)
             .await;
     let before_reputation = query_local_reputation(&state, character_id, &id).await;
     let character_settlement_id = before_character
@@ -261,11 +261,11 @@ pub(super) async fn rest(
         active_character.as_ref().map(|(character, _)| character),
     )
     .await;
-    let after_limbs = query_single::<CharacterLimbs>(&state, "character_limbs", character_id).await;
+    let after_limbs = query_single::<CharacterLimbs>(&state, "backend_character_limbs", character_id).await;
     let after_skills =
-        query_single::<CharacterSkills>(&state, "character_skills", character_id).await;
+        query_single::<CharacterSkills>(&state, "backend_character_skills", character_id).await;
     let after_time =
-        query_single::<crate::spacetimedb::CharacterTime>(&state, "character_time", character_id)
+        query_single::<crate::spacetimedb::CharacterTime>(&state, "backend_character_times", character_id)
             .await;
     let after_reputation = query_local_reputation(&state, character_id, &id).await;
     let summary = rest_summary(

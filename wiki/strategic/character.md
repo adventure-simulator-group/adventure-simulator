@@ -83,8 +83,10 @@ Socializing records asynchronous directed affinity and symmetric familiarity;
 it does not assert that the selected NPC lost finite canonical time. Party
 familiarity is the exception: the shared-clock presence path already owns
 those minutes, so Socializing grants affinity and training without adding the
-same familiarity twice. One cumulative actor/day receipt fixes the target and
-applied frontier, making retries and time-advance chunks equivalent.
+same familiarity twice. Actor/day/target receipts conserve the total applied
+frontier, making retries and time-advance chunks equivalent while still
+allowing a later chronological slice to retarget if the earlier companion has
+died, left the settlement, or otherwise become unavailable.
 Ambiguous targets are scored by a stable hash of actor, absolute calendar day,
 location, and target; character ID is the final tie break. Iteration or table
 insertion order therefore cannot change the selected companion.
@@ -120,21 +122,34 @@ counterfactual romantic relationship.
 
 Formal courtship currently requires a biologically male suitor and biologically
 female partner, enough affinity from the partner, and enough affinity from her
-known father. Informal courtship works for any mutually attracted eligible
+known father. The approving father's identity and the dowry amount implied by
+his wealth tier are frozen at that shared courtship minute; later opinion,
+wealth, or clock changes cannot rewrite the approval. Scheduling the wedding
+reserves that promised amount from the father in a private escrow. A cancelled
+or expired wedding refunds it; a fulfilled wedding pays it to the husband.
+Informal courtship works for any mutually attracted eligible
 pair, but requires substantially more affinity; Amorous partners lower that
 threshold and Proper partners raise it. A wedding can only be scheduled from
 an active courtship. Scheduling creates an immediate exclusive engagement for
-both people and fixes the ceremony one year later.
+both people and fixes the ceremony one year later. The wedding materializes
+only after both personal frontiers reach the ceremony; ending the resulting
+marriage likewise requires both spouses at the same personal date.
 
-While an informal courtship remains secret and Active, every living adult
-parent or sibling co-located with the couple makes one Insight-versus-weaker-
-Deception check per relationship day. These checks run from the canonical
+When an informal courtship begins, every living adult parent or sibling then
+co-located with the couple becomes a frozen observer, with that observer's
+Insight and the weaker partner's Deception frozen at the same effective
+minute. While the courtship remains secret and Active, each observer makes one
+Insight-versus-Deception check per relationship day. These checks run from the canonical
 lifecycle boundary independently of that day's Socializing target. Every
 success and failure has an immutable receipt; the first success exposes the
 facade and stops later checks. Discovery knowledge is available only through a
 gateway projection scoped to the discovering observer. An active retry of the
 same courtship kind is idempotent, a different active kind is rejected, and an
-ended pair is final in this first-pass history model.
+ended pair is final in this first-pass history model. A check waits until both
+participants and the frozen observer have reached that day. Because its cohort
+and skill values are historical facts captured at courtship establishment,
+settlement does not depend on later location, skill, clock-chunk, or NPC
+advancement order.
 
 Opposite-sex adult spouses who are co-located can conceive from qualifying
 spouse Leisure. Only the integer intersection of their realized Leisure
@@ -154,6 +169,12 @@ infertility, miscarriage, and childbirth risk remain follow-up systems.
 Child identity, name choice, sex, and home placement use separate stable seed
 domains based on the canonical parent pair, pregnancy ordinal, birth minute,
 and home location, so retries and insertion order cannot change the result.
+Full `Character` rows and their identity-bearing durable component rows are
+private and broadly readable only through registered-gateway projections.
+Browser-visible
+relationship summaries are filtered by the selected character's personal
+minute, so a realized child is not disclosed to a parent whose frontier is
+still before the due date.
 
 Browser ownership is separate from character identity. Candidate confirmation
 atomically records a private starting-character claim and character grant under

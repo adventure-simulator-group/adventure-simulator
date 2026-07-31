@@ -129,6 +129,15 @@ contains only settlement-specific appearance, vocation, service, and
 conversation metadata; presence is keyed by the same ID. Recruitment adds that
 same Character to a party rather than materializing a replacement.
 
+The canonical `Character` table and its identity-bearing durable component
+tables are private. Only the registered strategic gateway may subscribe
+broadly through `BackendCharacters` and the corresponding backend component
+views; tactical servers continue to receive only their `ConnectedPlayer`
+view. This prevents a direct client from enumerating a globally exclusive NPC,
+or detecting a future birth through an otherwise ordinary time, physiology,
+skill, or needs row, while that lifecycle fact is still beyond the selected
+character's personal date.
+
 The gateway resident roster is an explicit player-visible join over Character,
 private personality, resident profile, and presence authority. It includes the
 decimal character ID, home settlement, visible description, occupation,

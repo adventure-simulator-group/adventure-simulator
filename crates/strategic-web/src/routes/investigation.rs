@@ -30,7 +30,7 @@ async fn journal(State(state): State<AppState>, session: Session) -> Response {
     let character = match state
         .db
         .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
+            "SELECT * FROM backend_characters WHERE id = {character_id}"
         ))
         .await
     {
@@ -148,7 +148,7 @@ async fn perform_action(
             match state
                 .db
                 .query_one::<Character>(&format!(
-                    "SELECT * FROM character WHERE id = {character_id}"
+                    "SELECT * FROM backend_characters WHERE id = {character_id}"
                 ))
                 .await
             {

@@ -54,13 +54,13 @@ impl LiveRunner {
         let character = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)?;
         let condition = self
             .connection
             .db
-            .character_strategic_condition()
+            .backend_character_strategic_conditions()
             .iter()
             .find(|row| row.character_id == character_id)?;
         let illness = self
@@ -146,7 +146,7 @@ impl LiveRunner {
         let settlement_id = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
             .and_then(|character| character.current_settlement_id)
@@ -191,7 +191,7 @@ impl LiveRunner {
         let settlement_id = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
             .and_then(|character| character.current_settlement_id)
@@ -222,7 +222,7 @@ impl LiveRunner {
         let character = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
             .ok_or("character missing from coherent subscription")?;
@@ -251,7 +251,7 @@ impl LiveRunner {
             .party()
             .iter()
             .find(|row| row.id == party_id)?;
-        let leader = self.connection.db.character().iter().find(|row| {
+        let leader = self.connection.db.backend_characters().iter().find(|row| {
             leader_is_actionable(
                 party_id,
                 party.leader_id,
@@ -275,7 +275,7 @@ impl LiveRunner {
             .collect::<HashSet<_>>();
         self.connection
             .db
-            .character_time()
+            .backend_character_times()
             .iter()
             .filter(|row| member_ids.contains(&row.character_id))
             .map(|row| row.minutes)
@@ -287,7 +287,7 @@ impl LiveRunner {
         let mut newly_dead = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .filter(|row| !row.alive && self.character_ids.contains(&row.id))
             .filter_map(|row| self.recorded_deaths.insert(row.id).then_some(row.id))

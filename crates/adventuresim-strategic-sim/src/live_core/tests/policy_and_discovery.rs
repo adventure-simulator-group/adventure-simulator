@@ -19,6 +19,21 @@ fn startup_registers_and_resubscribes_gateway_before_seeding() {
         contracts < subscribe,
         "offered contracts must be part of the applied gateway subscription"
     );
+    for component in [
+        ".backend_characters()",
+        ".backend_character_capabilities()",
+        ".backend_character_needs()",
+        ".backend_character_strategic_conditions()",
+        ".backend_character_times()",
+        ".backend_character_training_schedules()",
+    ] {
+        assert!(
+            gateway_surface
+                .find(component)
+                .is_some_and(|index| index < subscribe),
+            "post-registration subscription must include {component}"
+        );
+    }
 }
 
 #[test]

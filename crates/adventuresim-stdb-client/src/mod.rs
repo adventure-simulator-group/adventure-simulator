@@ -42,14 +42,26 @@ pub mod backend_case_battles_table;
 pub mod backend_case_site_pin_type;
 pub mod backend_case_site_pins_table;
 pub mod backend_character_affinities_table;
+pub mod backend_character_attributes_table;
+pub mod backend_character_capabilities_table;
 pub mod backend_character_case_site_location_type;
 pub mod backend_character_case_site_locations_table;
+pub mod backend_character_conditions_table;
+pub mod backend_character_exposures_table;
 pub mod backend_character_familiarities_table;
+pub mod backend_character_limbs_table;
+pub mod backend_character_needs_table;
 pub mod backend_character_personalities_table;
 pub mod backend_character_relationship_status_type;
 pub mod backend_character_relationship_statuses_table;
 pub mod backend_character_residence_status_type;
 pub mod backend_character_residence_statuses_table;
+pub mod backend_character_skills_table;
+pub mod backend_character_stats_table;
+pub mod backend_character_strategic_conditions_table;
+pub mod backend_character_times_table;
+pub mod backend_character_training_schedules_table;
+pub mod backend_characters_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_contract_type;
 pub mod backend_contracts_table;
@@ -148,20 +160,16 @@ pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
 pub mod change_inventory_item_reducer;
 pub mod character_affinity_type;
-pub mod character_attributes_table;
 pub mod character_attributes_type;
 pub mod character_birth_type;
-pub mod character_capability_table;
 pub mod character_capability_type;
 pub mod character_case_site_occupancy_type;
-pub mod character_condition_table;
 pub mod character_condition_type;
 pub mod character_death_table;
 pub mod character_death_type;
 pub mod character_equipped_item_table;
 pub mod character_equipped_item_type;
 pub mod character_estate_basis_type;
-pub mod character_exposure_table;
 pub mod character_exposure_type;
 pub mod character_familiarity_type;
 pub mod character_filth_table;
@@ -169,27 +177,19 @@ pub mod character_filth_type;
 pub mod character_illness_status_table;
 pub mod character_illness_status_type;
 pub mod character_kinship_type;
-pub mod character_limbs_table;
 pub mod character_limbs_type;
 pub mod character_morale_source_table;
 pub mod character_morale_source_type;
-pub mod character_needs_table;
 pub mod character_needs_type;
 pub mod character_organization_role_type;
 pub mod character_personality_type;
 pub mod character_settlement_reputation_table;
 pub mod character_settlement_reputation_type;
-pub mod character_skills_table;
 pub mod character_skills_type;
-pub mod character_stats_table;
 pub mod character_stats_type;
-pub mod character_strategic_condition_table;
 pub mod character_strategic_condition_type;
-pub mod character_table;
-pub mod character_time_table;
 pub mod character_time_type;
 pub mod character_topic_knowledge_type;
-pub mod character_training_schedule_table;
 pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod charcoal_burning_industry_type;
@@ -231,6 +231,7 @@ pub mod corpse_permission_scope_type;
 pub mod corpse_permission_type;
 pub mod courtship_discovery_type;
 pub mod courtship_kind_type;
+pub mod courtship_observer_baseline_type;
 pub mod courtship_record_type;
 pub mod courtship_secrecy_reason_type;
 pub mod courtship_status_type;
@@ -279,6 +280,7 @@ pub mod disease_notice_type;
 pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
 pub mod dominant_leaf_type_type;
+pub mod dowry_escrow_type;
 pub mod dowry_outcome_kind_type;
 pub mod dowry_outcome_type;
 pub mod drive_type;
@@ -830,14 +832,26 @@ pub use backend_case_battles_table::*;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
 pub use backend_case_site_pins_table::*;
 pub use backend_character_affinities_table::*;
+pub use backend_character_attributes_table::*;
+pub use backend_character_capabilities_table::*;
 pub use backend_character_case_site_location_type::BackendCharacterCaseSiteLocation;
 pub use backend_character_case_site_locations_table::*;
+pub use backend_character_conditions_table::*;
+pub use backend_character_exposures_table::*;
 pub use backend_character_familiarities_table::*;
+pub use backend_character_limbs_table::*;
+pub use backend_character_needs_table::*;
 pub use backend_character_personalities_table::*;
 pub use backend_character_relationship_status_type::BackendCharacterRelationshipStatus;
 pub use backend_character_relationship_statuses_table::*;
 pub use backend_character_residence_status_type::BackendCharacterResidenceStatus;
 pub use backend_character_residence_statuses_table::*;
+pub use backend_character_skills_table::*;
+pub use backend_character_stats_table::*;
+pub use backend_character_strategic_conditions_table::*;
+pub use backend_character_times_table::*;
+pub use backend_character_training_schedules_table::*;
+pub use backend_characters_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_contract_type::BackendContract;
 pub use backend_contracts_table::*;
@@ -936,20 +950,16 @@ pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
 pub use change_inventory_item_reducer::change_inventory_item;
 pub use character_affinity_type::CharacterAffinity;
-pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
 pub use character_birth_type::CharacterBirth;
-pub use character_capability_table::*;
 pub use character_capability_type::CharacterCapability;
 pub use character_case_site_occupancy_type::CharacterCaseSiteOccupancy;
-pub use character_condition_table::*;
 pub use character_condition_type::CharacterCondition;
 pub use character_death_table::*;
 pub use character_death_type::CharacterDeath;
 pub use character_equipped_item_table::*;
 pub use character_equipped_item_type::CharacterEquippedItem;
 pub use character_estate_basis_type::CharacterEstateBasis;
-pub use character_exposure_table::*;
 pub use character_exposure_type::CharacterExposure;
 pub use character_familiarity_type::CharacterFamiliarity;
 pub use character_filth_table::*;
@@ -957,27 +967,19 @@ pub use character_filth_type::CharacterFilth;
 pub use character_illness_status_table::*;
 pub use character_illness_status_type::CharacterIllnessStatus;
 pub use character_kinship_type::CharacterKinship;
-pub use character_limbs_table::*;
 pub use character_limbs_type::CharacterLimbs;
 pub use character_morale_source_table::*;
 pub use character_morale_source_type::CharacterMoraleSource;
-pub use character_needs_table::*;
 pub use character_needs_type::CharacterNeeds;
 pub use character_organization_role_type::CharacterOrganizationRole;
 pub use character_personality_type::CharacterPersonality;
 pub use character_settlement_reputation_table::*;
 pub use character_settlement_reputation_type::CharacterSettlementReputation;
-pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
-pub use character_stats_table::*;
 pub use character_stats_type::CharacterStats;
-pub use character_strategic_condition_table::*;
 pub use character_strategic_condition_type::CharacterStrategicCondition;
-pub use character_table::*;
-pub use character_time_table::*;
 pub use character_time_type::CharacterTime;
 pub use character_topic_knowledge_type::CharacterTopicKnowledge;
-pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
@@ -1019,6 +1021,7 @@ pub use corpse_permission_scope_type::CorpsePermissionScope;
 pub use corpse_permission_type::CorpsePermission;
 pub use courtship_discovery_type::CourtshipDiscovery;
 pub use courtship_kind_type::CourtshipKind;
+pub use courtship_observer_baseline_type::CourtshipObserverBaseline;
 pub use courtship_record_type::CourtshipRecord;
 pub use courtship_secrecy_reason_type::CourtshipSecrecyReason;
 pub use courtship_status_type::CourtshipStatus;
@@ -1067,6 +1070,7 @@ pub use disease_notice_type::DiseaseNotice;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
 pub use dominant_leaf_type_type::DominantLeafType;
+pub use dowry_escrow_type::DowryEscrow;
 pub use dowry_outcome_kind_type::DowryOutcomeKind;
 pub use dowry_outcome_type::DowryOutcome;
 pub use drive_type::Drive;
@@ -3967,11 +3971,23 @@ pub struct DbUpdate {
     backend_case_battles: __sdk::TableUpdate<BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
+    backend_character_attributes: __sdk::TableUpdate<CharacterAttributes>,
+    backend_character_capabilities: __sdk::TableUpdate<CharacterCapability>,
     backend_character_case_site_locations: __sdk::TableUpdate<BackendCharacterCaseSiteLocation>,
+    backend_character_conditions: __sdk::TableUpdate<CharacterCondition>,
+    backend_character_exposures: __sdk::TableUpdate<CharacterExposure>,
     backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
+    backend_character_limbs: __sdk::TableUpdate<CharacterLimbs>,
+    backend_character_needs: __sdk::TableUpdate<CharacterNeeds>,
     backend_character_personalities: __sdk::TableUpdate<CharacterPersonality>,
     backend_character_relationship_statuses: __sdk::TableUpdate<BackendCharacterRelationshipStatus>,
     backend_character_residence_statuses: __sdk::TableUpdate<BackendCharacterResidenceStatus>,
+    backend_character_skills: __sdk::TableUpdate<CharacterSkills>,
+    backend_character_stats: __sdk::TableUpdate<CharacterStats>,
+    backend_character_strategic_conditions: __sdk::TableUpdate<CharacterStrategicCondition>,
+    backend_character_times: __sdk::TableUpdate<CharacterTime>,
+    backend_character_training_schedules: __sdk::TableUpdate<CharacterTrainingSchedule>,
+    backend_characters: __sdk::TableUpdate<Character>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_contracts: __sdk::TableUpdate<BackendContract>,
     backend_corpses: __sdk::TableUpdate<BackendCorpse>,
@@ -4005,24 +4021,12 @@ pub struct DbUpdate {
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
-    character: __sdk::TableUpdate<Character>,
-    character_attributes: __sdk::TableUpdate<CharacterAttributes>,
-    character_capability: __sdk::TableUpdate<CharacterCapability>,
-    character_condition: __sdk::TableUpdate<CharacterCondition>,
     character_death: __sdk::TableUpdate<CharacterDeath>,
     character_equipped_item: __sdk::TableUpdate<CharacterEquippedItem>,
-    character_exposure: __sdk::TableUpdate<CharacterExposure>,
     character_filth: __sdk::TableUpdate<CharacterFilth>,
     character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
-    character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
-    character_needs: __sdk::TableUpdate<CharacterNeeds>,
     character_settlement_reputation: __sdk::TableUpdate<CharacterSettlementReputation>,
-    character_skills: __sdk::TableUpdate<CharacterSkills>,
-    character_stats: __sdk::TableUpdate<CharacterStats>,
-    character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
-    character_time: __sdk::TableUpdate<CharacterTime>,
-    character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
     equipment_occupancy: __sdk::TableUpdate<EquipmentOccupancy>,
     food_lot: __sdk::TableUpdate<FoodLot>,
@@ -4108,6 +4112,14 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_character_affinities" => db_update.backend_character_affinities.append(
                     backend_character_affinities_table::parse_table_update(table_update)?,
                 ),
+                "backend_character_attributes" => db_update.backend_character_attributes.append(
+                    backend_character_attributes_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_capabilities" => {
+                    db_update.backend_character_capabilities.append(
+                        backend_character_capabilities_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_character_case_site_locations" => {
                     db_update.backend_character_case_site_locations.append(
                         backend_character_case_site_locations_table::parse_table_update(
@@ -4115,11 +4127,23 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         )?,
                     )
                 }
+                "backend_character_conditions" => db_update.backend_character_conditions.append(
+                    backend_character_conditions_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_exposures" => db_update.backend_character_exposures.append(
+                    backend_character_exposures_table::parse_table_update(table_update)?,
+                ),
                 "backend_character_familiarities" => {
                     db_update.backend_character_familiarities.append(
                         backend_character_familiarities_table::parse_table_update(table_update)?,
                     )
                 }
+                "backend_character_limbs" => db_update.backend_character_limbs.append(
+                    backend_character_limbs_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_needs" => db_update.backend_character_needs.append(
+                    backend_character_needs_table::parse_table_update(table_update)?,
+                ),
                 "backend_character_personalities" => {
                     db_update.backend_character_personalities.append(
                         backend_character_personalities_table::parse_table_update(table_update)?,
@@ -4139,6 +4163,32 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         )?,
                     )
                 }
+                "backend_character_skills" => db_update.backend_character_skills.append(
+                    backend_character_skills_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_stats" => db_update.backend_character_stats.append(
+                    backend_character_stats_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_strategic_conditions" => {
+                    db_update.backend_character_strategic_conditions.append(
+                        backend_character_strategic_conditions_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
+                "backend_character_times" => db_update.backend_character_times.append(
+                    backend_character_times_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_training_schedules" => {
+                    db_update.backend_character_training_schedules.append(
+                        backend_character_training_schedules_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
+                "backend_characters" => db_update
+                    .backend_characters
+                    .append(backend_characters_table::parse_table_update(table_update)?),
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(
                     backend_committed_cuts_table::parse_table_update(table_update)?,
                 ),
@@ -4257,62 +4307,26 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "battle_result" => db_update
                     .battle_result
                     .append(battle_result_table::parse_table_update(table_update)?),
-                "character" => db_update
-                    .character
-                    .append(character_table::parse_table_update(table_update)?),
-                "character_attributes" => db_update.character_attributes.append(
-                    character_attributes_table::parse_table_update(table_update)?,
-                ),
-                "character_capability" => db_update.character_capability.append(
-                    character_capability_table::parse_table_update(table_update)?,
-                ),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(character_condition_table::parse_table_update(table_update)?),
                 "character_death" => db_update
                     .character_death
                     .append(character_death_table::parse_table_update(table_update)?),
                 "character_equipped_item" => db_update.character_equipped_item.append(
                     character_equipped_item_table::parse_table_update(table_update)?,
                 ),
-                "character_exposure" => db_update
-                    .character_exposure
-                    .append(character_exposure_table::parse_table_update(table_update)?),
                 "character_filth" => db_update
                     .character_filth
                     .append(character_filth_table::parse_table_update(table_update)?),
                 "character_illness_status" => db_update.character_illness_status.append(
                     character_illness_status_table::parse_table_update(table_update)?,
                 ),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(character_limbs_table::parse_table_update(table_update)?),
                 "character_morale_source" => db_update.character_morale_source.append(
                     character_morale_source_table::parse_table_update(table_update)?,
                 ),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(character_needs_table::parse_table_update(table_update)?),
                 "character_settlement_reputation" => {
                     db_update.character_settlement_reputation.append(
                         character_settlement_reputation_table::parse_table_update(table_update)?,
                     )
                 }
-                "character_skills" => db_update
-                    .character_skills
-                    .append(character_skills_table::parse_table_update(table_update)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(character_stats_table::parse_table_update(table_update)?),
-                "character_strategic_condition" => db_update.character_strategic_condition.append(
-                    character_strategic_condition_table::parse_table_update(table_update)?,
-                ),
-                "character_time" => db_update
-                    .character_time
-                    .append(character_time_table::parse_table_update(table_update)?),
-                "character_training_schedule" => db_update.character_training_schedule.append(
-                    character_training_schedule_table::parse_table_update(table_update)?,
-                ),
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
@@ -4510,27 +4524,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.battle_result = cache
             .apply_diff_to_table::<BattleResult>("battle_result", &self.battle_result)
             .with_updates_by_pk(|row| &row.battle_id);
-        diff.character = cache
-            .apply_diff_to_table::<Character>("character", &self.character)
-            .with_updates_by_pk(|row| &row.id);
-        diff.character_attributes = cache
-            .apply_diff_to_table::<CharacterAttributes>(
-                "character_attributes",
-                &self.character_attributes,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_capability = cache
-            .apply_diff_to_table::<CharacterCapability>(
-                "character_capability",
-                &self.character_capability,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_condition = cache
-            .apply_diff_to_table::<CharacterCondition>(
-                "character_condition",
-                &self.character_condition,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
         diff.character_death = cache
             .apply_diff_to_table::<CharacterDeath>("character_death", &self.character_death)
             .with_updates_by_pk(|row| &row.character_id);
@@ -4540,12 +4533,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_equipped_item,
             )
             .with_updates_by_pk(|row| &row.inventory_item_id);
-        diff.character_exposure = cache
-            .apply_diff_to_table::<CharacterExposure>(
-                "character_exposure",
-                &self.character_exposure,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
         diff.character_filth = cache
             .apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth)
             .with_updates_by_pk(|row| &row.id);
@@ -4555,45 +4542,18 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_illness_status,
             )
             .with_updates_by_pk(|row| &row.character_id);
-        diff.character_limbs = cache
-            .apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs)
-            .with_updates_by_pk(|row| &row.character_id);
         diff.character_morale_source = cache
             .apply_diff_to_table::<CharacterMoraleSource>(
                 "character_morale_source",
                 &self.character_morale_source,
             )
             .with_updates_by_pk(|row| &row.id);
-        diff.character_needs = cache
-            .apply_diff_to_table::<CharacterNeeds>("character_needs", &self.character_needs)
-            .with_updates_by_pk(|row| &row.character_id);
         diff.character_settlement_reputation = cache
             .apply_diff_to_table::<CharacterSettlementReputation>(
                 "character_settlement_reputation",
                 &self.character_settlement_reputation,
             )
             .with_updates_by_pk(|row| &row.id);
-        diff.character_skills = cache
-            .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_stats = cache
-            .apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_strategic_condition = cache
-            .apply_diff_to_table::<CharacterStrategicCondition>(
-                "character_strategic_condition",
-                &self.character_strategic_condition,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_time = cache
-            .apply_diff_to_table::<CharacterTime>("character_time", &self.character_time)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_training_schedule = cache
-            .apply_diff_to_table::<CharacterTrainingSchedule>(
-                "character_training_schedule",
-                &self.character_training_schedule,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
         diff.equipment_occupancy = cache
             .apply_diff_to_table::<EquipmentOccupancy>(
                 "equipment_occupancy",
@@ -4805,14 +4765,38 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_character_affinities",
             &self.backend_character_affinities,
         );
+        diff.backend_character_attributes = cache.apply_diff_to_table::<CharacterAttributes>(
+            "backend_character_attributes",
+            &self.backend_character_attributes,
+        );
+        diff.backend_character_capabilities = cache.apply_diff_to_table::<CharacterCapability>(
+            "backend_character_capabilities",
+            &self.backend_character_capabilities,
+        );
         diff.backend_character_case_site_locations = cache
             .apply_diff_to_table::<BackendCharacterCaseSiteLocation>(
                 "backend_character_case_site_locations",
                 &self.backend_character_case_site_locations,
             );
+        diff.backend_character_conditions = cache.apply_diff_to_table::<CharacterCondition>(
+            "backend_character_conditions",
+            &self.backend_character_conditions,
+        );
+        diff.backend_character_exposures = cache.apply_diff_to_table::<CharacterExposure>(
+            "backend_character_exposures",
+            &self.backend_character_exposures,
+        );
         diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>(
             "backend_character_familiarities",
             &self.backend_character_familiarities,
+        );
+        diff.backend_character_limbs = cache.apply_diff_to_table::<CharacterLimbs>(
+            "backend_character_limbs",
+            &self.backend_character_limbs,
+        );
+        diff.backend_character_needs = cache.apply_diff_to_table::<CharacterNeeds>(
+            "backend_character_needs",
+            &self.backend_character_needs,
         );
         diff.backend_character_personalities = cache.apply_diff_to_table::<CharacterPersonality>(
             "backend_character_personalities",
@@ -4828,6 +4812,30 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_character_residence_statuses",
                 &self.backend_character_residence_statuses,
             );
+        diff.backend_character_skills = cache.apply_diff_to_table::<CharacterSkills>(
+            "backend_character_skills",
+            &self.backend_character_skills,
+        );
+        diff.backend_character_stats = cache.apply_diff_to_table::<CharacterStats>(
+            "backend_character_stats",
+            &self.backend_character_stats,
+        );
+        diff.backend_character_strategic_conditions = cache
+            .apply_diff_to_table::<CharacterStrategicCondition>(
+                "backend_character_strategic_conditions",
+                &self.backend_character_strategic_conditions,
+            );
+        diff.backend_character_times = cache.apply_diff_to_table::<CharacterTime>(
+            "backend_character_times",
+            &self.backend_character_times,
+        );
+        diff.backend_character_training_schedules = cache
+            .apply_diff_to_table::<CharacterTrainingSchedule>(
+                "backend_character_training_schedules",
+                &self.backend_character_training_schedules,
+            );
+        diff.backend_characters =
+            cache.apply_diff_to_table::<Character>("backend_characters", &self.backend_characters);
         diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
@@ -5002,11 +5010,29 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_attributes" => db_update
+                    .backend_character_attributes
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_capabilities" => db_update
+                    .backend_character_capabilities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_case_site_locations" => db_update
                     .backend_character_case_site_locations
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_conditions" => db_update
+                    .backend_character_conditions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_exposures" => db_update
+                    .backend_character_exposures
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_familiarities" => db_update
                     .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_limbs" => db_update
+                    .backend_character_limbs
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_needs" => db_update
+                    .backend_character_needs
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_personalities" => db_update
                     .backend_character_personalities
@@ -5016,6 +5042,24 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_residence_statuses" => db_update
                     .backend_character_residence_statuses
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_skills" => db_update
+                    .backend_character_skills
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_stats" => db_update
+                    .backend_character_stats
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_strategic_conditions" => db_update
+                    .backend_character_strategic_conditions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_times" => db_update
+                    .backend_character_times
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_training_schedules" => db_update
+                    .backend_character_training_schedules
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_characters" => db_update
+                    .backend_characters
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
@@ -5113,26 +5157,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "battle_result" => db_update
                     .battle_result
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character" => db_update
-                    .character
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_attributes" => db_update
-                    .character_attributes
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_capability" => db_update
-                    .character_capability
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_death" => db_update
                     .character_death
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_equipped_item" => db_update
                     .character_equipped_item
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_exposure" => db_update
-                    .character_exposure
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
@@ -5140,32 +5169,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_illness_status" => db_update
                     .character_illness_status
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_morale_source" => db_update
                     .character_morale_source
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_settlement_reputation" => db_update
                     .character_settlement_reputation
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_skills" => db_update
-                    .character_skills
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_strategic_condition" => db_update
-                    .character_strategic_condition
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_time" => db_update
-                    .character_time
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_training_schedule" => db_update
-                    .character_training_schedule
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
@@ -5351,11 +5359,29 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_attributes" => db_update
+                    .backend_character_attributes
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_capabilities" => db_update
+                    .backend_character_capabilities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_case_site_locations" => db_update
                     .backend_character_case_site_locations
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_conditions" => db_update
+                    .backend_character_conditions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_exposures" => db_update
+                    .backend_character_exposures
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_familiarities" => db_update
                     .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_limbs" => db_update
+                    .backend_character_limbs
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_needs" => db_update
+                    .backend_character_needs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_personalities" => db_update
                     .backend_character_personalities
@@ -5365,6 +5391,24 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_residence_statuses" => db_update
                     .backend_character_residence_statuses
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_skills" => db_update
+                    .backend_character_skills
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_stats" => db_update
+                    .backend_character_stats
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_strategic_conditions" => db_update
+                    .backend_character_strategic_conditions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_times" => db_update
+                    .backend_character_times
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_training_schedules" => db_update
+                    .backend_character_training_schedules
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_characters" => db_update
+                    .backend_characters
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
@@ -5462,26 +5506,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "battle_result" => db_update
                     .battle_result
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character" => db_update
-                    .character
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_attributes" => db_update
-                    .character_attributes
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_capability" => db_update
-                    .character_capability
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_death" => db_update
                     .character_death
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_equipped_item" => db_update
                     .character_equipped_item
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_exposure" => db_update
-                    .character_exposure
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
@@ -5489,32 +5518,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_illness_status" => db_update
                     .character_illness_status
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_morale_source" => db_update
                     .character_morale_source
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_settlement_reputation" => db_update
                     .character_settlement_reputation
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_skills" => db_update
-                    .character_skills
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_strategic_condition" => db_update
-                    .character_strategic_condition
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_time" => db_update
-                    .character_time
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_training_schedule" => db_update
-                    .character_training_schedule
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
@@ -5686,14 +5694,27 @@ pub struct AppliedDiff<'r> {
     backend_case_battles: __sdk::TableAppliedDiff<'r, BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
+    backend_character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
+    backend_character_capabilities: __sdk::TableAppliedDiff<'r, CharacterCapability>,
     backend_character_case_site_locations:
         __sdk::TableAppliedDiff<'r, BackendCharacterCaseSiteLocation>,
+    backend_character_conditions: __sdk::TableAppliedDiff<'r, CharacterCondition>,
+    backend_character_exposures: __sdk::TableAppliedDiff<'r, CharacterExposure>,
     backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
+    backend_character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
+    backend_character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
     backend_character_personalities: __sdk::TableAppliedDiff<'r, CharacterPersonality>,
     backend_character_relationship_statuses:
         __sdk::TableAppliedDiff<'r, BackendCharacterRelationshipStatus>,
     backend_character_residence_statuses:
         __sdk::TableAppliedDiff<'r, BackendCharacterResidenceStatus>,
+    backend_character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
+    backend_character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
+    backend_character_strategic_conditions:
+        __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
+    backend_character_times: __sdk::TableAppliedDiff<'r, CharacterTime>,
+    backend_character_training_schedules: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
+    backend_characters: __sdk::TableAppliedDiff<'r, Character>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
     backend_corpses: __sdk::TableAppliedDiff<'r, BackendCorpse>,
@@ -5731,24 +5752,12 @@ pub struct AppliedDiff<'r> {
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
-    character: __sdk::TableAppliedDiff<'r, Character>,
-    character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
-    character_capability: __sdk::TableAppliedDiff<'r, CharacterCapability>,
-    character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
     character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
     character_equipped_item: __sdk::TableAppliedDiff<'r, CharacterEquippedItem>,
-    character_exposure: __sdk::TableAppliedDiff<'r, CharacterExposure>,
     character_filth: __sdk::TableAppliedDiff<'r, CharacterFilth>,
     character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
-    character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
-    character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
     character_settlement_reputation: __sdk::TableAppliedDiff<'r, CharacterSettlementReputation>,
-    character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
-    character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
-    character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
-    character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
-    character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
     equipment_occupancy: __sdk::TableAppliedDiff<'r, EquipmentOccupancy>,
     food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
@@ -5851,14 +5860,44 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_character_affinities,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<CharacterAttributes>(
+            "backend_character_attributes",
+            &self.backend_character_attributes,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterCapability>(
+            "backend_character_capabilities",
+            &self.backend_character_capabilities,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<BackendCharacterCaseSiteLocation>(
             "backend_character_case_site_locations",
             &self.backend_character_case_site_locations,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<CharacterCondition>(
+            "backend_character_conditions",
+            &self.backend_character_conditions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterExposure>(
+            "backend_character_exposures",
+            &self.backend_character_exposures,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
             "backend_character_familiarities",
             &self.backend_character_familiarities,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterLimbs>(
+            "backend_character_limbs",
+            &self.backend_character_limbs,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterNeeds>(
+            "backend_character_needs",
+            &self.backend_character_needs,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterPersonality>(
@@ -5874,6 +5913,36 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendCharacterResidenceStatus>(
             "backend_character_residence_statuses",
             &self.backend_character_residence_statuses,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterSkills>(
+            "backend_character_skills",
+            &self.backend_character_skills,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterStats>(
+            "backend_character_stats",
+            &self.backend_character_stats,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterStrategicCondition>(
+            "backend_character_strategic_conditions",
+            &self.backend_character_strategic_conditions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterTime>(
+            "backend_character_times",
+            &self.backend_character_times,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>(
+            "backend_character_training_schedules",
+            &self.backend_character_training_schedules,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<Character>(
+            "backend_characters",
+            &self.backend_characters,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CommittedCut>(
@@ -6036,22 +6105,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.battle_result,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<Character>("character", &self.character, event);
-        callbacks.invoke_table_row_callbacks::<CharacterAttributes>(
-            "character_attributes",
-            &self.character_attributes,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterCapability>(
-            "character_capability",
-            &self.character_capability,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterCondition>(
-            "character_condition",
-            &self.character_condition,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<CharacterDeath>(
             "character_death",
             &self.character_death,
@@ -6060,11 +6113,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterEquippedItem>(
             "character_equipped_item",
             &self.character_equipped_item,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterExposure>(
-            "character_exposure",
-            &self.character_exposure,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterFilth>(
@@ -6077,49 +6125,14 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.character_illness_status,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<CharacterLimbs>(
-            "character_limbs",
-            &self.character_limbs,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<CharacterMoraleSource>(
             "character_morale_source",
             &self.character_morale_source,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<CharacterNeeds>(
-            "character_needs",
-            &self.character_needs,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<CharacterSettlementReputation>(
             "character_settlement_reputation",
             &self.character_settlement_reputation,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterSkills>(
-            "character_skills",
-            &self.character_skills,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterStats>(
-            "character_stats",
-            &self.character_stats,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterStrategicCondition>(
-            "character_strategic_condition",
-            &self.character_strategic_condition,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterTime>(
-            "character_time",
-            &self.character_time,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>(
-            "character_training_schedule",
-            &self.character_training_schedule,
             event,
         );
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
@@ -6999,11 +7012,23 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_case_battles_table::register_table(client_cache);
         backend_case_site_pins_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
+        backend_character_attributes_table::register_table(client_cache);
+        backend_character_capabilities_table::register_table(client_cache);
         backend_character_case_site_locations_table::register_table(client_cache);
+        backend_character_conditions_table::register_table(client_cache);
+        backend_character_exposures_table::register_table(client_cache);
         backend_character_familiarities_table::register_table(client_cache);
+        backend_character_limbs_table::register_table(client_cache);
+        backend_character_needs_table::register_table(client_cache);
         backend_character_personalities_table::register_table(client_cache);
         backend_character_relationship_statuses_table::register_table(client_cache);
         backend_character_residence_statuses_table::register_table(client_cache);
+        backend_character_skills_table::register_table(client_cache);
+        backend_character_stats_table::register_table(client_cache);
+        backend_character_strategic_conditions_table::register_table(client_cache);
+        backend_character_times_table::register_table(client_cache);
+        backend_character_training_schedules_table::register_table(client_cache);
+        backend_characters_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_contracts_table::register_table(client_cache);
         backend_corpses_table::register_table(client_cache);
@@ -7036,24 +7061,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
-        character_table::register_table(client_cache);
-        character_attributes_table::register_table(client_cache);
-        character_capability_table::register_table(client_cache);
-        character_condition_table::register_table(client_cache);
         character_death_table::register_table(client_cache);
         character_equipped_item_table::register_table(client_cache);
-        character_exposure_table::register_table(client_cache);
         character_filth_table::register_table(client_cache);
         character_illness_status_table::register_table(client_cache);
-        character_limbs_table::register_table(client_cache);
         character_morale_source_table::register_table(client_cache);
-        character_needs_table::register_table(client_cache);
         character_settlement_reputation_table::register_table(client_cache);
-        character_skills_table::register_table(client_cache);
-        character_stats_table::register_table(client_cache);
-        character_strategic_condition_table::register_table(client_cache);
-        character_time_table::register_table(client_cache);
-        character_training_schedule_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
         equipment_occupancy_table::register_table(client_cache);
         food_lot_table::register_table(client_cache);
@@ -7113,11 +7126,23 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_case_battles",
         "backend_case_site_pins",
         "backend_character_affinities",
+        "backend_character_attributes",
+        "backend_character_capabilities",
         "backend_character_case_site_locations",
+        "backend_character_conditions",
+        "backend_character_exposures",
         "backend_character_familiarities",
+        "backend_character_limbs",
+        "backend_character_needs",
         "backend_character_personalities",
         "backend_character_relationship_statuses",
         "backend_character_residence_statuses",
+        "backend_character_skills",
+        "backend_character_stats",
+        "backend_character_strategic_conditions",
+        "backend_character_times",
+        "backend_character_training_schedules",
+        "backend_characters",
         "backend_committed_cuts",
         "backend_contracts",
         "backend_corpses",
@@ -7150,24 +7175,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "battle_loot_item",
         "battle_participant",
         "battle_result",
-        "character",
-        "character_attributes",
-        "character_capability",
-        "character_condition",
         "character_death",
         "character_equipped_item",
-        "character_exposure",
         "character_filth",
         "character_illness_status",
-        "character_limbs",
         "character_morale_source",
-        "character_needs",
         "character_settlement_reputation",
-        "character_skills",
-        "character_stats",
-        "character_strategic_condition",
-        "character_time",
-        "character_training_schedule",
         "connected_players",
         "equipment_occupancy",
         "food_lot",

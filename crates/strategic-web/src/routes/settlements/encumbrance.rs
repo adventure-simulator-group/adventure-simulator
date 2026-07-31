@@ -89,17 +89,17 @@ impl EncumbranceRows {
                 // buffer is a bound on actual in-flight database calls.
                 let attributes = query_single::<CharacterAttributes>(
                     state,
-                    "character_attributes",
+                    "backend_character_attributes",
                     character_id,
                 )
                 .await;
                 let limbs =
-                    query_single::<CharacterLimbs>(state, "character_limbs", character_id).await;
+                    query_single::<CharacterLimbs>(state, "backend_character_limbs", character_id).await;
                 let condition =
-                    query_single::<CharacterCondition>(state, "character_condition", character_id)
+                    query_single::<CharacterCondition>(state, "backend_character_conditions", character_id)
                         .await;
                 let needs =
-                    query_single::<CharacterNeeds>(state, "character_needs", character_id).await;
+                    query_single::<CharacterNeeds>(state, "backend_character_needs", character_id).await;
                 (attributes, limbs, condition, needs)
             })
             .buffer_unordered(ENCUMBRANCE_QUERY_CONCURRENCY)
@@ -252,7 +252,7 @@ pub(super) async fn get_character_capability(
     state
         .db
         .query(&format!(
-            "SELECT * FROM character_capability WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_capabilities WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default()
@@ -334,7 +334,7 @@ pub(crate) async fn get_active_party_members(
         state
             .db
             .query::<Character>(&format!(
-                "SELECT * FROM character WHERE id = {}",
+                "SELECT * FROM backend_characters WHERE id = {}",
                 membership.character_id
             ))
             .await

@@ -428,7 +428,7 @@ pub(super) async fn service_quest_offers(
         .unwrap_or_default();
     let characters: Vec<Character> = state
         .db
-        .query("SELECT * FROM character")
+        .query("SELECT * FROM backend_characters")
         .await
         .unwrap_or_default();
     let viewer_party_id = active_party.as_ref().map(|party| party.id.as_str());
@@ -450,7 +450,7 @@ pub(super) async fn service_quest_offers(
         if let Some(capability) = state
             .db
             .query::<CharacterCapability>(&format!(
-                "SELECT * FROM character_capability WHERE character_id = {character_id}"
+                "SELECT * FROM backend_character_capabilities WHERE character_id = {character_id}"
             ))
             .await
             .unwrap_or_default()

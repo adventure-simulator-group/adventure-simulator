@@ -229,7 +229,7 @@ pub(super) async fn party_member(
         let characters: Vec<Character> = state
             .db
             .query(&format!(
-                "SELECT * FROM character WHERE id = {character_id}"
+                "SELECT * FROM backend_characters WHERE id = {character_id}"
             ))
             .await
             .unwrap_or_default();

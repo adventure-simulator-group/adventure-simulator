@@ -131,7 +131,9 @@ async fn actor_and_selector(
 ) -> Result<(Character, ConversationSelector), String> {
     let actor = state
         .db
-        .query::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {actor_id}"
+        ))
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -182,7 +184,7 @@ async fn actor_and_selector(
             let minute = state
                 .db
                 .query_one::<CharacterTime>(&format!(
-                    "SELECT * FROM character_time WHERE character_id = {}",
+                    "SELECT * FROM backend_character_times WHERE character_id = {}",
                     actor.id
                 ))
                 .await
@@ -200,7 +202,7 @@ async fn actor_and_selector(
             let id: u64 = subject_id.parse().map_err(|_| "Invalid player")?;
             let subject = state
                 .db
-                .query::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+                .query::<Character>(&format!("SELECT * FROM backend_characters WHERE id = {id}"))
                 .await
                 .map_err(|e| e.to_string())?
                 .into_iter()
@@ -309,7 +311,9 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
     };
     let Some(actor) = state
         .db
-        .query::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {actor_id}"
+        ))
         .await
         .ok()
         .and_then(|characters| characters.into_iter().next())
@@ -331,7 +335,7 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
         memberships.into_iter().map(|m| m.character_id).collect();
     let characters = state
         .db
-        .query::<Character>("SELECT * FROM character")
+        .query::<Character>("SELECT * FROM backend_characters")
         .await
         .unwrap_or_default();
     let all_messages = state

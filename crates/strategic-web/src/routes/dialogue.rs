@@ -552,7 +552,7 @@ async fn location_npcs(
     let character = state
         .db
         .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
+            "SELECT * FROM backend_characters WHERE id = {character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
@@ -596,7 +596,7 @@ async fn location_npcs(
     let minute = state
         .db
         .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
         ))
         .await
         .ok()
@@ -625,7 +625,7 @@ async fn social_npc_in_scope(
     let character = state
         .db
         .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
+            "SELECT * FROM backend_characters WHERE id = {character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
@@ -687,7 +687,7 @@ async fn available_social_npc(
     let minute = state
         .db
         .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
         ))
         .await
         .ok()
@@ -736,7 +736,7 @@ async fn npc_social_view(
     let actor_minute = state
         .db
         .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?

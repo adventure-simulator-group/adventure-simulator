@@ -592,7 +592,9 @@ pub(super) async fn settlement_resident_place(
         for related_id in related_ids {
             if let Ok(Some(related)) = state
                 .db
-                .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {related_id}"))
+                .query_one::<Character>(&format!(
+                    "SELECT * FROM backend_characters WHERE id = {related_id}"
+                ))
                 .await
             {
                 related_characters.push(related);
@@ -601,7 +603,7 @@ pub(super) async fn settlement_resident_place(
         let character_minute = state
             .db
             .query_one::<CharacterTime>(&format!(
-                "SELECT * FROM character_time WHERE character_id = {}",
+                "SELECT * FROM backend_character_times WHERE character_id = {}",
                 character.id
             ))
             .await

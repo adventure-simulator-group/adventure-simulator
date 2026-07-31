@@ -52,7 +52,7 @@ impl LiveRunner {
             .filter_map(|membership| {
                 self.connection
                     .db
-                    .character()
+                    .backend_characters()
                     .iter()
                     .find(|row| row.id == membership.character_id && row.alive)
             })
@@ -88,7 +88,7 @@ impl LiveRunner {
             .filter_map(|member| {
                 self.connection
                     .db
-                    .character_needs()
+                    .backend_character_needs()
                     .iter()
                     .find(|row| row.character_id == member.id)
             })
@@ -99,7 +99,7 @@ impl LiveRunner {
             .filter_map(|member| {
                 self.connection
                     .db
-                    .character_needs()
+                    .backend_character_needs()
                     .iter()
                     .find(|row| row.character_id == member.id)
             })
@@ -216,7 +216,7 @@ impl LiveRunner {
                 let payer_minute = self
                     .connection
                     .db
-                    .character_time()
+                    .backend_character_times()
                     .iter()
                     .find(|row| row.character_id == member.id)?
                     .minutes;

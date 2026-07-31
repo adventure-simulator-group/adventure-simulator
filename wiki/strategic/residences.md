@@ -21,11 +21,14 @@ occupants and primary designation while retaining its immutable history. A
 dormant purchased holding can be recovered and any eligible active holding can
 later be designated.
 
-The strategic gateway projects every legal holding back to its owner, including
-unoccupied nonprimary properties that still incur upkeep. The residence screen
-therefore lists the full portfolio and sends the selected holding ID explicitly
-when recovering, designating, or relinquishing property; private holding and
-occupancy tables are never queried directly by the browser-facing server.
+The strategic gateway projects every effective-dated legal holding back to its
+owner, including unoccupied nonprimary properties that still incur upkeep, and
+projects an occupied household home to each resident. The residence screen
+labels those two cases separately. Only the owner receives recovery,
+designation, or relinquishment controls, and terminal holdings disappear once
+the selected character's personal frontier reaches their resolution. Private
+holding and occupancy tables are never queried directly by the browser-facing
+server.
 
 Subsequent bills settle lazily from the owner's personal clock in whole 30-day
 periods, so advancing a month once has the same result as advancing it in
@@ -61,7 +64,8 @@ Ending a marriage or widowhood releases the marriage household and guest
 occupancy deterministically, while a residence holder keeps their own home.
 
 The web gateway reads only `BackendCharacterResidenceStatus`, a gateway-only
-projection of the selected character's active primary or occupied holding.
+projection of the selected character's as-of-personal-date portfolio, primary
+designation, and occupancy.
 Browser routes never query legal holdings, primary designations, occupancy
 edges, or charge ledgers directly.
 

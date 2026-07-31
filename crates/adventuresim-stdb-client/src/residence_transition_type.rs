@@ -54,6 +54,7 @@ impl __sdk::__query_builder::HasCols for ResidenceTransition {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct ResidenceTransitionIxCols {
+    pub affected_character_id: __sdk::__query_builder::IxCol<ResidenceTransition, u64>,
     pub holding_id: __sdk::__query_builder::IxCol<ResidenceTransition, String>,
     pub id: __sdk::__query_builder::IxCol<ResidenceTransition, String>,
     pub owner_character_id: __sdk::__query_builder::IxCol<ResidenceTransition, u64>,
@@ -63,6 +64,10 @@ impl __sdk::__query_builder::HasIxCols for ResidenceTransition {
     type IxCols = ResidenceTransitionIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ResidenceTransitionIxCols {
+            affected_character_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "affected_character_id",
+            ),
             holding_id: __sdk::__query_builder::IxCol::new(table_name, "holding_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             owner_character_id: __sdk::__query_builder::IxCol::new(

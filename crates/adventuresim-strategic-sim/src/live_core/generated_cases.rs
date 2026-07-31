@@ -129,7 +129,7 @@ impl LiveRunner {
         let Some(character) = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
         else {
@@ -141,7 +141,7 @@ impl LiveRunner {
         let minute = self
             .connection
             .db
-            .character_time()
+            .backend_character_times()
             .iter()
             .find(|row| row.character_id == character_id)
             .map_or(720, |row| row.minutes);
@@ -231,7 +231,7 @@ impl LiveRunner {
         let settlement_id = self
             .connection
             .db
-            .character()
+            .backend_characters()
             .iter()
             .find(|row| row.id == character_id)
             .and_then(|row| row.current_settlement_id)
@@ -617,7 +617,7 @@ impl LiveRunner {
         let actor_time = self
             .connection
             .db
-            .character_time()
+            .backend_character_times()
             .iter()
             .find(|row| row.character_id == character_id)
             .map(|row| row.minutes)
@@ -635,7 +635,7 @@ impl LiveRunner {
             .map(|member_id| {
                 self.connection
                     .db
-                    .character_time()
+                    .backend_character_times()
                     .iter()
                     .find(|row| row.character_id == *member_id)
                     .map(|row| row.minutes)

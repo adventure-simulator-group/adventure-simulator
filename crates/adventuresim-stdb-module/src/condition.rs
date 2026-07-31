@@ -41,7 +41,7 @@ fn enemy_fear_multiplier(enemy_type: &str) -> Result<f32, String> {
 
 /// Durable strategic inputs for blood loss and religious morale relationships.
 #[derive(Clone, Debug)]
-#[table(accessor = character_condition, public)]
+#[table(accessor = character_condition)]
 pub struct CharacterCondition {
     #[primary_key]
     pub character_id: u64,
@@ -54,7 +54,7 @@ pub struct CharacterCondition {
 /// Durable strategic food and water state. Positive balances are short-term
 /// physiological reserves; negative balances represent unsupported need.
 #[derive(Clone, Debug)]
-#[table(accessor = character_needs, public)]
+#[table(accessor = character_needs)]
 pub struct CharacterNeeds {
     #[primary_key]
     pub character_id: u64,
@@ -67,7 +67,7 @@ pub struct CharacterNeeds {
 /// separate from filth: water changes exposure but carries no dirt/blood
 /// provenance and washing never consumes it.
 #[derive(Clone, Debug, PartialEq)]
-#[table(accessor = character_exposure, public)]
+#[table(accessor = character_exposure)]
 pub struct CharacterExposure {
     #[primary_key]
     pub character_id: u64,
@@ -96,7 +96,7 @@ pub struct MoraleEvent {
 
 /// Refreshable server-authoritative projection used by strategic clients.
 #[derive(Clone, Debug, PartialEq)]
-#[table(accessor = character_strategic_condition, public)]
+#[table(accessor = character_strategic_condition)]
 pub struct CharacterStrategicCondition {
     #[primary_key]
     pub character_id: u64,

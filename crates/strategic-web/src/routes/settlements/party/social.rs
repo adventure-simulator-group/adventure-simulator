@@ -20,7 +20,9 @@ pub(super) async fn party_social(
     } else {
         match state
             .db
-            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {target_id}"))
+            .query_one::<Character>(&format!(
+                "SELECT * FROM backend_characters WHERE id = {target_id}"
+            ))
             .await
             .ok()
             .flatten()
@@ -56,7 +58,7 @@ pub(super) async fn party_social(
     let target_condition_result = state
         .db
         .query_one::<CharacterCondition>(&format!(
-            "SELECT * FROM character_condition WHERE character_id = {target_id}"
+            "SELECT * FROM backend_character_conditions WHERE character_id = {target_id}"
         ))
         .await;
     let religion_id = target_condition_result
@@ -71,7 +73,7 @@ pub(super) async fn party_social(
     let infamy = reputation
         .as_ref()
         .map_or(0.0, |value| value.infamy as f32 / 100.0);
-    let target_minute = query_single::<CharacterTime>(&state, "character_time", target_id)
+    let target_minute = query_single::<CharacterTime>(&state, "backend_character_times", target_id)
         .await
         .map_or(0, |v| v.minutes);
     let affinity_id = format!("{target_id}:{}", active.id);
@@ -169,7 +171,7 @@ pub(super) async fn party_social(
     let actor_skills_result = state
         .db
         .query_one::<CharacterSkills>(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {}",
+            "SELECT * FROM backend_character_skills WHERE character_id = {}",
             active.id
         ))
         .await;

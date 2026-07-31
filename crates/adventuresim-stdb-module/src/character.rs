@@ -2,16 +2,20 @@ use adventuresim_core::starting_character::{
     StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
     StartingPresentation, StartingSex, StartingSlot,
 };
-use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{
+    Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
+};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item,
     alcohol::alcohol_consumption,
-    capability::character_capability,
+    capability::{character_capability, character_capability__view},
     condition::{
-        character_condition, character_exposure, character_morale_source, character_needs,
-        character_strategic_condition, morale_event, religious_demand,
+        character_condition, character_condition__view, character_exposure,
+        character_exposure__view, character_morale_source, character_needs, character_needs__view,
+        character_strategic_condition, character_strategic_condition__view, morale_event,
+        religious_demand,
     },
     disease::{
         character_illness_status, committed_cut, disease_notice, infection_episode,
@@ -23,18 +27,27 @@ use crate::{
     personality::character_personality,
     relationship::{child_identity_reservation, npc_policy},
     repair::{item_condition, repair_order},
-    strategic::{inventory_quantity_target, party_authority, party_member, settlement},
+    strategic::{
+        inventory_quantity_target, party_authority, party_member, settlement,
+        strategic_gateway_authority__view,
+    },
     surgery::{limb_injury, retained_projectile},
     tactical::tactical_server_authority,
-    time::{character_time, character_training_schedule},
+    time::{
+        character_time, character_time__view, character_training_schedule,
+        character_training_schedule__view,
+    },
 };
 
 /// General character info
 #[derive(Clone, Debug)]
-#[table(accessor = character, public)]
+#[table(accessor = character)]
 pub struct Character {
     #[primary_key]
     pub id: u64,
+    /// Private full-table scan seam used only by trusted projections.
+    #[index(btree)]
+    pub scan_id: u64,
     pub name: String,
     pub xp: u32,
     pub level: u32,
@@ -51,6 +64,139 @@ pub struct Character {
     /// future death system, but parties already use this to govern succession.
     #[default(true)]
     pub alive: bool,
+}
+
+/// Full Character rows are private because a globally exclusive NPC may have
+/// been born or moved at a date the requesting player has not reached. The
+/// strategic gateway remains the sole broad reader and applies actor-specific
+/// chronological filtering in its public presentations.
+#[view(accessor = backend_characters, public)]
+pub fn backend_characters(ctx: &ViewContext) -> Vec<Character> {
+    if !character_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db.character().scan_id().filter(0u64..).collect()
+}
+
+fn character_view_is_gateway(ctx: &ViewContext) -> bool {
+    ctx.db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|authority| authority.identity == ctx.sender())
+}
+
+fn gateway_character_ids(ctx: &ViewContext) -> Vec<u64> {
+    if !character_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .character()
+        .scan_id()
+        .filter(0u64..)
+        .map(|character| character.id)
+        .collect()
+}
+
+#[view(accessor = backend_character_attributes, public)]
+pub fn backend_character_attributes(ctx: &ViewContext) -> Vec<CharacterAttributes> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_attributes().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_stats, public)]
+pub fn backend_character_stats(ctx: &ViewContext) -> Vec<CharacterStats> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_stats().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_skills, public)]
+pub fn backend_character_skills(ctx: &ViewContext) -> Vec<CharacterSkills> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_skills().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_limbs, public)]
+pub fn backend_character_limbs(ctx: &ViewContext) -> Vec<CharacterLimbs> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_limbs().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_times, public)]
+pub fn backend_character_times(ctx: &ViewContext) -> Vec<crate::time::CharacterTime> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_time().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_training_schedules, public)]
+pub fn backend_character_training_schedules(
+    ctx: &ViewContext,
+) -> Vec<crate::time::CharacterTrainingSchedule> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_training_schedule().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_capabilities, public)]
+pub fn backend_character_capabilities(
+    ctx: &ViewContext,
+) -> Vec<crate::capability::CharacterCapability> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_capability().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_conditions, public)]
+pub fn backend_character_conditions(
+    ctx: &ViewContext,
+) -> Vec<crate::condition::CharacterCondition> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_condition().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_needs, public)]
+pub fn backend_character_needs(ctx: &ViewContext) -> Vec<crate::condition::CharacterNeeds> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_needs().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_exposures, public)]
+pub fn backend_character_exposures(ctx: &ViewContext) -> Vec<crate::condition::CharacterExposure> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_exposure().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_strategic_conditions, public)]
+pub fn backend_character_strategic_conditions(
+    ctx: &ViewContext,
+) -> Vec<crate::condition::CharacterStrategicCondition> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| {
+            ctx.db
+                .character_strategic_condition()
+                .character_id()
+                .find(id)
+        })
+        .collect()
 }
 
 /// Durable receipt for an idempotent first-character confirmation.
@@ -227,7 +373,7 @@ pub fn backfill_character_deaths_and_leadership(ctx: &ReducerContext) -> Result<
 
 /// [`Character`] attributes
 #[derive(Clone, Debug)]
-#[table(accessor = character_attributes, public)]
+#[table(accessor = character_attributes)]
 pub struct CharacterAttributes {
     #[primary_key]
     pub character_id: u64,
@@ -250,7 +396,7 @@ pub struct CharacterAttributes {
 
 /// [`Character`] stats
 #[derive(Clone, Debug)]
-#[table(accessor = character_stats, public)]
+#[table(accessor = character_stats)]
 pub struct CharacterStats {
     #[primary_key]
     pub character_id: u64,
@@ -260,7 +406,7 @@ pub struct CharacterStats {
 
 /// [`Character`] skills
 #[derive(Clone, Debug)]
-#[table(accessor = character_skills, public)]
+#[table(accessor = character_skills)]
 pub struct CharacterSkills {
     #[primary_key]
     pub character_id: u64,
@@ -302,7 +448,7 @@ pub struct CharacterSkills {
 
 /// [`Character`] limbs
 #[derive(Clone, Debug)]
-#[table(accessor = character_limbs, public)]
+#[table(accessor = character_limbs)]
 pub struct CharacterLimbs {
     #[primary_key]
     pub character_id: u64,
@@ -1835,6 +1981,7 @@ pub(crate) fn insert_character_with_origin(
 
     let character = ctx.db.character().insert(Character {
         id,
+        scan_id: id,
         name,
         xp: 0,
         level: 1,
@@ -3004,6 +3151,41 @@ mod starting_character_boundary_tests {
         assert!(persistent.contains("CharacterCreationMode::PersistentNpc"));
         assert!(persistent.contains("create_solo_party: false"));
         assert!(persistent.contains("initial_time_minute"));
+    }
+
+    #[test]
+    fn full_character_rows_are_gateway_only() {
+        let source = include_str!("character.rs");
+        assert!(source.contains("#[table(accessor = character)]"));
+        assert!(!source.contains("#[table(accessor = character, public)]"));
+        for component in [
+            "character_attributes",
+            "character_stats",
+            "character_skills",
+            "character_limbs",
+        ] {
+            assert!(source.contains(&format!("#[table(accessor = {component})]")));
+            assert!(!source.contains(&format!("#[table(accessor = {component}, public)]")));
+        }
+        let projection = source.split("pub fn backend_characters").nth(1).unwrap();
+        assert!(projection.contains("strategic_gateway_authority()"));
+        assert!(projection.contains("authority.identity == ctx.sender()"));
+        assert!(projection.contains("character().scan_id().filter(0u64..)"));
+        for view in [
+            "backend_character_attributes",
+            "backend_character_stats",
+            "backend_character_skills",
+            "backend_character_limbs",
+            "backend_character_times",
+            "backend_character_training_schedules",
+            "backend_character_capabilities",
+            "backend_character_conditions",
+            "backend_character_needs",
+            "backend_character_exposures",
+            "backend_character_strategic_conditions",
+        ] {
+            assert!(projection.contains(&format!("pub fn {view}")));
+        }
     }
 
     #[test]

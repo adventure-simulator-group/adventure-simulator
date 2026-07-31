@@ -61,7 +61,7 @@ async fn active_context(
     let character = state
         .db
         .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
+            "SELECT * FROM backend_characters WHERE id = {character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
@@ -81,7 +81,7 @@ async fn active_context(
     let now_minute = state
         .db
         .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
@@ -288,7 +288,7 @@ async fn load_autopsy_demo(State(state): State<AppState>, session: Session) -> R
     let character = match state
         .db
         .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
+            "SELECT * FROM backend_characters WHERE id = {character_id}"
         ))
         .await
     {
@@ -348,7 +348,7 @@ async fn load_outbreak_demo(State(state): State<AppState>, session: Session) -> 
     let character = match state
         .db
         .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
+            "SELECT * FROM backend_characters WHERE id = {character_id}"
         ))
         .await
     {

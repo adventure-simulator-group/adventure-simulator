@@ -15,7 +15,7 @@ use crate::character::character;
 use crate::condition::{MoraleEvent, morale_event};
 use crate::relationship::{HouseholdRole, character_kinship, household_member};
 use crate::strategic::{settlement, strategic_gateway_authority__view};
-use crate::time::character_time;
+use crate::time::{character_time, character_time__view};
 
 pub const RESIDENCE_BILLING_PERIOD_MINUTES: u64 = HOUSING_BILLING_PERIOD_MINUTES;
 
@@ -169,6 +169,7 @@ pub struct ResidenceTransition {
     pub holding_id: String,
     #[index(btree)]
     pub owner_character_id: u64,
+    #[index(btree)]
     pub affected_character_id: u64,
     pub kind: ResidenceTransitionKind,
     pub minute: u64,
@@ -201,6 +202,71 @@ fn residence_view_is_gateway(ctx: &ViewContext) -> bool {
         .is_some_and(|authority| authority.identity == ctx.sender())
 }
 
+fn holding_active_at_view(ctx: &ViewContext, holding_id: &str, minute: u64) -> bool {
+    let mut transitions = ctx
+        .db
+        .residence_transition()
+        .holding_id()
+        .filter(&holding_id.to_owned())
+        .filter(|transition| transition.minute <= minute)
+        .collect::<Vec<_>>();
+    transitions.sort_by_key(|transition| {
+        (
+            transition.minute,
+            residence_transition_precedence(transition.kind),
+            transition.id.clone(),
+        )
+    });
+    transitions
+        .into_iter()
+        .fold(false, |active, transition| match transition.kind {
+            ResidenceTransitionKind::Acquired | ResidenceTransitionKind::Recovered => true,
+            ResidenceTransitionKind::Dormant | ResidenceTransitionKind::Relinquished => false,
+            ResidenceTransitionKind::Designated
+            | ResidenceTransitionKind::OccupantAdmitted
+            | ResidenceTransitionKind::OccupantRemoved => active,
+        })
+}
+
+fn occupant_holding_id_at_view(
+    ctx: &ViewContext,
+    character_id: u64,
+    minute: u64,
+) -> Option<String> {
+    let mut transitions = ctx
+        .db
+        .residence_transition()
+        .affected_character_id()
+        .filter(character_id)
+        .filter(|transition| transition.minute <= minute)
+        .filter(|transition| {
+            matches!(
+                transition.kind,
+                ResidenceTransitionKind::OccupantAdmitted
+                    | ResidenceTransitionKind::OccupantRemoved
+            )
+        })
+        .collect::<Vec<_>>();
+    transitions.sort_by_key(|transition| {
+        (
+            transition.minute,
+            residence_transition_precedence(transition.kind),
+            transition.id.clone(),
+        )
+    });
+    transitions
+        .into_iter()
+        .fold(None, |holding_id, transition| match transition.kind {
+            ResidenceTransitionKind::OccupantAdmitted => Some(transition.holding_id),
+            ResidenceTransitionKind::OccupantRemoved
+                if holding_id.as_deref() == Some(transition.holding_id.as_str()) =>
+            {
+                None
+            }
+            _ => holding_id,
+        })
+}
+
 #[view(accessor = backend_character_residence_statuses, public)]
 pub fn backend_character_residence_statuses(
     ctx: &ViewContext,
@@ -219,6 +285,13 @@ pub fn backend_character_residence_statuses(
                 .residence_occupant()
                 .holding_id()
                 .filter(&holding_id)
+                .filter(|row| {
+                    ctx.db
+                        .character_time()
+                        .character_id()
+                        .find(row.character_id)
+                        .is_some_and(|time| row.admitted_minute <= time.minutes)
+                })
                 .map(|row| row.character_id)
                 .collect::<Vec<_>>();
             // Legal ownership must remain visible to the owner even after a
@@ -231,7 +304,21 @@ pub fn backend_character_residence_statuses(
                     .primary_residence()
                     .holding_id()
                     .filter(&holding_id)
+                    .filter(|row| {
+                        ctx.db
+                            .character_time()
+                            .character_id()
+                            .find(row.character_id)
+                            .is_some_and(|time| row.designated_minute <= time.minutes)
+                    })
                     .map(|row| row.character_id),
+            );
+            character_ids.extend(
+                ctx.db
+                    .residence_transition()
+                    .holding_id()
+                    .filter(&holding_id)
+                    .map(|transition| transition.affected_character_id),
             );
             character_ids.sort_unstable();
             character_ids.dedup();
@@ -239,31 +326,39 @@ pub fn backend_character_residence_statuses(
                 .into_iter()
                 .map(move |character_id| (holding.clone(), character_id))
         })
-        .map(|(holding, character_id)| {
-            let occupancy = ctx
+        .filter_map(|(holding, character_id)| {
+            let character_minute = ctx
                 .db
-                .residence_occupant()
+                .character_time()
                 .character_id()
-                .find(character_id);
+                .find(character_id)
+                .map(|time| time.minutes)?;
+            if holding.acquired_minute > character_minute
+                || holding
+                    .resolved_minute
+                    .is_some_and(|resolved| resolved <= character_minute)
+            {
+                return None;
+            }
+            let occupancy_holding_id =
+                occupant_holding_id_at_view(ctx, character_id, character_minute);
             let primary = ctx.db.primary_residence().character_id().find(character_id);
-            BackendCharacterResidenceStatus {
+            Some(BackendCharacterResidenceStatus {
                 character_id,
                 holding_id: holding.id.clone(),
                 owner_character_id: holding.owner_character_id,
                 settlement_id: holding.settlement_id,
                 tier: holding.tier,
                 tenure: holding.tenure,
-                active: holding.status == ResidenceHoldingStatus::Active,
-                primary: primary
-                    .as_ref()
-                    .is_some_and(|row| row.holding_id == holding.id),
-                occupied: occupancy
-                    .as_ref()
-                    .is_some_and(|row| row.holding_id == holding.id),
+                active: holding_active_at_view(ctx, &holding.id, character_minute),
+                primary: primary.as_ref().is_some_and(|row| {
+                    row.holding_id == holding.id && row.designated_minute <= character_minute
+                }),
+                occupied: occupancy_holding_id.as_deref() == Some(holding.id.as_str()),
                 acquired_minute: holding.acquired_minute,
                 last_billed_minute: holding.last_billed_minute,
                 next_due_minute: holding.next_due_minute,
-            }
+            })
         })
         .collect()
 }
@@ -376,16 +471,18 @@ pub fn primary_residence_holding(
     ctx: &ReducerContext,
     character_id: u64,
 ) -> Option<ResidenceHolding> {
+    let minute = residence_now(ctx, character_id).ok()?;
     let primary = ctx
         .db
         .primary_residence()
         .character_id()
-        .find(character_id)?;
+        .find(character_id)
+        .filter(|row| row.designated_minute <= minute)?;
     ctx.db
         .residence_holding()
         .id()
         .find(&primary.holding_id)
-        .filter(|row| row.status == ResidenceHoldingStatus::Active)
+        .filter(|row| holding_active_at(ctx, &row.id, minute))
 }
 
 pub fn active_primary_residence(
@@ -404,18 +501,152 @@ pub fn active_residence_for_occupant(
     character_id: u64,
     settlement_id: &str,
 ) -> Option<ResidenceHolding> {
-    let occupant = ctx
-        .db
-        .residence_occupant()
-        .character_id()
-        .find(character_id)?;
+    let minute = residence_now(ctx, character_id).ok()?;
+    let holding_id = occupant_holding_id_at(ctx, character_id, minute)?;
     ctx.db
         .residence_holding()
         .id()
-        .find(&occupant.holding_id)
-        .filter(|row| {
-            row.status == ResidenceHoldingStatus::Active && row.settlement_id == settlement_id
+        .find(&holding_id)
+        .filter(|row| holding_active_at(ctx, &row.id, minute) && row.settlement_id == settlement_id)
+}
+
+/// Whether a holding was usable at an effective personal minute. Current
+/// status alone is insufficient because a later unpaid bill or recovery may
+/// have changed the mutable row after the event being materialized.
+pub(crate) fn holding_active_at(ctx: &ReducerContext, holding_id: &str, minute: u64) -> bool {
+    let mut transitions = ctx
+        .db
+        .residence_transition()
+        .holding_id()
+        .filter(&holding_id.to_owned())
+        .filter(|transition| transition.minute <= minute)
+        .collect::<Vec<_>>();
+    transitions.sort_by_key(|transition| {
+        (
+            transition.minute,
+            residence_transition_precedence(transition.kind),
+            transition.id.clone(),
+        )
+    });
+    transitions
+        .into_iter()
+        .fold(false, |active, transition| match transition.kind {
+            ResidenceTransitionKind::Acquired | ResidenceTransitionKind::Recovered => true,
+            ResidenceTransitionKind::Dormant | ResidenceTransitionKind::Relinquished => false,
+            ResidenceTransitionKind::Designated
+            | ResidenceTransitionKind::OccupantAdmitted
+            | ResidenceTransitionKind::OccupantRemoved => active,
         })
+}
+
+const fn residence_transition_precedence(kind: ResidenceTransitionKind) -> u8 {
+    match kind {
+        ResidenceTransitionKind::Acquired => 0,
+        ResidenceTransitionKind::Designated => 1,
+        ResidenceTransitionKind::OccupantRemoved => 2,
+        ResidenceTransitionKind::OccupantAdmitted => 3,
+        ResidenceTransitionKind::Dormant => 4,
+        ResidenceTransitionKind::Recovered => 5,
+        ResidenceTransitionKind::Relinquished => 6,
+    }
+}
+
+fn occupant_holding_id_at(ctx: &ReducerContext, character_id: u64, minute: u64) -> Option<String> {
+    let mut transitions = ctx
+        .db
+        .residence_transition()
+        .affected_character_id()
+        .filter(character_id)
+        .filter(|transition| transition.minute <= minute)
+        .filter(|transition| {
+            matches!(
+                transition.kind,
+                ResidenceTransitionKind::OccupantAdmitted
+                    | ResidenceTransitionKind::OccupantRemoved
+            )
+        })
+        .collect::<Vec<_>>();
+    transitions.sort_by_key(|transition| {
+        (
+            transition.minute,
+            residence_transition_precedence(transition.kind),
+            transition.id.clone(),
+        )
+    });
+    transitions
+        .into_iter()
+        .fold(None, |holding_id, transition| match transition.kind {
+            ResidenceTransitionKind::OccupantAdmitted => Some(transition.holding_id),
+            ResidenceTransitionKind::OccupantRemoved
+                if holding_id.as_deref() == Some(transition.holding_id.as_str()) =>
+            {
+                None
+            }
+            _ => holding_id,
+        })
+}
+
+/// Apply an occupancy transition at its effective minute without overwriting
+/// a newer current pointer. This is used by delayed shared lifecycle events.
+pub(crate) fn move_residence_occupant_effective(
+    ctx: &ReducerContext,
+    holding_id: &str,
+    character_id: u64,
+    minute: u64,
+) -> Result<(), String> {
+    let holding = ctx
+        .db
+        .residence_holding()
+        .id()
+        .find(holding_id.to_owned())
+        .filter(|row| holding_active_at(ctx, &row.id, minute))
+        .ok_or("Residence holding was not active at the effective minute")?;
+    if occupant_holding_id_at(ctx, character_id, minute).as_deref() == Some(holding_id) {
+        return Ok(());
+    }
+    if let Some(previous_id) = occupant_holding_id_at(ctx, character_id, minute)
+        && let Some(previous) = ctx.db.residence_holding().id().find(&previous_id)
+    {
+        record_transition(
+            ctx,
+            &previous,
+            character_id,
+            minute,
+            ResidenceTransitionKind::OccupantRemoved,
+        );
+    }
+    record_transition(
+        ctx,
+        &holding,
+        character_id,
+        minute,
+        ResidenceTransitionKind::OccupantAdmitted,
+    );
+    let has_later_transition = ctx
+        .db
+        .residence_transition()
+        .affected_character_id()
+        .filter(character_id)
+        .any(|transition| transition.minute > minute);
+    if !has_later_transition {
+        let row = ResidenceOccupant {
+            character_id,
+            holding_id: holding.id,
+            admitted_minute: minute,
+        };
+        if ctx
+            .db
+            .residence_occupant()
+            .character_id()
+            .find(character_id)
+            .is_some()
+        {
+            ctx.db.residence_occupant().character_id().update(row);
+        } else {
+            ctx.db.residence_occupant().insert(row);
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn remove_occupant_at(

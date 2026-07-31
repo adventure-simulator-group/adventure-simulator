@@ -10,6 +10,7 @@ pub struct SocializingReceipt {
     pub id: String,
     pub actor_id: u64,
     pub target_id: u64,
+    pub day: u64,
     pub start_minute: u64,
     pub end_minute: u64,
     pub minutes: u64,
@@ -26,6 +27,7 @@ pub struct SocializingReceiptCols {
     pub id: __sdk::__query_builder::Col<SocializingReceipt, String>,
     pub actor_id: __sdk::__query_builder::Col<SocializingReceipt, u64>,
     pub target_id: __sdk::__query_builder::Col<SocializingReceipt, u64>,
+    pub day: __sdk::__query_builder::Col<SocializingReceipt, u64>,
     pub start_minute: __sdk::__query_builder::Col<SocializingReceipt, u64>,
     pub end_minute: __sdk::__query_builder::Col<SocializingReceipt, u64>,
     pub minutes: __sdk::__query_builder::Col<SocializingReceipt, u64>,
@@ -38,6 +40,7 @@ impl __sdk::__query_builder::HasCols for SocializingReceipt {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             actor_id: __sdk::__query_builder::Col::new(table_name, "actor_id"),
             target_id: __sdk::__query_builder::Col::new(table_name, "target_id"),
+            day: __sdk::__query_builder::Col::new(table_name, "day"),
             start_minute: __sdk::__query_builder::Col::new(table_name, "start_minute"),
             end_minute: __sdk::__query_builder::Col::new(table_name, "end_minute"),
             minutes: __sdk::__query_builder::Col::new(table_name, "minutes"),
@@ -50,6 +53,7 @@ impl __sdk::__query_builder::HasCols for SocializingReceipt {
 /// Provides typed access to indexed columns for query building.
 pub struct SocializingReceiptIxCols {
     pub actor_id: __sdk::__query_builder::IxCol<SocializingReceipt, u64>,
+    pub day: __sdk::__query_builder::IxCol<SocializingReceipt, u64>,
     pub id: __sdk::__query_builder::IxCol<SocializingReceipt, String>,
     pub target_id: __sdk::__query_builder::IxCol<SocializingReceipt, u64>,
 }
@@ -59,6 +63,7 @@ impl __sdk::__query_builder::HasIxCols for SocializingReceipt {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         SocializingReceiptIxCols {
             actor_id: __sdk::__query_builder::IxCol::new(table_name, "actor_id"),
+            day: __sdk::__query_builder::IxCol::new(table_name, "day"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             target_id: __sdk::__query_builder::IxCol::new(table_name, "target_id"),
         }

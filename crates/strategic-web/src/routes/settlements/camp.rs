@@ -127,7 +127,7 @@ pub(super) async fn camp(
     let party_members = get_active_party_members(&state, Some(&character)).await;
     let member_times: Vec<CharacterTime> = state
         .db
-        .query("SELECT * FROM character_time")
+        .query("SELECT * FROM backend_character_times")
         .await
         .unwrap_or_default();
     let current_party_minute = party_members
@@ -229,7 +229,7 @@ pub(super) async fn camp(
     };
     let stats: Vec<CharacterStats> = state
         .db
-        .query("SELECT * FROM character_stats")
+        .query("SELECT * FROM backend_character_stats")
         .await
         .unwrap_or_default();
     let fatigue_rest_minutes = party_members
@@ -742,7 +742,7 @@ pub(super) async fn travel_provision_forecast_for_minutes(
         let Some(needs) = state
             .db
             .query_one::<CharacterNeeds>(&format!(
-                "SELECT * FROM character_needs WHERE character_id = {}",
+                "SELECT * FROM backend_character_needs WHERE character_id = {}",
                 traveler.id
             ))
             .await
@@ -776,7 +776,7 @@ pub(super) async fn travel_provision_forecast_for_minutes(
                 });
             }
         }
-        let time = query_single::<CharacterTime>(state, "character_time", traveler.id).await;
+        let time = query_single::<CharacterTime>(state, "backend_character_times", traveler.id).await;
         let personality = query_single::<CharacterPersonality>(
             state,
             "backend_character_personalities",

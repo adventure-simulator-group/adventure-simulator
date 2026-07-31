@@ -75,7 +75,7 @@ async fn character_condition(
         state
             .db
             .query_one::<CharacterStrategicCondition>(&format!(
-                "SELECT * FROM character_strategic_condition WHERE character_id = {id}"
+                "SELECT * FROM backend_character_strategic_conditions WHERE character_id = {id}"
             ))
             .await
             .ok()
@@ -116,7 +116,11 @@ async fn remembered_characters(state: &AppState, session: &Session) -> Vec<Chara
     let characters: Vec<Character> = if let Some(characters) = state.live.cached_characters() {
         characters
     } else {
-        match state.db.query::<Character>("SELECT * FROM character").await {
+        match state
+            .db
+            .query::<Character>("SELECT * FROM backend_characters")
+            .await
+        {
             Ok(characters) => characters,
             Err(error) => {
                 tracing::error!(%error, "failed to list characters");

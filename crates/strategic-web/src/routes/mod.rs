@@ -191,7 +191,9 @@ pub(crate) async fn execute_or_request_party_action(
 ) -> Result<PartyActionOutcome, String> {
     let character = state
         .db
-        .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query_one::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {actor_id}"
+        ))
         .await
         .map_err(|e| e.to_string())?
         .ok_or("Character not found")?;
@@ -223,7 +225,7 @@ pub(crate) async fn execute_or_request_party_action(
             let member = state
                 .db
                 .query_one::<Character>(&format!(
-                    "SELECT * FROM character WHERE id = {}",
+                    "SELECT * FROM backend_characters WHERE id = {}",
                     membership.character_id
                 ))
                 .await
@@ -240,7 +242,7 @@ pub(crate) async fn execute_or_request_party_action(
             let condition = state
                 .db
                 .query_one::<CharacterStrategicCondition>(&format!(
-                    "SELECT * FROM character_strategic_condition WHERE character_id = {}",
+                    "SELECT * FROM backend_character_strategic_conditions WHERE character_id = {}",
                     member.id
                 ))
                 .await
@@ -284,7 +286,7 @@ pub(crate) async fn execute_or_request_party_action(
     let leader = state
         .db
         .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {}",
+            "SELECT * FROM backend_characters WHERE id = {}",
             party.leader_id
         ))
         .await
@@ -344,7 +346,7 @@ pub(crate) async fn party_terrain_profile(
     for id in member_ids {
         let Some(character) = state
             .db
-            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+            .query_one::<Character>(&format!("SELECT * FROM backend_characters WHERE id = {id}"))
             .await
             .map_err(|e| e.to_string())?
         else {
@@ -356,7 +358,7 @@ pub(crate) async fn party_terrain_profile(
         let Some(attributes) = state
             .db
             .query_one::<CharacterAttributes>(&format!(
-                "SELECT * FROM character_attributes WHERE character_id = {id}"
+                "SELECT * FROM backend_character_attributes WHERE character_id = {id}"
             ))
             .await
             .map_err(|e| e.to_string())?
@@ -366,7 +368,7 @@ pub(crate) async fn party_terrain_profile(
         let Some(limbs) = state
             .db
             .query_one::<CharacterLimbs>(&format!(
-                "SELECT * FROM character_limbs WHERE character_id = {id}"
+                "SELECT * FROM backend_character_limbs WHERE character_id = {id}"
             ))
             .await
             .map_err(|e| e.to_string())?
@@ -376,7 +378,7 @@ pub(crate) async fn party_terrain_profile(
         let Some(skills) = state
             .db
             .query_one::<CharacterSkills>(&format!(
-                "SELECT * FROM character_skills WHERE character_id = {id}"
+                "SELECT * FROM backend_character_skills WHERE character_id = {id}"
             ))
             .await
             .map_err(|e| e.to_string())?
@@ -462,7 +464,7 @@ async fn authoritative_party_departure_minute(
     for id in member_ids {
         let living = state
             .db
-            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+            .query_one::<Character>(&format!("SELECT * FROM backend_characters WHERE id = {id}"))
             .await
             .map_err(|error| error.to_string())?
             .is_some_and(|character| character.alive);
@@ -472,7 +474,7 @@ async fn authoritative_party_departure_minute(
         if let Some(time) = state
             .db
             .query_one::<CharacterTime>(&format!(
-                "SELECT * FROM character_time WHERE character_id = {id}"
+                "SELECT * FROM backend_character_times WHERE character_id = {id}"
             ))
             .await
             .map_err(|error| error.to_string())?
@@ -493,7 +495,9 @@ async fn planned_travel_call(
     };
     let character = state
         .db
-        .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .query_one::<Character>(&format!(
+            "SELECT * FROM backend_characters WHERE id = {actor_id}"
+        ))
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Character not found")?;
@@ -930,7 +934,7 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
         .into_response();
     };
     let character_time_sql =
-        format!("SELECT * FROM character_time WHERE character_id = {character_id}");
+        format!("SELECT * FROM backend_character_times WHERE character_id = {character_id}");
     let (character_time, world_clock) = tokio::join!(
         state.db.query::<CharacterTime>(&character_time_sql),
         state

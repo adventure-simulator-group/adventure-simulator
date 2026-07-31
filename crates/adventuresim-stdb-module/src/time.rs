@@ -64,7 +64,7 @@ pub struct WorldClockSchedule {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = character_time, public)]
+#[table(accessor = character_time)]
 pub struct CharacterTime {
     #[primary_key]
     pub character_id: u64,
@@ -127,7 +127,7 @@ pub enum ImmediateActivity {
 /// Daily settlement plan. The empty travel allocation is retained temporarily
 /// for database/client compatibility; travel never applies it.
 #[derive(Clone, Debug)]
-#[table(accessor = character_training_schedule, public)]
+#[table(accessor = character_training_schedule)]
 pub struct CharacterTrainingSchedule {
     #[primary_key]
     pub character_id: u64,

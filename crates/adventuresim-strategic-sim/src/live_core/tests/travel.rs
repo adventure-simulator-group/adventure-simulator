@@ -302,7 +302,7 @@ fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
         .and_then(|tail| tail.split("fn travel_camps").next())
         .expect("journey provisioner");
     for public_surface in [
-        ".character_needs()",
+        ".backend_character_needs()",
         ".inventory_item()",
         ".party_inventory_item()",
         ".food_lot()",

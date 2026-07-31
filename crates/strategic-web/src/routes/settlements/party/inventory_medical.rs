@@ -546,7 +546,7 @@ pub(super) async fn render_party_stats(
         let characters: Vec<Character> = state
             .db
             .query(&format!(
-                "SELECT * FROM character WHERE id = {character_id}"
+                "SELECT * FROM backend_characters WHERE id = {character_id}"
             ))
             .await
             .unwrap_or_default();
@@ -589,21 +589,21 @@ pub(super) async fn render_party_stats(
     let selected_attributes: Vec<CharacterAttributes> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_attributes WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_attributes WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let selected_skills: Vec<CharacterSkills> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_skills WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let selected_limbs: Vec<CharacterLimbs> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_limbs WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_limbs WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
@@ -612,7 +612,7 @@ pub(super) async fn render_party_stats(
     let can_examine = false;
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
-    let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
+    let religion = query_single::<CharacterCondition>(&state, "backend_character_conditions", character_id)
         .await
         .and_then(|condition| condition.religion_id);
     let reputation = query_local_reputation(&state, character_id, &location.id).await;
@@ -713,7 +713,7 @@ pub(crate) async fn medical_presentation(
     let current_minute = match state
         .db
         .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {target_id}"
+            "SELECT * FROM backend_character_times WHERE character_id = {target_id}"
         ))
         .await
     {
@@ -831,7 +831,7 @@ pub(super) async fn get_strategic_condition(
         tracing::warn!(%error, character_id, "failed to refresh strategic condition");
         return None;
     }
-    query_single(state, "character_strategic_condition", character_id).await
+    query_single(state, "backend_character_strategic_conditions", character_id).await
 }
 
 pub(super) async fn get_morale_sources(state: &AppState, character_id: u64) -> Vec<CharacterMoraleSource> {
