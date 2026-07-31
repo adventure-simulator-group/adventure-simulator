@@ -1851,7 +1851,20 @@ mod developer_quest_source_tests {
                 &chapter.settlement_id,
                 ERRANTRY_ISSUER_ORGANIZATION_ID,
             );
-        assert!(expected_representative.contains(&chapter.settlement_id));
+        assert_eq!(
+            expected_representative,
+            adventuresim_core::organization::organization_representative_id(
+                &chapter.settlement_id,
+                ERRANTRY_ISSUER_ORGANIZATION_ID,
+            )
+        );
+        assert_ne!(
+            expected_representative,
+            adventuresim_core::organization::organization_representative_id(
+                "different-settlement",
+                ERRANTRY_ISSUER_ORGANIZATION_ID,
+            )
+        );
 
         let source = include_str!("mission_bootstrap.rs");
         let seed = source

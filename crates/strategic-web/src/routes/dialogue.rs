@@ -1391,7 +1391,8 @@ async fn build_view(
         adventuresim_core::organization::organization_representative_id(
             &session.settlement_id,
             "order_saint_george",
-        );
+        )
+        .to_string();
     let order_errantry_offer = session.conversation_id == "organization-representative"
         && participants.iter().any(|participant| {
             participant.character_id.is_none()

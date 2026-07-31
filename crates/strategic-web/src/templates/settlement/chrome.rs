@@ -1230,6 +1230,7 @@ mod tests {
         assert!(colocated_places.contains("organization-surgeons-guild"));
 
         let components = include_str!("../../../static/css/components.css");
+        let components = components.replace("\r\n", "\n");
         assert!(components.contains(".settlement-places-nav {\n  display: grid;\n  gap: 0.3rem;"));
         assert!(components.contains(
             ".settlement-places-nav a:is(:hover, :focus-visible, .active, [aria-current=\"page\"])"

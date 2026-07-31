@@ -36,7 +36,7 @@ mod training_schedule_form_tests {
     fn immediate_route_checks_resolved_location_before_calling_reducer() {
         let source = include_str!("training_activity.rs");
         let handler = source
-            .split_once("pub(super) async fn perform_immediate_activity(\n")
+            .rsplit_once("pub(super) async fn perform_immediate_activity(")
             .map(|(_, tail)| tail)
             .and_then(|tail| tail.split("pub(super) async fn party_member").next())
             .expect("immediate activity handler");
