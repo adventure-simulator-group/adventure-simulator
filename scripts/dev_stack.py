@@ -391,6 +391,7 @@ def write_tactical_env_file(
     scene_key: str,
     character_id: int,
     enemy_count: int,
+    tactical_claim: str,
 ) -> None:
     TACTICAL_ENV_FILE.write_text(
         "\n".join([
@@ -401,6 +402,9 @@ def write_tactical_env_file(
             f"TACTICAL_SCENE_KEY={scene_key}",
             f"TACTICAL_CHARACTER_ID={character_id}",
             f"TACTICAL_BOTS={enemy_count}",
+            # Matches the tactical server's own `--tactical-claim` env fallback,
+            # so a bare `just tactical` picks it up with no extra flag.
+            f"ADVENTURESIM_TACTICAL_CLAIM={tactical_claim}",
             "",
         ])
     )
@@ -703,7 +707,7 @@ def run_profile(
     base_port: int,
     mode: ProfileMode = ProfileMode.STRATEGIC,
     verify_http: bool = False,
-    mission_id: str = "test-mission",
+    mission_id: str = "mission:test-mission",
     scene_key: str = "hills",
     character_id: int = 0,
     enemy_count: int = 3,
@@ -770,10 +774,12 @@ def run_profile(
                 return code
 
             if mode is ProfileMode.TACTICAL:
+                tactical_claim = secrets.token_hex(32)
                 result = run_checked([
                     "spacetime", "call", "--server", server, database,
                     "seed_standalone_tactical_mission", bootstrap_token,
                     str(character_id), mission_id, scene_key, str(enemy_count),
+                    tactical_claim,
                 ])
                 write_console(result.stdout)
                 if result.returncode:
@@ -783,6 +789,7 @@ def run_profile(
                     url=server, database=database, port=int(values["tactical_port"]),
                     mission_id=mission_id, scene_key=scene_key,
                     character_id=character_id, enemy_count=enemy_count,
+                    tactical_claim=tactical_claim,
                 )
                 wrote_tactical_env = True
                 print("")
@@ -893,7 +900,7 @@ def create_parser() -> argparse.ArgumentParser:
     sub.add_parser("verify-bindings")
     runner = sub.add_parser("run-profile")
     runner.add_argument("--mode", choices=[m.value for m in ProfileMode], default=ProfileMode.STRATEGIC.value)
-    runner.add_argument("--mission-id", default="test-mission")
+    runner.add_argument("--mission-id", default="mission:test-mission")
     runner.add_argument("--scene-key", default="hills")
     runner.add_argument("--character-id", type=int, default=0)
     runner.add_argument("--enemy-count", type=int, default=3)

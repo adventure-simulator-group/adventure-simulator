@@ -559,9 +559,14 @@ fn on_successful_attack_display(
             children.spawn(TextSpan::new(": "));
             match event.result {
                 AttackResult::ToAttacker { balance_damage, .. } => {
+                    let reason = match event.defender_response {
+                        DefenderResponse::None => "Missed",
+                        DefenderResponse::Dodge { .. } => "Dodged",
+                        DefenderResponse::Parry { .. } => "Parried",
+                    };
                     children.spawn((ClassList::new("error"), TextSpan::new("fail")));
                     children.spawn(TextSpan::new(format!(
-                        "\n\nGot {balance_damage:.1} balance damage\n\n[part: {}]",
+                        "\n\n{reason}! Got {balance_damage:.1} balance damage\n\n[part: {}]",
                         event.body_part
                     )));
                 }

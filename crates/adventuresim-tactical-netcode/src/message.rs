@@ -2,6 +2,22 @@ use adventuresim_tactical_core::prelude::*;
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use serde::{Deserialize, Serialize};
 
+/// Sent by the client whenever the player presses dodge or parry.
+///
+/// This is a simplified version of [`DefenderResponse`] that omits
+/// `input_reflex` — the server computes reflex from timestamp delta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Event, Serialize, Deserialize)]
+pub enum DefendRequest {
+    Dodge,
+    Parry,
+}
+
+/// Sent by the client the moment it starts a melee attack windup, before the
+/// hit itself is resolved. Carries no data of its own — the attacker is the
+/// message sender.
+#[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
+pub struct AttackStartedRequest;
+
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
 pub struct JoinRequest {
     pub player_id: u64,
@@ -31,6 +47,7 @@ pub struct SuccessfulAttackResponse {
     pub body_part: BodyPart,
     pub result: AttackResult,
     pub flanking: f32,
+    pub defender_response: DefenderResponse,
 }
 
 impl SuccessfulAttackResponse {

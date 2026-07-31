@@ -1963,6 +1963,7 @@ pub enum Reducer {
         mission_id: String,
         scene_key: String,
         required_enemy_kills: u32,
+        tactical_claim: String,
     },
     SendLocalChatMessage {
         sender_id: u64,
@@ -3236,12 +3237,14 @@ Reducer::BeginWorldDataImport{
                 mission_id,
                 scene_key,
                 required_enemy_kills,
+                tactical_claim,
 }             => __sats::bsatn::to_vec(&seed_standalone_tactical_mission_reducer::SeedStandaloneTacticalMissionArgs {
                 bootstrap_token: bootstrap_token.clone(),
                 character_id: character_id.clone(),
                 mission_id: mission_id.clone(),
                 scene_key: scene_key.clone(),
                 required_enemy_kills: required_enemy_kills.clone(),
+                tactical_claim: tactical_claim.clone(),
 }),
             Reducer::SendLocalChatMessage{
                 sender_id,

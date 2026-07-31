@@ -234,7 +234,7 @@ class WorkflowTests(unittest.TestCase):
             "run-profile", "--mode", "tactical", "demo", "23100",
         ])
         self.assertEqual(args.mode, "tactical")
-        self.assertEqual(args.mission_id, "test-mission")
+        self.assertEqual(args.mission_id, "mission:test-mission")
         self.assertEqual(args.scene_key, "hills")
         self.assertEqual(args.character_id, 0)
         self.assertEqual(args.enemy_count, 3)
@@ -322,6 +322,7 @@ class WorkflowTests(unittest.TestCase):
                 scene_key="hills",
                 character_id=0,
                 enemy_count=3,
+                tactical_claim="deadbeef",
             )
             content = dev_stack.TACTICAL_ENV_FILE.read_text()
             self.assertIn("TACTICAL_SPACETIMEDB_URL=http://127.0.0.1:23310", content)
@@ -331,6 +332,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("TACTICAL_SCENE_KEY=hills", content)
             self.assertIn("TACTICAL_CHARACTER_ID=0", content)
             self.assertIn("TACTICAL_BOTS=3", content)
+            self.assertIn("ADVENTURESIM_TACTICAL_CLAIM=deadbeef", content)
             dev_stack.remove_tactical_env_file()
             self.assertFalse(dev_stack.TACTICAL_ENV_FILE.exists())
             dev_stack.remove_tactical_env_file()

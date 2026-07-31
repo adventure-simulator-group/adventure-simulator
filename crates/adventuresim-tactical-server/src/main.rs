@@ -1,5 +1,6 @@
 //! Tactical Server - Replicon + Aeronet websocket game server
 
+mod bot;
 mod combat;
 mod stdb;
 mod terrain;
@@ -19,7 +20,7 @@ use bevy::prelude::*;
 use bevy::time::Stopwatch;
 use clap::{ArgAction, Parser};
 
-use crate::{stdb::SpacetimeDb, terrain::TerrainGenerator};
+use crate::{bot::MissionEnemy, stdb::SpacetimeDb, terrain::TerrainGenerator};
 use input::AccumulatedInput;
 
 /// Default [`Args::timeout`] time.
@@ -119,7 +120,11 @@ fn main() {
                 }),
             AdventureSimulatorNetPlugins,
         ))
-        .add_plugins((stdb::SpacetimeDbPlugin, combat::CombatPlugin))
+        .add_plugins((
+            stdb::SpacetimeDbPlugin,
+            combat::CombatPlugin,
+            bot::BotPlugin,
+        ))
         .insert_resource(MissionState {
             timeout: (!args.no_timeout)
                 .then_some(args.timeout)
@@ -141,7 +146,6 @@ fn main() {
         .add_observer(on_join_request)
         .add_observer(on_player_input)
         .add_observer(on_client_disconnected)
-        .add_observer(on_authoritative_enemy_death)
         .run();
 }
 
@@ -151,41 +155,11 @@ struct LoadingPlayer {
 }
 
 #[derive(Resource)]
-struct MissionState {
+pub struct MissionState {
     timeout: Option<Timer>,
-    enemies_killed: u32,
+    pub enemies_killed: u32,
     required_enemy_kills: u32,
     committed: bool,
-}
-
-#[derive(Component)]
-struct MissionEnemy;
-
-#[derive(Component)]
-struct CountedEnemyDeath;
-
-/// Emitted only by the server's authoritative combat/death pipeline. Combat
-/// damage is not implemented yet, so no client-controlled path can emit it and
-/// incomplete missions fail closed at timeout.
-#[derive(Event)]
-struct AuthoritativeEnemyDeath(Entity);
-
-fn mission_objective_satisfied(required: u32, killed: u32) -> bool {
-    killed >= required
-}
-
-fn on_authoritative_enemy_death(
-    death: On<AuthoritativeEnemyDeath>,
-    enemies: Query<(), (With<MissionEnemy>, Without<CountedEnemyDeath>)>,
-    mut commands: Commands,
-    mut state: ResMut<MissionState>,
-) {
-    let entity = death.0;
-    if enemies.get(entity).is_err() {
-        return;
-    }
-    commands.entity(entity).insert(CountedEnemyDeath);
-    state.enemies_killed = state.enemies_killed.saturating_add(1);
 }
 
 fn setup_server(mut commands: Commands, args: Res<Args>) {
@@ -496,7 +470,8 @@ fn check_mission_timeout(
     info!("Mission timeout, committing results...");
     state.committed = true;
 
-    let success = mission_objective_satisfied(state.required_enemy_kills, state.enemies_killed);
+    let success =
+        bot::mission_objective_satisfied(state.required_enemy_kills, state.enemies_killed);
     let xp_gained = (state.enemies_killed * 25) as i32;
 
     let resolution = if success {
@@ -624,20 +599,6 @@ fn on_join_request(
     );
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::mission_objective_satisfied;
-
-    #[test]
-    fn mission_success_requires_the_full_authoritative_objective() {
-        assert!(mission_objective_satisfied(0, 0));
-        assert!(!mission_objective_satisfied(3, 0));
-        assert!(!mission_objective_satisfied(3, 2));
-        assert!(mission_objective_satisfied(3, 3));
-        assert!(mission_objective_satisfied(3, 4));
-    }
 }
 
 fn on_player_input(

@@ -69,7 +69,7 @@ impl Mul<f32> for AttackResult {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum DefenderResponse {
     #[default]
     None,
