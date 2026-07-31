@@ -870,7 +870,7 @@ pub fn camp_page(
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
-            (visual_stage("camp", "Camp", "A sheltered fire beside the party's onward route"))
+            (visual_stage("camp", "Camp", "A resting place beside the party's onward route"))
             (settlement_chat_area("Camp", active_character))
         }
         aside class="right-sidebar camp-journey-sidebar" {

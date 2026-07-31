@@ -29,6 +29,8 @@ between screens:
 SpacetimeDB stores durable world and character facts such as:
 
 - characters, parties, progression, schedules, injuries, and needs;
+- separate character wetness and signed thermal strain, with sustained
+  frostbite committed through the durable limb-injury authority;
 - inventory, equipment condition, currency, and custody;
 - settlements, organizations, journeys, cases, contracts, and investigations;
 - mission requests, authenticated outcome receipts, final battle results, and
@@ -56,6 +58,16 @@ that result is allowed to create.
 Random encounters are durable strategic journey events only at their
 boundaries: timing, route position, available choices, and final outcome may be
 persistent, while the combat simulation remains transient.
+
+Strategic weather exposure is evaluated from absolute character time and
+authoritative location after each actually elapsed interval is clipped and
+committed. Its pure minute reducer is partition invariant. Settlement
+coordinates use imported elevation; route and private case-site coordinates
+use zero elevation until those authorities carry elevation. Field shelter is a
+typed action input: a bivouac provides no protection, while a party-owned tent
+blocks rain and reduces wind without generating heat. Route terrain currently
+has no ford locations, so water immersion is an explicit reusable impulse and
+is never guessed from generic wetlands.
 
 ## Strategic authority
 

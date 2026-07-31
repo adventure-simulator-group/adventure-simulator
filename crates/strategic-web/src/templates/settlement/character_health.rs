@@ -322,6 +322,12 @@ pub(super) fn strategic_condition_rail(
         ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
         ("Hunger", "meal", "hunger", condition.hunger),
         ("Thirst", "water-drop", "thirst", condition.thirst),
+        (
+            "Temperature",
+            "thermometer-cold",
+            "thermal",
+            condition.thermal,
+        ),
     ];
     let incapacitation_sources = [
         ("Pain", "broken-heart", "pain", condition.pain),
@@ -331,39 +337,10 @@ pub(super) fn strategic_condition_rail(
             "blood",
             condition.blood_loss,
         ),
-        ("Fear", "terror", "fear", condition.fear),
         ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
     ];
     html! {
         (sidebar_section("Status", html! {
-            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) style=(meter_style) role="meter" aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(format!("{:.1}", condition.morale)) title=(format!("{resolved_morale:.1} morale from successful social support currently offsets actionable concerns")) aria-label=(format!(
-                "Morale {:.1}; fear {}; {:.1} morale resolved by successful social support; inspiration {:.1}%",
-                condition.morale,
-                percent(condition.fear),
-                resolved_morale,
-                condition.morale_bonus * 100.0,
-            )) {
-                div class="morale-meter-heading" {
-                    strong class="metric-label" { (decorative_game_icon("sun")) span { "Morale" } }
-                    span class="morale-meter-value" { (format!("{:+.1}", condition.morale)) }
-                    a class=(if social_open { "character-menu-button is-open" } else { "character-menu-button" })
-                        href=(social_href) title="Open social menu" aria-label="Open social menu"
-                        aria-haspopup="dialog" aria-expanded=(social_open) {
-                        span class="stat-icon" style="--stat-icon: url('/static/icons/game/conversation.svg')" aria-hidden="true" {}
-                        @if social_open { span class="sr-only" { " (open)" } }
-                    }
-                }
-                div class="morale-meter-track" aria-hidden="true" {
-                    span class="morale-meter-fear" { span class="morale-meter-resolved" {} }
-                    span class="morale-meter-neutral" {}
-                    span class="morale-meter-bonus" {}
-                }
-                div class="morale-meter-labels" {
-                    span { "100% fear" }
-                    span { "Neutral" }
-                    span { (format!("{:.1}% inspiration", condition.morale_bonus * 100.0)) }
-                }
-            }
             div class="fervor-meter" tabindex="0" style=(format!("--fervor: {:.0}%", condition.fervor.clamp(0.0, 1.0) * 100.0)) aria-label=(format!("Fervor {}", percent(condition.fervor))) {
                 div class="fervor-meter-heading" {
                     strong class="metric-label" { (decorative_game_icon("holy-symbol")) span { "Fervor" } }
@@ -395,6 +372,34 @@ pub(super) fn strategic_condition_rail(
                 }
             }
             div class="incapacitation-sources" aria-label="Sources of incapacitation" {
+                div class=(if condition.fear > 0.0 { "morale-meter incapacitation-morale is-fearful" } else { "morale-meter incapacitation-morale" }) style=(meter_style) role="meter" aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(format!("{:.1}", condition.morale)) title=(format!("{resolved_morale:.1} morale from successful social support currently offsets actionable concerns")) aria-label=(format!(
+                    "Morale {:.1}; fear {}; {:.1} morale resolved by successful social support; inspiration {:.1}%",
+                    condition.morale,
+                    percent(condition.fear),
+                    resolved_morale,
+                    condition.morale_bonus * 100.0,
+                )) {
+                    div class="morale-meter-heading" {
+                        strong class="metric-label" { (decorative_game_icon("sun")) span { "Morale" } }
+                        span class="morale-meter-value" { (format!("{:+.1}", condition.morale)) }
+                        a class=(if social_open { "character-menu-button is-open" } else { "character-menu-button" })
+                            href=(social_href) title="Open social menu" aria-label="Open social menu"
+                            aria-haspopup="dialog" aria-expanded=(social_open) {
+                            span class="stat-icon" style="--stat-icon: url('/static/icons/game/conversation.svg')" aria-hidden="true" {}
+                            @if social_open { span class="sr-only" { " (open)" } }
+                        }
+                    }
+                    div class="morale-meter-track" aria-hidden="true" {
+                        span class="morale-meter-fear" { span class="morale-meter-resolved" {} }
+                        span class="morale-meter-neutral" {}
+                        span class="morale-meter-bonus" {}
+                    }
+                    div class="morale-meter-labels" {
+                        span { "100% fear" }
+                        span { "Neutral" }
+                        span { (format!("{:.1}% inspiration", condition.morale_bonus * 100.0)) }
+                    }
+                }
                 @for (label, icon, color, value) in incapacitation_sources {
                     div class=(format!("incapacitation-source incapacitation-{color}"))
                         title=(format!("{label}: {} incapacitation", percent(value))) {
@@ -407,13 +412,59 @@ pub(super) fn strategic_condition_rail(
                         }
                     }
                 }
+                (temperature_strain_meter(condition.thermal_strain))
             }
             div class="need-balance-meters" aria-label="Food and water reserves" {
                 (need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", condition.food_days, condition.hunger))
                 (need_balance_meter("Water", "water-drop", "Thirst", "Hydrated", "thirst", condition.water_days, condition.thirst))
             }
-            (filth_status_bar(filth))
+            (filth_status_bar(filth, condition.wetness_bps))
         }))
+    }
+}
+
+fn temperature_strain_meter(strain: i32) -> Markup {
+    let percent = (strain.clamp(
+        -adventuresim_core::survival::MAX_THERMAL_STRAIN,
+        adventuresim_core::survival::MAX_THERMAL_STRAIN,
+    ) as f32
+        / adventuresim_core::survival::MAX_THERMAL_STRAIN as f32
+        * 100.0)
+        .round() as i32;
+    let label = if percent < 0 {
+        format!("Cold strain {}%", percent.unsigned_abs())
+    } else if percent > 0 {
+        format!("Heat strain {percent}%")
+    } else {
+        "Temperature comfortable".into()
+    };
+    let cold_width = if percent < 0 {
+        percent.unsigned_abs()
+    } else {
+        0
+    };
+    let hot_width = percent.max(0);
+    html! {
+        div class="temperature-strain incapacitation-source incapacitation-thermal" tabindex="0" title=(&label) {
+            strong class="metric-label temperature-strain-label" {
+                span class="temperature-condition-icon" aria-hidden="true" {
+                    span class="temperature-condition-cold" {}
+                    span class="temperature-condition-hot" {}
+                }
+                span { "Temperature" }
+            }
+            div class="temperature-strain-track" role="meter" aria-label=(&label)
+                aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(percent)
+                style=(format!(
+                    "--thermal-cold: {:.1}%; --thermal-hot: {:.1}%",
+                    cold_width as f32 / 2.0,
+                    hot_width as f32 / 2.0,
+                )) {
+                span class="temperature-strain-cold" aria-hidden="true" {}
+                span class="temperature-strain-hot" aria-hidden="true" {}
+                i aria-hidden="true" {}
+            }
+        }
     }
 }
 
@@ -1327,11 +1378,14 @@ fn regional_health_bar(
     let cut = injury
         .map_or(0.0, |row| row.cut_damage)
         .min(physical_damage);
+    let frostbite = injury
+        .map_or(0.0, |row| row.frostbite_damage)
+        .min((physical_damage - cut).max(0.0));
     let total_blunt = injury
-        .map_or(physical_damage - cut, |row| {
+        .map_or(physical_damage - cut - frostbite, |row| {
             row.bruise_damage.max(row.fracture_damage)
         })
-        .min((physical_damage - cut).max(0.0));
+        .min((physical_damage - cut - frostbite).max(0.0));
     let fracture = injury
         .map_or(0.0, |row| row.fracture_damage)
         .min(total_blunt);
@@ -1388,9 +1442,10 @@ fn regional_health_bar(
     };
     let reading = if humour.is_some() {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% frostbite, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
             okay * 100.0,
             cut * 100.0,
+            frostbite * 100.0,
             blunt * 100.0,
             fracture * 100.0,
             values.sanguine.abs() * scale * 100.0,
@@ -1400,9 +1455,10 @@ fn regional_health_bar(
         )
     } else {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% other impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% frostbite, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% other impairment",
             okay * 100.0,
             cut * 100.0,
+            frostbite * 100.0,
             blunt * 100.0,
             fracture * 100.0,
             other * 100.0,
@@ -1414,6 +1470,7 @@ fn regional_health_bar(
             aria-valuemin="0" aria-valuemax="100" aria-valuenow=(okay * 100.0) {
             span class="attribute-health-current" title="Sound" style=(format!("width:{:.1}%", okay * 100.0)) {}
             span class=(if bandaged { "attribute-health-cut bandaged-cut" } else { "attribute-health-cut" }) title=(if bandaged { "Bandaged cut damage" } else { "Cut damage" }) style=(format!("width:{:.1}%", cut * 100.0)) {}
+            span class="attribute-health-frostbite" title="Frostbite damage" style=(format!("width:{:.1}%", frostbite * 100.0)) {}
             span class="attribute-health-blunt" title="Blunt damage" style=(format!("width:{:.1}%", blunt * 100.0)) {}
             span class=(if splinted { "attribute-health-fracture splinted-fracture" } else { "attribute-health-fracture" })
                 title=(if splinted { "Splinted fracture" } else { "Fracture" })
@@ -1501,7 +1558,7 @@ mod tests {
             serialized.get("origin").and_then(|value| value.as_str()),
             Some("Foreign")
         );
-        let markup = filth_status_bar(&[deposit]).into_string();
+        let markup = filth_status_bar(&[deposit], 0).into_string();
         assert!(markup.contains("2 foreign"));
         assert!(!markup.contains("source_character_id"));
         assert!(!markup.contains("filth-legend"));
@@ -1511,7 +1568,7 @@ mod tests {
     }
 
     #[test]
-    fn status_rail_places_filth_after_water() {
+    fn status_rail_layers_filth_inside_independently_accessible_wetness() {
         let condition = CharacterStrategicCondition {
             character_id: 7,
             morale: 0.0,
@@ -1524,6 +1581,9 @@ mod tests {
             fatigue: 0.0,
             hunger: 0.0,
             thirst: 0.0,
+            thermal: 0.0,
+            wetness_bps: 6_500,
+            thermal_strain: -4_000,
             food_days: 1.0,
             water_days: 1.0,
             water_capacity_ml: 2_000,
@@ -1533,13 +1593,38 @@ mod tests {
         };
         let markup =
             strategic_condition_rail(Some(&condition), &[], &[], "/social", false).into_string();
-        assert!(markup.contains("class=\"morale-meter\""));
+        let sources = markup
+            .find("class=\"incapacitation-sources\"")
+            .expect("incapacitation source grid");
+        let morale = markup
+            .find("class=\"morale-meter incapacitation-morale\"")
+            .expect("full-width morale meter");
+        let temperature = markup
+            .find("class=\"temperature-strain incapacitation-source incapacitation-thermal\"")
+            .expect("signed temperature meter");
+        assert!(sources < morale);
+        assert!(morale < temperature);
+        assert!(!markup.contains("class=\"incapacitation-source incapacitation-fear\""));
         assert!(markup.contains("href=\"/social\" title=\"Open social menu\""));
         assert!(markup.contains("/static/icons/game/conversation.svg"));
         assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
         let water = markup.find("Water").expect("water meter");
-        let filth = markup.find("Filth").expect("filth meter");
+        let wetness = markup
+            .find("class=\"wetness-status\"")
+            .expect("wetness meter");
+        let filth = markup.find("class=\"filth-status\"").expect("filth meter");
         assert!(water < filth);
+        assert!(wetness < filth);
+        assert!(markup.contains("class=\"coating-status\" role=\"group\""));
+        assert!(!markup.contains("wetness-status-label"));
+        assert!(markup.contains("aria-label=\"Wetness 65 out of 100\""));
+        assert!(markup.contains("aria-label=\"Filth 0 out of 100\""));
+        assert!(markup.contains("Wetness is the blue outer bar behind filth"));
+        assert!(markup.contains("aria-label=\"Cold strain 40%\""));
+        assert!(markup.contains("class=\"temperature-condition-icon\""));
+        assert!(!markup.contains(">Cold</span>"));
+        assert!(!markup.contains(">Comfort</span>"));
+        assert!(!markup.contains(">Hot</span>"));
     }
 
     #[test]
@@ -1556,6 +1641,9 @@ mod tests {
             fatigue: 0.0,
             hunger: 0.0,
             thirst: 0.0,
+            thermal: 0.0,
+            wetness_bps: 0,
+            thermal_strain: 0,
             food_days: 1.0,
             water_days: 1.0,
             water_capacity_ml: 2_000,
@@ -1970,6 +2058,7 @@ mod tests {
             limb: LimbRegion::Chest,
             cut_damage: 0.2,
             bruise_damage: 0.2,
+            frostbite_damage: 0.0,
             fracture_damage: 0.2,
             bandaged: true,
             stitched: false,

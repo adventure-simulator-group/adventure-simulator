@@ -123,6 +123,22 @@ See [Inventory](../shared/inventory.md) for provision storage and
 [Food and cooking](../reference/food-and-cooking.md) for authoritative food
 behavior.
 
+## Weather and field shelter
+
+Travel, waiting, and rest advance deterministic wetness and signed thermal
+strain from the party's authoritative route or location. Rain wets exposed
+characters; wetness makes cold more dangerous. Worn padding supplies
+insulation, while an outer leather-equivalent resistant layer provides the
+current all-or-nothing weatherproofing approximation.
+
+Every deliberate field rest chooses either a bivouac or a tent. A bivouac
+requires no item and provides no weather protection. A tent must already be in
+shared party inventory; its carried weight therefore affects the journey. It
+blocks rain and reduces wind during that rest but creates no heat. Current
+route persistence has no ford coordinates, so wetlands do not falsely trigger
+immersion; a reusable explicit immersion impulse is reserved for future ford
+and river actions.
+
 ## Stealth, detection, and interdiction
 
 Strategic stealth determines whether nearby groups detect one another early

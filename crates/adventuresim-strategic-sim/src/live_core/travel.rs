@@ -742,7 +742,7 @@ impl LiveRunner {
             let result = reducer_call!(self, "rest_at_camp", |cb| self
                 .connection
                 .reducers
-                .rest_at_camp_then(travel_actor, rest_minutes, cb));
+                .rest_at_camp_then(travel_actor, rest_minutes, FieldShelter::Bivouac, cb));
             self.call(result)?;
             self.observe_deaths();
             let Some((continue_actor, agent, continue_actor_role)) =

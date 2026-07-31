@@ -29,6 +29,17 @@ pub(crate) fn party_rest_menu(
     html! {
         div class="rest-service-heading" { strong { (heading) } }
         form action=(action) method="post" {
+            fieldset class="field-shelter-choice" {
+                legend { "Shelter" }
+                label title="Rest in the open; rain and wind reach the party" {
+                    input type="radio" name="shelter" value="bivouac" required;
+                    " Bivouac"
+                }
+                label title="Requires a field tent in party inventory; blocks rain and reduces wind" {
+                    input type="radio" name="shelter" value="tent";
+                    " Tent"
+                }
+            }
             (wake_time_rest_duration_control(
                 id_prefix,
                 default_minutes.max(1),
@@ -414,6 +425,24 @@ mod tests {
         assert!(markup.contains("aria-label=\"Wake time\""));
         assert!(markup.contains("aria-valuetext=\"08:00\""));
         assert!(markup.contains("name=\"requested_minutes\""));
+    }
+
+    #[test]
+    fn field_rest_requires_an_explicit_shelter_choice() {
+        let markup = party_rest_menu(
+            "/camp/rest",
+            "camp",
+            "Rest",
+            "Rest",
+            480,
+            None,
+            SoapRestPreview::default(),
+        )
+        .into_string();
+        assert!(markup.contains("<legend>Shelter</legend>"));
+        assert!(markup.contains("name=\"shelter\" value=\"bivouac\" required"));
+        assert!(markup.contains("name=\"shelter\" value=\"tent\""));
+        assert!(markup.contains("Requires a field tent in party inventory"));
     }
 
     #[test]

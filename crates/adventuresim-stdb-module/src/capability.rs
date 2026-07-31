@@ -266,6 +266,7 @@ pub(crate) struct StrategicEquipment {
     shield: Option<Item>,
     shield_inventory_id: Option<u64>,
     armor: [adventuresim_core::equipment::LayeredArmor; 7],
+    survival_clothing: adventuresim_core::survival::ClothingExposure,
     inventory_weight: f32,
 }
 
@@ -377,8 +378,11 @@ impl StrategicEquipment {
             .map(|inventory| inventory.quantity)
             .sum();
         let mut armor = [adventuresim_core::equipment::LayeredArmor::default(); 7];
+        let mut survival_layers = Vec::new();
+        let mut weatherproofing_total = 0_u32;
+        let mut peripheral_protection_bps = [0_u16; 4];
         for part in BodyPart::FULL_BODY.iter() {
-            let pieces = ctx
+            let pieces: Vec<_> = ctx
                 .db
                 .character_equipped_item()
                 .character_id()
@@ -421,7 +425,28 @@ impl StrategicEquipment {
                         flexibility: item.flexibility,
                         range_of_motion: item.range_of_motion,
                     })
-                });
+                })
+                .collect();
+            survival_layers.extend(pieces.iter().map(|piece| (piece.padding, piece.coverage)));
+            if let Some(piece) =
+                adventuresim_core::equipment::outermost_wearable(part, pieces.iter().copied())
+            {
+                let protection = adventuresim_core::survival::weatherproofing_from_outer_layer(
+                    piece.resistance,
+                    piece.coverage,
+                );
+                weatherproofing_total = weatherproofing_total.saturating_add(u32::from(protection));
+                let peripheral_index = match part {
+                    BodyPart::LeftArm => Some(0),
+                    BodyPart::RightArm => Some(1),
+                    BodyPart::LeftLeg => Some(2),
+                    BodyPart::RightLeg => Some(3),
+                    _ => None,
+                };
+                if let Some(index) = peripheral_index {
+                    peripheral_protection_bps[index] = protection;
+                }
+            }
             armor[body_part_index(part)] =
                 adventuresim_core::equipment::aggregate_layered_armor(part, pieces);
         }
@@ -471,6 +496,15 @@ impl StrategicEquipment {
             shield,
             shield_inventory_id,
             armor,
+            survival_clothing: adventuresim_core::survival::ClothingExposure {
+                insulation_bps: adventuresim_core::survival::insulation_from_layers(
+                    survival_layers,
+                ),
+                // Coverage scales continuously across the seven stable body
+                // regions; resistance is capped at leather equivalence.
+                weatherproofing_bps: (weatherproofing_total / 7).min(10_000) as u16,
+                peripheral_protection_bps,
+            },
             inventory_weight: dry_inventory_weight + carried_water_weight,
         }
     }
@@ -490,6 +524,10 @@ impl StrategicEquipment {
 
     fn armor_for(&self, part: BodyPart) -> adventuresim_core::equipment::LayeredArmor {
         self.armor[body_part_index(part)]
+    }
+
+    pub(crate) fn survival_clothing(&self) -> adventuresim_core::survival::ClothingExposure {
+        self.survival_clothing
     }
 
     pub(crate) fn combat_equipment(&self) -> CombatEquipment {

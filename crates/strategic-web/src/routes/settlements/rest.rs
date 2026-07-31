@@ -4,6 +4,20 @@ pub(crate) struct RestForm {
     pub(crate) unit: String,
     #[serde(default, deserialize_with = "deserialize_optional_u64")]
     pub(crate) requested_minutes: Option<u64>,
+    #[serde(default = "default_field_shelter")]
+    pub(crate) shelter: String,
+}
+
+fn default_field_shelter() -> String {
+    String::new()
+}
+
+pub(crate) fn field_shelter_argument(form: &RestForm) -> Result<serde_json::Value, &'static str> {
+    match form.shelter.as_str() {
+        "bivouac" => Ok(json!({"bivouac": {}})),
+        "tent" => Ok(json!({"tent": {}})),
+        _ => Err("Shelter must be bivouac or tent"),
+    }
 }
 
 pub(super) fn deserialize_optional_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>

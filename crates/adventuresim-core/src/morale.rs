@@ -80,11 +80,18 @@ pub struct StrategicIncapacitation {
     pub fatigue: f32,
     pub hunger: f32,
     pub thirst: f32,
+    pub thermal: f32,
 }
 
 impl StrategicIncapacitation {
     pub fn total(self) -> f32 {
-        self.pain + self.blood_loss + self.fear + self.fatigue + self.hunger + self.thirst
+        self.pain
+            + self.blood_loss
+            + self.fear
+            + self.fatigue
+            + self.hunger
+            + self.thirst
+            + self.thermal
     }
 
     pub fn status(self) -> IncapacitationStatus {

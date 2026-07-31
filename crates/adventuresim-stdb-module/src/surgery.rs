@@ -90,6 +90,8 @@ pub struct LimbInjury {
     pub limb: LimbRegion,
     pub cut_damage: f32,
     pub bruise_damage: f32,
+    /// Cold injury is durable tissue damage, independent of impact trauma.
+    pub frostbite_damage: f32,
     /// Fracture severity is a condition within blunt trauma, not additional
     /// health damage. It therefore never contributes again to the projection.
     pub fracture_damage: f32,
@@ -133,6 +135,7 @@ fn blank_injury(character_id: u64, limb: LimbRegion) -> LimbInjury {
         limb,
         cut_damage: 0.0,
         bruise_damage: 0.0,
+        frostbite_damage: 0.0,
         fracture_damage: 0.0,
         bandaged: false,
         stitched: false,
@@ -146,7 +149,8 @@ fn blank_injury(character_id: u64, limb: LimbRegion) -> LimbInjury {
 }
 
 fn projected_damage(injury: &LimbInjury) -> f32 {
-    (injury.cut_damage + injury.bruise_damage.max(injury.fracture_damage)).clamp(0.0, 1.0)
+    (injury.cut_damage + injury.bruise_damage.max(injury.fracture_damage) + injury.frostbite_damage)
+        .clamp(0.0, 1.0)
 }
 
 pub fn injury_for(ctx: &ReducerContext, character_id: u64, limb: LimbRegion) -> LimbInjury {
@@ -299,6 +303,29 @@ pub fn commit_hit_injury(
             source_damage: total_damage,
         });
     }
+    refresh_limb_projection(ctx, character_id, limb);
+    Ok(())
+}
+
+/// Commit sustained cold injury through the same durable limb authority used
+/// by combat and surgery. Frostbite is not a cut, bruise, or fracture and
+/// therefore cannot create blood deposits or projectile state.
+pub fn commit_frostbite_injury(
+    ctx: &ReducerContext,
+    character_id: u64,
+    limb: LimbRegion,
+    damage: f32,
+) -> Result<(), String> {
+    if !matches!(
+        limb,
+        LimbRegion::LeftArm | LimbRegion::RightArm | LimbRegion::LeftLeg | LimbRegion::RightLeg
+    ) {
+        return Err("Frostbite must target a peripheral limb".to_string());
+    }
+    backfill_character_injuries(ctx, character_id);
+    let mut injury = injury_for(ctx, character_id, limb);
+    injury.frostbite_damage = (injury.frostbite_damage + damage.max(0.0)).clamp(0.0, 1.0);
+    store_injury(ctx, injury);
     refresh_limb_projection(ctx, character_id, limb);
     Ok(())
 }
@@ -1049,6 +1076,16 @@ mod tests {
     fn fracture_uses_single_hit_threshold() {
         assert_eq!(fracture_from_single_hit(0.18), 0.0);
         assert!((fracture_from_single_hit(0.38) - 0.13).abs() < 0.0001);
+    }
+
+    #[test]
+    fn frostbite_is_distinct_additive_tissue_damage() {
+        let mut injury = blank_injury(7, LimbRegion::LeftArm);
+        injury.bruise_damage = 0.1;
+        injury.frostbite_damage = 0.2;
+        assert!((projected_damage(&injury) - 0.3).abs() < 0.0001);
+        assert_eq!(injury.cut_damage, 0.0);
+        assert_eq!(injury.fracture_damage, 0.0);
     }
 
     #[test]

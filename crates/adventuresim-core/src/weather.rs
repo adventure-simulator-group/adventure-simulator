@@ -6,7 +6,10 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const WEATHER_RULES_VERSION: u16 = 1;
+pub const WEATHER_RULES_VERSION: u16 = 2;
+/// One domain seed shared by every authoritative and player-visible weather
+/// query in the Adventure Simulator world.
+pub const WORLD_WEATHER_SEED: u64 = 0x4144_5645_4e54_5552;
 pub const WEATHER_INTERVAL_MINUTES: u64 = 360;
 pub const WEATHER_CELL_MICRODEGREES: i32 = 250_000;
 const HISTORY_INTERVALS: u64 = 16;
@@ -26,6 +29,10 @@ pub struct WeatherSnapshot {
     pub interval_start_minute: u64,
     pub cell_latitude: i32,
     pub cell_longitude: i32,
+    /// Ambient air temperature in tenths of a degree Celsius.
+    pub temperature_deci_c: i32,
+    /// Deterministic wind speed on a 0..=10,000 strategic scale.
+    pub wind_speed_bps: u16,
     pub precipitation: Precipitation,
     /// Current precipitation intensity, in basis points.
     pub intensity_bps: u16,
@@ -102,6 +109,8 @@ pub fn weather_at(
         interval_start_minute: interval * WEATHER_INTERVAL_MINUTES,
         cell_latitude,
         cell_longitude,
+        temperature_deci_c: temperature_deci_c(interval, cell_latitude, elevation_m),
+        wind_speed_bps: current.wind_speed_bps,
         precipitation: current.precipitation,
         intensity_bps: current.intensity_bps,
         ground_moisture_bps: moisture.min(10_000) as u16,
@@ -140,6 +149,7 @@ fn advance_ground(
 struct IntervalWeather {
     precipitation: Precipitation,
     intensity_bps: u16,
+    wind_speed_bps: u16,
 }
 
 fn interval_weather(
@@ -157,6 +167,7 @@ fn interval_weather(
         return IntervalWeather {
             precipitation: Precipitation::Clear,
             intensity_bps: 0,
+            wind_speed_bps: ((roll >> 32) % 10_001) as u16,
         };
     }
     let intensity_bps = 1_000 + ((roll >> 16) % 9_001) as u16;
@@ -168,6 +179,7 @@ fn interval_weather(
     IntervalWeather {
         precipitation,
         intensity_bps,
+        wind_speed_bps: ((roll >> 32) % 10_001) as u16,
     }
 }
 
@@ -238,6 +250,8 @@ mod tests {
         assert_eq!(a, weather_at(42, 123_456, 53_551_000, 9_993_000, 10));
         assert_eq!(a, weather_at(42, 123_457, 53_599_999, 9_999_999, 10));
         assert_eq!(a.rules_version, WEATHER_RULES_VERSION);
+        assert!((-800..=500).contains(&a.temperature_deci_c));
+        assert!(a.wind_speed_bps <= 10_000);
     }
 
     #[test]
@@ -302,14 +316,17 @@ mod tests {
         let rain = IntervalWeather {
             precipitation: Precipitation::Rain,
             intensity_bps: 9_000,
+            wind_speed_bps: 0,
         };
         let clear = IntervalWeather {
             precipitation: Precipitation::Clear,
             intensity_bps: 0,
+            wind_speed_bps: 0,
         };
         let snowfall = IntervalWeather {
             precipitation: Precipitation::Snow,
             intensity_bps: 9_000,
+            wind_speed_bps: 0,
         };
         let (wet, _) = advance_ground(0, 0, rain, 50);
         let (drained, _) = advance_ground(wet, 0, clear, 50);

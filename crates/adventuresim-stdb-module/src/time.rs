@@ -16,7 +16,9 @@ use crate::condition::{character_condition as _, character_strategic_condition a
 use crate::disease::character_illness_status as _;
 use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
 use crate::organization::organization_membership as _;
-use crate::strategic::{party_authority, party_member as _, strategic_incident as _};
+use crate::strategic::{
+    party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
+};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_limbs,
     character_skills, character_stats, settlement,
@@ -79,6 +81,22 @@ pub struct ScheduleAllocation {
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,
     pub raiding_minutes: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, SpacetimeType)]
+pub enum FieldShelter {
+    #[default]
+    Bivouac,
+    Tent,
+}
+
+impl FieldShelter {
+    fn core(self) -> adventuresim_core::survival::FieldShelter {
+        match self {
+            Self::Bivouac => adventuresim_core::survival::FieldShelter::Bivouac,
+            Self::Tent => adventuresim_core::survival::FieldShelter::Tent,
+        }
+    }
 }
 
 /// An explicit settlement activity selected by the player.  Profession
@@ -325,6 +343,14 @@ pub fn advance_character_time(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::condition::apply_weather_exposure(
+        ctx,
+        character_id,
+        starting_minute,
+        elapsed,
+        true,
+        adventuresim_core::survival::FieldShelter::Bivouac,
+    )?;
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
@@ -571,6 +597,7 @@ pub fn advance_character_wait_time(
         .character_id()
         .find(character_id)
         .ok_or("Character time record not found")?;
+    let starting_minute = time.minutes;
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) =
@@ -578,18 +605,30 @@ pub fn advance_character_wait_time(
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
-    crate::organization::settle_membership_dues(ctx, character_id)?;
-    crate::social::settle_shared_party_time(ctx, character_id);
-    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
-    if terminal.is_some() || !settled.alive {
-        return Ok(false);
-    }
     let at_settlement = ctx
         .db
         .character()
         .id()
         .find(character_id)
         .is_some_and(|row| row.current_settlement_id.is_some());
+    crate::condition::apply_weather_exposure(
+        ctx,
+        character_id,
+        starting_minute,
+        settled.elapsed,
+        false,
+        if at_settlement {
+            adventuresim_core::survival::FieldShelter::Tent
+        } else {
+            adventuresim_core::survival::FieldShelter::Bivouac
+        },
+    )?;
+    crate::organization::settle_membership_dues(ctx, character_id)?;
+    crate::social::settle_shared_party_time(ctx, character_id);
+    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    if terminal.is_some() || !settled.alive {
+        return Ok(false);
+    }
     if at_settlement {
         crate::condition::apply_rest_condition(ctx, character_id, settled.elapsed)?;
     } else {
@@ -1526,6 +1565,7 @@ pub fn perform_immediate_activity(
         .character_id()
         .find(character_id)
         .ok_or("Character time record not found")?;
+    let starting_minute = character_time.minutes;
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, false)?;
     let (elapsed, terminal) =
@@ -1541,6 +1581,14 @@ pub fn perform_immediate_activity(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::condition::apply_weather_exposure(
+        ctx,
+        character_id,
+        starting_minute,
+        elapsed,
+        false,
+        adventuresim_core::survival::FieldShelter::Tent,
+    )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
@@ -2003,6 +2051,14 @@ fn rest_for_minutes(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::condition::apply_weather_exposure(
+        ctx,
+        character_id,
+        starting_minute,
+        elapsed,
+        false,
+        adventuresim_core::survival::FieldShelter::Tent,
+    )?;
     if at_inn {
         let elapsed_cost = inn_stay_cost(elapsed)?;
         let patient_contribution =
@@ -2102,7 +2158,7 @@ fn rest_for_minutes(
         crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     }
 
-    crate::condition::apply_rest_condition(ctx, character_id, recovery_elapsed)?;
+    crate::condition::apply_rest_condition(ctx, character_id, elapsed)?;
     crate::food::clear_stomach_fullness(ctx, character_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
     if automatic_social && recovery_elapsed > 0 {
@@ -2220,7 +2276,8 @@ pub(crate) fn synchronize_party_departure_time(
                 automatic_chat_downtime.push((member_id, downtime));
             }
         } else {
-            let downtime = advance_personal_camp_time(ctx, member_id, elapsed, false)?;
+            let downtime =
+                advance_personal_camp_time(ctx, member_id, elapsed, false, FieldShelter::Bivouac)?;
             if downtime > 0 {
                 automatic_chat_downtime.push((member_id, downtime));
             }
@@ -2251,6 +2308,7 @@ fn advance_personal_camp_time(
     member_id: u64,
     elapsed: u64,
     automatic_social: bool,
+    shelter: FieldShelter,
 ) -> Result<u64, String> {
     ensure_character_time(ctx, member_id)?;
     let mut time = ctx
@@ -2269,6 +2327,14 @@ fn advance_personal_camp_time(
     let elapsed = settled.elapsed;
     time.minutes = time.minutes.saturating_add(elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::condition::apply_weather_exposure(
+        ctx,
+        member_id,
+        starting_minute,
+        elapsed,
+        false,
+        shelter.core(),
+    )?;
     crate::organization::settle_membership_dues(ctx, member_id)?;
     crate::social::settle_shared_party_time(ctx, member_id);
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
@@ -2381,6 +2447,7 @@ pub fn rest_at_camp(
     ctx: &ReducerContext,
     character_id: u64,
     requested_minutes: u64,
+    shelter: FieldShelter,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
@@ -2404,6 +2471,21 @@ pub fn rest_at_camp(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
+    if shelter == FieldShelter::Tent
+        && !ctx
+            .db
+            .party_inventory_item()
+            .party_id()
+            .filter(&party_id)
+            .any(|row| {
+                row.quantity > 0
+                    && adventuresim_core::item_catalog::definition(&row.item_id).is_some_and(
+                        |definition| definition.tags.iter().any(|tag| tag == "field_shelter"),
+                    )
+            })
+    {
+        return Err("A tent must be in party inventory before choosing tent shelter".into());
+    }
     if !crate::strategic::party_member_can_direct_field_rest(ctx, &party, character_id) {
         return Err(
             "Only the party leader, or a ready companion aiding an unready leader, can rest the party at camp"
@@ -2490,6 +2572,14 @@ pub fn rest_at_camp(
         time.minutes = time.minutes.saturating_add(member_elapsed);
         let interval_end_minute = time.minutes;
         ctx.db.character_time().character_id().update(time);
+        crate::condition::apply_weather_exposure(
+            ctx,
+            member_id,
+            interval_end_minute.saturating_sub(member_elapsed),
+            member_elapsed,
+            false,
+            shelter.core(),
+        )?;
         crate::organization::settle_membership_dues(ctx, member_id)?;
         crate::social::settle_shared_party_time(ctx, member_id);
         crate::condition::apply_elapsed_needs(ctx, member_id, member_elapsed)?;
@@ -2680,6 +2770,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     if requested_elapsed == 0 {
         return Ok(forced_catch_up);
     }
+    let starting_minute = character_time.minutes;
     let saved_schedule = ctx
         .db
         .character_training_schedule()
@@ -2716,6 +2807,19 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .character_time()
         .character_id()
         .update(character_time);
+    let at_settlement = character.current_settlement_id.is_some();
+    crate::condition::apply_weather_exposure(
+        ctx,
+        character_id,
+        starting_minute,
+        elapsed,
+        false,
+        if at_settlement {
+            adventuresim_core::survival::FieldShelter::Tent
+        } else {
+            adventuresim_core::survival::FieldShelter::Bivouac
+        },
+    )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
@@ -2748,7 +2852,6 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         target_minutes,
     )?;
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
-    let at_settlement = character.current_settlement_id.is_some();
     if at_settlement && training_elapsed > 0 {
         crate::social::apply_automatic_social_chats(ctx, character_id, training_elapsed)?;
     }
@@ -2800,6 +2903,62 @@ pub fn update_training_schedule(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_authoritative_clock_commit_has_one_exposure_application() {
+        let source = include_str!("time.rs");
+        for (start, end) in [
+            (
+                "pub fn advance_character_time",
+                "pub fn preview_travel_time",
+            ),
+            ("pub fn advance_character_wait_time", "fn default_schedule"),
+            (
+                "pub fn perform_immediate_activity",
+                "fn apply_organization_outcomes",
+            ),
+            ("fn rest_for_minutes", "fn validate_settlement_rest_minutes"),
+            (
+                "fn advance_personal_camp_time",
+                "pub(crate) fn rest_temporary_party_member",
+            ),
+            ("pub fn rest_at_camp", "fn party_fatigue_summary"),
+            (
+                "fn synchronize_character",
+                "pub fn synchronize_character_time",
+            ),
+        ] {
+            let body = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect(start);
+            assert_eq!(
+                body.matches("apply_weather_exposure(").count(),
+                1,
+                "{start} must apply exposure exactly once"
+            );
+            assert!(
+                body.find("update(character_time)")
+                    .or_else(|| body.find("update(time)"))
+                    .unwrap()
+                    < body.find("apply_weather_exposure(").unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn tent_validation_precedes_every_explicit_rest_mutation() {
+        let source = include_str!("time.rs");
+        let rest = source
+            .split("pub fn rest_at_camp")
+            .nth(1)
+            .and_then(|tail| tail.split("fn party_fatigue_summary").next())
+            .unwrap();
+        let validation = rest.find("\"field_shelter\"").unwrap();
+        assert!(validation < rest.find("wash_party_before_explicit_rest").unwrap());
+        assert!(rest.contains("FieldShelter::Tent"));
+    }
 
     #[test]
     fn settlement_rest_rejects_unavailable_inn_and_temple_services() {
