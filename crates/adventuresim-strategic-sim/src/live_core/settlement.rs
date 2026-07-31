@@ -400,7 +400,7 @@ impl LiveRunner {
                     let source = self
                         .connection
                         .db
-                        .character_death()
+                        .backend_character_deaths()
                         .iter()
                         .find(|row| row.character_id == character_id)
                         .map(|row| row.source);

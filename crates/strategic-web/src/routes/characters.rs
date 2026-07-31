@@ -128,14 +128,30 @@ async fn remembered_characters(state: &AppState, session: &Session) -> Vec<Chara
             }
         }
     };
-    ids.into_iter()
+    let mut remembered: Vec<_> = ids
+        .into_iter()
         .filter_map(|id| {
             characters
                 .iter()
                 .find(|character| character.id == id && !character.temporary)
                 .cloned()
         })
-        .collect()
+        .collect();
+    for character in &mut remembered {
+        if let Err(error) = super::data::project_alive_as_observed(
+            state,
+            character.id,
+            std::slice::from_mut(character),
+        )
+        .await
+        {
+            tracing::warn!(%error, character_id = character.id, "could not project remembered character life state");
+            // Do not disclose broad current death state when its chronology
+            // could not be compared with this character's personal date.
+            character.alive = true;
+        }
+    }
+    remembered
 }
 
 async fn candidate_roster(Query(query): Query<CandidateQuery>) -> Response {
@@ -319,5 +335,20 @@ mod tests {
             starting_age_tier_argument(StartingAgeTier::Old),
             json!({ "old": {} })
         );
+    }
+
+    #[test]
+    fn remembered_roster_projects_each_character_at_its_own_date() {
+        let source = include_str!("characters.rs");
+        let loader = source
+            .split("async fn remembered_characters")
+            .nth(1)
+            .unwrap()
+            .split("async fn candidate_roster")
+            .next()
+            .unwrap();
+        assert!(loader.contains("project_alive_as_observed"));
+        assert!(loader.contains("character.id"));
+        assert!(loader.contains("character.alive = true"));
     }
 }

@@ -128,7 +128,7 @@ pub struct CharacterStrategicCondition {
 
 /// A signed contribution to the character's current projected morale.
 #[derive(Clone, Debug)]
-#[table(accessor = character_morale_source, public)]
+#[table(accessor = character_morale_source)]
 pub struct CharacterMoraleSource {
     #[primary_key]
     pub id: String,

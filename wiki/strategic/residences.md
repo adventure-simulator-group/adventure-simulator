@@ -59,13 +59,20 @@ pretending to own the home. Public admission requires living co-located
 characters and an active shared household or spouse/parent/child relationship;
 an existing place in another home is rejected rather than silently stolen.
 Wedding and birth settlement use a private atomic move after establishing the
-new household or kinship. A character has one active household membership.
+new household or kinship. Both resolve holding activity, household membership,
+and occupancy at the ceremony or due minute, so a parent whose personal clock
+has advanced farther cannot retroactively change the newborn's home. A
+character has one active household membership.
 Ending a marriage or widowhood releases the marriage household and guest
 occupancy deterministically, while a residence holder keeps their own home.
+Delayed widowhood records its guest-occupancy removal at the death minute but
+preserves any household membership or residence move established afterward.
 
 The web gateway reads only `BackendCharacterResidenceStatus`, a gateway-only
 projection of the selected character's as-of-personal-date portfolio, primary
-designation, and occupancy.
+designation, and occupancy. Owner-only billing timestamps are omitted from a
+household occupant's row, since the owner may have advanced beyond that
+occupant's personal date.
 Browser routes never query legal holdings, primary designations, occupancy
 edges, or charge ledgers directly.
 

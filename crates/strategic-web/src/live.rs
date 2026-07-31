@@ -21,7 +21,9 @@ use adventuresim_stdb_client::{
     backend_character_attributes_table::BackendCharacterAttributesTableAccess,
     backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
     backend_character_conditions_table::BackendCharacterConditionsTableAccess,
+    backend_character_deaths_table::BackendCharacterDeathsTableAccess,
     backend_character_limbs_table::BackendCharacterLimbsTableAccess,
+    backend_character_morale_sources_table::BackendCharacterMoraleSourcesTableAccess,
     backend_character_needs_table::BackendCharacterNeedsTableAccess,
     backend_character_skills_table::BackendCharacterSkillsTableAccess,
     backend_character_stats_table::BackendCharacterStatsTableAccess,
@@ -41,7 +43,6 @@ use adventuresim_stdb_client::{
     battle_result_table::BattleResultTableAccess,
     character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_filth_table::CharacterFilthTableAccess,
-    character_morale_source_table::CharacterMoraleSourceTableAccess,
     character_settlement_reputation_table::CharacterSettlementReputationTableAccess,
     equipment_occupancy_table::EquipmentOccupancyTableAccess, food_lot_table::FoodLotTableAccess,
     inventory_item_amount_table::InventoryItemAmountTableAccess,
@@ -138,7 +139,8 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "backend_character_conditions",
     "backend_character_needs",
     "backend_character_strategic_conditions",
-    "character_morale_source",
+    "backend_character_deaths",
+    "backend_character_morale_sources",
     "character_settlement_reputation",
     "morale_event",
     "religious_demand",
@@ -326,7 +328,8 @@ impl LiveState {
                 .db
                 .backend_character_strategic_conditions()
         );
-        invalidate_on_changes!(state.0._connection.db.character_morale_source());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_deaths());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_morale_sources());
         invalidate_on_changes!(state.0._connection.db.character_settlement_reputation());
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
@@ -393,9 +396,10 @@ impl LiveState {
             .add_query(|query| query.from.equipment_occupancy())
             .add_query(|query| query.from.character_filth())
             .add_query(|query| query.from.backend_character_limbs())
+            .add_query(|query| query.from.backend_character_deaths())
             .add_query(|query| query.from.limb_injury())
             .add_query(|query| query.from.retained_projectile())
-            .add_query(|query| query.from.character_morale_source())
+            .add_query(|query| query.from.backend_character_morale_sources())
             .add_query(|query| query.from.backend_character_needs())
             .add_query(|query| query.from.character_settlement_reputation())
             .add_query(|query| query.from.backend_character_skills())

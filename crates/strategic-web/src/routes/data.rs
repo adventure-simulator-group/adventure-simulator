@@ -2,6 +2,12 @@
 
 use super::AppState;
 use crate::spacetimedb::{BackendCharacterCaseSiteLocation, Character, Result};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct BackendCharacterDeathMinute {
+    strategic_minute: u64,
+}
 
 fn prefer_complete_cache<T>(cache: Option<Option<T>>, fallback: Option<T>) -> Option<T> {
     cache.unwrap_or(fallback)
@@ -32,6 +38,89 @@ pub(crate) async fn character(state: &AppState, character_id: u64) -> Result<Opt
         character.current_case_site_id = case_site.map(|location| location.case_site_id.value);
     }
     Ok(character)
+}
+
+/// Reconstruct mutable life state at the selected observer's authoritative
+/// personal minute. The trusted gateway can read the broad current Character
+/// projection, but must not disclose a death from another character's future.
+pub(crate) async fn project_alive_as_observed(
+    state: &AppState,
+    observer_character_id: u64,
+    characters: &mut [Character],
+) -> Result<()> {
+    let observer_time = match state
+        .db
+        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
+            "SELECT * FROM backend_character_times WHERE character_id = {observer_character_id}"
+        ))
+        .await
+    {
+        Ok(time) => time,
+        Err(error) => {
+            tracing::warn!(%error, observer_character_id, "could not read observer chronology");
+            for character in characters.iter_mut().filter(|character| !character.alive) {
+                character.alive = true;
+            }
+            return Ok(());
+        }
+    };
+    let Some(observer_minute) = observer_time.map(|time| time.minutes) else {
+        // Without an observer frontier the gateway cannot safely decide that a
+        // broad current death is already knowable. Preserve availability and
+        // leave authoritative reducers to reject actions when appropriate.
+        for character in characters.iter_mut().filter(|character| !character.alive) {
+            character.alive = true;
+        }
+        return Ok(());
+    };
+    for character in characters.iter_mut().filter(|character| !character.alive) {
+        let death = match state
+            .db
+            .query_one::<BackendCharacterDeathMinute>(&format!(
+                "SELECT * FROM backend_character_deaths WHERE character_id = {}",
+                character.id
+            ))
+            .await
+        {
+            Ok(death) => death,
+            Err(error) => {
+                tracing::warn!(%error, character_id = character.id, observer_character_id, "could not read death chronology");
+                character.alive = true;
+                continue;
+            }
+        };
+        character.alive = death.is_none_or(|death| death.strategic_minute > observer_minute);
+    }
+    Ok(())
+}
+
+pub(crate) async fn character_as_observed(
+    state: &AppState,
+    character_id: u64,
+    observer_character_id: u64,
+) -> Result<Option<Character>> {
+    let mut character = character(state, character_id).await?;
+    if let Some(character) = character.as_mut() {
+        project_alive_as_observed(
+            state,
+            observer_character_id,
+            std::slice::from_mut(character),
+        )
+        .await?;
+    }
+    Ok(character)
+}
+
+pub(crate) async fn character_is_alive_as_observed(
+    state: &AppState,
+    character_id: u64,
+    observer_character_id: u64,
+) -> Result<bool> {
+    Ok(
+        character_as_observed(state, character_id, observer_character_id)
+            .await?
+            .is_some_and(|character| character.alive),
+    )
 }
 
 #[cfg(test)]
@@ -86,6 +175,24 @@ mod tests {
         assert!(loader.contains("character.current_case_site_id"));
         assert!(loader.contains("location.case_site_id.value"));
         assert!(!loader.contains("current_case_site_id.unwrap"));
+    }
+
+    #[test]
+    fn observed_character_projection_uses_observer_time_and_private_death_view() {
+        let source = include_str!("data.rs");
+        let projection = source
+            .split("pub(crate) async fn project_alive_as_observed")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) async fn character_as_observed")
+            .next()
+            .unwrap();
+        assert!(projection.contains("backend_character_times"));
+        assert!(projection.contains("backend_character_deaths"));
+        assert!(projection.contains("death.strategic_minute > observer_minute"));
+        assert!(projection.contains("let Some(observer_minute)"));
+        assert!(projection.contains("character.alive = true"));
+        assert!(!projection.contains("character_death WHERE"));
     }
 }
 

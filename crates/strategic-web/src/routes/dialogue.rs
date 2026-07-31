@@ -384,6 +384,8 @@ mod npc_navigation_tests {
             .and_then(|tail| tail.split("async fn build_view").next())
             .expect("NPC endpoint");
         assert!(endpoint.contains("npc.presentation.to_lowercase()"));
+        assert!(endpoint.contains("character_is_alive_as_observed"));
+        assert!(endpoint.contains("alive_npc_ids.contains"));
         assert!(!endpoint.contains("npc.sex"));
     }
 
@@ -593,6 +595,22 @@ async fn location_npcs(
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let mut alive_npc_ids = std::collections::HashSet::new();
+    for npc in &npcs {
+        let alive = super::data::character_is_alive_as_observed(
+            &state,
+            npc.character_id,
+            character_id,
+        )
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, resident_character_id = npc.character_id, observer_character_id = character_id, "could not project resident life state");
+            true
+        });
+        if alive {
+            alive_npc_ids.insert(npc.character_id);
+        }
+    }
     let minute = state
         .db
         .query_one::<crate::spacetimedb::CharacterTime>(&format!(
@@ -606,6 +624,7 @@ async fn location_npcs(
     let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && npc_presence_contains(presence.start_minute, presence.end_minute, minute)).filter_map(|presence| {
         let npc = npcs.iter().find(|npc| {
             npc.character_id == presence.resident_character_id
+                && alive_npc_ids.contains(&npc.character_id)
                 && npc_matches_location_binding(npc, &settlement_id, &location_id, &settlement.economy)
         })?;
         let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
@@ -650,7 +669,7 @@ async fn social_npc_in_scope(
     ) {
         return Err(StatusCode::NOT_FOUND);
     }
-    state
+    let npc = state
         .db
         .query_one::<SettlementResidentRow>(&format!(
             "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
@@ -666,7 +685,20 @@ async fn social_npc_in_scope(
                     &settlement.economy,
                 )
         })
-        .ok_or(StatusCode::NOT_FOUND)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if !super::data::character_is_alive_as_observed(
+        state,
+        resident_character_id,
+        character_id,
+    )
+    .await
+    .unwrap_or_else(|error| {
+        tracing::warn!(%error, resident_character_id, observer_character_id = character_id, "could not project resident life state");
+        true
+    }) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(npc)
 }
 
 async fn available_social_npc(

@@ -37,7 +37,7 @@ use adventuresim_stdb_client::{
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
     backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
-    character_death_table::CharacterDeathTableAccess,
+    backend_character_deaths_table::BackendCharacterDeathsTableAccess,
     character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_illness_status_table::CharacterIllnessStatusTableAccess,
     backend_character_needs_table::BackendCharacterNeedsTableAccess,

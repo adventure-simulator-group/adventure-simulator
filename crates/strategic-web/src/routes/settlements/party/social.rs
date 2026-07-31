@@ -18,11 +18,7 @@ pub(super) async fn party_social(
     let selected = if target_id == active.id {
         active.clone()
     } else {
-        match state
-            .db
-            .query_one::<Character>(&format!(
-                "SELECT * FROM backend_characters WHERE id = {target_id}"
-            ))
+        match crate::routes::data::character_as_observed(&state, target_id, active.id)
             .await
             .ok()
             .flatten()

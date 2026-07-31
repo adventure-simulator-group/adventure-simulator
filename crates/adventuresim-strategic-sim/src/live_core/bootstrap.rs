@@ -123,7 +123,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.battle_result())
         .add_query(|query| query.from.backend_characters())
         .add_query(|query| query.from.backend_character_capabilities())
-        .add_query(|query| query.from.character_death())
+        .add_query(|query| query.from.backend_character_deaths())
         .add_query(|query| query.from.character_equipped_item())
         .add_query(|query| query.from.equipment_occupancy())
         .add_query(|query| query.from.character_illness_status())

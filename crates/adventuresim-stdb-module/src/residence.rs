@@ -343,6 +343,7 @@ pub fn backend_character_residence_statuses(
             let occupancy_holding_id =
                 occupant_holding_id_at_view(ctx, character_id, character_minute);
             let primary = ctx.db.primary_residence().character_id().find(character_id);
+            let owns_holding = holding.owner_character_id == character_id;
             Some(BackendCharacterResidenceStatus {
                 character_id,
                 holding_id: holding.id.clone(),
@@ -356,8 +357,13 @@ pub fn backend_character_residence_statuses(
                 }),
                 occupied: occupancy_holding_id.as_deref() == Some(holding.id.as_str()),
                 acquired_minute: holding.acquired_minute,
-                last_billed_minute: holding.last_billed_minute,
-                next_due_minute: holding.next_due_minute,
+                // Billing is the owner's private economic state. Household
+                // occupants need the home and comfort facts, not timestamps
+                // that may have been advanced beyond their personal date.
+                last_billed_minute: owns_holding
+                    .then_some(holding.last_billed_minute)
+                    .unwrap_or(0),
+                next_due_minute: owns_holding.then_some(holding.next_due_minute).unwrap_or(0),
             })
         })
         .collect()
@@ -647,6 +653,51 @@ pub(crate) fn move_residence_occupant_effective(
         }
     }
     Ok(())
+}
+
+/// End guest occupancy at an effective lifecycle minute without allowing a
+/// delayed marriage resolution to overwrite a newer move. Owners retain their
+/// own holding; only the historical non-owner occupancy receives a removal.
+pub(crate) fn remove_nonowned_occupancy_effective(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) {
+    let Some(holding_id) = occupant_holding_id_at(ctx, character_id, minute) else {
+        return;
+    };
+    let Some(holding) = ctx.db.residence_holding().id().find(&holding_id) else {
+        return;
+    };
+    if holding.owner_character_id == character_id {
+        return;
+    }
+    record_transition(
+        ctx,
+        &holding,
+        character_id,
+        minute,
+        ResidenceTransitionKind::OccupantRemoved,
+    );
+    let has_later_transition = ctx
+        .db
+        .residence_transition()
+        .affected_character_id()
+        .filter(character_id)
+        .any(|transition| transition.minute > minute);
+    if !has_later_transition
+        && ctx
+            .db
+            .residence_occupant()
+            .character_id()
+            .find(character_id)
+            .is_some_and(|occupant| occupant.holding_id == holding_id)
+    {
+        ctx.db
+            .residence_occupant()
+            .character_id()
+            .delete(character_id);
+    }
 }
 
 pub(crate) fn remove_occupant_at(
@@ -1582,6 +1633,27 @@ mod tests {
         assert!(projection.contains("character_ids.push(holding.owner_character_id)"));
         assert!(projection.contains("residence_occupant()"));
         assert!(projection.contains("primary_residence()"));
+        assert!(
+            projection.contains("let owns_holding = holding.owner_character_id == character_id")
+        );
+        assert!(projection.contains("owns_holding.then_some(holding.last_billed_minute)"));
+        assert!(projection.contains("owns_holding.then_some(holding.next_due_minute)"));
+    }
+
+    #[test]
+    fn effective_guest_removal_preserves_newer_current_occupancy() {
+        let source = include_str!("residence.rs");
+        let removal = source
+            .split("pub(crate) fn remove_nonowned_occupancy_effective")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn remove_occupant_at")
+            .next()
+            .unwrap();
+        assert!(removal.contains("occupant_holding_id_at(ctx, character_id, minute)"));
+        assert!(removal.contains("holding.owner_character_id == character_id"));
+        assert!(removal.contains("transition.minute > minute"));
+        assert!(removal.contains("occupant.holding_id == holding_id"));
     }
 
     #[test]

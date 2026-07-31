@@ -136,7 +136,14 @@ views; tactical servers continue to receive only their `ConnectedPlayer`
 view. This prevents a direct client from enumerating a globally exclusive NPC,
 or detecting a future birth through an otherwise ordinary time, physiology,
 skill, or needs row, while that lifecycle fact is still beyond the selected
-character's personal date.
+character's personal date. Death receipts and derived morale-source labels are
+private for the same reason: only gateway projections may read them broadly,
+and player-facing death presentation must apply the selected observer's
+personal-date boundary. Strategic web therefore reconstructs `Character.alive`
+for party, remembered-character, and settlement-resident presentation from the
+private death receipt and the selected observer's `CharacterTime`; a missing
+observer frontier is treated as insufficient authority to reveal the broad
+current death state.
 
 The gateway resident roster is an explicit player-visible join over Character,
 private personality, resident profile, and presence authority. It includes the

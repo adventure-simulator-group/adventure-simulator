@@ -644,6 +644,9 @@ pub fn spend_time_with_settlement_resident(
         .character_id()
         .find(actor_id)
         .map_or(0, |time| time.minutes);
+    if !crate::relationship::character_alive_at(ctx, resident_character_id, now) {
+        return Err("Resident is not available at the actor's personal date".into());
+    }
     let remaining_presence = ctx
         .db
         .settlement_resident_presence()
@@ -3573,6 +3576,20 @@ mod contract_tests {
             .expect("selector boundary");
         assert!(automatic.contains(".find(target_id)"));
         assert!(!automatic.contains(".find(actor_id)"));
+    }
+
+    #[test]
+    fn settlement_chat_rejects_a_target_not_born_at_the_actor_frontier() {
+        let source = include_str!("social.rs");
+        let chat = source
+            .split("pub fn spend_time_with_settlement_resident")
+            .nth(1)
+            .unwrap()
+            .split("/// Spend deliberate personal time")
+            .next()
+            .unwrap();
+        assert!(chat.contains("character_alive_at(ctx, resident_character_id, now)"));
+        assert!(chat.contains("not available at the actor's personal date"));
     }
 
     #[test]

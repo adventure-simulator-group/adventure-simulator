@@ -13,9 +13,9 @@ use crate::{
     capability::{character_capability, character_capability__view},
     condition::{
         character_condition, character_condition__view, character_exposure,
-        character_exposure__view, character_morale_source, character_needs, character_needs__view,
-        character_strategic_condition, character_strategic_condition__view, morale_event,
-        religious_demand,
+        character_exposure__view, character_morale_source, character_morale_source__view,
+        character_needs, character_needs__view, character_strategic_condition,
+        character_strategic_condition__view, morale_event, religious_demand,
     },
     disease::{
         character_illness_status, committed_cut, disease_notice, infection_episode,
@@ -199,6 +199,21 @@ pub fn backend_character_strategic_conditions(
         .collect()
 }
 
+/// Morale source labels can reveal private religion, household, and romantic
+/// state (including the spouse-leisure source). Only the trusted gateway may
+/// read the broad projection; browser handlers must still scope rows to the
+/// selected character or an authorized party member.
+#[view(accessor = backend_character_morale_sources, public)]
+pub fn backend_character_morale_sources(
+    ctx: &ViewContext,
+) -> Vec<crate::condition::CharacterMoraleSource> {
+    let mut rows = Vec::new();
+    for id in gateway_character_ids(ctx) {
+        rows.extend(ctx.db.character_morale_source().character_id().filter(id));
+    }
+    rows
+}
+
 /// Durable receipt for an idempotent first-character confirmation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum StartingAgeTierCoordinate {
@@ -260,7 +275,7 @@ pub enum DeathSource {
 /// Immutable first-known death context. Tactical state is deliberately absent;
 /// committed outcomes pass only their durable cause/source into this boundary.
 #[derive(Clone, Debug)]
-#[table(accessor = character_death, public)]
+#[table(accessor = character_death)]
 pub struct CharacterDeath {
     #[primary_key]
     pub character_id: u64,
@@ -268,6 +283,21 @@ pub struct CharacterDeath {
     pub source: DeathSource,
     pub source_id: Option<String>,
     pub strategic_minute: u64,
+}
+
+/// Death authority is private because its timestamp may lie beyond another
+/// character's personal frontier. Strategic simulation consumes this trusted
+/// broad projection. Any player-facing presentation must additionally compare
+/// `strategic_minute` with the selected observer's CharacterTime.
+#[view(accessor = backend_character_deaths, public)]
+pub fn backend_character_deaths(ctx: &ViewContext) -> Vec<CharacterDeath> {
+    if !character_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_death().character_id().find(id))
+        .collect()
 }
 
 pub fn require_living_character(
@@ -332,6 +362,11 @@ pub fn transition_character_to_dead(
     // combatants that died in transient tactical state.
     let party_id = character.party_id.clone();
     ctx.db.character().id().update(character);
+    crate::relationship::settle_relationship_lifecycle_for_death(
+        ctx,
+        character_id,
+        strategic_minute,
+    );
     crate::social::prune_invalid_automatic_social_chats(ctx);
     if let Some(party_id) = party_id {
         crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
@@ -3183,9 +3218,16 @@ mod starting_character_boundary_tests {
             "backend_character_needs",
             "backend_character_exposures",
             "backend_character_strategic_conditions",
+            "backend_character_morale_sources",
+            "backend_character_deaths",
         ] {
             assert!(projection.contains(&format!("pub fn {view}")));
         }
+        assert!(source.contains("#[table(accessor = character_death)]"));
+        assert!(!source.contains("#[table(accessor = character_death, public)]"));
+        let condition_source = include_str!("condition.rs");
+        assert!(condition_source.contains("#[table(accessor = character_morale_source)]"));
+        assert!(!condition_source.contains("#[table(accessor = character_morale_source, public)]"));
     }
 
     #[test]

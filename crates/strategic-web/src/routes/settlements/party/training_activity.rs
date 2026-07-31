@@ -226,14 +226,15 @@ pub(super) async fn party_member(
     let selected = if character_id == active_character.id {
         active_character.clone()
     } else {
-        let characters: Vec<Character> = state
-            .db
-            .query(&format!(
-                "SELECT * FROM backend_characters WHERE id = {character_id}"
-            ))
+        let character = crate::routes::data::character_as_observed(
+            &state,
+            character_id,
+            active_character.id,
+        )
             .await
-            .unwrap_or_default();
-        match characters.into_iter().next() {
+            .ok()
+            .flatten();
+        match character {
             Some(character) => character,
             None => return Html("<h1>Party member not found</h1>".to_string()),
         }

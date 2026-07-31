@@ -173,9 +173,11 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_character_case_site_location_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_character_case_site_locations_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_character_conditions_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_character_deaths_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_character_exposures_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_character_familiarities_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_character_limbs_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_character_morale_sources_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_character_needs_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_character_personalities_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_character_relationship_status_type.rs` — Generated SpacetimeDB data type.
@@ -291,7 +293,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_capability_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_case_site_occupancy_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_condition_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/character_death_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_death_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_equipped_item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_equipped_item_type.rs` — Generated SpacetimeDB data type.
@@ -304,7 +305,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_illness_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_kinship_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_limbs_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/character_morale_source_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_morale_source_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_needs_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_organization_role_type.rs` — Generated SpacetimeDB data type.

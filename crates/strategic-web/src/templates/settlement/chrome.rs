@@ -378,9 +378,11 @@ fn residence_offer_panel(
                                 @if holding.occupied { " (occupied)" }
                                 @if !holding.active { " (payment overdue)" }
                             }
-                            p class="text-muted small-copy" {
-                                @if holding.active { "Next payment: " } @else { "Overdue since " }
-                                (format_residence_date(holding.next_due_minute)) "."
+                            @if owns_holding {
+                                p class="text-muted small-copy" {
+                                    @if holding.active { "Next payment: " } @else { "Overdue since " }
+                                    (format_residence_date(holding.next_due_minute)) "."
+                                }
                             }
                             @if owns_holding && holding.tenure == ResidenceTenure::Owner && !holding.active {
                                 form action=(format!("/settlements/{}/residences/recover/current", settlement.id)) method="post" {

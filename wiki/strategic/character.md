@@ -87,6 +87,14 @@ same familiarity twice. Actor/day/target receipts conserve the total applied
 frontier, making retries and time-advance chunks equivalent while still
 allowing a later chronological slice to retarget if the earlier companion has
 died, left the settlement, or otherwise become unavailable.
+Each slice selects against its own effective start minute rather than the
+actor's already-written interval-end clock, so a later birth or relationship
+boundary cannot rewrite an earlier day's companion. A candidate whose personal
+frontier is later than that slice is unavailable, because their mutable current
+settlement may already describe a future move. The actor's current settlement
+is safe for the whole interval because scheduled Socializing is applied only by
+the stationary advancement path, which captures one fixed execution location;
+travel time does not run this schedule.
 Ambiguous targets are scored by a stable hash of actor, absolute calendar day,
 location, and target; character ID is the final tie break. Iteration or table
 insertion order therefore cannot change the selected companion.
@@ -127,6 +135,10 @@ his wealth tier are frozen at that shared courtship minute; later opinion,
 wealth, or clock changes cannot rewrite the approval. Scheduling the wedding
 reserves that promised amount from the father in a private escrow. A cancelled
 or expired wedding refunds it; a fulfilled wedding pays it to the husband.
+Partner and father affinity thresholds are projected at that same effective
+minute. If a compact affinity row was replaced by a newer anchor and its past
+value can no longer be reconstructed, the exclusive action fails closed
+instead of using a future opinion.
 Informal courtship works for any mutually attracted eligible
 pair, but requires substantially more affinity; Amorous partners lower that
 threshold and Proper partners raise it. A wedding can only be scheduled from
@@ -149,7 +161,14 @@ ended pair is final in this first-pass history model. A check waits until both
 participants and the frozen observer have reached that day. Because its cohort
 and skill values are historical facts captured at courtship establishment,
 settlement does not depend on later location, skill, clock-chunk, or NPC
-advancement order.
+advancement order. An observer who dies ceases to be eligible from the death
+minute onward and cannot hold the remaining living observer cohort at an
+unreachable personal frontier; post-death days are deterministic skips and do
+not create discovery-attempt receipts for that observer.
+The discovery receipt keeps that historical attempt minute, while any affinity
+penalty is anchored at the observer's current frontier where the mutable
+affinity value was evaluated; delayed settlement therefore cannot decay the
+same elapsed interval twice.
 
 Opposite-sex adult spouses who are co-located can conceive from qualifying
 spouse Leisure. Only the integer intersection of their realized Leisure
@@ -175,6 +194,13 @@ Browser-visible
 relationship summaries are filtered by the selected character's personal
 minute, so a realized child is not disclosed to a parent whose frontier is
 still before the due date.
+
+Death closes any active courtship immediately. A reserved wedding is cancelled
+atomically, releasing both exclusive participant claims and refunding any
+dowry escrow; it never waits for a dead participant's frozen clock to reach the
+ceremony. If the deceased character is pregnant, the pregnancy ends and its
+reserved child identity is released. A surviving pregnant mother may still
+carry a deceased father's child to term.
 
 Browser ownership is separate from character identity. Candidate confirmation
 atomically records a private starting-character claim and character grant under
@@ -368,6 +394,18 @@ Mortals risen from the dead through unnatural magic.
 ## Death
 
 Characters begin alive. Death is an authoritative strategic transition: `Character.alive` is the fast life-state flag and one immutable `CharacterDeath` row retains the first typed cause, source, optional committed-outcome identifier, and the character's personal strategic minute. Repeating the transition is idempotent and cannot replace the original context. Tactical combat may submit a final death outcome, but tactical positions, hit points, enemies, and tick state never enter strategic persistence.
+
+`CharacterDeath` and derived morale-source rows are private authority. The
+registered gateway receives broad backend projections for simulation and
+server-rendered UI work; a player-facing death view must hide any receipt whose
+strategic minute is later than the selected observer's personal date. Keeping
+morale sources behind the same boundary prevents labels such as spouse Leisure
+from disclosing a private relationship to unrelated direct clients. The web
+gateway applies that rule to shared party portraits, settlement resident lists,
+action previews, and remembered characters by reconstructing life state at the
+observer's personal minute. If the observer time cannot be read, the gateway
+does not use the broad current `alive = false` value to disclose or suppress a
+character; strategic reducers remain authoritative for attempted actions.
 
 Dead characters remain visible for history and party context, but cannot train, rest, travel, trade, manage equipment or inventory, enter combat, use party actions, recruit, change membership, or chat. Party readiness, forecasts, provisioning, movement, needs, condition updates, and combat construction consider living members only; a corpse's personal minute and location remain fixed while survivors continue. Dead members are not recorded as battle participants, receive no victory morale, mission experience, loot stake, or quest reward, and participant life state is checked again when loot is stored. A disposable simulation capability provides the deterministic death path used for integration testing; ordinary production identities cannot invoke it.
 

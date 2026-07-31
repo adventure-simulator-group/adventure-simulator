@@ -222,12 +222,7 @@ pub(crate) async fn execute_or_request_party_action(
             .await
             .map_err(|error| error.to_string())?;
         for membership in members {
-            let member = state
-                .db
-                .query_one::<Character>(&format!(
-                    "SELECT * FROM backend_characters WHERE id = {}",
-                    membership.character_id
-                ))
+            let member = data::character_as_observed(state, membership.character_id, actor_id)
                 .await
                 .map_err(|error| error.to_string())?
                 .ok_or("Party member not found")?;
@@ -344,9 +339,7 @@ pub(crate) async fn party_terrain_profile(
         Vec::new(),
     ];
     for id in member_ids {
-        let Some(character) = state
-            .db
-            .query_one::<Character>(&format!("SELECT * FROM backend_characters WHERE id = {id}"))
+        let Some(character) = data::character_as_observed(state, id, actor.id)
             .await
             .map_err(|e| e.to_string())?
         else {
@@ -462,9 +455,7 @@ async fn authoritative_party_departure_minute(
     };
     let mut departure = 0;
     for id in member_ids {
-        let living = state
-            .db
-            .query_one::<Character>(&format!("SELECT * FROM backend_characters WHERE id = {id}"))
+        let living = data::character_as_observed(state, id, actor.id)
             .await
             .map_err(|error| error.to_string())?
             .is_some_and(|character| character.alive);

@@ -735,9 +735,11 @@ async fn party_notifications(
         Vec::new()
     };
     let actual_leader_alive = match parties.first() {
-        Some(party) => get_character(&state, party.leader_id)
+        Some(party) => super::data::character_as_observed(&state, party.leader_id, character_id)
             .await
-            .is_some_and(|leader| leader.alive),
+            .ok()
+            .flatten()
+            .is_none_or(|leader| leader.alive),
         None => true,
     };
     let leader_votes = state

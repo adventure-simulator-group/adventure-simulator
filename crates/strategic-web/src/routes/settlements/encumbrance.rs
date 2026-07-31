@@ -217,7 +217,7 @@ pub(super) async fn get_active_character(
     let character_id = character_id?;
     let inventory_sql = format!("SELECT * FROM inventory_item WHERE character_id = {character_id}");
     let (character, inventory) = tokio::join!(
-        super::super::data::character(state, character_id),
+        super::super::data::character_as_observed(state, character_id, character_id),
         state.db.query::<InventoryItem>(&inventory_sql),
     );
     let character = character.ok().flatten()?;
@@ -344,6 +344,20 @@ pub(crate) async fn get_active_party_members(
     });
     let mut members: Vec<Character> = join_all(lookups).await.into_iter().flatten().collect();
     if let Some(actor) = active_character {
+        if let Err(error) = super::super::data::project_alive_as_observed(
+            state,
+            actor.id,
+            &mut members,
+        )
+        .await
+        {
+            // A failed chronology read must not disclose or act on broad
+            // current death state from beyond the selected character's date.
+            tracing::warn!(%error, "could not project party life state at observer date");
+            for member in members.iter_mut().filter(|member| !member.alive) {
+                member.alive = true;
+            }
+        }
         let addresses_sql = format!(
             "SELECT * FROM backend_social_addresses WHERE actor_id = {}",
             actor.id
@@ -356,7 +370,7 @@ pub(crate) async fn get_active_party_members(
             state
                 .db
                 .query::<CharacterMoraleSource>(&format!(
-                    "SELECT * FROM character_morale_source WHERE character_id = {}",
+                    "SELECT * FROM backend_character_morale_sources WHERE character_id = {}",
                     member.id
                 ))
                 .await
