@@ -155,6 +155,12 @@ Child identity, name choice, sex, and home placement use separate stable seed
 domains based on the canonical parent pair, pregnancy ordinal, birth minute,
 and home location, so retries and insertion order cannot change the result.
 
+Browser ownership is separate from character identity. Candidate confirmation
+atomically records a private starting-character claim and character grant under
+the gateway's pseudonymous owner key. A deterministic candidate may be retried
+by that owner, but another owner cannot replay the coordinates to take it.
+Selection is server-side and is permitted only for a granted character.
+
 The Social family is **Insight**, **Charm**, **Command**, and **Deception**.
 Social outcomes combine the action skill, current Affinity and Familiarity,
 the actor's diagnosis, the target's true personality and topic sensitivity,

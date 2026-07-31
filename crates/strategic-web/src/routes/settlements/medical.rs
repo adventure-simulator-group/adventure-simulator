@@ -534,36 +534,21 @@ pub(super) async fn settlement_resident_place(
             "SELECT * FROM settlement_residence_offer WHERE settlement_id = {settlement_literal}"
         );
         let residence_sql = format!(
-            "SELECT * FROM character_residence WHERE character_id = {}",
-            character.id,
-        );
-        let occupancy_sql = format!(
-            "SELECT * FROM residence_occupant WHERE character_id = {}",
+            "SELECT * FROM backend_character_residence_statuses WHERE character_id = {}",
             character.id,
         );
         let relationship_sql = format!(
             "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {}",
             character.id,
         );
-        let commitment_first_sql = format!(
-            "SELECT * FROM exclusive_commitment WHERE first_character_id = {}",
-            character.id
-        );
-        let commitment_second_sql = format!(
-            "SELECT * FROM exclusive_commitment WHERE second_character_id = {}",
-            character.id
-        );
-        let (offers, residence, occupancy, relationship, first_commitments, second_commitments) = tokio::join!(
+        let (offers, residence, relationship) = tokio::join!(
             state.db.query::<SettlementResidenceOffer>(&offers_sql),
-            state.db.query_one::<CharacterResidence>(&residence_sql),
-            state.db.query_one::<ResidenceOccupant>(&occupancy_sql),
+            state
+                .db
+                .query_one::<BackendCharacterResidenceStatus>(&residence_sql),
             state
                 .db
                 .query_one::<BackendCharacterRelationshipStatus>(&relationship_sql),
-            state.db.query::<ExclusiveCommitment>(&commitment_first_sql),
-            state
-                .db
-                .query::<ExclusiveCommitment>(&commitment_second_sql),
         );
         let mut offers = offers.unwrap_or_default();
         offers.sort_by_key(|offer| match offer.tier {
@@ -572,23 +557,7 @@ pub(super) async fn settlement_resident_place(
             ResidenceTier::Fancy => 2,
         });
         let residence = residence.ok().flatten();
-        let occupancy = occupancy.ok().flatten();
-        let occupied_residence = if let Some(occupancy) = occupancy.as_ref()
-            && occupancy.residence_character_id != character.id
-        {
-            state
-                .db
-                .query_one::<CharacterResidence>(&format!(
-                    "SELECT * FROM character_residence WHERE character_id = {}",
-                    occupancy.residence_character_id
-                ))
-                .await
-                .ok()
-                .flatten()
-        } else {
-            residence.clone()
-        };
-        let can_rest_at_home = occupied_residence
+        let can_rest_at_home = residence
             .as_ref()
             .is_some_and(|home| home.active && home.settlement_id == settlement.id);
         let relationship = relationship.ok().flatten();
@@ -623,17 +592,14 @@ pub(super) async fn settlement_resident_place(
             .ok()
             .flatten()
             .map_or(0, |time| time.minutes);
-        let mut commitments = first_commitments.unwrap_or_default();
-        commitments.extend(second_commitments.unwrap_or_default());
-        let wedding = commitments
-            .iter()
-            .find(|row| row.status.eq_ignore_ascii_case("reserved"))
-            .map(|row| WeddingPresentation {
-                days_remaining: row
-                    .effective_minute
+        let wedding = relationship
+            .as_ref()
+            .and_then(|row| row.wedding_effective_minute)
+            .map(|effective_minute| WeddingPresentation {
+                days_remaining: effective_minute
                     .saturating_sub(character_minute)
                     .div_ceil(adventuresim_core::strategic_time::MINUTES_PER_DAY),
-                date_label: relationship_date_label(row.effective_minute),
+                date_label: relationship_date_label(effective_minute),
             });
         let presentation = relationship.as_ref().map(|status| {
             let name = |id: Option<u64>| {

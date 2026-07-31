@@ -54,6 +54,11 @@ new household or kinship. A character has one active household membership.
 Ending a marriage or widowhood releases the marriage household and guest
 occupancy deterministically, while a residence holder keeps their own home.
 
+The web gateway reads only `BackendCharacterResidenceStatus`, a gateway-only
+projection of the selected character's active primary or occupied holding.
+Browser routes never query legal holdings, primary designations, occupancy
+edges, or charge ledgers directly.
+
 Residence and spouse Leisure are each represented by one refreshable morale
 source rather than a new stackable event per rest. Residence morale is capped
 at 8 points and lasts seven days; spouse Leisure is capped at 12 points and

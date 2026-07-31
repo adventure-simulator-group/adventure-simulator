@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::household_role_type::HouseholdRole;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct HouseholdMember {
@@ -11,6 +13,7 @@ pub struct HouseholdMember {
     pub household_id: String,
     pub character_id: u64,
     pub joined_minute: u64,
+    pub role: HouseholdRole,
 }
 
 impl __sdk::InModule for HouseholdMember {
@@ -25,6 +28,7 @@ pub struct HouseholdMemberCols {
     pub household_id: __sdk::__query_builder::Col<HouseholdMember, String>,
     pub character_id: __sdk::__query_builder::Col<HouseholdMember, u64>,
     pub joined_minute: __sdk::__query_builder::Col<HouseholdMember, u64>,
+    pub role: __sdk::__query_builder::Col<HouseholdMember, HouseholdRole>,
 }
 
 impl __sdk::__query_builder::HasCols for HouseholdMember {
@@ -35,6 +39,7 @@ impl __sdk::__query_builder::HasCols for HouseholdMember {
             household_id: __sdk::__query_builder::Col::new(table_name, "household_id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             joined_minute: __sdk::__query_builder::Col::new(table_name, "joined_minute"),
+            role: __sdk::__query_builder::Col::new(table_name, "role"),
         }
     }
 }

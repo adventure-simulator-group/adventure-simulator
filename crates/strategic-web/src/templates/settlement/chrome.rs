@@ -5,9 +5,9 @@ use maud::{Markup, html};
 use super::social::{npc_description_stage, npc_portrait_strip, settlement_resident_chat_area};
 use super::{SoapRestPreview, corpse_medical_dialog, rest_service_menu};
 use crate::spacetimedb::{
-    BackendCorpse, Character, CharacterResidence, ResidenceTenure, ResidenceTier, Settlement,
-    SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
-    SettlementResidenceOffer,
+    BackendCharacterResidenceStatus, BackendCorpse, Character, ResidenceTenure, ResidenceTier,
+    Settlement, SettlementAlias, SettlementCategory, SettlementDescription,
+    SettlementDescriptionKind, SettlementResidenceOffer,
 };
 use crate::templates::{
     game_icon, population_description, settlement_layout_with_session, sidebar_section,
@@ -185,7 +185,7 @@ pub fn settlement_residence_page(
     party_members: &[Character],
     logged_in_as: Option<&str>,
     offers: &[SettlementResidenceOffer],
-    current: Option<&CharacterResidence>,
+    current: Option<&BackendCharacterResidenceStatus>,
     relationship: Option<&RelationshipPresentation>,
     can_rest_at_home: bool,
     notice: Option<&str>,
@@ -339,7 +339,7 @@ fn residence_tier_id(tier: ResidenceTier) -> &'static str {
 fn residence_offer_panel(
     settlement: &Settlement,
     offers: &[SettlementResidenceOffer],
-    current: Option<&CharacterResidence>,
+    current: Option<&BackendCharacterResidenceStatus>,
     relationship: Option<&RelationshipPresentation>,
     notice: Option<&str>,
 ) -> Markup {

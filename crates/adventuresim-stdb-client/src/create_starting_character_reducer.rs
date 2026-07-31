@@ -9,6 +9,7 @@ use super::starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct CreateStartingCharacterArgs {
+    pub owner_key: String,
     pub generator_version: u16,
     pub seed: String,
     pub age_tier: StartingAgeTierCoordinate,
@@ -18,6 +19,7 @@ pub(super) struct CreateStartingCharacterArgs {
 impl From<CreateStartingCharacterArgs> for super::Reducer {
     fn from(args: CreateStartingCharacterArgs) -> Self {
         Self::CreateStartingCharacter {
+            owner_key: args.owner_key,
             generator_version: args.generator_version,
             seed: args.seed,
             age_tier: args.age_tier,
@@ -43,12 +45,20 @@ pub trait create_starting_character {
     /// /// Use [`create_starting_character:create_starting_character_then`] to run a callback after the reducer completes.
     fn create_starting_character(
         &self,
+        owner_key: String,
         generator_version: u16,
         seed: String,
         age_tier: StartingAgeTierCoordinate,
         slot: u8,
     ) -> __sdk::Result<()> {
-        self.create_starting_character_then(generator_version, seed, age_tier, slot, |_, _| {})
+        self.create_starting_character_then(
+            owner_key,
+            generator_version,
+            seed,
+            age_tier,
+            slot,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `create_starting_character` to run as soon as possible,
@@ -59,6 +69,7 @@ pub trait create_starting_character {
     ///  and its status can be observed with the `callback`.
     fn create_starting_character_then(
         &self,
+        owner_key: String,
         generator_version: u16,
         seed: String,
         age_tier: StartingAgeTierCoordinate,
@@ -75,6 +86,7 @@ pub trait create_starting_character {
 impl create_starting_character for super::RemoteReducers {
     fn create_starting_character_then(
         &self,
+        owner_key: String,
         generator_version: u16,
         seed: String,
         age_tier: StartingAgeTierCoordinate,
@@ -88,6 +100,7 @@ impl create_starting_character for super::RemoteReducers {
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             CreateStartingCharacterArgs {
+                owner_key,
                 generator_version,
                 seed,
                 age_tier,

@@ -1,4 +1,5 @@
 pub mod alcohol;
+mod browser_session;
 pub mod capability;
 pub mod character;
 pub mod condition;
@@ -32,6 +33,7 @@ pub mod tactical;
 pub mod time;
 
 pub use alcohol::*;
+pub use browser_session::*;
 pub use capability::*;
 pub use character::*;
 pub use condition::*;

@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::AppState;
-use crate::session::{Session, clear_character_cookie, set_character_cookie};
+use crate::session::{Session, clear_character_cookie, redirect_with_session_cookie};
 use crate::spacetimedb::{Character, CharacterStrategicCondition};
 use crate::templates::character::{
     character_candidates_bootstrap_page, character_candidates_page, character_switcher_options,
@@ -171,11 +171,34 @@ async fn confirm_candidate(
         Ok(spec) => spec,
         Err(error) => return (axum::http::StatusCode::BAD_REQUEST, error).into_response(),
     };
+    let issued = if session.owner_key().is_none() {
+        match state.session_codec.issue() {
+            Ok(issued) => Some(issued),
+            Err(error) => {
+                tracing::error!(%error, "failed to issue browser session");
+                return (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    "A browser session could not be created. Please try again.",
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+    let owner_key = session
+        .owner_key()
+        .or_else(|| issued.as_ref().map(|issued| issued.owner_key.as_str()))
+        .expect("existing or newly issued browser owner");
+    let token = session
+        .token()
+        .or_else(|| issued.as_ref().map(|issued| issued.token.as_str()));
     if let Err(error) = state
         .db
         .call(
             "create_starting_character",
             &[
+                json!(owner_key),
                 json!(form.version),
                 json!(form.seed),
                 starting_age_tier_argument(form.age),
@@ -191,7 +214,20 @@ async fn confirm_candidate(
         )
             .into_response();
     }
-    set_character_cookie(spec.id, &session.character_ids(), "/")
+    if let Err(error) = state
+        .db
+        .call(
+            "select_browser_character",
+            &[json!(owner_key), json!(spec.id)],
+        )
+        .await
+    {
+        tracing::error!(character_id = spec.id, %error, "failed to select starting character");
+        // Preserve a newly issued identity after the durable grant succeeds so
+        // a transient selection failure cannot orphan the character.
+        return redirect_with_session_cookie(&state.session_codec, token, "/characters");
+    }
+    redirect_with_session_cookie(&state.session_codec, token, "/")
 }
 
 async fn select_character(
@@ -199,9 +235,30 @@ async fn select_character(
     Path(id): Path<u64>,
     session: Session,
 ) -> Response {
+    let Some(owner_key) = session.owner_key() else {
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            "Browser session required",
+        )
+            .into_response();
+    };
     match super::data::character(&state, id).await {
         Ok(Some(character)) if !character.temporary && session.character_ids().contains(&id) => {
-            set_character_cookie(id, &session.character_ids(), "/")
+            match state
+                .db
+                .call("select_browser_character", &[json!(owner_key), json!(id)])
+                .await
+            {
+                Ok(()) => redirect_with_session_cookie(&state.session_codec, None, "/"),
+                Err(error) => {
+                    tracing::error!(character_id = id, %error, "failed to select granted character");
+                    (
+                        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                        "Character selection is unavailable",
+                    )
+                        .into_response()
+                }
+            }
         }
         Ok(Some(_)) => {
             (axum::http::StatusCode::FORBIDDEN, "Character not available").into_response()
@@ -215,7 +272,20 @@ async fn select_character(
     }
 }
 
-async fn switch_character() -> Response {
+async fn switch_character(State(state): State<AppState>, session: Session) -> Response {
+    if let Some(owner_key) = session.owner_key()
+        && let Err(error) = state
+            .db
+            .call("clear_browser_character_selection", &[json!(owner_key)])
+            .await
+    {
+        tracing::error!(%error, "failed to clear browser character selection");
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "Character selection is unavailable",
+        )
+            .into_response();
+    }
     clear_character_cookie("/characters/candidates")
 }
 

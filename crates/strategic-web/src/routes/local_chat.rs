@@ -489,12 +489,11 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("async fn messages").next())
             .expect("local chat authority handler");
-        assert!(
-            local_route
-                .contains("SELECT * FROM backend_settlement_residents WHERE character_id = {}")
-        );
         assert!(local_route.contains(
-            "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {}"
+            "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
+        ));
+        assert!(local_route.contains(
+            "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {resident_character_id}"
         ));
         assert!(
             include_str!("local_chat.rs").contains("presence.location_id == requested_location_id")

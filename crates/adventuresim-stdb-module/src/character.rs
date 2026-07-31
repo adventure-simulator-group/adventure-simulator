@@ -73,12 +73,14 @@ impl StartingAgeTierCoordinate {
 
 /// Durable receipt for an idempotent first-character confirmation.
 #[derive(Clone, Debug)]
-#[table(accessor = starting_character_claim, public)]
+#[table(accessor = starting_character_claim)]
 pub struct StartingCharacterClaim {
     #[primary_key]
     pub request_key: String,
     #[unique]
     pub character_id: u64,
+    #[index(btree)]
+    pub owner_key: String,
     pub generator_version: u16,
     pub seed: String,
     pub age_tier: StartingAgeTierCoordinate,
@@ -1061,6 +1063,7 @@ pub fn create_named_character_with_id(
 #[reducer]
 pub fn create_starting_character(
     ctx: &ReducerContext,
+    owner_key: String,
     generator_version: u16,
     seed: String,
     age_tier: StartingAgeTierCoordinate,
@@ -1085,7 +1088,16 @@ pub fn create_starting_character(
             .id()
             .find(claim.character_id)
             .ok_or("candidate claim exists without its character")?;
+        if claim.owner_key != owner_key {
+            return Err("candidate was already claimed by a different browser owner".into());
+        }
         if existing.id == spec.id && existing.name == spec.name {
+            crate::browser_session::grant_browser_character_internal(
+                ctx,
+                &owner_key,
+                existing.id,
+                &request_key,
+            )?;
             return Ok(());
         }
         return Err("candidate claim does not match regenerated character".into());
@@ -1097,13 +1109,20 @@ pub fn create_starting_character(
     ctx.db
         .starting_character_claim()
         .insert(StartingCharacterClaim {
-            request_key,
+            request_key: request_key.clone(),
             character_id: spec.id,
+            owner_key: owner_key.clone(),
             generator_version,
             seed,
             age_tier: coordinate,
             slot,
         });
+    crate::browser_session::grant_browser_character_internal(
+        ctx,
+        &owner_key,
+        spec.id,
+        &request_key,
+    )?;
     Ok(())
 }
 

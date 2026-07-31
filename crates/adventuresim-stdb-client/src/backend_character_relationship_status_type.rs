@@ -12,6 +12,10 @@ pub struct BackendCharacterRelationshipStatus {
     pub courtship_partner_id: Option<u64>,
     pub courtship_kind: Option<String>,
     pub courtship_exposed: bool,
+    pub wedding_commitment_id: Option<String>,
+    pub wedding_partner_id: Option<u64>,
+    pub wedding_effective_minute: Option<u64>,
+    pub wedding_settlement_id: Option<String>,
     pub pregnancy_due_minute: Option<u64>,
     pub pregnancy_child_id: Option<u64>,
 }
@@ -31,6 +35,14 @@ pub struct BackendCharacterRelationshipStatusCols {
     pub courtship_kind:
         __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<String>>,
     pub courtship_exposed: __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, bool>,
+    pub wedding_commitment_id:
+        __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<String>>,
+    pub wedding_partner_id:
+        __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<u64>>,
+    pub wedding_effective_minute:
+        __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<u64>>,
+    pub wedding_settlement_id:
+        __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<String>>,
     pub pregnancy_due_minute:
         __sdk::__query_builder::Col<BackendCharacterRelationshipStatus, Option<u64>>,
     pub pregnancy_child_id:
@@ -49,6 +61,19 @@ impl __sdk::__query_builder::HasCols for BackendCharacterRelationshipStatus {
             ),
             courtship_kind: __sdk::__query_builder::Col::new(table_name, "courtship_kind"),
             courtship_exposed: __sdk::__query_builder::Col::new(table_name, "courtship_exposed"),
+            wedding_commitment_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "wedding_commitment_id",
+            ),
+            wedding_partner_id: __sdk::__query_builder::Col::new(table_name, "wedding_partner_id"),
+            wedding_effective_minute: __sdk::__query_builder::Col::new(
+                table_name,
+                "wedding_effective_minute",
+            ),
+            wedding_settlement_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "wedding_settlement_id",
+            ),
             pregnancy_due_minute: __sdk::__query_builder::Col::new(
                 table_name,
                 "pregnancy_due_minute",

@@ -467,6 +467,10 @@ pub struct BackendCharacterRelationshipStatus {
     pub courtship_partner_id: Option<u64>,
     pub courtship_kind: Option<String>,
     pub courtship_exposed: bool,
+    pub wedding_commitment_id: Option<String>,
+    pub wedding_partner_id: Option<u64>,
+    pub wedding_effective_minute: Option<u64>,
+    pub wedding_settlement_id: Option<String>,
     pub pregnancy_due_minute: Option<u64>,
     pub pregnancy_child_id: Option<u64>,
 }
@@ -617,12 +621,41 @@ pub fn backend_character_relationship_statuses(
                     })
                     .max_by_key(|row| (row.due_minute, row.id.clone()))
                     .and_then(|row| row.birth_character_id);
+                let wedding = ctx
+                    .db
+                    .exclusive_commitment_participant()
+                    .character_id()
+                    .find(character.id)
+                    .and_then(|participant| {
+                        ctx.db
+                            .exclusive_commitment()
+                            .id()
+                            .find(&participant.commitment_id)
+                    })
+                    .filter(|commitment| {
+                        commitment.status == CommitmentStatus::Reserved
+                            && commitment.created_minute <= observer_minute
+                            && (commitment.first_character_id == character.id
+                                || commitment.second_character_id == character.id)
+                    });
                 BackendCharacterRelationshipStatus {
                     character_id: character.id,
                     spouse_id,
                     courtship_partner_id,
                     courtship_kind,
                     courtship_exposed,
+                    wedding_commitment_id: wedding.as_ref().map(|row| row.id.clone()),
+                    wedding_partner_id: wedding.as_ref().map(|row| {
+                        if row.first_character_id == character.id {
+                            row.second_character_id
+                        } else {
+                            row.first_character_id
+                        }
+                    }),
+                    wedding_effective_minute: wedding.as_ref().map(|row| row.effective_minute),
+                    wedding_settlement_id: wedding
+                        .as_ref()
+                        .map(|row| row.ceremony_settlement_id.clone()),
                     pregnancy_due_minute: active_pregnancy.map(|row| row.due_minute),
                     pregnancy_child_id: born_child_id,
                 }

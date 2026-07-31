@@ -1,18 +1,119 @@
-//! Session management via cookies
+//! Signed opaque browser sessions backed by server-side character grants.
+
+use std::{fmt, future::Future};
 
 use axum::{
     extract::FromRequestParts,
-    http::{HeaderMap, HeaderValue, header, request::Parts},
+    http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::CookieJar;
-use std::collections::HashSet;
-use std::future::Future;
-use std::{fmt, str::FromStr};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use hmac::{Hmac, Mac};
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
-pub const CHARACTER_COOKIE: &str = "character_id";
-pub const CHARACTER_ROSTER_COOKIE: &str = "character_roster";
-const MAX_REMEMBERED_CHARACTERS: usize = 32;
+use crate::{routes::AppState, spacetimedb::sql_string_literal};
+
+pub const SESSION_COOKIE: &str = "adventuresim_session";
+const SESSION_VERSION: &str = "v1";
+const SESSION_ID_BYTES: usize = 32;
+const OWNER_DOMAIN: &[u8] = b"adventuresim/browser-session-owner/v1\0";
+
+type HmacSha256 = Hmac<Sha256>;
+
+#[derive(Clone)]
+pub struct SessionCodec {
+    secret: [u8; 32],
+    secure_cookie: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionCodecError {
+    #[error("STRATEGIC_SESSION_SECRET must be exactly 32 base64url bytes")]
+    InvalidSecret,
+    #[error("secure random session generation failed")]
+    Random,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IssuedSession {
+    pub token: String,
+    pub owner_key: String,
+}
+
+impl SessionCodec {
+    pub fn from_base64url(secret: &str, secure_cookie: bool) -> Result<Self, SessionCodecError> {
+        let decoded = URL_SAFE_NO_PAD
+            .decode(secret)
+            .map_err(|_| SessionCodecError::InvalidSecret)?;
+        let secret: [u8; 32] = decoded
+            .try_into()
+            .map_err(|_| SessionCodecError::InvalidSecret)?;
+        Ok(Self {
+            secret,
+            secure_cookie,
+        })
+    }
+
+    pub fn issue(&self) -> Result<IssuedSession, SessionCodecError> {
+        let mut id = [0u8; SESSION_ID_BYTES];
+        getrandom::fill(&mut id).map_err(|_| SessionCodecError::Random)?;
+        let encoded_id = URL_SAFE_NO_PAD.encode(id);
+        let signed = format!("{SESSION_VERSION}.{encoded_id}");
+        let signature = self.sign(signed.as_bytes());
+        Ok(IssuedSession {
+            token: format!("{signed}.{}", URL_SAFE_NO_PAD.encode(signature)),
+            owner_key: owner_key(&id),
+        })
+    }
+
+    /// Verify the HMAC before accepting the opaque ID. `verify_slice` performs
+    /// a constant-time MAC comparison.
+    pub fn verify(&self, token: &str) -> Option<String> {
+        let mut parts = token.split('.');
+        let version = parts.next()?;
+        let encoded_id = parts.next()?;
+        let encoded_signature = parts.next()?;
+        if version != SESSION_VERSION || parts.next().is_some() {
+            return None;
+        }
+        let id = URL_SAFE_NO_PAD.decode(encoded_id).ok()?;
+        let id: [u8; SESSION_ID_BYTES] = id.try_into().ok()?;
+        let signature = URL_SAFE_NO_PAD.decode(encoded_signature).ok()?;
+        let signed = format!("{version}.{encoded_id}");
+        let mut mac = HmacSha256::new_from_slice(&self.secret).ok()?;
+        mac.update(signed.as_bytes());
+        mac.verify_slice(&signature).ok()?;
+        Some(owner_key(&id))
+    }
+
+    fn sign(&self, value: &[u8]) -> [u8; 32] {
+        let mut mac =
+            HmacSha256::new_from_slice(&self.secret).expect("HMAC-SHA256 accepts 32-byte keys");
+        mac.update(value);
+        mac.finalize().into_bytes().into()
+    }
+
+    pub fn set_cookie_value(&self, token: &str) -> String {
+        let secure = if self.secure_cookie { "; Secure" } else { "" };
+        format!(
+            "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{}",
+            60 * 60 * 24 * 30,
+            secure
+        )
+    }
+}
+
+fn owner_key(id: &[u8; SESSION_ID_BYTES]) -> String {
+    let mut hash = Sha256::new();
+    hash.update(OWNER_DOMAIN);
+    hash.update(id);
+    hash.finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CharacterId(u64);
@@ -22,32 +123,19 @@ impl CharacterId {
         self.0
     }
 }
+
 impl fmt::Display for CharacterId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
-impl FromStr for CharacterId {
-    type Err = std::num::ParseIntError;
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        value.parse().map(Self)
-    }
-}
 
-/// Current session extracted from cookies
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Session {
+    owner_key: Option<String>,
+    token: Option<String>,
     character_id: Option<CharacterId>,
     character_ids: Vec<CharacterId>,
-}
-
-impl Default for Session {
-    fn default() -> Self {
-        Self {
-            character_id: None,
-            character_ids: Vec::new(),
-        }
-    }
 }
 
 impl Session {
@@ -56,44 +144,88 @@ impl Session {
     }
 
     pub fn character_ids(&self) -> Vec<u64> {
-        let mut ids = self
-            .character_ids
+        self.character_ids
             .iter()
             .copied()
             .map(CharacterId::get)
-            .collect::<Vec<_>>();
-        if let Some(current) = self.character_id_u64()
-            && !ids.contains(&current)
-        {
-            ids.push(current);
-        }
-        ids
+            .collect()
+    }
+
+    pub(crate) fn owner_key(&self) -> Option<&str> {
+        self.owner_key.as_deref()
+    }
+
+    pub(crate) fn token(&self) -> Option<&str> {
+        self.token.as_deref()
     }
 }
 
-/// Extractor for session from cookies
-impl<S> FromRequestParts<S> for Session
-where
-    S: Send + Sync,
-{
-    type Rejection = std::convert::Infallible;
+#[derive(Clone, Debug, Deserialize)]
+struct BackendBrowserCharacterAccess {
+    owner_key: String,
+    character_id: u64,
+    selected: bool,
+}
+
+pub struct SessionUnavailable;
+
+impl IntoResponse for SessionUnavailable {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Browser session data is unavailable",
+        )
+            .into_response()
+    }
+}
+
+impl FromRequestParts<AppState> for Session {
+    type Rejection = SessionUnavailable;
 
     fn from_request_parts(
         parts: &mut Parts,
-        state: &S,
+        state: &AppState,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
         async move {
             let jar = CookieJar::from_request_parts(parts, state)
                 .await
                 .unwrap_or_default();
-
-            let character_id = jar
-                .get(CHARACTER_COOKIE)
-                .and_then(|c| c.value().parse().ok());
-            let character_ids = jar
-                .get(CHARACTER_ROSTER_COOKIE)
-                .map_or_else(Vec::new, |cookie| parse_character_ids(cookie.value()));
+            let Some(token) = jar
+                .get(SESSION_COOKIE)
+                .map(|cookie| cookie.value().to_owned())
+            else {
+                return Ok(Session::default());
+            };
+            let Some(owner_key) = state.session_codec.verify(&token) else {
+                // A malformed, expired, or forged cookie has no authority.
+                return Ok(Session::default());
+            };
+            let rows = state
+                .db
+                .query::<BackendBrowserCharacterAccess>(&format!(
+                    "SELECT * FROM backend_browser_character_access WHERE owner_key = {}",
+                    sql_string_literal(&owner_key)
+                ))
+                .await
+                .map_err(|error| {
+                    tracing::error!(%error, "failed to resolve browser character grants");
+                    SessionUnavailable
+                })?;
+            if rows.iter().any(|row| row.owner_key != owner_key) {
+                tracing::error!("browser character access projection returned a foreign owner");
+                return Err(SessionUnavailable);
+            }
+            let character_id = rows
+                .iter()
+                .find(|row| row.selected)
+                .map(|row| CharacterId(row.character_id));
+            let character_ids = rows
+                .into_iter()
+                .map(|row| CharacterId(row.character_id))
+                .collect();
             Ok(Session {
+                owner_key: Some(owner_key),
+                token: Some(token),
                 character_id,
                 character_ids,
             })
@@ -101,112 +233,71 @@ where
     }
 }
 
-fn parse_character_ids(value: &str) -> Vec<CharacterId> {
-    let mut seen = HashSet::new();
-    value
-        .split('.')
-        .filter_map(|value| value.parse::<CharacterId>().ok())
-        .filter(|id| seen.insert(id.get()))
-        .take(MAX_REMEMBERED_CHARACTERS)
-        .collect()
-}
-
-/// Response that selects and remembers a character before redirecting.
-pub fn set_character_cookie(
-    character_id: u64,
-    remembered_character_ids: &[u64],
+pub fn redirect_with_session_cookie(
+    codec: &SessionCodec,
+    token: Option<&str>,
     redirect_to: &str,
 ) -> Response {
-    let current_cookie = format!(
-        "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
-        CHARACTER_COOKIE,
-        character_id,
-        60 * 60 * 24 * 30 // 30 days
-    );
-    let mut roster = remembered_character_ids
-        .iter()
-        .copied()
-        .filter(|id| *id != character_id)
-        .take(MAX_REMEMBERED_CHARACTERS.saturating_sub(1))
-        .collect::<Vec<_>>();
-    roster.push(character_id);
-    let roster_cookie = format!(
-        "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
-        CHARACTER_ROSTER_COOKIE,
-        roster
-            .iter()
-            .map(u64::to_string)
-            .collect::<Vec<_>>()
-            .join("."),
-        60 * 60 * 24 * 30
-    );
     let mut headers = HeaderMap::new();
-    for cookie in [current_cookie, roster_cookie] {
-        if let Ok(value) = HeaderValue::from_str(&cookie) {
-            headers.append(header::SET_COOKIE, value);
-        }
+    if let Some(token) = token
+        && let Ok(cookie) = HeaderValue::from_str(&codec.set_cookie_value(token))
+    {
+        headers.append(header::SET_COOKIE, cookie);
     }
-
     (headers, Redirect::to(redirect_to)).into_response()
 }
 
-/// Response that clears the character cookie and redirects
+/// Clearing a character selection keeps the opaque browser identity and all
+/// grants. The caller must clear the server-side selection first.
 pub fn clear_character_cookie(redirect_to: &str) -> Response {
-    let cookie = format!(
-        "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
-        CHARACTER_COOKIE
-    );
-
-    (
-        [(axum::http::header::SET_COOKIE, cookie)],
-        Redirect::to(redirect_to),
-    )
-        .into_response()
+    Redirect::to(redirect_to).into_response()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn character_id_rejects_non_numeric_cookie_values() {
-        assert!("123".parse::<CharacterId>().is_ok());
-        assert!("not-an-id".parse::<CharacterId>().is_err());
+    fn test_codec(secret_byte: u8, secure: bool) -> SessionCodec {
+        SessionCodec::from_base64url(&URL_SAFE_NO_PAD.encode([secret_byte; 32]), secure).unwrap()
     }
 
     #[test]
-    fn remembered_character_ids_are_ordered_unique_and_bounded() {
-        let value = (1_u64..=40)
-            .chain([2, 3])
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(".");
-        let ids = parse_character_ids(&value)
-            .into_iter()
-            .map(CharacterId::get)
-            .collect::<Vec<_>>();
-        assert_eq!(ids, (1_u64..=32).collect::<Vec<_>>());
+    fn signed_tokens_round_trip_without_character_ids() {
+        let codec = test_codec(7, false);
+        let issued = codec.issue().unwrap();
+        assert_eq!(codec.verify(&issued.token), Some(issued.owner_key));
+        assert!(!issued.token.contains("character"));
+        assert_eq!(issued.token.split('.').count(), 3);
     }
 
     #[test]
-    fn selecting_a_character_sets_current_and_roster_cookies() {
-        let response = set_character_cookie(9, &[7, 8], "/");
-        let cookies = response
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .filter_map(|value| value.to_str().ok())
-            .collect::<Vec<_>>();
-        assert_eq!(cookies.len(), 2);
+    fn tampering_and_different_secrets_are_rejected() {
+        let codec = test_codec(7, false);
+        let issued = codec.issue().unwrap();
+        let mut tampered = issued.token.clone().into_bytes();
+        let last = tampered.len() - 1;
+        tampered[last] = if tampered[last] == b'A' { b'B' } else { b'A' };
         assert!(
-            cookies
-                .iter()
-                .any(|cookie| cookie.starts_with("character_id=9;"))
+            codec
+                .verify(std::str::from_utf8(&tampered).unwrap())
+                .is_none()
         );
+        assert!(test_codec(8, false).verify(&issued.token).is_none());
+    }
+
+    #[test]
+    fn secret_length_and_cookie_flags_fail_closed() {
+        assert!(SessionCodec::from_base64url(&URL_SAFE_NO_PAD.encode([0u8; 31]), true).is_err());
+        let issued = test_codec(1, true).issue().unwrap();
+        let cookie = test_codec(1, true).set_cookie_value(&issued.token);
+        assert!(cookie.starts_with("adventuresim_session=v1."));
+        assert!(cookie.contains("; HttpOnly;"));
+        assert!(cookie.contains("; SameSite=Lax;"));
+        assert!(cookie.ends_with("; Secure"));
         assert!(
-            cookies
-                .iter()
-                .any(|cookie| cookie.starts_with("character_roster=7.8.9;"))
+            !test_codec(1, false)
+                .set_cookie_value(&issued.token)
+                .contains("; Secure")
         );
     }
 }

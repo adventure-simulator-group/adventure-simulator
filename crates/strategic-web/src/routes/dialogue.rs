@@ -1,7 +1,5 @@
 use super::{AppState, BackendSettlementResidentRow as SettlementResidentRow};
-use crate::spacetimedb::{
-    BackendCharacterRelationshipStatus, ExclusiveCommitment, Settlement, SettlementCategory,
-};
+use crate::spacetimedb::{BackendCharacterRelationshipStatus, Settlement, SettlementCategory};
 use crate::{session::Session, spacetimedb::sql_string_literal};
 use axum::{
     Json, Router,
@@ -770,7 +768,8 @@ async fn npc_social_view(
             .is_some_and(|status| status.courtship_exposed);
     let wedding_countdown_days = active_commitment.as_ref().map(|commitment| {
         commitment
-            .effective_minute
+            .wedding_effective_minute
+            .unwrap_or(actor_minute)
             .saturating_sub(actor_minute)
             .div_ceil(1_440)
     });
@@ -798,27 +797,18 @@ async fn active_commitment_with(
     state: &AppState,
     actor_id: u64,
     target_id: u64,
-) -> Result<Option<ExclusiveCommitment>, StatusCode> {
-    let mut rows = state
+) -> Result<Option<BackendCharacterRelationshipStatus>, StatusCode> {
+    let status = state
         .db
-        .query::<ExclusiveCommitment>(&format!(
-            "SELECT * FROM exclusive_commitment WHERE first_character_id = {actor_id}"
+        .query_one::<BackendCharacterRelationshipStatus>(&format!(
+            "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {actor_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    rows.extend(
-        state
-            .db
-            .query::<ExclusiveCommitment>(&format!(
-                "SELECT * FROM exclusive_commitment WHERE second_character_id = {actor_id}"
-            ))
-            .await
-            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?,
-    );
-    Ok(rows.into_iter().find(|row| {
-        row.status.eq_ignore_ascii_case("reserved")
-            && ((row.first_character_id == actor_id && row.second_character_id == target_id)
-                || (row.first_character_id == target_id && row.second_character_id == actor_id))
+    Ok(status.filter(|row| {
+        row.character_id == actor_id
+            && row.wedding_commitment_id.is_some()
+            && row.wedding_partner_id == Some(target_id)
     }))
 }
 
@@ -932,7 +922,14 @@ async fn npc_romance_action(
             };
             (
                 "cancel_wedding",
-                vec![json!(character_id), json!(commitment.id)],
+                vec![
+                    json!(character_id),
+                    json!(
+                        commitment
+                            .wedding_commitment_id
+                            .expect("projected active commitment has an id")
+                    ),
+                ],
                 "The wedding has been cancelled.",
             )
         }

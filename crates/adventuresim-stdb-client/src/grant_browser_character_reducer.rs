@@ -6,57 +6,57 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct RemoveHouseholdOccupantArgs {
-    pub owner_character_id: u64,
-    pub holding_id: String,
-    pub occupant_id: u64,
+pub(super) struct GrantBrowserCharacterArgs {
+    pub owner_key: String,
+    pub character_id: u64,
+    pub starting_request_key: String,
 }
 
-impl From<RemoveHouseholdOccupantArgs> for super::Reducer {
-    fn from(args: RemoveHouseholdOccupantArgs) -> Self {
-        Self::RemoveHouseholdOccupant {
-            owner_character_id: args.owner_character_id,
-            holding_id: args.holding_id,
-            occupant_id: args.occupant_id,
+impl From<GrantBrowserCharacterArgs> for super::Reducer {
+    fn from(args: GrantBrowserCharacterArgs) -> Self {
+        Self::GrantBrowserCharacter {
+            owner_key: args.owner_key,
+            character_id: args.character_id,
+            starting_request_key: args.starting_request_key,
         }
     }
 }
 
-impl __sdk::InModule for RemoveHouseholdOccupantArgs {
+impl __sdk::InModule for GrantBrowserCharacterArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `remove_household_occupant`.
+/// Extension trait for access to the reducer `grant_browser_character`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait remove_household_occupant {
-    /// Request that the remote module invoke the reducer `remove_household_occupant` to run as soon as possible.
+pub trait grant_browser_character {
+    /// Request that the remote module invoke the reducer `grant_browser_character` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`remove_household_occupant:remove_household_occupant_then`] to run a callback after the reducer completes.
-    fn remove_household_occupant(
+    /// /// Use [`grant_browser_character:grant_browser_character_then`] to run a callback after the reducer completes.
+    fn grant_browser_character(
         &self,
-        owner_character_id: u64,
-        holding_id: String,
-        occupant_id: u64,
+        owner_key: String,
+        character_id: u64,
+        starting_request_key: String,
     ) -> __sdk::Result<()> {
-        self.remove_household_occupant_then(owner_character_id, holding_id, occupant_id, |_, _| {})
+        self.grant_browser_character_then(owner_key, character_id, starting_request_key, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `remove_household_occupant` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `grant_browser_character` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn remove_household_occupant_then(
+    fn grant_browser_character_then(
         &self,
-        owner_character_id: u64,
-        holding_id: String,
-        occupant_id: u64,
+        owner_key: String,
+        character_id: u64,
+        starting_request_key: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,12 +66,12 @@ pub trait remove_household_occupant {
     ) -> __sdk::Result<()>;
 }
 
-impl remove_household_occupant for super::RemoteReducers {
-    fn remove_household_occupant_then(
+impl grant_browser_character for super::RemoteReducers {
+    fn grant_browser_character_then(
         &self,
-        owner_character_id: u64,
-        holding_id: String,
-        occupant_id: u64,
+        owner_key: String,
+        character_id: u64,
+        starting_request_key: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -80,10 +80,10 @@ impl remove_household_occupant for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            RemoveHouseholdOccupantArgs {
-                owner_character_id,
-                holding_id,
-                occupant_id,
+            GrantBrowserCharacterArgs {
+                owner_key,
+                character_id,
+                starting_request_key,
             },
             callback,
         )

@@ -26,13 +26,12 @@ use axum::{
     response::{IntoResponse, Json, Redirect, Response},
     routing::get,
 };
-use axum_extra::extract::CookieJar;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::live::LiveState;
-use crate::session::{CHARACTER_COOKIE, Session};
+use crate::session::{Session, SessionCodec};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     BackendCaseSitePin, BackendCharacterCaseSiteLocation, Character, CharacterAttributes,
@@ -48,6 +47,7 @@ pub struct AppState {
     pub live: LiveState,
     pub strategic_map: Option<std::sync::Arc<crate::strategic_map::StrategicMap>>,
     pub terrain: Option<std::sync::Arc<travel::TerrainPlanner>>,
+    pub session_codec: std::sync::Arc<SessionCodec>,
 }
 
 /// Serde transport for the gateway's player-visible settlement NPC projection.
@@ -879,6 +879,7 @@ pub(crate) async fn approve_party_action(
 
 /// Build the complete router
 pub fn build_router(state: AppState) -> Router {
+    let middleware_state = state.clone();
     Router::new()
         .route(
             crate::strategic_map::DATA_LICENSE_PATH,
@@ -905,7 +906,10 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(missions::routes())
                 .merge(crate::live::routes())
                 .route("/time", get(current_time))
-                .layer(middleware::from_fn(require_active_character)),
+                .layer(middleware::from_fn_with_state(
+                    middleware_state,
+                    require_active_character,
+                )),
         )
         .with_state(state)
 }
@@ -973,9 +977,8 @@ async fn current_time(State(state): State<AppState>, session: Session) -> Respon
 
 /// Strategic screens have no anonymous mode. Character creation and selection
 /// remain public entry screens; every other route requires a selected character.
-async fn require_active_character(request: Request, next: Next) -> Response {
-    let cookies = CookieJar::from_headers(request.headers());
-    if cookies.get(CHARACTER_COOKIE).is_none() {
+async fn require_active_character(session: Session, request: Request, next: Next) -> Response {
+    if session.character_id_u64().is_none() {
         return Redirect::to("/characters").into_response();
     }
     next.run(request).await
@@ -989,7 +992,7 @@ mod onboarding_route_tests {
         let home = source.find(".merge(home::routes())").unwrap();
         let protected = source.find(".merge(dialogue::routes())").unwrap();
         let guard = source
-            .find(".layer(middleware::from_fn(require_active_character))")
+            .find(".layer(middleware::from_fn_with_state(")
             .unwrap();
         assert!(home < protected && protected < guard);
     }

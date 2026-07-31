@@ -9,12 +9,12 @@ use adventuresim_core::courtship::{
     RefreshableMorale, refresh_bounded_leisure_morale, residence_leisure_bonus_milli,
     residence_period_charge,
 };
-use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::character;
 use crate::condition::{MoraleEvent, morale_event};
 use crate::relationship::{HouseholdRole, character_kinship, household_member};
-use crate::strategic::settlement;
+use crate::strategic::{settlement, strategic_gateway_authority__view};
 use crate::time::character_time;
 
 pub const RESIDENCE_BILLING_PERIOD_MINUTES: u64 = HOUSING_BILLING_PERIOD_MINUTES;
@@ -172,6 +172,95 @@ pub struct ResidenceTransition {
     pub affected_character_id: u64,
     pub kind: ResidenceTransitionKind,
     pub minute: u64,
+}
+
+/// Gateway-only summary of the home a character may currently use. Legal
+/// holdings, billing ledgers, and the identities of unrelated occupants remain
+/// private.
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendCharacterResidenceStatus {
+    pub character_id: u64,
+    pub holding_id: String,
+    pub owner_character_id: u64,
+    pub settlement_id: String,
+    pub tier: ResidenceTier,
+    pub tenure: ResidenceTenure,
+    pub active: bool,
+    pub primary: bool,
+    pub occupied: bool,
+    pub acquired_minute: u64,
+    pub last_billed_minute: u64,
+    pub next_due_minute: u64,
+}
+
+fn residence_view_is_gateway(ctx: &ViewContext) -> bool {
+    ctx.db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|authority| authority.identity == ctx.sender())
+}
+
+#[view(accessor = backend_character_residence_statuses, public)]
+pub fn backend_character_residence_statuses(
+    ctx: &ViewContext,
+) -> Vec<BackendCharacterResidenceStatus> {
+    if !residence_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .residence_holding()
+        .owner_character_id()
+        .filter(0u64..)
+        .flat_map(|holding| {
+            let holding_id = holding.id.clone();
+            let mut character_ids = ctx
+                .db
+                .residence_occupant()
+                .holding_id()
+                .filter(&holding_id)
+                .map(|row| row.character_id)
+                .collect::<Vec<_>>();
+            character_ids.extend(
+                ctx.db
+                    .primary_residence()
+                    .holding_id()
+                    .filter(&holding_id)
+                    .map(|row| row.character_id),
+            );
+            character_ids.sort_unstable();
+            character_ids.dedup();
+            character_ids
+                .into_iter()
+                .map(move |character_id| (holding.clone(), character_id))
+        })
+        .map(|(holding, character_id)| {
+            let occupancy = ctx
+                .db
+                .residence_occupant()
+                .character_id()
+                .find(character_id);
+            let primary = ctx.db.primary_residence().character_id().find(character_id);
+            BackendCharacterResidenceStatus {
+                character_id,
+                holding_id: holding.id.clone(),
+                owner_character_id: holding.owner_character_id,
+                settlement_id: holding.settlement_id,
+                tier: holding.tier,
+                tenure: holding.tenure,
+                active: holding.status == ResidenceHoldingStatus::Active,
+                primary: primary
+                    .as_ref()
+                    .is_some_and(|row| row.holding_id == holding.id),
+                occupied: occupancy
+                    .as_ref()
+                    .is_some_and(|row| row.holding_id == holding.id),
+                acquired_minute: holding.acquired_minute,
+                last_billed_minute: holding.last_billed_minute,
+                next_due_minute: holding.next_due_minute,
+            }
+        })
+        .collect()
 }
 
 pub fn offer_id(settlement_id: &str, tier: ResidenceTier) -> String {

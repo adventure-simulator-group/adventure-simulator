@@ -107,8 +107,10 @@ The current deployment boundary is intentionally narrow:
 - `strategic-web` holds the registered strategic-gateway identity;
 - browsers submit ordinary HTTP actions to `strategic-web` and never receive a
   SpacetimeDB credential;
-- a selected-character cookie chooses presentation context but is not yet a
-  complete player-to-character authorization model;
+- one signed, opaque `adventuresim_session` bearer cookie identifies a
+  pseudonymous browser owner; character IDs and rosters never enter cookies;
+- private grants bind each generated character to exactly one browser owner,
+  and a private selection row chooses presentation context;
 - non-loopback use therefore requires the explicit insecure-development
   opt-in until account ownership is implemented;
 - tactical dispatch claims are one-use, digest-bound capabilities rather than
@@ -160,11 +162,18 @@ First-character onboarding is a separate entry surface. The browser tab holds
 a private seed for deterministic candidate previews keyed by life stage.
 Confirmation sends only the generator version, seed, selected age tier, and
 slot; strategic authority regenerates and persists that exact candidate.
-Confirmed or selected character IDs are remembered in a bounded,
-browser-scoped roster cookie. The strategic header resolves only remembered,
-non-temporary rows into its character switcher. Both the roster and
-selected-character cookies are local selectors, not authentication or
-ownership proof.
+Confirmation atomically grants the generated character to the pseudonymous
+browser owner. The strategic header resolves its selected character and roster
+only through the gateway-only `BackendBrowserCharacterAccess` projection.
+Replaying the same deterministic candidate coordinates is idempotent for that
+owner and rejected for every other owner. Switching clears only the server-side
+selection; it does not discard grants or expose IDs in the cookie.
+
+The cookie is `v1.<random 32-byte base64url ID>.<HMAC-SHA256>` and is
+`HttpOnly`, `SameSite=Lax`, and optionally `Secure`. The web server derives a
+domain-separated SHA-256 owner key from the verified random ID and never stores
+the raw token in SpacetimeDB. Invalid signatures are anonymous; backend
+resolution failures fail closed.
 
 ### First-character authority
 

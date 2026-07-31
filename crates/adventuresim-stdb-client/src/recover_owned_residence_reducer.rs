@@ -8,12 +8,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct RecoverOwnedResidenceArgs {
     pub character_id: u64,
+    pub holding_id: String,
 }
 
 impl From<RecoverOwnedResidenceArgs> for super::Reducer {
     fn from(args: RecoverOwnedResidenceArgs) -> Self {
         Self::RecoverOwnedResidence {
             character_id: args.character_id,
+            holding_id: args.holding_id,
         }
     }
 }
@@ -33,8 +35,8 @@ pub trait recover_owned_residence {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`recover_owned_residence:recover_owned_residence_then`] to run a callback after the reducer completes.
-    fn recover_owned_residence(&self, character_id: u64) -> __sdk::Result<()> {
-        self.recover_owned_residence_then(character_id, |_, _| {})
+    fn recover_owned_residence(&self, character_id: u64, holding_id: String) -> __sdk::Result<()> {
+        self.recover_owned_residence_then(character_id, holding_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `recover_owned_residence` to run as soon as possible,
@@ -46,6 +48,7 @@ pub trait recover_owned_residence {
     fn recover_owned_residence_then(
         &self,
         character_id: u64,
+        holding_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -59,6 +62,7 @@ impl recover_owned_residence for super::RemoteReducers {
     fn recover_owned_residence_then(
         &self,
         character_id: u64,
+        holding_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,7 +70,12 @@ impl recover_owned_residence for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(RecoverOwnedResidenceArgs { character_id }, callback)
+        self.imp.invoke_reducer_with_callback(
+            RecoverOwnedResidenceArgs {
+                character_id,
+                holding_id,
+            },
+            callback,
+        )
     }
 }
