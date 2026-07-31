@@ -538,6 +538,72 @@ pub(crate) fn referred_generated_witness(
     Ok(Some((validated.manifest, witness)))
 }
 
+/// A known outbreak's patients and explicit family/carers may speak about
+/// their authored testimony without first being unlocked by another witness.
+/// The observer must still possess the ordinary rumor receipt, and the NPC
+/// must be an exact generated witness at their authoritative location.
+pub(crate) fn known_outbreak_witness(
+    ctx: &ReducerContext,
+    character_id: u64,
+    witness_npc_id: &str,
+    settlement_id: &str,
+    location_id: &str,
+) -> Result<
+    Option<(
+        adventuresim_core::quest_generation::GeneratedCase,
+        adventuresim_core::quest_generation::WitnessBinding,
+    )>,
+    String,
+> {
+    let mut matches = Vec::new();
+    for receipt in ctx
+        .db
+        .local_problem_receipt()
+        .character_id()
+        .filter(character_id)
+        .filter(|receipt| receipt.settlement_id == settlement_id)
+    {
+        let authority = ctx
+            .db
+            .quest_generation_authority()
+            .case_id()
+            .find(&receipt.opaque_case_ref)
+            .ok_or("Known outbreak receipt lost its generation authority")?;
+        let validated = validate_quest_generation_authority(&authority)?;
+        let generated = validated.manifest;
+        if generated.problem_id != receipt.problem_id {
+            return Err("Known outbreak receipt no longer matches its problem".into());
+        }
+        let Some(outbreak) = generated.outbreak.as_ref() else {
+            continue;
+        };
+        let has_explicit_relationship = outbreak.exposure_chronology.iter().any(|patient| {
+            patient.presentation_npc_id == witness_npc_id
+                || patient.family_npc_id.as_deref() == Some(witness_npc_id)
+        });
+        if !has_explicit_relationship {
+            continue;
+        }
+        let Some(witness) = generated
+            .witnesses
+            .iter()
+            .find(|witness| {
+                witness.npc_id == witness_npc_id
+                    && witness.expected_location == location_id
+                    && validated.context.settlement_id == settlement_id
+            })
+            .cloned()
+        else {
+            return Err("Known outbreak patient or carer has no authored testimony".into());
+        };
+        matches.push((generated, witness));
+        if matches.len() > 1 {
+            return Err("This NPC is connected to more than one known outbreak".into());
+        }
+    }
+    Ok(matches.pop())
+}
+
 /// Converts #182's private safe receipt to owner knowledge without consulting
 /// or exposing the local problem's hidden cause.
 #[reducer]

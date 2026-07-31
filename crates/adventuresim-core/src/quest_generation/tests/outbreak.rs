@@ -171,10 +171,20 @@ fn patient_courses_and_bindings_are_exact_and_carriers_have_no_direct_fix() {
                 exposure.exposed_at + definition.incubation_minutes
             );
             assert!(!exposure.presentation_npc_id.is_empty());
+            assert!(case
+                .witnesses
+                .iter()
+                .any(|witness| witness.npc_id == exposure.presentation_npc_id));
             assert_ne!(
                 exposure.family_npc_id.as_deref(),
                 Some(exposure.presentation_npc_id.as_str())
             );
+            if let Some(family_npc_id) = &exposure.family_npc_id {
+                assert!(case
+                    .witnesses
+                    .iter()
+                    .any(|witness| witness.npc_id == *family_npc_id));
+            }
         }
         let physical = case
             .actions

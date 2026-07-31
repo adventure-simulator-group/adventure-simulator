@@ -416,6 +416,10 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     };
                     exposure.patient_ref.is_empty()
                         || exposure.presentation_npc_id.is_empty()
+                        || !case
+                            .witnesses
+                            .iter()
+                            .any(|witness| witness.npc_id == exposure.presentation_npc_id)
                         || exposure.family_npc_id.as_deref()
                             == Some(exposure.presentation_npc_id.as_str())
                         || exposure.family_npc_id.as_ref().is_some_and(|family_npc_id| {

@@ -32,6 +32,12 @@ and environmental facts. Questioning residents can establish chronology,
 practice, responsibility, or a carrier's presence. Neither route requires a
 corpse, so a buried or inaccessible victim cannot deadlock the case.
 
+After the party hears the ordinary outbreak rumor, each modeled patient and
+their explicitly authored family member or carer can discuss the fevers
+directly. The party does not have to follow the rumor's witness referrals in a
+specific order. Unrelated residents do not gain outbreak testimony merely
+because they live in the settlement.
+
 Living patients progress against authoritative world time and appear through an
 observer-scoped portrait after discovery. Their Physiology action exposes only
 bounded findings. Environmental and carrier exposure requires presence at the
