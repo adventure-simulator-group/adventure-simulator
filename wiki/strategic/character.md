@@ -70,6 +70,15 @@ allocation, selected in priority order: a romantic partner, a co-located party
 member, a positive-affinity acquaintance, then another co-located person.
 Socializing records asynchronous directed affinity and symmetric familiarity;
 it does not assert that the selected NPC lost finite canonical time.
+Ambiguous targets are scored by a stable hash of actor, absolute calendar day,
+location, and target; character ID is the final tie break. Iteration or table
+insertion order therefore cannot change the selected companion.
+
+Socializing trains one conserved Social training budget at the ordinary
+activity rate. Gregarious, Neutral, and Solitary actors direct 60%, 50%, and
+40% respectively to Charm. Transparency splits the remainder: Open directs
+all of it to Insight, Neutral divides it equally, and Guarded directs all of it
+to Deception. The three integer basis-point weights always sum to 10,000.
 
 ### Courtship
 
@@ -89,12 +98,18 @@ an active courtship. Scheduling creates an immediate exclusive engagement for
 both people and fixes the ceremony one year later.
 
 Opposite-sex adult spouses who are co-located can conceive from qualifying
-spouse Leisure. The daily conception roll is deterministic and keyed to the
-calendar date. Pregnancy is exclusive to the mother, lasts exactly 280 days,
+spouse Leisure. Only the integer intersection of their realized Leisure
+intervals at an identical location qualifies. Joint minutes are conserved
+across checkpoints; each crossing of 60 minutes creates one deterministic
+trial with a stable ordinal and exact crossing minute. Pregnancy is exclusive
+to the mother, lasts exactly 280 days,
 and has no complications in this pass. A due pregnancy materializes one full,
 NPC-policy-controlled dependent child, then creates parent/child and household
 edges atomically. Childhood behavior, education, inheritance, contraception,
 infertility, miscarriage, and childbirth risk remain follow-up systems.
+Child identity, name choice, sex, and home placement use separate stable seed
+domains based on the canonical parent pair, pregnancy ordinal, birth minute,
+and home location, so retries and insertion order cannot change the result.
 
 The Social family is **Insight**, **Charm**, **Command**, and **Deception**.
 Social outcomes combine the action skill, current Affinity and Familiarity,

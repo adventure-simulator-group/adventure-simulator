@@ -3,10 +3,11 @@
 use crate::attribute::PlayerAttributes;
 use crate::equipment::WeaponSkillDistribution;
 use crate::organization::{OrganizationDefinition, TrainingTarget};
-use crate::skill::{Skill, apply_direct_training};
+use crate::skill::{apply_direct_training, Skill};
+use crate::social::Transparency;
 use crate::{
     activity::*,
-    strategic_time::{MINUTES_PER_DAY, training_hours_increment},
+    strategic_time::{training_hours_increment, MINUTES_PER_DAY},
 };
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
@@ -237,6 +238,58 @@ pub struct ActivityTrainingProfile {
     pub combat: CombatTrainingProfile,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SocializingTrainingWeights {
+    pub charm_basis_points: u16,
+    pub insight_basis_points: u16,
+    pub deception_basis_points: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SocializingSociability {
+    #[default]
+    Neutral,
+    Gregarious,
+    Solitary,
+}
+
+impl SocializingTrainingWeights {
+    pub const TOTAL_BASIS_POINTS: u16 = 10_000;
+
+    pub const fn values(self) -> [u16; 3] {
+        [
+            self.charm_basis_points,
+            self.insight_basis_points,
+            self.deception_basis_points,
+        ]
+    }
+}
+
+/// Socializing conserves one training budget. Sociability determines how much
+/// is active Charm practice; Transparency directs the remaining observational
+/// budget between Insight and Deception.
+pub const fn socializing_training_weights(
+    sociability: SocializingSociability,
+    transparency: Transparency,
+) -> SocializingTrainingWeights {
+    let charm = match sociability {
+        SocializingSociability::Gregarious => 6_000,
+        SocializingSociability::Neutral => 5_000,
+        SocializingSociability::Solitary => 4_000,
+    };
+    let remaining = SocializingTrainingWeights::TOTAL_BASIS_POINTS - charm;
+    let (insight, deception) = match transparency {
+        Transparency::Open => (remaining, 0),
+        Transparency::Neutral => (remaining / 2, remaining - remaining / 2),
+        Transparency::Guarded => (0, remaining),
+    };
+    SocializingTrainingWeights {
+        charm_basis_points: charm,
+        insight_basis_points: insight,
+        deception_basis_points: deception,
+    }
+}
+
 /// Relative training demand for equipped weapon leaves and the four Defense leaves.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -343,6 +396,29 @@ pub fn apply_schedule_training(
     profile: ActivityTrainingProfile,
     attributes: &impl PlayerAttributes,
 ) -> f32 {
+    apply_schedule_training_for_personality(
+        skills,
+        schedule,
+        elapsed_minutes,
+        profile,
+        SocializingSociability::Neutral,
+        Transparency::Neutral,
+        attributes,
+    )
+}
+
+/// Apply schedule training with the actor's immutable social personality.
+/// The compatibility entry point above uses neutral axes, while authoritative
+/// character callers can supply their exact profile.
+pub fn apply_schedule_training_for_personality(
+    skills: &mut SkillHours,
+    schedule: DailySchedule,
+    elapsed_minutes: u64,
+    profile: ActivityTrainingProfile,
+    sociability: SocializingSociability,
+    transparency: Transparency,
+    attributes: &impl PlayerAttributes,
+) -> f32 {
     let mut excess = 0.0;
     let mut award = |stored: &mut f32, skill: Skill, real_hours: f32| {
         excess +=
@@ -354,6 +430,23 @@ pub fn apply_schedule_training(
         Skill::Charm,
         increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE,
     );
+    let socializing_hours = increment(schedule.socializing_minutes) * ACTIVITY_TRAINING_RATE;
+    let socializing = socializing_training_weights(sociability, transparency);
+    for ((stored, skill), basis_points) in [
+        (&mut skills.charm, Skill::Charm),
+        (&mut skills.insight, Skill::Insight),
+        (&mut skills.deception, Skill::Deception),
+    ]
+    .into_iter()
+    .zip(socializing.values())
+    {
+        award(
+            stored,
+            skill,
+            socializing_hours * f32::from(basis_points)
+                / f32::from(SocializingTrainingWeights::TOTAL_BASIS_POINTS),
+        );
+    }
     award(
         &mut skills.will,
         Skill::Will,
@@ -660,6 +753,114 @@ mod tests {
     }
 
     #[test]
+    fn socializing_personality_weights_always_conserve_the_budget() {
+        for sociability in [
+            SocializingSociability::Gregarious,
+            SocializingSociability::Neutral,
+            SocializingSociability::Solitary,
+        ] {
+            for transparency in [
+                Transparency::Open,
+                Transparency::Neutral,
+                Transparency::Guarded,
+            ] {
+                let weights = socializing_training_weights(sociability, transparency);
+                assert_eq!(
+                    weights.values().into_iter().sum::<u16>(),
+                    SocializingTrainingWeights::TOTAL_BASIS_POINTS
+                );
+            }
+        }
+        assert!(
+            socializing_training_weights(SocializingSociability::Gregarious, Transparency::Neutral)
+                .charm_basis_points
+                > socializing_training_weights(
+                    SocializingSociability::Solitary,
+                    Transparency::Neutral
+                )
+                .charm_basis_points
+        );
+        assert_eq!(
+            socializing_training_weights(SocializingSociability::Neutral, Transparency::Open)
+                .deception_basis_points,
+            0
+        );
+        assert_eq!(
+            socializing_training_weights(SocializingSociability::Neutral, Transparency::Guarded)
+                .insight_basis_points,
+            0
+        );
+    }
+
+    #[test]
+    fn socializing_trains_charm_insight_and_deception_without_losing_hours() {
+        let schedule = DailySchedule {
+            socializing_minutes: 240,
+            ..Default::default()
+        };
+        let mut neutral = SkillHours::default();
+        apply_schedule_training(
+            &mut neutral,
+            schedule,
+            MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+            &NeutralAttributes,
+        );
+        assert!((neutral.charm - 0.5).abs() < 0.001);
+        assert!((neutral.insight - 0.25).abs() < 0.001);
+        assert!((neutral.deception - 0.25).abs() < 0.001);
+        assert!((neutral.charm + neutral.insight + neutral.deception - 1.0).abs() < 0.001);
+
+        let mut guarded = SkillHours::default();
+        apply_schedule_training_for_personality(
+            &mut guarded,
+            schedule,
+            MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+            SocializingSociability::Solitary,
+            Transparency::Guarded,
+            &NeutralAttributes,
+        );
+        assert!((guarded.charm - 0.4).abs() < 0.001);
+        assert_eq!(guarded.insight, 0.0);
+        assert!((guarded.deception - 0.6).abs() < 0.001);
+        assert!((guarded.charm + guarded.insight + guarded.deception - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn socializing_training_is_bulk_chunk_equivalent() {
+        let schedule = DailySchedule {
+            socializing_minutes: 315,
+            ..Default::default()
+        };
+        let mut whole = SkillHours::default();
+        apply_schedule_training_for_personality(
+            &mut whole,
+            schedule,
+            30 * MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+            SocializingSociability::Gregarious,
+            Transparency::Open,
+            &NeutralAttributes,
+        );
+        let mut chunked = SkillHours::default();
+        for _ in 0..30 {
+            apply_schedule_training_for_personality(
+                &mut chunked,
+                schedule,
+                MINUTES_PER_DAY,
+                ActivityTrainingProfile::default(),
+                SocializingSociability::Gregarious,
+                Transparency::Open,
+                &NeutralAttributes,
+            );
+        }
+        for (left, right) in whole.values().into_iter().zip(chunked.values()) {
+            assert!((left - right).abs() < 0.002, "{left} != {right}");
+        }
+    }
+
+    #[test]
     fn restorative_leisure_is_proportional_and_chunk_invariant() {
         let none = DailySchedule::default();
         assert_eq!(restorative_leisure_minutes(none, 0, 1_440), 1_440);
@@ -699,15 +900,11 @@ mod tests {
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([item(false, true, false, 0.1)]).weights(),
-            [
-                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0
-            ]
+            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([item(true, true, false, 0.0)]).weights(),
-            [
-                0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0
-            ]
+            [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([
@@ -715,9 +912,7 @@ mod tests {
                 item(true, false, false, 0.3)
             ])
             .weights(),
-            [
-                0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.7, 1.0, 1.0
-            ]
+            [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.7, 1.0, 1.0]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([
