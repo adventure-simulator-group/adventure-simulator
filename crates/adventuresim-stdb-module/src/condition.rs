@@ -1718,6 +1718,40 @@ pub fn upsert_refreshable_morale_event_at_without_refresh(
     Ok(())
 }
 
+/// Replace a bounded morale source with rules-owned magnitude and duration.
+/// Lifecycle systems use this when personality must not alter a contractual
+/// effect's retention window.
+pub(crate) fn upsert_fixed_morale_event_without_refresh(
+    ctx: &ReducerContext,
+    character_id: u64,
+    kind: &str,
+    magnitude: f32,
+    occurred_at_minute: u64,
+    expires_at_minute: u64,
+    source_id: &str,
+) {
+    let existing = ctx
+        .db
+        .morale_event()
+        .character_id()
+        .filter(character_id)
+        .find(|event| event.source_id.as_deref() == Some(source_id));
+    let event = MoraleEvent {
+        id: existing.as_ref().map_or(0, |event| event.id),
+        character_id,
+        kind: kind.into(),
+        magnitude,
+        occurred_at_minute,
+        expires_at_minute,
+        source_id: Some(source_id.into()),
+    };
+    if existing.is_some() {
+        ctx.db.morale_event().id().update(event);
+    } else {
+        ctx.db.morale_event().insert(event);
+    }
+}
+
 fn insert_morale_event_without_refresh(
     ctx: &ReducerContext,
     character_id: u64,

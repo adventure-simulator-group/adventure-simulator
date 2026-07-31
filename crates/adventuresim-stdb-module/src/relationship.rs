@@ -3,15 +3,18 @@
 //! kinship, pregnancy, and delayed ceremonies are globally exclusive facts.
 
 use adventuresim_core::courtship::{
-    ADULT_AGE_YEARS, CourtshipDisposition, FORMAL_COURTSHIP_AFFINITY,
-    FORMAL_FATHER_APPROVAL_AFFINITY, GESTATION_MINUTES, WEDDING_NOTICE_MINUTES,
-    deterministic_child_seeds, informal_affinity_threshold, succeeds_daily_trial,
+    ADULT_AGE_YEARS, ConceptionQuantumState, CourtshipDisposition, FORMAL_COURTSHIP_AFFINITY,
+    FORMAL_FATHER_APPROVAL_AFFINITY, GESTATION_MINUTES, LeisureInterval,
+    SPOUSE_LEISURE_MORALE_SPEC, WEDDING_NOTICE_MINUTES, conception_quantum_plan,
+    deterministic_child_seeds, informal_affinity_threshold, joint_leisure_minutes, refresh_morale,
+    spouse_leisure_earned_milli, stable_lifecycle_hash, succeeds_daily_trial,
 };
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::{character, character__view};
 use crate::character_skills;
+use crate::condition::morale_event as _;
 use crate::personality::{
     Courtship as PersonalityCourtship, Inclination, Presentation, Sex, character_personality,
 };
@@ -316,6 +319,65 @@ pub struct ActivePregnancy {
     #[primary_key]
     pub mother_id: u64,
     pub pregnancy_id: String,
+}
+
+/// Durable reservation prevents any ordinary character-creation path from
+/// claiming an identity already promised to a pregnancy.
+#[derive(Clone, Debug)]
+#[table(accessor = child_identity_reservation)]
+pub struct ChildIdentityReservation {
+    #[primary_key]
+    pub character_id: u64,
+    pub pregnancy_id: String,
+    pub reserved_minute: u64,
+}
+
+/// A realized, same-location Leisure span. Spouses write their own spans; a
+/// canonical pair processor intersects them without consuming either clock.
+#[derive(Clone, Debug)]
+#[table(accessor = spouse_leisure_slice)]
+pub struct SpouseLeisureSlice {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub start_minute: u64,
+    pub end_minute: u64,
+    pub location_id: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = spouse_leisure_overlap)]
+pub struct SpouseLeisureOverlap {
+    #[primary_key]
+    pub id: String,
+    pub first_slice_id: String,
+    pub second_slice_id: String,
+    pub joint_minutes: u64,
+    pub resolved_minute: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = spouse_leisure_accrual)]
+pub struct SpouseLeisureAccrual {
+    #[primary_key]
+    pub pair_id: String,
+    pub first_character_id: u64,
+    pub second_character_id: u64,
+    pub conserved_joint_minutes: u8,
+    pub next_trial_ordinal: u64,
+    pub total_joint_minutes: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = conception_trial_receipt)]
+pub struct ConceptionTrialReceipt {
+    #[primary_key]
+    pub id: String,
+    pub pair_id: String,
+    pub ordinal: u64,
+    pub minute: u64,
+    pub succeeded: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -823,13 +885,14 @@ pub fn settle_due_weddings(
         })
         .collect();
     for commitment in due {
+        let effective_minute = commitment.effective_minute;
         let Some(first) = ctx.db.character().id().find(commitment.first_character_id) else {
             transition_commitment_terminal(
                 ctx,
                 commitment,
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantDead,
-                now,
+                effective_minute,
             );
             continue;
         };
@@ -839,7 +902,7 @@ pub fn settle_due_weddings(
                 commitment,
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantDead,
-                now,
+                effective_minute,
             );
             continue;
         };
@@ -849,7 +912,7 @@ pub fn settle_due_weddings(
                 commitment,
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantDead,
-                now,
+                effective_minute,
             );
             continue;
         }
@@ -859,7 +922,7 @@ pub fn settle_due_weddings(
                 commitment,
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantUnderage,
-                now,
+                effective_minute,
             );
             continue;
         }
@@ -871,7 +934,7 @@ pub fn settle_due_weddings(
                 commitment,
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::CeremonyLocationUnavailable,
-                now,
+                effective_minute,
             );
             continue;
         }
@@ -889,7 +952,7 @@ pub fn settle_due_weddings(
                 commitment,
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ResidenceUnavailable,
-                now,
+                effective_minute,
             );
             continue;
         };
@@ -1034,7 +1097,7 @@ pub fn settle_due_weddings(
             commitment,
             CommitmentStatus::Fulfilled,
             CommitmentTerminalReason::WeddingCompleted,
-            now,
+            effective_minute,
         );
     }
     Ok(())
@@ -1135,6 +1198,13 @@ pub fn establish_pregnancy(
         resolved_minute: None,
     };
     ctx.db.pregnancy().insert(pregnancy.clone());
+    ctx.db
+        .child_identity_reservation()
+        .insert(ChildIdentityReservation {
+            character_id: reserved_child_id,
+            pregnancy_id: id.clone(),
+            reserved_minute: conceived_minute,
+        });
     ctx.db.active_pregnancy().insert(ActivePregnancy {
         mother_id,
         pregnancy_id: id,
@@ -1142,16 +1212,11 @@ pub fn establish_pregnancy(
     Ok(pregnancy)
 }
 
-/// Deterministic conception gate for qualifying spouse Leisure.  It is keyed
-/// to the calendar day, making a month advanced in one call equivalent to the
-/// same month advanced day by day.  No fertility, contraception, miscarriage,
-/// or complications are modeled in this first pass.
-pub fn attempt_spouse_conception(
+fn conception_parents(
     ctx: &ReducerContext,
     first_id: u64,
     second_id: u64,
-    day: u64,
-) -> Result<Option<Pregnancy>, String> {
+) -> Result<Option<(u64, u64)>, String> {
     let first = ctx
         .db
         .character()
@@ -1194,28 +1259,202 @@ pub fn attempt_spouse_conception(
         (Sex::Male, Sex::Female) => (second_id, first_id),
         _ => return Ok(None),
     };
-    if ctx
+    Ok(Some((mother_id, father_id)))
+}
+
+fn refresh_spouse_pair_morale(
+    ctx: &ReducerContext,
+    first_id: u64,
+    second_id: u64,
+    joint_minutes: u64,
+    minute: u64,
+) -> Result<(), String> {
+    let earned = spouse_leisure_earned_milli(joint_minutes);
+    if earned == 0 {
+        return Ok(());
+    }
+    let source = format!(
+        "spouse-leisure:{}:{}",
+        first_id.min(second_id),
+        first_id.max(second_id)
+    );
+    for character_id in [first_id, second_id] {
+        let existing = ctx
+            .db
+            .morale_event()
+            .character_id()
+            .filter(character_id)
+            .find(|event| event.source_id.as_deref() == Some(&source));
+        let refreshed = refresh_morale(
+            existing.as_ref().map_or(Default::default(), |event| {
+                adventuresim_core::courtship::RefreshableMorale {
+                    milli_points: (event.magnitude.max(0.0) * 1_000.0).round() as u32,
+                    expires_at_minute: event.expires_at_minute,
+                }
+            }),
+            minute,
+            earned,
+            SPOUSE_LEISURE_MORALE_SPEC,
+        );
+        let residence_source = format!("residence-leisure:{character_id}");
+        let residence_milli = ctx
+            .db
+            .morale_event()
+            .character_id()
+            .filter(character_id)
+            .find(|event| event.source_id.as_deref() == Some(&residence_source))
+            .map_or(0, |event| {
+                (event.magnitude.max(0.0) * 1_000.0).round() as u32
+            });
+        let stack_room = adventuresim_core::courtship::LEISURE_MORALE_STACK_CAP_MILLI
+            .saturating_sub(residence_milli);
+        let bounded_milli = refreshed.milli_points.min(stack_room);
+        crate::condition::upsert_fixed_morale_event_without_refresh(
+            ctx,
+            character_id,
+            "spouse_leisure",
+            bounded_milli as f32 / 1_000.0,
+            minute,
+            refreshed.expires_at_minute,
+            &source,
+        );
+        crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    }
+    Ok(())
+}
+
+fn settle_spouse_leisure_pair(
+    ctx: &ReducerContext,
+    first_id: u64,
+    second_id: u64,
+) -> Result<(), String> {
+    let (first_id, second_id) = canonical_pair(first_id, second_id);
+    let pair_id = format!("spouse-leisure:{first_id}:{second_id}");
+    let mut overlaps = Vec::new();
+    for first in ctx
         .db
-        .active_pregnancy()
-        .mother_id()
-        .find(mother_id)
-        .is_some()
+        .spouse_leisure_slice()
+        .character_id()
+        .filter(first_id)
     {
-        return Ok(None);
+        for second in ctx
+            .db
+            .spouse_leisure_slice()
+            .character_id()
+            .filter(second_id)
+        {
+            let id = format!("spouse-overlap:{}:{}", first.id, second.id);
+            if ctx.db.spouse_leisure_overlap().id().find(&id).is_some() {
+                continue;
+            }
+            let joint = joint_leisure_minutes(
+                LeisureInterval {
+                    start_minute: first.start_minute,
+                    end_minute: first.end_minute,
+                    location_id: &first.location_id,
+                },
+                LeisureInterval {
+                    start_minute: second.start_minute,
+                    end_minute: second.end_minute,
+                    location_id: &second.location_id,
+                },
+            );
+            if joint > 0 {
+                let start = first.start_minute.max(second.start_minute);
+                overlaps.push((start, id, first.id.clone(), second.id.clone(), joint));
+            }
+        }
     }
-    let entropy = ((first_id ^ second_id ^ day.rotate_left(11)) % 10_000) as u16;
-    // Three percent per qualifying daily spouse-Leisure event; tuning is kept
-    // local to this deterministic gate rather than embedded in UI code.
-    if !succeeds_daily_trial(entropy, 300) {
-        return Ok(None);
+    overlaps.sort_by(|left, right| (left.0, &left.1).cmp(&(right.0, &right.1)));
+    for (overlap_start, id, first_slice_id, second_slice_id, joint) in overlaps {
+        let mut accrual = ctx
+            .db
+            .spouse_leisure_accrual()
+            .pair_id()
+            .find(&pair_id)
+            .unwrap_or(SpouseLeisureAccrual {
+                pair_id: pair_id.clone(),
+                first_character_id: first_id,
+                second_character_id: second_id,
+                conserved_joint_minutes: 0,
+                next_trial_ordinal: 0,
+                total_joint_minutes: 0,
+            });
+        let plan = conception_quantum_plan(
+            ConceptionQuantumState {
+                conserved_joint_minutes: accrual.conserved_joint_minutes,
+                next_trial_ordinal: accrual.next_trial_ordinal,
+            },
+            joint,
+        );
+        for trial in &plan.trials {
+            let receipt_id = format!("conception-trial:{pair_id}:{}", trial.ordinal);
+            if ctx
+                .db
+                .conception_trial_receipt()
+                .id()
+                .find(&receipt_id)
+                .is_some()
+            {
+                continue;
+            }
+            let minute =
+                overlap_start.saturating_add(trial.crossing_offset_minutes.saturating_sub(1));
+            let ordinal = trial.ordinal.to_string();
+            let entropy = (stable_lifecycle_hash(
+                "spouse-conception",
+                &[&first_id.to_string(), &second_id.to_string(), &ordinal],
+            ) % 10_000) as u16;
+            let parents = conception_parents(ctx, first_id, second_id)?;
+            let succeeded = parents.is_some()
+                && succeeds_daily_trial(entropy, 300)
+                && parents.is_some_and(|(mother_id, _)| {
+                    ctx.db
+                        .active_pregnancy()
+                        .mother_id()
+                        .find(mother_id)
+                        .is_none()
+                });
+            ctx.db
+                .conception_trial_receipt()
+                .insert(ConceptionTrialReceipt {
+                    id: receipt_id,
+                    pair_id: pair_id.clone(),
+                    ordinal: trial.ordinal,
+                    minute,
+                    succeeded,
+                });
+            if succeeded && let Some((mother_id, father_id)) = parents {
+                establish_pregnancy(ctx, mother_id, father_id, minute)?;
+            }
+        }
+        accrual.conserved_joint_minutes = plan.state.conserved_joint_minutes;
+        accrual.next_trial_ordinal = plan.state.next_trial_ordinal;
+        accrual.total_joint_minutes = accrual.total_joint_minutes.saturating_add(joint);
+        if ctx
+            .db
+            .spouse_leisure_accrual()
+            .pair_id()
+            .find(&pair_id)
+            .is_some()
+        {
+            ctx.db.spouse_leisure_accrual().pair_id().update(accrual);
+        } else {
+            ctx.db.spouse_leisure_accrual().insert(accrual);
+        }
+        let resolved_minute = overlap_start.saturating_add(joint);
+        ctx.db
+            .spouse_leisure_overlap()
+            .insert(SpouseLeisureOverlap {
+                id,
+                first_slice_id,
+                second_slice_id,
+                joint_minutes: joint,
+                resolved_minute,
+            });
+        refresh_spouse_pair_morale(ctx, first_id, second_id, joint, resolved_minute)?;
     }
-    establish_pregnancy(
-        ctx,
-        mother_id,
-        father_id,
-        day.saturating_mul(MINUTES_PER_DAY),
-    )
-    .map(Some)
+    Ok(())
 }
 
 pub fn apply_spouse_leisure_conception(
@@ -1234,64 +1473,42 @@ pub fn apply_spouse_leisure_conception(
     }) else {
         return Ok(());
     };
-    for day in
-        (interval_start / MINUTES_PER_DAY)..=(interval_end.saturating_sub(1) / MINUTES_PER_DAY)
-    {
-        let _ = attempt_spouse_conception(ctx, character_id, spouse_id, day)?;
-    }
-    Ok(())
-}
-
-/// Colocated spouses refresh a durable morale benefit from qualifying Leisure.
-/// The source is pair-stable, so repeated leisure refreshes rather than stacks
-/// unbounded events and remains independent of a residence comfort bonus.
-pub fn apply_spouse_leisure_morale(
-    ctx: &ReducerContext,
-    character_id: u64,
-    interval_end: u64,
-    qualifying_leisure_minutes: u64,
-) -> Result<(), String> {
-    if qualifying_leisure_minutes == 0 {
-        return Ok(());
-    }
     let character = ctx
         .db
         .character()
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    let Some(spouse_id) = ctx.db.character_kinship().iter().find_map(|edge| {
-        (edge.subject_id == character_id && edge.kind == KinshipKind::Spouse)
-            .then_some(edge.related_id)
-    }) else {
+    let Some(location_id) = character.current_settlement_id else {
         return Ok(());
     };
-    let spouse = ctx
-        .db
-        .character()
-        .id()
-        .find(spouse_id)
-        .ok_or("Spouse not found")?;
-    if !character.alive
-        || !spouse.alive
-        || character.current_settlement_id != spouse.current_settlement_id
-    {
-        return Ok(());
+    let realized_end = interval_start
+        .saturating_add(qualifying_leisure_minutes)
+        .min(interval_end);
+    let id = format!("spouse-leisure-slice:{character_id}:{interval_start}:{realized_end}");
+    if ctx.db.spouse_leisure_slice().id().find(&id).is_none() {
+        ctx.db.spouse_leisure_slice().insert(SpouseLeisureSlice {
+            id,
+            character_id,
+            start_minute: interval_start,
+            end_minute: realized_end,
+            location_id,
+        });
     }
-    let source = format!(
-        "spouse-leisure:{}:{}",
-        character_id.min(spouse_id),
-        character_id.max(spouse_id)
-    );
-    crate::condition::upsert_refreshable_morale_event_at_without_refresh(
-        ctx,
-        character_id,
-        "spouse_leisure",
-        2.0,
-        interval_end,
-        &source,
-    )?;
-    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    settle_spouse_leisure_pair(ctx, character_id, spouse_id)
+}
+
+/// Colocated spouses refresh a durable morale benefit from qualifying Leisure.
+/// The source is pair-stable, so repeated leisure refreshes rather than stacks
+/// unbounded events and remains independent of a residence comfort bonus.
+pub fn apply_spouse_leisure_morale(
+    _ctx: &ReducerContext,
+    _character_id: u64,
+    _interval_end: u64,
+    _qualifying_leisure_minutes: u64,
+) -> Result<(), String> {
+    // Compatibility seam: conception registration now settles the conserved
+    // overlap and refreshes the bounded benefit for both spouses exactly once.
     Ok(())
 }
 
@@ -1343,7 +1560,7 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
             child_id,
             crate::character::CharacterCreationOptions {
                 origin_settlement_id: Some(&settlement_id),
-                mode: crate::character::CharacterCreationMode::PersistentNpc,
+                mode: crate::character::CharacterCreationMode::Newborn,
                 create_solo_party: false,
                 stable_seed: pregnancy.child_name_seed,
                 initial_time_minute: Some(pregnancy.due_minute),
@@ -1364,6 +1581,10 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 .update(personality);
         }
         initialize_npc_policy(ctx, child_id, settlement_id, pregnancy.child_home_seed)?;
+        ctx.db
+            .child_identity_reservation()
+            .character_id()
+            .delete(child_id);
         ensure_kinship(
             ctx,
             child_id,
@@ -2320,5 +2541,51 @@ mod tests {
         assert!(!birth.contains("child.age_years = 0"));
         assert!(birth.contains("active_pregnancy()"));
         assert!(birth.contains(".delete(pregnancy.mother_id)"));
+    }
+
+    #[test]
+    fn spouse_leisure_is_simultaneous_conserved_and_idempotent() {
+        let source = include_str!("relationship.rs");
+        let settlement = source
+            .split("fn settle_spouse_leisure_pair")
+            .nth(1)
+            .unwrap()
+            .split("pub fn apply_spouse_leisure_conception")
+            .next()
+            .unwrap();
+        assert!(settlement.contains("joint_leisure_minutes("));
+        assert!(settlement.contains("conception_quantum_plan("));
+        assert!(settlement.contains("spouse_leisure_overlap().id().find"));
+        assert!(settlement.contains("conception_trial_receipt().id().find"));
+        assert!(settlement.contains("refresh_spouse_pair_morale"));
+    }
+
+    #[test]
+    fn spouse_morale_is_awarded_to_both_and_respects_combined_cap() {
+        let source = include_str!("relationship.rs");
+        let morale = source
+            .split("fn refresh_spouse_pair_morale")
+            .nth(1)
+            .unwrap()
+            .split("fn settle_spouse_leisure_pair")
+            .next()
+            .unwrap();
+        assert!(morale.contains("for character_id in [first_id, second_id]"));
+        assert!(morale.contains("LEISURE_MORALE_STACK_CAP_MILLI"));
+        assert!(morale.contains("SPOUSE_LEISURE_MORALE_SPEC"));
+    }
+
+    #[test]
+    fn wedding_resolution_uses_the_scheduled_effective_minute() {
+        let source = include_str!("relationship.rs");
+        let wedding = source
+            .split("pub fn settle_due_weddings")
+            .nth(1)
+            .unwrap()
+            .split("pub fn settle_due_weddings_global")
+            .next()
+            .unwrap();
+        assert!(wedding.contains("let effective_minute = commitment.effective_minute"));
+        assert!(!wedding.contains("WeddingCompleted,\n            now"));
     }
 }

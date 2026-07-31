@@ -380,7 +380,7 @@ pub fn settle_residence_billing(ctx: &ReducerContext, character_id: u64) -> Resu
                 due_minute,
                 amount: each,
                 outcome: ResidenceChargeOutcome::Paid,
-                recorded_minute: now,
+                recorded_minute: due_minute,
             });
         }
         residence.last_billed_minute = due_minute;
@@ -395,7 +395,7 @@ pub fn settle_residence_billing(ctx: &ReducerContext, character_id: u64) -> Resu
                 due_minute: unpaid_due,
                 amount: each,
                 outcome: ResidenceChargeOutcome::Unpaid,
-                recorded_minute: now,
+                recorded_minute: unpaid_due,
             });
         }
         residence.active = false;
@@ -403,7 +403,7 @@ pub fn settle_residence_billing(ctx: &ReducerContext, character_id: u64) -> Resu
             ctx,
             character_id,
             character_id,
-            now,
+            unpaid_due,
             ResidenceTransitionKind::Dormant,
         );
         if residence.tenure == ResidenceTenure::Renter {
@@ -415,7 +415,7 @@ pub fn settle_residence_billing(ctx: &ReducerContext, character_id: u64) -> Resu
                 .map(|row| row.character_id)
                 .collect();
             for occupant_id in occupants {
-                remove_occupant_at(ctx, occupant_id, now);
+                remove_occupant_at(ctx, occupant_id, unpaid_due);
             }
         }
     }
@@ -705,6 +705,17 @@ mod tests {
         assert!(source.contains("pub struct ResidenceCharge"));
         assert!(source.contains("for period in 0..plan.periods_paid"));
         assert!(!source.contains("charge_for_periods"));
+        let billing = source
+            .split("pub fn settle_residence_billing")
+            .nth(1)
+            .unwrap()
+            .split("pub fn apply_residence_leisure_morale")
+            .next()
+            .unwrap();
+        assert!(billing.contains("recorded_minute: due_minute"));
+        assert!(billing.contains("recorded_minute: unpaid_due"));
+        assert!(billing.contains("ResidenceTransitionKind::Dormant"));
+        assert!(billing.contains("remove_occupant_at(ctx, occupant_id, unpaid_due)"));
     }
 
     #[test]

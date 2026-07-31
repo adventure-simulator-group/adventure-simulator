@@ -21,7 +21,7 @@ use crate::{
     item::item,
     organization::{organization_membership, organization_presentation},
     personality::character_personality,
-    relationship::npc_policy,
+    relationship::{child_identity_reservation, npc_policy},
     repair::{item_condition, repair_order},
     strategic::{inventory_quantity_target, party_authority, party_member, settlement},
     surgery::{limb_injury, retained_projectile},
@@ -1541,15 +1541,23 @@ pub(crate) enum CharacterCreationMode {
     Player,
     PersistentNpc,
     TemporaryNpc,
+    Newborn,
 }
 
 impl CharacterCreationMode {
     const fn is_npc(self) -> bool {
-        matches!(self, Self::PersistentNpc | Self::TemporaryNpc)
+        matches!(
+            self,
+            Self::PersistentNpc | Self::TemporaryNpc | Self::Newborn
+        )
     }
 
     const fn temporary(self) -> bool {
         matches!(self, Self::TemporaryNpc)
+    }
+
+    const fn newborn(self) -> bool {
+        matches!(self, Self::Newborn)
     }
 }
 
@@ -1746,6 +1754,14 @@ pub(crate) fn insert_character_with_origin(
     log::info!("New character created: {name} (ID: {id})");
     let temporary = options.mode.temporary();
     let npc = options.mode.is_npc();
+    let newborn = options.mode.newborn();
+    let reserved = ctx.db.child_identity_reservation().character_id().find(id);
+    if reserved.is_some() && !newborn {
+        return Err("Character identity is reserved for a pending birth".into());
+    }
+    if newborn && reserved.is_none() {
+        return Err("Newborn creation requires a reserved child identity".into());
+    }
 
     let settlements: Vec<Settlement> = ctx.db.settlement().iter().collect();
     if settlements.is_empty() {
@@ -1817,7 +1833,7 @@ pub(crate) fn insert_character_with_origin(
         ),
         alive: true,
     });
-    if !temporary {
+    if !temporary && !newborn {
         let urban = matches!(
             start_settlement.category,
             crate::strategic::SettlementCategory::Town
@@ -2154,13 +2170,16 @@ pub(crate) fn insert_character_with_origin(
         }
     }
 
-    // Starter items
-    crate::item::credit_personal_currency(
-        ctx,
-        character.id,
-        &start_settlement.id,
-        starting.map_or(100, |s| s.currency),
-    )?;
+    // Newborns receive the full durable character component surface, but no
+    // adult economic or equipment package.
+    if !newborn {
+        crate::item::credit_personal_currency(
+            ctx,
+            character.id,
+            &start_settlement.id,
+            starting.map_or(100, |s| s.currency),
+        )?;
+    }
     if let Some(spec) = starting {
         for item in &spec.inventory {
             if let Some(slot) = item.equipped {
@@ -2183,7 +2202,7 @@ pub(crate) fn insert_character_with_origin(
                 add_inventory_item(ctx, character.id, &item.item_id, item.quantity);
             }
         }
-    } else {
+    } else if !newborn {
         add_inventory_item(ctx, character.id, "torch", 1);
         add_inventory_item(ctx, character.id, "bandage", 3);
         for (item, slot) in [
@@ -2940,6 +2959,9 @@ mod starting_character_boundary_tests {
         assert!(!CharacterCreationMode::PersistentNpc.temporary());
         assert!(CharacterCreationMode::TemporaryNpc.is_npc());
         assert!(CharacterCreationMode::TemporaryNpc.temporary());
+        assert!(CharacterCreationMode::Newborn.is_npc());
+        assert!(!CharacterCreationMode::Newborn.temporary());
+        assert!(CharacterCreationMode::Newborn.newborn());
 
         let source = include_str!("character.rs");
         let persistent = source
@@ -2953,6 +2975,22 @@ mod starting_character_boundary_tests {
         assert!(persistent.contains("CharacterCreationMode::PersistentNpc"));
         assert!(persistent.contains("create_solo_party: false"));
         assert!(persistent.contains("initial_time_minute"));
+    }
+
+    #[test]
+    fn newborns_have_full_components_without_an_adult_starter_package() {
+        let source = include_str!("character.rs");
+        let insertion = source
+            .split("pub(crate) fn insert_character_with_origin")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn validate_full_character_components")
+            .next()
+            .unwrap();
+        assert!(insertion.contains("Newborn creation requires a reserved child identity"));
+        assert!(insertion.contains("if !newborn {\n        crate::item::credit_personal_currency"));
+        assert!(insertion.contains("} else if !newborn {\n        add_inventory_item"));
+        assert!(insertion.contains("validate_full_character_components(ctx, character.id)?"));
     }
 
     #[test]
