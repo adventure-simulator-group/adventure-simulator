@@ -398,6 +398,7 @@ fn camp_schedule(allocation: &ScheduleAllocation) -> DailySchedule {
         reading_minutes: 0,
         combat_training_minutes: allocation.combat_training_minutes,
         carousing_minutes: allocation.carousing_minutes,
+        socializing_minutes: allocation.socializing_minutes,
         apprenticeship_minutes: allocation.apprenticeship_minutes,
         profession_practice_minutes: allocation.profession_practice_minutes,
         labor: 0,

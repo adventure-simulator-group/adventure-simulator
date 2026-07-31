@@ -1191,6 +1191,7 @@ fn skills_table(
                         (schedule_special_row("Reading", "open-book", "reading_minutes", schedule.downtime.reading_minutes, effective.reading_minutes, true, immediate_actions && preview.reading.is_some(), ActivityEffectRates::default(), None, None, preview.reading.as_ref().map_or(0.0, |reading| reading.rate), reading_description))
                         (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, effective.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, combat_training, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
                         (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, effective.carousing_minutes, true, carousing_action, ActivityEffectRates::carousing(), None, None, instinct_training, "Drink and socialize to improve morale and train Charm at 25% speed. Ordinary carousing changes no reputation, but a disorder incident can add Infamy; Drunkards are at substantially higher risk."))
+                        (schedule_special_row("Socializing", "conversation", "socializing_minutes", schedule.downtime.socializing_minutes, effective.socializing_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, 1.0, "Spend allocated time with one deterministic highest-priority companion: a romantic partner, party member, positive-affinity acquaintance, or stranger. This is distinct from Leisure and Carousing; it builds familiarity and affinity without claiming the other person's canonical schedule."))
                         @let apprenticeship_id = schedule.downtime.apprenticeship_organization_id.as_deref().filter(|id| preview.profession.contains_key(*id)).or_else(|| preview.profession.keys().next().map(String::as_str));
                         @if let Some(service_id) = apprenticeship_id {
                             (schedule_organization_selection("Training organization", "apprenticeship_organization_id", service_id, preview.profession.iter().map(|(id, entry)| (id.as_str(), entry.tier_label.as_str())).collect()))
@@ -2102,6 +2103,7 @@ fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         reading_minutes: schedule.reading_minutes,
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
+        socializing_minutes: schedule.socializing_minutes,
         apprenticeship_minutes: schedule.apprenticeship_minutes,
         profession_practice_minutes: schedule.profession_practice_minutes,
         labor: schedule.labor_minutes,
@@ -2139,6 +2141,7 @@ fn effective_preview_schedule(
             [
                 schedule.combat_training_minutes,
                 schedule.carousing_minutes,
+                schedule.socializing_minutes,
                 schedule.apprenticeship_minutes,
                 schedule.profession_practice_minutes,
                 schedule.labor_minutes,
@@ -2153,6 +2156,7 @@ fn effective_preview_schedule(
                 true,
                 true,
                 true,
+                true,
                 location.allows(LocationActivity::Thievery),
                 location.allows(LocationActivity::Raiding),
             ],
@@ -2160,12 +2164,13 @@ fn effective_preview_schedule(
         );
         effective.combat_training_minutes = redistributed[0];
         effective.carousing_minutes = redistributed[1];
-        effective.apprenticeship_minutes = redistributed[2];
-        effective.profession_practice_minutes = redistributed[3];
-        effective.labor_minutes = redistributed[4];
-        effective.prayer_minutes = redistributed[5];
-        effective.thievery_minutes = redistributed[6];
-        effective.raiding_minutes = redistributed[7];
+        effective.socializing_minutes = redistributed[2];
+        effective.apprenticeship_minutes = redistributed[3];
+        effective.profession_practice_minutes = redistributed[4];
+        effective.labor_minutes = redistributed[5];
+        effective.prayer_minutes = redistributed[6];
+        effective.thievery_minutes = redistributed[7];
+        effective.raiding_minutes = redistributed[8];
     }
     effective
 }
@@ -2174,6 +2179,7 @@ fn preview_allocated_minutes(schedule: &ScheduleAllocation) -> u64 {
     adventuresim_core::strategic_time::allocated_schedule_minutes([
         schedule.combat_training_minutes,
         schedule.carousing_minutes,
+        schedule.socializing_minutes,
         schedule.apprenticeship_minutes,
         schedule.profession_practice_minutes,
         schedule.labor_minutes,

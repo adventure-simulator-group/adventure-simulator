@@ -72,6 +72,9 @@ pub struct ScheduleAllocation {
     pub reading_minutes: u16,
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
+    /// Allocated relationship time.  Unlike Carousing this neither requires
+    /// an inn nor grants its incidental morale/incident outcome.
+    pub socializing_minutes: u16,
     pub apprenticeship_minutes: u16,
     pub apprenticeship_organization_id: Option<String>,
     pub profession_practice_minutes: u16,
@@ -136,6 +139,7 @@ impl ScheduleAllocation {
             self.raiding_minutes,
             self.combat_training_minutes,
             self.carousing_minutes,
+            self.socializing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
             self.reading_minutes,
@@ -150,6 +154,7 @@ impl ScheduleAllocation {
             self.raiding_minutes,
             self.combat_training_minutes,
             self.carousing_minutes,
+            self.socializing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
             self.reading_minutes,
@@ -236,6 +241,7 @@ pub(crate) fn effective_location_schedule(
         [
             schedule.combat_training_minutes,
             schedule.carousing_minutes,
+            schedule.socializing_minutes,
             schedule.apprenticeship_minutes,
             schedule.profession_practice_minutes,
             schedule.labor_minutes,
@@ -250,6 +256,7 @@ pub(crate) fn effective_location_schedule(
             true,
             true,
             true,
+            true,
             location.allows(LocationActivity::Thievery),
             location.allows(LocationActivity::Raiding),
         ],
@@ -257,12 +264,13 @@ pub(crate) fn effective_location_schedule(
     );
     effective.combat_training_minutes = redistributed[0];
     effective.carousing_minutes = redistributed[1];
-    effective.apprenticeship_minutes = redistributed[2];
-    effective.profession_practice_minutes = redistributed[3];
-    effective.labor_minutes = redistributed[4];
-    effective.prayer_minutes = redistributed[5];
-    effective.thievery_minutes = redistributed[6];
-    effective.raiding_minutes = redistributed[7];
+    effective.socializing_minutes = redistributed[2];
+    effective.apprenticeship_minutes = redistributed[3];
+    effective.profession_practice_minutes = redistributed[4];
+    effective.labor_minutes = redistributed[5];
+    effective.prayer_minutes = redistributed[6];
+    effective.thievery_minutes = redistributed[7];
+    effective.raiding_minutes = redistributed[8];
     effective
 }
 
@@ -1299,6 +1307,7 @@ pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         reading_minutes: schedule.reading_minutes,
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
+        socializing_minutes: schedule.socializing_minutes,
         apprenticeship_minutes: schedule.apprenticeship_minutes,
         profession_practice_minutes: schedule.profession_practice_minutes,
         labor: schedule.labor_minutes,
@@ -1464,6 +1473,17 @@ fn apply_activity_outcomes_inner(
             core_schedule(schedule),
             elapsed,
             interval_end_minute,
+        )?;
+        crate::relationship::apply_spouse_leisure_conception(
+            ctx,
+            character_id,
+            interval_end_minute.saturating_sub(elapsed),
+            interval_end_minute,
+            adventuresim_core::strategic_schedule::restorative_leisure_minutes(
+                core_schedule(schedule),
+                interval_end_minute.saturating_sub(elapsed),
+                elapsed,
+            ),
         )?;
     }
     Ok(ActivityRisks {
@@ -2853,6 +2873,13 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     )?;
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     if at_settlement && training_elapsed > 0 {
+        crate::relationship::apply_scheduled_socializing(
+            ctx,
+            character_id,
+            effective_schedule.socializing_minutes,
+            target_minutes.saturating_sub(elapsed),
+            target_minutes,
+        )?;
         crate::social::apply_automatic_social_chats(ctx, character_id, training_elapsed)?;
     }
     if at_settlement {

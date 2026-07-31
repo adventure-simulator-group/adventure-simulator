@@ -122,6 +122,10 @@ pub struct DailySchedule {
     pub combat_training_minutes: u16,
     /// Social recreation which trains Charm at the activity rate.
     pub carousing_minutes: u16,
+    /// Deliberate conversation with one selected relationship target. Its
+    /// relationship resolution is strategic-module state, but it consumes
+    /// discretionary time and therefore cannot also be restorative Leisure.
+    pub socializing_minutes: u16,
     /// Supervised work in an unlocked profession.
     pub apprenticeship_minutes: u16,
     /// Independent paid professional work, available at Journeyman rank.
@@ -141,6 +145,7 @@ impl DailySchedule {
             self.raiding,
             self.combat_training_minutes,
             self.carousing_minutes,
+            self.socializing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
             self.reading_minutes,

@@ -5,6 +5,7 @@ pub mod autopsy;
 pub mod autoresolve;
 pub mod battle_rewards;
 pub mod bestiary;
+pub mod courtship;
 pub mod body;
 pub mod book;
 pub mod capability;

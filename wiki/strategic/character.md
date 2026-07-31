@@ -35,6 +35,56 @@ character pair. Its displayed effective hours divide shared time by current
 party size while both characters remain together, and use the undivided total
 after they separate.
 
+### Temporal relationship scope
+
+Relationship systems distinguish **pairwise-soft** history from canonical,
+exclusive history. Affinity, familiarity, and ordinary Socializing are
+pairwise-soft: they may be updated on the acting character's clock and never
+consume another character's schedule. A person who is engaged or married can
+therefore still become a close friend of somebody whose personal date is in
+their past. The resulting friendship does not create romantic eligibility.
+
+Courtship, gifts, discovery by family, engagements, marriage, pregnancy, and
+birth are canonical or exclusive actions. NPC-controlled people are full
+Characters with an NPC policy and an authoritative personal frontier. Those
+actions may only move that frontier forward; player travel and account-owned
+schedule reducers never advance it. Institutional services (guild admission,
+renewable market trade, ordinary rest, and actor-local quest journal updates)
+remain asynchronous only when they neither read nor write dynamic canonical
+NPC state.
+
+Socializing is a 15-minute allocated strategic activity, distinct from both
+Leisure and Carousing. One deterministic companion receives all of a daily
+allocation, selected in priority order: a romantic partner, a co-located party
+member, a positive-affinity acquaintance, then another co-located person.
+Socializing records asynchronous directed affinity and symmetric familiarity;
+it does not assert that the selected NPC lost finite canonical time.
+
+### Courtship
+
+Courtship is an explicit canonical action, never an automatic threshold
+transition. Both participants must be living adults, co-located, mutually
+attracted according to their private inclination and observable presentation,
+not close kin, and synchronized to the relevant canonical date. High affinity
+with a person who has an exclusive commitment remains friendship rather than a
+counterfactual romantic relationship.
+
+Formal courtship currently requires a biologically male suitor and biologically
+female partner, enough affinity from the partner, and enough affinity from her
+known father. Informal courtship works for any mutually attracted eligible
+pair, but requires substantially more affinity; Amorous partners lower that
+threshold and Proper partners raise it. A wedding can only be scheduled from
+an active courtship. Scheduling creates an immediate exclusive engagement for
+both people and fixes the ceremony one year later.
+
+Opposite-sex adult spouses who are co-located can conceive from qualifying
+spouse Leisure. The daily conception roll is deterministic and keyed to the
+calendar date. Pregnancy is exclusive to the mother, lasts exactly 280 days,
+and has no complications in this pass. A due pregnancy materializes one full,
+NPC-policy-controlled dependent child, then creates parent/child and household
+edges atomically. Childhood behavior, education, inheritance, contraception,
+infertility, miscarriage, and childbirth risk remain follow-up systems.
+
 The Social family is **Insight**, **Charm**, **Command**, and **Deception**.
 Social outcomes combine the action skill, current Affinity and Familiarity,
 the actor's diagnosis, the target's true personality and topic sensitivity,

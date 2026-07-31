@@ -239,6 +239,7 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
         reading_minutes: 0,
         combat_training_minutes: quarter_hour(s.combat_training_minutes),
         carousing_minutes: quarter_hour(s.carousing_minutes),
+        socializing_minutes: 0,
         // Simulation profiles may express future profession preferences that
         // the disposable character has not learned yet. Do not submit those
         // locked activities to the authoritative schedule reducer.
@@ -261,6 +262,7 @@ fn schedule_allocated_minutes(schedule: &ScheduleAllocation) -> u16 {
     [
         schedule.combat_training_minutes,
         schedule.carousing_minutes,
+        schedule.socializing_minutes,
         schedule.apprenticeship_minutes,
         schedule.profession_practice_minutes,
         schedule.labor_minutes,
@@ -323,6 +325,7 @@ fn medical_rest_schedule() -> ScheduleAllocation {
         reading_minutes: 0,
         combat_training_minutes: 0,
         carousing_minutes: 0,
+        socializing_minutes: 0,
         apprenticeship_minutes: 0,
         apprenticeship_organization_id: None,
         profession_practice_minutes: 0,

@@ -10,6 +10,7 @@ pub struct ScheduleAllocation {
     pub reading_minutes: u16,
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
+    pub socializing_minutes: u16,
     pub apprenticeship_minutes: u16,
     pub apprenticeship_organization_id: Option<String>,
     pub profession_practice_minutes: u16,

@@ -1830,6 +1830,39 @@ fn put_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64, value: f32
     }
 }
 
+/// Record an asynchronous, pairwise-soft social interval.  It intentionally
+/// does not consult either participant's canonical NPC frontier, consume an
+/// NPC schedule, or create an exclusive claim.  The receipt belongs to the
+/// caller in `relationship`; this helper only mutates the independent social
+/// edge once the caller has established idempotency.
+pub fn apply_async_socializing(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    minutes: u64,
+) -> Result<(), String> {
+    if actor_id == target_id || minutes == 0 { return Ok(()); }
+    if ctx.db.character().id().find(actor_id).is_none() || ctx.db.character().id().find(target_id).is_none() {
+        return Err("Socializing requires full Characters".into());
+    }
+    let current = current_affinity(ctx, target_id, actor_id);
+    // A small diminishing directed gain: socializing says the target gets to
+    // know the actor better, but does not assert romantic availability.
+    let requested = (minutes as f32 / 60.0) * 0.4;
+    put_affinity(ctx, target_id, actor_id, current + realized_affinity_delta(current, requested));
+    let Some((low_id, high_id)) = canonical_pair(actor_id, target_id) else { return Ok(()); };
+    let id = pair_id(low_id, high_id);
+    if let Some(mut familiarity) = ctx.db.character_familiarity().id().find(&id) {
+        familiarity.shared_minutes = familiarity.shared_minutes.saturating_add(minutes);
+        ctx.db.character_familiarity().id().update(familiarity);
+    } else {
+        ctx.db.character_familiarity().insert(CharacterFamiliarity {
+            id, low_id, high_id, shared_minutes: minutes, joint_minute_anchor: 0,
+        });
+    }
+    Ok(())
+}
+
 /// Settle canonical familiarity whenever either member's personal strategic
 /// clock changes. Taking the minimum clock makes simultaneous party time
 /// partition-independent and prevents double counting.
