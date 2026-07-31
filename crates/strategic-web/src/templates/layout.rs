@@ -206,7 +206,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/building-state.js?v=non-service-building-tabs-2" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
                     script src="/static/strategic-map.js?v=population-culling-3" defer {}
-                    script src="/static/rest-duration.js?v=wake-time-3" defer {}
+                    script src="/static/rest-duration.js?v=wake-time-4" defer {}
                     script src="/static/training-schedule.js?v=apprentice-system-1" defer {}
                     script src="/static/immediate-activity.js?v=manual-activities-1" defer {}
                 }
