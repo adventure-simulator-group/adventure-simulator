@@ -283,7 +283,8 @@ fn settlement_top_bar(
                 a href=(format!("/locations/settlement/{}", settlement_id)) class="settlement-name" {
                     (settlement_name)
                 }
-                span class="settlement-time" data-player-time title="Loading official time…" {
+                span class="settlement-time" data-player-time title="Loading official time…"
+                    aria-label="1st of First Seed · 08:00" {
                     "1st of First Seed · 08:00"
                 }
                 }
@@ -419,7 +420,7 @@ fn settlement_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=continuous-environment-1" {}
+        script src="/static/strategic-time.js?v=accessible-clock-1" {}
     }
 }
 
@@ -480,7 +481,8 @@ fn quest_location_top_bar(
                     } @else {
                         a href=(format!("/locations/case-site/{}", location_id)) class="settlement-name" { (location_name) }
                     }
-                    span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
+                    span class="settlement-time" data-player-time
+                        aria-label="1st of First Seed · 08:00" { "1st of First Seed · 08:00" }
                 }
                 (journal_button())
             }
@@ -530,7 +532,7 @@ fn quest_location_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=continuous-environment-1" {}
+        script src="/static/strategic-time.js?v=accessible-clock-1" {}
     }
 }
 

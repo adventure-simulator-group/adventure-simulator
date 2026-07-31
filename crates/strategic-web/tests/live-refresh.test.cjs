@@ -6,6 +6,58 @@ const vm = require("node:vm");
 
 const root = path.join(__dirname, "..");
 
+test("all strategic clock script references use the accessible clock cache key", () => {
+  const layout = fs.readFileSync(path.join(root, "src", "templates", "layout.rs"), "utf8");
+  const references = [...layout.matchAll(/\/static\/strategic-time\.js\?v=([^\"]+)/g)]
+    .map((match) => match[1]);
+  assert.deepEqual(references, ["accessible-clock-1", "accessible-clock-1"]);
+});
+
+test("strategic clock refresh keeps visible and accessible character time synchronized", async () => {
+  const source = fs.readFileSync(path.join(root, "static", "strategic-time.js"), "utf8");
+  const attributes = new Map();
+  const listeners = new Map();
+  const responses = [
+    { character_minutes: 1505, official_minutes: 2945 },
+    { character_minutes: 2946, official_minutes: 4386 },
+  ];
+  const clock = {
+    textContent: "1st of First Seed · 08:00",
+    title: "Loading official time…",
+    setAttribute(name, value) { attributes.set(name, value); },
+  };
+  const document = {
+    documentElement: { style: { setProperty() {} } },
+    querySelectorAll: () => [clock],
+    dispatchEvent() {},
+    addEventListener(type, listener) { listeners.set(type, listener); },
+  };
+  const window = {
+    queueStrategicInitialLoad: (load) => Promise.resolve().then(load),
+    strategicBackgroundFetch: async () => ({
+      json: async () => responses.shift(),
+    }),
+    reportStrategicError(error) { throw error; },
+  };
+  class CustomEvent {
+    constructor(type, init) { this.type = type; this.detail = init.detail; }
+  }
+
+  vm.runInNewContext(source, { window, document, CustomEvent, Promise });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(clock.textContent, "Day 2 · 01:05");
+  assert.equal(attributes.get("aria-label"), clock.textContent);
+  assert.equal(clock.title, "Official time: Day 3 · 01:05");
+
+  listeners.get("strategic-page-mounted")();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(clock.textContent, "Day 3 · 01:06");
+  assert.equal(attributes.get("aria-label"), clock.textContent);
+  assert.equal(clock.title, "Official time: Day 4 · 01:06");
+});
+
 test("SSE subscribes before reading its initial revision", () => {
   const source = fs.readFileSync(path.join(root, "src", "live.rs"), "utf8");
   const subscribe = source.indexOf("let receiver = state.live.subscribe()");
