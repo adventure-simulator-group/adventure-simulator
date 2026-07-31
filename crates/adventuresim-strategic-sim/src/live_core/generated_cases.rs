@@ -840,7 +840,8 @@ impl LiveRunner {
                 .iter()
                 .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
                 .collect::<Vec<_>>();
-            actions.sort_by_key(|row| row.action_id.clone());
+            let profile = &self.profiles[agent as usize];
+            sort_generated_actions(profile, &mut actions);
             if let Some(action) = actions.iter().find(|row| row.available).cloned() {
                 let known_outcomes = self
                     .connection
@@ -1120,6 +1121,33 @@ impl LiveRunner {
             });
             if let Some(pin) = pin {
                 if pin.combat_available {
+                    let defeat_key = (character_id, case_id.to_owned());
+                    let combat_fingerprint = self.public_party_combat_fingerprint(party_id);
+                    if self
+                        .generated_defeat_fingerprints
+                        .get(&defeat_key)
+                        .is_some_and(|previous| previous == &combat_fingerprint)
+                    {
+                        self.event(
+                            agent,
+                            CoreLoopEventKind::QuestSuppressed,
+                            format!(
+                                "generated_case={};reason=unchanged_defeated_threat;public_fingerprint_members={}",
+                                bounded_event_field(case_id),
+                                combat_fingerprint.members.len(),
+                            ),
+                        );
+                        let settlement_id = pin.origin_settlement_id.clone();
+                        let result = reducer_call!(self, "generated_unchanged_defeat_retreat", |cb| self
+                            .connection
+                            .reducers
+                            .travel_to_settlement_then(character_id, settlement_id.clone(), cb));
+                        self.call(result)?;
+                        if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                            return Ok(false);
+                        }
+                        return Ok(false);
+                    }
                     let mission_id = format!(
                         "mission:sim-generated:{party_id}:{}:{}",
                         pin.case_site_id, self.sequence
@@ -1158,6 +1186,8 @@ impl LiveRunner {
                         );
                     } else {
                         self.metrics.defeats += 1;
+                        self.generated_defeat_fingerprints
+                            .insert(defeat_key, combat_fingerprint);
                         self.event(
                             agent,
                             CoreLoopEventKind::AutoresolveDefeat,
@@ -1184,6 +1214,7 @@ impl LiveRunner {
                         }
                         return Ok(false);
                     }
+                    self.generated_defeat_fingerprints.remove(&(character_id, case_id.to_owned()));
                     self.observe_generated_case_transition(
                         agent,
                         character_id,

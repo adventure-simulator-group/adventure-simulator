@@ -186,6 +186,7 @@ fn run_core_loop_inner(
         generated_traveled_cases: HashSet::new(),
         generated_finance_blocks: HashMap::new(),
         generated_discovery_backoff: HashMap::new(),
+        generated_defeat_fingerprints: HashMap::new(),
         failure_recorder,
     };
     if runner
@@ -371,12 +372,13 @@ fn run_core_loop_inner(
         .clone()
         .ok_or("leader not at settlement")?;
     let mut party_ids = Vec::new();
-    for first in (0..runner.character_ids.len()).step_by(config.party_size as usize) {
+    let party_groups = balanced_party_groups(&runner.profiles, config.party_size as usize);
+    for group in party_groups {
+        let first = group[0];
         let leader = runner.character_ids[first];
         let leader_party = runner.party_for(leader)?;
         party_ids.push(leader_party.id.clone());
-        let end = (first + config.party_size as usize).min(runner.character_ids.len());
-        for agent in first + 1..end {
+        for agent in group.into_iter().skip(1) {
             let member = runner.character_ids[agent];
             let result = reducer_call!(runner, "request_general_party_join", |cb| runner
                 .connection
@@ -504,7 +506,8 @@ fn run_core_loop_inner(
                 ^ u64::from(cycle).wrapping_mul(0xbf58_476d_1ce4_e5b9);
             let selector = (mixed >> 11) as f64 / ((1_u64 << 53) as f64);
             let quest_propensity = profile.activity_vs_quest_propensity;
-            let wants_quest = selector < f64::from(quest_propensity);
+            let wants_quest = !profile.build.activity_only
+                && selector < f64::from(quest_propensity);
             let party = runner.party_for(leader)?;
             let settlement_id = party.current_settlement_id.as_deref();
             let offered_contracts = settlement_id.map_or(0, |settlement_id| {
@@ -518,6 +521,17 @@ fn run_core_loop_inner(
                             && contract.status == ContractStatus::Offered
                     })
                     .count()
+            });
+            let contract_difficulty_ceiling = runner.public_party_contract_ceiling(&party.id);
+            let safe_offered_contracts = settlement_id.map_or(0, |settlement_id| {
+                runner.connection.db.backend_contracts().iter().filter(|contract| {
+                    contract.settlement_id == settlement_id
+                        && contract.status == ContractStatus::Offered
+                        && public_contract_is_eligible(
+                            contract.difficulty,
+                            contract_difficulty_ceiling,
+                        )
+                }).count()
             });
             let open_generated_cases = runner.owned_open_generated_cases(leader);
             for (case_id, title) in &open_generated_cases {
@@ -541,10 +555,12 @@ fn run_core_loop_inner(
                             .any(|(case_id, _)| case_id == &row.case_id)
                 })
                 .count();
-            let direct_quest_chosen =
-                wants_quest && runner.choose_quest(&party, &profile).is_some();
+            let safe_direct_quest = runner.choose_quest(&party, &profile);
+            let direct_quest_chosen = wants_quest && safe_direct_quest.is_some();
             let active_direct_contract = runner.active_direct_contract(&party);
-            let quest_path = if active_direct_contract.is_some() {
+            let quest_path = if profile.build.activity_only {
+                "activity"
+            } else if active_direct_contract.is_some() {
                 "direct_contract_continuation"
             } else if !open_generated_cases.is_empty() {
                 "generated_open_case"
@@ -566,12 +582,16 @@ fn run_core_loop_inner(
                     quest_propensity,
                     settlement_id,
                     offered_contracts,
+                    safe_offered_contracts,
+                    contract_difficulty_ceiling,
                     open_generated_cases.len(),
                     projected_investigation_actions,
                     quest_path,
                     wants_quest,
                     quest_selected,
-                    if quest_selected {
+                    if wants_quest && offered_contracts > 0 && safe_direct_quest.is_none() {
+                        "no_safe_contract"
+                    } else if quest_selected {
                         "none"
                     } else {
                         "policy_prefers_activity"

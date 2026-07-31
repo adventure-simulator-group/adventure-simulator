@@ -186,13 +186,15 @@ fn quest_decision_detail_is_bounded_and_stably_formatted() {
             Some("lubeck"),
             2,
             1,
+            4,
+            1,
             3,
             "generated_open_case",
             true,
             true,
             "none",
         ),
-        "cycle=7;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=lubeck;offered_contracts=2;open_generated_cases=1;projected_investigation_actions=3;quest_path=generated_open_case;quest_intended=true;quest_selected=true;selection_reason=none"
+        "cycle=7;wants_quest=true;selector=0.250000;quest_propensity=0.750000;settlement=lubeck;offered_contracts=2;safe_offered_contracts=1;contract_difficulty_ceiling=4;open_generated_cases=1;projected_investigation_actions=3;quest_path=generated_open_case;quest_intended=true;quest_selected=true;selection_reason=none"
     );
     assert_eq!(
         format_quest_decision_detail(
@@ -204,12 +206,14 @@ fn quest_decision_detail_is_bounded_and_stably_formatted() {
             0,
             0,
             0,
+            0,
+            0,
             "activity",
             false,
             false,
             "policy_prefers_activity",
         ),
-        "cycle=8;wants_quest=false;selector=0.250000;quest_propensity=0.750000;settlement=none;offered_contracts=0;open_generated_cases=0;projected_investigation_actions=0;quest_path=activity;quest_intended=false;quest_selected=false;selection_reason=policy_prefers_activity"
+        "cycle=8;wants_quest=false;selector=0.250000;quest_propensity=0.750000;settlement=none;offered_contracts=0;safe_offered_contracts=0;contract_difficulty_ceiling=0;open_generated_cases=0;projected_investigation_actions=0;quest_path=activity;quest_intended=false;quest_selected=false;selection_reason=policy_prefers_activity"
     );
 }
 

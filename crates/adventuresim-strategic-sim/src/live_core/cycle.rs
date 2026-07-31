@@ -213,145 +213,35 @@ impl LiveRunner {
             return Ok(());
         }
 
-        let mut victory = false;
-        let mut winning_battle_id = None;
-        for attempt in 0..=MAX_DEFEAT_RETRIES {
-            let mission_id = format!(
-                "mission:sim-autoresolve:{}:{}:{}",
-                party_id, case_site.case_site_id, attempt
-            );
-            let battle_id = format!("battle:{mission_id}");
-            let result = reducer_call!(self, "autoresolve_mission", |cb| self
-                .connection
-                .reducers
-                .autoresolve_mission_then(leader, mission_id.clone(), cb));
-            self.call(result)?;
-            self.observe_deaths();
-            let Some((current, current_agent)) = self.current_leader(party_id) else {
-                return Ok(());
-            };
-            leader = current;
-            leader_agent = current_agent;
-            let report = self
-                .connection
-                .db
-                .autoresolve_report()
-                .iter()
-                .find(|r| r.battle_id == battle_id)
-                .ok_or("autoresolve completed without a report")?;
-            if self
-                .connection
-                .db
-                .battle_result()
-                .iter()
-                .any(|r| r.battle_id == battle_id)
-            {
-                victory = true;
-                winning_battle_id = Some(battle_id.clone());
-                self.event(
-                    leader_agent,
-                    CoreLoopEventKind::AutoresolveVictory,
-                    format!(
-                        "seed={};rounds={};summary={};log={:?}",
-                        report.seed, report.rounds, report.summary, report.log
-                    ),
-                );
-                break;
-            }
+        let mission_id = format!(
+            "mission:sim-autoresolve:{party_id}:{}:{cycle}",
+            case_site.case_site_id
+        );
+        let battle_id = format!("battle:{mission_id}");
+        let result = reducer_call!(self, "autoresolve_mission", |cb| self
+            .connection
+            .reducers
+            .autoresolve_mission_then(leader, mission_id.clone(), cb));
+        self.call(result)?;
+        self.observe_deaths();
+        let Some((current, current_agent)) = self.current_leader(party_id) else {
+            return Ok(());
+        };
+        leader = current;
+        leader_agent = current_agent;
+        let report = self.connection.db.autoresolve_report().iter()
+            .find(|report| report.battle_id == battle_id)
+            .ok_or("autoresolve completed without a report")?;
+        let victory = self.connection.db.battle_result().iter()
+            .any(|result| result.battle_id == battle_id);
+        let winning_battle_id = victory.then_some(battle_id);
+        self.event(
+            leader_agent,
+            if victory { CoreLoopEventKind::AutoresolveVictory } else { CoreLoopEventKind::AutoresolveDefeat },
+            format!("seed={};rounds={};summary={};log={:?}", report.seed, report.rounds, report.summary, report.log),
+        );
+        if !victory {
             self.metrics.defeats += 1;
-            self.event(
-                leader_agent,
-                CoreLoopEventKind::AutoresolveDefeat,
-                format!(
-                    "seed={};rounds={};summary={};log={:?}",
-                    report.seed, report.rounds, report.summary, report.log
-                ),
-            );
-            if attempt == MAX_DEFEAT_RETRIES {
-                break;
-            }
-            self.metrics.retries += 1;
-            let result = reducer_call!(self, "retreat_to_settlement", |cb| self
-                .connection
-                .reducers
-                .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
-            self.call(result)?;
-            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
-                return Ok(());
-            }
-            self.observe_deaths();
-            let Some((current, _)) = self.current_leader(party_id) else {
-                return Ok(());
-            };
-            leader = current;
-            for agent in self.party_agents(leader)? {
-                self.ensure_medically_safe(agent)?;
-            }
-            let Some((current_agent, _)) =
-                self.refreshed_safe_party_for_owner(party_id, quest_owner)?
-            else {
-                return Ok(());
-            };
-            leader = quest_owner;
-            leader_agent = current_agent;
-            if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
-                party_id,
-                leader,
-                leader_agent,
-                &quest.case_id,
-                case_site.distance_m,
-            )? {
-                self.event(
-                    leader_agent,
-                    CoreLoopEventKind::QuestSuppressed,
-                    format!(
-                        "quest={};retry_deferred={reason}",
-                        bounded_event_field(&quest.id)
-                    ),
-                );
-                let result =
-                    reducer_call!(self, "abandon_failed_unprovisioned_contract", |cb| self
-                        .connection
-                        .reducers
-                        .abandon_contract_then(leader, quest.id.clone(), cb));
-                self.call(result)?;
-                self.event(
-                    leader_agent,
-                    CoreLoopEventKind::AbandonQuest,
-                    format!(
-                        "quest={};reason=failed_expedition_cannot_reprovision;detail={reason}",
-                        bounded_event_field(&quest.id)
-                    ),
-                );
-                self.settlement_activity_day(leader_agent)?;
-                return Ok(());
-            }
-            let result = reducer_call!(self, "retry_travel_to_case_site", |cb| self
-                .connection
-                .reducers
-                .travel_to_case_site_then(
-                    leader,
-                    CaseSiteId {
-                        value: case_site.case_site_id.clone(),
-                    },
-                    cb,
-                ));
-            self.call(result)?;
-            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
-                return Ok(());
-            }
-            self.observe_deaths();
-            let Some((current, current_agent)) = self.current_leader(party_id) else {
-                return Ok(());
-            };
-            leader = current;
-            leader_agent = current_agent;
-            let retry_agents = self.party_agents(leader)?;
-            if !self.unsafe_party_agents(&retry_agents).is_empty() {
-                // Reuse the same post-travel health gate on retries; the next
-                // iteration must never call a living-only combat reducer.
-                break;
-            }
         }
         if !victory {
             let result = reducer_call!(self, "defeat_retreat_to_settlement", |cb| self
@@ -382,7 +272,11 @@ impl LiveRunner {
                 .reducers
                 .abandon_contract_then(leader, quest.id.clone(), cb));
             self.call(result)?;
-            self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
+            self.event(
+                leader_agent,
+                CoreLoopEventKind::AbandonQuest,
+                format!("quest={};reason=unchanged_defeated_threat", bounded_event_field(&quest.id)),
+            );
             let result = reducer_call!(self, "replenish_quests_after_abandon", |cb| self
                 .connection
                 .reducers

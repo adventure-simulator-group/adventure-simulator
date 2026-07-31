@@ -44,10 +44,10 @@
         assert_eq!(
             select_expedition_encounter_choice(
                 &["attack".into(), "run".into(), "detour".into()],
-                0,
                 true,
-            ),
-            Some("run".into())
+            )
+            .map(|choice| choice.choice),
+            Some("detour".into())
         );
 
         let source = LIVE_CORE_SOURCE;

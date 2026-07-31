@@ -1,4 +1,4 @@
-use crate::{ActivityPreference, AgentProfile, EquipmentStyle, generate_profile};
+use crate::{ActivityPreference, AgentProfile, BuildRole, EquipmentStyle, generate_profile};
 use adventuresim_core::simulation_security::{
     SIM_BOOTSTRAP_TOKEN_ENV as BOOTSTRAP_TOKEN_ENV,
     SIM_BOOTSTRAP_TOKEN_HEX_LEN as BOOTSTRAP_TOKEN_HEX_LEN,
@@ -95,7 +95,6 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 /// Severe but non-incapacitating injuries can reduce overland pace enough for
 /// a long quest leg to require many daily camps.
 const MAX_CAMPS_PER_LEG: u32 = 512;
-const MAX_DEFEAT_RETRIES: u32 = 2;
 /// Long but survivable illnesses and injuries can require many daily rests;
 /// keep the policy bounded well beyond ordinary convalescence.
 const MAX_RECOVERY_ACTIONS: u32 = 128;
@@ -695,16 +694,121 @@ fn classify_post_encounter_journey(
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct EncounterPolicyChoice {
+    choice: String,
+    reason: &'static str,
+}
+
 fn select_expedition_encounter_choice(
     available_choices: &[String],
-    roll_index: u64,
     evacuation: bool,
-) -> Option<String> {
-    let eligible = available_choices
-        .iter()
-        .filter(|choice| !evacuation || choice.as_str() != "attack")
-        .collect::<Vec<_>>();
-    (!eligible.is_empty()).then(|| (*eligible[(roll_index as usize) % eligible.len()]).clone())
+) -> Option<EncounterPolicyChoice> {
+    let has = |candidate: &str| available_choices.iter().any(|choice| choice == candidate);
+    if has("detour") {
+        return Some(EncounterPolicyChoice { choice: "detour".into(), reason: "guaranteed_party_aware_detour" });
+    }
+    if has("run") {
+        return Some(EncounterPolicyChoice { choice: "run".into(), reason: "public_speed_check_allows_escape" });
+    }
+    if has("surrender") {
+        return Some(EncounterPolicyChoice { choice: "surrender".into(), reason: "bandit_surrender_is_only_protective_choice" });
+    }
+    (!evacuation && has("attack")).then(|| EncounterPolicyChoice {
+        choice: "attack".into(),
+        reason: "no_protective_response_available",
+    })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct PublicCombatFingerprint {
+    members: Vec<(u64, bool, bool, bool, bool, u32, u32, u32)>,
+}
+
+fn public_contract_difficulty_ceiling(capabilities: &[CharacterCapability]) -> i32 {
+    capabilities.iter().filter(|row| row.melee || row.ranged).map(|row| {
+        1 + i32::from(row.heavy || row.half_armor)
+            + i32::from(row.precise || row.weapon_precision >= 1.0)
+    }).sum()
+}
+
+fn public_contract_is_eligible(difficulty: i32, ceiling: i32) -> bool {
+    difficulty > 0 && difficulty <= ceiling
+}
+
+fn public_combat_fingerprint(mut capabilities: Vec<CharacterCapability>) -> PublicCombatFingerprint {
+    capabilities.sort_by_key(|row| row.character_id);
+    PublicCombatFingerprint {
+        members: capabilities.into_iter().map(|row| (
+            row.character_id, row.melee, row.ranged, row.heavy || row.half_armor, row.precise,
+            (row.endurance.max(0.0) * 100.0).round() as u32,
+            (row.athletics.max(0.0) * 100.0).round() as u32,
+            (row.weapon_precision.max(0.0) * 100.0).round() as u32,
+        )).collect(),
+    }
+}
+
+fn generated_method_skill_fit(profile: &AgentProfile, method: &str) -> u32 {
+    let skills = &profile.initial_skills;
+    let hours = match method {
+        "approach_lead" | "interview" | "locate_contact" => skills.insight.max(skills.charm).max(skills.command),
+        "inspect_site" | "examine" | "analyze" => skills.physiology.max(skills.herbalism),
+        "search_area" | "reacquire_tracks" | "follow_tracks" | "watch" => skills.stealth,
+        "patrol" | "confront" => skills.sword.max(skills.axe).max(skills.bow).max(skills.crossbow),
+        _ => 0.0,
+    };
+    hours.max(0.0).min(100_000.0).round() as u32
+}
+
+fn generated_action_score(profile: &AgentProfile, action: &BackendInvestigationAction) -> (u8, u32, u16, u32, u32) {
+    let progress = if action.available { 3 }
+        else if action.can_travel_to_required_site { 2 }
+        else if projected_investigation_wait_minutes(&action.unavailable_reason_code, action.wait_minutes).is_some() { 1 }
+        else { 0 };
+    (
+        progress,
+        generated_method_skill_fit(profile, &action.method),
+        10_000_u16.saturating_sub(action.uncertainty_bps),
+        u32::MAX.saturating_sub(action.duration_max_minutes),
+        u32::MAX.saturating_sub(action.wait_minutes),
+    )
+}
+
+fn sort_generated_actions(profile: &AgentProfile, actions: &mut [BackendInvestigationAction]) {
+    actions.sort_by(|left, right| {
+        generated_action_score(profile, right)
+            .cmp(&generated_action_score(profile, left))
+            .then_with(|| left.action_id.cmp(&right.action_id))
+    });
+}
+
+fn role_rank(role: BuildRole) -> u8 {
+    match role {
+        BuildRole::FrontLine => 0, BuildRole::Skirmisher => 1, BuildRole::Ranged => 2,
+        BuildRole::Healer => 3, BuildRole::Devout => 4, BuildRole::Civilian => 5,
+    }
+}
+
+fn balanced_party_groups(profiles: &[AgentProfile], party_size: usize) -> Vec<Vec<usize>> {
+    let group_count = profiles.len().div_ceil(party_size);
+    if group_count == 0 { return Vec::new(); }
+    let mut targets = vec![profiles.len() / group_count; group_count];
+    for target in targets.iter_mut().take(profiles.len() % group_count) { *target += 1; }
+    let mut order = (0..profiles.len()).collect::<Vec<_>>();
+    order.sort_by_key(|&index| (role_rank(profiles[index].build.role), profiles[index].agent_id));
+    let mut groups = vec![Vec::new(); group_count];
+    let mut cursor = 0;
+    for index in order {
+        let group = (0..group_count).map(|offset| (cursor + offset) % group_count)
+            .find(|&group| groups[group].len() < targets[group])
+            .expect("party target capacity covers every profile");
+        groups[group].push(index);
+        cursor = (group + 1) % group_count;
+    }
+    for group in &mut groups {
+        group.sort_by_key(|&index| (profiles[index].build.activity_only, profiles[index].agent_id));
+    }
+    groups
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -763,6 +867,8 @@ fn format_quest_decision_detail(
     quest_propensity: f32,
     settlement_id: Option<&str>,
     offered_contracts: usize,
+    safe_offered_contracts: usize,
+    contract_difficulty_ceiling: i32,
     open_generated_cases: usize,
     projected_investigation_actions: usize,
     quest_path: &str,
@@ -771,7 +877,7 @@ fn format_quest_decision_detail(
     selection_reason: &str,
 ) -> String {
     format!(
-        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};open_generated_cases={open_generated_cases};projected_investigation_actions={projected_investigation_actions};quest_path={quest_path};quest_intended={quest_intended};quest_selected={quest_selected};selection_reason={}",
+        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};safe_offered_contracts={safe_offered_contracts};contract_difficulty_ceiling={contract_difficulty_ceiling};open_generated_cases={open_generated_cases};projected_investigation_actions={projected_investigation_actions};quest_path={quest_path};quest_intended={quest_intended};quest_selected={quest_selected};selection_reason={}",
         settlement_id.unwrap_or("none"),
         bounded_event_field(selection_reason),
     )

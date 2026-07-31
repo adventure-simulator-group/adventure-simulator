@@ -60,7 +60,10 @@ activity-only; ambition increases quest propensity. Bravery selects heavy front-
 endurance and both-arm strength make it viable, while fearful agents prefer ranged/light roles when
 their perception supports one. Followers still defer to the current leader's quest/activity decision;
 individual follower policy is applied to training, recovery, treatment, and equipment, which is a known
-party-decision limitation.
+party-decision limitation. Bootstrap distributes build roles deterministically across bounded
+party groups, then selects the lowest-ID non-Content member in each group as its founding leader
+when one exists. An all-Content group remains activity-only. Ordinary party reducers remain
+authoritative for joining and later leadership succession.
 
 Reports include a bounded decision trace, bounded periodic snapshots, terminal
 reason, wealth, final and gained skill hours, activity and leisure time,
@@ -99,8 +102,17 @@ autoresolves, stores loot, returns,
 turns in, liquidates party loot, withdraws the member's earned stake, purchases
 from the merchant, and equips an upgrade. Followers travel and run their own
 daily schedules. Defeat causes a retreat, bounded settlement convalescence, and
-a bounded retry; an incapacitated party is never autoresolved repeatedly in
-place.
+abandonment of the direct contract; the driver never gambles on a new autoresolve
+roll against an unchanged threat. A generated-case finale records a bounded
+fingerprint made only from subscribed public party capability rows and will not
+reattempt the same defeated threat until that fingerprint materially changes.
+
+Direct contracts are eligible only when their disclosed difficulty is at or
+below a conservative ceiling derived from the party's public combat-capability
+projection. Risk tolerance ranks only this eligible set. When offered contracts
+exist but none meets the ceiling, the trace records `no_safe_contract` and the
+party uses generated discovery or settlement activity instead; contract wording
+and hidden hostile authority are not policy inputs.
 
 Core-loop reports are explicitly tagged `spacetimedb_authoritative_core_loop`
 and retain the server origin, disposable database, claimed run nonce, generated
@@ -144,7 +156,20 @@ hunger, thirst, visible food and water, character minutes, and signed deltas,
 with `outcome=completed`. A rejected settlement-rest attempt
 instead emits one `outcome=failed` activity event before the run stops,
 containing its public pre-action state, effective plan and venue, stable stage,
-and safe error category without raw reducer text. Camp handling subscribes only
+and safe error category without raw reducer text. Random encounters use a
+deterministic safety floor over the server-projected choices: detour when it is
+offered, then an eligible run, then bandit surrender, and attack only when no
+protective response exists. Evacuation never attacks. The encounter event
+records the stable reason, evacuation flag, public run eligibility, and
+projected choice set.
+
+Generated investigation actions are ranked by a stable pure score. It considers
+projected availability and progress (perform, travel, or bounded wait), the
+owner profile's fit for the projected method, public uncertainty, public
+duration, and public wait. `action_id` is only the final tie-break. The policy
+reads no canonical generated-case rows or private hostile authority.
+
+Camp handling subscribes only
 to the public `party_journey` and `party_journey_itinerary` projections. At
 each stop it applies the same remaining-interval overlap as the web UI to
 `completed_elapsed_minutes..total_elapsed_minutes`, rests exactly to the end of

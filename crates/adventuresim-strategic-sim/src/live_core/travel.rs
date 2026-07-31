@@ -1,4 +1,47 @@
 impl LiveRunner {
+    pub(super) fn public_party_contract_ceiling(&self, party_id: &str) -> i32 {
+        let living_ids = self.connection.db.backend_characters().iter()
+            .filter(|character| character.alive)
+            .map(|character| character.id)
+            .collect::<HashSet<_>>();
+        let member_ids = self.connection.db.party_member().iter()
+            .filter(|member| member.party_id == party_id)
+            .map(|member| member.character_id)
+            .filter(|character_id| living_ids.contains(character_id))
+            .collect::<HashSet<_>>();
+        let capabilities = self.connection.db.backend_character_capabilities().iter()
+            .filter(|row| member_ids.contains(&row.character_id))
+            .collect::<Vec<_>>();
+        public_contract_difficulty_ceiling(&capabilities)
+    }
+
+    pub(super) fn public_party_combat_fingerprint(
+        &self,
+        party_id: &str,
+    ) -> PublicCombatFingerprint {
+        let living_ids = self.connection.db.backend_characters().iter()
+            .filter(|character| character.alive)
+            .map(|character| character.id)
+            .collect::<HashSet<_>>();
+        let member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|member| member.party_id == party_id)
+            .map(|member| member.character_id)
+            .filter(|character_id| living_ids.contains(character_id))
+            .collect::<HashSet<_>>();
+        public_combat_fingerprint(
+            self.connection
+                .db
+                .backend_character_capabilities()
+                .iter()
+                .filter(|row| member_ids.contains(&row.character_id))
+                .collect(),
+        )
+    }
+
     pub(super) fn provision_case_site_journey(
         &mut self,
         party_id: &str,
@@ -568,12 +611,12 @@ impl LiveRunner {
                     self.metrics.encounter_escape_ineligible += 1;
                 }
                 let evacuation = self.public_journey_is_evacuation(party_id);
-                let choice = select_expedition_encounter_choice(
+                let policy_choice = select_expedition_encounter_choice(
                     &encounter.available_choices,
-                    encounter.roll_index,
                     evacuation,
                 )
                 .ok_or("encounter offers no protective evacuation choice")?;
+                let choice = policy_choice.choice;
                 match choice.as_str() {
                     "sneak" => self.metrics.encounter_sneaks += 1,
                     "detour" => self.metrics.encounter_detours += 1,
@@ -626,7 +669,12 @@ impl LiveRunner {
                 self.event(
                     self.current_leader(party_id).map_or(0, |(_, agent)| agent),
                     CoreLoopEventKind::Encounter,
-                    format!("id={encounter_id};choice={choice};outcome={resolved_outcome:?}"),
+                    format!(
+                        "id={encounter_id};choice={choice};reason={};evacuation={evacuation};run_eligible={};available_choices={};outcome={resolved_outcome:?}",
+                        policy_choice.reason,
+                        encounter.run_ineligibility.is_none(),
+                        encounter.available_choices.join(","),
+                    ),
                 );
                 if self.current_leader(party_id).is_none() {
                     return self.record_journey_hold(
@@ -954,6 +1002,8 @@ impl LiveRunner {
             .iter()
             .filter(|q| q.settlement_id == *settlement && q.status == ContractStatus::Offered)
             .collect();
+        let ceiling = self.public_party_contract_ceiling(&party.id);
+        quests.retain(|quest| public_contract_is_eligible(quest.difficulty, ceiling));
         quests.sort_by_key(|q| {
             let risk_target = (profile.risk_tolerance * 10.0).round() as i32;
             ((q.difficulty - risk_target).abs(), q.id.clone())
