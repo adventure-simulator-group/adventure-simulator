@@ -608,8 +608,8 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             ),
         ] {
             if present {
-                weapon_precision = weapon_precision
-                    .max(skill.capped_rank_for_aptitude(hours, spec.attributes.agility));
+                weapon_precision =
+                    weapon_precision.max(skill.capped_training_rank(hours, &spec.attributes));
             }
         }
         let capability = CharacterCapability {
@@ -632,28 +632,21 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             slash,
             pierce,
             athletics: Skill::Dodge
-                .capped_rank_for_aptitude(spec.skills.dodge, spec.attributes.agility)
-                .max(
-                    Skill::Balance
-                        .capped_rank_for_aptitude(spec.skills.balance, spec.attributes.agility),
-                ),
+                .capped_training_rank(spec.skills.dodge, &spec.attributes)
+                .max(Skill::Balance.capped_training_rank(spec.skills.balance, &spec.attributes)),
             endurance: spec.attributes.endurance,
             physiology: Skill::Physiology
-                .capped_rank_for_aptitude(spec.skills.physiology, spec.attributes.intelligence),
-            knife: Skill::Knife
-                .capped_rank_for_aptitude(spec.skills.knife, spec.attributes.agility),
+                .capped_training_rank(spec.skills.physiology, &spec.attributes),
+            knife: Skill::Knife.capped_training_rank(spec.skills.knife, &spec.attributes),
             tailoring: Skill::Tailoring
-                .capped_rank_for_aptitude(spec.skills.tailoring, spec.attributes.agility),
-            surgery: Skill::Surgery.capped_rank_for_aptitude(
+                .capped_training_rank(spec.skills.tailoring, &spec.attributes),
+            surgery: Skill::Surgery.capped_training_rank(
                 effective_skill_hours.effective_skill_hours(Skill::Surgery),
-                spec.attributes.intelligence,
+                &spec.attributes,
             ),
-            command: Skill::Command
-                .capped_rank_for_aptitude(spec.skills.command, spec.attributes.instinct),
-            religion: Skill::Religion.capped_rank_for_aptitude(
-                spec.skills.religion.maximum_effective(),
-                spec.attributes.intelligence,
-            ),
+            command: Skill::Command.capped_training_rank(spec.skills.command, &spec.attributes),
+            religion: Skill::Religion
+                .capped_training_rank(spec.skills.religion.maximum_effective(), &spec.attributes),
             weapon_precision,
         };
         let organization_memberships = spec
@@ -926,6 +919,26 @@ mod creation_tests {
         adult.skills.tailoring = 0.0;
         let direct_only = CandidatePresentation::from(&adult).capability.surgery;
         assert!(correlated > direct_only);
+    }
+
+    #[test]
+    fn candidate_surgery_capability_uses_the_weighted_governing_aptitude() {
+        let mut candidate = roster(
+            adventuresim_core::starting_character::GENERATOR_VERSION,
+            "00112233445566778899aabbccddeeff",
+            StartingAgeTier::Young,
+        )
+        .unwrap()
+        .remove(0);
+        candidate.attributes.intelligence = 4.0;
+        candidate.attributes.instinct = 1.0;
+        candidate.attributes.agility = 3.5;
+        candidate.skills.surgery = adventuresim_core::skill::Skill::Surgery.hours_for_rank(4.0);
+        candidate.skills.knife = 0.0;
+        candidate.skills.tailoring = 0.0;
+
+        let surgery = CandidatePresentation::from(&candidate).capability.surgery;
+        assert!((surgery - 3.15).abs() < 0.001);
     }
 
     #[test]

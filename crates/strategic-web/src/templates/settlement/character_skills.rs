@@ -1,5 +1,6 @@
 use adventuresim_core::{
     activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
+    body::BodyPart,
     prelude::{PlayerSkills, Skill},
     skill::aptitude_training_multiplier,
     strategic_schedule::{
@@ -194,17 +195,7 @@ pub(super) fn character_summary_icons(
     };
     let intelligence = finite_rank(attributes.intelligence);
     let instinct = finite_rank(attributes.instinct);
-    let arm_agility =
-        finite_rank((attributes.left_arm_agility + attributes.right_arm_agility) * 0.5);
-    let leg_agility =
-        finite_rank((attributes.left_leg_agility + attributes.right_leg_agility) * 0.5);
-    let all_agility = finite_rank(
-        (attributes.left_arm_agility
-            + attributes.right_arm_agility
-            + attributes.left_leg_agility
-            + attributes.right_leg_agility)
-            * 0.25,
-    );
+    let surgery_aptitude = character_aptitude(attributes, Skill::Surgery);
     let view = CharacterSkillHours(skills);
     let mut icons = Vec::new();
 
@@ -220,9 +211,10 @@ pub(super) fn character_summary_icons(
         ("Throw", "throwing-ball", Skill::Throw),
     ]) {
         if weight > 0.0 {
-            let rank = finite_rank(
-                skill.capped_rank_for_aptitude(view.effective_skill_hours(skill), arm_agility),
-            );
+            let rank = finite_rank(skill.capped_rank_for_aptitude(
+                view.effective_skill_hours(skill),
+                character_aptitude(attributes, skill),
+            ));
             let label = format!("{label} — {rank:.1}");
             icons.push(summary_mask_icon(&label, &label, rank, "skills", icon));
         }
@@ -240,14 +232,14 @@ pub(super) fn character_summary_icons(
         } else {
             ("No armor", "armor-coverage-0")
         };
-        let dodge = finite_rank(
-            Skill::Dodge
-                .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Dodge), leg_agility),
-        );
-        let block = finite_rank(
-            Skill::Block
-                .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Block), arm_agility),
-        );
+        let dodge = finite_rank(Skill::Dodge.capped_rank_for_aptitude(
+            view.effective_skill_hours(Skill::Dodge),
+            character_aptitude(attributes, Skill::Dodge),
+        ));
+        let block = finite_rank(Skill::Block.capped_rank_for_aptitude(
+            view.effective_skill_hours(Skill::Block),
+            character_aptitude(attributes, Skill::Block),
+        ));
         let (defense, rank) = if block > dodge {
             ("Block", block)
         } else {
@@ -266,33 +258,31 @@ pub(super) fn character_summary_icons(
     let social_entries = [
         (
             "Insight",
-            finite_rank(
-                Skill::Insight
-                    .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Insight), instinct),
-            ),
+            finite_rank(Skill::Insight.capped_rank_for_aptitude(
+                view.effective_skill_hours(Skill::Insight),
+                character_aptitude(attributes, Skill::Insight),
+            )),
         ),
         (
             "Charm",
-            finite_rank(
-                Skill::Charm
-                    .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Charm), instinct),
-            ),
+            finite_rank(Skill::Charm.capped_rank_for_aptitude(
+                view.effective_skill_hours(Skill::Charm),
+                character_aptitude(attributes, Skill::Charm),
+            )),
         ),
         (
             "Command",
-            finite_rank(
-                Skill::Command
-                    .capped_rank_for_aptitude(view.effective_skill_hours(Skill::Command), instinct),
-            ),
+            finite_rank(Skill::Command.capped_rank_for_aptitude(
+                view.effective_skill_hours(Skill::Command),
+                character_aptitude(attributes, Skill::Command),
+            )),
         ),
         (
             "Deception",
-            finite_rank(
-                Skill::Deception.capped_rank_for_aptitude(
-                    view.effective_skill_hours(Skill::Deception),
-                    instinct,
-                ),
-            ),
+            finite_rank(Skill::Deception.capped_rank_for_aptitude(
+                view.effective_skill_hours(Skill::Deception),
+                character_aptitude(attributes, Skill::Deception),
+            )),
         ),
     ];
     let qualifying_social = social_entries
@@ -300,7 +290,10 @@ pub(super) fn character_summary_icons(
         .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
         .collect::<Vec<_>>();
     if !qualifying_social.is_empty() {
-        let rank = finite_rank(social_family_rank(skills, instinct));
+        let rank = finite_rank(social_family_rank(
+            skills,
+            character_aptitude(attributes, Skill::Insight),
+        ));
         icons.push(summary_mask_icon(
             format!("Social — {rank:.1}"),
             qualifying_tooltip("Social", &qualifying_social),
@@ -316,7 +309,7 @@ pub(super) fn character_summary_icons(
         "Physiology",
         "physiology",
         Skill::Physiology,
-        intelligence,
+        character_aptitude(attributes, Skill::Physiology),
     );
     push_standalone_summary_icon(
         &mut icons,
@@ -324,7 +317,7 @@ pub(super) fn character_summary_icons(
         "Cooking",
         "cooking",
         Skill::Cooking,
-        intelligence,
+        character_aptitude(attributes, Skill::Cooking),
     );
 
     let primary = primary_religion(skills, religion_context);
@@ -335,17 +328,17 @@ pub(super) fn character_summary_icons(
                 religion.label(),
                 finite_rank(Skill::Religion.capped_rank_for_aptitude(
                     skills.religion_hours.effective(religion),
-                    intelligence,
+                    character_aptitude(attributes, Skill::Religion),
                 )),
             )
         })
         .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
         .collect::<Vec<_>>();
     if !religion_entries.is_empty() {
-        let rank = finite_rank(
-            Skill::Religion
-                .capped_rank_for_aptitude(skills.religion_hours.effective(primary), intelligence),
-        );
+        let rank = finite_rank(Skill::Religion.capped_rank_for_aptitude(
+            skills.religion_hours.effective(primary),
+            character_aptitude(attributes, Skill::Religion),
+        ));
         icons.push(SummaryIcon {
             label: format!("{} religion — {rank:.1}", primary.label()),
             tooltip: qualifying_tooltip("Religion", &religion_entries),
@@ -361,18 +354,17 @@ pub(super) fn character_summary_icons(
                 category.label(),
                 finite_rank(Skill::Bestiary.capped_rank_for_aptitude(
                     skills.bestiary_hours.effective(category),
-                    intelligence,
+                    character_aptitude(attributes, Skill::Bestiary),
                 )),
             )
         })
         .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
         .collect::<Vec<_>>();
     if !bestiary_entries.is_empty() {
-        let rank =
-            finite_rank(Skill::Bestiary.capped_rank_for_aptitude(
-                skills.bestiary_hours.aggregate_effective(),
-                intelligence,
-            ));
+        let rank = finite_rank(Skill::Bestiary.capped_rank_for_aptitude(
+            skills.bestiary_hours.aggregate_effective(),
+            character_aptitude(attributes, Skill::Bestiary),
+        ));
         icons.push(summary_mask_icon(
             format!("Bestiary — {rank:.1}"),
             qualifying_tooltip("Bestiary", &bestiary_entries),
@@ -441,7 +433,7 @@ pub(super) fn character_summary_icons(
         "Stealth",
         "stealth",
         Skill::Stealth,
-        all_agility,
+        character_aptitude(attributes, Skill::Stealth),
     );
 
     let terrain_entries = [
@@ -456,15 +448,19 @@ pub(super) fn character_summary_icons(
     .map(|(label, skill)| {
         (
             label,
-            finite_rank(
-                skill.capped_rank_for_aptitude(view.effective_skill_hours(skill), instinct),
-            ),
+            finite_rank(skill.capped_rank_for_aptitude(
+                view.effective_skill_hours(skill),
+                character_aptitude(attributes, skill),
+            )),
         )
     })
     .filter(|(_, rank)| *rank >= SUMMARY_SKILL_THRESHOLD)
     .collect::<Vec<_>>();
     if !terrain_entries.is_empty() {
-        let rank = finite_rank(terrain_family_rank(skills, instinct));
+        let rank = finite_rank(terrain_family_rank(
+            skills,
+            character_aptitude(attributes, Skill::TerrainPlains),
+        ));
         icons.push(summary_mask_icon(
             format!("Terrain — {rank:.1}"),
             qualifying_tooltip("Terrain", &terrain_entries),
@@ -480,7 +476,7 @@ pub(super) fn character_summary_icons(
         "Surgery",
         "surgeon",
         Skill::Surgery,
-        intelligence,
+        surgery_aptitude,
     );
     push_standalone_summary_icon(
         &mut icons,
@@ -488,7 +484,7 @@ pub(super) fn character_summary_icons(
         "Tailoring",
         "sewing-needle",
         Skill::Tailoring,
-        arm_agility,
+        character_aptitude(attributes, Skill::Tailoring),
     );
     push_standalone_summary_icon(
         &mut icons,
@@ -496,7 +492,7 @@ pub(super) fn character_summary_icons(
         "Smithing",
         "smithing",
         Skill::Smithing,
-        arm_agility,
+        character_aptitude(attributes, Skill::Smithing),
     );
     icons
 }
@@ -677,16 +673,16 @@ impl ActivityPreviewRates {
                 BookTarget::Religion { religion } => Some((
                     Skill::Religion.capped_rank_for_aptitude(
                         skills.religion_hours.effective(*religion),
-                        attributes.intelligence,
+                        character_aptitude(attributes, Skill::Religion),
                     ),
-                    attributes.intelligence,
+                    character_aptitude(attributes, Skill::Religion),
                 )),
                 BookTarget::Bestiary { category } => Some((
                     Skill::Bestiary.capped_rank_for_aptitude(
                         skills.bestiary_hours.effective(*category),
-                        attributes.intelligence,
+                        character_aptitude(attributes, Skill::Bestiary),
                     ),
-                    attributes.intelligence,
+                    character_aptitude(attributes, Skill::Bestiary),
                 )),
                 BookTarget::Terrain { terrain } => {
                     let skill = match terrain.as_str() {
@@ -910,16 +906,19 @@ fn training_target_skill(
 }
 
 fn character_aptitude(attributes: &CharacterAttributes, skill: Skill) -> f32 {
-    match skill.governing_aptitude_kind() {
-        adventuresim_core::skill::GoverningAptitude::Intelligence => attributes.intelligence,
-        adventuresim_core::skill::GoverningAptitude::Instinct => attributes.instinct,
-        adventuresim_core::skill::GoverningAptitude::Agility(weights) => {
-            attributes.left_arm_agility * weights.left_arm
-                + attributes.right_arm_agility * weights.right_arm
-                + attributes.left_leg_agility * weights.left_leg
-                + attributes.right_leg_agility * weights.right_leg
-        }
-    }
+    skill
+        .governing_aptitudes()
+        .resolve(
+            attributes.intelligence,
+            attributes.instinct,
+            |part| match part {
+                BodyPart::LeftArm => attributes.left_arm_agility,
+                BodyPart::RightArm => attributes.right_arm_agility,
+                BodyPart::LeftLeg => attributes.left_leg_agility,
+                BodyPart::RightLeg => attributes.right_leg_agility,
+                _ => 0.0,
+            },
+        )
 }
 #[derive(Clone, Copy, Default)]
 pub(crate) struct CharacterSheetActions<'a> {
@@ -1060,6 +1059,8 @@ fn skills_table(
         (value.left_leg_agility + value.right_leg_agility) * 0.5
     });
     let all_agility = (arm_agility + leg_agility) * 0.5;
+    let surgery_aptitude =
+        attributes.map_or(0.0, |value| character_aptitude(value, Skill::Surgery));
     let instinct_training = aptitude_training_multiplier(instinct);
     let intelligence_training = aptitude_training_multiplier(intelligence);
     let arm_training = aptitude_training_multiplier(arm_agility);
@@ -1150,7 +1151,7 @@ fn skills_table(
                             open: actions.foraging_open,
                         }),
                     ))
-                    @if skills.surgery_hours > 0.0 { (party_skill_row(skills, "Surgery", "surgeon", Skill::Surgery, intelligence, head_health, schedule.is_some(), None)) }
+                    @if skills.surgery_hours > 0.0 { (party_skill_row(skills, "Surgery", "surgeon", Skill::Surgery, surgery_aptitude, head_health, schedule.is_some(), None)) }
                     @if skills.tailoring_hours > 0.0 { (party_skill_row(skills, "Tailoring", "sewing-needle", Skill::Tailoring, arm_agility, upper_health, schedule.is_some(), None)) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row(skills, "Smithing", "smithing", Skill::Smithing, arm_agility, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
@@ -1472,7 +1473,7 @@ fn religion_skill_rows(
 fn religion_tooltip(skills: &CharacterSkills, religion: OfficialReligion) -> SkillTooltip {
     SkillTooltip::new(
         religion.label(),
-        Skill::Religion.governing_aptitude_kind().label(),
+        Skill::Religion.governing_aptitudes().description(),
         skills.religion_hours.direct(religion),
         skills.religion_hours.effective(religion),
         OfficialReligion::ALL
@@ -1580,7 +1581,7 @@ fn bestiary_skill_rows(
 fn bestiary_family_tooltip(skills: &CharacterSkills) -> SkillTooltip {
     SkillTooltip::aggregate(
         Skill::Bestiary.label(),
-        Skill::Bestiary.governing_aptitude_kind().label(),
+        Skill::Bestiary.governing_aptitudes().description(),
         skills.bestiary_hours.total_direct() / BestiaryCategory::ALL.len() as f32,
         skills.bestiary_hours.aggregate_effective(),
     )
@@ -1589,7 +1590,7 @@ fn bestiary_family_tooltip(skills: &CharacterSkills) -> SkillTooltip {
 fn bestiary_tooltip(skills: &CharacterSkills, category: BestiaryCategory) -> SkillTooltip {
     SkillTooltip::new(
         category.label(),
-        Skill::Bestiary.governing_aptitude_kind().label(),
+        Skill::Bestiary.governing_aptitudes().description(),
         skills.bestiary_hours.direct(category),
         skills.bestiary_hours.effective(category),
         BestiaryCategory::ALL
@@ -1742,7 +1743,7 @@ fn combat_meta_group(
         / relevant.len().max(1) as f32;
     let governed_by = if relevant
         .iter()
-        .all(|entry| entry.2.governing_aptitude_kind().label() == "Agility")
+        .all(|entry| entry.2.governing_aptitudes().description() == "Agility")
     {
         "Agility"
     } else {
@@ -1889,7 +1890,7 @@ impl SkillTooltip {
     fn direct(skill: Skill, trained_hours: f32) -> Self {
         Self::new(
             skill.label(),
-            skill.governing_aptitude_kind().label(),
+            skill.governing_aptitudes().description(),
             trained_hours,
             trained_hours,
             std::iter::empty::<(&str, f32)>(),
@@ -1900,7 +1901,7 @@ impl SkillTooltip {
         let view = CharacterSkillHours(skills);
         Self::new(
             skill.label(),
-            skill.governing_aptitude_kind().label(),
+            skill.governing_aptitudes().description(),
             view.skill_hours_trained(skill),
             view.effective_skill_hours(skill),
             skill
@@ -2558,6 +2559,36 @@ mod tests {
     }
 
     #[test]
+    fn surgery_aptitude_and_summary_use_the_shared_weighted_blend() {
+        let mut attributes = test_attributes(1.0);
+        attributes.intelligence = 2.0;
+        attributes.instinct = 4.0;
+        attributes.left_arm_agility = 5.0;
+        attributes.right_arm_agility = 4.0;
+        attributes.left_leg_agility = 0.5;
+        attributes.right_leg_agility = 1.5;
+        let aptitude = character_aptitude(&attributes, Skill::Surgery);
+        assert!((aptitude - 3.65).abs() < 0.001);
+
+        let skills = CharacterSkills {
+            surgery_hours: Skill::Surgery.hours_for_rank(4.0),
+            ..Default::default()
+        };
+        let icons = character_summary_icons(
+            None,
+            Some(&attributes),
+            Some(&skills),
+            CombatTrainingProfile::default(),
+            None,
+        );
+        let surgery = icons
+            .iter()
+            .find(|icon| icon.label.starts_with("Surgery"))
+            .unwrap();
+        assert!((surgery.rank - 3.65).abs() < 0.001);
+    }
+
+    #[test]
     fn healthy_summary_orders_unique_weapon_leaves_before_armor_and_noncombat() {
         let skills = CharacterSkills {
             sword_hours: 50_000.0,
@@ -3157,6 +3188,7 @@ mod tests {
         .into_string();
 
         assert!(rendered.contains("&quot;name&quot;:&quot;Surgery&quot;"));
+        assert!(rendered.contains("50% arm Agility, 30% Intelligence, 20% Instinct"));
         assert!(!rendered.contains("Anatomy"));
         assert!(rendered.contains("0.0 hours from correlated skills:"));
         assert!(rendered.contains("Knife | 15%"));
