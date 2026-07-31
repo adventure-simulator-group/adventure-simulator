@@ -16,8 +16,7 @@ use crate::time::character_time;
 const NPC_CAUSAL_SCHEDULE_ID: u64 = 0;
 const NPC_CAUSAL_INTERVAL_MICROS: i64 = 5_000_000;
 pub const MAX_NPCS_PER_CAUSAL_TICK: usize = 64;
-pub const MAX_WEDDINGS_PER_CAUSAL_TICK: usize = 32;
-pub const MAX_BIRTHS_PER_CAUSAL_TICK: usize = 32;
+pub const MAX_LIFECYCLE_EVENTS_PER_CAUSAL_TICK: usize = 64;
 
 #[derive(Clone, Debug)]
 #[table(accessor = npc_causal_schedule, scheduled(run_npc_causal_tick))]
@@ -75,15 +74,10 @@ pub fn run_npc_causal_tick(
     }
     let official_minute = crate::time::refresh_clock(ctx)?;
 
-    crate::relationship::settle_due_weddings_global(
+    crate::relationship::settle_due_lifecycle_events_global(
         ctx,
         official_minute,
-        MAX_WEDDINGS_PER_CAUSAL_TICK,
-    )?;
-    crate::relationship::settle_due_births_global(
-        ctx,
-        official_minute,
-        MAX_BIRTHS_PER_CAUSAL_TICK,
+        MAX_LIFECYCLE_EVENTS_PER_CAUSAL_TICK,
     )?;
 
     for time in stable_npc_batch(ctx, official_minute) {
@@ -101,8 +95,7 @@ mod tests {
     fn scheduler_has_hard_bounded_batches_and_one_day_steps() {
         let source = include_str!("npc_causal.rs");
         assert!(source.contains("truncate(MAX_NPCS_PER_CAUSAL_TICK)"));
-        assert!(source.contains("MAX_WEDDINGS_PER_CAUSAL_TICK"));
-        assert!(source.contains("MAX_BIRTHS_PER_CAUSAL_TICK"));
+        assert!(source.contains("MAX_LIFECYCLE_EVENTS_PER_CAUSAL_TICK"));
         assert!(source.contains("time.minutes.saturating_add(MINUTES_PER_DAY)"));
     }
 
@@ -120,8 +113,7 @@ mod tests {
             .split("pub fn run_npc_causal_tick")
             .nth(1)
             .expect("scheduled reducer");
-        assert!(events.contains("settle_due_weddings_global"));
-        assert!(events.contains("settle_due_births_global"));
+        assert!(events.contains("settle_due_lifecycle_events_global"));
         assert!(!events.contains("require_strategic_character_authority"));
     }
 

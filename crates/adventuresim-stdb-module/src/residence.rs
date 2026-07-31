@@ -334,6 +334,7 @@ fn admission_relationship_authorized(
     ctx: &ReducerContext,
     residence_character_id: u64,
     occupant_id: u64,
+    actor_minute: u64,
 ) -> bool {
     use crate::relationship::KinshipKind;
 
@@ -346,10 +347,15 @@ fn admission_relationship_authorized(
         .character_id()
         .find(residence_character_id)
         .zip(ctx.db.household_member().character_id().find(occupant_id))
-        .is_some_and(|(holder, occupant)| holder.household_id == occupant.household_id);
+        .is_some_and(|(holder, occupant)| {
+            holder.household_id == occupant.household_id
+                && holder.joined_minute <= actor_minute
+                && occupant.joined_minute <= actor_minute
+        });
     let family = ctx.db.character_kinship().iter().any(|edge| {
         edge.subject_id == residence_character_id
             && edge.related_id == occupant_id
+            && edge.established_minute <= actor_minute
             && matches!(
                 edge.kind,
                 KinshipKind::Spouse | KinshipKind::Parent | KinshipKind::Child
@@ -368,6 +374,12 @@ fn validate_public_admission(
 
     let holder = crate::character::require_living_character(ctx, residence.character_id)?;
     let occupant = crate::character::require_living_character(ctx, occupant_id)?;
+    let actor_minute = crate::relationship::enforce_temporal_scope(
+        ctx,
+        residence.character_id,
+        Some(occupant_id),
+        crate::relationship::TemporalScope::PairwiseSoft,
+    )?;
     if holder.current_settlement_id.as_deref() != Some(&residence.settlement_id)
         || occupant.current_settlement_id.as_deref() != Some(&residence.settlement_id)
     {
@@ -376,12 +388,13 @@ fn validate_public_admission(
     let dependent = ctx.db.character_kinship().iter().any(|edge| {
         edge.subject_id == residence.character_id
             && edge.related_id == occupant_id
+            && edge.established_minute <= actor_minute
             && matches!(edge.kind, KinshipKind::Parent | KinshipKind::Child)
     });
     if occupant.age_years < ADULT_AGE_YEARS && !dependent {
         return Err("Only an adult or dependent child may occupy a residence".into());
     }
-    if !admission_relationship_authorized(ctx, residence.character_id, occupant_id) {
+    if !admission_relationship_authorized(ctx, residence.character_id, occupant_id, actor_minute) {
         return Err("Only an active household member or immediate family may be admitted".into());
     }
     if ctx

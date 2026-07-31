@@ -1833,6 +1833,12 @@ fn finalize_storefront_trade_impl(
     party_scope: bool,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
+    crate::relationship::enforce_temporal_scope(
+        ctx,
+        character_id,
+        Some(provider_resident_character_id),
+        crate::relationship::TemporalScope::PairwiseSoft,
+    )?;
     let (storefront, location_id) = merchant_storefront(&service_id)?;
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()

@@ -360,6 +360,19 @@ pub fn advance_character_time(
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
     let starting_minute = character_time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_time(ctx, character_id, first)? {
+            return Ok(false);
+        }
+        return advance_character_time(ctx, character_id, minutes.saturating_sub(first));
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) =
@@ -410,6 +423,24 @@ fn advance_character_time_in_plan(
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
     let starting_minute = character_time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_time_in_plan(ctx, character_id, first, plan)? {
+            return Ok(false);
+        }
+        return advance_character_time_in_plan(
+            ctx,
+            character_id,
+            minutes.saturating_sub(first),
+            plan,
+        );
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
@@ -636,6 +667,19 @@ pub fn advance_character_wait_time(
         .find(character_id)
         .ok_or("Character time record not found")?;
     let starting_minute = time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_wait_time(ctx, character_id, first)? {
+            return Ok(false);
+        }
+        return advance_character_wait_time(ctx, character_id, minutes.saturating_sub(first));
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) =
@@ -697,6 +741,24 @@ pub fn advance_character_wait_time_in_plan(
         .find(character_id)
         .ok_or("Character time record not found")?;
     let starting_minute = time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_wait_time_in_plan(ctx, character_id, first, plan)? {
+            return Ok(false);
+        }
+        return advance_character_wait_time_in_plan(
+            ctx,
+            character_id,
+            minutes.saturating_sub(first),
+            plan,
+        );
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
@@ -3511,5 +3573,37 @@ mod tests {
         assert!((health_recovered_per_day(2.5) - 0.035).abs() < f32::EPSILON);
         assert!((health_recovered_per_day(5.0) - 0.06).abs() < f32::EPSILON);
         assert!((health_recovered_per_day(8.0) - 0.06).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn authoritative_time_paths_split_at_lifecycle_boundaries() {
+        let source = include_str!("time.rs");
+        for (start, end) in [
+            (
+                "pub fn advance_character_time",
+                "fn advance_character_time_in_plan",
+            ),
+            (
+                "fn advance_character_time_in_plan",
+                "/// Actual strategic movement",
+            ),
+            (
+                "pub fn advance_character_wait_time",
+                "pub fn advance_character_wait_time_in_plan",
+            ),
+            (
+                "pub fn advance_character_wait_time_in_plan",
+                "fn default_schedule",
+            ),
+        ] {
+            let path = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect("time advancement path");
+            assert!(path.contains("next_lifecycle_boundary"));
+            assert!(path.contains("minutes.saturating_sub(first)"));
+            assert!(path.contains("settle_lifecycle_after_character_time_write"));
+        }
     }
 }

@@ -61,13 +61,23 @@ not a parallel clock. NPC policy advancement rejects retroactive targets and
 atomically settles due residence billing, weddings, and births after writing
 the new frontier; a failed settlement rolls back the clock write with it.
 The module seeds one private recurring causal processor. Each invocation first
-settles bounded wedding and birth batches in effective-minute/identity order,
-without waiting for a participant login, then selects at most 64 living NPCs
+settles one bounded queue containing both weddings and births, ordered by
+`(effective minute, event-kind precedence, event identity)` without waiting
+for a participant login. Weddings precede births when they share an exact
+minute. Indexed due-minute scans are capped before merging, and a malformed
+gameplay event is terminalized with a durable failure receipt so it cannot
+stall later events or the recurring schedule. The processor then selects at
+most 64 living NPCs
 by `(CharacterTime, character id)` and advances each through at most one day of
 its ordinary stationary schedule. Dead characters remain frozen. Scheduler
 jitter therefore changes catch-up latency, not durable ordering or step size.
 Actor-local dialogue, trade, guild, quest, and rest interactions may remain
-asynchronous when they do not mutate that canonical NPC state.
+asynchronous when they do not mutate that canonical NPC state. Those reducers
+declare their temporal scope and never move the target's personal clock.
+Authoritative travel and stationary time paths split an actor interval at the
+next wedding, birth, or marriage boundary. Globally materialized future facts
+are filtered by effective minute, so pre-ceremony leisure and household actions
+cannot observe a future marriage.
 
 Every character saves one global 24-hour downtime plan with integer-minute allocations for activities; moving never edits that plan. At each execution boundary the server makes an effective copy. Every 15-minute segment assigned to an unavailable activity is independently reassigned to another available non-Leisure activity already present in the plan, with selection probability proportional to that activity's saved minutes. If there is no such activity, the segment remains unallocated Leisure. The character ID seeds these draws so authoritative execution and the schedule preview agree without persisting a second plan. Thievery is available only inside settlements, Raiding only at stationary named locations outside settlements (currently positive-distance case sites that are not incident sites), and Carousing only in settlements whose economy provides an inn. Training, income, Morale, reputation, fatigue, restorative Leisure, and incident risk all use this effective copy. Walking advances personal time and travel condition but never trains skills or performs scheduled activities. Journey-camp rest retains its existing camp-safe rules and offers no immediate activity controls. The pure training and activity calculations are shared with the native strategic simulation harness; the harness uses repeated one-day actions as its canonical cadence. A live bulk rest evaluates one aggregate outcome and at most one incident interruption, so rounded activity income and incidents can differ from an otherwise equivalent sequence of one-day rests; bulk-rest strategy parity remains follow-up work.
 

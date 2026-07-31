@@ -201,6 +201,12 @@ pub fn join_organization(
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::time::initialize_character_time(ctx, character_id)?;
+    crate::relationship::enforce_temporal_scope(
+        ctx,
+        character_id,
+        None,
+        crate::relationship::TemporalScope::Institutional,
+    )?;
     let definition = require_local_chapter(ctx, character_id, &organization_id)?;
     if membership(ctx, character_id, &organization_id).is_some() {
         return Ok(());

@@ -28,6 +28,12 @@ pub fn start_dialogue(
     let npc_character_id = npc_actor_id
         .parse::<u64>()
         .map_err(|_| "Dialogue NPC identity is invalid")?;
+    crate::relationship::enforce_temporal_scope(
+        ctx,
+        character_id,
+        Some(npc_character_id),
+        crate::relationship::TemporalScope::PairwiseSoft,
+    )?;
     let npc = crate::settlement_population::resolve_settlement_resident(ctx, npc_character_id)
         .ok_or("Dialogue actor is not a persistent settlement NPC")?;
     if npc.home_settlement_id != settlement_id {
