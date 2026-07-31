@@ -3556,10 +3556,17 @@ button.party-portrait-action {
 
 .incapacitation-sources {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem 0.7rem;
   margin-top: 0.65rem;
 }
+
+.incapacitation-morale {
+  grid-column: 1 / -1;
+  padding-right: 0;
+  padding-left: 0;
+}
+.incapacitation-morale .morale-meter-heading > .metric-label { font-size: .85rem; }
 
 .incapacitation-source {
   min-width: 0;
@@ -5759,26 +5766,32 @@ body.chat-resizing {
   .strategic-map-control { width: 2.75rem; height: 2.75rem; }
 }
 @media (prefers-reduced-motion: reduce) { .strategic-map-svg { scroll-behavior: auto; } }
-.filth-status {
-  position: relative; z-index: 2; width: auto; margin: -.95rem .18rem 0; padding-top: .1rem; outline: none;
-}
 .filth-status-label { margin-bottom: .25rem; font-size: var(--font-size-xs); }
 .filth-track { display: flex; height: .55rem; overflow: hidden; border: 1px solid var(--border-light); border-radius: 999px; background: var(--bg-tertiary); }
 .filth-segment { display: block; min-width: 0; }
 .filth-dirt { background: #76552e; }
 .filth-blood { background: #8e2020; }
-.coating-status { position: relative; margin-top: .75rem; min-height: 2.75rem; }
+.coating-status { position: relative; margin-top: .75rem; }
+.coating-track-stack { display: grid; align-items: center; }
+.coating-track-stack > * { grid-area: 1 / 1; }
 .wetness-status { position: relative; z-index: 1; outline: none; }
-.wetness-status-label { margin-bottom: .1rem; font-size: var(--font-size-xs); }
 .wetness-track { display: block; height: 1rem; overflow: hidden; border: 1px solid #70a9c3; border-radius: 999px; background: rgba(40, 75, 91, .45); }
 .wetness-track > span { display: block; height: 100%; background: #3187ad; }
-.temperature-strain { margin-top: .5rem; }
+.filth-status { position: relative; z-index: 2; margin: 0 .18rem; outline: none; }
+.temperature-strain {
+  --temperature-cold: #70b7d6;
+  --temperature-hot: #d9822b;
+  min-width: 0;
+}
+.temperature-condition-icon { position: relative; display: inline-block; flex: 0 0 .9rem; width: .9rem; height: .9rem; }
+.temperature-condition-icon > span { position: absolute; background: currentcolor; inset: 0; -webkit-mask-position: center; mask-position: center; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-size: contain; mask-size: contain; }
+.temperature-condition-cold { color: var(--temperature-cold); clip-path: inset(0 50% 0 0); -webkit-mask-image: url("/static/icons/game/snowflake-1.svg"); mask-image: url("/static/icons/game/snowflake-1.svg"); }
+.temperature-condition-hot { color: var(--temperature-hot); clip-path: inset(0 0 0 50%); -webkit-mask-image: url("/static/icons/game/flame.svg"); mask-image: url("/static/icons/game/flame.svg"); transform: scale(.82); }
 .temperature-strain-track { position: relative; display: flex; height: .65rem; overflow: hidden; border: 1px solid var(--border-light); border-radius: 999px; background: var(--bg-tertiary); }
 .temperature-strain-track > span { position: absolute; top: 0; bottom: 0; }
-.temperature-strain-cold { right: 50%; width: var(--thermal-cold); background: #4d86c4; }
-.temperature-strain-hot { left: 50%; width: var(--thermal-hot); background: #c4553f; }
+.temperature-strain-cold { right: 50%; width: var(--thermal-cold); background: var(--temperature-cold); }
+.temperature-strain-hot { left: 50%; width: var(--thermal-hot); background: var(--temperature-hot); }
 .temperature-strain-track > i { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--text-primary); }
-.temperature-strain-labels { display: flex; justify-content: space-between; font-size: var(--font-size-xs); }
 .attribute-health-frostbite { background: #6f8fc0; }
 .field-shelter-choice { display: flex; gap: .75rem; margin: .35rem 0; padding: .35rem .5rem; border: 1px solid var(--border-light); }
 .field-shelter-choice legend { padding: 0 .25rem; font-size: var(--font-size-xs); }

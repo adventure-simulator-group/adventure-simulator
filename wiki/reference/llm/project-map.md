@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1466)
+## Files (1468)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1147,6 +1147,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/dodge.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/duration.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/eye-target.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/flame.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/flanged-mace.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/gothic-cross.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/greaves.svg` — Vector UI or texture asset.
@@ -1202,6 +1203,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/shop.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/skirt.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/sleeveless-jacket.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/snowflake-1.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/spear-hook.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/spears.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/spiked-halo.svg` — Vector UI or texture asset.

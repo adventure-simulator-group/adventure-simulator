@@ -337,45 +337,10 @@ pub(super) fn strategic_condition_rail(
             "blood",
             condition.blood_loss,
         ),
-        ("Fear", "terror", "fear", condition.fear),
         ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
-        (
-            "Temperature",
-            "thermometer-cold",
-            "thermal",
-            condition.thermal,
-        ),
     ];
     html! {
         (sidebar_section("Status", html! {
-            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) style=(meter_style) role="meter" aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(format!("{:.1}", condition.morale)) title=(format!("{resolved_morale:.1} morale from successful social support currently offsets actionable concerns")) aria-label=(format!(
-                "Morale {:.1}; fear {}; {:.1} morale resolved by successful social support; inspiration {:.1}%",
-                condition.morale,
-                percent(condition.fear),
-                resolved_morale,
-                condition.morale_bonus * 100.0,
-            )) {
-                div class="morale-meter-heading" {
-                    strong class="metric-label" { (decorative_game_icon("sun")) span { "Morale" } }
-                    span class="morale-meter-value" { (format!("{:+.1}", condition.morale)) }
-                    a class=(if social_open { "character-menu-button is-open" } else { "character-menu-button" })
-                        href=(social_href) title="Open social menu" aria-label="Open social menu"
-                        aria-haspopup="dialog" aria-expanded=(social_open) {
-                        span class="stat-icon" style="--stat-icon: url('/static/icons/game/conversation.svg')" aria-hidden="true" {}
-                        @if social_open { span class="sr-only" { " (open)" } }
-                    }
-                }
-                div class="morale-meter-track" aria-hidden="true" {
-                    span class="morale-meter-fear" { span class="morale-meter-resolved" {} }
-                    span class="morale-meter-neutral" {}
-                    span class="morale-meter-bonus" {}
-                }
-                div class="morale-meter-labels" {
-                    span { "100% fear" }
-                    span { "Neutral" }
-                    span { (format!("{:.1}% inspiration", condition.morale_bonus * 100.0)) }
-                }
-            }
             div class="fervor-meter" tabindex="0" style=(format!("--fervor: {:.0}%", condition.fervor.clamp(0.0, 1.0) * 100.0)) aria-label=(format!("Fervor {}", percent(condition.fervor))) {
                 div class="fervor-meter-heading" {
                     strong class="metric-label" { (decorative_game_icon("holy-symbol")) span { "Fervor" } }
@@ -407,6 +372,34 @@ pub(super) fn strategic_condition_rail(
                 }
             }
             div class="incapacitation-sources" aria-label="Sources of incapacitation" {
+                div class=(if condition.fear > 0.0 { "morale-meter incapacitation-morale is-fearful" } else { "morale-meter incapacitation-morale" }) style=(meter_style) role="meter" aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(format!("{:.1}", condition.morale)) title=(format!("{resolved_morale:.1} morale from successful social support currently offsets actionable concerns")) aria-label=(format!(
+                    "Morale {:.1}; fear {}; {:.1} morale resolved by successful social support; inspiration {:.1}%",
+                    condition.morale,
+                    percent(condition.fear),
+                    resolved_morale,
+                    condition.morale_bonus * 100.0,
+                )) {
+                    div class="morale-meter-heading" {
+                        strong class="metric-label" { (decorative_game_icon("sun")) span { "Morale" } }
+                        span class="morale-meter-value" { (format!("{:+.1}", condition.morale)) }
+                        a class=(if social_open { "character-menu-button is-open" } else { "character-menu-button" })
+                            href=(social_href) title="Open social menu" aria-label="Open social menu"
+                            aria-haspopup="dialog" aria-expanded=(social_open) {
+                            span class="stat-icon" style="--stat-icon: url('/static/icons/game/conversation.svg')" aria-hidden="true" {}
+                            @if social_open { span class="sr-only" { " (open)" } }
+                        }
+                    }
+                    div class="morale-meter-track" aria-hidden="true" {
+                        span class="morale-meter-fear" { span class="morale-meter-resolved" {} }
+                        span class="morale-meter-neutral" {}
+                        span class="morale-meter-bonus" {}
+                    }
+                    div class="morale-meter-labels" {
+                        span { "100% fear" }
+                        span { "Neutral" }
+                        span { (format!("{:.1}% inspiration", condition.morale_bonus * 100.0)) }
+                    }
+                }
                 @for (label, icon, color, value) in incapacitation_sources {
                     div class=(format!("incapacitation-source incapacitation-{color}"))
                         title=(format!("{label}: {} incapacitation", percent(value))) {
@@ -419,12 +412,12 @@ pub(super) fn strategic_condition_rail(
                         }
                     }
                 }
+                (temperature_strain_meter(condition.thermal_strain))
             }
             div class="need-balance-meters" aria-label="Food and water reserves" {
                 (need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", condition.food_days, condition.hunger))
                 (need_balance_meter("Water", "water-drop", "Thirst", "Hydrated", "thirst", condition.water_days, condition.thirst))
             }
-            (temperature_strain_meter(condition.thermal_strain))
             (filth_status_bar(filth, condition.wetness_bps))
         }))
     }
@@ -452,8 +445,14 @@ fn temperature_strain_meter(strain: i32) -> Markup {
     };
     let hot_width = percent.max(0);
     html! {
-        div class="temperature-strain" tabindex="0" title=(&label) {
-            strong class="metric-label" { (decorative_game_icon("thermometer-cold")) span { "Temperature" } }
+        div class="temperature-strain incapacitation-source incapacitation-thermal" tabindex="0" title=(&label) {
+            strong class="metric-label temperature-strain-label" {
+                span class="temperature-condition-icon" aria-hidden="true" {
+                    span class="temperature-condition-cold" {}
+                    span class="temperature-condition-hot" {}
+                }
+                span { "Temperature" }
+            }
             div class="temperature-strain-track" role="meter" aria-label=(&label)
                 aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(percent)
                 style=(format!(
@@ -464,11 +463,6 @@ fn temperature_strain_meter(strain: i32) -> Markup {
                 span class="temperature-strain-cold" aria-hidden="true" {}
                 span class="temperature-strain-hot" aria-hidden="true" {}
                 i aria-hidden="true" {}
-            }
-            div class="temperature-strain-labels" aria-hidden="true" {
-                span { "Cold" }
-                span { "Comfort" }
-                span { "Hot" }
             }
         }
     }
@@ -1599,19 +1593,38 @@ mod tests {
         };
         let markup =
             strategic_condition_rail(Some(&condition), &[], &[], "/social", false).into_string();
-        assert!(markup.contains("class=\"morale-meter\""));
+        let sources = markup
+            .find("class=\"incapacitation-sources\"")
+            .expect("incapacitation source grid");
+        let morale = markup
+            .find("class=\"morale-meter incapacitation-morale\"")
+            .expect("full-width morale meter");
+        let temperature = markup
+            .find("class=\"temperature-strain incapacitation-source incapacitation-thermal\"")
+            .expect("signed temperature meter");
+        assert!(sources < morale);
+        assert!(morale < temperature);
+        assert!(!markup.contains("class=\"incapacitation-source incapacitation-fear\""));
         assert!(markup.contains("href=\"/social\" title=\"Open social menu\""));
         assert!(markup.contains("/static/icons/game/conversation.svg"));
         assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
         let water = markup.find("Water").expect("water meter");
-        let wetness = markup.find("Wetness").expect("wetness meter");
-        let filth = markup.find("Filth").expect("filth meter");
+        let wetness = markup
+            .find("class=\"wetness-status\"")
+            .expect("wetness meter");
+        let filth = markup.find("class=\"filth-status\"").expect("filth meter");
         assert!(water < filth);
         assert!(wetness < filth);
         assert!(markup.contains("class=\"coating-status\" role=\"group\""));
+        assert!(!markup.contains("wetness-status-label"));
         assert!(markup.contains("aria-label=\"Wetness 65 out of 100\""));
         assert!(markup.contains("aria-label=\"Filth 0 out of 100\""));
+        assert!(markup.contains("Wetness is the blue outer bar behind filth"));
         assert!(markup.contains("aria-label=\"Cold strain 40%\""));
+        assert!(markup.contains("class=\"temperature-condition-icon\""));
+        assert!(!markup.contains(">Cold</span>"));
+        assert!(!markup.contains(">Comfort</span>"));
+        assert!(!markup.contains(">Hot</span>"));
     }
 
     #[test]
