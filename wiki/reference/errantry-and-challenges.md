@@ -89,6 +89,10 @@ Run `just puzzle-demo`, select a character in a settlement, enable developer
 mode, and choose **Puzzle demo**. The development-only reducer creates or
 reuses a deterministic Order-sourced case, accepted contract, finale site and
 hostile group, active journey, persisted camp, and observer-bound challenge.
+The isolated development bootstrap seeds an authored Order chapter and its
+canonical organization representative so a fresh demo profile has a valid
+Order issuer even though the selected Social Demo character begins in
+Riverdale.
 The HTTP adapter redirects directly to the chat puzzle, skipping ordinary
 dialogue acceptance and travel setup. Solving shows the boon and returns to
 camp so **Continue travel** can reach the bound finale.
