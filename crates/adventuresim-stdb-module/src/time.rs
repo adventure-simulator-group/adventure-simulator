@@ -2406,7 +2406,7 @@ fn rest_for_minutes(
         starting_minute,
         elapsed,
         false,
-        adventuresim_core::survival::FieldShelter::Tent,
+        adventuresim_core::survival::FieldShelter::Indoor,
     )?;
     if provision == SettlementRestProvision::Inn {
         let elapsed_cost = inn_stay_cost(elapsed)?;
@@ -3408,6 +3408,18 @@ mod tests {
         let validation = rest.find("\"field_shelter\"").unwrap();
         assert!(validation < rest.find("wash_party_before_explicit_rest").unwrap());
         assert!(rest.contains("FieldShelter::Tent"));
+    }
+
+    #[test]
+    fn settlement_rest_uses_indoor_exposure() {
+        let source = include_str!("time.rs");
+        let rest = source
+            .split("fn rest_for_minutes")
+            .nth(1)
+            .and_then(|tail| tail.split("fn inn_stay_cost").next())
+            .expect("settlement rest implementation");
+        assert!(rest.contains("FieldShelter::Indoor"));
+        assert!(!rest.contains("FieldShelter::Tent"));
     }
 
     #[test]
