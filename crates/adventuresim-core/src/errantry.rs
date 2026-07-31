@@ -6,9 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const ORDERED_SIGIL_RULES_VERSION: u16 = 1;
+pub const ORDERED_SIGIL_RULES_VERSION: u16 = 2;
 pub const ORDERED_SIGIL_COUNT: usize = 5;
-const MAX_GENERATION_CLUES: usize = 24;
+pub const MAX_MINIMIZATION_SUBSETS: usize = 100_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrantryPurpose {
@@ -150,58 +150,7 @@ impl OrderedSigilPuzzle {
             solution.swap(end, selected);
         }
 
-        let mut pool = Vec::new();
-        for position in 0..ORDERED_SIGIL_COUNT {
-            pool.push(OrderedSigilClue::Exact {
-                sigil: solution[position],
-                position: position as u8,
-            });
-            for wrong in 0..ORDERED_SIGIL_COUNT {
-                if wrong != position {
-                    pool.push(OrderedSigilClue::NotAt {
-                        sigil: solution[position],
-                        position: wrong as u8,
-                    });
-                }
-            }
-        }
-        for left in 0..ORDERED_SIGIL_COUNT {
-            for right in (left + 1)..ORDERED_SIGIL_COUNT {
-                pool.push(OrderedSigilClue::Before {
-                    first: solution[left],
-                    second: solution[right],
-                });
-                if right == left + 1 {
-                    pool.push(OrderedSigilClue::Adjacent {
-                        first: solution[left],
-                        second: solution[right],
-                    });
-                }
-            }
-        }
-        for end in (1..pool.len()).rev() {
-            let selected = (rng.next() as usize) % (end + 1);
-            pool.swap(end, selected);
-        }
-
-        let mut clues = Vec::new();
-        for clue in pool.into_iter().take(MAX_GENERATION_CLUES) {
-            clues.push(clue);
-            if solutions(&clues, 2).len() == 1 {
-                break;
-            }
-        }
-        // Exact clues occur in the bounded pool and force convergence.
-        if solutions(&clues, 2).len() != 1 {
-            clues = solution
-                .iter()
-                .enumerate()
-                .map(|(position, sigil)| OrderedSigilClue::Exact {
-                    sigil: *sigil,
-                    position: position as u8,
-                })
-                .collect();
-        }
+        let (clues, _) = minimum_clues(&solution)?;
         let puzzle = Self {
             rules_version,
             seed,
@@ -249,6 +198,149 @@ impl OrderedSigilPuzzle {
         }
         Ok(submission.ordering == self.solution)
     }
+}
+
+fn true_clue_pool(solution: &[Sigil; ORDERED_SIGIL_COUNT]) -> Vec<OrderedSigilClue> {
+    let mut pool = Vec::with_capacity(39);
+    // Canonical relational-first order is also the final deterministic
+    // tie-break after cardinality, Exact count, and NotAt count.
+    for left in 0..ORDERED_SIGIL_COUNT {
+        for right in (left + 1)..ORDERED_SIGIL_COUNT {
+            pool.push(OrderedSigilClue::Before {
+                first: solution[left],
+                second: solution[right],
+            });
+        }
+    }
+    for left in 0..(ORDERED_SIGIL_COUNT - 1) {
+        pool.push(OrderedSigilClue::Adjacent {
+            first: solution[left],
+            second: solution[left + 1],
+        });
+    }
+    for (position, sigil) in solution.iter().copied().enumerate() {
+        for wrong in 0..ORDERED_SIGIL_COUNT {
+            if wrong != position {
+                pool.push(OrderedSigilClue::NotAt {
+                    sigil,
+                    position: wrong as u8,
+                });
+            }
+        }
+    }
+    for (position, sigil) in solution.iter().copied().enumerate() {
+        pool.push(OrderedSigilClue::Exact {
+            sigil,
+            position: position as u8,
+        });
+    }
+    pool
+}
+
+fn all_orderings() -> Vec<[Sigil; ORDERED_SIGIL_COUNT]> {
+    solutions(&[], usize::MAX)
+}
+
+fn minimum_clues(
+    solution: &[Sigil; ORDERED_SIGIL_COUNT],
+) -> Result<(Vec<OrderedSigilClue>, usize), &'static str> {
+    let pool = true_clue_pool(solution);
+    let orderings = all_orderings();
+    let solution_index = orderings
+        .iter()
+        .position(|candidate| candidate == solution)
+        .ok_or("ordered-sigil solution is absent from permutation space")?;
+    let target = 1_u128 << solution_index;
+    let full = (1_u128 << orderings.len()) - 1;
+    let masks = pool
+        .iter()
+        .map(|clue| {
+            orderings
+                .iter()
+                .enumerate()
+                .fold(0_u128, |mask, (index, candidate)| {
+                    mask | (u128::from(clue_holds(clue, candidate)) << index)
+                })
+        })
+        .collect::<Vec<_>>();
+    let mut evaluated = 0;
+    for cardinality in 1..=4 {
+        let mut chosen = Vec::with_capacity(cardinality);
+        let mut best: Option<(usize, usize, Vec<usize>)> = None;
+        search_minimum_subsets(
+            0,
+            cardinality,
+            full,
+            target,
+            &pool,
+            &masks,
+            &mut chosen,
+            &mut best,
+            &mut evaluated,
+        )?;
+        if let Some((_, _, indices)) = best {
+            return Ok((
+                indices
+                    .into_iter()
+                    .map(|index| pool[index].clone())
+                    .collect(),
+                evaluated,
+            ));
+        }
+    }
+    Err("ordered-sigil four-clue relational bound failed")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_minimum_subsets(
+    start: usize,
+    remaining: usize,
+    intersection: u128,
+    target: u128,
+    pool: &[OrderedSigilClue],
+    masks: &[u128],
+    chosen: &mut Vec<usize>,
+    best: &mut Option<(usize, usize, Vec<usize>)>,
+    evaluated: &mut usize,
+) -> Result<(), &'static str> {
+    if remaining == 0 {
+        *evaluated += 1;
+        if *evaluated > MAX_MINIMIZATION_SUBSETS {
+            return Err("ordered-sigil minimization exceeded its subset bound");
+        }
+        if intersection == target {
+            let exact = chosen
+                .iter()
+                .filter(|index| matches!(pool[**index], OrderedSigilClue::Exact { .. }))
+                .count();
+            let not_at = chosen
+                .iter()
+                .filter(|index| matches!(pool[**index], OrderedSigilClue::NotAt { .. }))
+                .count();
+            let candidate = (exact, not_at, chosen.clone());
+            if best.as_ref().is_none_or(|current| candidate < *current) {
+                *best = Some(candidate);
+            }
+        }
+        return Ok(());
+    }
+    let last_start = pool.len().saturating_sub(remaining);
+    for index in start..=last_start {
+        chosen.push(index);
+        search_minimum_subsets(
+            index + 1,
+            remaining - 1,
+            intersection & masks[index],
+            target,
+            pool,
+            masks,
+            chosen,
+            best,
+            evaluated,
+        )?;
+        chosen.pop();
+    }
+    Ok(())
 }
 
 pub fn solutions(clues: &[OrderedSigilClue], limit: usize) -> Vec<[Sigil; ORDERED_SIGIL_COUNT]> {
@@ -314,71 +406,51 @@ impl SplitMix64 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PresenterKind {
-    FeySpoken,
-    RuinContraption,
+pub enum FeyPresenterCatalogId {
+    LadyBeneathThornV1,
 }
 
-/// Flavor/presentation is bound after generation and cannot alter puzzle truth.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChallengePresenter {
-    pub kind: PresenterKind,
-    pub name: String,
-    pub title: String,
-    pub introduction: Vec<String>,
-    pub instruction: Vec<String>,
-    pub wrong_feedback: Vec<String>,
-    pub correct_feedback: Vec<String>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FeySpeechPart {
+    Introduction,
+    Instruction,
+    Wrong,
+    Correct,
 }
 
-pub fn presenter(kind: PresenterKind) -> ChallengePresenter {
-    match kind {
-        PresenterKind::FeySpoken => ChallengePresenter {
-            kind,
-            name: "The Lady Beneath the Thorn".into(),
-            title: "Now Hear the Lady Crowned with Briar Thorn".into(),
-            // Closed, authored supernatural speech. Each line is intended as
-            // iambic pentameter in Shakespearean English, modern spelling.
-            introduction: vec![
-                "Good knight, five signs attend my moonlit gate.".into(),
-                "Set each in place, and thereby prove thy wit.".into(),
-            ],
-            instruction: vec![
-                "Mark well my words, then set the signs in rank.".into(),
-                "Submit thy choice when all the five are set.".into(),
-            ],
-            wrong_feedback: vec![
-                "Thy chosen rank hath missed the hidden truth.".into(),
-                "Take heart, good knight, and read my words anew.".into(),
-            ],
-            correct_feedback: vec![
-                "Thy wit hath won the passage through my wood.".into(),
-                "Go forth with honor; none shall bar thy road.".into(),
-            ],
-        },
-        PresenterKind::RuinContraption => ChallengePresenter {
-            kind,
-            name: "The Fivefold Gate".into(),
-            title: "An ancient ordering mechanism".into(),
-            introduction: vec!["Five weathered sockets wait beneath a sealed stone door.".into()],
-            instruction: vec![
-                "Arrange every sigil from left to right, then engage the bronze lever.".into(),
-            ],
-            wrong_feedback: vec![
-                "The mechanism shudders, resets, and remains unlocked for another attempt.".into(),
-            ],
-            correct_feedback: vec!["Hidden counterweights descend. The stone door opens.".into()],
-        },
+pub const FEY_PRESENTER_NAME: &str = "The Lady Beneath the Thorn";
+pub const FEY_PRESENTER_TITLE: &str = "Now Hear the Lady Crowned with Briar Thorn";
+
+/// Closed server-owned speech selected by typed catalog identity. No persisted
+/// prose can become a supernatural utterance.
+pub fn fey_speech(
+    catalog: FeyPresenterCatalogId,
+    part: FeySpeechPart,
+) -> &'static [&'static str] {
+    match (catalog, part) {
+        (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+            "Good knight, five signs attend my moonlit gate.",
+            "Set each in place, and thereby prove thy wit.",
+        ],
+        (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+            "Mark well my words, then set the signs in rank.",
+            "Submit thy choice when all the five are set.",
+        ],
+        (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+            "Thy chosen rank hath missed the hidden truth.",
+            "Take heart, good knight, and read my words anew.",
+        ],
+        (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+            "Thy wit hath won the passage through my wood.",
+            "Go forth with honor; none shall bar thy road.",
+        ],
     }
 }
 
-/// Adapts formal puzzle clues to presenter language without changing their
-/// truth conditions. Supernatural speech comes only from the closed catalog
-/// below; mechanisms retain concise non-spoken instruction prose.
-pub fn presented_clue_text(kind: PresenterKind, clue: &OrderedSigilClue) -> &'static str {
-    if kind == PresenterKind::RuinContraption {
-        return ruin_clue_text(clue);
-    }
+pub fn fey_clue_text(
+    _catalog: FeyPresenterCatalogId,
+    clue: &OrderedSigilClue,
+) -> &'static str {
     let sigil = |value: Sigil| match value {
         Sigil::Crown => 0,
         Sigil::Hart => 1,
@@ -397,28 +469,6 @@ pub fn presented_clue_text(kind: PresenterKind, clue: &OrderedSigilClue) -> &'st
         } => FEY_NOT_AT[sigil(value)][usize::from(position)],
         OrderedSigilClue::Before { first, second } => FEY_BEFORE[sigil(first)][sigil(second)],
         OrderedSigilClue::Adjacent { first, second } => FEY_ADJACENT[sigil(first)][sigil(second)],
-    }
-}
-
-fn ruin_clue_text(clue: &OrderedSigilClue) -> &'static str {
-    let sigil = |value: Sigil| match value {
-        Sigil::Crown => 0,
-        Sigil::Hart => 1,
-        Sigil::Moon => 2,
-        Sigil::Rose => 3,
-        Sigil::Sword => 4,
-    };
-    match *clue {
-        OrderedSigilClue::Exact {
-            sigil: value,
-            position,
-        } => RUIN_EXACT[sigil(value)][usize::from(position)],
-        OrderedSigilClue::NotAt {
-            sigil: value,
-            position,
-        } => RUIN_NOT_AT[sigil(value)][usize::from(position)],
-        OrderedSigilClue::Before { first, second } => RUIN_BEFORE[sigil(first)][sigil(second)],
-        OrderedSigilClue::Adjacent { first, second } => RUIN_ADJACENT[sigil(first)][sigil(second)],
     }
 }
 
@@ -576,7 +626,9 @@ const FEY_ADJACENT: [[&str; 5]; 5] = [
     ],
 ];
 
-// Closed mechanism inscriptions remain presenter-specific but are not speech.
+// Historical physical-presenter text is compile-disabled while the initial
+// errantry slice is chat-only.
+#[cfg(any())]
 const RUIN_EXACT: [[&str; 5]; 5] = [
     [
         "Crown: I.",
@@ -614,6 +666,7 @@ const RUIN_EXACT: [[&str; 5]; 5] = [
         "Sword: V.",
     ],
 ];
+#[cfg(any())]
 const RUIN_NOT_AT: [[&str; 5]; 5] = [
     [
         "Crown ≠ I.",
@@ -651,6 +704,7 @@ const RUIN_NOT_AT: [[&str; 5]; 5] = [
         "Sword ≠ V.",
     ],
 ];
+#[cfg(any())]
 const RUIN_BEFORE: [[&str; 5]; 5] = [
     [
         "",
@@ -688,6 +742,7 @@ const RUIN_BEFORE: [[&str; 5]; 5] = [
         "",
     ],
 ];
+#[cfg(any())]
 const RUIN_ADJACENT: [[&str; 5]; 5] = [
     [
         "",
@@ -713,36 +768,86 @@ mod tests {
     use super::*;
 
     #[test]
-    fn one_thousand_seeds_terminate_and_have_one_solution() {
-        for seed in 0..1_000 {
-            let puzzle = OrderedSigilPuzzle::generate(seed);
-            assert_eq!(solutions(&puzzle.clues, 2), vec![puzzle.solution]);
-            assert!(puzzle.clues.len() <= MAX_GENERATION_CLUES);
+    fn every_solution_gets_a_globally_minimum_bounded_necessary_clue_set() {
+        for solution in all_orderings() {
+            let (clues, evaluated) = minimum_clues(&solution).unwrap();
+            assert!(clues.len() <= 4);
+            assert!(evaluated <= MAX_MINIMIZATION_SUBSETS);
+            assert_eq!(solutions(&clues, 2), vec![solution]);
+
+            for removed in 0..clues.len() {
+                let mut reduced = clues.clone();
+                reduced.remove(removed);
+                assert_ne!(solutions(&reduced, 2), vec![solution]);
+            }
+
+            let pool = true_clue_pool(&solution);
+            for cardinality in 1..clues.len() {
+                assert!(
+                    best_unique_subset(&pool, &solution, cardinality).is_none(),
+                    "found a smaller clue set for {solution:?}"
+                );
+            }
         }
     }
 
     #[test]
     fn replay_is_versioned_and_deterministic() {
-        let first = OrderedSigilPuzzle::generate_versioned(1, 41).unwrap();
+        let first =
+            OrderedSigilPuzzle::generate_versioned(ORDERED_SIGIL_RULES_VERSION, 41).unwrap();
+        assert_eq!(
+            first.solution,
+            [Sigil::Hart, Sigil::Crown, Sigil::Sword, Sigil::Moon, Sigil::Rose]
+        );
+        assert_eq!(
+            first.clues,
+            vec![
+                OrderedSigilClue::Before {
+                    first: Sigil::Hart,
+                    second: Sigil::Crown,
+                },
+                OrderedSigilClue::Before {
+                    first: Sigil::Crown,
+                    second: Sigil::Sword,
+                },
+                OrderedSigilClue::Before {
+                    first: Sigil::Sword,
+                    second: Sigil::Moon,
+                },
+                OrderedSigilClue::Before {
+                    first: Sigil::Moon,
+                    second: Sigil::Rose,
+                },
+            ]
+        );
         assert_eq!(
             first,
-            OrderedSigilPuzzle::generate_versioned(1, 41).unwrap()
+            OrderedSigilPuzzle::generate_versioned(ORDERED_SIGIL_RULES_VERSION, 41).unwrap()
         );
-        assert!(OrderedSigilPuzzle::generate_versioned(2, 41).is_err());
+        assert!(OrderedSigilPuzzle::generate_versioned(1, 41).is_err());
     }
 
     #[test]
-    fn presenters_share_truth_and_projection_is_safe() {
+    fn tie_break_prefers_relations_then_not_at_then_exact() {
+        for solution in all_orderings() {
+            let (chosen, _) = minimum_clues(&solution).unwrap();
+            let pool = true_clue_pool(&solution);
+            let chosen_indices = chosen
+                .iter()
+                .map(|clue| pool.iter().position(|candidate| candidate == clue).unwrap())
+                .collect::<Vec<_>>();
+            let chosen_score = subset_style_score(&pool, &chosen_indices);
+            assert_eq!(
+                Some(chosen_score),
+                best_unique_subset(&pool, &solution, chosen.len())
+            );
+        }
+    }
+
+    #[test]
+    fn projection_is_safe() {
         let puzzle = OrderedSigilPuzzle::generate(9);
         let projection = puzzle.projection();
-        assert_eq!(
-            presenter(PresenterKind::FeySpoken).kind,
-            PresenterKind::FeySpoken
-        );
-        assert_eq!(
-            presenter(PresenterKind::RuinContraption).kind,
-            PresenterKind::RuinContraption
-        );
         let json = serde_json::to_string(&projection).unwrap();
         assert!(!json.contains("solution"));
         assert!(!json.contains("seed"));
@@ -774,13 +879,15 @@ mod tests {
 
     #[test]
     fn supernatural_speech_comes_only_from_the_closed_verse_catalog() {
-        let fey = presenter(PresenterKind::FeySpoken);
-        let all = fey
-            .introduction
-            .iter()
-            .chain(&fey.instruction)
-            .chain(&fey.wrong_feedback)
-            .chain(&fey.correct_feedback)
+        let catalog = FeyPresenterCatalogId::LadyBeneathThornV1;
+        let all = [
+            FeySpeechPart::Introduction,
+            FeySpeechPart::Instruction,
+            FeySpeechPart::Wrong,
+            FeySpeechPart::Correct,
+        ]
+        .into_iter()
+        .flat_map(|part| fey_speech(catalog, part))
             .collect::<Vec<_>>();
         assert_eq!(all.len(), 8);
         assert!(
@@ -791,26 +898,26 @@ mod tests {
         let mut clue_lines = Vec::new();
         for sigil in Sigil::ALL {
             for position in 0..ORDERED_SIGIL_COUNT as u8 {
-                clue_lines.push(presented_clue_text(
-                    PresenterKind::FeySpoken,
+                clue_lines.push(fey_clue_text(
+                    catalog,
                     &OrderedSigilClue::Exact { sigil, position },
                 ));
-                clue_lines.push(presented_clue_text(
-                    PresenterKind::FeySpoken,
+                clue_lines.push(fey_clue_text(
+                    catalog,
                     &OrderedSigilClue::NotAt { sigil, position },
                 ));
             }
             for other in Sigil::ALL {
                 if sigil != other {
-                    clue_lines.push(presented_clue_text(
-                        PresenterKind::FeySpoken,
+                    clue_lines.push(fey_clue_text(
+                        catalog,
                         &OrderedSigilClue::Before {
                             first: sigil,
                             second: other,
                         },
                     ));
-                    clue_lines.push(presented_clue_text(
-                        PresenterKind::FeySpoken,
+                    clue_lines.push(fey_clue_text(
+                        catalog,
                         &OrderedSigilClue::Adjacent {
                             first: sigil,
                             second: other,
@@ -826,5 +933,92 @@ mod tests {
                 && !line.contains('{')
                 && !line.contains("position {}")
         }));
+    }
+
+    fn subset_style_score(
+        pool: &[OrderedSigilClue],
+        indices: &[usize],
+    ) -> (usize, usize, Vec<usize>) {
+        let exact = indices
+            .iter()
+            .filter(|index| matches!(pool[**index], OrderedSigilClue::Exact { .. }))
+            .count();
+        let not_at = indices
+            .iter()
+            .filter(|index| matches!(pool[**index], OrderedSigilClue::NotAt { .. }))
+            .count();
+        (exact, not_at, indices.to_vec())
+    }
+
+    fn best_unique_subset(
+        pool: &[OrderedSigilClue],
+        solution: &[Sigil; ORDERED_SIGIL_COUNT],
+        cardinality: usize,
+    ) -> Option<(usize, usize, Vec<usize>)> {
+        let orderings = all_orderings();
+        let target = 1_u128
+            << orderings
+                .iter()
+                .position(|candidate| candidate == solution)
+                .unwrap();
+        let masks = pool
+            .iter()
+            .map(|clue| {
+                orderings
+                    .iter()
+                    .enumerate()
+                    .fold(0_u128, |mask, (index, ordering)| {
+                        mask | (u128::from(clue_holds(clue, ordering)) << index)
+                    })
+            })
+            .collect::<Vec<_>>();
+        let mut best = None;
+        visit_mask_subsets(
+            pool,
+            &masks,
+            cardinality,
+            0,
+            (1_u128 << orderings.len()) - 1,
+            target,
+            &mut Vec::new(),
+            &mut best,
+        );
+        best
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn visit_mask_subsets(
+        pool: &[OrderedSigilClue],
+        masks: &[u128],
+        remaining: usize,
+        start: usize,
+        intersection: u128,
+        target: u128,
+        chosen: &mut Vec<usize>,
+        best: &mut Option<(usize, usize, Vec<usize>)>,
+    ) {
+        if remaining == 0 {
+            if intersection == target {
+                let candidate = subset_style_score(pool, chosen);
+                if best.as_ref().is_none_or(|current| candidate < *current) {
+                    *best = Some(candidate);
+                }
+            }
+            return;
+        }
+        for index in start..=pool.len() - remaining {
+            chosen.push(index);
+            visit_mask_subsets(
+                pool,
+                masks,
+                remaining - 1,
+                index + 1,
+                intersection & masks[index],
+                target,
+                chosen,
+                best,
+            );
+            chosen.pop();
+        }
     }
 }

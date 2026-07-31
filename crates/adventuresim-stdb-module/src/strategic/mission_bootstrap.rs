@@ -556,6 +556,20 @@ pub fn seed_standalone_tactical_mission(
     let mission = if let Some(existing) = ctx.db.mission_authority().id().find(&mission_id) {
         existing
     } else {
+        let (enemy_combat_scale_bps, countermeasure_source_challenge_id) =
+            errantry_mission_scale_snapshot(
+                ctx,
+                &party_id,
+                &case_id,
+                case_site.id.as_str(),
+                &hostile_group_id,
+                group.combat_scale_bps,
+            );
+        let normalized_combat_power = u64::from(group.normalized_combat_power)
+            .saturating_mul(u64::from(enemy_combat_scale_bps))
+            .checked_div(u64::from(group.combat_scale_bps.max(1)))
+            .unwrap_or_default()
+            .min(u64::from(u32::MAX)) as u32;
         ctx.db.mission_authority().insert(MissionAuthority {
             id: mission_id.clone(),
             party_id: party_id.clone(),
@@ -571,8 +585,10 @@ pub fn seed_standalone_tactical_mission(
             hostile_version: group.escalation_incident_ordinal,
             enemy_count: group.enemy_count,
             enemy_difficulty: group.base_difficulty,
-            enemy_combat_scale_bps: group.combat_scale_bps,
-            normalized_combat_power: group.normalized_combat_power,
+            base_enemy_combat_scale_bps: group.combat_scale_bps,
+            enemy_combat_scale_bps,
+            countermeasure_source_challenge_id,
+            normalized_combat_power,
             drop_item_id: group.drop_item_id.clone(),
             drop_quantity: group.drop_quantity,
         })

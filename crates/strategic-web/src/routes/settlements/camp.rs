@@ -263,6 +263,15 @@ pub(super) async fn camp(
     .flatten();
     let camp_destinations = camp_settlement_destinations(&state, &party, journey.as_ref()).await;
     let soap_preview = soap_rest_preview(&state, &party_members, Some(&party.id)).await;
+    let trial = state
+        .db
+        .query_one::<BackendChallenge>(&format!(
+            "SELECT * FROM backend_challenges WHERE owner_character_id = {} AND active = true",
+            character.id
+        ))
+        .await
+        .ok()
+        .flatten();
     let foraging_dialog = if query.forage.unwrap_or(false) {
         Some(
             crate::routes::foraging::activity_dialog(
@@ -293,6 +302,9 @@ pub(super) async fn camp(
             planned_wake_minute,
             continue_block_reason,
             encounter.as_ref(),
+            trial
+                .as_ref()
+                .map(|trial| (trial.case_id.as_str(), trial.id.as_str())),
             foraging_dialog,
             Some(&character.name),
         )

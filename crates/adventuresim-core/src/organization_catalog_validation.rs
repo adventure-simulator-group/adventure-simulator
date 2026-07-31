@@ -225,6 +225,7 @@ pub fn validate_documents(
                 "historical_fantasy_note",
                 "service_id",
                 "public_threat_referrals",
+                "errantry_issuance",
                 "starting_role",
                 "roles",
                 "chapters",
@@ -244,6 +245,14 @@ pub fn validate_documents(
         {
             return Err(format!(
                 "{source}: organization.public_threat_referrals must be a boolean"
+            ));
+        }
+        if org
+            .get("errantry_issuance")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Err(format!(
+                "{source}: organization.errantry_issuance must be a boolean"
             ));
         }
         let id = text(org, source, "id")?;

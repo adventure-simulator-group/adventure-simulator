@@ -1,6 +1,4 @@
-use adventuresim_core::errantry::{
-    ChallengePresenter, OrderedSigilProjection, OrderedSigilSubmission,
-};
+use adventuresim_core::errantry::{OrderedSigilProjection, OrderedSigilSubmission};
 use axum::{
     Form, Router,
     extract::{Path, State},
@@ -70,19 +68,16 @@ async fn show(
             Ok(value) => value,
             Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
         };
-    let presenter: ChallengePresenter = match serde_json::from_str(&challenge.presenter_json) {
-        Ok(value) => value,
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-    };
     Html(
         ordered_sigil_page(
             &challenge.id,
             &challenge.case_id,
             challenge.revision,
             &puzzle,
-            &presenter,
             challenge.solved,
             challenge.last_attempt_correct,
+            challenge.boon_item_id.as_deref(),
+            challenge.boon_combat_scale_reduction_bps,
             &character.name,
         )
         .into_string(),

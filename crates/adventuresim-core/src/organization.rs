@@ -30,6 +30,10 @@ pub struct OrganizationDefinition {
     /// Authored authority to refer dues-current members to publicly notorious
     /// hostile cases. Never inferred from names, ranks, or skills.
     pub public_threat_referrals: bool,
+    /// Authored authority to issue romantic errantry. This capability is
+    /// intentionally narrower than public threat referral.
+    #[serde(default)]
+    pub errantry_issuance: bool,
     #[serde(default)]
     pub starting_role: Option<OrganizationStartingRole>,
     /// Additive social and professional roles. These do not replace ranks,
@@ -961,6 +965,18 @@ mod tests {
             });
             assert_eq!(
                 organization.public_threat_referrals, expected,
+                "{}",
+                organization.id
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_order_of_saint_george_can_issue_errantry() {
+        for organization in &catalog().organizations {
+            assert_eq!(
+                organization.errantry_issuance,
+                organization.id == "order_saint_george",
                 "{}",
                 organization.id
             );

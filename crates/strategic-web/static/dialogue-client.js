@@ -247,6 +247,29 @@
       if (expanded) row.append(claimResponsePanel(expanded, binding));
     });
     renderPrompt(view.open_prompt);
+    if (view.order_errantry_offer) {
+      const row = document.createElement("div");
+      row.className = "chat-system-message";
+      row.dataset.chatChannel = "info";
+      row.dataset.dialogueScripted = "true";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-primary";
+      button.textContent = "Accept the Order's errantry";
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        request("/api/dialogue/accept-order-errantry", {
+          session_id: view.session_id,
+        }).then((result) => {
+          window.location.assign(result.redirect);
+        }).catch((error) => {
+          button.disabled = false;
+          window.reportStrategicError(error, "accept Order errantry");
+        });
+      }, { signal });
+      row.append(button);
+      messages.append(row);
+    }
     refreshCompletion();
     messages.scrollTop = messages.scrollHeight;
   };

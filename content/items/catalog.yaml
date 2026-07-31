@@ -3818,6 +3818,15 @@
       "tags": ["general_goods", "field_shelter"],
       "presentation": {"icon": "camping-tent"},
       "kind": "simple"
+    },
+    {
+      "id": "favor_of_the_thorn_lady",
+      "display_name": "Favor of the Thorn Lady",
+      "weight_kg": 0.01,
+      "base_value": 0,
+      "tags": ["quest_token", "fey_favor", "countermeasure"],
+      "presentation": {"icon": "rose"},
+      "kind": "simple"
     }
   ]
 }

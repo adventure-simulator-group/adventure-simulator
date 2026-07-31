@@ -178,7 +178,7 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendCorpse,
+    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge, BackendCorpse,
     BackendLocalProblemTradeEffect,
     BackendPhysiologyAdministration, BackendPhysiologyChart, Character, CharacterAffinity,
     CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquipmentGraph,

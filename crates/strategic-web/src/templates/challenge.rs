@@ -1,5 +1,6 @@
 use adventuresim_core::errantry::{
-    ChallengePresenter, OrderedSigilProjection, PresenterKind, Sigil, presented_clue_text,
+    FEY_PRESENTER_NAME, FeyPresenterCatalogId, FeySpeechPart, OrderedSigilProjection, Sigil,
+    fey_clue_text, fey_speech,
 };
 use maud::{Markup, html};
 
@@ -10,99 +11,91 @@ pub fn ordered_sigil_page(
     case_id: &str,
     revision: u32,
     projection: &OrderedSigilProjection,
-    presenter: &ChallengePresenter,
     solved: bool,
     last_attempt_correct: Option<bool>,
+    boon_item_id: Option<&str>,
+    boon_reduction_bps: Option<u32>,
     character_name: &str,
 ) -> Markup {
-    let supernatural = presenter.kind == PresenterKind::FeySpoken;
+    let catalog = FeyPresenterCatalogId::LadyBeneathThornV1;
     let content = html! {
         aside class="left-sidebar challenge-rail" aria-hidden="true" {}
         main class="center-content challenge-page" {
-            article class="panel challenge-panel" aria-labelledby="challenge-title"
-                data-challenge-id=(challenge_id)
-                data-presenter-kind=(if supernatural { "supernatural-spoken" } else { "contraption" }) {
-                header {
-                    p class="eyebrow" { "A trial of discernment" }
-                    h1 id="challenge-title" { (&presenter.title) }
-                    p class="challenge-presenter" { (&presenter.name) }
-                }
-                section aria-labelledby="challenge-address" {
-                    h2 id="challenge-address" class="visually-hidden" { "The challenge" }
-                    @for line in &presenter.introduction {
-                        p class=(if supernatural { "supernatural-spoken-line" } else { "inscription-line" }) {
-                            (line)
-                        }
-                    }
-                    @for line in &presenter.instruction {
-                        p class=(if supernatural { "supernatural-spoken-line" } else { "inscription-line" }) {
-                            (line)
-                        }
-                    }
-                }
-                section class="challenge-clues" aria-labelledby="challenge-clues-title" {
-                    h2 id="challenge-clues-title" { "The clues" }
-                    @if supernatural {
-                        blockquote class="supernatural-clue-speech" {
-                            ol aria-label="The Lady's spoken clues" {
-                                @for clue in &projection.clues {
-                                    li class="supernatural-spoken-line" {
-                                        (presented_clue_text(presenter.kind, clue))
-                                    }
-                                }
+            section class="settlement-chat challenge-chat" aria-label="Fey conversation"
+                data-challenge-id=(challenge_id) data-presenter-catalog="lady-beneath-thorn-v1" {
+                div class="settlement-chat-layout" {
+                    div class="settlement-chat-conversation" {
+                        div class="settlement-chat-messages" aria-live="polite" {
+                            div class="chat-system-message" data-chat-channel="info" {
+                                "A trial of discernment interrupts the road."
                             }
-                            cite { "The Lady Beneath the Thorn" }
-                        }
-                    } @else {
-                        ol class="mechanism-clue-inscriptions" aria-label="Engraved clues" {
-                            @for clue in &projection.clues {
-                                li class="inscription-line" {
-                                    (presented_clue_text(presenter.kind, clue))
-                                }
-                            }
-                        }
-                    }
-                }
-                @if solved {
-                    div class="notice success" role="status" data-challenge-correct {
-                        @for line in &presenter.correct_feedback {
-                            p class=(if supernatural { "supernatural-spoken-line" } else { "mechanism-feedback" }) {
-                                (line)
-                            }
-                        }
-                        a class="btn btn-primary" href="/quests" { "Return to the journal" }
-                    }
-                } @else {
-                    @if last_attempt_correct == Some(false) {
-                        div class="notice warning" role="alert" data-challenge-wrong {
-                            @for line in &presenter.wrong_feedback {
-                                p class=(if supernatural { "supernatural-spoken-line" } else { "mechanism-feedback" }) {
+                            @for line in fey_speech(catalog, FeySpeechPart::Introduction) {
+                                p class="supernatural-spoken-line" {
+                                    strong { (FEY_PRESENTER_NAME) ": " }
                                     (line)
                                 }
                             }
-                        }
-                    }
-                    form method="post"
-                        action=(format!("/quests/{case_id}/challenges/{challenge_id}"))
-                        class="challenge-ordering-form" {
-                        input type="hidden" name="expected_revision" value=(revision);
-                        fieldset {
-                            legend { "Arrange the five sigils from first to fifth" }
-                            div class="challenge-ordering" {
-                                @for position in 0..projection.sigils.len() {
-                                    label {
-                                        span { (ordinal(position)) }
-                                        select name=(format!("sigil_{position}")) required {
-                                            option value="" { "Choose a sigil" }
-                                            @for sigil in projection.sigils {
-                                                option value=(sigil.label()) { (sigil.label()) }
-                                            }
-                                        }
+                            @for line in fey_speech(catalog, FeySpeechPart::Instruction) {
+                                p class="supernatural-spoken-line" {
+                                    strong { (FEY_PRESENTER_NAME) ": " }
+                                    (line)
+                                }
+                            }
+                            ol aria-label="The Lady's spoken clues" {
+                                @for clue in &projection.clues {
+                                    li class="supernatural-spoken-line" {
+                                        (fey_clue_text(catalog, clue))
                                     }
                                 }
                             }
+                            @if solved {
+                                @for line in fey_speech(catalog, FeySpeechPart::Correct) {
+                                    p class="supernatural-spoken-line notice success" role="status" {
+                                        strong { (FEY_PRESENTER_NAME) ": " }
+                                        (line)
+                                    }
+                                }
+                                @if let (Some(item_id), Some(reduction)) = (boon_item_id, boon_reduction_bps) {
+                                    div class="chat-system-message notice success" data-chat-channel="info"
+                                        data-countermeasure-source=(challenge_id) {
+                                        "Received " (item_id) ". The boon reduces the bound finale's enemy combat scale by "
+                                        (reduction / 100) "% when that mission is first bound."
+                                    }
+                                }
+                                a class="btn btn-primary" href="/camp" { "Return to camp" }
+                            } @else {
+                                @if last_attempt_correct == Some(false) {
+                                    @for line in fey_speech(catalog, FeySpeechPart::Wrong) {
+                                        p class="supernatural-spoken-line notice warning" role="alert" {
+                                            strong { (FEY_PRESENTER_NAME) ": " }
+                                            (line)
+                                        }
+                                    }
+                                }
+                                form method="post"
+                                    action=(format!("/quests/{case_id}/challenges/{challenge_id}"))
+                                    class="challenge-ordering-form settlement-chat-composer" {
+                                    input type="hidden" name="expected_revision" value=(revision);
+                                    fieldset {
+                                        legend { "Arrange the five sigils from first to fifth" }
+                                        div class="challenge-ordering" {
+                                            @for position in 0..projection.sigils.len() {
+                                                label {
+                                                    span { (ordinal(position)) }
+                                                    select name=(format!("sigil_{position}")) required {
+                                                        option value="" { "Choose a sigil" }
+                                                        @for sigil in projection.sigils {
+                                                            option value=(sigil.label()) { (sigil.label()) }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    button type="submit" class="btn btn-primary" { "Answer the Lady" }
+                                }
+                            }
                         }
-                        button type="submit" class="btn btn-primary" { "Submit the ordering" }
                     }
                 }
             }
@@ -143,80 +136,29 @@ pub fn parse_form_sigils(values: [&str; 5]) -> Result<[Sigil; 5], &'static str> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adventuresim_core::errantry::{
-        ORDERED_SIGIL_RULES_VERSION, OrderedSigilClue, OrderedSigilPuzzle, presenter,
-    };
+    use adventuresim_core::errantry::OrderedSigilPuzzle;
 
     #[test]
-    fn page_is_no_js_required_and_accessibly_labelled() {
+    fn whole_trial_is_a_no_js_shared_chat_visual() {
         let puzzle = OrderedSigilPuzzle::generate(4);
         let markup = ordered_sigil_page(
             "challenge:test",
             "case:test",
             0,
             &puzzle.projection(),
-            &presenter(PresenterKind::RuinContraption),
             false,
             Some(false),
-            "Ada",
-        )
-        .into_string();
-        assert!(markup.contains("method=\"post\""));
-        assert!(markup.contains("<fieldset>"));
-        assert!(markup.contains("<legend>"));
-        assert!(markup.contains("role=\"alert\""));
-        assert!(markup.contains("mechanism-clue-inscriptions"));
-        assert!(!markup.contains("solution"));
-        assert!(!markup.contains("data-private-seed"));
-        let projection_json = serde_json::to_string(&puzzle.projection()).unwrap();
-        assert!(!projection_json.contains("\"seed\""));
-        assert!(!projection_json.contains("\"solution\""));
-    }
-
-    #[test]
-    fn fey_clues_are_marked_as_the_supernatural_presenters_speech() {
-        let mut clues = Vec::new();
-        for sigil in Sigil::ALL {
-            for position in 0..5 {
-                clues.push(OrderedSigilClue::Exact { sigil, position });
-                clues.push(OrderedSigilClue::NotAt { sigil, position });
-            }
-            for other in Sigil::ALL {
-                if sigil != other {
-                    clues.push(OrderedSigilClue::Before {
-                        first: sigil,
-                        second: other,
-                    });
-                    clues.push(OrderedSigilClue::Adjacent {
-                        first: sigil,
-                        second: other,
-                    });
-                }
-            }
-        }
-        assert_eq!(clues.len(), 90);
-        let projection = OrderedSigilProjection {
-            rules_version: ORDERED_SIGIL_RULES_VERSION,
-            sigils: Sigil::ALL,
-            clues,
-        };
-        let markup = ordered_sigil_page(
-            "challenge:test",
-            "case:test",
-            0,
-            &projection,
-            &presenter(PresenterKind::FeySpoken),
-            false,
+            None,
             None,
             "Ada",
         )
         .into_string();
-        assert!(markup.contains("supernatural-clue-speech"));
-        assert!(markup.contains("aria-label=\"The Lady's spoken clues\""));
-        assert!(markup.contains("<cite>The Lady Beneath the Thorn</cite>"));
-        for clue in &projection.clues {
-            assert!(markup.contains(presented_clue_text(PresenterKind::FeySpoken, clue)));
-            assert!(!markup.contains(&clue.text()));
-        }
+        assert!(markup.contains("settlement-chat"));
+        assert!(markup.contains("settlement-chat-messages"));
+        assert!(markup.contains("method=\"post\""));
+        assert!(markup.contains("<fieldset>"));
+        assert!(markup.contains("role=\"alert\""));
+        assert!(!markup.contains("solution"));
+        assert!(!markup.contains("data-private-seed"));
     }
 }

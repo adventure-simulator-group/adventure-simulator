@@ -6,14 +6,21 @@ pub struct BackendChallenge {
     pub case_id: String,
     pub party_id: String,
     pub owner_character_id: u64,
-    pub site_id: String,
+    pub finale_case_site_id: String,
     pub puzzle_projection_json: String,
-    pub presenter_json: String,
+    pub presenter_catalog_id: ChallengePresenterCatalogId,
     pub revision: u32,
     pub open: bool,
     pub solved: bool,
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
+    pub boon_item_id: Option<String>,
+    pub boon_combat_scale_reduction_bps: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum ChallengePresenterCatalogId {
+    LadyBeneathThornV1,
 }
 
 #[derive(Clone, Debug, Serialize)]

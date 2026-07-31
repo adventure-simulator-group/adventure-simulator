@@ -307,7 +307,7 @@ async fn load_autopsy_demo(State(state): State<AppState>, session: Session) -> R
                 .into_response();
         }
     };
-    let Some(settlement_id) = character.current_settlement_id else {
+    let Some(_settlement_id) = character.current_settlement_id else {
         return (
             StatusCode::CONFLICT,
             Json(json!({"message":"Load the autopsy demo while in a settlement"})),
@@ -428,8 +428,7 @@ async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Re
         .await
     {
         Ok(()) => {
-            let demo_prefix =
-                format!("challenge:ordered-sigils:demo:{character_id}:{settlement_id}:");
+            let demo_prefix = format!("challenge:ordered-sigils:demo:{character_id}:");
             let sql = format!(
                 "SELECT * FROM backend_challenges WHERE owner_character_id = {character_id}"
             );
@@ -440,7 +439,6 @@ async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Re
                         row.active
                             && row.open
                             && !row.solved
-                            && row.site_id == settlement_id
                             && row.id.starts_with(&demo_prefix)
                     })
                     .collect::<Vec<_>>(),
