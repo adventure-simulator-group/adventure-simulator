@@ -1505,14 +1505,79 @@ pub(crate) fn insert_new_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, temporary, None, None)
+    let mode = if temporary {
+        CharacterCreationMode::TemporaryNpc
+    } else {
+        CharacterCreationMode::Player
+    };
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode,
+            create_solo_party: true,
+            stable_seed: id,
+            initial_time_minute: None,
+        },
+        None,
+        None,
+    )
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CharacterCreationMode {
+    Player,
+    PersistentNpc,
+    TemporaryNpc,
+}
+
+impl CharacterCreationMode {
+    const fn is_npc(self) -> bool {
+        matches!(self, Self::PersistentNpc | Self::TemporaryNpc)
+    }
+
+    const fn temporary(self) -> bool {
+        matches!(self, Self::TemporaryNpc)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CharacterCreationOptions<'a> {
+    pub origin_settlement_id: Option<&'a str>,
+    pub mode: CharacterCreationMode,
+    pub create_solo_party: bool,
+    pub stable_seed: u64,
+    pub initial_time_minute: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NpcLifeFacts {
     pub age_years: u16,
     pub organization_id: Option<String>,
     pub literacy: Option<adventuresim_world_schema::WrittenLanguage>,
+}
+
+impl NpcLifeFacts {
+    /// Produce the baseline life facts for a persistent NPC without consulting
+    /// reducer RNG. Authored organization and literacy can be overlaid by the
+    /// population importer before creation.
+    pub(crate) fn from_stable_seed(stable_seed: u64) -> Self {
+        let draw = stable_mix(stable_seed ^ 0x6c69_6665_2d61_6765);
+        Self {
+            age_years: 18 + (draw % 43) as u16,
+            organization_id: None,
+            literacy: None,
+        }
+    }
+}
+
+fn stable_mix(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 pub(crate) fn insert_new_npc_character(
@@ -1521,7 +1586,53 @@ pub(crate) fn insert_new_npc_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, true, None, None)
+    let mode = if temporary {
+        CharacterCreationMode::TemporaryNpc
+    } else {
+        CharacterCreationMode::PersistentNpc
+    };
+    let life = NpcLifeFacts::from_stable_seed(id);
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode,
+            create_solo_party: temporary,
+            stable_seed: id,
+            initial_time_minute: None,
+        },
+        None,
+        Some(&life),
+    )
+}
+
+/// Create a persistent, full-component NPC at an explicit settlement. Unlike a
+/// player character or tactical temporary, the NPC begins outside any party.
+pub(crate) fn insert_persistent_npc_character(
+    ctx: &ReducerContext,
+    name: String,
+    id: u64,
+    origin_settlement_id: &str,
+    stable_seed: u64,
+    initial_time_minute: Option<u64>,
+) -> Result<(), String> {
+    let life = NpcLifeFacts::from_stable_seed(stable_seed);
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: Some(origin_settlement_id),
+            mode: CharacterCreationMode::PersistentNpc,
+            create_solo_party: false,
+            stable_seed,
+            initial_time_minute,
+        },
+        None,
+        Some(&life),
+    )
 }
 
 pub(crate) fn insert_new_npc_character_with_life(
@@ -1531,7 +1642,25 @@ pub(crate) fn insert_new_npc_character_with_life(
     temporary: bool,
     facts: NpcLifeFacts,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, true, None, Some(&facts))
+    let mode = if temporary {
+        CharacterCreationMode::TemporaryNpc
+    } else {
+        CharacterCreationMode::PersistentNpc
+    };
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode,
+            create_solo_party: temporary,
+            stable_seed: id,
+            initial_time_minute: None,
+        },
+        None,
+        Some(&facts),
+    )
 }
 
 fn insert_starting_character(
@@ -1542,8 +1671,13 @@ fn insert_starting_character(
         ctx,
         spec.name.clone(),
         spec.id,
-        false,
-        false,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode: CharacterCreationMode::Player,
+            create_solo_party: true,
+            stable_seed: spec.id,
+            initial_time_minute: None,
+        },
         Some(spec),
         None,
     )
@@ -1623,12 +1757,13 @@ pub(crate) fn insert_character_with_origin(
     ctx: &ReducerContext,
     name: String,
     id: u64,
-    temporary: bool,
-    npc: bool,
+    options: CharacterCreationOptions<'_>,
     starting: Option<&StartingCharacterSpec>,
     npc_life: Option<&NpcLifeFacts>,
 ) -> Result<(), String> {
     log::info!("New character created: {name} (ID: {id})");
+    let temporary = options.mode.temporary();
+    let npc = options.mode.is_npc();
 
     let settlements: Vec<Settlement> = ctx.db.settlement().iter().collect();
     if settlements.is_empty() {
@@ -1636,9 +1771,22 @@ pub(crate) fn insert_character_with_origin(
     }
     let mut settlements = settlements;
     settlements.sort_by(|left, right| left.id.cmp(&right.id));
-    let selector = starting.map_or_else(|| ctx.random::<u64>(), |spec| spec.settlement_selector);
-    let start_settlement = if let Some(starting_organization) =
-        starting.and_then(|spec| spec.organization.as_ref())
+    let selector = starting.map_or_else(
+        || {
+            if npc {
+                stable_mix(options.stable_seed ^ 0x7365_7474_6c65_6d65)
+            } else {
+                ctx.random::<u64>()
+            }
+        },
+        |spec| spec.settlement_selector,
+    );
+    let start_settlement = if let Some(origin_settlement_id) = options.origin_settlement_id {
+        settlements
+            .iter()
+            .find(|settlement| settlement.id == origin_settlement_id)
+            .ok_or_else(|| format!("Unknown origin settlement {origin_settlement_id}"))?
+    } else if let Some(starting_organization) = starting.and_then(|spec| spec.organization.as_ref())
     {
         let organization =
             adventuresim_core::organization::organization(&starting_organization.organization_id)
@@ -1761,7 +1909,7 @@ pub(crate) fn insert_character_with_origin(
             .and_then(adventuresim_core::organization::organization);
         adventuresim_core::life_simulation::simulate_life(
             adventuresim_core::life_simulation::LifeSimulationInput {
-                stable_seed: id ^ 0x6765_6e65_7269_6300,
+                stable_seed: options.stable_seed ^ 0x6765_6e65_7269_6300,
                 age_years: npc_life.map_or(25, |facts| facts.age_years),
                 attributes: &character_attributes,
                 organization,
@@ -1927,6 +2075,16 @@ pub(crate) fn insert_character_with_origin(
         ),
     });
     crate::time::initialize_character_time(ctx, id)?;
+    if let Some(minutes) = options.initial_time_minute {
+        let mut time = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(id)
+            .ok_or("New character time was not initialized")?;
+        time.minutes = minutes;
+        ctx.db.character_time().character_id().update(time);
+    }
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
         character_id: id,
         left_arm_health: 1.0,
@@ -2007,7 +2165,11 @@ pub(crate) fn insert_character_with_origin(
         };
         ctx.db.character_personality().insert(personality);
     } else {
-        crate::personality::initialize_personality(ctx, id, npc);
+        if npc {
+            crate::personality::initialize_npc_personality(ctx, id, options.stable_seed);
+        } else {
+            crate::personality::initialize_personality(ctx, id, false);
+        }
     }
 
     // Starter items
@@ -2057,7 +2219,9 @@ pub(crate) fn insert_character_with_origin(
         }
     }
 
-    crate::strategic::create_solo_party_for_character(ctx, character.id)?;
+    if options.create_solo_party {
+        crate::strategic::create_solo_party_for_character(ctx, character.id)?;
+    }
     if let Some(starting_organization) = starting.and_then(|spec| spec.organization.as_ref()) {
         let definition =
             adventuresim_core::organization::organization(&starting_organization.organization_id)
@@ -2118,8 +2282,138 @@ pub(crate) fn insert_character_with_origin(
     }
     crate::condition::refresh_character_strategic_condition(ctx, character.id)?;
     crate::equipment_law::enforce_equipment_compliance(ctx, character.id)?;
+    validate_full_character_components(ctx, character.id)?;
 
     Ok(())
+}
+
+/// Verify the ordinary durable component set shared by player characters and
+/// persistent NPCs. This is deliberately a runtime invariant rather than a
+/// migration/link-table shim: population import must create real Characters.
+pub(crate) fn validate_full_character_components(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    let mut missing = Vec::new();
+    if ctx.db.character().id().find(character_id).is_none() {
+        missing.push("character");
+    }
+    if ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("stats");
+    }
+    if ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("attributes");
+    }
+    if ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("skills");
+    }
+    if ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("limbs");
+    }
+    if ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("personality");
+    }
+    if ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("time");
+    }
+    if ctx
+        .db
+        .character_training_schedule()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("training_schedule");
+    }
+    if ctx
+        .db
+        .character_capability()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("capability");
+    }
+    if ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("condition");
+    }
+    if ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("needs");
+    }
+    if ctx
+        .db
+        .character_exposure()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("exposure");
+    }
+    if ctx
+        .db
+        .character_strategic_condition()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("strategic_condition");
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Character {character_id} is missing full components: {}",
+            missing.join(", ")
+        ))
+    }
 }
 
 #[reducer]
@@ -2626,8 +2920,9 @@ pub fn add_and_equip_item(
 #[cfg(test)]
 mod starting_character_boundary_tests {
     use super::{
-        attachment_point_matches_requirement, attachment_would_create_cycle,
-        conflicting_root_requirements, first_free_attachment_capacity, initial_membership_minutes,
+        CharacterCreationMode, NpcLifeFacts, attachment_point_matches_requirement,
+        attachment_would_create_cycle, conflicting_root_requirements,
+        first_free_attachment_capacity, initial_membership_minutes,
     };
     use crate::item::{
         EquipmentAttachmentPoint, EquipmentChannel, EquipmentLocation,
@@ -2644,6 +2939,70 @@ mod starting_character_boundary_tests {
                 9_000 + 30 * adventuresim_core::strategic_time::MINUTES_PER_DAY
             )
         );
+    }
+
+    #[test]
+    fn stable_npc_life_is_order_independent_and_adult_bounded() {
+        let first = NpcLifeFacts::from_stable_seed(31);
+        let _unrelated = NpcLifeFacts::from_stable_seed(99);
+        let repeated = NpcLifeFacts::from_stable_seed(31);
+        assert_eq!(first, repeated);
+        assert!((18..=60).contains(&first.age_years));
+    }
+
+    #[test]
+    fn creation_modes_separate_persistent_npcs_from_tactical_temporaries() {
+        assert!(!CharacterCreationMode::Player.is_npc());
+        assert!(!CharacterCreationMode::Player.temporary());
+        assert!(CharacterCreationMode::PersistentNpc.is_npc());
+        assert!(!CharacterCreationMode::PersistentNpc.temporary());
+        assert!(CharacterCreationMode::TemporaryNpc.is_npc());
+        assert!(CharacterCreationMode::TemporaryNpc.temporary());
+
+        let source = include_str!("character.rs");
+        let persistent = source
+            .split("pub(crate) fn insert_persistent_npc_character")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn insert_new_npc_character_with_life")
+            .next()
+            .unwrap();
+        assert!(persistent.contains("origin_settlement_id: Some(origin_settlement_id)"));
+        assert!(persistent.contains("CharacterCreationMode::PersistentNpc"));
+        assert!(persistent.contains("create_solo_party: false"));
+        assert!(persistent.contains("initial_time_minute"));
+    }
+
+    #[test]
+    fn completed_creation_checks_the_full_component_invariant() {
+        let source = include_str!("character.rs");
+        let insertion = source
+            .split("pub(crate) fn insert_character_with_origin")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn validate_full_character_components")
+            .next()
+            .unwrap();
+        assert!(insertion.contains("validate_full_character_components(ctx, character.id)?"));
+        for component in [
+            "character_stats",
+            "character_attributes",
+            "character_skills",
+            "character_limbs",
+            "character_personality",
+            "character_time",
+            "character_training_schedule",
+            "character_capability",
+            "character_condition",
+            "character_needs",
+            "character_exposure",
+            "character_strategic_condition",
+        ] {
+            assert!(
+                source.contains(component),
+                "missing invariant for {component}"
+            );
+        }
     }
 
     #[test]

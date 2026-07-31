@@ -46,9 +46,20 @@ their past. The resulting friendship does not create romantic eligibility.
 
 Courtship, gifts, discovery by family, engagements, marriage, pregnancy, and
 birth are canonical or exclusive actions. NPC-controlled people are full
-Characters with an NPC policy and an authoritative personal frontier. Those
-actions may only move that frontier forward; player travel and account-owned
-schedule reducers never advance it. Institutional services (guild admission,
+Characters with the same stats, attributes, skills, limbs, personality,
+condition, needs, equipment capability, and `CharacterTime` components as
+player characters. `NpcPolicy` changes who drives that character; it does not
+create a second identity or a reduced character type. Persistent NPCs begin
+outside a party, while player creation retains its normal solo-party behavior.
+NPC generation takes an explicit upbringing settlement and stable policy seed,
+so its life simulation and personality do not depend on reducer RNG, insertion
+order, or retries.
+
+`CharacterTime` is the one authoritative personal frontier for both players
+and NPCs; there is no parallel NPC clock. Canonical NPC actions may only move
+that frontier forward and settle residence bills, weddings, and births in the
+same transaction. Player travel and account-owned schedule reducers never
+advance an NPC on its behalf. Institutional services (guild admission,
 renewable market trade, ordinary rest, and actor-local quest journal updates)
 remain asynchronous only when they neither read nor write dynamic canonical
 NPC state.
@@ -158,11 +169,11 @@ This is deliberately not event sourcing. Persistence retains only the current
 `CharacterSkills` projection (plus the character's other current state), never
 historical activity transitions, schedules, or phase records. Recreating the
 same candidate coordinates reproduces the same result, but gameplay never
-replays a stored life history. Generic full Characters and settlement NPCs
-materialized as recruiting-party leaders use the same one-time simulation;
-lightweight settlement demographic rows, temporary tactical enemies, exact
-strategic-simulator evaluation profiles, imports without a full Character, and
-purpose-built fixtures remain outside that contract.
+replays a stored life history. Generic full Characters and persistent
+settlement NPCs use the same one-time simulation and must pass the same
+full-component invariant. Temporary tactical enemies, exact strategic-simulator
+evaluation profiles, and purpose-built fixtures remain outside the persistent
+NPC contract.
 
 Native oral language is an acquired identity supplied by the character's
 upbringing settlement, rather than credited study hours competing for a daily
