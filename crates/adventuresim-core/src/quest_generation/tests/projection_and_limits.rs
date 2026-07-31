@@ -107,6 +107,7 @@
                     TemplateFamily::DisappearanceOrLoss => {
                         assert!(producer.active_initially);
                     }
+                    TemplateFamily::Outbreak => unreachable!("legacy pattern test families"),
                 }
                 prelearning_blueprints.insert(format!(
                     "{:?}:{}:{}",

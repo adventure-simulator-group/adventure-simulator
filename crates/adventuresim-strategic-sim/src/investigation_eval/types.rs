@@ -298,4 +298,5 @@ pub(crate) enum Capability {
     Prepare(String),
     WaitForWitness(usize),
     Conclude(RouteClass),
+    ResolveCarrier(RouteClass),
 }

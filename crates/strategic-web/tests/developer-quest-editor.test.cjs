@@ -42,17 +42,37 @@ test("submission handles structured 422 diagnostics, override, and duplicate pre
   assert.match(script, /if \(submitting \|\| !draft\) return/);
   assert.match(script, /submit\.disabled = true/);
   assert.match(script, /data-developer-field-error/);
-  assert.doesNotMatch(script, /location\.(assign|replace)|window\.location/);
+  const questSubmission = script.split('form.addEventListener("submit"')[1];
+  assert.doesNotMatch(questSubmission, /location\.(assign|replace)|window\.location/);
+});
+
+test("autopsy demo loader is explicit, settlement-only, and redirects after success", () => {
+  assert.match(layout, /data-developer-autopsy-demo/);
+  assert.match(script, /fetch\("\/api\/developer\/autopsy-demo"/);
+  assert.match(script, /Prepare the selected character/);
+  assert.match(script, /window\.location\.assign\(body\.redirect_to/);
+  assert.match(route, /\.route\("\/api\/developer\/autopsy-demo"/);
+  assert.match(route, /"load_autopsy_demo"/);
+});
+
+test("outbreak demo uses real server materialization and ordinary rumor discovery", () => {
+  assert.match(layout, /data-developer-outbreak-demo/);
+  assert.match(script, /fetch\("\/api\/developer\/outbreak-demo"/);
+  assert.match(script, /discover it through an ordinary local rumor/);
+  assert.match(route, /\.route\("\/api\/developer\/outbreak-demo"/);
+  assert.match(route, /"load_outbreak_demo"/);
+  assert.match(route, /"discovery":"normal_rumor"/);
 });
 
 test("HTTP adapter derives settlement and leaves discovery to normal rumors", () => {
-  assert.match(route, /current_settlement_id/);
-  const request = route.split("struct SpawnRequest {")[1].split("}")[0];
+  const productionRoute = route.split("#[cfg(test)]")[0];
+  assert.match(productionRoute, /current_settlement_id/);
+  const request = productionRoute.split("struct SpawnRequest {")[1].split("}")[0];
   assert.doesNotMatch(request, /settlement_id/);
-  assert.match(route, /"discovery":"normal_rumor"/);
-  assert.doesNotMatch(route, /rumor_receipt|journal|case_site_pin|referral/);
-  assert.match(route, /SELECT \* FROM character_time WHERE character_id/);
-  assert.match(route, /now_minute/);
+  assert.match(productionRoute, /"discovery":"normal_rumor"/);
+  assert.doesNotMatch(productionRoute, /rumor_receipt|journal|case_site_pin|referral/);
+  assert.match(productionRoute, /SELECT \* FROM character_time WHERE character_id/);
+  assert.match(productionRoute, /now_minute/);
 });
 
 test("typed constructors replace whole tagged values and structured options", () => {

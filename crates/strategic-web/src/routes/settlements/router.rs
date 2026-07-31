@@ -43,6 +43,8 @@ struct BuildingQuery {
     building: Option<String>,
     cook: Option<bool>,
     herbalism: Option<bool>,
+    corpse: Option<String>,
+    medical: Option<String>,
     forage: Option<bool>,
     forage_receipt: Option<String>,
     forage_error: Option<String>,
@@ -176,7 +178,8 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendLocalProblemTradeEffect,
+    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendCorpse,
+    BackendLocalProblemTradeEffect,
     BackendPhysiologyAdministration, BackendPhysiologyChart, Character, CharacterAffinity,
     CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquipmentGraph,
     CharacterEquippedItem, CharacterFamiliarity, CharacterFilth, CharacterLimbs,

@@ -437,6 +437,7 @@ fn route_variant_candidates(family: TemplateFamily) -> [Candidate<RouteVariant>;
         .relation(match family {
             TemplateFamily::RecurringDepredation => "route.recurring_depredation",
             TemplateFamily::DisappearanceOrLoss => "route.disappearance_or_loss",
+            TemplateFamily::Outbreak => "route.outbreak",
         })
         .expect("validated route relation");
     let authored = |id: &str| {
@@ -482,6 +483,7 @@ fn attack_pattern_candidates(
         .relation(match family {
             TemplateFamily::RecurringDepredation => "pattern.recurring_depredation",
             TemplateFamily::DisappearanceOrLoss => "pattern.disappearance_or_loss",
+            TemplateFamily::Outbreak => "pattern.outbreak",
         })
         .expect("validated pattern relation");
     let authored = |id: &str| {

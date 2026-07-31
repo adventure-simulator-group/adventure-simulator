@@ -412,7 +412,54 @@
       status.textContent = "";
     }
   }
+  async function loadAutopsyDemo(button) {
+    if (!document.documentElement.hasAttribute("data-developer-mode")) return;
+    if (document.querySelector("[data-environment]")?.dataset.environment !== "settlement") return;
+    if (!window.confirm("Prepare the selected character and load three autoresolve-derived autopsy demo bodies here?")) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Loading...";
+    try {
+      const response = await fetch("/api/developer/autopsy-demo", {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || `Autopsy demo failed (${response.status})`);
+      window.location.assign(body.redirect_to || window.location.href);
+    } catch (error) {
+      window.alert(error.message);
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+  async function loadOutbreakDemo(button) {
+    if (!document.documentElement.hasAttribute("data-developer-mode")) return;
+    if (document.querySelector("[data-environment]")?.dataset.environment !== "settlement") return;
+    if (!window.confirm("Create a deterministic outbreak here and prepare this character to investigate it? You will still discover it through an ordinary local rumor.")) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Loading...";
+    try {
+      const response = await fetch("/api/developer/outbreak-demo", {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || `Outbreak demo failed (${response.status})`);
+      window.alert("Outbreak created. Ask around for local rumors to discover the case normally.");
+      window.location.assign(body.redirect_to || window.location.href);
+    } catch (error) {
+      window.alert(error.message);
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
   document.addEventListener("click", (event) => {
+    const outbreakDemo = event.target.closest("[data-developer-outbreak-demo]");
+    if (outbreakDemo) loadOutbreakDemo(outbreakDemo);
+    const autopsyDemo = event.target.closest("[data-developer-autopsy-demo]");
+    if (autopsyDemo) loadAutopsyDemo(autopsyDemo);
     const open = event.target.closest("[data-developer-quest-open]");
     if (open) openEditor(open);
     if (event.target.closest("[data-developer-quest-close]")) dialog.close();

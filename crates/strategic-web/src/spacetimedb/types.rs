@@ -180,6 +180,38 @@ pub struct BackendPhysicalEvidenceInspection {
     pub narration: String,
     pub attempted_at: u64,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendCorpse {
+    pub owner_character_id: u64,
+    pub corpse_id: String,
+    pub display_name: String,
+    pub creature_kind: String,
+    pub source_id: String,
+    pub location: String,
+    pub decomposition: String,
+    pub case_site_id: String,
+    pub settlement_id: String,
+    pub opened: bool,
+    pub permission: String,
+    pub exhumation_permission: bool,
+    pub penalty_free_burning: bool,
+    pub revision: u32,
+    pub findings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendOutbreakPatient {
+    pub owner_character_id: u64,
+    pub patient_ref: String,
+    pub presentation_npc_id: String,
+    pub display_name: String,
+    pub case_id: String,
+    pub source_site_id: String,
+    pub alive: bool,
+    pub symptomatic: bool,
+    pub findings: Vec<String>,
+}
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 

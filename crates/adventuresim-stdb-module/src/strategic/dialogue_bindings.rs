@@ -5,30 +5,13 @@ fn receive_referred_testimony(
     live_npc: &crate::settlement_population::SettlementNpc,
     action_id: &str,
 ) -> Result<(), String> {
-    let delivery = ctx
-        .db
-        .local_problem_rumor_delivery()
-        .session_id()
-        .filter(&session.id)
-        .find(|delivery| delivery.character_id == character_id)
-        .ok_or("Dialogue has no exact local-problem referral")?;
-    let ReferralDeliveryAuthority::LocalProblem(receipt) =
-        referral_delivery_authority(ctx, &delivery)?
-    else {
-        return Err("Dialogue has no exact local-problem referral".into());
-    };
-    if receipt.character_id != character_id || receipt.settlement_id != session.settlement_id {
-        return Err("Addressed NPC is not the exact referred witness here".into());
-    }
-    let (generated, witness) = referred_generated_witness(
+    let (generated, witness) = dialogue_referred_witness(
         ctx,
         character_id,
-        &receipt.opaque_case_ref,
+        session,
         &live_npc.id,
-        &session.settlement_id,
-        &session.location_id,
     )?
-    .ok_or("Addressed NPC is not the exact referred witness here")?;
+    .ok_or("Addressed NPC has no available generated testimony here")?;
     crate::investigation::persist_generated_testimony(
         ctx,
         character_id,
@@ -52,24 +35,28 @@ pub(crate) fn dialogue_referred_witness(
     )>,
     String,
 > {
-    let Some(delivery) = ctx
+    if let Some(delivery) = ctx
         .db
         .local_problem_rumor_delivery()
         .session_id()
         .filter(&session.id)
         .find(|delivery| delivery.character_id == character_id)
-    else {
-        return Ok(None);
-    };
-    let ReferralDeliveryAuthority::LocalProblem(receipt) =
-        referral_delivery_authority(ctx, &delivery)?
-    else {
-        return Ok(None);
-    };
-    referred_generated_witness(
+        && let ReferralDeliveryAuthority::LocalProblem(receipt) =
+            referral_delivery_authority(ctx, &delivery)?
+        && let Some(referred) = referred_generated_witness(
+            ctx,
+            character_id,
+            &receipt.opaque_case_ref,
+            npc_id,
+            &session.settlement_id,
+            &session.location_id,
+        )?
+    {
+        return Ok(Some(referred));
+    }
+    crate::investigation::known_outbreak_witness(
         ctx,
         character_id,
-        &receipt.opaque_case_ref,
         npc_id,
         &session.settlement_id,
         &session.location_id,
@@ -995,18 +982,66 @@ fn refresh_dialogue_topic_options(
             }
             let public_case_id =
                 dialogue_public_case_id(ctx, character_id, session, &case_effects)?;
+            let label = if topic.id == "referred-testimony" {
+                let outbreak_testimony = ctx
+                    .db
+                    .dialogue_participant()
+                    .session_id()
+                    .filter(&session.id)
+                    .find(|participant| participant.character_id.is_none())
+                    .map(|participant| {
+                        dialogue_referred_witness(
+                            ctx,
+                            character_id,
+                            session,
+                            &participant.actor_id,
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+                    .is_some_and(|(generated, _)| generated.outbreak.is_some());
+                if outbreak_testimony {
+                    "The fevers".into()
+                } else {
+                    topic.label.clone()
+                }
+            } else {
+                topic.label.clone()
+            };
             ctx.db.dialogue_topic_option().insert(DialogueTopicOption {
                 id: format!("{}:{}", session.id, topic.id),
                 gateway_bucket: 0,
                 session_id: session.id.clone(),
                 topic_id: topic.id.clone(),
                 public_case_id,
-                label: topic.label.clone(),
+                label,
                 source_ref_json: serde_json::to_string(&adventuresim_dialogue::source_for_topic(
                     &session.conversation_id,
                     &topic.id,
                 ))
                 .map_err(|_| "Could not encode topic source")?,
+            });
+        }
+    }
+    if let Some(npc_id) = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .find(|participant| participant.character_id.is_none())
+        .map(|participant| participant.actor_id)
+    {
+        for (topic_id, label) in
+            crate::corpse::permission_topics_for_npc(ctx, character_id, &npc_id)
+        {
+            ctx.db.dialogue_topic_option().insert(DialogueTopicOption {
+                id: format!("{}:{topic_id}", session.id),
+                gateway_bucket: 0,
+                session_id: session.id.clone(),
+                topic_id,
+                public_case_id: String::new(),
+                label,
+                source_ref_json: "[]".into(),
             });
         }
     }

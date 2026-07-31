@@ -1,5 +1,50 @@
 # Development Workflow
 
+## Outbreak demo
+
+Start a disposable strategic-only stack with `just outbreak-demo`. Create or
+select an adventurer, enable browser-local developer mode, and choose
+**Outbreak demo** in the settlement top bar. The loader creates a deterministic
+generated outbreak with private progressing patients, an optional exact-course
+disease victim or carrier-autoresolve victim, and an ordinary remediation path.
+It prepares the selected character
+with Physiology, Surgery, Bestiary, social and urban-investigation skills plus a
+surgery kit.
+
+The loader intentionally does not reveal the case or write a journal entry.
+Ask local NPCs for rumors, then investigate through the normal quest,
+physiology, surgery, bestiary, and dialogue surfaces. Repeated loading is
+idempotent for the same character and settlement. The reducer is available only
+in a development-bootstrap module.
+
+## Autopsy demo
+
+Start a disposable strategic-only stack:
+
+```powershell
+just autopsy-demo
+```
+
+Create or select an adventurer, enable browser-local developer mode, return to
+their settlement overview, and choose **Autopsy demo** in the top bar. The
+one-shot loader raises that character's Surgery, Physiology, and Bestiary
+skills, supplies a surgery kit, and stages three bodies in the current
+settlement: a recent victim, an unidentified interred victim, and an enemy
+killed by the party. All physical injuries come from ordinary strategic
+autoresolve. The loader adjusts only custody and discovery times to make each
+state immediately accessible.
+
+The recent and buried victims share an explicitly bound local family member so
+dialogue permission and unauthorized consequences can be exercised. Burning
+either victim demonstrates the severe social and reputation penalty; burning
+the fallen enemy demonstrates the penalty exemption. Loading is intentionally
+one-shot for the selected character. Restart the isolated profile to obtain a
+clean run after irreversible actions.
+
+The loader reducer is disabled in normal module builds. Like the existing
+developer quest UI, browser-local developer mode only hides the control; do not
+deploy a development-bootstrap module to an untrusted environment.
+
 ## Herbalism demo
 
 Bootstrap the isolated profile with visual demos, select **Herbalism Demo**,
@@ -464,6 +509,10 @@ For a self-contained tactical database and request, prefer
   $env:CARGO_TARGET_DIR = "$PWD\target\verification"
   just test
   ```
+
+  Isolated profiles started with `scripts/dev_stack.py run-profile` also honor
+  `CARGO_TARGET_DIR`, which lets multiple worktrees reuse an existing build
+  directory instead of compiling the same stack into each worktree.
 
 `strategic-web` logs every HTTP request at `info` level with a request ID,
 method, URI, response status, and elapsed milliseconds. The same request ID is

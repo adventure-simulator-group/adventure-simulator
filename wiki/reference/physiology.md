@@ -1,5 +1,15 @@
 # Physiology system
 
+During an outbreak, Physiology can examine living or dead patients through the
+existing window and contribute systemic findings. It does not read outbreak
+truth, identify the source, or complete the quest; those conclusions require
+the investigation evidence graph and exact remediation. See
+[Outbreak investigations](outbreaks.md).
+
+Dead subjects remain available to the medical interface. External and internal
+post-mortem interpretation, its separation from Surgery and Bestiary, and
+observer-safe corpse findings are documented in [Autopsies](autopsies.md).
+
 Physiology is the skill for preventing avoidable disease exposure, observing
 health, administering prepared interventions, and improving wound recovery. It
 produces a fallible differential of possible diseases, but never reveals the

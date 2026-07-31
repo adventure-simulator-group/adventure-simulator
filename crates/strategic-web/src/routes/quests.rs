@@ -25,11 +25,12 @@ use super::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendInvestigationAction,
-    BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
-    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
-    ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
-    PartyInventoryItem, PartyStake, Settlement,
+    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendCorpse,
+    BackendInvestigationAction, BackendOutbreakPatient, BattleLootItem, BattleResult, Character,
+    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterStrategicCondition,
+    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
+    FoodLot, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake,
+    Settlement,
 };
 use crate::templates::quest::{
     CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
@@ -46,6 +47,11 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/case-site/{id}", get(quest_location_base))
         .route("/locations/case-site/{id}/map", get(quest_location_map))
         .route("/locations/case-site/{id}/enemy", get(quest_location_enemy))
+        .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
+        .route(
+            "/outbreak-patients/{patient_ref}/physiology",
+            post(examine_outbreak_patient),
+        )
         .route(
             "/locations/case-site/{id}/loot",
             get(quest_location_legacy_loot),
@@ -344,14 +350,21 @@ async fn store_battle_loot(
     )
 }
 
-#[derive(Default, serde::Deserialize)]
+#[derive(Clone, Default, serde::Deserialize)]
 struct QuestMapQuery {
     destination: Option<String>,
 }
 
+#[derive(Clone, Default, serde::Deserialize)]
+struct QuestEnemyQuery {
+    corpse: Option<String>,
+    patient: Option<String>,
+    medical: Option<String>,
+}
+
 enum QuestLocationTab {
     Map(Option<String>),
-    Enemy,
+    Enemy(QuestEnemyQuery),
 }
 
 fn case_site_page_presentation(
@@ -520,9 +533,142 @@ async fn quest_location_map(
 async fn quest_location_enemy(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<QuestEnemyQuery>,
     session: Session,
 ) -> Response {
-    render_quest_location(state, id, session, QuestLocationTab::Enemy).await
+    render_quest_location(state, id, session, QuestLocationTab::Enemy(query)).await
+}
+
+#[derive(serde::Deserialize)]
+struct CorpseActionForm {
+    action_kind: String,
+    discipline: String,
+    stage: String,
+    action_id: String,
+    expected_revision: u32,
+    #[serde(default)]
+    confirm_unauthorized: bool,
+    return_to: String,
+}
+
+async fn perform_corpse_action(
+    State(state): State<AppState>,
+    Path(corpse_id): Path<String>,
+    session: Session,
+    Form(form): Form<CorpseActionForm>,
+) -> Redirect {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    let result = match form.action_kind.as_str() {
+        "open" => {
+            state
+                .db
+                .call(
+                    "open_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                        json!(form.confirm_unauthorized),
+                    ],
+                )
+                .await
+        }
+        "exhume" => {
+            state
+                .db
+                .call(
+                    "exhume_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                        json!(form.confirm_unauthorized),
+                    ],
+                )
+                .await
+        }
+        "bury" => {
+            state
+                .db
+                .call(
+                    "bury_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                    ],
+                )
+                .await
+        }
+        "burn" => {
+            state
+                .db
+                .call(
+                    "burn_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                        json!(form.confirm_unauthorized),
+                    ],
+                )
+                .await
+        }
+        _ => {
+            state
+                .db
+                .call(
+                    "examine_corpse",
+                    &[
+                        json!(actor_id),
+                        json!(&corpse_id),
+                        json!(&form.discipline),
+                        json!(&form.stage),
+                        json!(&form.action_id),
+                        json!(form.expected_revision),
+                        json!(form.confirm_unauthorized),
+                    ],
+                )
+                .await
+        }
+    };
+    if let Err(error) = result {
+        tracing::warn!(%error, actor_id, %corpse_id, "corpse medical action failed");
+    }
+    super::redirect_to_local(&form.return_to, "/")
+}
+
+#[derive(serde::Deserialize)]
+struct OutbreakPatientActionForm {
+    return_to: String,
+}
+
+async fn examine_outbreak_patient(
+    State(state): State<AppState>,
+    Path(patient_ref): Path<String>,
+    session: Session,
+    Form(form): Form<OutbreakPatientActionForm>,
+) -> Redirect {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters");
+    };
+    if let Err(error) = state
+        .db
+        .call(
+            "examine_outbreak_patient",
+            &[json!(actor_id), json!(&patient_ref)],
+        )
+        .await
+    {
+        tracing::warn!(%error, actor_id, %patient_ref, "outbreak patient physiology failed");
+    }
+    super::redirect_to_local(&form.return_to, "/")
 }
 
 async fn quest_location_legacy_loot(Path(id): Path<String>) -> Redirect {
@@ -960,6 +1106,54 @@ async fn render_quest_location(
             .unwrap_or_default(),
         &site.case_site_id,
     );
+    let corpses = state
+        .db
+        .query::<BackendCorpse>(&format!(
+            "SELECT * FROM backend_corpses WHERE owner_character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|corpse| corpse.case_site_id == site.case_site_id && corpse.location == "scene")
+        .collect::<Vec<_>>();
+    let outbreak_patients = state
+        .db
+        .query::<BackendOutbreakPatient>(&format!(
+            "SELECT * FROM backend_outbreak_patients WHERE owner_character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|patient| patient.source_site_id == site.case_site_id)
+        .collect::<Vec<_>>();
+    let selected_corpse_coordinate = match &tab {
+        QuestLocationTab::Enemy(query) => query.corpse.as_deref().and_then(|corpse_id| {
+            corpses
+                .iter()
+                .position(|corpse| corpse.corpse_id == corpse_id)
+                .map(|index| {
+                    (
+                        index,
+                        if query.medical.as_deref() == Some("surgery") {
+                            "surgery"
+                        } else {
+                            "physiology"
+                        },
+                    )
+                })
+        }),
+        QuestLocationTab::Map(_) => None,
+    };
+    let selected_corpse =
+        selected_corpse_coordinate.map(|(index, window)| (&corpses[index], window));
+    let selected_patient = match &tab {
+        QuestLocationTab::Enemy(query) => query.patient.as_deref().and_then(|patient_ref| {
+            outbreak_patients
+                .iter()
+                .find(|patient| patient.patient_ref == patient_ref)
+        }),
+        QuestLocationTab::Map(_) => None,
+    };
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let soap_preview = soap_rest_preview(
         &state,
@@ -986,8 +1180,12 @@ async fn render_quest_location(
             soap_preview,
             recovery_notice.as_ref(),
             logged_in_as,
+            &corpses,
+            None,
+            &outbreak_patients,
+            None,
         ),
-        QuestLocationTab::Enemy => quest_location_enemy_page(
+        QuestLocationTab::Enemy(_query) => quest_location_enemy_page(
             &presentation,
             site,
             &onsite_actions,
@@ -1008,6 +1206,10 @@ async fn render_quest_location(
             &food_lots,
             &targets,
             logged_in_as,
+            &corpses,
+            selected_corpse,
+            &outbreak_patients,
+            selected_patient,
         ),
     };
     Html(page.into_string()).into_response()

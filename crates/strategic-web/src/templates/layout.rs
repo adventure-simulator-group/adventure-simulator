@@ -167,7 +167,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=multi-character-switcher-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=developer-visibility-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
                 link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1-equipment-slots-7-weather-status-2";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
@@ -361,6 +361,18 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
+                    button type="button" class="btn btn-small developer-outbreak-demo-button"
+                        data-developer-outbreak-demo data-developer-only
+                        aria-label="Load the outbreak demo"
+                        title="Create a real outbreak and discover it through an ordinary rumor" {
+                        "Outbreak demo"
+                    }
+                    button type="button" class="btn btn-small developer-autopsy-demo-button"
+                        data-developer-autopsy-demo data-developer-only
+                        aria-label="Load the autopsy demo"
+                        title="Prepare this character and load autoresolve-derived demo bodies" {
+                        "Autopsy demo"
+                    }
                     button type="button" class="developer-quest-button" data-developer-quest-open
                         data-developer-only aria-label="Spawn a developer quest"
                         title="Spawn a developer quest" {
@@ -1061,6 +1073,19 @@ mod tests {
         );
         assert!(markup.contains("aria-label=\"Enable developer mode\""));
         assert!(markup.contains("aria-pressed=\"false\""));
+        assert!(markup.contains("data-developer-outbreak-demo data-developer-only"));
+        assert!(markup.contains("data-developer-autopsy-demo data-developer-only"));
+        let layout_css = include_str!("../../static/css/layout.css");
+        assert!(
+            layout_css.contains(
+                "html:not([data-developer-mode]) [data-developer-only] { display: none; }"
+            )
+        );
+        assert!(
+            layout_css.contains(
+                "html[data-developer-mode] [data-developer-only] { display: inline-grid; }"
+            )
+        );
         assert!(markup.contains("class=\"journal-button\""));
         assert!(markup.contains("aria-label=\"Open journal\""));
         assert!(markup.contains("data-journal-tab"));

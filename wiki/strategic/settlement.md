@@ -1,5 +1,11 @@
 # Services
 
+Generated outbreak patients are real temporary characters in the affected
+settlement, but private disease/source authority is not a public settlement
+fact. Before discovery, the settlement exposes only the bounded sick-local
+symptom; rumor discovery then creates the observer-owned investigation. See
+[Outbreak investigations](../reference/outbreaks.md).
+
 City- and Capital-scale settlements infer a Bookstore service and Books stock.
 The bookseller uses ordinary merchant purchase authority and also supplies the
 free on-site fallback catalog for Reading. Book-capability items are excluded

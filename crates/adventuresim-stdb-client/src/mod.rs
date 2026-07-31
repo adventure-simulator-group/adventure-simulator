@@ -25,6 +25,7 @@ pub mod attach_item_at_placement_reducer;
 pub mod authority_arrest_charge_type;
 pub mod authorize_tactical_server_claim_reducer;
 pub mod automatic_social_chat_type;
+pub mod autopsy_action_receipt_type;
 pub mod autoresolve_mission_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
@@ -44,6 +45,8 @@ pub mod backend_character_personalities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_contract_type;
 pub mod backend_contracts_table;
+pub mod backend_corpse_type;
+pub mod backend_corpses_table;
 pub mod backend_dialogue_event_type;
 pub mod backend_dialogue_events_table;
 pub mod backend_dialogue_participant_type;
@@ -74,6 +77,8 @@ pub mod backend_local_problem_rumor_type;
 pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
 pub mod backend_local_problem_trade_effects_table;
+pub mod backend_outbreak_patient_type;
+pub mod backend_outbreak_patients_table;
 pub mod backend_physical_evidence_inspection_type;
 pub mod backend_physical_evidence_inspections_table;
 pub mod backend_physical_evidence_table;
@@ -106,6 +111,8 @@ pub mod bestiary_hours_type;
 pub mod blood_exposure_checkpoint_type;
 pub mod bootstrap_development_world_reducer;
 pub mod built_settlement_cover_type;
+pub mod burn_corpse_reducer;
+pub mod bury_corpse_reducer;
 pub mod camp_duration_mode_type;
 pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
@@ -189,6 +196,14 @@ pub mod contract_type;
 pub mod conviction_type;
 pub mod cook_food_reducer;
 pub mod cooking_method_type;
+pub mod corpse_body_state_type;
+pub mod corpse_family_binding_type;
+pub mod corpse_injury_type;
+pub mod corpse_pathology_type;
+pub mod corpse_permission_attempt_type;
+pub mod corpse_permission_kind_type;
+pub mod corpse_permission_scope_type;
+pub mod corpse_permission_type;
 pub mod courtship_type;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
@@ -256,6 +271,9 @@ pub mod equipment_occupancy_type;
 pub mod equipment_parent_requirement_type;
 pub mod equipment_placement_type;
 pub mod evidence_presentation_kind_type;
+pub mod examine_corpse_reducer;
+pub mod examine_outbreak_patient_reducer;
+pub mod exhume_corpse_reducer;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
 pub mod fallback_historical_vegetation_type;
@@ -385,6 +403,8 @@ pub mod limb_injury_table;
 pub mod limb_injury_type;
 pub mod limb_region_type;
 pub mod liquidate_party_inventory_reducer;
+pub mod load_autopsy_demo_reducer;
+pub mod load_outbreak_demo_reducer;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -392,6 +412,7 @@ pub mod local_problem_incident_receipt_type;
 pub mod local_problem_outcome_receipt_type;
 pub mod local_problem_receipt_type;
 pub mod local_problem_rumor_delivery_type;
+pub mod local_problem_rumor_preference_type;
 pub mod local_problem_symptom_table;
 pub mod local_problem_symptom_type;
 pub mod located_route_landform_type;
@@ -422,6 +443,7 @@ pub mod npc_sex_type;
 pub mod objective_continuity_guard_type;
 pub mod objective_continuity_kind_type;
 pub mod official_religion_type;
+pub mod open_corpse_reducer;
 pub mod oral_language_hours_type;
 pub mod organic_soil_type;
 pub mod organization_membership_table;
@@ -429,6 +451,10 @@ pub mod organization_membership_type;
 pub mod organization_presentation_table;
 pub mod organization_presentation_type;
 pub mod other_non_textured_soil_type;
+pub mod outbreak_authority_type;
+pub mod outbreak_patient_authority_type;
+pub mod outbreak_patient_examination_type;
+pub mod outbreak_source_presence_span_type;
 pub mod outcome_source_authority_type;
 pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
@@ -635,6 +661,7 @@ pub mod stone_content_percent_type;
 pub mod stop_preparation_reducer;
 pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
+pub mod strategic_corpse_type;
 pub mod strategic_encounter_loss_type;
 pub mod strategic_encounter_table;
 pub mod strategic_encounter_type;
@@ -715,6 +742,7 @@ pub use attach_item_at_placement_reducer::attach_item_at_placement;
 pub use authority_arrest_charge_type::AuthorityArrestCharge;
 pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
 pub use automatic_social_chat_type::AutomaticSocialChat;
+pub use autopsy_action_receipt_type::AutopsyActionReceipt;
 pub use autoresolve_mission_reducer::autoresolve_mission;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
@@ -734,6 +762,8 @@ pub use backend_character_personalities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_contract_type::BackendContract;
 pub use backend_contracts_table::*;
+pub use backend_corpse_type::BackendCorpse;
+pub use backend_corpses_table::*;
 pub use backend_dialogue_event_type::BackendDialogueEvent;
 pub use backend_dialogue_events_table::*;
 pub use backend_dialogue_participant_type::BackendDialogueParticipant;
@@ -764,6 +794,8 @@ pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
 pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
 pub use backend_local_problem_trade_effects_table::*;
+pub use backend_outbreak_patient_type::BackendOutbreakPatient;
+pub use backend_outbreak_patients_table::*;
 pub use backend_physical_evidence_inspection_type::BackendPhysicalEvidenceInspection;
 pub use backend_physical_evidence_inspections_table::*;
 pub use backend_physical_evidence_table::*;
@@ -796,6 +828,8 @@ pub use bestiary_hours_type::BestiaryHours;
 pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use built_settlement_cover_type::BuiltSettlementCover;
+pub use burn_corpse_reducer::burn_corpse;
+pub use bury_corpse_reducer::bury_corpse;
 pub use camp_duration_mode_type::CampDurationMode;
 pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
@@ -879,6 +913,14 @@ pub use contract_type::Contract;
 pub use conviction_type::Conviction;
 pub use cook_food_reducer::cook_food;
 pub use cooking_method_type::CookingMethod;
+pub use corpse_body_state_type::CorpseBodyState;
+pub use corpse_family_binding_type::CorpseFamilyBinding;
+pub use corpse_injury_type::CorpseInjury;
+pub use corpse_pathology_type::CorpsePathology;
+pub use corpse_permission_attempt_type::CorpsePermissionAttempt;
+pub use corpse_permission_kind_type::CorpsePermissionKind;
+pub use corpse_permission_scope_type::CorpsePermissionScope;
+pub use corpse_permission_type::CorpsePermission;
 pub use courtship_type::Courtship;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
@@ -946,6 +988,9 @@ pub use equipment_occupancy_type::EquipmentOccupancy;
 pub use equipment_parent_requirement_type::EquipmentParentRequirement;
 pub use equipment_placement_type::EquipmentPlacement;
 pub use evidence_presentation_kind_type::EvidencePresentationKind;
+pub use examine_corpse_reducer::examine_corpse;
+pub use examine_outbreak_patient_reducer::examine_outbreak_patient;
+pub use exhume_corpse_reducer::exhume_corpse;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
 pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
@@ -1075,6 +1120,8 @@ pub use limb_injury_table::*;
 pub use limb_injury_type::LimbInjury;
 pub use limb_region_type::LimbRegion;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
+pub use load_autopsy_demo_reducer::load_autopsy_demo;
+pub use load_outbreak_demo_reducer::load_outbreak_demo;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -1082,6 +1129,7 @@ pub use local_problem_incident_receipt_type::LocalProblemIncidentReceipt;
 pub use local_problem_outcome_receipt_type::LocalProblemOutcomeReceipt;
 pub use local_problem_receipt_type::LocalProblemReceipt;
 pub use local_problem_rumor_delivery_type::LocalProblemRumorDelivery;
+pub use local_problem_rumor_preference_type::LocalProblemRumorPreference;
 pub use local_problem_symptom_table::*;
 pub use local_problem_symptom_type::LocalProblemSymptom;
 pub use located_route_landform_type::LocatedRouteLandform;
@@ -1112,6 +1160,7 @@ pub use npc_sex_type::NpcSex;
 pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
 pub use objective_continuity_kind_type::ObjectiveContinuityKind;
 pub use official_religion_type::OfficialReligion;
+pub use open_corpse_reducer::open_corpse;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use organic_soil_type::OrganicSoil;
 pub use organization_membership_table::*;
@@ -1119,6 +1168,10 @@ pub use organization_membership_type::OrganizationMembership;
 pub use organization_presentation_table::*;
 pub use organization_presentation_type::OrganizationPresentation;
 pub use other_non_textured_soil_type::OtherNonTexturedSoil;
+pub use outbreak_authority_type::OutbreakAuthority;
+pub use outbreak_patient_authority_type::OutbreakPatientAuthority;
+pub use outbreak_patient_examination_type::OutbreakPatientExamination;
+pub use outbreak_source_presence_span_type::OutbreakSourcePresenceSpan;
 pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
@@ -1325,6 +1378,7 @@ pub use stone_content_percent_type::StoneContentPercent;
 pub use stop_preparation_reducer::stop_preparation;
 pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
+pub use strategic_corpse_type::StrategicCorpse;
 pub use strategic_encounter_loss_type::StrategicEncounterLoss;
 pub use strategic_encounter_table::*;
 pub use strategic_encounter_type::StrategicEncounter;
@@ -1471,6 +1525,19 @@ pub enum Reducer {
         bootstrap_token: String,
         include_visual_demos: bool,
     },
+    BurnCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        action_id: String,
+        expected_revision: u32,
+        confirm_destruction: bool,
+    },
+    BuryCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        action_id: String,
+        expected_revision: u32,
+    },
     CancelMissionRequest {
         character_id: u64,
         mission_id: String,
@@ -1610,6 +1677,26 @@ pub enum Reducer {
         inventory_item_id: u64,
         placement_index: u16,
     },
+    ExamineCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        discipline: String,
+        stage: String,
+        action_id: String,
+        expected_revision: u32,
+        confirm_unauthorized: bool,
+    },
+    ExamineOutbreakPatient {
+        actor_id: u64,
+        patient_ref: String,
+    },
+    ExhumeCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        action_id: String,
+        expected_revision: u32,
+        confirm_unauthorized: bool,
+    },
     FinalizeMerchantTrade {
         character_id: u64,
         settlement_id: String,
@@ -1694,6 +1781,19 @@ pub enum Reducer {
         settlement_id: String,
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
+    },
+    LoadAutopsyDemo {
+        character_id: u64,
+    },
+    LoadOutbreakDemo {
+        character_id: u64,
+    },
+    OpenCorpse {
+        actor_id: u64,
+        corpse_id: String,
+        action_id: String,
+        expected_revision: u32,
+        confirm_unauthorized: bool,
     },
     PayOrganizationDues {
         character_id: u64,
@@ -2083,6 +2183,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
             Reducer::BootstrapDevelopmentWorld { .. } => "bootstrap_development_world",
+            Reducer::BurnCorpse { .. } => "burn_corpse",
+            Reducer::BuryCorpse { .. } => "bury_corpse",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::ChatWithPartyMember { .. } => "chat_with_party_member",
@@ -2112,6 +2214,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::EquipItemAtPlacement { .. } => "equip_item_at_placement",
+            Reducer::ExamineCorpse { .. } => "examine_corpse",
+            Reducer::ExamineOutbreakPatient { .. } => "examine_outbreak_patient",
+            Reducer::ExhumeCorpse { .. } => "exhume_corpse",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
@@ -2129,6 +2234,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::LoadAutopsyDemo { .. } => "load_autopsy_demo",
+            Reducer::LoadOutbreakDemo { .. } => "load_outbreak_demo",
+            Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformInvestigationAction { .. } => "perform_investigation_action",
@@ -2346,6 +2454,30 @@ Reducer::BeginWorldDataImport{
 }             => __sats::bsatn::to_vec(&bootstrap_development_world_reducer::BootstrapDevelopmentWorldArgs {
                 bootstrap_token: bootstrap_token.clone(),
                 include_visual_demos: include_visual_demos.clone(),
+}),
+            Reducer::BurnCorpse{
+                actor_id,
+                corpse_id,
+                action_id,
+                expected_revision,
+                confirm_destruction,
+}             => __sats::bsatn::to_vec(&burn_corpse_reducer::BurnCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                confirm_destruction: confirm_destruction.clone(),
+}),
+            Reducer::BuryCorpse{
+                actor_id,
+                corpse_id,
+                action_id,
+                expected_revision,
+}             => __sats::bsatn::to_vec(&bury_corpse_reducer::BuryCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
 }),
             Reducer::CancelMissionRequest{
                 character_id,
@@ -2596,6 +2728,43 @@ Reducer::BeginWorldDataImport{
                 inventory_item_id: inventory_item_id.clone(),
                 placement_index: placement_index.clone(),
 }),
+            Reducer::ExamineCorpse{
+                actor_id,
+                corpse_id,
+                discipline,
+                stage,
+                action_id,
+                expected_revision,
+                confirm_unauthorized,
+}             => __sats::bsatn::to_vec(&examine_corpse_reducer::ExamineCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                discipline: discipline.clone(),
+                stage: stage.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                confirm_unauthorized: confirm_unauthorized.clone(),
+}),
+            Reducer::ExamineOutbreakPatient{
+                actor_id,
+                patient_ref,
+}             => __sats::bsatn::to_vec(&examine_outbreak_patient_reducer::ExamineOutbreakPatientArgs {
+                actor_id: actor_id.clone(),
+                patient_ref: patient_ref.clone(),
+}),
+            Reducer::ExhumeCorpse{
+                actor_id,
+                corpse_id,
+                action_id,
+                expected_revision,
+                confirm_unauthorized,
+}             => __sats::bsatn::to_vec(&exhume_corpse_reducer::ExhumeCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                confirm_unauthorized: confirm_unauthorized.clone(),
+}),
             Reducer::FinalizeMerchantTrade{
                 character_id,
                 settlement_id,
@@ -2748,6 +2917,29 @@ Reducer::BeginWorldDataImport{
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::LoadAutopsyDemo{
+                character_id,
+}             => __sats::bsatn::to_vec(&load_autopsy_demo_reducer::LoadAutopsyDemoArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::LoadOutbreakDemo{
+                character_id,
+}             => __sats::bsatn::to_vec(&load_outbreak_demo_reducer::LoadOutbreakDemoArgs {
+                character_id: character_id.clone(),
+}),
+            Reducer::OpenCorpse{
+                actor_id,
+                corpse_id,
+                action_id,
+                expected_revision,
+                confirm_unauthorized,
+}             => __sats::bsatn::to_vec(&open_corpse_reducer::OpenCorpseArgs {
+                actor_id: actor_id.clone(),
+                corpse_id: corpse_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                confirm_unauthorized: confirm_unauthorized.clone(),
 }),
             Reducer::PayOrganizationDues{
                 character_id,
@@ -3413,6 +3605,7 @@ pub struct DbUpdate {
     backend_character_personalities: __sdk::TableUpdate<CharacterPersonality>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_contracts: __sdk::TableUpdate<BackendContract>,
+    backend_corpses: __sdk::TableUpdate<BackendCorpse>,
     backend_dialogue_events: __sdk::TableUpdate<BackendDialogueEvent>,
     backend_dialogue_participants: __sdk::TableUpdate<BackendDialogueParticipant>,
     backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
@@ -3428,6 +3621,7 @@ pub struct DbUpdate {
     backend_local_chat_messages: __sdk::TableUpdate<BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
+    backend_outbreak_patients: __sdk::TableUpdate<BackendOutbreakPatient>,
     backend_physical_evidence: __sdk::TableUpdate<BackendPhysicalEvidence>,
     backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
     backend_physiology_administrations: __sdk::TableUpdate<BackendPhysiologyAdministration>,
@@ -3561,6 +3755,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_contracts" => db_update
                     .backend_contracts
                     .append(backend_contracts_table::parse_table_update(table_update)?),
+                "backend_corpses" => db_update
+                    .backend_corpses
+                    .append(backend_corpses_table::parse_table_update(table_update)?),
                 "backend_dialogue_events" => db_update.backend_dialogue_events.append(
                     backend_dialogue_events_table::parse_table_update(table_update)?,
                 ),
@@ -3618,6 +3815,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         )?,
                     )
                 }
+                "backend_outbreak_patients" => db_update.backend_outbreak_patients.append(
+                    backend_outbreak_patients_table::parse_table_update(table_update)?,
+                ),
                 "backend_physical_evidence" => db_update.backend_physical_evidence.append(
                     backend_physical_evidence_table::parse_table_update(table_update)?,
                 ),
@@ -4226,6 +4426,8 @@ impl __sdk::DbUpdate for DbUpdate {
         );
         diff.backend_contracts = cache
             .apply_diff_to_table::<BackendContract>("backend_contracts", &self.backend_contracts);
+        diff.backend_corpses =
+            cache.apply_diff_to_table::<BackendCorpse>("backend_corpses", &self.backend_corpses);
         diff.backend_dialogue_events = cache.apply_diff_to_table::<BackendDialogueEvent>(
             "backend_dialogue_events",
             &self.backend_dialogue_events,
@@ -4294,6 +4496,10 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects",
                 &self.backend_local_problem_trade_effects,
             );
+        diff.backend_outbreak_patients = cache.apply_diff_to_table::<BackendOutbreakPatient>(
+            "backend_outbreak_patients",
+            &self.backend_outbreak_patients,
+        );
         diff.backend_physical_evidence = cache.apply_diff_to_table::<BackendPhysicalEvidence>(
             "backend_physical_evidence",
             &self.backend_physical_evidence,
@@ -4395,6 +4601,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_contracts" => db_update
                     .backend_contracts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_corpses" => db_update
+                    .backend_corpses
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_dialogue_events" => db_update
                     .backend_dialogue_events
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -4439,6 +4648,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_outbreak_patients" => db_update
+                    .backend_outbreak_patients
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
@@ -4726,6 +4938,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_contracts" => db_update
                     .backend_contracts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_corpses" => db_update
+                    .backend_corpses
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_dialogue_events" => db_update
                     .backend_dialogue_events
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4770,6 +4985,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_outbreak_patients" => db_update
+                    .backend_outbreak_patients
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
@@ -5036,6 +5254,7 @@ pub struct AppliedDiff<'r> {
     backend_character_personalities: __sdk::TableAppliedDiff<'r, CharacterPersonality>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
+    backend_corpses: __sdk::TableAppliedDiff<'r, BackendCorpse>,
     backend_dialogue_events: __sdk::TableAppliedDiff<'r, BackendDialogueEvent>,
     backend_dialogue_participants: __sdk::TableAppliedDiff<'r, BackendDialogueParticipant>,
     backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
@@ -5053,6 +5272,7 @@ pub struct AppliedDiff<'r> {
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
+    backend_outbreak_patients: __sdk::TableAppliedDiff<'r, BackendOutbreakPatient>,
     backend_physical_evidence: __sdk::TableAppliedDiff<'r, BackendPhysicalEvidence>,
     backend_physical_evidence_inspections:
         __sdk::TableAppliedDiff<'r, BackendPhysicalEvidenceInspection>,
@@ -5208,6 +5428,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_contracts,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendCorpse>(
+            "backend_corpses",
+            &self.backend_corpses,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<BackendDialogueEvent>(
             "backend_dialogue_events",
             &self.backend_dialogue_events,
@@ -5281,6 +5506,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendLocalProblemTradeEffect>(
             "backend_local_problem_trade_effects",
             &self.backend_local_problem_trade_effects,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendOutbreakPatient>(
+            "backend_outbreak_patients",
+            &self.backend_outbreak_patients,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendPhysicalEvidence>(
@@ -6310,6 +6540,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_character_personalities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_contracts_table::register_table(client_cache);
+        backend_corpses_table::register_table(client_cache);
         backend_dialogue_events_table::register_table(client_cache);
         backend_dialogue_participants_table::register_table(client_cache);
         backend_dialogue_prompts_table::register_table(client_cache);
@@ -6325,6 +6556,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_local_chat_messages_table::register_table(client_cache);
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
+        backend_outbreak_patients_table::register_table(client_cache);
         backend_physical_evidence_table::register_table(client_cache);
         backend_physical_evidence_inspections_table::register_table(client_cache);
         backend_physiology_administrations_table::register_table(client_cache);
@@ -6418,6 +6650,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_character_personalities",
         "backend_committed_cuts",
         "backend_contracts",
+        "backend_corpses",
         "backend_dialogue_events",
         "backend_dialogue_participants",
         "backend_dialogue_prompts",
@@ -6433,6 +6666,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_local_chat_messages",
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
+        "backend_outbreak_patients",
         "backend_physical_evidence",
         "backend_physical_evidence_inspections",
         "backend_physiology_administrations",

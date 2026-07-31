@@ -337,7 +337,10 @@ fn insert_npc_with_id(
     } else {
         provider_profession
     };
-    let local_role = if service.is_empty() && profile.profession == Profession::Retainer {
+    let local_role = if service.is_empty()
+        && profile.profession == Profession::Retainer
+        && supplied_role != "reeve"
+    {
         "lord's household retainer"
     } else {
         supplied_role
@@ -524,16 +527,7 @@ pub fn ensure_settlement_population(
             )
         })
     {
-        insert_npc(
-            ctx,
-            settlement_id,
-            "keep",
-            "",
-            "retainer",
-            "lord's household retainer",
-            0,
-            true,
-        )?;
+        insert_npc(ctx, settlement_id, "keep", "", "retainer", "reeve", 0, true)?;
         insert_npc(
             ctx,
             settlement_id,

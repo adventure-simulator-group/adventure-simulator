@@ -1,5 +1,11 @@
 # Quest authority
 
+Generated outbreaks add private outbreak and patient authority beneath this
+boundary. Public projections never expose disease, source, culpability,
+chronology, carrier, or exact remediation. A remediation fact is accepted only
+when its source and ID match that authority. See
+[Outbreak investigations](outbreaks.md).
+
 This page is the canonical technical reference for durable cases, objectives, contracts, local problems, mission and battle outcomes, NPC recruitment, and strategic incidents. These systems may interact, but none uses legacy quest identity as its authority boundary.
 
 ## Cases, objectives, and contracts

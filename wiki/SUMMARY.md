@@ -44,6 +44,8 @@
 - [Foraging](reference/foraging.md)
 - [Measured inventory architecture](reference/measured-inventory.md)
 - [Physiology system](reference/physiology.md)
+- [Autopsies](reference/autopsies.md)
+- [Outbreak investigations](reference/outbreaks.md)
 
 # Strategic
 
