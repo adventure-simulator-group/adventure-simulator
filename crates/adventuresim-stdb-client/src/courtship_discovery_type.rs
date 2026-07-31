@@ -10,7 +10,11 @@ pub struct CourtshipDiscovery {
     pub id: String,
     pub courtship_id: String,
     pub observer_id: u64,
-    pub discovered_minute: u64,
+    pub day: u64,
+    pub attempted_minute: u64,
+    pub succeeded: bool,
+    pub observer_insight: f32,
+    pub weaker_deception: f32,
 }
 
 impl __sdk::InModule for CourtshipDiscovery {
@@ -24,7 +28,11 @@ pub struct CourtshipDiscoveryCols {
     pub id: __sdk::__query_builder::Col<CourtshipDiscovery, String>,
     pub courtship_id: __sdk::__query_builder::Col<CourtshipDiscovery, String>,
     pub observer_id: __sdk::__query_builder::Col<CourtshipDiscovery, u64>,
-    pub discovered_minute: __sdk::__query_builder::Col<CourtshipDiscovery, u64>,
+    pub day: __sdk::__query_builder::Col<CourtshipDiscovery, u64>,
+    pub attempted_minute: __sdk::__query_builder::Col<CourtshipDiscovery, u64>,
+    pub succeeded: __sdk::__query_builder::Col<CourtshipDiscovery, bool>,
+    pub observer_insight: __sdk::__query_builder::Col<CourtshipDiscovery, f32>,
+    pub weaker_deception: __sdk::__query_builder::Col<CourtshipDiscovery, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for CourtshipDiscovery {
@@ -34,7 +42,11 @@ impl __sdk::__query_builder::HasCols for CourtshipDiscovery {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             courtship_id: __sdk::__query_builder::Col::new(table_name, "courtship_id"),
             observer_id: __sdk::__query_builder::Col::new(table_name, "observer_id"),
-            discovered_minute: __sdk::__query_builder::Col::new(table_name, "discovered_minute"),
+            day: __sdk::__query_builder::Col::new(table_name, "day"),
+            attempted_minute: __sdk::__query_builder::Col::new(table_name, "attempted_minute"),
+            succeeded: __sdk::__query_builder::Col::new(table_name, "succeeded"),
+            observer_insight: __sdk::__query_builder::Col::new(table_name, "observer_insight"),
+            weaker_deception: __sdk::__query_builder::Col::new(table_name, "weaker_deception"),
         }
     }
 }

@@ -6,6 +6,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::commitment_kind_type::CommitmentKind;
 use super::commitment_status_type::CommitmentStatus;
+use super::commitment_terminal_reason_type::CommitmentTerminalReason;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,8 +16,11 @@ pub struct ExclusiveCommitment {
     pub second_character_id: u64,
     pub kind: CommitmentKind,
     pub status: CommitmentStatus,
+    pub ceremony_settlement_id: String,
     pub effective_minute: u64,
     pub created_minute: u64,
+    pub resolved_minute: Option<u64>,
+    pub terminal_reason: Option<CommitmentTerminalReason>,
 }
 
 impl __sdk::InModule for ExclusiveCommitment {
@@ -32,8 +36,12 @@ pub struct ExclusiveCommitmentCols {
     pub second_character_id: __sdk::__query_builder::Col<ExclusiveCommitment, u64>,
     pub kind: __sdk::__query_builder::Col<ExclusiveCommitment, CommitmentKind>,
     pub status: __sdk::__query_builder::Col<ExclusiveCommitment, CommitmentStatus>,
+    pub ceremony_settlement_id: __sdk::__query_builder::Col<ExclusiveCommitment, String>,
     pub effective_minute: __sdk::__query_builder::Col<ExclusiveCommitment, u64>,
     pub created_minute: __sdk::__query_builder::Col<ExclusiveCommitment, u64>,
+    pub resolved_minute: __sdk::__query_builder::Col<ExclusiveCommitment, Option<u64>>,
+    pub terminal_reason:
+        __sdk::__query_builder::Col<ExclusiveCommitment, Option<CommitmentTerminalReason>>,
 }
 
 impl __sdk::__query_builder::HasCols for ExclusiveCommitment {
@@ -48,8 +56,14 @@ impl __sdk::__query_builder::HasCols for ExclusiveCommitment {
             ),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
+            ceremony_settlement_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "ceremony_settlement_id",
+            ),
             effective_minute: __sdk::__query_builder::Col::new(table_name, "effective_minute"),
             created_minute: __sdk::__query_builder::Col::new(table_name, "created_minute"),
+            resolved_minute: __sdk::__query_builder::Col::new(table_name, "resolved_minute"),
+            terminal_reason: __sdk::__query_builder::Col::new(table_name, "terminal_reason"),
         }
     }
 }
@@ -58,6 +72,7 @@ impl __sdk::__query_builder::HasCols for ExclusiveCommitment {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct ExclusiveCommitmentIxCols {
+    pub effective_minute: __sdk::__query_builder::IxCol<ExclusiveCommitment, u64>,
     pub first_character_id: __sdk::__query_builder::IxCol<ExclusiveCommitment, u64>,
     pub id: __sdk::__query_builder::IxCol<ExclusiveCommitment, String>,
     pub second_character_id: __sdk::__query_builder::IxCol<ExclusiveCommitment, u64>,
@@ -67,6 +82,7 @@ impl __sdk::__query_builder::HasIxCols for ExclusiveCommitment {
     type IxCols = ExclusiveCommitmentIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ExclusiveCommitmentIxCols {
+            effective_minute: __sdk::__query_builder::IxCol::new(table_name, "effective_minute"),
             first_character_id: __sdk::__query_builder::IxCol::new(
                 table_name,
                 "first_character_id",

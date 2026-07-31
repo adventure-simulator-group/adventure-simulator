@@ -16,6 +16,8 @@ pub struct CharacterResidence {
     pub tenure: ResidenceTenure,
     pub active: bool,
     pub last_billed_minute: u64,
+    pub next_due_minute: u64,
+    pub acquired_minute: u64,
 }
 
 impl __sdk::InModule for CharacterResidence {
@@ -32,6 +34,8 @@ pub struct CharacterResidenceCols {
     pub tenure: __sdk::__query_builder::Col<CharacterResidence, ResidenceTenure>,
     pub active: __sdk::__query_builder::Col<CharacterResidence, bool>,
     pub last_billed_minute: __sdk::__query_builder::Col<CharacterResidence, u64>,
+    pub next_due_minute: __sdk::__query_builder::Col<CharacterResidence, u64>,
+    pub acquired_minute: __sdk::__query_builder::Col<CharacterResidence, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterResidence {
@@ -44,6 +48,8 @@ impl __sdk::__query_builder::HasCols for CharacterResidence {
             tenure: __sdk::__query_builder::Col::new(table_name, "tenure"),
             active: __sdk::__query_builder::Col::new(table_name, "active"),
             last_billed_minute: __sdk::__query_builder::Col::new(table_name, "last_billed_minute"),
+            next_due_minute: __sdk::__query_builder::Col::new(table_name, "next_due_minute"),
+            acquired_minute: __sdk::__query_builder::Col::new(table_name, "acquired_minute"),
         }
     }
 }

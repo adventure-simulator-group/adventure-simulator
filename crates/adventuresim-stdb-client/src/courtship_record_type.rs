@@ -5,7 +5,9 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::courtship_kind_type::CourtshipKind;
+use super::courtship_secrecy_reason_type::CourtshipSecrecyReason;
 use super::courtship_status_type::CourtshipStatus;
+use super::courtship_terminal_reason_type::CourtshipTerminalReason;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,7 +17,11 @@ pub struct CourtshipRecord {
     pub second_character_id: u64,
     pub kind: CourtshipKind,
     pub status: CourtshipStatus,
+    pub secrecy_reason: Option<CourtshipSecrecyReason>,
     pub started_minute: u64,
+    pub next_discovery_day: u64,
+    pub resolved_minute: Option<u64>,
+    pub terminal_reason: Option<CourtshipTerminalReason>,
 }
 
 impl __sdk::InModule for CourtshipRecord {
@@ -31,7 +37,13 @@ pub struct CourtshipRecordCols {
     pub second_character_id: __sdk::__query_builder::Col<CourtshipRecord, u64>,
     pub kind: __sdk::__query_builder::Col<CourtshipRecord, CourtshipKind>,
     pub status: __sdk::__query_builder::Col<CourtshipRecord, CourtshipStatus>,
+    pub secrecy_reason:
+        __sdk::__query_builder::Col<CourtshipRecord, Option<CourtshipSecrecyReason>>,
     pub started_minute: __sdk::__query_builder::Col<CourtshipRecord, u64>,
+    pub next_discovery_day: __sdk::__query_builder::Col<CourtshipRecord, u64>,
+    pub resolved_minute: __sdk::__query_builder::Col<CourtshipRecord, Option<u64>>,
+    pub terminal_reason:
+        __sdk::__query_builder::Col<CourtshipRecord, Option<CourtshipTerminalReason>>,
 }
 
 impl __sdk::__query_builder::HasCols for CourtshipRecord {
@@ -46,7 +58,11 @@ impl __sdk::__query_builder::HasCols for CourtshipRecord {
             ),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
+            secrecy_reason: __sdk::__query_builder::Col::new(table_name, "secrecy_reason"),
             started_minute: __sdk::__query_builder::Col::new(table_name, "started_minute"),
+            next_discovery_day: __sdk::__query_builder::Col::new(table_name, "next_discovery_day"),
+            resolved_minute: __sdk::__query_builder::Col::new(table_name, "resolved_minute"),
+            terminal_reason: __sdk::__query_builder::Col::new(table_name, "terminal_reason"),
         }
     }
 }

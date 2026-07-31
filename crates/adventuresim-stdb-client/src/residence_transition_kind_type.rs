@@ -7,18 +7,22 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum CommitmentStatus {
-    Reserved,
+pub enum ResidenceTransitionKind {
+    Acquired,
 
-    Fulfilled,
+    Designated,
 
-    Cancelled,
+    Relinquished,
 
-    Expired,
+    Dormant,
 
-    Ended,
+    Recovered,
+
+    OccupantAdmitted,
+
+    OccupantRemoved,
 }
 
-impl __sdk::InModule for CommitmentStatus {
+impl __sdk::InModule for ResidenceTransitionKind {
     type Module = super::RemoteModule;
 }
