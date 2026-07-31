@@ -138,7 +138,7 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
                 .max_by_key(|receipt| receipt.submitted_revision)
                 .map(|receipt| receipt.correct);
             Some(BackendChallenge {
-                id: challenge.id,
+                id: challenge.id.clone(),
                 case_id: challenge.case_id,
                 party_id: challenge.party_id,
                 owner_character_id: party.leader_id,

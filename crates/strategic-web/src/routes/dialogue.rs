@@ -167,9 +167,7 @@ async fn accept_order_errantry(
     session: Session,
     Json(request): Json<AcceptOrderErrantryRequest>,
 ) -> Result<Json<AcceptOrderErrantryResponse>, StatusCode> {
-    let character_id = session
-        .character_id_u64()
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
     state
         .db
         .call(

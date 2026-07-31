@@ -436,10 +436,7 @@ async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Re
                 Ok(rows) => rows
                     .into_iter()
                     .filter(|row| {
-                        row.active
-                            && row.open
-                            && !row.solved
-                            && row.id.starts_with(&demo_prefix)
+                        row.active && row.open && !row.solved && row.id.starts_with(&demo_prefix)
                     })
                     .collect::<Vec<_>>(),
                 Err(error) => {

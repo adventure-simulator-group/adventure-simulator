@@ -423,10 +423,7 @@ pub const FEY_PRESENTER_TITLE: &str = "Now Hear the Lady Crowned with Briar Thor
 
 /// Closed server-owned speech selected by typed catalog identity. No persisted
 /// prose can become a supernatural utterance.
-pub fn fey_speech(
-    catalog: FeyPresenterCatalogId,
-    part: FeySpeechPart,
-) -> &'static [&'static str] {
+pub fn fey_speech(catalog: FeyPresenterCatalogId, part: FeySpeechPart) -> &'static [&'static str] {
     match (catalog, part) {
         (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
             "Good knight, five signs attend my moonlit gate.",
@@ -447,10 +444,7 @@ pub fn fey_speech(
     }
 }
 
-pub fn fey_clue_text(
-    _catalog: FeyPresenterCatalogId,
-    clue: &OrderedSigilClue,
-) -> &'static str {
+pub fn fey_clue_text(_catalog: FeyPresenterCatalogId, clue: &OrderedSigilClue) -> &'static str {
     let sigil = |value: Sigil| match value {
         Sigil::Crown => 0,
         Sigil::Hart => 1,
@@ -797,7 +791,13 @@ mod tests {
             OrderedSigilPuzzle::generate_versioned(ORDERED_SIGIL_RULES_VERSION, 41).unwrap();
         assert_eq!(
             first.solution,
-            [Sigil::Hart, Sigil::Crown, Sigil::Sword, Sigil::Moon, Sigil::Rose]
+            [
+                Sigil::Hart,
+                Sigil::Crown,
+                Sigil::Sword,
+                Sigil::Moon,
+                Sigil::Rose
+            ]
         );
         assert_eq!(
             first.clues,
@@ -888,7 +888,7 @@ mod tests {
         ]
         .into_iter()
         .flat_map(|part| fey_speech(catalog, part))
-            .collect::<Vec<_>>();
+        .collect::<Vec<_>>();
         assert_eq!(all.len(), 8);
         assert!(
             all.iter()
