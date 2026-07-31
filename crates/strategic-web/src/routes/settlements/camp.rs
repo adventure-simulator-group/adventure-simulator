@@ -626,7 +626,15 @@ pub(super) async fn rest_at_camp(
         )
         .await
     {
-        Ok(()) => Redirect::to("/camp").into_response(),
+        Ok(()) => {
+            if form.advance_development_clock {
+                let _ = state
+                    .db
+                    .call("sync_development_clock_to_character", &[json!(character_id)])
+                    .await;
+            }
+            Redirect::to("/camp").into_response()
+        }
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }

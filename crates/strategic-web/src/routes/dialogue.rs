@@ -102,7 +102,7 @@ struct WitnessClaimRow {
 
 #[derive(Deserialize)]
 struct NpcPresenceRow {
-    resident_character_id: u64,
+    character_id: u64,
     settlement_id: String,
     location_id: String,
     start_minute: u16,
@@ -783,7 +783,7 @@ async fn location_npcs(
         % 1_440;
     let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && npc_presence_contains(presence.start_minute, presence.end_minute, minute)).filter_map(|presence| {
         let npc = npcs.iter().find(|npc| {
-            npc.character_id == presence.resident_character_id
+            npc.character_id == presence.character_id
                 && alive_npc_ids.contains(&npc.character_id)
                 && npc_matches_location_binding(npc, &settlement_id, &location_id, &settlement.economy)
         })?;
@@ -889,7 +889,7 @@ async fn available_social_npc(
     let present = state
         .db
         .query::<NpcPresenceRow>(&format!(
-            "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {resident_character_id}"
+            "SELECT * FROM settlement_resident_presence WHERE character_id = {resident_character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?

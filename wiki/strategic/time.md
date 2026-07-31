@@ -53,6 +53,14 @@ The server stores official time as an absolute number of game minutes rather tha
 
 The server stores an epoch rather than updating the clock table continuously. When a browser opens a page, it requests one snapshot of the character and official clocks and renders that snapshot without a wall-clock timer. The character snapshot also determines the interpolated location sky, the edge-to-edge sun or moon position, and building illumination until an explicit action returns a newer time. Authoritative reducers derive the current official minute from the epoch when gameplay needs it.
 
+In browser-local developer mode, an explicit rest also moves the disposable
+world epoch forward to the resting character's new personal date. Active NPC
+partners, household members, and immediate kin are advanced to that same date
+through the ordinary lifecycle settlement path, allowing wedding, pregnancy,
+birth, and dependent-aging UI flows to be exercised without waiting for the
+real-time world clock. This acceleration is scoped to developer-mode rest and
+does not fast-forward unrelated world NPCs.
+
 Each character has their own absolute minute. Character time advances lazily when their strategic page is accessed or their daily schedule is saved. If they are more than a year behind official time, the server advances them in one transaction to exactly one year behind and does not apply the triggering schedule change; the player can try again after the catch-up. Characters may remain out of sync while idle. At departure every living party member advances forward to the latest compatible party minute; nobody is rewound, dead members are unchanged, and excessive skew is rejected. Journeys persist that absolute departure minute plus separate movement and elapsed coordinates, so camp rest advances progress without changing distance.
 
 Persistent NPCs use this same `CharacterTime` row as their authoritative

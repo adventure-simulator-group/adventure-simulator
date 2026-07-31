@@ -7,7 +7,7 @@ struct MerchantProviderRow {
 
 #[derive(serde::Deserialize)]
 struct MerchantProviderPresenceRow {
-    resident_character_id: u64,
+    character_id: u64,
     settlement_id: String,
     location_id: String,
     is_default: bool,
@@ -53,7 +53,7 @@ pub(super) async fn merchant_provider_id(
                 presences
                     .iter()
                     .any(|presence| {
-                        presence.resident_character_id == provider.character_id
+                        presence.character_id == provider.character_id
                             && presence.settlement_id == settlement_id
                             && presence.location_id == location_id
                             && presence.is_default

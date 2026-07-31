@@ -6,6 +6,8 @@ pub(crate) struct RestForm {
     pub(crate) requested_minutes: Option<u64>,
     #[serde(default = "default_field_shelter")]
     pub(crate) shelter: String,
+    #[serde(default)]
+    pub(crate) advance_development_clock: bool,
 }
 
 fn default_field_shelter() -> String {
@@ -267,6 +269,18 @@ pub(super) async fn rest(
     let after_time =
         query_single::<crate::spacetimedb::CharacterTime>(&state, "backend_character_times", character_id)
             .await;
+    if form.advance_development_clock
+        && let Err(error) = state
+            .db
+            .call("sync_development_clock_to_character", &[json!(character_id)])
+            .await
+    {
+        tracing::warn!(
+            %error,
+            character_id,
+            "developer clock synchronization failed after settlement rest"
+        );
+    }
     let after_reputation = query_local_reputation(&state, character_id, &id).await;
     let summary = rest_summary(
         before_character

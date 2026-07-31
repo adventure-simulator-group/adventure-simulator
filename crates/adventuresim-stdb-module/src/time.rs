@@ -6,7 +6,7 @@ use adventuresim_core::strategic_schedule::{
 };
 use adventuresim_core::strategic_time::{
     MINUTES_PER_DAY, MINUTES_PER_YEAR, WORLD_START_MINUTE, allocated_schedule_minutes,
-    official_minutes as calculate_official_minutes,
+    epoch_micros_for_official_minute, official_minutes as calculate_official_minutes,
 };
 use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
 use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, table};
@@ -21,7 +21,11 @@ use crate::personality::{
     Sociability as CharacterSociability, Transparency as CharacterTransparency,
     character_personality,
 };
-use crate::relationship::{npc_policy as _, socializing_receipt as _};
+use crate::relationship::{
+    CommitmentStatus, CourtshipStatus, MarriageStatus, character_kinship as _, courtship as _,
+    exclusive_commitment as _, household_member as _, marriage as _, npc_policy as _,
+    socializing_receipt as _,
+};
 use crate::strategic::{
     party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
 };
@@ -309,6 +313,120 @@ pub fn refresh_clock(ctx: &ReducerContext) -> Result<u64, String> {
         ctx.db.world_clock().id().update(clock);
     }
     Ok(official_minutes)
+}
+
+fn development_related_npc_ids(ctx: &ReducerContext, character_id: u64) -> Vec<u64> {
+    let mut related = std::collections::BTreeSet::new();
+    for row in ctx.db.courtship().iter().filter(|row| {
+        row.status != CourtshipStatus::Ended
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
+    }
+    for row in ctx.db.exclusive_commitment().iter().filter(|row| {
+        row.status == CommitmentStatus::Reserved
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
+    }
+    for row in ctx.db.marriage().iter().filter(|row| {
+        row.status == MarriageStatus::Active
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
+    }
+    if let Some(member) = ctx.db.household_member().character_id().find(character_id) {
+        related.extend(
+            ctx.db
+                .household_member()
+                .household_id()
+                .filter(&member.household_id)
+                .map(|row| row.character_id),
+        );
+    }
+    related.extend(
+        ctx.db
+            .character_kinship()
+            .subject_id()
+            .filter(character_id)
+            .map(|row| row.related_id),
+    );
+    related.remove(&character_id);
+    related
+        .into_iter()
+        .filter(|related_id| {
+            ctx.db
+                .npc_policy()
+                .character_id()
+                .find(*related_id)
+                .is_some()
+        })
+        .take(32)
+        .collect()
+}
+
+/// Developer-mode acceleration for disposable browser profiles. The target is
+/// derived from the authenticated character rather than caller-supplied time.
+/// Only their active partner, household, and immediate kin NPCs are advanced;
+/// ordinary world NPCs retain the bounded causal scheduler.
+#[reducer]
+pub fn sync_development_clock_to_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    let character_target_minutes = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time record not found")?
+        .minutes;
+    let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
+    let current_minutes = refresh_clock(ctx)?;
+    let development_slice = MINUTES_PER_YEAR;
+    let target_minutes =
+        character_target_minutes.min(current_minutes.saturating_add(development_slice));
+    if target_minutes > current_minutes {
+        let mut clock = ctx
+            .db
+            .world_clock()
+            .id()
+            .find(0)
+            .ok_or("World clock is not initialized")?;
+        clock.official_minutes = target_minutes;
+        clock.epoch_micros = epoch_micros_for_official_minute(now_micros, target_minutes)
+            .ok_or("Developer clock target is out of range")?;
+        ctx.db.world_clock().id().update(clock);
+    }
+
+    // A wedding or birth can introduce a new household member, so perform two
+    // bounded passes. This developer-only path writes the small related cohort
+    // directly; simulating years of survival ticks can exceed a reducer budget.
+    for _ in 0..2 {
+        for related_id in development_related_npc_ids(ctx, character_id) {
+            if let Some(mut time) = ctx.db.character_time().character_id().find(related_id)
+                && time.minutes < target_minutes
+            {
+                time.minutes = target_minutes;
+                ctx.db.character_time().character_id().update(time);
+                settle_lifecycle_after_character_time_write(ctx, related_id, target_minutes)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[reducer]

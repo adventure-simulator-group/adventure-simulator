@@ -321,6 +321,16 @@ pub fn official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
     WORLD_START_MINUTE.saturating_add(elapsed_official_minutes(epoch_micros, now_micros))
 }
 
+/// Choose an epoch whose derived official clock is exactly `target_minutes`
+/// at `now_micros`. Developer tooling uses this to move a disposable world's
+/// wall clock alongside an explicitly advanced character without changing the
+/// production conversion rate.
+pub fn epoch_micros_for_official_minute(now_micros: i64, target_minutes: u64) -> Option<i64> {
+    let elapsed_minutes = target_minutes.saturating_sub(WORLD_START_MINUTE);
+    let elapsed_micros = (u128::from(elapsed_minutes) * 84_000_000).div_ceil(73);
+    now_micros.checked_sub(i64::try_from(elapsed_micros).ok()?)
+}
+
 /// Sum the daily minutes assigned to training and labor activities.
 pub fn allocated_schedule_minutes<const N: usize>(daily_minutes: [u16; N]) -> u64 {
     daily_minutes.into_iter().map(u64::from).sum()
@@ -410,6 +420,20 @@ mod tests {
         const DAYS_BEFORE_AUGUST: u64 = 31 + 28 + 31 + 30 + 31 + 30 + 31;
         assert_eq!(WORLD_START_DAY_OF_YEAR, DAYS_BEFORE_AUGUST + 19);
         assert_eq!(official_minutes(42, 42), WORLD_START_MINUTE);
+    }
+
+    #[test]
+    fn developer_epoch_round_trips_exact_official_minutes() {
+        let now = 2_000_000_000_000_000_i64;
+        for target in [
+            WORLD_START_MINUTE,
+            WORLD_START_MINUTE + 1,
+            WORLD_START_MINUTE + MINUTES_PER_DAY,
+            WORLD_START_MINUTE + 16 * MINUTES_PER_YEAR,
+        ] {
+            let epoch = epoch_micros_for_official_minute(now, target).unwrap();
+            assert_eq!(official_minutes(epoch, now), target);
+        }
     }
 
     #[test]

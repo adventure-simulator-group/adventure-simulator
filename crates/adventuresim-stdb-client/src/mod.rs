@@ -588,6 +588,7 @@ pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
 pub mod pregnancy_status_type;
 pub mod pregnancy_type;
+pub mod prepare_development_courtship_reducer;
 pub mod prepare_herbal_remedy_reducer;
 pub mod present_organization_reducer;
 pub mod presentation_type;
@@ -783,6 +784,7 @@ pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
 pub mod surrender_to_authority_reducer;
+pub mod sync_development_clock_to_character_reducer;
 pub mod synchronize_character_time_reducer;
 pub mod tactical_mission_resolution_type;
 pub mod tactical_server_claim_type;
@@ -1414,6 +1416,7 @@ pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
 pub use pregnancy_status_type::PregnancyStatus;
 pub use pregnancy_type::Pregnancy;
+pub use prepare_development_courtship_reducer::prepare_development_courtship;
 pub use prepare_herbal_remedy_reducer::prepare_herbal_remedy;
 pub use present_organization_reducer::present_organization;
 pub use presentation_type::Presentation;
@@ -1609,6 +1612,7 @@ pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
 pub use surrender_to_authority_reducer::surrender_to_authority;
+pub use sync_development_clock_to_character_reducer::sync_development_clock_to_character;
 pub use synchronize_character_time_reducer::synchronize_character_time;
 pub use tactical_mission_resolution_type::TacticalMissionResolution;
 pub use tactical_server_claim_type::TacticalServerClaim;
@@ -2082,6 +2086,10 @@ pub enum Reducer {
         source_id: String,
         action_kind: String,
     },
+    PrepareDevelopmentCourtship {
+        suitor_id: u64,
+        partner_id: u64,
+    },
     PrepareHerbalRemedy {
         character_id: u64,
         inventory_item_id: u64,
@@ -2394,6 +2402,9 @@ pub enum Reducer {
         character_id: u64,
         incident_id: String,
     },
+    SyncDevelopmentClockToCharacter {
+        character_id: u64,
+    },
     SynchronizeCharacterTime {
         character_id: u64,
     },
@@ -2567,6 +2578,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformInvestigationAction { .. } => "perform_investigation_action",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
+            Reducer::PrepareDevelopmentCourtship { .. } => "prepare_development_courtship",
             Reducer::PrepareHerbalRemedy { .. } => "prepare_herbal_remedy",
             Reducer::PresentOrganization { .. } => "present_organization",
             Reducer::PromoteOrganizationMembership { .. } => "promote_organization_membership",
@@ -2632,6 +2644,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
             Reducer::SubmitOrderedSigilChallenge { .. } => "submit_ordered_sigil_challenge",
             Reducer::SurrenderToAuthority { .. } => "surrender_to_authority",
+            Reducer::SyncDevelopmentClockToCharacter { .. } => {
+                "sync_development_clock_to_character"
+            }
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TrackCaseSite { .. } => "track_case_site",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
@@ -3402,6 +3417,13 @@ Reducer::BeginFormalCourtship{
                 source_id: source_id.clone(),
                 action_kind: action_kind.clone(),
 }),
+            Reducer::PrepareDevelopmentCourtship{
+                suitor_id,
+                partner_id,
+}             => __sats::bsatn::to_vec(&prepare_development_courtship_reducer::PrepareDevelopmentCourtshipArgs {
+                suitor_id: suitor_id.clone(),
+                partner_id: partner_id.clone(),
+}),
             Reducer::PrepareHerbalRemedy{
                 character_id,
                 inventory_item_id,
@@ -3964,6 +3986,11 @@ Reducer::BeginFormalCourtship{
 }             => __sats::bsatn::to_vec(&surrender_to_authority_reducer::SurrenderToAuthorityArgs {
                 character_id: character_id.clone(),
                 incident_id: incident_id.clone(),
+}),
+            Reducer::SyncDevelopmentClockToCharacter{
+                character_id,
+}             => __sats::bsatn::to_vec(&sync_development_clock_to_character_reducer::SyncDevelopmentClockToCharacterArgs {
+                character_id: character_id.clone(),
 }),
             Reducer::SynchronizeCharacterTime{
                 character_id,

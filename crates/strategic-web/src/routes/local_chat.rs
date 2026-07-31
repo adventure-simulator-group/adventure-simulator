@@ -75,7 +75,7 @@ struct LocalNpcRow {
 
 #[derive(Deserialize)]
 struct LocalNpcPresenceRow {
-    resident_character_id: u64,
+    character_id: u64,
     settlement_id: String,
     location_id: String,
     start_minute: u16,
@@ -90,7 +90,7 @@ fn npc_authority_matches(
     minute: u64,
 ) -> bool {
     let minute = (minute % 1_440) as u16;
-    npc.character_id == presence.resident_character_id
+    npc.character_id == presence.character_id
         && npc.home_settlement_id == settlement_id
         && presence.settlement_id == settlement_id
         && presence.location_id == requested_location_id
@@ -176,7 +176,7 @@ async fn actor_and_selector(
             let presence = state
                 .db
                 .query_one::<LocalNpcPresenceRow>(&format!(
-                    "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {resident_character_id}"
+                    "SELECT * FROM settlement_resident_presence WHERE character_id = {resident_character_id}"
                 ))
                 .await
                 .map_err(|error| error.to_string())?
@@ -470,7 +470,7 @@ mod tests {
             home_settlement_id: "riverdale".into(),
         };
         let mut presence = LocalNpcPresenceRow {
-            resident_character_id: npc.character_id,
+            character_id: npc.character_id,
             settlement_id: "riverdale".into(),
             location_id: "inn".into(),
             start_minute: 0,
@@ -527,7 +527,7 @@ mod tests {
             "SELECT * FROM backend_settlement_residents WHERE character_id = {resident_character_id}"
         ));
         assert!(local_route.contains(
-            "SELECT * FROM settlement_resident_presence WHERE resident_character_id = {resident_character_id}"
+            "SELECT * FROM settlement_resident_presence WHERE character_id = {resident_character_id}"
         ));
         assert!(
             include_str!("local_chat.rs").contains("presence.location_id == requested_location_id")

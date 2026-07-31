@@ -1643,19 +1643,30 @@ pub fn current_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64) ->
         })
 }
 
-fn put_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64, value: f32) {
+pub(crate) fn put_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64, value: f32) {
+    let anchor_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(subject_id)
+        .map_or(0, |v| v.minutes);
+    put_affinity_at(ctx, subject_id, actor_id, value, anchor_minute);
+}
+
+pub(crate) fn put_affinity_at(
+    ctx: &ReducerContext,
+    subject_id: u64,
+    actor_id: u64,
+    value: f32,
+    anchor_minute: u64,
+) {
     let id = affinity_id(subject_id, actor_id);
     let row = CharacterAffinity {
         id: id.clone(),
         subject_id,
         actor_id,
         anchor: value.clamp(AFFINITY_MIN, AFFINITY_MAX),
-        anchor_minute: ctx
-            .db
-            .character_time()
-            .character_id()
-            .find(subject_id)
-            .map_or(0, |v| v.minutes),
+        anchor_minute,
     };
     if ctx.db.character_affinity().id().find(&id).is_some() {
         ctx.db.character_affinity().id().update(row);

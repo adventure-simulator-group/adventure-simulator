@@ -306,6 +306,8 @@ fn wake_time_rest_duration_control(
                 button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration" data-rest-step="1" { "+" }
             }
             input type="hidden" name="requested_minutes" disabled[!hours_active] data-rest-exact-minutes;
+            input type="hidden" name="advance_development_clock" value="true" disabled
+                data-developer-mode-input;
         }
     }
 }

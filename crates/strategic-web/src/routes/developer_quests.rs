@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 
 #[derive(Clone, Deserialize)]
 struct PresenceRow {
-    resident_character_id: u64,
+    character_id: u64,
     settlement_id: String,
     location_id: String,
     start_minute: u16,
@@ -112,7 +112,7 @@ async fn active_context(
         .filter_map(|npc| {
             let presence = presences
                 .iter()
-                .find(|row| row.resident_character_id == npc.character_id)?;
+                .find(|row| row.character_id == npc.character_id)?;
             visible_witness_candidate(VisibleWitnessCandidateInput {
                 resident_character_id: npc.character_id,
                 display_name: &npc.name,

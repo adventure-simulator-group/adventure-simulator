@@ -3774,6 +3774,39 @@ pub fn begin_formal_courtship(
     )
 }
 
+/// Prepare a compatible pair for browser-driven courtship testing without
+/// weakening the normal affinity and family-approval rules.
+///
+/// Only the registered strategic gateway can call this reducer. Production
+/// gameplay never invokes it; developer tooling uses it to reach the
+/// year-long marriage and child lifecycle in a bounded test session.
+#[reducer]
+pub fn prepare_development_courtship(
+    ctx: &ReducerContext,
+    suitor_id: u64,
+    partner_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    let settlement_id = ctx
+        .db
+        .character()
+        .id()
+        .find(suitor_id)
+        .and_then(|character| character.current_settlement_id)
+        .ok_or("Development courtship requires a current settlement")?;
+    crate::item::credit_personal_currency(ctx, suitor_id, &settlement_id, 10_000)?;
+    let minute = match validate_canonical_courtship_pair(ctx, suitor_id, partner_id) {
+        Ok(minute) => minute,
+        Err(error) if error.contains("exclusive romantic commitment") => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    crate::social::put_affinity_at(ctx, partner_id, suitor_id, 100.0, minute);
+    if let Some(father_id) = father_of_at(ctx, partner_id, minute)? {
+        crate::social::put_affinity_at(ctx, father_id, suitor_id, 100.0, minute);
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn begin_informal_courtship(
     ctx: &ReducerContext,
