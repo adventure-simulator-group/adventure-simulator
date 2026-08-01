@@ -138,6 +138,22 @@ impl LiveRunner {
         let Some(settlement_id) = character.current_settlement_id else {
             return Vec::new();
         };
+        let Some(settlement) = self
+            .connection
+            .db
+            .settlement()
+            .iter()
+            .find(|row| row.id == settlement_id)
+        else {
+            return Vec::new();
+        };
+        let Some(economy) = public_settlement_economy_profile(&settlement.economy) else {
+            return Vec::new();
+        };
+        let has_keep = matches!(
+            settlement.category,
+            SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+        );
         let minute = self
             .connection
             .db
@@ -172,6 +188,12 @@ impl LiveRunner {
                     })
             })
             .collect();
+        let candidates = retain_navigable_public_npc_candidates(
+            candidates,
+            &economy,
+            has_keep,
+            &settlement_id,
+        );
         stable_public_npc_candidates(candidates, preferred_name, preferred_location)
     }
 

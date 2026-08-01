@@ -285,6 +285,116 @@ fn ambiguous_public_npc_candidates_remain_bounded_and_stable() {
 }
 
 #[test]
+fn inn_only_dialogue_candidates_exclude_hidden_service_locations() {
+    let profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+    let projected: SettlementEconomyProfile =
+        serde_json::from_value(serde_json::to_value(&profile).unwrap()).unwrap();
+    assert_eq!(public_settlement_economy_profile(&projected), Some(profile.clone()));
+    let candidate = |id: u64, location: &str| PublicNpcCandidate {
+        resident_character_id: id,
+        name: format!("Resident {id}"),
+        profession: "Resident".into(),
+        conversation_id: "local-resident".into(),
+        location_id: location.into(),
+    };
+    let locations = [
+        "overview",
+        "residences",
+        "inn",
+        "keep",
+        "market",
+        "forge",
+        "armoury",
+        "tailor",
+        "herbalist",
+        "church",
+        "bookstore",
+    ];
+    let retained = retain_navigable_public_npc_candidates(
+        locations
+            .iter()
+            .enumerate()
+            .map(|(index, location)| candidate(index as u64 + 1, location))
+            .collect(),
+        &profile,
+        false,
+        "ironforge",
+    );
+    assert_eq!(
+        retained
+            .iter()
+            .map(|candidate| candidate.location_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["overview", "residences", "inn"]
+    );
+}
+
+#[test]
+fn hidden_preferred_witness_cannot_reach_dialogue_selection() {
+    let profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+    let candidates = retain_navigable_public_npc_candidates(
+        vec![
+            PublicNpcCandidate {
+                resident_character_id: 41,
+                name: "Hidden Witness".into(),
+                profession: "Armorer".into(),
+                conversation_id: "local-resident".into(),
+                location_id: "armoury".into(),
+            },
+            PublicNpcCandidate {
+                resident_character_id: 42,
+                name: "Visible Resident".into(),
+                profession: "Innkeeper".into(),
+                conversation_id: "local-resident".into(),
+                location_id: "inn".into(),
+            },
+        ],
+        &profile,
+        false,
+        "ironforge",
+    );
+    let mut preferred = stable_public_npc_candidates(
+        candidates,
+        Some("Hidden Witness"),
+        Some("armoury"),
+    );
+    preferred.retain(|candidate| candidate.name.eq_ignore_ascii_case("Hidden Witness"));
+    assert!(preferred.is_empty());
+}
+
+#[test]
+fn dialogue_candidates_are_filtered_by_the_authoritative_public_navigation_rule() {
+    let source = LIVE_CORE_SOURCE;
+    let candidates = source
+        .split("pub(super) fn visible_npc_candidates")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn start_public_dialogue").next())
+        .expect("public NPC candidate projection");
+    assert!(candidates.contains("public_settlement_economy_profile"));
+    assert!(candidates.contains("retain_navigable_public_npc_candidates"));
+    assert_eq!(
+        source.matches("self.start_public_dialogue(").count(),
+        2,
+        "discovery and case continuation must share the filtered candidate source"
+    );
+
+    let navigation = source
+        .split("fn retain_navigable_public_npc_candidates")
+        .nth(1)
+        .and_then(|tail| tail.split("const PUBLIC_DISCOVERY_BACKOFF_MINUTES").next())
+        .expect("public NPC navigation boundary");
+    assert!(navigation.contains("settlement_economy::npc_location_is_navigable"));
+
+    let case_dialogue = source
+        .split("pub(super) fn try_generated_dialogue_topic")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn generated_actor_ready_after_time").next())
+        .expect("generated-case dialogue selection");
+    assert!(case_dialogue.contains("self.visible_npc_candidates"));
+    assert!(case_dialogue.contains("\n        Ok(false)\n    }"));
+}
+
+#[test]
 fn generated_discovery_uses_one_stable_representative_at_the_valid_public_location() {
     let candidate = |resident_character_id: u64, name: &str, location: &str| PublicNpcCandidate {
         resident_character_id,

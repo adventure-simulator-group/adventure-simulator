@@ -1013,6 +1013,36 @@ struct PublicNpcCandidate {
     location_id: String,
 }
 
+fn public_settlement_economy_profile(
+    profile: &SettlementEconomyProfile,
+) -> Option<adventuresim_world_schema::SettlementEconomyProfile> {
+    // SpacetimeDB generates client-side mirrors of the shared world-schema
+    // types. Convert the public projection without reimplementing the
+    // settlement-navigation rules in the simulator.
+    serde_json::to_value(profile)
+        .ok()
+        .and_then(|value| serde_json::from_value(value).ok())
+}
+
+fn retain_navigable_public_npc_candidates(
+    candidates: Vec<PublicNpcCandidate>,
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    has_keep: bool,
+    settlement_id: &str,
+) -> Vec<PublicNpcCandidate> {
+    candidates
+        .into_iter()
+        .filter(|candidate| {
+            adventuresim_core::settlement_economy::npc_location_is_navigable(
+                profile,
+                has_keep,
+                settlement_id,
+                &candidate.location_id,
+            )
+        })
+        .collect()
+}
+
 const PUBLIC_DISCOVERY_BACKOFF_MINUTES: u64 = 2 * 1_440;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

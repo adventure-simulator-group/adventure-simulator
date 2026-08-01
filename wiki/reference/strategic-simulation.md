@@ -361,7 +361,10 @@ case, journal, lead, dialogue-topic, action, action-outcome, and exact-site-pin
 projections. Referred witnesses are never inferred from generated truth:
 same-named public candidates are tried in stable order and only the candidate
 whose projected session exposes `referred-testimony` for the selected public
-case is selected. Investigation actions and their outcomes are likewise
+case is selected. Public presence is filtered through the settlement's visible
+NPC locations before any dialogue attempt, so a resident scheduled at a hidden
+service location cannot become a reducer-failing contact. Investigation
+actions and their outcomes are likewise
 filtered by exact owner and public case before reducers receive the projected
 action ID, method, and version. Exact site travel selects only the pin matching
 the party's current case-site occupancy. Combat requires an owner-scoped,
