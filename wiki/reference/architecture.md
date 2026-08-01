@@ -281,10 +281,16 @@ synchronous errors no more than once per second, before reevaluating combat
 predicates, and exits only after successful submission. A configured timeout
 remains a bounded `Failed` fallback.
 
-The strategic reducer selects and commits the durable outcome; the tactical
-server's XP argument is deliberately ignored. Tactical combat still does not
-persist strategic wounds or create an authenticated combat receipt. Ranged AI
-and durable combat consequences also remain unimplemented.
+The terminal call carries a bounded authenticated consequence receipt frozen
+with the resolution. It contains only Party character IDs, applied (clamped)
+limb injuries, incremental blood loss, ammunition use, and bounded equipment
+contacts with durable inventory provenance. Strategic authority validates
+membership, server enrollment, custody, uniqueness, finite numeric ranges, and
+record caps before transactionally applying injuries, blood loss, capability,
+filth, ammunition, equipment wear, and defeat morale. Invalid receipts reject
+the whole terminal transaction and remain retryable; tactical data cannot
+choose outcomes, capture subjects, rewards, or XP. Positions, ticks, and enemy
+state remain transient. Ranged AI and ranged receipt population remain deferred.
 
 Mission, hostile-group, battle, and outcome-source identities are separate.
 Tactical success never chooses a case objective, capture subject, contract

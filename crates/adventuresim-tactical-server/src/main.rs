@@ -22,7 +22,7 @@ use clap::{ArgAction, Parser};
 
 use crate::{
     bot::{MissionEnemy, OffensiveMeleeAi},
-    combat::{MeleeAttackAuthority, TacticalCombatSide},
+    combat::{MeleeAttackAuthority, TacticalCombatSide, TacticalConsequenceAccumulator},
     stdb::{SpacetimeDb, SpacetimeDbReady},
     terrain::TerrainGenerator,
 };
@@ -163,6 +163,7 @@ fn main() {
             abandonment_elapsed: Duration::ZERO,
             terminal_retry_not_before: Duration::ZERO,
             pending_resolution: None,
+            pending_receipt: None,
             committed: false,
         })
         .insert_resource(args)
@@ -189,6 +190,10 @@ struct LoadingPlayer {
     requested_player_id: u64,
 }
 
+/// Durable inventory provenance retained only on the authoritative server.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct TacticalInventoryItemId(pub u64);
+
 #[derive(Resource)]
 pub struct MissionState {
     timeout: Option<Timer>,
@@ -201,6 +206,7 @@ pub struct MissionState {
     abandonment_elapsed: Duration,
     terminal_retry_not_before: Duration,
     pending_resolution: Option<TacticalMissionResolution>,
+    pending_receipt: Option<TacticalConsequenceReceipt>,
     committed: bool,
 }
 
@@ -258,19 +264,22 @@ impl MissionState {
     fn submit_terminal<E>(
         &mut self,
         resolution: TacticalMissionResolution,
+        receipt: TacticalConsequenceReceipt,
         now: Duration,
-        mut send: impl FnMut(TacticalMissionResolution) -> Result<(), E>,
+        mut send: impl FnMut(TacticalMissionResolution, TacticalConsequenceReceipt) -> Result<(), E>,
     ) -> Result<bool, E> {
         if self.committed || now < self.terminal_retry_not_before {
             return Ok(false);
         }
         let resolution = *self.pending_resolution.get_or_insert(resolution);
-        if let Err(error) = send(resolution) {
+        let receipt = self.pending_receipt.get_or_insert(receipt).clone();
+        if let Err(error) = send(resolution, receipt) {
             self.terminal_retry_not_before = now.saturating_add(TERMINAL_RETRY_BACKOFF);
             return Err(error);
         }
         self.committed = true;
         self.pending_resolution = None;
+        self.pending_receipt = None;
         Ok(true)
     }
 }
@@ -540,6 +549,7 @@ fn spawn_connected_player(
 
         let mut item_cmd = cmd.spawn((
             Replicated,
+            TacticalInventoryItemId(item.inventory_item_id),
             ItemOf(entity),
             ItemQuantity(quantity),
             ItemProperties {
@@ -644,13 +654,13 @@ fn commit_terminal_resolution(
     resolution: TacticalMissionResolution,
     now: Duration,
     conn: Res<SpacetimeDb>,
+    consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
     mut exit: MessageWriter<AppExit>,
 ) -> Result {
-    let submitted = match state.submit_terminal(resolution, now, |resolution| {
-        // Strategic authority ignores this observer-supplied XP value and
-        // derives durable consequences from the bound mission.
-        conn.reducers().end_tactical_server(resolution, 0)
+    let receipt = tactical_consequence_receipt(&consequences);
+    let submitted = match state.submit_terminal(resolution, receipt, now, |resolution, receipt| {
+        conn.reducers().end_tactical_server(resolution, receipt)
     }) {
         Ok(submitted) => submitted,
         Err(error) => {
@@ -672,9 +682,85 @@ fn commit_terminal_resolution(
     Ok(())
 }
 
+fn receipt_body_part(body_part: BodyPart) -> TacticalReceiptBodyPart {
+    match body_part {
+        BodyPart::LeftArm => TacticalReceiptBodyPart::LeftArm,
+        BodyPart::RightArm => TacticalReceiptBodyPart::RightArm,
+        BodyPart::LeftLeg => TacticalReceiptBodyPart::LeftLeg,
+        BodyPart::RightLeg => TacticalReceiptBodyPart::RightLeg,
+        BodyPart::Chest => TacticalReceiptBodyPart::Chest,
+        BodyPart::Stomach => TacticalReceiptBodyPart::Stomach,
+        BodyPart::Head => TacticalReceiptBodyPart::Head,
+    }
+}
+
+fn tactical_consequence_receipt(
+    accumulated: &TacticalConsequenceAccumulator,
+) -> TacticalConsequenceReceipt {
+    let mut party: Vec<_> = accumulated
+        .party
+        .iter()
+        .map(|(character_id, consequence)| TacticalCharacterConsequence {
+            character_id: *character_id,
+            injuries: consequence
+                .injuries
+                .iter()
+                .map(|injury| TacticalHitInjury {
+                    body_part: receipt_body_part(injury.body_part),
+                    cut_damage: injury.cut_damage,
+                    blunt_damage: injury.blunt_damage,
+                    max_single_hit_blunt_damage: injury.max_single_hit_blunt_damage,
+                })
+                .collect(),
+            blood_loss_fraction: consequence.blood_loss_fraction,
+            ammunition_used: 0,
+        })
+        .collect();
+    for contact in &accumulated.equipment_contacts {
+        if !party
+            .iter()
+            .any(|consequence| consequence.character_id == contact.character_id)
+        {
+            party.push(TacticalCharacterConsequence {
+                character_id: contact.character_id,
+                injuries: Vec::new(),
+                blood_loss_fraction: 0.0,
+                ammunition_used: 0,
+            });
+        }
+    }
+    party.sort_by_key(|consequence| consequence.character_id);
+    party.truncate(adventuresim_core::mission::MAX_TACTICAL_RECEIPT_PARTICIPANTS);
+    TacticalConsequenceReceipt {
+        party,
+        equipment_contacts: accumulated
+            .equipment_contacts
+            .iter()
+            .map(|contact| TacticalEquipmentContact {
+                character_id: contact.character_id,
+                inventory_item_id: contact.inventory_item_id,
+                contact_stress: contact.contact_stress,
+                role: if contact.defender_equipment {
+                    TacticalEquipmentContactRole::DefenderEquipment
+                } else {
+                    TacticalEquipmentContactRole::AttackerWeapon
+                },
+            })
+            .collect(),
+    }
+}
+
+fn empty_tactical_consequence_receipt() -> TacticalConsequenceReceipt {
+    TacticalConsequenceReceipt {
+        party: Vec::new(),
+        equipment_contacts: Vec::new(),
+    }
+}
+
 fn check_terminal_combat_outcome(
     time: Res<Time>,
     conn: Res<SpacetimeDb>,
+    consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
     exit: MessageWriter<AppExit>,
     enemies: Query<(), (With<bot::MissionEnemy>, With<Player>)>,
@@ -687,7 +773,14 @@ fn check_terminal_combat_outcome(
     // A result whose first submission failed is already decided. Retry it
     // before observing recoveries, disconnects, or any newly terminal state.
     if let Some(resolution) = state.pending_resolution {
-        return commit_terminal_resolution(resolution, time.elapsed(), conn, state, exit);
+        return commit_terminal_resolution(
+            resolution,
+            time.elapsed(),
+            conn,
+            consequences,
+            state,
+            exit,
+        );
     }
     let mut loaded_party = 0;
     let mut incapacitated_party = 0;
@@ -725,6 +818,7 @@ fn check_terminal_combat_outcome(
             TacticalMissionResolution::Failed,
             time.elapsed(),
             conn,
+            consequences,
             state,
             exit,
         );
@@ -740,12 +834,13 @@ fn check_terminal_combat_outcome(
     let Some(resolution) = terminal_resolution(snapshot) else {
         return Ok(());
     };
-    commit_terminal_resolution(resolution, time.elapsed(), conn, state, exit)
+    commit_terminal_resolution(resolution, time.elapsed(), conn, consequences, state, exit)
 }
 
 fn check_mission_timeout(
     time: Res<Time>,
     conn: Res<SpacetimeDb>,
+    consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
     exit: MessageWriter<AppExit>,
 ) -> Result {
@@ -766,6 +861,7 @@ fn check_mission_timeout(
         TacticalMissionResolution::Failed,
         time.elapsed(),
         conn,
+        consequences,
         state,
         exit,
     )
@@ -969,6 +1065,8 @@ mod tests {
         assert_eq!(baseline, 1.0);
         assert!(escalated > baseline);
         assert!(countered < escalated);
+    }
+
     fn snapshot() -> TerminalCombatSnapshot {
         TerminalCombatSnapshot {
             required_enemies: 2,
@@ -1060,6 +1158,7 @@ mod tests {
             abandonment_elapsed: Duration::ZERO,
             terminal_retry_not_before: Duration::ZERO,
             pending_resolution: None,
+            pending_receipt: None,
             committed: false,
         };
         let resolution = terminal_resolution(TerminalCombatSnapshot {
@@ -1069,11 +1168,21 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            state.submit_terminal(resolution, Duration::ZERO, |_| Ok::<_, ()>(())),
+            state.submit_terminal(
+                resolution,
+                empty_tactical_consequence_receipt(),
+                Duration::ZERO,
+                |_, _| Ok::<_, ()>(()),
+            ),
             Ok(true)
         );
         assert_eq!(
-            state.submit_terminal(resolution, Duration::ZERO, |_| Ok::<_, ()>(())),
+            state.submit_terminal(
+                resolution,
+                empty_tactical_consequence_receipt(),
+                Duration::ZERO,
+                |_, _| Ok::<_, ()>(()),
+            ),
             Ok(false)
         );
     }
@@ -1091,19 +1200,37 @@ mod tests {
             abandonment_elapsed: Duration::ZERO,
             terminal_retry_not_before: Duration::ZERO,
             pending_resolution: None,
+            pending_receipt: None,
             committed: false,
         };
         let mut attempts = 0;
         let mut reports = Vec::new();
-        let mut sender = |resolution| {
+        let mut receipts = Vec::new();
+        let frozen_receipt = TacticalConsequenceReceipt {
+            party: vec![TacticalCharacterConsequence {
+                character_id: 7,
+                injuries: vec![TacticalHitInjury {
+                    body_part: TacticalReceiptBodyPart::Chest,
+                    cut_damage: 0.2,
+                    blunt_damage: 0.0,
+                    max_single_hit_blunt_damage: 0.0,
+                }],
+                blood_loss_fraction: 0.1,
+                ammunition_used: 0,
+            }],
+            equipment_contacts: Vec::new(),
+        };
+        let mut sender = |resolution, receipt| {
             attempts += 1;
             reports.push(resolution);
+            receipts.push(receipt);
             (attempts > 1).then_some(()).ok_or("offline")
         };
 
         assert_eq!(
             state.submit_terminal(
                 TacticalMissionResolution::Defeated,
+                frozen_receipt.clone(),
                 Duration::ZERO,
                 &mut sender
             ),
@@ -1119,16 +1246,27 @@ mod tests {
             .or(current_resolution)
             .expect("failed submission remains pending");
         assert_eq!(
-            state.submit_terminal(retry_resolution, Duration::from_millis(999), &mut sender),
+            state.submit_terminal(
+                retry_resolution,
+                empty_tactical_consequence_receipt(),
+                Duration::from_millis(999),
+                &mut sender,
+            ),
             Ok(false)
         );
         assert_eq!(
-            state.submit_terminal(retry_resolution, Duration::from_secs(1), &mut sender),
+            state.submit_terminal(
+                retry_resolution,
+                empty_tactical_consequence_receipt(),
+                Duration::from_secs(1),
+                &mut sender,
+            ),
             Ok(true)
         );
         assert_eq!(
             state.submit_terminal(
                 TacticalMissionResolution::Defeated,
+                empty_tactical_consequence_receipt(),
                 Duration::from_secs(2),
                 &mut sender
             ),
@@ -1142,6 +1280,7 @@ mod tests {
                 TacticalMissionResolution::Defeated
             ]
         );
+        assert_eq!(receipts, vec![frozen_receipt.clone(), frozen_receipt]);
     }
 
     #[test]
@@ -1217,5 +1356,24 @@ mod tests {
             PARTY_RECONNECT_GRACE.saturating_mul(2)
         ));
         assert_eq!(elapsed, Duration::ZERO);
+    }
+
+    #[test]
+    fn weapon_contact_owner_is_included_without_an_injury() {
+        let mut accumulated = TacticalConsequenceAccumulator::default();
+        accumulated
+            .equipment_contacts
+            .push(combat::AccumulatedEquipmentContact {
+                character_id: 7,
+                inventory_item_id: 99,
+                contact_stress: 12.0,
+                defender_equipment: false,
+            });
+
+        let receipt = tactical_consequence_receipt(&accumulated);
+        assert_eq!(receipt.party.len(), 1);
+        assert_eq!(receipt.party[0].character_id, 7);
+        assert!(receipt.party[0].injuries.is_empty());
+        assert_eq!(receipt.equipment_contacts.len(), 1);
     }
 }

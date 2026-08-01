@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Hard limits for authenticated tactical terminal consequence receipts.
+pub const MAX_TACTICAL_RECEIPT_PARTICIPANTS: usize = 16;
+pub const MAX_TACTICAL_INJURIES_PER_PARTICIPANT: usize = 64;
+pub const MAX_TACTICAL_EQUIPMENT_CONTACTS: usize = 128;
+pub const MAX_TACTICAL_DAMAGE_PER_HIT: f32 = 1.0;
+pub const MAX_TACTICAL_CONTACT_STRESS: f32 = 10_000.0;
+pub const MAX_TACTICAL_AMMUNITION_USED: u32 = 1_024;
+
 macro_rules! authority_id {
     ($name:ident, $prefix:literal) => {
         #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

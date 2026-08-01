@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1681)
+## Files (1689)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -666,6 +666,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/mission_outcome_candidate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mixed_lithology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/morale_band_type.rs` — Generated SpacetimeDB data type.
@@ -960,8 +962,14 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/sync_development_clock_to_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/synchronize_character_time_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/synchronize_party_for_activity_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/tactical_character_consequence_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/tactical_consequence_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/tactical_equipment_contact_role_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/tactical_equipment_contact_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/tactical_hit_injury_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/tactical_mission_resolution_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/tactical_mission_side_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/tactical_receipt_body_part_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/tactical_server_claim_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/tactical_server_request_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/tactical_server_request_type.rs` — Generated SpacetimeDB data type.
@@ -1082,6 +1090,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/strategic/world_import.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/surgery.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/world_actor.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/static/tactical.html` — Browser UI page.
@@ -1153,8 +1163,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-server/src/bot.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/combat.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/stdb.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/terrain.rs` — Rust source module for this component.
