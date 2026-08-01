@@ -1,0 +1,162 @@
+{
+  "encounters": [
+    {
+      "id": "enchanted_fog_lost_forester_v1",
+      "version": 1,
+      "weight": 60,
+      "triggers": { "travel": true, "rest": true },
+      "provenance": {
+        "works": ["Parzival", "Wigalois", "Lanzelet", "Theuerdank", "Le Morte d'Arthur"],
+        "motifs": ["enchanted_fog", "beguiling_voices", "lost_foresters", "steadfast_company", "betrayed_trust"],
+        "adaptation_note": "An original synthesis of misleading enchantments, familiar voices in wild places, steadfast companies, forest guidance, and betrayals of entrusted service common in chivalric romance; it does not reproduce a particular episode."
+      },
+      "cast": [
+        { "id": "white_mere_lady", "name": "Lady of the White Mere", "nature": "supernatural" },
+        { "id": "forest_reeve", "name": "Forest reeve", "nature": "mortal" },
+        { "id": "forest_charges", "name": "Foresters in the reeve's charge", "nature": "mortal" }
+      ],
+      "opening": [
+        { "speaker": "white_mere_lady", "text": "Within my veil, each borrowed voice rings true.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
+        { "speaker": "white_mere_lady", "text": "Forsake the common road and follow me.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
+        { "speaker": "white_mere_lady", "text": "Now bind thy will, nor heed the voices near.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
+        { "speaker": "forest_reeve", "text": "Good travelers, this white fog maketh familiar voices call beyond our marked line. I am forest reeve unto these charges; I know the drainage, iron road-stakes, and local ways. Two mailed waylayers shadow us from the clear edge and keep near the drainage cut, awaiting any soul the voices draw apart. My pack beareth the charges' sealed forty-eight-groschen wage purse beside a spare self bow and eight arrows from our hunt stores. Help me bring every soul unto the clear edge, and that spare gear shall reward sound aid.", "reviewed_shakespearean": true }
+      ],
+      "choices": [
+        {
+          "id": "hold_staked_line_against_voices",
+          "label": "Hold the road-stakes and keep the company in touch",
+          "response": [{ "speaker": "forest_reeve", "text": "Grip thou the iron stakes and keep each hand in living touch. Though beloved voices call beyond the line, I shall lead by the marks I set before the mist arose.", "reviewed_shakespearean": true }],
+          "result": "For forty-five minutes thou holdest fast against borrowed voices and keepest the company hand to hand upon the reeve's staked line. Near the clear edge he prepareth his spare self bow across a narrow drainage cut. Two mailed road robbers show blades only, find no ranged answer across the gap, and withdraw without a shot. For thy courage the reeve granteth thee that bow and eight arrows from his pack.",
+          "deed": "hold_forest_company_to_staked_line_in_enchanted_fog",
+          "outcome_tags": ["courage", "steadfastness", "physical_observation"],
+          "checks": [{ "kind": "skill", "skill": "will", "difficulty_milli": 1200 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "self_bow", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "arrow", "quantity": 8 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "nerve", "delta": 110, "virtue": "courage" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 45 }
+        },
+        {
+          "id": "follow_falling_water",
+          "label": "Follow falling water beneath the reeve's local judgment",
+          "response": [{ "speaker": "forest_reeve", "text": "The false voices wander, but water yet falleth toward the old roadside drain. Read its descent beneath my premise, whilst I match each turn unto my stakes and local bounds.", "reviewed_shakespearean": true }],
+          "result": "For an hour thou readest the fall of hidden water while the reeve matchest it to his known drains, stakes, and lawful road. The company reacheth the clear edge at a narrow drainage cut, where he prepareth the pack's spare self bow. Two mailed road robbers bearing blades only cannot answer across that lane and withdraw unshot. The reeve rewardeth thy prudent reading with the bow and eight arrows.",
+          "deed": "follow_falling_water_under_forest_reeves_guidance",
+          "outcome_tags": ["prudence", "forestcraft", "physical_observation"],
+          "checks": [{ "kind": "skill", "skill": "terrain_forest", "difficulty_milli": 1100 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "self_bow", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "arrow", "quantity": 8 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 110, "virtue": "prudence" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "hear_bell_and_stream_beneath_echoes",
+          "label": "Distinguish the iron road-bell and stream beneath the echoes",
+          "response": [{ "speaker": "forest_reeve", "text": "Hearken for the iron road-bell's blunt return and the stream's unbroken fall. The copied cries leap without distance; those honest sounds abide where wood and water set them.", "reviewed_shakespearean": true }],
+          "result": "For forty minutes thou separatest the real iron bell and steady stream from familiar voices that shift without distance. The reeve useth those bearings to recover his marked line. At its clear edge he setteth the spare self bow across a narrow drainage cut; two mailed, blade-only road robbers cannot answer that range and retreat before any shot. He granteth thee the bow and eight arrows for prudent hearing.",
+          "deed": "distinguish_road_bell_and_stream_from_fog_echoes",
+          "outcome_tags": ["prudence", "hearing", "physical_observation"],
+          "checks": [{ "kind": "attribute", "attribute": "hearing", "difficulty_milli": 1150 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "self_bow", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "arrow", "quantity": 8 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 100, "virtue": "prudence" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "calm_and_name_the_company",
+          "label": "Calm the company and name each living companion",
+          "response": [{ "speaker": "forest_reeve", "text": "Speak each living name and bid its bearer answer from thy hand's reach. Courtesy among the fearful shall keep borrowed voices from dividing those I guide.", "reviewed_shakespearean": true }],
+          "result": "For thirty-five minutes thou namest and reassures each frightened forester, so every true answer cometh from a companion held within the line. Thus composed, they obey the reeve unto the clear edge. He prepareth the spare self bow across a narrow drainage cut; two mailed road robbers reveal blades only and withdraw without a shot when they cannot answer its range. He granteth thee the bow and eight arrows for courteous aid.",
+          "deed": "calm_and_name_foresters_in_enchanted_fog",
+          "outcome_tags": ["courtesy", "reassurance", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "charm", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "charm", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "self_bow", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "arrow", "quantity": 8 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "sociability", "delta": 110, "virtue": "courtesy" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 35 }
+        },
+        {
+          "id": "coordinate_reeves_mist_line",
+          "label": "Coordinate the reeve's tethers, counting, and mist-line",
+          "response": [{ "speaker": "forest_reeve", "text": "I shall choose the drainage, stakes, route, and marching order. Set thou my tethers, repeat each count, and keep every charge obedient beneath that forest judgment.", "reviewed_shakespearean": true }],
+          "result": "For fifty minutes thou coordinatest tethers, repeated counts, and the mist-line while the reeve alone chooseth drainage, stakes, route, and order. His company reacheth the clear edge together. There he prepareth the spare self bow across a narrow drainage cut; two mailed road robbers show blades only, cannot answer across it, and withdraw without a shot. He granteth thee the bow and eight arrows for prudent command.",
+          "deed": "coordinate_company_beneath_forest_reeves_mist_line",
+          "outcome_tags": ["prudence", "command", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "self_bow", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "arrow", "quantity": 8 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 100, "virtue": "prudence" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 50 }
+        },
+        {
+          "id": "keep_shared_litany",
+          "label": "Keep a spoken litany as the company's shared cadence",
+          "response": [{ "speaker": "forest_reeve", "text": "Let each Christian speak the known response upon the same measured breath. No prayer commandeth this fog; the shared cadence shall fix our moral purpose and tell true companions from borrowed cries.", "reviewed_shakespearean": true }],
+          "result": "For forty-five minutes the company keepeth a familiar spoken litany as shared cadence and moral focus. It neither dispelleth nor altereth the fog; it helpeth mortal companions answer together while the reeve followeth his stakes unto the clear edge. There his prepared self bow commandeth a narrow drainage cut, and two mailed road robbers with blades only withdraw without a shot when they cannot answer its range. He granteth thee the bow and eight arrows for faithful fellowship.",
+          "deed": "keep_shared_christian_litany_in_enchanted_fog",
+          "outcome_tags": ["faith", "shared_cadence", "physical_observation"],
+          "requirements": [{ "kind": "religion", "religion": "roman_catholic" }],
+          "checks": [{ "kind": "religion", "religion": "roman_catholic", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "self_bow", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "arrow", "quantity": 8 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "conviction", "delta": 110, "virtue": "faith" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 45 }
+        },
+        {
+          "id": "steal_reeves_wages_and_hunt_gear",
+          "label": "Feign concern for the forward count and rob the reeve's pack",
+          "response": [{ "speaker": "forest_reeve", "text": "Thou sayest the foremost tether hath slackened? Guard my pack beside this stake whilst I go before and count each charge beneath mine own eye.", "reviewed_shakespearean": true }],
+          "result": "Thou cooperatest until the reeve hath established the safe drainage line near the clear edge and prepared his spare self bow across its narrow cut. Two mailed road robbers reveal blades only, cannot answer at range, and withdraw without a shot. When he returneth the bow and eight arrows unto his open pack, thou falsely reportest trouble in the forward count. He goeth ahead to check his charges, leaving thee alone beneath credible color of guarding the stake. Thou stealest their established forty-eight-groschen wage purse with the spare bow and arrows, then followest the already-marked drainage line. Reeve and charges emerge safely behind thee.",
+          "deed": "steal_forest_wages_and_hunt_gear_after_safe_line_is_known",
+          "outcome_tags": ["deception", "theft", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "deception", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "deception", "difficulty_milli": 1200 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 48 },
+            { "kind": "grant_item", "item_id": "self_bow", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "arrow", "quantity": 8 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "transparency", "delta": -250, "virtue": "honesty" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "ignore",
+          "label": "Wait silently for the white fog to thin",
+          "response": [],
+          "result": "Thou waitest three hours without joining the forest company. The white enchantment passeth, the fog thinneth of itself, and thou continuest upon the common road.",
+          "deed": "wait_out_enchanted_fog_without_intervening",
+          "outcome_tags": [],
+          "transition": { "kind": "travel_delay", "minutes": 180 }
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information", "material_preparation"]
+    }
+  ]
+}
