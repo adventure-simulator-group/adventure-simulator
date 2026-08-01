@@ -401,7 +401,19 @@ fn dialogue_candidates_are_filtered_by_the_authoritative_public_navigation_rule(
         .and_then(|tail| tail.split("pub(super) fn generated_actor_ready_after_time").next())
         .expect("generated-case dialogue selection");
     assert!(case_dialogue.contains("self.visible_npc_candidates"));
-    assert!(case_dialogue.contains("\n        Ok(false)\n    }"));
+    let preferred_filter = case_dialogue
+        .find("candidates.retain(|candidate| candidate.name.eq_ignore_ascii_case(name))")
+        .expect("preferred witnesses are filtered from publicly visible candidates");
+    let candidate_loop = case_dialogue
+        .find("for candidate in candidates.into_iter()")
+        .expect("dialogue attempts iterate the filtered candidates");
+    assert!(preferred_filter < candidate_loop);
+
+    let normalized = case_dialogue.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized.ends_with("Ok(false) }"),
+        "no visible preferred witness must safely decline dialogue"
+    );
 }
 
 #[test]
