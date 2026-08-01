@@ -2480,8 +2480,8 @@ pub(crate) fn insert_character_with_origin(
             &starting_organization.organization_id,
         )?;
     }
-    crate::capability::refresh_character_capability(ctx, character.id)?;
     crate::condition::initialize_character_condition(ctx, character.id)?;
+    crate::capability::refresh_character_capability(ctx, character.id)?;
     if let Some(religion_id) = starting.and_then(|spec| spec.religion_id.as_ref()) {
         let mut condition = ctx
             .db
@@ -3279,6 +3279,28 @@ mod starting_character_boundary_tests {
                 "missing invariant for {component}"
             );
         }
+    }
+
+    #[test]
+    fn creation_initializes_condition_before_refreshing_capability() {
+        let source = include_str!("character.rs");
+        let insertion = source
+            .split("pub(crate) fn insert_character_with_origin")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn validate_full_character_components")
+            .next()
+            .unwrap();
+        let condition = insertion
+            .find("crate::condition::initialize_character_condition(ctx, character.id)?")
+            .unwrap();
+        let capability = insertion
+            .find("crate::capability::refresh_character_capability(ctx, character.id)?")
+            .unwrap();
+        assert!(
+            condition < capability,
+            "capability refresh loads the character condition and must run after initialization"
+        );
     }
 
     #[test]
