@@ -157,6 +157,18 @@
     }
 
     #[test]
+    fn chart_ranking_prefers_skilled_recent_clinician_and_rejects_stale_rows() {
+        assert_eq!(
+            compare_public_chart_rank(8_500, 900, 20, "physician", 3_000, 901, 10, "self"),
+            std::cmp::Ordering::Less,
+            "a minute-newer weak self chart must not displace a skilled clinician"
+        );
+        assert!(public_chart_is_fresh(2_000, 560));
+        assert!(!public_chart_is_fresh(2_001, 560));
+        assert!(!public_chart_is_fresh(559, 560));
+    }
+
+    #[test]
     fn medical_policy_uses_only_authorized_public_chart_and_patient_inventory() {
         let source = LIVE_CORE_SOURCE;
         let chart = source
@@ -188,7 +200,7 @@
             "public_differential=",
             "public_score_micropoints=",
             "storefront_quote=",
-            "outcome=authoritative_reducer_accepted",
+            "authoritative_reducer_accepted",
         ] {
             assert!(recovery.contains(public_trace), "missing trace {public_trace}");
         }
@@ -196,7 +208,46 @@
         assert!(recovery.contains("character_id,"));
         assert!(recovery.contains("preparation_inventory_id"));
         assert!(recovery.contains("chart_unavailable_or_low_confidence"));
+        assert!(recovery.contains("active_public_intervention_supportive_rest"));
+        assert!(recovery.contains("authoritative_terminal_boundary"));
+        assert!(recovery.contains("medical_rest_requested_minutes=1440"));
+        assert!(recovery.contains("medical_rest_actual_minutes="));
+        assert!(recovery.contains("saturating_sub(medical_rest_started_at)"));
+        let schedule_sync = recovery.find("set_medical_rest_schedule(agent)").unwrap();
+        let chart_read = recovery.find("public_physician_chart(character_id)").unwrap();
+        let administration = recovery.find("administer_preparation_then").unwrap();
+        let post_administration_death_check = recovery[administration..]
+            .find("self.observe_deaths()")
+            .map(|offset| administration + offset)
+            .unwrap();
+        let medical_rest = recovery.find("medical_recovery_rest").unwrap();
+        assert!(schedule_sync < chart_read);
+        assert!(administration < post_administration_death_check);
+        assert!(post_administration_death_check < medical_rest);
         assert!(!recovery.contains("infection_episode"));
+    }
+
+    #[test]
+    fn owned_supported_medicine_does_not_require_a_storefront_quote() {
+        let source = LIVE_CORE_SOURCE;
+        let offers = source
+            .split("fn public_intervention_offers")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(super) fn observable_medical_reserve").next())
+            .expect("public intervention offers");
+        let inventory = offers.find("let inventory_item_id").unwrap();
+        let quote = offers.find("let storefront_quote").unwrap();
+        assert!(inventory < quote);
+        assert!(offers.contains("inventory_item_id.is_none() && storefront_quote.is_none()"));
+        assert!(offers.contains("if !chart.known_interventions.is_empty()"));
+
+        let recovery = source
+            .split("fn ensure_medically_safe")
+            .nth(1)
+            .and_then(|tail| tail.split("fn settlement_activity_day").next())
+            .unwrap();
+        assert!(recovery.contains("offer.inventory_item_id.is_some()"));
+        assert!(recovery.contains("|| selected_intervention"));
     }
 
     #[test]

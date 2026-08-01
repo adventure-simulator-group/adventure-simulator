@@ -128,6 +128,10 @@ const MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS: u32 = 2_000;
 const MAX_DEPARTURE_WETNESS_BPS: u16 = 8_000;
 const MAX_DEPARTURE_ABS_THERMAL_STRAIN: u32 = 2_500;
 const MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS: u16 = 3_000;
+/// Older observations can describe a materially different disease stage.
+/// One strategic day permits ordinary asynchronous party observation without
+/// allowing an indefinitely cached chart to direct treatment.
+const MAX_ACTIONABLE_PHYSIOLOGY_CHART_AGE_MINUTES: u64 = 1_440;
 const DEFAULT_SIMULATION_DISEASE: &str = "influenza";
 const SIMULATION_DISEASE_SCENARIOS: [&str; 9] = [
     "influenza",

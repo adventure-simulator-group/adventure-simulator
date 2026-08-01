@@ -39,8 +39,32 @@ struct PublicInterventionOffer {
     profile_version: u16,
     route: String,
     public_score_micropoints: i64,
-    storefront_quote: u64,
+    storefront_quote: Option<u64>,
     inventory_item_id: Option<u64>,
+}
+
+fn public_chart_is_fresh(patient_minute: u64, observed_at: u64) -> bool {
+    observed_at <= patient_minute
+        && patient_minute.saturating_sub(observed_at)
+            <= MAX_ACTIONABLE_PHYSIOLOGY_CHART_AGE_MINUTES
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compare_public_chart_rank(
+    left_confidence: u16,
+    left_observed_at: u64,
+    left_observer_id: u64,
+    left_id: &str,
+    right_confidence: u16,
+    right_observed_at: u64,
+    right_observer_id: u64,
+    right_id: &str,
+) -> std::cmp::Ordering {
+    right_confidence
+        .cmp(&left_confidence)
+        .then_with(|| right_observed_at.cmp(&left_observed_at))
+        .then_with(|| left_observer_id.cmp(&right_observer_id))
+        .then_with(|| left_id.cmp(right_id))
 }
 
 fn public_disease_id(value: &str) -> Option<adventuresim_core::disease::DiseaseId> {
@@ -125,7 +149,7 @@ fn choose_medical_action(
     condition_status: &str,
     symptomatic: bool,
     at_settlement: bool,
-    herbalist_available: bool,
+    intervention_available: bool,
     purse: u64,
     observable_quote: Option<u64>,
     natural_rest_venue: Option<bool>,
@@ -149,8 +173,8 @@ fn choose_medical_action(
             "convalescing_without_symptoms",
         );
     }
-    if !herbalist_available {
-        return (MedicalChoice::RestNaturally, "herbalist_unavailable");
+    if !intervention_available {
+        return (MedicalChoice::RestNaturally, "intervention_unavailable");
     }
     let Some(quote) = observable_quote else {
         return (MedicalChoice::RestNaturally, "observable_quote_unavailable");

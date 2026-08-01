@@ -465,8 +465,10 @@ capability boundary as other simulator-only setup. Policy observes only public c
 public symptomatic/critical signal, and the gateway-authorized physiology chart. It never subscribes
 to infection episodes or reconstructs hidden disease truth. A usable chart must belong to the patient,
 name a simulator-controlled living observer who is a co-located member of the patient's current party,
-and meet the public confidence floor. Freshness, then confidence, then stable observer/chart identity
-selects among eligible rows; that observer performs the ordinary intervention reducer as clinician.
+and meet the public confidence floor. Charts older than one strategic day are rejected. Among fresh
+rows, confidence ranks before recency, then stable observer/chart identity breaks ties, so a
+minute-newer weak self-reading cannot displace a skilled party clinician; that observer performs the
+ordinary intervention reducer as clinician.
 
 For every positively scored preparation that the visible herbalist stocks, the policy reproduces the
 authoritative public quote and scores its public generic meter deltas against the chart's public weighted
@@ -477,7 +479,10 @@ patient's inventory and consumed through the ordinary administration reducer; pr
 outcome remain authoritative. Low/no confidence, an active matching intervention, no positive profile,
 missing stock, or an unaffordable course falls back to supportive/natural rest. ORS remains the concrete
 conservative reserve course used by discretionary-spending policy; the medical selector may choose a
-different publicly supported preparation. Affordability includes the
+different publicly supported preparation. A positively scored course already in the patient's
+inventory is eligible without any herbalist, stock, or quote; storefront authority is required only
+when purchase is necessary, and suitable owned medicine ranks before purchases. A public active
+intervention suppresses additional administration until it ends. Affordability includes the
 visible cost of the required one-day rest venue, preferring a free temple to a paid inn. An affordable symptomatic character buys a course;
 an unaffordable character, a settlement without an herbalist, or a nonsymptomatic convalescent
 instead takes bounded one-day natural recovery. Equipment maintenance retains one locally quoted
@@ -489,6 +494,12 @@ outcome, affordability, action, and reason. Recovery completion records
 `recovery_context=public_symptoms` and keeps the pre-rest symptomatic
 observation separate from the newly read post-rest observation; it does not
 claim a private physiological cause.
+The medical-rest schedule is installed before chart, co-location, inventory, and quote selection,
+because that authority call may synchronize a lagging clock; all inputs are re-read before any
+charge. Administration is another terminal boundary: liveness and public condition are re-read
+immediately, actual spend and outcome are recorded, and a dead patient is never sent to a rest
+reducer. Medicated rest reports 1,440 requested minutes separately from the authoritative patient-clock
+delta and contributes only that actual delta to treatment-rest metrics.
 For a nonsymptomatic patient who cannot afford the inn and lacks a supplied
 temple rest, the policy deterministically selects the solvent co-located living
 party member with the greatest public purse after retaining that payer's own

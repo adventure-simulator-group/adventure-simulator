@@ -298,7 +298,7 @@ impl LiveRunner {
             .iter()
             .filter(|chart| {
                 chart.patient_id == patient_id
-                    && chart.observed_at <= patient_minute
+                    && public_chart_is_fresh(patient_minute, chart.observed_at)
                     && chart.confidence_bps >= MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS
                     && chart.gap_from.is_none()
                     && chart.gap_to.is_none()
@@ -323,12 +323,16 @@ impl LiveRunner {
             })
             .collect::<Vec<_>>();
         charts.sort_by(|left, right| {
-            right
-                .observed_at
-                .cmp(&left.observed_at)
-                .then_with(|| right.confidence_bps.cmp(&left.confidence_bps))
-                .then_with(|| left.observer_id.cmp(&right.observer_id))
-                .then_with(|| left.id.cmp(&right.id))
+            compare_public_chart_rank(
+                left.confidence_bps,
+                left.observed_at,
+                left.observer_id,
+                &left.id,
+                right.confidence_bps,
+                right.observed_at,
+                right.observer_id,
+                &right.id,
+            )
         });
         charts.into_iter().next()
     }
@@ -339,23 +343,16 @@ impl LiveRunner {
         settlement_id: &str,
         chart: &BackendPhysiologyChart,
     ) -> Vec<PublicInterventionOffer> {
+        if !chart.known_interventions.is_empty() {
+            return Vec::new();
+        }
         let mut offers = adventuresim_core::physiology::INTERVENTION_PROFILES
             .iter()
-            .filter(|profile| {
-                !chart.known_interventions.iter().any(|known| {
-                    known.split_whitespace().next() == Some(profile.preparation_id)
-                })
-            })
             .filter_map(|profile| {
                 let score = public_intervention_score(&chart.possible_diseases, profile);
                 if score <= 0 {
                     return None;
                 }
-                let quote = self.observable_preparation_quote(
-                    patient_id,
-                    settlement_id,
-                    profile.preparation_id,
-                )?;
                 let inventory_item_id = self
                     .connection
                     .db
@@ -368,20 +365,34 @@ impl LiveRunner {
                     })
                     .map(|row| row.id)
                     .min();
+                let storefront_quote = self.observable_preparation_quote(
+                    patient_id,
+                    settlement_id,
+                    profile.preparation_id,
+                );
+                if inventory_item_id.is_none() && storefront_quote.is_none() {
+                    return None;
+                }
                 Some(PublicInterventionOffer {
                     preparation_id: profile.preparation_id.to_owned(),
                     profile_version: profile.version,
                     route: intervention_route_name(profile.route).to_owned(),
                     public_score_micropoints: score,
-                    storefront_quote: quote,
+                    storefront_quote,
                     inventory_item_id,
                 })
             })
             .collect::<Vec<_>>();
         offers.sort_by(|left, right| {
             right
-                .public_score_micropoints
-                .cmp(&left.public_score_micropoints)
+                .inventory_item_id
+                .is_some()
+                .cmp(&left.inventory_item_id.is_some())
+                .then_with(|| {
+                    right
+                        .public_score_micropoints
+                        .cmp(&left.public_score_micropoints)
+                })
                 .then_with(|| left.storefront_quote.cmp(&right.storefront_quote))
                 .then_with(|| left.preparation_id.cmp(&right.preparation_id))
         });
@@ -522,7 +533,7 @@ impl LiveRunner {
     pub(super) fn ensure_medically_safe(&mut self, agent: u32) -> Result<bool, String> {
         let character_id = self.character_ids[agent as usize];
         for _ in 0..MAX_RECOVERY_ACTIONS {
-            let character = self
+            let mut character = self
                 .connection
                 .db
                 .backend_characters()
@@ -550,20 +561,54 @@ impl LiveRunner {
                 }
                 return Ok(false);
             }
-            let condition = self
+            let mut condition = self
                 .connection
                 .db
                 .backend_character_strategic_conditions()
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .ok_or("missing medical condition")?;
-            let symptomatic = self
+            let mut symptomatic = self
                 .connection
                 .db
                 .character_illness_status()
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .is_some_and(|row| row.symptomatic);
+            if (condition.status != "ready" || symptomatic)
+                && character.current_settlement_id.is_some()
+            {
+                // Installing the medical schedule may synchronize a lagging
+                // character clock. Nothing clinical is selected or purchased
+                // until every public input is re-read after that authority call.
+                self.set_medical_rest_schedule(agent)?;
+                self.observe_deaths();
+                character = self
+                    .connection
+                    .db
+                    .backend_characters()
+                    .iter()
+                    .find(|row| row.id == character_id)
+                    .ok_or("missing medical character after schedule synchronization")?;
+                if !character.alive {
+                    self.medically_paused_schedules.remove(&character_id);
+                    return Ok(false);
+                }
+                condition = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .ok_or("missing medical condition after schedule synchronization")?;
+                symptomatic = self
+                    .connection
+                    .db
+                    .character_illness_status()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .is_some_and(|row| row.symptomatic);
+            }
             let settlement = character.current_settlement_id.clone();
             let herbalist_available = settlement.as_ref().is_some_and(|settlement| {
                 self.connection
@@ -624,7 +669,10 @@ impl LiveRunner {
                 let purchase_cost = if offer.inventory_item_id.is_some() {
                     0
                 } else {
-                    offer.storefront_quote
+                    let Some(quote) = offer.storefront_quote else {
+                        return false;
+                    };
+                    quote
                 };
                 affordable_medical_rest_venue(
                     inn_available,
@@ -639,7 +687,9 @@ impl LiveRunner {
                 if offer.inventory_item_id.is_some() {
                     0
                 } else {
-                    offer.storefront_quote
+                    offer
+                        .storefront_quote
+                        .expect("purchased intervention requires a public quote")
                 }
             });
             let medicated_rest_venue = observable_quote.and_then(|quote| {
@@ -676,7 +726,10 @@ impl LiveRunner {
                 &condition.status,
                 symptomatic,
                 settlement.is_some(),
-                herbalist_available,
+                herbalist_available
+                    || selected_intervention
+                        .as_ref()
+                        .is_some_and(|offer| offer.inventory_item_id.is_some()),
                 purse,
                 observable_quote,
                 natural_rest_venue,
@@ -685,6 +738,11 @@ impl LiveRunner {
             let reason = if symptomatic && choice == MedicalChoice::RestNaturally {
                 if chart.is_none() {
                     "chart_unavailable_or_low_confidence"
+                } else if chart
+                    .as_ref()
+                    .is_some_and(|chart| !chart.known_interventions.is_empty())
+                {
+                    "active_public_intervention_supportive_rest"
                 } else if intervention_offers.is_empty() {
                     "no_positive_stocked_public_intervention"
                 } else if selected_intervention.is_none() {
@@ -726,7 +784,7 @@ impl LiveRunner {
                     selected_intervention.as_ref().map_or("none", |offer| offer.preparation_id.as_str()),
                     selected_intervention.as_ref().map_or_else(|| "none".into(), |offer| offer.public_score_micropoints.to_string()),
                     selected_intervention.as_ref().map_or("none", |offer| offer.route.as_str()),
-                    selected_intervention.as_ref().map_or_else(|| "unavailable".into(), |offer| offer.storefront_quote.to_string()),
+                    selected_intervention.as_ref().and_then(|offer| offer.storefront_quote).map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
                     observable_quote.map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
                     required_rest_cost.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
                     observable_care_total.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
@@ -758,7 +816,6 @@ impl LiveRunner {
             let Some(settlement) = settlement else {
                 unreachable!("a missing settlement is handled as quest suppression");
             };
-            self.set_medical_rest_schedule(agent)?;
             let survival_before = self
                 .public_survival_observation(character_id)
                 .unwrap_or_default();
@@ -940,7 +997,7 @@ impl LiveRunner {
                         "observer={clinician_id};item={preparation_id};route={};public_score_micropoints={};storefront_quote={}",
                         intervention.route,
                         intervention.public_score_micropoints,
-                        intervention.storefront_quote,
+                        intervention.storefront_quote.expect("purchase requires a public quote"),
                     ),
                 );
                 self.connection
@@ -966,32 +1023,80 @@ impl LiveRunner {
                     1_000,
                     None,
                     cb
-                ));
+            ));
             self.call(result)?;
             self.metrics.interventions_administered += 1;
+            let actual_treatment_spend =
+                gold_before.saturating_sub(self.personal_gold(character_id));
+            self.metrics.treatment_gold_spent = self
+                .metrics
+                .treatment_gold_spent
+                .saturating_add(actual_treatment_spend);
+            self.observe_deaths();
+            let post_administration = self
+                .connection
+                .db
+                .backend_characters()
+                .iter()
+                .find(|row| row.id == character_id)
+                .ok_or("missing patient after authoritative intervention")?;
+            let post_administration_condition = self
+                .connection
+                .db
+                .backend_character_strategic_conditions()
+                .iter()
+                .find(|row| row.character_id == character_id)
+                .map_or_else(|| "unavailable".to_owned(), |row| row.status);
             self.event(
                 agent,
                 CoreLoopEventKind::AdministerPreparation,
                 format!(
-                    "observer={clinician_id};administered={preparation_id};profile={};route={};public_score_micropoints={};storefront_quote={};outcome=authoritative_reducer_accepted",
+                    "observer={clinician_id};administered={preparation_id};profile={};route={};public_score_micropoints={};storefront_quote={};actual_spend={actual_treatment_spend};alive_after={};condition_after={};outcome={}",
                     intervention.profile_version,
                     intervention.route,
                     intervention.public_score_micropoints,
-                    intervention.storefront_quote,
+                    intervention.storefront_quote.map_or_else(|| "not_required".to_owned(), |quote| quote.to_string()),
+                    post_administration.alive,
+                    bounded_event_field(&post_administration_condition),
+                    if post_administration.alive { "authoritative_reducer_accepted" } else { "authoritative_terminal_boundary" },
                 ),
             );
-            self.metrics.treatment_gold_spent +=
-                gold_before.saturating_sub(self.personal_gold(character_id));
+            if !post_administration.alive {
+                self.medically_paused_schedules.remove(&character_id);
+                return Ok(false);
+            }
 
             let at_inn =
                 medicated_rest_venue.expect("purchase choice requires an affordable venue");
+            let medical_rest_started_at = self
+                .connection
+                .db
+                .backend_character_times()
+                .iter()
+                .find(|row| row.character_id == character_id)
+                .ok_or("missing patient clock before medical recovery rest")?
+                .minutes;
             let result = reducer_call!(self, "medical_recovery_rest", |cb| self
                 .connection
                 .reducers
                 .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
             self.call(result)?;
-            self.metrics.treatment_rest_minutes += 1_440;
+            let medical_rest_ended_at = self
+                .connection
+                .db
+                .backend_character_times()
+                .iter()
+                .find(|row| row.character_id == character_id)
+                .ok_or("missing patient clock after medical recovery rest")?
+                .minutes;
+            let actual_medical_rest_minutes =
+                medical_rest_ended_at.saturating_sub(medical_rest_started_at);
+            self.metrics.treatment_rest_minutes = self
+                .metrics
+                .treatment_rest_minutes
+                .saturating_add(actual_medical_rest_minutes);
             self.metrics.recovery_rests += 1;
+            self.observe_deaths();
             let survival_after = self
                 .public_survival_observation(character_id)
                 .unwrap_or_default();
@@ -1002,7 +1107,7 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::Recover,
                 format!(
-                    "medical_rest_minutes=1440;thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
+                    "medical_rest_requested_minutes=1440;medical_rest_actual_minutes={actual_medical_rest_minutes};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
                     survival_before.thermal,
                     survival_after.thermal,
                     survival_before.wetness_bps,
