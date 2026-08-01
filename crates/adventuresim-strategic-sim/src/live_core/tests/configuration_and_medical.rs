@@ -316,6 +316,7 @@
             assert!(selector.contains(public_input), "missing {public_input}");
         }
         assert!(selector.contains("spendable >= sponsor_quote"));
+        assert!(selector.contains("party_stake.min(party_treasury)"));
         assert!(selector.contains("Reverse(option.spendable)"));
         assert!(!selector.contains("infection_episode"));
 
@@ -325,6 +326,7 @@
             .and_then(|tail| tail.split("fn settlement_activity_day").next())
             .expect("medical recovery driver");
         assert!(recovery.contains(".sponsor_party_member_inn_rest_then("));
+        assert!(recovery.contains("withdraw_stake_for_personal_purchase"));
         assert!(recovery.contains("sponsored_settlement_rest=completed"));
         assert!(recovery.contains("thermal_before"));
         assert!(recovery.contains("wetness_bps_before"));

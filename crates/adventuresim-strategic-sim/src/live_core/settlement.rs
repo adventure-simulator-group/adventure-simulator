@@ -1,4 +1,180 @@
 impl LiveRunner {
+    fn acquire_first_aid_material(
+        &mut self,
+        actor_id: u64,
+        party_id: &str,
+        settlement_id: &str,
+        item_id: &str,
+        agent: u32,
+    ) -> Result<bool, String> {
+        let Some(item) = self.item_definition(item_id) else {
+            return Ok(false);
+        };
+        let Some(quote) = self.public_general_store_quote(actor_id, settlement_id, &item) else {
+            return Ok(false);
+        };
+        let reserve = self
+            .observable_medical_reserve(actor_id, settlement_id)
+            .unwrap_or(0);
+        let personal_spendable = self.personal_gold(actor_id).saturating_sub(reserve);
+        let shortfall = quote.saturating_sub(personal_spendable);
+        if !self.withdraw_stake_for_personal_purchase(actor_id, party_id, shortfall)?
+            || self.personal_gold(actor_id).saturating_sub(reserve) < quote
+        {
+            return Ok(false);
+        }
+        let quantity_before = self.personal_item_quantity(actor_id, item_id);
+        let result = reducer_call!(self, "purchase_first_aid_material", |cb| self
+            .connection
+            .reducers
+            .finalize_merchant_trade_then(
+                actor_id,
+                settlement_id.to_owned(),
+                vec![item_id.to_owned()],
+                vec![1],
+                vec![],
+                vec![],
+                false,
+                cb,
+            ));
+        self.call(result)?;
+        let purchased = self.personal_item_quantity(actor_id, item_id) > quantity_before;
+        if purchased {
+            self.event(
+                agent,
+                CoreLoopEventKind::Purchase,
+                format!(
+                    "first_aid_material={item_id};actor={actor_id};public_quote={quote};medical_reserve={reserve}"
+                ),
+            );
+        }
+        Ok(purchased)
+    }
+
+    /// Apply ordinary visible first aid before paying for convalescence. Open
+    /// cuts and unsplinted fractures do not heal through rest alone.
+    fn apply_visible_first_aid(&mut self, patient_id: u64, agent: u32) -> Result<(), String> {
+        let patient = self
+            .connection
+            .db
+            .backend_characters()
+            .iter()
+            .find(|row| row.id == patient_id && row.alive)
+            .ok_or("missing first-aid patient")?;
+        let Some(party_id) = patient.party_id.clone() else {
+            return Ok(());
+        };
+        let settlement_id = patient.current_settlement_id.clone();
+        let injuries = self
+            .connection
+            .db
+            .limb_injury()
+            .iter()
+            .filter(|row| row.character_id == patient_id)
+            .collect::<Vec<_>>();
+        for injury in injuries {
+            let procedure = if injury.cut_damage > 0.0 && !injury.bandaged {
+                Some(("bandage", "bandage"))
+            } else if injury.fracture_damage > 0.0 && injury.splint_inventory_item_id.is_none() {
+                Some(("splint", "splint"))
+            } else {
+                None
+            };
+            let Some((procedure, item_id)) = procedure else {
+                continue;
+            };
+            let mut candidates = self
+                .connection
+                .db
+                .party_member()
+                .iter()
+                .filter(|member| member.party_id == party_id)
+                .filter_map(|member| {
+                    let character = self.connection.db.backend_characters().iter().find(|row| {
+                        row.id == member.character_id
+                            && row.alive
+                            && row.current_settlement_id == settlement_id
+                    })?;
+                    let agent_id = self.character_ids.iter().position(|id| *id == character.id)?;
+                    let profile = &self.profiles[agent_id];
+                    Some((
+                        character.id,
+                        profile.build.role == BuildRole::Healer,
+                        profile.initial_skills.surgery,
+                        character.id != patient_id,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            candidates.sort_by(|left, right| {
+                right
+                    .1
+                    .cmp(&left.1)
+                    .then_with(|| right.2.total_cmp(&left.2))
+                    .then_with(|| right.3.cmp(&left.3))
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+            let mut actor = candidates
+                .iter()
+                .find(|candidate| self.personal_item_quantity(candidate.0, item_id) > 0)
+                .map(|candidate| candidate.0);
+            if actor.is_none() {
+                if let (Some(candidate), Some(settlement_id)) =
+                    (candidates.first(), settlement_id.as_deref())
+                {
+                    if self.acquire_first_aid_material(
+                        candidate.0,
+                        &party_id,
+                        settlement_id,
+                        item_id,
+                        agent,
+                    )? {
+                        actor = Some(candidate.0);
+                    }
+                }
+            }
+            let Some(actor_id) = actor else {
+                self.event(
+                    agent,
+                    CoreLoopEventKind::MedicalDecision,
+                    format!(
+                        "first_aid=deferred;patient={patient_id};procedure={procedure};reason=material_unavailable"
+                    ),
+                );
+                continue;
+            };
+            let limb_slug = match injury.limb {
+                LimbRegion::LeftArm => "left-arm",
+                LimbRegion::RightArm => "right-arm",
+                LimbRegion::LeftLeg => "left-leg",
+                LimbRegion::RightLeg => "right-leg",
+                LimbRegion::Chest => "chest",
+                LimbRegion::Stomach => "stomach",
+                LimbRegion::Head => "head",
+            };
+            let result = reducer_call!(self, "visible_first_aid", |cb| self
+                .connection
+                .reducers
+                .treat_limb_then(
+                    actor_id,
+                    patient_id,
+                    limb_slug.to_owned(),
+                    procedure.to_owned(),
+                    None,
+                    false,
+                    cb,
+                ));
+            self.call(result)?;
+            self.event(
+                agent,
+                CoreLoopEventKind::Recover,
+                format!(
+                    "first_aid=completed;actor={actor_id};patient={patient_id};limb={limb_slug};procedure={procedure};authority=public_limb_injury"
+                ),
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn personal_gold(&self, character_id: u64) -> u64 {
         self.connection
             .db
@@ -64,7 +240,16 @@ impl LiveRunner {
                 let medical_reserve = self
                     .observable_medical_reserve(payer.id, settlement_id)
                     .unwrap_or(0);
-                let spendable = purse.saturating_sub(medical_reserve);
+                let party_stake = self
+                    .connection
+                    .db
+                    .party_stake()
+                    .iter()
+                    .find(|stake| stake.party_id == party_id && stake.character_id == payer.id)
+                    .map_or(0, |stake| stake.value);
+                let spendable = purse
+                    .saturating_add(party_stake.min(party_treasury))
+                    .saturating_sub(medical_reserve);
                 (spendable >= sponsor_quote).then(|| SettlementRestSponsor {
                     payer_id: payer.id,
                     payer_agent_id,
@@ -74,13 +259,7 @@ impl LiveRunner {
                     patient_contribution,
                     sponsor_quote,
                     party_treasury,
-                    party_stake: self
-                        .connection
-                        .db
-                        .party_stake()
-                        .iter()
-                        .find(|stake| stake.party_id == party_id && stake.character_id == payer.id)
-                        .map_or(0, |stake| stake.value),
+                    party_stake,
                 })
             })
             .collect::<Vec<_>>();
@@ -533,6 +712,9 @@ impl LiveRunner {
     /// Private infection episodes are deliberately absent from this policy.
     pub(super) fn ensure_medically_safe(&mut self, agent: u32) -> Result<bool, String> {
         let character_id = self.character_ids[agent as usize];
+        self.apply_visible_first_aid(character_id, agent)?;
+        let mut last_natural_rest_burden = None;
+        let mut nonprogressing_natural_rests = 0_u8;
         for _ in 0..MAX_RECOVERY_ACTIONS {
             let mut character = self
                 .connection
@@ -845,7 +1027,24 @@ impl LiveRunner {
                     let sponsor = rest_sponsor
                         .as_ref()
                         .expect("unaffordable inn venue requires a selected sponsor");
-                    let payer_purse_before = sponsor.purse;
+                    let sponsor_personal_spendable = sponsor
+                        .purse
+                        .saturating_sub(sponsor.medical_reserve);
+                    let stake_shortfall = sponsor
+                        .sponsor_quote
+                        .saturating_sub(sponsor_personal_spendable);
+                    let party_id = character
+                        .party_id
+                        .as_deref()
+                        .expect("sponsored rest requires a party");
+                    if !self.withdraw_stake_for_personal_purchase(
+                        sponsor.payer_id,
+                        party_id,
+                        stake_shortfall,
+                    )? {
+                        return Err("selected rest sponsor could not withdraw its own stake".into());
+                    }
+                    let payer_purse_before = self.personal_gold(sponsor.payer_id);
                     let patient_purse_before = purse;
                     let condition_before = condition.status.clone();
                     let public_quote = inn_cost.expect("sponsored inn rest requires a quote");
@@ -970,6 +1169,41 @@ impl LiveRunner {
                         survival_after.party_tent_quantity,
                     ),
                 );
+                let condition_after = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .ok_or("missing medical condition after natural recovery rest")?;
+                let burden_after = condition_after.pain
+                    + condition_after.blood_loss
+                    + condition_after.fear
+                    + condition_after.fatigue
+                    + condition_after.hunger
+                    + condition_after.thirst
+                    + condition_after.thermal;
+                if !symptomatic
+                    && last_natural_rest_burden
+                        .is_some_and(|before| burden_after >= before - 0.000_1)
+                {
+                    nonprogressing_natural_rests = nonprogressing_natural_rests.saturating_add(1);
+                } else {
+                    nonprogressing_natural_rests = 0;
+                }
+                last_natural_rest_burden = Some(burden_after);
+                if nonprogressing_natural_rests >= 2 {
+                    self.metrics.quests_suppressed_for_health += 1;
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::QuestSuppressed,
+                        format!(
+                            "status={};reason=natural_rest_not_improving_public_condition;burden={burden_after:.4};rests_without_progress={nonprogressing_natural_rests}",
+                            condition_after.status
+                        ),
+                    );
+                    return Ok(false);
+                }
                 continue;
             }
 

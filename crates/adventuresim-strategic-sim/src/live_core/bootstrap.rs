@@ -169,6 +169,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.food_lot())
         .add_query(|query| query.from.item())
         .add_query(|query| query.from.item_condition())
+        .add_query(|query| query.from.limb_injury())
         .add_query(|query| query.from.local_problem_symptom())
         .add_query(|query| query.from.party())
         .add_query(|query| query.from.party_inventory_item())

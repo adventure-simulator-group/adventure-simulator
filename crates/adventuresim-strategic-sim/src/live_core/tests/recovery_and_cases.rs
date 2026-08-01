@@ -655,3 +655,26 @@
         assert!(driver.contains("wait_for_generated_investigation_window"));
         assert!(!driver.contains("action.unavailable_reason.contains"));
     }
+    #[test]
+    fn settlement_recovery_treats_visible_nonhealing_wounds_and_bounds_paid_rest() {
+        let production = LIVE_CORE_SOURCE.split("#[cfg(test)]").next().unwrap();
+        let first_aid = production
+            .split("fn apply_visible_first_aid")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(super) fn personal_gold").next())
+            .expect("visible first-aid policy");
+        assert!(first_aid.contains("limb_injury()"));
+        assert!(first_aid.contains("injury.cut_damage > 0.0 && !injury.bandaged"));
+        assert!(first_aid.contains("injury.fracture_damage > 0.0"));
+        assert!(first_aid.contains("treat_limb_then"));
+        assert!(!first_aid.contains("infection_episode"));
+
+        let recovery = production
+            .split("pub(super) fn ensure_medically_safe")
+            .nth(1)
+            .expect("settlement recovery policy");
+        assert!(recovery.contains("apply_visible_first_aid"));
+        assert!(recovery.contains("withdraw_stake_for_personal_purchase"));
+        assert!(recovery.contains("natural_rest_not_improving_public_condition"));
+        assert!(recovery.contains("nonprogressing_natural_rests >= 2"));
+    }
