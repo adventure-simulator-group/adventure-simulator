@@ -76,9 +76,21 @@ fn quest_encounter_influence_is_scoped_to_outbound_case_site_destinations() {
     );
 
     let multi_site_groups = [
-        ("group:first", "case-site:other", "skeleton"),
-        ("group:destination", "case-site:test", "bandit"),
-        ("group:last", "case-site:test", "skeleton"),
+        (
+            "group:first".into(),
+            "case-site:other".into(),
+            "skeleton".into(),
+        ),
+        (
+            "group:destination".into(),
+            "case-site:test".into(),
+            "bandit".into(),
+        ),
+        (
+            "group:last".into(),
+            "case-site:test".into(),
+            "skeleton".into(),
+        ),
     ];
     assert_eq!(
         destination_hostile_archetype("case-site:test", multi_site_groups),

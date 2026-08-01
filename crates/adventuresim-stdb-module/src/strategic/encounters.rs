@@ -206,15 +206,15 @@ fn quest_influence_case_site_id(destination: &JourneyEndpoint) -> Option<&str> {
     destination.case_site_id()
 }
 
-fn destination_hostile_archetype<'a>(
+fn destination_hostile_archetype(
     destination_case_site_id: &str,
-    groups: impl IntoIterator<Item = (&'a str, &'a str, &'a str)>,
+    groups: impl IntoIterator<Item = (String, String, String)>,
 ) -> Option<adventuresim_core::encounter::EncounterArchetype> {
     groups
         .into_iter()
-        .filter(|(_, case_site_id, _)| *case_site_id == destination_case_site_id)
+        .filter(|(_, case_site_id, _)| case_site_id == destination_case_site_id)
         .min_by(|(left_id, _, _), (right_id, _, _)| left_id.cmp(right_id))
-        .and_then(|(_, _, enemy_type)| quest_encounter_archetype(enemy_type))
+        .and_then(|(_, _, enemy_type)| quest_encounter_archetype(&enemy_type))
 }
 
 /// Truncates a walking leg at its first canonical random-encounter boundary.
@@ -272,13 +272,10 @@ fn maybe_interrupt_travel(
             }
             destination_hostile_archetype(
                 destination_case_site_id,
-                ctx.db.hostile_group_authority().iter().map(|group| {
-                    (
-                        group.id.as_str(),
-                        group.case_site_id.as_str(),
-                        group.enemy_type.as_str(),
-                    )
-                }),
+                ctx.db
+                    .hostile_group_authority()
+                    .iter()
+                    .map(|group| (group.id, group.case_site_id.value, group.enemy_type)),
             )
         });
     let member_ids = living_party_member_ids(ctx, party_id);
