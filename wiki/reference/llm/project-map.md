@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1657)
+## Files (1658)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -40,6 +40,7 @@ development, or other wiki document before changing a subsystem.
 - `content/encounters/insulting-damsel-and-dwarf.yaml` — Repository support file.
 - `content/encounters/proud-traveler-errands.yaml` — Repository support file.
 - `content/encounters/rash-cliff-hunt.yaml` — Repository support file.
+- `content/encounters/stolen-lapdog-prize-horse.yaml` — Repository support file.
 - `content/encounters/unlawful-bridge-custom.yaml` — Repository support file.
 - `content/encounters/wounded-courier.yaml` — Repository support file.
 - `content/encounters/wounded-knight-linden.yaml` — Repository support file.

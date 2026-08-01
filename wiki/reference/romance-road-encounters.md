@@ -238,6 +238,37 @@ theft lowers Honesty without publicly exemplifying it and causes no physical
 injury or captivity. The encounter is travel-only, goal-neutral, entirely
 mortal, and requires no runtime catalog special case.
 
+`stolen_lapdog_prize_horse_v1` places a widowed mortal chatelaine and her
+competent mortal kennel master against a mortal horse-coper who holds her
+lapdog and stolen prize bay beside two mailed grooms. A severed silver leash,
+clay-daubed livery brand, mixed tracks, and dubious tally establish the dispute.
+The kennel master owns the tracking, known recall, terrain choice, and
+bloodless animal-handling plan; neutral help supplies evidence, negotiation,
+or authority. The party may follow the tracks, compare the physical tokens,
+negotiate a face-saving return, coordinate servants and witnesses beneath the
+master's plan, or consume one travel ration so his known recall proves the
+lapdog's training. The animals are narrative-only property and never become
+items or persistent strategic state.
+
+Every active route reveals the same physical preparation lesson at the kennel
+master's drainage-ditch position: a prepared bow lane controls a gap that the
+coper's two mailed, blade-only grooms cannot answer by melee. Each route grants
+the chatelaine's declared spare `self_bow` and eight `arrow` items from her hunt
+cart, a real material value of sixteen groschen. In the evil route the coper's
+well-filled purse is visible from the opening. The player poses as a neutral
+adjudicator and requires both parties' loose weapons in custody: the chatelaine
+entrusts the hunt cart's spare bow and eight arrows and withdraws her ditch
+bowman, while the coper's grooms seal their blades in his baggage beneath the
+player's mark. Only after that custody and withdrawal does the coper draw the
+player aside under the pretext of inspecting the tally, privately offer forty-
+eight groschen from the established purse beyond the chatelaine's hearing, and
+await judgment. The player returns, falsely validates the tally, takes the
+payment discreetly, and steals the entrusted gear. The animals leave with the
+coper and never enter player inventory or persistent state. That materially
+richer betrayal lowers Honesty without publicly exemplifying it. The encounter
+is travel-only, goal-neutral, entirely mortal, and requires no runtime catalog
+special case.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,

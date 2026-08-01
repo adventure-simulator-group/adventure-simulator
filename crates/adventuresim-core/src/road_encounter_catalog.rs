@@ -1760,6 +1760,83 @@ mod tests {
     }
 
     #[test]
+    fn stolen_animals_routes_share_real_bow_preparation_without_persisting_animals() {
+        let definition = encounter("stolen_lapdog_prize_horse_v1").unwrap();
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        for route in &active {
+            assert!(route.effects.iter().any(|effect| matches!(
+                effect,
+                Effect::Information { information_id }
+                    if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
+            )));
+            assert!(route.effects.iter().any(|effect| matches!(
+                effect,
+                Effect::GrantItem { item_id, quantity: 1 } if item_id == "self_bow"
+            )));
+            assert!(route.effects.iter().any(|effect| matches!(
+                effect,
+                Effect::GrantItem { item_id, quantity: 8 } if item_id == "arrow"
+            )));
+            assert!(route.quest_reward_tags == ["prepare_bows_against_melee_only_opposition"]);
+        }
+        let bow = crate::item_catalog::definition("self_bow").unwrap();
+        let arrow = crate::item_catalog::definition("arrow").unwrap();
+        assert_eq!(bow.base_value + arrow.base_value * 8, 16);
+        let command = choice("coordinate_bloodless_recovery");
+        let command_prose = format!("{} {}", command.response[0].text, command.result);
+        assert!(command_prose.contains("I shall choose the ditch, recall, and animal handling"));
+        assert!(command_prose.contains("coordinating witnesses and servants"));
+        let ration = choice("lure_dog_for_recall_proof");
+        assert!(matches!(
+            ration.requirements[0],
+            Requirement::Item { ref item_id, minimum_quantity: 1 } if item_id == "travel_ration"
+        ));
+        assert!(matches!(
+            ration.effects[0],
+            Effect::ConsumeItem { ref item_id, quantity: 1 } if item_id == "travel_ration"
+        ));
+        let theft = choice("validate_tally_and_take_commission");
+        assert!(matches!(
+            theft.effects[0],
+            Effect::Currency { amount: 48, .. }
+        ));
+        assert!(theft.personality.iter().all(|change| change.delta < 0));
+        assert_eq!(exemplified_virtue(&theft.personality), None);
+        let mut cursor = 0;
+        for event in [
+            "Under color of neutral custody",
+            "ordereth her ditch bowman away",
+            "draweth thee aside beyond the chatelaine's hearing and quietly offereth forty-eight",
+            "falsely rulest",
+            "discreetly payeth the promised forty-eight",
+            "stealest the entrusted bow and arrows and departest. Dog and bay pass away with the coper",
+        ] {
+            let found = theft.result[cursor..].find(event).unwrap();
+            cursor += found + event.len();
+        }
+        let effects = active
+            .iter()
+            .flat_map(|route| &route.effects)
+            .collect::<Vec<_>>();
+        let effects = serde_json::to_string(&effects).unwrap();
+        assert!(!effects.contains("dog") && !effects.contains("horse") && !effects.contains("bay"));
+        let ignore = choice("ignore");
+        assert!(ignore.transition.is_none());
+        assert!(ignore.effects.is_empty() && ignore.personality.is_empty());
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition
