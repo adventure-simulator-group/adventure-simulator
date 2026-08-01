@@ -18,6 +18,10 @@ pub const BANDIT_SURRENDER_THRESHOLD_PERCENT: u8 = 45;
 pub const PARTY_WALKING_SPEED_M_PER_MINUTE: u32 = 83;
 pub const MIN_ENCUMBRANCE_SPEED_BASIS_POINTS: u32 = 1_000;
 pub const PARTY_MEMBER_LOGISTICS_PENALTY_BASIS_POINTS: u32 = 250;
+pub const NARRATIVE_TRAVEL_INTERVAL_MINUTES: u64 = 240;
+pub const NARRATIVE_REST_INTERVAL_MINUTES: u64 = 180;
+pub const NARRATIVE_TRAVEL_CHANCE_BPS: u16 = 900;
+pub const NARRATIVE_REST_CHANCE_BPS: u16 = 1_200;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EncounterTerrain {
@@ -402,6 +406,100 @@ fn domain_roll(seed: u64, index: u64, domain: u64) -> u64 {
     value ^ (value >> 31)
 }
 
+/// Durable context for a goal-neutral narrative interruption roll. This uses
+/// entropy domains disjoint from tactical/combat encounter selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NarrativeBoundaryKind {
+    Travel,
+    Rest,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NarrativeContext {
+    pub kind: NarrativeBoundaryKind,
+    pub in_settlement: bool,
+    pub another_interruption_pending: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NarrativeSelection {
+    pub boundary_minute: u64,
+    pub roll_index: u64,
+    pub catalog_id: String,
+}
+
+pub const fn next_combat_roll_after_reached_boundary(boundary_minute: u64) -> u64 {
+    boundary_minute / ENCOUNTER_ROLL_INTERVAL_MINUTES + 1
+}
+
+/// Returns the first narrative boundary in `(completed, completed + requested]`.
+/// `completed` is the journey movement cursor for travel and the durable
+/// accumulated camp-rest cursor for rest, so splitting a reducer call cannot
+/// introduce another roll.
+pub fn first_narrative_encounter(
+    seed: u64,
+    completed: u64,
+    requested: u64,
+    context: NarrativeContext,
+) -> Option<NarrativeSelection> {
+    if context.in_settlement || context.another_interruption_pending {
+        return None;
+    }
+    let interval = match context.kind {
+        NarrativeBoundaryKind::Travel => NARRATIVE_TRAVEL_INTERVAL_MINUTES,
+        NarrativeBoundaryKind::Rest => NARRATIVE_REST_INTERVAL_MINUTES,
+    };
+    let first = completed / interval + 1;
+    let last = completed.saturating_add(requested) / interval;
+    (first..=last).find_map(|index| narrative_selection_at(seed, index, index * interval, context))
+}
+
+pub fn narrative_selection_at(
+    seed: u64,
+    index: u64,
+    boundary_minute: u64,
+    context: NarrativeContext,
+) -> Option<NarrativeSelection> {
+    if context.in_settlement || context.another_interruption_pending {
+        return None;
+    }
+    let chance = match context.kind {
+        NarrativeBoundaryKind::Travel => NARRATIVE_TRAVEL_CHANCE_BPS,
+        NarrativeBoundaryKind::Rest => NARRATIVE_REST_CHANCE_BPS,
+    };
+    // Domains 100+ are reserved for narrative encounters and cannot perturb
+    // the combat selector's domains 0..=6.
+    if domain_roll(seed, index, 100 + context.kind as u64) % 10_000 >= u64::from(chance) {
+        return None;
+    }
+    let candidates: Vec<_> = crate::road_encounter_catalog::definitions()
+        .iter()
+        .filter(|definition| match context.kind {
+            NarrativeBoundaryKind::Travel => definition.triggers.travel,
+            NarrativeBoundaryKind::Rest => definition.triggers.rest,
+        })
+        .collect();
+    let total = candidates
+        .iter()
+        .map(|definition| u64::from(definition.weight))
+        .sum::<u64>();
+    if total == 0 {
+        return None;
+    }
+    let mut pick = domain_roll(seed, index, 110 + context.kind as u64) % total;
+    for definition in candidates {
+        if pick < u64::from(definition.weight) {
+            return Some(NarrativeSelection {
+                boundary_minute,
+                roll_index: index,
+                catalog_id: definition.id.clone(),
+            });
+        }
+        pick -= u64::from(definition.weight);
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,6 +512,77 @@ mod tests {
             party_awareness: 500,
             enemy_awareness: 500,
             party_speed_m_per_minute: PARTY_WALKING_SPEED_M_PER_MINUTE,
+        }
+    }
+
+    fn narrative(kind: NarrativeBoundaryKind) -> NarrativeContext {
+        NarrativeContext {
+            kind,
+            in_settlement: false,
+            another_interruption_pending: false,
+        }
+    }
+
+    #[test]
+    fn narrative_travel_and_rest_are_chunk_and_retry_invariant() {
+        for kind in [NarrativeBoundaryKind::Travel, NarrativeBoundaryKind::Rest] {
+            let whole = first_narrative_encounter(88, 0, 7_200, narrative(kind));
+            assert_eq!(
+                whole,
+                first_narrative_encounter(88, 0, 7_200, narrative(kind))
+            );
+            let interval = match kind {
+                NarrativeBoundaryKind::Travel => NARRATIVE_TRAVEL_INTERVAL_MINUTES,
+                NarrativeBoundaryKind::Rest => NARRATIVE_REST_INTERVAL_MINUTES,
+            };
+            let by_boundaries = (1..=7_200 / interval).find_map(|index| {
+                narrative_selection_at(88, index, index * interval, narrative(kind))
+            });
+            assert_eq!(whole, by_boundaries);
+        }
+    }
+
+    #[test]
+    fn narrative_interruption_advances_only_past_its_reached_combat_boundary() {
+        let requested_end = ENCOUNTER_ROLL_INTERVAL_MINUTES * 20;
+        let narrative_boundary = ENCOUNTER_ROLL_INTERVAL_MINUTES * 3;
+        assert_eq!(
+            next_combat_roll_after_reached_boundary(narrative_boundary),
+            4
+        );
+        assert_ne!(
+            next_combat_roll_after_reached_boundary(narrative_boundary),
+            next_combat_roll_after_reached_boundary(requested_end),
+        );
+    }
+
+    #[test]
+    fn narrative_never_selects_in_settlement_or_over_an_interruption() {
+        for seed in 0..10_000 {
+            assert!(
+                narrative_selection_at(
+                    seed,
+                    1,
+                    240,
+                    NarrativeContext {
+                        in_settlement: true,
+                        ..narrative(NarrativeBoundaryKind::Travel)
+                    }
+                )
+                .is_none()
+            );
+            assert!(
+                narrative_selection_at(
+                    seed,
+                    1,
+                    240,
+                    NarrativeContext {
+                        another_interruption_pending: true,
+                        ..narrative(NarrativeBoundaryKind::Travel)
+                    }
+                )
+                .is_none()
+            );
         }
     }
 

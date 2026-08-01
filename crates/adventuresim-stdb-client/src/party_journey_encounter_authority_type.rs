@@ -10,6 +10,7 @@ pub struct PartyJourneyEncounterAuthority {
     pub party_id: String,
     pub seed: u64,
     pub next_roll: u64,
+    pub narrative_rest_elapsed_minutes: u64,
 }
 
 impl __sdk::InModule for PartyJourneyEncounterAuthority {
@@ -23,6 +24,8 @@ pub struct PartyJourneyEncounterAuthorityCols {
     pub party_id: __sdk::__query_builder::Col<PartyJourneyEncounterAuthority, String>,
     pub seed: __sdk::__query_builder::Col<PartyJourneyEncounterAuthority, u64>,
     pub next_roll: __sdk::__query_builder::Col<PartyJourneyEncounterAuthority, u64>,
+    pub narrative_rest_elapsed_minutes:
+        __sdk::__query_builder::Col<PartyJourneyEncounterAuthority, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for PartyJourneyEncounterAuthority {
@@ -32,6 +35,10 @@ impl __sdk::__query_builder::HasCols for PartyJourneyEncounterAuthority {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             seed: __sdk::__query_builder::Col::new(table_name, "seed"),
             next_roll: __sdk::__query_builder::Col::new(table_name, "next_roll"),
+            narrative_rest_elapsed_minutes: __sdk::__query_builder::Col::new(
+                table_name,
+                "narrative_rest_elapsed_minutes",
+            ),
         }
     }
 }

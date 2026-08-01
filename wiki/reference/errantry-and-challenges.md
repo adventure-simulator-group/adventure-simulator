@@ -167,9 +167,12 @@ movement, elapsed, and finale-destination coordinates match private authority.
 A pending random encounter hides and blocks trial actions. The trial is not a
 `StrategicEncounter` and never blocks **Continue travel**.
 
-After at least one hour of rest at that same camp, an optional wounded Order
-courier can interrupt the rest. This is a mortal, ordinary-prose conversation
-inside the camp chat window. The deed, not a virtue-labelled button, determines
+After at least one hour of rest at that same camp, an optional wounded courier
+can interrupt the rest. The same build-compiled, goal-neutral scene may also
+occur by chance during ordinary travel or wilderness rest. Its public
+projection does not reveal which origin selected it. This is a mortal,
+Shakespearean-English conversation inside the camp chat window. The deed, not
+a virtue-labelled button, determines
 which virtue the outcome recognizes. Binding his wound is always available,
 exemplifies Mercy, and yields the physical captured dispatch. A trained
 Command route rallies him and commits the knight to escorting him back through
@@ -179,8 +182,9 @@ a Religion route that consecrates his oath, exemplifies Faith, and yields a
 blessed sword-knot. Each successful source-idempotent resolution raises only
 the acting knight's matching Conscience, Nerve, or Conviction score by up to
 6,000; the requested change is clamped at the score boundary.
-Leaving him closes the conversation without a boon or personality judgment;
-ignoring him or continuing the journey does not mutate it. Neither
+Robbing him yields more coin while reducing Conscience. Ignoring him is an
+explicit, uniformly available resolution and does not mutate inventory or
+personality. Neither
 preliminary challenge is a quest objective: defeating the finale's four armed
 retainers resolves the errantry normally.
 
@@ -191,26 +195,18 @@ ranged attack and must close to melee range, so the retained transcript and
 camp preparation notice recommend bows and arrows. The solved challenge does
 not mutate their count, attributes, skills, equipment, or combat profile.
 
-The finale also authors typed defenses for material road-trial consequences.
-This first frame uses **Unnatural Prowess**, **Reinforcements**, and
-**Supernatural Armor**. The captured dispatch counters Reinforcements. The oath
-token also counters Reinforcements as a rescued-ally countermeasure, while the
-blessed sword-knot counters Supernatural Armor. Because the road trial closes
-after one deed, only one of these route-specific material advantages can be
-earned from it. The puzzle insight does not participate in this resolver.
+The courier's dispatch, oath token, sword-knot, or stolen currency is ordinary
+inventory. No route writes generic enemy-scale reductions, capability
+multipliers, or magical buffs. An errantry-only overlay may append practical
+information after resolution, but a chance occurrence never mutates a quest.
+Applying that information through physical tactical preparation is deferred to
+the corresponding finale implementation; it may not weaken the enemy merely
+because a content tag was earned.
 
-This vertical slice deliberately does not add Courtesy, Loyalty, Justice,
-Generosity, Prudence, or a second Temperance axis. A new virtue axis should be
-added only with authored morale stimuli, observation contexts, and systemic
-effects rather than as decorative quest bookkeeping.
-
-When the finale mission first binds, a deterministic resolver chooses the
-strongest applicable countermeasure for each authored defense and records the
-applied and unresolved defenses in an immutable approach snapshot. Scale
-reductions add with a 50% floor; capability multipliers compose with the same
-floor. Tactical play and autoresolve consume the same effective scale and
-capability snapshot. Irrelevant boons and duplicate weaker counters do not
-alter it. Existing missions and hostile-group authority are never mutated.
+The shared virtue vocabulary now also names Justice, Courtesy, Loyalty,
+Prudence, and Honesty. Personality changes still target the existing mutable
+continuous axes and must be paired with an authored deed, rather than serving
+as decorative bookkeeping.
 
 ## Direct development demo
 

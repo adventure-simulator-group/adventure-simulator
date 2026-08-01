@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1644)
+## Files (1646)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -35,6 +35,7 @@ development, or other wiki document before changing a subsystem.
 - `content/dialogue/examples.yaml` — Repository support file.
 - `content/dialogue/organizations.yaml` — Repository support file.
 - `content/dialogue/services.yaml` — Repository support file.
+- `content/encounters/wounded-courier.yaml` — Repository support file.
 - `content/items/catalog.yaml` — Repository support file.
 - `content/organizations/catalog.yaml` — Repository support file.
 - `content/organizations/social-estates.yaml` — Repository support file.
@@ -111,6 +112,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/quest_generation/tests/testimony.rs` — Rust source module.
 - `crates/adventuresim-core/src/quest_generation/validation.rs` — Rust source module.
 - `crates/adventuresim-core/src/reputation.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/road_encounter_catalog.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_economy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_population.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/simulation_security.rs` — Rust source module for this component.
@@ -463,9 +465,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/equipment_parent_requirement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/equipment_placement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/errantry_authority_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/errantry_countermeasure_kind_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/errantry_countermeasure_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/errantry_finale_defense_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/errantry_puzzle_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/estate_disposition_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/estate_disposition_type.rs` — Generated SpacetimeDB data type.
@@ -652,6 +651,10 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/morale_band_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/morale_event_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/morale_event_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/narrative_encounter_information_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/narrative_encounter_origin_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/narrative_encounter_private_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/narrative_encounter_trigger_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/native_range_evidence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/nerve_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/npc_adventuring_party_authority_type.rs` — Generated SpacetimeDB data type.
@@ -803,8 +806,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/river_and_canal_access_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/river_watercourse_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/road_challenge_authority_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/road_challenge_catalog_id_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/road_challenge_deed_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/road_challenge_resolution_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/rock_outcrop_soil_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/route_elevation_profile_type.rs` — Generated SpacetimeDB data type.
@@ -1623,6 +1624,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/quest-authority.md` — Project documentation.
 - `wiki/reference/quest-generation-and-investigation.md` — Project documentation.
 - `wiki/reference/religion.md` — Project documentation.
+- `wiki/reference/romance-road-encounters.md` — Project documentation.
 - `wiki/reference/route-terrain.md` — Project documentation.
 - `wiki/reference/soil.md` — Project documentation.
 - `wiki/reference/source-manifests.md` — Project documentation.

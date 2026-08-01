@@ -158,6 +158,11 @@ pub enum ChivalricVirtue {
     Courage,
     Mercy,
     Faith,
+    Justice,
+    Courtesy,
+    Loyalty,
+    Prudence,
+    Honesty,
 }
 
 /// Sole durable authority for the thirteen mutable behavioral axes. Values

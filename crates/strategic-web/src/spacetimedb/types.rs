@@ -27,49 +27,14 @@ pub enum ChallengePresenterCatalogId {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BackendRoadChallenge {
     pub id: String,
-    pub case_id: String,
     pub owner_character_id: u64,
-    pub catalog_id: RoadChallengeCatalogId,
+    pub absolute_minute: u64,
+    pub presentation_json: String,
     pub revision: u32,
     pub open: bool,
     pub active: bool,
-    pub resolved_choice: Option<String>,
-    pub resolved_deed: Option<RoadChallengeDeed>,
-    pub virtue_exemplified: Option<ChivalricVirtue>,
-    pub command_route_available: bool,
-    pub faith_route_available: bool,
-    pub boon_item_id: Option<String>,
-    pub counters_defense: Option<ErrantryFinaleDefenseKind>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum RoadChallengeDeed {
-    TendCourierAndCarryWarning,
-    RallyAndEscortCourierThroughFord,
-    ConsecrateCourierOath,
-    LeaveCourier,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum ChivalricVirtue {
-    Courage,
-    Mercy,
-    Faith,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum RoadChallengeCatalogId {
-    WoundedOrderCourierV1,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum ErrantryFinaleDefenseKind {
-    UnnaturalProwess,
-    Reinforcements,
-    PoisonedArms,
-    ConcealedTrap,
-    Glamour,
-    SupernaturalArmor,
+    pub result_transcript: Option<String>,
+    pub quest_reward_addendum: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

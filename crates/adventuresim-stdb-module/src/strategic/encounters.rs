@@ -208,7 +208,7 @@ fn maybe_interrupt_travel(
     ctx: &ReducerContext,
     party_id: &str,
     requested_minutes: u64,
-) -> Result<(u64, Option<StrategicEncounter>, u64), String> {
+) -> Result<(u64, Option<StrategicEncounter>, Option<adventuresim_core::encounter::NarrativeSelection>, u64), String> {
     require_no_unresolved_encounter(ctx, party_id)?;
     let Some(journey) = ctx
         .db
@@ -216,7 +216,7 @@ fn maybe_interrupt_travel(
         .party_id()
         .find(&party_id.to_string())
     else {
-        return Ok((requested_minutes, None, 1));
+        return Ok((requested_minutes, None, None, 1));
     };
     let absolute_start = journey
         .departure_minute
@@ -325,10 +325,28 @@ fn maybe_interrupt_travel(
             }
         },
     );
+    let narrative = adventuresim_core::encounter::first_narrative_encounter(
+        authority.seed,
+        completed,
+        requested_minutes,
+        adventuresim_core::encounter::NarrativeContext {
+            kind: adventuresim_core::encounter::NarrativeBoundaryKind::Travel,
+            in_settlement: false,
+            another_interruption_pending: false,
+        },
+    );
     let crossed_end = completed.saturating_add(requested_minutes);
     let next_roll = crossed_end / adventuresim_core::encounter::ENCOUNTER_ROLL_INTERVAL_MINUTES + 1;
+    if let Some(narrative) = narrative
+        && selection.as_ref().is_none_or(|combat| narrative.boundary_minute <= combat.boundary_minute)
+    {
+        let reached_next_roll = adventuresim_core::encounter::next_combat_roll_after_reached_boundary(
+            narrative.boundary_minute,
+        );
+        return Ok((narrative.boundary_minute.saturating_sub(completed), None, Some(narrative), reached_next_roll));
+    }
     let Some(selection) = selection else {
-        return Ok((requested_minutes, None, next_roll));
+        return Ok((requested_minutes, None, None, next_roll));
     };
 
     use adventuresim_core::encounter::{Awareness, EncounterArchetype};
@@ -336,7 +354,7 @@ fn maybe_interrupt_travel(
         Awareness::PartyOnly => (true, false),
         Awareness::EnemyOnly => (false, true),
         Awareness::Both => (true, true),
-        Awareness::Neither => return Ok((requested_minutes, None, next_roll)),
+        Awareness::Neither => return Ok((requested_minutes, None, None, next_roll)),
     };
     let archetype = match selection.archetype {
         EncounterArchetype::Bandits => "bandit",
@@ -421,6 +439,7 @@ fn maybe_interrupt_travel(
     Ok((
         selection.boundary_minute.saturating_sub(completed),
         Some(encounter),
+        None,
         selection.roll_index.saturating_add(1),
     ))
 }
@@ -430,19 +449,20 @@ fn advance_party_movement_until_encounter(
     party_id: &str,
     traveler_ids: &[u64],
     proposed_leg_minutes: u64,
-) -> Result<(u64, Option<StrategicEncounter>, u64), String> {
-    let (requested_leg_minutes, mut encounter, mut next_roll) =
+) -> Result<(u64, Option<StrategicEncounter>, Option<adventuresim_core::encounter::NarrativeSelection>, u64), String> {
+    let (requested_leg_minutes, mut encounter, mut narrative, mut next_roll) =
         maybe_interrupt_travel(ctx, party_id, proposed_leg_minutes)?;
     let (actual_minutes, _) =
         advance_party_movement(ctx, party_id, traveler_ids, requested_leg_minutes)?;
     if actual_minutes < requested_leg_minutes {
-        let (rescanned_minutes, rescanned_encounter, rescanned_next_roll) =
+        let (rescanned_minutes, rescanned_encounter, rescanned_narrative, rescanned_next_roll) =
             maybe_interrupt_travel(ctx, party_id, actual_minutes)?;
         debug_assert_eq!(rescanned_minutes, actual_minutes);
         encounter = rescanned_encounter;
+        narrative = rescanned_narrative;
         next_roll = rescanned_next_roll;
     }
-    Ok((actual_minutes, encounter, next_roll))
+    Ok((actual_minutes, encounter, narrative, next_roll))
 }
 
 /// Commits the scan cursor and, when one was found, materializes the encounter
@@ -452,6 +472,7 @@ fn commit_encounter_scan(
     party_id: &str,
     next_roll: u64,
     encounter: Option<StrategicEncounter>,
+    narrative: Option<adventuresim_core::encounter::NarrativeSelection>,
 ) -> Result<(), String> {
     let mut authority = ctx
         .db
@@ -465,6 +486,12 @@ fn commit_encounter_scan(
         .party_journey_encounter_authority()
         .party_id()
         .update(authority);
+
+    if let Some(selection) = narrative {
+        return materialize_chance_narrative_encounter(
+            ctx, party_id, &selection, NarrativeEncounterOrigin::ChanceTravel,
+        );
+    }
 
     let Some(mut encounter) = encounter else {
         return Ok(());

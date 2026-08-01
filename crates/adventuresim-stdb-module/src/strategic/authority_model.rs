@@ -600,6 +600,7 @@ pub struct PartyJourneyEncounterAuthority {
     pub party_id: String,
     pub seed: u64,
     pub next_roll: u64,
+    pub narrative_rest_elapsed_minutes: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]
@@ -1113,11 +1114,7 @@ pub struct MissionAuthority {
     pub hostile_version: u16,
     pub enemy_count: u32,
     pub enemy_difficulty: i32,
-    pub base_enemy_combat_scale_bps: u32,
     pub enemy_combat_scale_bps: u32,
-    pub countermeasure_multiplier_bps: u32,
-    pub countermeasure_source_challenge_id: Option<String>,
-    pub errantry_approach_snapshot_json: String,
     pub normalized_combat_power: u32,
     pub drop_item_id: Option<String>,
     pub drop_quantity: u32,

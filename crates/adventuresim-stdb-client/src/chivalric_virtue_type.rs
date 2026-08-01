@@ -13,6 +13,16 @@ pub enum ChivalricVirtue {
     Mercy,
 
     Faith,
+
+    Justice,
+
+    Courtesy,
+
+    Loyalty,
+
+    Prudence,
+
+    Honesty,
 }
 
 impl __sdk::InModule for ChivalricVirtue {

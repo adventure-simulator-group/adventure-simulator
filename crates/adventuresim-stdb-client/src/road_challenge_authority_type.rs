@@ -5,8 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::chivalric_virtue_type::ChivalricVirtue;
-use super::road_challenge_catalog_id_type::RoadChallengeCatalogId;
-use super::road_challenge_deed_type::RoadChallengeDeed;
+use super::narrative_encounter_trigger_type::NarrativeEncounterTrigger;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,12 +19,19 @@ pub struct RoadChallengeAuthority {
     pub journey_departure_minute: u64,
     pub camp_movement_minute: u64,
     pub available_at_elapsed_minute: u64,
-    pub catalog_id: RoadChallengeCatalogId,
+    pub catalog_id: String,
+    pub catalog_revision: u32,
+    pub catalog_digest: String,
+    pub absolute_minute: u64,
+    pub longitude_e_7: i32,
+    pub latitude_e_7: i32,
+    pub trigger: NarrativeEncounterTrigger,
     pub revision: u32,
     pub open: bool,
     pub resolved_choice: Option<String>,
-    pub resolved_deed: Option<RoadChallengeDeed>,
+    pub resolved_deed: Option<String>,
     pub virtue_exemplified: Option<ChivalricVirtue>,
+    pub result_transcript: Option<String>,
 }
 
 impl __sdk::InModule for RoadChallengeAuthority {
@@ -45,14 +51,20 @@ pub struct RoadChallengeAuthorityCols {
     pub journey_departure_minute: __sdk::__query_builder::Col<RoadChallengeAuthority, u64>,
     pub camp_movement_minute: __sdk::__query_builder::Col<RoadChallengeAuthority, u64>,
     pub available_at_elapsed_minute: __sdk::__query_builder::Col<RoadChallengeAuthority, u64>,
-    pub catalog_id: __sdk::__query_builder::Col<RoadChallengeAuthority, RoadChallengeCatalogId>,
+    pub catalog_id: __sdk::__query_builder::Col<RoadChallengeAuthority, String>,
+    pub catalog_revision: __sdk::__query_builder::Col<RoadChallengeAuthority, u32>,
+    pub catalog_digest: __sdk::__query_builder::Col<RoadChallengeAuthority, String>,
+    pub absolute_minute: __sdk::__query_builder::Col<RoadChallengeAuthority, u64>,
+    pub longitude_e_7: __sdk::__query_builder::Col<RoadChallengeAuthority, i32>,
+    pub latitude_e_7: __sdk::__query_builder::Col<RoadChallengeAuthority, i32>,
+    pub trigger: __sdk::__query_builder::Col<RoadChallengeAuthority, NarrativeEncounterTrigger>,
     pub revision: __sdk::__query_builder::Col<RoadChallengeAuthority, u32>,
     pub open: __sdk::__query_builder::Col<RoadChallengeAuthority, bool>,
     pub resolved_choice: __sdk::__query_builder::Col<RoadChallengeAuthority, Option<String>>,
-    pub resolved_deed:
-        __sdk::__query_builder::Col<RoadChallengeAuthority, Option<RoadChallengeDeed>>,
+    pub resolved_deed: __sdk::__query_builder::Col<RoadChallengeAuthority, Option<String>>,
     pub virtue_exemplified:
         __sdk::__query_builder::Col<RoadChallengeAuthority, Option<ChivalricVirtue>>,
+    pub result_transcript: __sdk::__query_builder::Col<RoadChallengeAuthority, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for RoadChallengeAuthority {
@@ -84,11 +96,18 @@ impl __sdk::__query_builder::HasCols for RoadChallengeAuthority {
                 "available_at_elapsed_minute",
             ),
             catalog_id: __sdk::__query_builder::Col::new(table_name, "catalog_id"),
+            catalog_revision: __sdk::__query_builder::Col::new(table_name, "catalog_revision"),
+            catalog_digest: __sdk::__query_builder::Col::new(table_name, "catalog_digest"),
+            absolute_minute: __sdk::__query_builder::Col::new(table_name, "absolute_minute"),
+            longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
+            latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
+            trigger: __sdk::__query_builder::Col::new(table_name, "trigger"),
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             open: __sdk::__query_builder::Col::new(table_name, "open"),
             resolved_choice: __sdk::__query_builder::Col::new(table_name, "resolved_choice"),
             resolved_deed: __sdk::__query_builder::Col::new(table_name, "resolved_deed"),
             virtue_exemplified: __sdk::__query_builder::Col::new(table_name, "virtue_exemplified"),
+            result_transcript: __sdk::__query_builder::Col::new(table_name, "result_transcript"),
         }
     }
 }

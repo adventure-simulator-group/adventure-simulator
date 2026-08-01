@@ -59,16 +59,6 @@ pub enum FinaleDefenseKind {
     SupernaturalArmor,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum CountermeasureKind {
-    CapturedDispatch,
-    Antidote,
-    TrapWarning,
-    ColdIronCharm,
-    BlessedWeapon,
-    RescuedAlly,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TacticalInsightKind {
     MustCloseToMelee,
@@ -106,101 +96,6 @@ pub fn tactical_insight_for(threat_id: crate::bestiary::ThreatId) -> Option<Tact
         ),
         preparation: "Bring bows and arrows; archers can strike while these enemies close.".into(),
     })
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MaterialCountermeasure {
-    pub kind: CountermeasureKind,
-    pub source_challenge_id: String,
-    pub item_id: String,
-    pub counters: FinaleDefenseKind,
-    pub enemy_scale_reduction_bps: u32,
-    pub enemy_capability_multiplier_bps: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AppliedCountermeasure {
-    pub kind: CountermeasureKind,
-    pub source_challenge_id: String,
-    pub item_id: String,
-    pub countered_defense: FinaleDefenseKind,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FinaleApproachResolution {
-    pub authored_defenses: Vec<FinaleDefenseKind>,
-    pub applied: Vec<AppliedCountermeasure>,
-    pub unresolved_defenses: Vec<FinaleDefenseKind>,
-    pub enemy_scale_reduction_bps: u32,
-    pub enemy_capability_multiplier_bps: u32,
-}
-
-/// Resolves material countermeasures against a destination's authored
-/// defenses. Only one source may suppress each defense; duplicate sources and
-/// countermeasures for defenses the finale does not possess have no effect.
-/// The result is sorted and deterministic so it can be snapshotted verbatim.
-pub fn resolve_finale_approach(
-    defenses: &[FinaleDefenseKind],
-    countermeasures: &[MaterialCountermeasure],
-) -> FinaleApproachResolution {
-    let mut authored_defenses = defenses.to_vec();
-    authored_defenses.sort();
-    authored_defenses.dedup();
-
-    let mut candidates = countermeasures.to_vec();
-    candidates.sort_by(|left, right| {
-        left.counters
-            .cmp(&right.counters)
-            .then(
-                right
-                    .enemy_scale_reduction_bps
-                    .cmp(&left.enemy_scale_reduction_bps),
-            )
-            .then(
-                left.enemy_capability_multiplier_bps
-                    .cmp(&right.enemy_capability_multiplier_bps),
-            )
-            .then(left.kind.cmp(&right.kind))
-            .then(left.source_challenge_id.cmp(&right.source_challenge_id))
-    });
-    let mut applied = Vec::new();
-    let mut scale_reduction = 0_u32;
-    let mut capability_multiplier = 10_000_u64;
-    for defense in authored_defenses.iter().copied() {
-        let Some(countermeasure) = candidates.iter().find(|item| item.counters == defense) else {
-            continue;
-        };
-        scale_reduction = scale_reduction
-            .saturating_add(countermeasure.enemy_scale_reduction_bps)
-            .min(5_000);
-        capability_multiplier = capability_multiplier.saturating_mul(u64::from(
-            countermeasure
-                .enemy_capability_multiplier_bps
-                .clamp(5_000, 10_000),
-        )) / 10_000;
-        applied.push(AppliedCountermeasure {
-            kind: countermeasure.kind,
-            source_challenge_id: countermeasure.source_challenge_id.clone(),
-            item_id: countermeasure.item_id.clone(),
-            countered_defense: defense,
-        });
-    }
-    let unresolved_defenses = authored_defenses
-        .iter()
-        .copied()
-        .filter(|defense| {
-            !applied
-                .iter()
-                .any(|item| item.countered_defense == *defense)
-        })
-        .collect();
-    FinaleApproachResolution {
-        authored_defenses,
-        applied,
-        unresolved_defenses,
-        enemy_scale_reduction_bps: scale_reduction,
-        enemy_capability_multiplier_bps: capability_multiplier.max(5_000) as u32,
-    }
 }
 
 /// A camp's stable identity within one journey. Elapsed time is deliberately
@@ -690,87 +585,6 @@ const RUIN_ADJACENT: [[&str; 5]; 5] = [
 mod tests {
     use super::*;
 
-    fn countermeasure(
-        kind: CountermeasureKind,
-        source: &str,
-        item: &str,
-        counters: FinaleDefenseKind,
-        scale_reduction: u32,
-        capability_multiplier: u32,
-    ) -> MaterialCountermeasure {
-        MaterialCountermeasure {
-            kind,
-            source_challenge_id: source.into(),
-            item_id: item.into(),
-            counters,
-            enemy_scale_reduction_bps: scale_reduction,
-            enemy_capability_multiplier_bps: capability_multiplier,
-        }
-    }
-
-    #[test]
-    fn material_countermeasures_resolve_only_authored_defenses_once() {
-        let defenses = [
-            FinaleDefenseKind::Reinforcements,
-            FinaleDefenseKind::UnnaturalProwess,
-            FinaleDefenseKind::Reinforcements,
-        ];
-        let resolution = resolve_finale_approach(
-            &defenses,
-            &[
-                countermeasure(
-                    CountermeasureKind::CapturedDispatch,
-                    "challenge:courier",
-                    "captured_dispatch",
-                    FinaleDefenseKind::Reinforcements,
-                    1_500,
-                    8_500,
-                ),
-                countermeasure(
-                    CountermeasureKind::RescuedAlly,
-                    "challenge:weaker-duplicate",
-                    "ally",
-                    FinaleDefenseKind::Reinforcements,
-                    500,
-                    9_500,
-                ),
-                countermeasure(
-                    CountermeasureKind::ColdIronCharm,
-                    "challenge:fey",
-                    "favor",
-                    FinaleDefenseKind::UnnaturalProwess,
-                    2_500,
-                    7_500,
-                ),
-                countermeasure(
-                    CountermeasureKind::Antidote,
-                    "challenge:irrelevant",
-                    "antidote",
-                    FinaleDefenseKind::PoisonedArms,
-                    4_000,
-                    5_000,
-                ),
-            ],
-        );
-        assert_eq!(
-            resolution.authored_defenses,
-            vec![
-                FinaleDefenseKind::UnnaturalProwess,
-                FinaleDefenseKind::Reinforcements,
-            ]
-        );
-        assert_eq!(resolution.applied.len(), 2);
-        assert!(
-            resolution
-                .applied
-                .iter()
-                .any(|item| item.kind == CountermeasureKind::CapturedDispatch)
-        );
-        assert!(resolution.unresolved_defenses.is_empty());
-        assert_eq!(resolution.enemy_scale_reduction_bps, 4_000);
-        assert_eq!(resolution.enemy_capability_multiplier_bps, 6_375);
-    }
-
     #[test]
     fn tactical_insight_reports_consumed_physical_mechanics_without_modifying_them() {
         let threat = crate::bestiary::ThreatId::ArmedRetainer;
@@ -782,30 +596,6 @@ mod tests {
         assert!(insight.finding.contains("no missile weapons"));
         assert!(insight.preparation.contains("bows and arrows"));
         assert_eq!(format!("{before:?}"), format!("{after:?}"));
-    }
-
-    #[test]
-    fn unresolved_defenses_remain_visible_and_effects_are_bounded() {
-        let resolution = resolve_finale_approach(
-            &[
-                FinaleDefenseKind::Reinforcements,
-                FinaleDefenseKind::PoisonedArms,
-            ],
-            &[countermeasure(
-                CountermeasureKind::CapturedDispatch,
-                "challenge:courier",
-                "captured_dispatch",
-                FinaleDefenseKind::Reinforcements,
-                9_999,
-                1,
-            )],
-        );
-        assert_eq!(resolution.enemy_scale_reduction_bps, 5_000);
-        assert_eq!(resolution.enemy_capability_multiplier_bps, 5_000);
-        assert_eq!(
-            resolution.unresolved_defenses,
-            vec![FinaleDefenseKind::PoisonedArms]
-        );
     }
 
     #[test]

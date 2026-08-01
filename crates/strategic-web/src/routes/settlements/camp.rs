@@ -55,7 +55,7 @@ pub(super) struct CampQuery {
     forage: Option<bool>,
     forage_receipt: Option<String>,
     forage_error: Option<String>,
-    road_result: Option<String>,
+    road_occurrence: Option<String>,
 }
 
 pub(super) async fn camp(
@@ -330,14 +330,15 @@ pub(super) async fn camp(
             Vec::new()
         }
     };
-    let road_trial = road_challenges
+    let active_road_trial = road_challenges
         .iter()
         .find(|challenge| challenge.active && challenge.open);
-    let road_result = query.road_result.as_deref().filter(|result| {
-        road_challenges.iter().any(|challenge| {
-            !challenge.open && challenge.resolved_choice.as_deref() == Some(*result)
-        })
-    });
+    let mut road_history = road_challenges.iter().filter(|challenge| !challenge.open).collect::<Vec<_>>();
+    road_history.sort_by(|left, right| right.absolute_minute.cmp(&left.absolute_minute).then_with(|| right.id.cmp(&left.id)));
+    if let Some(requested) = query.road_occurrence.as_deref()
+        && let Some(index) = road_history.iter().position(|challenge| challenge.id == requested)
+    { road_history.swap(0, index); }
+    road_history.truncate(10);
     let foraging_dialog = if query.forage.unwrap_or(false) {
         Some(
             crate::routes::foraging::activity_dialog(
@@ -376,8 +377,8 @@ pub(super) async fn camp(
                 )
             }),
             tactical_insight,
-            road_trial,
-            road_result,
+            active_road_trial,
+            &road_history,
             foraging_dialog,
             Some(&character.name),
         )
@@ -408,7 +409,7 @@ pub(super) async fn resolve_errantry_road_challenge(
             "resolve_errantry_road_challenge",
             &[
                 json!(character_id),
-                json!(form.challenge_id),
+                json!(&form.challenge_id),
                 json!(form.expected_revision),
                 json!(form.choice),
                 json!(form.action_id),
@@ -416,14 +417,7 @@ pub(super) async fn resolve_errantry_road_challenge(
         )
         .await
     {
-        Ok(()) => Redirect::to(match form.choice.as_str() {
-            "aid" => "/camp?road_result=aid",
-            "rally" => "/camp?road_result=rally",
-            "consecrate" => "/camp?road_result=consecrate",
-            "leave" => "/camp?road_result=leave",
-            _ => "/camp",
-        })
-        .into_response(),
+        Ok(()) => Redirect::to(&format!("/camp?road_occurrence={}", form.challenge_id)).into_response(),
         Err(error) if error.to_string().contains("stale") => {
             StatusCode::CONFLICT.into_response()
         }
@@ -526,26 +520,22 @@ mod direct_demo_redirect_tests {
 #[cfg(test)]
 mod road_challenge_route_tests {
     #[test]
-    fn courier_is_chat_native_optional_and_server_authoritative() {
+    fn narrative_encounters_are_generic_chat_native_and_server_authoritative() {
         let route = include_str!("camp.rs");
         let router = include_str!("router.rs");
         let template = include_str!("../../templates/settlement/travel.rs");
         assert!(route.contains("SELECT * FROM backend_road_challenges"));
         assert!(route.contains("challenge.active && challenge.open"));
-        assert!(route.contains(
-            "!challenge.open && challenge.resolved_choice.as_deref() == Some(*result)"
-        ));
+        assert!(route.contains("challenge.id == requested"));
         assert!(route.contains("\"resolve_errantry_road_challenge\""));
         assert!(router.contains("/camp/errantry-road-challenge"));
         assert!(template.contains("aria-label=\"Roadside conversation\""));
-        assert!(template.contains("Bind his wound and carry the dispatch"));
-        assert!(template.contains("escort him through the threatened ford"));
-        assert!(template.contains("Consecrate his oath and sword-knot"));
-        assert!(template.contains("Virtue exemplified: Mercy"));
-        assert!(template.contains("Virtue exemplified: Courage"));
-        assert!(template.contains("Virtue exemplified: Faith"));
-        assert!(template.contains("Leave him by the road"));
-        assert!(!template.contains("supernatural-spoken-line\" {\n                                    strong { \"Wounded Order courier"));
+        assert!(template.contains("generic_road_encounter(road_trial)"));
+        assert!(template.contains("presentation.choices"));
+        assert!(template.contains("presentation.opening"));
+        assert!(!template.contains("EncounterDefinition"));
+        assert!(!template.contains("WoundedOrderCourierV1"));
+        assert!(!template.contains("Black Knight's men"));
     }
 }
 
