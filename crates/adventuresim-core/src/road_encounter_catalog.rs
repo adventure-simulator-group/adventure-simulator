@@ -1295,11 +1295,18 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ")
             .to_lowercase();
-        for withheld_observation in ["mail", "shallow", "gravel", "deep current"] {
+        assert!(opening.contains("mixed company waiteth upon either bank"));
+        assert!(opening.contains("mail-clad riders"));
+        assert!(opening.contains("their horses"));
+        assert!(opening.contains("blade of my west oar lieth split"));
+        for withheld_observation in ["shallow", "gravel", "deep current", "forceth both back"] {
             assert!(!opening.contains(withheld_observation));
         }
         assert!(opening.contains("twelve groschen"));
         assert!(opening.contains("elder marks"));
+        let authored_prose = serde_json::to_string(definition).unwrap().to_lowercase();
+        assert!(!authored_prose.contains("spare oar"));
+        assert!(!authored_prose.contains("hidden oar"));
 
         let choice = |id| {
             definition
@@ -1342,9 +1349,12 @@ mod tests {
                     .any(|tag| tag == "physical_observation")
         }));
         assert!(active.iter().all(|choice| {
-            choice.result.contains("deep current")
-                && choice.result.contains("mail-burdened riders")
-                && choice.result.contains("shallow gravel")
+            choice.result.contains("witnessest a mail-clad rider")
+                && choice
+                    .result
+                    .contains("urge his horse into the deep current")
+                && choice.result.contains("forceth both back")
+                && choice.result.contains("shallow gravel margin")
         }));
 
         for (route, minutes) in [
@@ -1397,6 +1407,15 @@ mod tests {
                 difficulty_milli: 1200
             }
         ));
+        assert!(choice("row_in_lieu").label.contains("sound sculling oar"));
+        assert!(
+            choice("row_in_lieu").response[0]
+                .text
+                .contains("tend the landing cable and call thy stroke")
+        );
+        for route in ["pay_tribute", "barter_provisions"] {
+            assert!(choice(route).result.contains("slow sculling"));
+        }
         let lawful_fare = choice("expose_altered_tally");
         assert!(lawful_fare.response[0].text.contains("Four groschen"));
         assert!(lawful_fare.response[0].text.contains("witness-mark"));
@@ -1418,7 +1437,17 @@ mod tests {
         assert!(
             choice("organize_repair").response[0]
                 .text
-                .contains("spare ash, cord, and iron")
+                .contains("raw ash, cord, and iron")
+        );
+        assert!(
+            choice("organize_repair")
+                .result
+                .contains("temporary splint")
+        );
+        assert!(
+            choice("organize_repair")
+                .result
+                .contains("sufficient only for the immediate queued crossings")
         );
 
         for (route, virtue) in [
@@ -1432,6 +1461,13 @@ mod tests {
         }
         let theft = choice("steal_till");
         assert!(theft.response[0].text.contains("trust the charge"));
+        assert!(theft.response[0].text.contains("till ashore"));
+        assert!(theft.result.contains("keeping the shore tally"));
+        assert!(
+            theft
+                .result
+                .contains("repeatedly sculleth queued crossings")
+        );
         assert!(
             theft
                 .result

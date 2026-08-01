@@ -16,7 +16,7 @@
       "opening": [
         {
           "speaker": "ferryman",
-          "text": "Good travelers, the river hath swollen beyond its wont, and my west oar lieth split. Some hand hath newly cut this toll board above its elder marks, yet twelve groschen is the fare I claim. The upper ford standeth three rough hours from hence.",
+          "text": "Good travelers, the river hath swollen beyond its wont, and the blade of my west oar lieth split. A mixed company waiteth upon either bank, with foot travelers, mail-clad riders, and their horses all among them. Some hand hath newly cut this toll board above its elder marks, yet twelve groschen is the fare I claim. The upper ford standeth three rough hours from hence.",
           "reviewed_shakespearean": true
         }
       ],
@@ -24,8 +24,8 @@
         {
           "id": "pay_tribute",
           "label": "Pay the twelve-groschen tribute",
-          "response": [{ "speaker": "ferryman", "text": "Thy silver spareth thee the harsher bank. Sit steady whilst I work the sound oar, and heed how this swollen water useth those who bear great weight.", "reviewed_shakespearean": true }],
-          "result": "Thou payest twelve groschen and crossest in fifteen minutes. From the ferry thou seest that the deep current driveth mail-burdened riders toward the shallow gravel margins, where alone they can keep their footing.",
+          "response": [{ "speaker": "ferryman", "text": "Thy silver spareth thee the harsher bank. Sit steady whilst I scull us slowly with the sound oar, and heed how this swollen water useth those who bear great weight.", "reviewed_shakespearean": true }],
+          "result": "Thou payest twelve groschen and crossest in fifteen minutes beneath the ferryman's slow sculling. From the ferry thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
           "deed": "pay_ferrymans_disputed_tribute",
           "outcome_tags": ["prudence", "peaceful_passage", "physical_observation"],
           "requirements": [{ "kind": "currency", "amount": 12 }],
@@ -40,8 +40,8 @@
         {
           "id": "barter_provisions",
           "label": "Barter four travel rations for passage",
-          "response": [{ "speaker": "ferryman", "text": "Bread keepeth strength when swollen waters idle honest hands. Lay down four rations, and I shall bear thy company across.", "reviewed_shakespearean": true }],
-          "result": "Thou barterest four travel rations and crossest in twenty minutes. From the ferry thou seest the deep current confine mail-burdened riders to the shallow gravel margins, where alone they can keep their footing.",
+          "response": [{ "speaker": "ferryman", "text": "Bread keepeth strength when swollen waters idle honest hands. Lay down four rations, and I shall scull thy company slowly across with the sound oar.", "reviewed_shakespearean": true }],
+          "result": "Thou barterest four travel rations and crossest in twenty minutes beneath the ferryman's slow sculling. From the ferry thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
           "deed": "barter_provisions_for_ferry_passage",
           "outcome_tags": ["courtesy", "barter", "physical_observation"],
           "requirements": [{ "kind": "item", "item_id": "travel_ration", "minimum_quantity": 4 }],
@@ -55,9 +55,9 @@
         },
         {
           "id": "row_in_lieu",
-          "label": "Take the spare oar and row in lieu of payment",
-          "response": [{ "speaker": "ferryman", "text": "Thy back may pay where purse will not. Take thou the sound oar; pull when I command, and fight not the middle stream as though it were a man.", "reviewed_shakespearean": true }],
-          "result": "Under the ferryman's direction, thou spendest forty-five minutes at the oar. Its resistance teacheth thee that the deep current confineth mail-burdened riders to the shallow gravel margins.",
+          "label": "Relieve the ferryman at the sound sculling oar",
+          "response": [{ "speaker": "ferryman", "text": "Thy back may pay where purse will not. Relieve me at the sound sculling oar; work it when I command, whilst I tend the landing cable and call thy stroke.", "reviewed_shakespearean": true }],
+          "result": "Under the ferryman's direction, thou spendest forty-five minutes working the sound sculling oar whilst he tendeth the landing cable and calleth each stroke. During thy labor thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
           "deed": "row_ferry_in_lieu_of_tribute",
           "outcome_tags": ["courage", "labor", "physical_observation"],
           "checks": [{ "kind": "attribute", "attribute": "endurance", "difficulty_milli": 1200 }],
@@ -70,7 +70,7 @@
           "id": "expose_altered_tally",
           "label": "Read the elder cuts and expose the altered tally",
           "response": [{ "speaker": "ferryman", "text": "Thine eye hath found the witness-mark beneath the fresher knife. Four groschen was the lawful fare; pay that sum, and I shall gainsay thee no further.", "reviewed_shakespearean": true }],
-          "result": "Thou matchest the elder cuts to their witness-mark, payest the lawful four-groschen fare, and crossest in thirty minutes. The passage showeth that deep current confineth mail-burdened riders to the shallow gravel margins.",
+          "result": "Thou matchest the elder cuts to their witness-mark, payest the lawful four-groschen fare, and crossest in thirty minutes beneath the ferryman's slow sculling. During the passage thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
           "deed": "expose_ferrymans_altered_toll_tally",
           "outcome_tags": ["justice", "fraud_exposed", "physical_observation"],
           "requirements": [{ "kind": "currency", "amount": 4 }],
@@ -86,8 +86,8 @@
         {
           "id": "organize_repair",
           "label": "Organize the stranded travelers to repair the oar",
-          "response": [{ "speaker": "ferryman", "text": "I have spare ash, cord, and iron, and know the binding that will hold. Set thou these idle travelers to ordered work, and we shall mend the blade together.", "reviewed_shakespearean": true }],
-          "result": "The ferryman provideth materials and craft while thou spendest an hour ordering the stranded travelers. During the repaired ferry's trial, thou learnest that deep current confineth mail-burdened riders to the shallow gravel margins.",
+          "response": [{ "speaker": "ferryman", "text": "I have raw ash, cord, and iron, and know a binding that shall serve awhile. Set thou these waiting travelers to ordered work; beneath my hand we shall splint the west blade for the crossings presently before us.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest an hour ordering the waiting company whilst the ferryman shapeth raw ash, cord, and iron into a temporary splint for the west blade, sufficient only for the immediate queued crossings. During that work thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
           "deed": "organize_stranded_travelers_to_repair_ferry_oar",
           "outcome_tags": ["prudence", "command", "physical_observation"],
           "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
@@ -100,8 +100,8 @@
         {
           "id": "steal_till",
           "label": "Win his trust, collect the fares, and steal the till",
-          "response": [{ "speaker": "ferryman", "text": "Thou hast kept a noble landing and knowest the tally well. Hold thou my till and gather each fare whilst I fetch the hidden oar; I trust the charge unto thee.", "reviewed_shakespearean": true }],
-          "result": "Thou falsely claimest service at a noble landing, spendest ninety minutes collecting fares, and observest that deep current confineth mail-burdened riders to the shallow gravel margins; then thou abscondest with forty-eight groschen from the entrusted till.",
+          "response": [{ "speaker": "ferryman", "text": "Thou hast kept a noble landing and knowest the tally well. Hold thou my till ashore and gather each fare whilst I scull the queue, tend the cable, and shape my repair stock; I trust the charge unto thee.", "reviewed_shakespearean": true }],
+          "result": "Thou falsely claimest service at a noble landing and spendest ninety minutes keeping the shore tally whilst the ferryman repeatedly sculleth queued crossings, tendeth the cable, and shapeth repair stock. There thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin. Then thou abscondest with forty-eight groschen from the entrusted till.",
           "deed": "steal_ferrymans_entrusted_till",
           "outcome_tags": ["deception", "theft", "physical_observation"],
           "requirements": [{ "kind": "skill", "skill": "deception", "minimum_hours": 1 }],
