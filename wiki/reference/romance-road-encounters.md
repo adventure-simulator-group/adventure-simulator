@@ -171,6 +171,26 @@ damaging equipment, or weakening any opponent. The materially richest theft
 lowers Honesty without publicly exemplifying it. The encounter is travel-only,
 goal-neutral, entirely mortal, and requires no runtime catalog special case.
 
+`envious_captain_false_directions_v1` places a mortal escort captain at a
+fork, where his Holy Rood oath favors the lower road despite an elder
+ridge-pointing stone and fresh ridge chalk on his escort's boots. A richer
+merchant train carrying the quarrymen's payroll followeth behind. The party may
+read chalk, stone, and flood marks together, scout both roads, expose the
+contradiction before both companies, organize the convoy beneath the merchant
+factor and ridge guard's own expertise, demand that the captain repeat his oath
+at a wayside cross, or collude after he privately confesseth envy and steal half
+the ninety-six-groschen payroll; waiting for both companies to clear costs an
+hour but nothing else. Each active route reaches the same portable physical
+lesson through different causality: a prepared bow guard upon the opposite
+shelf controls a washed ridge cleft, while the captain's mailed escort, armed
+only with swords and spears for melee, cannot answer across the gap and must
+yield the lane. The observation concerns melee-only equipment, not armor in
+general, and reinforces preparation of bows and arrows without weakening an
+opponent. The theft leaves the lead wagon upright and all travelers uninjured,
+but pays more than twice the richest honest route and lowers Honesty without
+publicly exemplifying it. The encounter is travel-only, goal-neutral, entirely
+mortal, and requires no runtime catalog special case.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,

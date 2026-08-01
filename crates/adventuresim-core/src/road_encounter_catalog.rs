@@ -1601,6 +1601,138 @@ mod tests {
     }
 
     #[test]
+    fn envious_captain_routes_ground_oath_trust_and_portable_bow_lesson() {
+        let definition = encounter("envious_captain_false_directions_v1").unwrap();
+        assert!(definition.triggers.travel && !definition.triggers.rest);
+        assert_eq!(definition.cast[0].nature, SpeakerNature::Mortal);
+        assert!(definition.opening[0].reviewed_shakespearean);
+        assert!(!definition.opening[0].reviewed_iambic_pentameter);
+
+        let opening = definition.opening[0].text.to_lowercase();
+        for premise in [
+            "holy rood",
+            "lower road",
+            "elder stone",
+            "pale ridge chalk",
+            "richer merchant train",
+            "quarrymen's payroll",
+        ] {
+            assert!(opening.contains(premise));
+        }
+        for withheld in ["envy", "bow", "missile", "sword", "spear", "across the gap"] {
+            assert!(!opening.contains(withheld));
+        }
+
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        assert_eq!(active.len(), 6);
+        assert!(
+            active
+                .iter()
+                .flat_map(|choice| &choice.response)
+                .all(|line| { line.reviewed_shakespearean && !line.reviewed_iambic_pentameter })
+        );
+        assert!(active.iter().all(|choice| {
+            choice.effects.iter().any(|effect| {
+                matches!(
+                    effect,
+                    Effect::Information { information_id }
+                        if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
+                )
+            }) && choice.quest_reward_tags == ["prepare_bows_against_melee_only_opposition"]
+                && choice
+                    .outcome_tags
+                    .iter()
+                    .any(|tag| tag == "physical_observation")
+        }));
+        assert!(active.iter().all(|choice| {
+            let result = choice.result.to_lowercase().replace('-', " ");
+            result.contains("bow")
+                && result.contains("opposite shelf")
+                && result.contains("washed")
+                && result.contains("cleft")
+                && result.contains("mailed")
+                && result.contains("sword")
+                && result.contains("spear")
+                && result.contains("melee")
+                && result.contains("cannot answer")
+                && result.contains("gap")
+                && result.contains("yield")
+        }));
+        assert_eq!(
+            active
+                .iter()
+                .map(|choice| &choice.result)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            6
+        );
+
+        let command = choice("organize_ridge_passage");
+        let command_prose = format!("{} {}", command.response[0].text, command.result);
+        for grounded in [
+            "factor and ridge guard claim knowledge",
+            "inventorying wagons and positioning the convoy",
+            "factor and ridge guard choose the route and anchors",
+        ] {
+            assert!(command_prose.contains(grounded));
+        }
+
+        let oath = choice("demand_oath_at_cross");
+        assert!(opening.contains("swear the lower road standeth sound"));
+        assert!(oath.response[0].text.contains("shall not swear it twice"));
+        assert!(oath.response[0].text.contains("my counsel was false"));
+        assert!(oath.result.contains("without any supernatural judgment"));
+
+        let theft = choice("collude_and_split_payroll");
+        assert!(theft.response[0].text.contains("envy biteth me"));
+        assert!(
+            theft.response[0]
+                .text
+                .contains("ninety-six-groschen payroll equally")
+        );
+        assert!(theft.result.contains("without overturn or injury"));
+        assert!(theft.result.contains("keeping forty-eight groschen"));
+        assert!(matches!(
+            theft.effects[0],
+            Effect::Currency { amount: 48, .. }
+        ));
+        let honest_max = active
+            .iter()
+            .filter(|choice| choice.id != theft.id)
+            .flat_map(|choice| &choice.effects)
+            .filter_map(|effect| match effect {
+                Effect::Currency { amount, .. } if *amount > 0 => Some(*amount),
+                _ => None,
+            })
+            .max()
+            .unwrap();
+        assert!(48 > honest_max);
+        assert!(theft.personality.iter().all(|change| change.delta < 0));
+        assert_eq!(exemplified_virtue(&theft.personality), None);
+
+        let ignore = choice("ignore");
+        assert!(matches!(
+            ignore.transition.as_ref(),
+            Some(EncounterTransition::TravelDelay { minutes: 60 })
+        ));
+        assert!(ignore.response.is_empty());
+        assert!(ignore.effects.is_empty());
+        assert!(ignore.outcome_tags.is_empty());
+        assert!(ignore.personality.is_empty());
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition
