@@ -1,0 +1,158 @@
+{
+  "encounters": [
+    {
+      "id": "enchanted_sleep_beneath_hawthorn_v1",
+      "version": 1,
+      "weight": 60,
+      "triggers": { "travel": true, "rest": true },
+      "provenance": {
+        "works": ["Le Morte d'Arthur, Volume I, Book VI, Chapter III"],
+        "motifs": ["enchanted_sleep", "six_hour_enchantment", "hawthorn_grievance", "company_rescue", "physical_restitution", "betrayed_trust"],
+        "adaptation_note": "A direct adaptation of Malory's Volume I, Book VI, Chapter III, where Morgan le Fay enchants the sleeping Launcelot for six hours and has him borne away. This version relocates enchanted sleep to a reusable roadside company rescue and omits Morgan's abduction and coercive demand."
+      },
+      "cast": [
+        { "id": "veteran_caravan_mistress", "name": "Veteran caravan mistress", "nature": "mortal" },
+        { "id": "lady_of_hawthorn", "name": "Lady of the Hawthorn", "nature": "supernatural" }
+      ],
+      "opening": [
+        {
+          "speaker": "veteran_caravan_mistress",
+          "text": "I returned from the brook to find my whole company asleep beneath this flowering hawthorn. I am their veteran caravan mistress, herb-wife, and quartermistress: their breath runneth evenly, their pulses hold ordinary measure, and I alone shall order triage, safe lifting, and the watch cart's stores. A sharp line of fallen blossom boundeth the sleep. One sleeper drove an iron tent stake into the root before I left. The cart visibly holdeth our sealed ninety-six-groschen wage coffer, a folded jack of plates, and my common spare halberd; I may grant that halberd as the fee for a sound rescue.",
+          "reviewed_shakespearean": true
+        },
+        { "speaker": "lady_of_hawthorn", "text": "No blood I claim; I hold their waking hours.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
+        { "speaker": "lady_of_hawthorn", "text": "Your iron pierced the root; my song replies.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
+        { "speaker": "lady_of_hawthorn", "text": "Bear out the stake, or bear the sleepers hence.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true }
+      ],
+      "choices": [
+        {
+          "id": "draw_offending_stake",
+          "label": "Draw the offending stake with the mistress's cart line",
+          "response": [{ "speaker": "veteran_caravan_mistress", "text": "I shall place every sleeper and forbid unsafe lifting. Take the hauling line I have laid; my halberd's long shaft and hook shall set it upon the iron from beyond the blossom while thou drawest against root and earth.", "reviewed_shakespearean": true }],
+          "result": "For fifty minutes thou endurest the hawthorn song's attention and haulest beneath the mistress's body-order. From outside the sharp blossom line she useth the halberd's full reach and hook to lay the cart rope upon the buried stake without crossing into the song. Thy sustained pull draweth the offending iron from root and earth. The company waketh safely, and the mistress granteth thee the same common halberd for restoring what justice required.",
+          "deed": "draw_iron_stake_from_enchanted_hawthorn_root",
+          "outcome_tags": ["justice", "physical_restitution", "halberd_working_reach_observed"],
+          "checks": [{ "kind": "attribute", "attribute": "endurance", "difficulty_milli": 1100 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "halberd", "quantity": 1 },
+            { "kind": "information", "information_id": "halberd_provides_two_meter_working_reach" }
+          ],
+          "personality": [{ "axis": "conscience", "delta": 110, "virtue": "justice" }],
+          "quest_reward_tags": ["prepare_halberd_for_long_reach"],
+          "transition": { "kind": "travel_delay", "minutes": 50 }
+        },
+        {
+          "id": "bear_sleepers_beyond_blossom",
+          "label": "Resist the song and bear sleepers beyond the blossom line",
+          "response": [{ "speaker": "veteran_caravan_mistress", "text": "I alone shall assign each carry by breath, weight, and limb. Bind thy will within the song, obey my lifting word, and bear each sleeper unto the receiving cloth I set beyond the blossoms.", "reviewed_shakespearean": true }],
+          "result": "For an hour thou resistest the song and carriest sleepers in the mistress's exact triage order. She remaineth outside the ring and extendeth the hooked halberd across its edge to draw each receiving cloth the final two long paces, so she may receive its burden without stepping into the song. The last sleeper passeth the blossom line and all wake unharmed; the mistress granteth thee the long common halberd for courage.",
+          "deed": "bear_enchanted_sleepers_beyond_hawthorn_blossom",
+          "outcome_tags": ["courage", "resisted_enchantment", "halberd_working_reach_observed"],
+          "checks": [{ "kind": "skill", "skill": "will", "difficulty_milli": 1300 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "halberd", "quantity": 1 },
+            { "kind": "information", "information_id": "halberd_provides_two_meter_working_reach" }
+          ],
+          "personality": [{ "axis": "nerve", "delta": 120, "virtue": "courage" }],
+          "quest_reward_tags": ["prepare_halberd_for_long_reach"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "find_brooks_acoustic_lee",
+          "label": "Find the brook's acoustic lee for a low-song withdrawal lane",
+          "response": [{ "speaker": "veteran_caravan_mistress", "text": "Find where brook and bank break the song, but leave breath, pulse, and carries unto me. I shall set a withdrawal lane upon thy hearing and use cart cloths to receive them.", "reviewed_shakespearean": true }],
+          "result": "For forty minutes thou distinguishest a narrow acoustic lee where brook noise and alder bank lower the hawthorn song without altering it. The mistress directeth carriers and sleepers through that lane. Standing upon its quiet side, she useth the halberd's reach of above two yards to pass straps over the singing verge and draw burdened cloths back across it. The company clears the blossom line and waketh; she rewardeth thy prudent hearing with the halberd.",
+          "deed": "find_acoustic_lee_for_hawthorn_sleep_rescue",
+          "outcome_tags": ["prudence", "hearing", "halberd_working_reach_observed"],
+          "checks": [{ "kind": "attribute", "attribute": "hearing", "difficulty_milli": 1150 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "halberd", "quantity": 1 },
+            { "kind": "information", "information_id": "halberd_provides_two_meter_working_reach" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 110, "virtue": "prudence" }],
+          "quest_reward_tags": ["prepare_halberd_for_long_reach"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "coordinate_silent_rescue_relay",
+          "label": "Coordinate covered ears, hand signs, and the rescue relay",
+          "response": [{ "speaker": "veteran_caravan_mistress", "text": "I alone shall assign every carry, receiving place, and safe lift. Order covered ears, repeat my hand signs, and relay cloth and bearer when I command.", "reviewed_shakespearean": true }],
+          "result": "For forty-five minutes thou coordinatest covered ears, hand signs, and relay timing while the mistress alone assigneth bodies and lifting order. She setteth the halberd crosswise at the blossom edge; its long shaft receiveth each strap across the boundary, and its hook draweth the waiting cloth to the outer relay without requiring another bearer to enter the song. The ordered company waketh safely beyond the line, and she granteth thee the halberd for loyal command.",
+          "deed": "coordinate_silent_relay_beneath_mistress_triage",
+          "outcome_tags": ["loyalty", "command", "halberd_working_reach_observed", "mistress_owned_triage_and_lifting"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "halberd", "quantity": 1 },
+            { "kind": "information", "information_id": "halberd_provides_two_meter_working_reach" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 110, "virtue": "loyalty" }],
+          "quest_reward_tags": ["prepare_halberd_for_long_reach"],
+          "transition": { "kind": "travel_delay", "minutes": 45 }
+        },
+        {
+          "id": "keep_litany_carry_cadence",
+          "label": "Keep a known litany as the rescuers' carrying cadence",
+          "response": [{ "speaker": "veteran_caravan_mistress", "text": "Speak the known response together and heed who answereth at thy side. The litany shall keep mortal minds mutually attentive whilst I govern each lift; it shall neither dispel nor alter the lady's song.", "reviewed_shakespearean": true }],
+          "result": "For forty minutes the rescuers keep a familiar Christian litany as shared attention and carrying cadence, never as counterspell. The enchantment changeth not. Under the mistress's physical directions they bear each sleeper to the edge, where her long-shafted halberd hook draweth the receiving cloth fully beyond the song-line. All wake safely after physical removal; she granteth thee the halberd for faithful fellowship.",
+          "deed": "keep_ordinary_litany_during_hawthorn_rescue",
+          "outcome_tags": ["faith", "ordinary_shared_cadence", "halberd_working_reach_observed"],
+          "requirements": [{ "kind": "religion", "religion": "roman_catholic" }],
+          "checks": [{ "kind": "religion", "religion": "roman_catholic", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "halberd", "quantity": 1 },
+            { "kind": "information", "information_id": "halberd_provides_two_meter_working_reach" }
+          ],
+          "personality": [{ "axis": "conviction", "delta": 110, "virtue": "faith" }],
+          "quest_reward_tags": ["prepare_halberd_for_long_reach"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "request_restitution_pause",
+          "label": "Acknowledge the wrong and request a brief restitution pause",
+          "response": [{ "speaker": "veteran_caravan_mistress", "text": "Name the pierced root plainly and ask only time to restore it. If the song relenteth, I shall choose who approacheth, govern the stake line, and move every sleeper.", "reviewed_shakespearean": true }],
+          "result": "For thirty-five minutes thou courteously acknowledgest the iron wound and seekest no release without restitution. A brief quiet in the already-declared song alloweth the mistress to work; the Lady of the Hawthorn addeth no spoken reply. Remaining beyond the blossom, the mistress setteth her halberd hook at its full reach upon the stake rope and draweth it clear across the boundary. The root freed, the company waketh safely, and she granteth thee the halberd for courteous truth.",
+          "deed": "request_brief_pause_for_hawthorn_restitution",
+          "outcome_tags": ["courtesy", "acknowledged_wrong", "halberd_working_reach_observed"],
+          "requirements": [{ "kind": "skill", "skill": "charm", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "charm", "difficulty_milli": 1150 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "halberd", "quantity": 1 },
+            { "kind": "information", "information_id": "halberd_provides_two_meter_working_reach" }
+          ],
+          "personality": [{ "axis": "sociability", "delta": 110, "virtue": "courtesy" }],
+          "quest_reward_tags": ["prepare_halberd_for_long_reach"],
+          "transition": { "kind": "travel_delay", "minutes": 35 }
+        },
+        {
+          "id": "steal_watch_cart_stores_and_release_rig",
+          "label": "Send the mistress ahead, rob the watch cart, and release her rig",
+          "response": [{ "speaker": "veteran_caravan_mistress", "text": "Thou sayest the far receiving bank hath slipped beneath my blankets? Guard the watch cart and my rigged hauling brake whilst I go beyond the ring and set the sleepers' places anew.", "reviewed_shakespearean": true }],
+          "result": "For an hour thou aidest until the mistress hath established safe receiving places and rigged a cart-hauling line to the offending stake. From beyond the blossom she showeth how the common halberd's long hook may trip its brake without entering the song. Thou falsely reportest that the far receiving bank hath slipped and sendest her beyond the ring under color of needing her skilled triage there. Alone, thou securest the declared ninety-six-groschen wage coffer and folded jack of plates among thy road baggage, and takest the halberd in hand. As thy final act, thou usest its full reach from outside the blossom to trip her already-rigged brake. The hauling line draweth the stake free; as the company beginneth safely to wake, thou departest at once with all three goods. The mistress returneth unharmed and may tend her people, but her caravan suffereth the real material loss.",
+          "deed": "steal_watch_cart_stores_then_trip_safe_release_rig",
+          "outcome_tags": ["deception", "theft", "halberd_working_reach_observed", "loot_secured_before_release", "mistress_established_safe_rescue", "sleepers_woke_safely", "departed_before_mistress_returned", "material_loss_to_caravan"],
+          "requirements": [{ "kind": "skill", "skill": "deception", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "deception", "difficulty_milli": 1250 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 96 },
+            { "kind": "grant_item", "item_id": "jack_of_plates", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "halberd", "quantity": 1 },
+            { "kind": "information", "information_id": "halberd_provides_two_meter_working_reach" }
+          ],
+          "personality": [{ "axis": "transparency", "delta": -250, "virtue": "honesty" }],
+          "quest_reward_tags": ["prepare_halberd_for_long_reach"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "ignore",
+          "label": "Skirt the blossom line and leave the sleeping company",
+          "response": [],
+          "result": "Thou skirtest the fallen blossom and leavest sleeping company and caravan mistress beneath the hawthorn. The open road and nearby resting ground remain free.",
+          "deed": "leave_hawthorn_sleeping_company_untouched",
+          "outcome_tags": []
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information", "material_preparation"]
+    }
+  ]
+}

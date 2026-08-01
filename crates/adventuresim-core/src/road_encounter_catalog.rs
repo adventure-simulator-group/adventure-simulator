@@ -2061,6 +2061,81 @@ mod tests {
     }
 
     #[test]
+    fn hawthorn_sleep_routes_share_real_halberd_working_reach_without_sleep_state() {
+        let definition = encounter("enchanted_sleep_beneath_hawthorn_v1").unwrap();
+        assert!(definition.triggers.travel && definition.triggers.rest);
+        assert_eq!(
+            definition
+                .opening
+                .iter()
+                .filter(|line| line.speaker == "lady_of_hawthorn")
+                .count(),
+            3
+        );
+        assert!(
+            definition
+                .choices
+                .iter()
+                .flat_map(|choice| &choice.response)
+                .all(|line| line.speaker != "lady_of_hawthorn")
+        );
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        assert!(active.len() == 7 && active.iter().all(|route| route.checks.len() == 1));
+        for route in &active {
+            let effects = serde_json::to_string(&route.effects).unwrap();
+            assert!(effects.contains(r#""item_id":"halberd","quantity":1"#));
+            assert!(effects.contains("halberd_provides_two_meter_working_reach"));
+            assert_eq!(route.quest_reward_tags, ["prepare_halberd_for_long_reach"]);
+            assert!(
+                !["sleep", "stake", "cart", "weather"]
+                    .iter()
+                    .any(|id| effects.contains(id))
+            );
+        }
+        let halberd = crate::item_catalog::definition("halberd").unwrap();
+        let weapon = serde_json::to_string(&halberd.kind).unwrap();
+        assert!(weapon.contains("\"reach_m\":2.0") && weapon.contains("\"penetration\":2.0"));
+        assert!(
+            ["blunt", "slash", "pierce"]
+                .iter()
+                .all(|damage| weapon.contains(damage))
+        );
+        let tagged =
+            |route: &EncounterChoice, tag| route.outcome_tags.iter().any(|found| found == tag);
+        let command = choice("coordinate_silent_rescue_relay");
+        assert!(tagged(command, "mistress_owned_triage_and_lifting"));
+        let faith = choice("keep_litany_carry_cadence");
+        assert!(tagged(faith, "ordinary_shared_cadence"));
+        let evil = choice("steal_watch_cart_stores_and_release_rig");
+        let evil_effects = serde_json::to_string(&evil.effects).unwrap();
+        assert!(evil_effects.contains("\"amount\":96") && evil_effects.contains("jack_of_plates"));
+        assert!(evil.personality.len() == 1 && evil.personality[0].delta < 0);
+        assert_eq!(exemplified_virtue(&evil.personality), None);
+        let jack = crate::item_catalog::definition("jack_of_plates").unwrap();
+        assert_eq!(jack.base_value, 35);
+        assert!(96 + jack.base_value + halberd.base_value == 155 && 155 > 6 * halberd.base_value);
+        assert!(tagged(evil, "loot_secured_before_release"));
+        assert!(
+            tagged(evil, "sleepers_woke_safely")
+                && tagged(evil, "departed_before_mistress_returned")
+        );
+        let ignore = choice("ignore");
+        assert!(ignore.transition.is_none());
+        assert!(ignore.effects.is_empty() && ignore.personality.is_empty());
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition
