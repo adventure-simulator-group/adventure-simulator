@@ -428,6 +428,10 @@ pub struct NarrativeSelection {
     pub catalog_id: String,
 }
 
+pub const fn next_combat_roll_after_reached_boundary(boundary_minute: u64) -> u64 {
+    boundary_minute / ENCOUNTER_ROLL_INTERVAL_MINUTES + 1
+}
+
 /// Returns the first narrative boundary in `(completed, completed + requested]`.
 /// `completed` is the journey movement cursor for travel and the durable
 /// accumulated camp-rest cursor for rest, so splitting a reducer call cannot
@@ -536,6 +540,17 @@ mod tests {
             });
             assert_eq!(whole, by_boundaries);
         }
+    }
+
+    #[test]
+    fn narrative_interruption_advances_only_past_its_reached_combat_boundary() {
+        let requested_end = ENCOUNTER_ROLL_INTERVAL_MINUTES * 20;
+        let narrative_boundary = ENCOUNTER_ROLL_INTERVAL_MINUTES * 3;
+        assert_eq!(next_combat_roll_after_reached_boundary(narrative_boundary), 4);
+        assert_ne!(
+            next_combat_roll_after_reached_boundary(narrative_boundary),
+            next_combat_roll_after_reached_boundary(requested_end),
+        );
     }
 
     #[test]

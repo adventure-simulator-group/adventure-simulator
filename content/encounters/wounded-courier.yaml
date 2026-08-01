@@ -75,7 +75,7 @@
           "response": [],
           "result": "Thou passest by, and the courier's plea fadeth behind thee.",
           "deed": "ignore_wounded_courier",
-          "outcome_tags": ["ignored"]
+          "outcome_tags": []
         }
       ],
       "quest_reward_eligibility": ["physical_tactical_information"]

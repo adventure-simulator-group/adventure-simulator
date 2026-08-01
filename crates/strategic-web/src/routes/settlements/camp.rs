@@ -55,7 +55,7 @@ pub(super) struct CampQuery {
     forage: Option<bool>,
     forage_receipt: Option<String>,
     forage_error: Option<String>,
-    road_result: Option<String>,
+    road_occurrence: Option<String>,
 }
 
 pub(super) async fn camp(
@@ -333,14 +333,12 @@ pub(super) async fn camp(
     let active_road_trial = road_challenges
         .iter()
         .find(|challenge| challenge.active && challenge.open);
-    let road_result = query.road_result.as_deref().filter(|result| {
-        road_challenges.iter().any(|challenge| {
-            !challenge.open && challenge.resolved_choice.as_deref() == Some(*result)
-        })
-    });
-    let road_trial = active_road_trial.or_else(|| road_result.and_then(|result| {
-        road_challenges.iter().find(|challenge| !challenge.open && challenge.resolved_choice.as_deref() == Some(result))
-    })).or_else(|| road_challenges.iter().filter(|challenge| !challenge.open).max_by_key(|challenge| challenge.revision));
+    let mut road_history = road_challenges.iter().filter(|challenge| !challenge.open).collect::<Vec<_>>();
+    road_history.sort_by(|left, right| right.absolute_minute.cmp(&left.absolute_minute).then_with(|| right.id.cmp(&left.id)));
+    if let Some(requested) = query.road_occurrence.as_deref()
+        && let Some(index) = road_history.iter().position(|challenge| challenge.id == requested)
+    { road_history.swap(0, index); }
+    road_history.truncate(10);
     let foraging_dialog = if query.forage.unwrap_or(false) {
         Some(
             crate::routes::foraging::activity_dialog(
@@ -379,8 +377,8 @@ pub(super) async fn camp(
                 )
             }),
             tactical_insight,
-            road_trial,
-            road_result,
+            active_road_trial,
+            &road_history,
             foraging_dialog,
             Some(&character.name),
         )
@@ -411,7 +409,7 @@ pub(super) async fn resolve_errantry_road_challenge(
             "resolve_errantry_road_challenge",
             &[
                 json!(character_id),
-                json!(form.challenge_id),
+                json!(&form.challenge_id),
                 json!(form.expected_revision),
                 json!(form.choice),
                 json!(form.action_id),
@@ -419,7 +417,7 @@ pub(super) async fn resolve_errantry_road_challenge(
         )
         .await
     {
-        Ok(()) => Redirect::to(&format!("/camp?road_result={}", form.choice)).into_response(),
+        Ok(()) => Redirect::to(&format!("/camp?road_occurrence={}", form.challenge_id)).into_response(),
         Err(error) if error.to_string().contains("stale") => {
             StatusCode::CONFLICT.into_response()
         }

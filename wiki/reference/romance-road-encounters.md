@@ -100,13 +100,16 @@ unknown-kinsman duel, chapel perilous, denounced ravisher, and dammed spring.
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
 cast nature, reviewed goal-neutral Shakespearean prose, choices/results,
-deed/outcome tags, typed requirement/check/effect declarations, material
+deed/outcome tags, typed requirement/check/effect declarations, an optional
+closed transition identifier, material
 rewards/costs, personality development, and optional reward tags. Rust owns
 selection, rolls, checks, all mutation, receipts, and private quest overlays.
 Run `cargo run -p adventuresim-core --bin content-check -- encounters`.
 
-The validator requires ignore plus at least two materially distinct non-ignore
-routes, rejects malformed/dangling/duplicate IDs and bounded values, uses
+The validator requires a consequence-free ignore choice plus at least two
+mechanically distinct non-ignore routes, rejects zero requirements/effects/
+personality changes, repeated personality axes, multiple virtues per choice,
+malformed/dangling/duplicate IDs and bounded values, and uses
 closed skill/religion/attribute/virtue enums, rejects quest-goal/runtime slots
 in generic prose, and requires every line's Shakespearean review marker.
 Supernatural lines additionally require a reviewed-iambic marker. This is an
@@ -114,7 +117,15 @@ editorial inventory, not a claim of automatic meter proof.
 
 Occurrences persist catalog revision/digest, party/journey boundary, movement
 and elapsed coordinates, location, status/revision/choice/deed and exact result.
+Chance occurrence identity includes journey entropy, origin, departure and both
+cursors, so different journeys and travel/rest rolls cannot alias. Travel
+occurrences activate at the exact reached boundary; rest and errantry scenes
+activate only after the bound camp rest.
 Private authority alone records chance-versus-errantry origin and quest binding.
+The gateway exposes only an observer-safe presentation DTO: visible speaker
+name, text and supernatural styling, choice ID/label/availability, and the
+chosen response after resolution. Catalog provenance, review flags, hidden
+effects, personality changes, reward tags and quest bindings never cross it.
 Only after generic effects and personality development may it append a quest
 reward. Rewards are real items, currency, or information; generic boss BPS and
 magical buffs are forbidden. Physical application of finale information is

@@ -824,7 +824,7 @@ pub fn camp_page(
     trial: Option<(&str, &str, ChallengePresenterCatalogId)>,
     tactical_insight: Option<(&str, &str)>,
     road_trial: Option<&BackendRoadChallenge>,
-    road_result: Option<&str>,
+    road_history: &[&BackendRoadChallenge],
     foraging_dialog: Option<Markup>,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -912,21 +912,10 @@ pub fn camp_page(
             @if let Some(road_trial) = road_trial {
                 (generic_road_encounter(road_trial))
             }
-            @if let Some(_result) = road_result {
-                section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation result" {
-                    div class="settlement-chat-layout" {
-                        div class="settlement-chat-conversation" {
-                            div class="settlement-chat-messages" aria-live="polite" {
-                                @if let Some(challenge) = road_trial.or_else(|| road_result.and_then(|_| None)) {
-                                    @if let Some(transcript) = challenge.result_transcript.as_deref() { p { (transcript) } }
-                                    @if let Some(addendum) = challenge.quest_reward_addendum.as_deref() { p class="text-muted" { (addendum) } }
-                                } @else { p { "The encounter hath ended." } }
-                            }
-                        }
-                    }
-                }
+            @for challenge in road_history {
+                (generic_road_encounter(challenge))
             }
-            @if trial.is_none() && road_trial.is_none() && road_result.is_none() {
+            @if trial.is_none() && road_trial.is_none() && road_history.is_empty() {
                 (settlement_chat_area("Camp", active_character))
             }
         }
@@ -977,47 +966,36 @@ fn camp_continue_control(block_reason: Option<&str>) -> Markup {
 }
 
 fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
-    let Ok(definition) = serde_json::from_str::<
-        adventuresim_core::road_encounter_catalog::EncounterDefinition,
-    >(&challenge.projection_json) else {
+    let Ok(presentation) = serde_json::from_str::<
+        adventuresim_core::road_encounter_catalog::EncounterPresentation,
+    >(&challenge.presentation_json) else {
         return html! { p class="encounter-warning" { "This encounter's authored record is unavailable." } };
-    };
-    let speaker_name = |id: &str| {
-        definition
-            .cast
-            .iter()
-            .find(|speaker| speaker.id == id)
-            .map_or("Traveler", |speaker| speaker.name.as_str())
     };
     html! {
         section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation" {
             div class="settlement-chat-layout" { div class="settlement-chat-conversation" {
                 div class="settlement-chat-messages" aria-live="polite" {
-                    @for line in &definition.opening {
-                        p class=(if line.reviewed_iambic_pentameter { "supernatural-spoken-line" } else { "" }) {
-                            strong { (speaker_name(&line.speaker)) ": " } (line.text.as_str())
+                    @for line in &presentation.opening {
+                        p class=(if line.supernatural { "supernatural-spoken-line" } else { "" }) {
+                            strong { (line.speaker_name.as_str()) ": " } (line.text.as_str())
                         }
                     }
                     @if challenge.open {
                         div class="dialogue-actions" {
-                            @for choice in &definition.choices {
+                            @for choice in &presentation.choices {
                                 form action="/camp/errantry-road-challenge" method="post" {
                                     input type="hidden" name="challenge_id" value=(&challenge.id);
                                     input type="hidden" name="expected_revision" value=(challenge.revision);
                                     input type="hidden" name="choice" value=(&choice.id);
                                     input type="hidden" name="action_id" value=(format!("road-choice:{}:{}:{}", challenge.id, challenge.revision, choice.id));
-                                    button type="submit" class="btn btn-primary" { (choice.label.as_str()) }
-                                    @if !choice.requirements.is_empty() { span class="text-muted small-copy" { "Requirements are checked when chosen." } }
+                                    button type="submit" class="btn btn-primary" disabled[!choice.available] { (choice.label.as_str()) }
                                 }
                             }
                         }
                     } @else {
-                        @if let Some(choice) = challenge.resolved_choice.as_deref()
-                            .and_then(|id| definition.choices.iter().find(|choice| choice.id == id)) {
-                            @for line in &choice.response {
-                                p class=(if line.reviewed_iambic_pentameter { "supernatural-spoken-line" } else { "" }) {
-                                    strong { (speaker_name(&line.speaker)) ": " } (line.text.as_str())
-                                }
+                        @for line in &presentation.response {
+                            p class=(if line.supernatural { "supernatural-spoken-line" } else { "" }) {
+                                strong { (line.speaker_name.as_str()) ": " } (line.text.as_str())
                             }
                         }
                         @if let Some(transcript) = challenge.result_transcript.as_deref() { p { (transcript) } }

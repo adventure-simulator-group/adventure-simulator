@@ -95,6 +95,43 @@ pub struct EncounterChoice {
     pub personality: Vec<PersonalityDevelopment>,
     #[serde(default)]
     pub quest_reward_tags: Vec<String>,
+    #[serde(default)]
+    pub transition: Option<EncounterTransition>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum EncounterTransition {
+    Noop,
+    Combat,
+    TravelDelay,
+    NpcState,
+    CaptiveState,
+    Injury,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EncounterPresentation {
+    pub opening: Vec<PresentationLine>,
+    pub choices: Vec<PresentationChoice>,
+    pub response: Vec<PresentationLine>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationLine {
+    pub speaker_name: String,
+    pub text: String,
+    pub supernatural: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationChoice {
+    pub id: String,
+    pub label: String,
+    pub available: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -231,7 +268,10 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
         if !definition.triggers.travel && !definition.triggers.rest {
             return Err(format!("{}: no eligible trigger", definition.id));
         }
-        if definition.cast.is_empty() {
+        if definition.cast.is_empty()
+            && (!definition.opening.is_empty()
+                || definition.choices.iter().any(|choice| !choice.response.is_empty()))
+        {
             return Err(format!("{}: cast is empty", definition.id));
         }
         let mut speakers = BTreeSet::new();
@@ -262,6 +302,20 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
             validate_goal_neutral(&choice.label)?;
             validate_goal_neutral(&choice.result)?;
             validate_lines(&definition.id, &definition.cast, &choice.response)?;
+            for requirement in &choice.requirements {
+                match requirement {
+                    Requirement::Skill { minimum_hours, .. } if *minimum_hours == 0 => {
+                        return Err(format!("{}:{} has a zero skill requirement", definition.id, choice.id));
+                    }
+                    Requirement::Item { item_id, minimum_quantity } => {
+                        validate_id(item_id, "requirement.item_id")?;
+                        if *minimum_quantity == 0 {
+                            return Err(format!("{}:{} has a zero item requirement", definition.id, choice.id));
+                        }
+                    }
+                    _ => {}
+                }
+            }
             for check in &choice.checks {
                 let difficulty = match check {
                     Check::Skill {
@@ -304,12 +358,40 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                     }
                 }
             }
+            let mut axes = BTreeSet::new();
+            let mut virtues = BTreeSet::new();
+            for development in &choice.personality {
+                if development.delta == 0 || development.delta.unsigned_abs() > 10_000 {
+                    return Err(format!("{}:{} has an invalid personality delta", definition.id, choice.id));
+                }
+                if !axes.insert(development.axis) {
+                    return Err(format!("{}:{} repeats a personality axis", definition.id, choice.id));
+                }
+                virtues.insert(development.virtue);
+            }
+            if virtues.len() > 1 {
+                return Err(format!("{}:{} names more than one virtue", definition.id, choice.id));
+            }
+            if !matches!(choice.transition, None | Some(EncounterTransition::Noop)) {
+                return Err(format!("{}:{} uses an unsupported encounter transition", definition.id, choice.id));
+            }
+            if choice.id == "ignore"
+                && (!choice.requirements.is_empty()
+                    || !choice.checks.is_empty()
+                    || !choice.effects.is_empty()
+                    || !choice.personality.is_empty()
+                    || !choice.quest_reward_tags.is_empty()
+                    || !choice.outcome_tags.is_empty())
+            {
+                return Err(format!("{}: ignore choice must be consequence-free", definition.id));
+            }
             if choice.id != "ignore" {
                 material_routes.insert(
                     serde_json::to_string(&(
-                        choice.outcome_tags.as_slice(),
+                        choice.requirements.as_slice(),
+                        choice.checks.as_slice(),
                         choice.effects.as_slice(),
-                        choice.personality.as_slice(),
+                        choice.transition,
                     ))
                     .unwrap(),
                 );
@@ -445,6 +527,27 @@ pub fn definitions() -> &'static [EncounterDefinition] {
 pub fn encounter(id: &str) -> Option<&'static EncounterDefinition> {
     definitions().iter().find(|definition| definition.id == id)
 }
+
+#[cfg(runtime_catalog)]
+pub fn select_quest_eligible(seed: u64, draw: u64) -> Option<&'static EncounterDefinition> {
+    let eligible = definitions()
+        .iter()
+        .filter(|definition| !definition.quest_reward_eligibility.is_empty())
+        .collect::<Vec<_>>();
+    let total = eligible.iter().map(|definition| u64::from(definition.weight)).sum::<u64>();
+    if total == 0 { return None; }
+    let mut mixed = seed
+        ^ draw.wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ 0x726f_6164_7175_6573;
+    mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    let mut roll = (mixed ^ (mixed >> 31)) % total;
+    for definition in eligible {
+        if roll < u64::from(definition.weight) { return Some(definition); }
+        roll -= u64::from(definition.weight);
+    }
+    None
+}
 #[cfg(runtime_catalog)]
 pub fn digest() -> &'static str {
     ROAD_ENCOUNTER_CATALOG_DIGEST
@@ -520,5 +623,31 @@ mod tests {
             validate_item_references(definitions(), |id| id != "captured_black_knight_dispatch")
                 .unwrap_err();
         assert!(error.contains("captured_black_knight_dispatch"));
+    }
+
+    #[test]
+    fn quest_selection_is_deterministic_weighted_and_eligible() {
+        let first = select_quest_eligible(42, 7).unwrap();
+        let second = select_quest_eligible(42, 7).unwrap();
+        assert_eq!(first.id, second.id);
+        assert!(!first.quest_reward_eligibility.is_empty());
+    }
+
+    #[test]
+    fn validator_rejects_dirty_ignore_and_non_mechanical_route_variants() {
+        let mut dirty = definitions()[0].clone();
+        dirty.choices.iter_mut().find(|choice| choice.id == "ignore").unwrap()
+            .personality.push(PersonalityDevelopment { axis: PersonalityAxisId::Nerve, delta: 1, virtue: VirtueId::Courage });
+        assert!(validate_definitions(&[dirty]).unwrap_err().contains("consequence-free"));
+
+        let mut duplicate = definitions()[0].clone();
+        let first = duplicate.choices.iter().position(|choice| choice.id == "aid").unwrap();
+        let second = duplicate.choices.iter().position(|choice| choice.id == "rally").unwrap();
+        duplicate.choices[second].requirements = duplicate.choices[first].requirements.clone();
+        duplicate.choices[second].checks = duplicate.choices[first].checks.clone();
+        duplicate.choices[second].effects = duplicate.choices[first].effects.clone();
+        duplicate.choices[second].transition = duplicate.choices[first].transition;
+        duplicate.choices.retain(|choice| matches!(choice.id.as_str(), "aid" | "rally" | "ignore"));
+        assert!(validate_definitions(&[duplicate]).unwrap_err().contains("materially distinct"));
     }
 }

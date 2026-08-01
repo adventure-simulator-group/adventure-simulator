@@ -340,7 +340,10 @@ fn maybe_interrupt_travel(
     if let Some(narrative) = narrative
         && selection.as_ref().is_none_or(|combat| narrative.boundary_minute <= combat.boundary_minute)
     {
-        return Ok((narrative.boundary_minute.saturating_sub(completed), None, Some(narrative), next_roll));
+        let reached_next_roll = adventuresim_core::encounter::next_combat_roll_after_reached_boundary(
+            narrative.boundary_minute,
+        );
+        return Ok((narrative.boundary_minute.saturating_sub(completed), None, Some(narrative), reached_next_roll));
     }
     let Some(selection) = selection else {
         return Ok((requested_minutes, None, None, next_roll));

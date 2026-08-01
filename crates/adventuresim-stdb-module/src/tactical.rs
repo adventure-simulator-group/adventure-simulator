@@ -596,7 +596,7 @@ pub fn request_tactical_server(
             required_enemy_kills: mission.enemy_count,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
-            countermeasure_multiplier_bps: mission.countermeasure_multiplier_bps,
+            countermeasure_multiplier_bps: 10_000,
             normalized_combat_power: mission.normalized_combat_power,
         });
 
