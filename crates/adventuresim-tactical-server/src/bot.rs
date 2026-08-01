@@ -10,7 +10,7 @@ use crate::{
     MissionState,
     combat::{
         Incapacitated, MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse,
-        TacticalCombatSide,
+        TacticalCombatSide, TacticalCombatantDefeated,
     },
 };
 
@@ -62,12 +62,7 @@ enum OffensiveMeleePhase {
 }
 
 #[derive(Component)]
-pub struct CountedEnemyDeath;
-
-/// Reserved for the future terminal-outcome pipeline. Incapacitation is now
-/// authoritative but is not counted as a mission death in this branch.
-#[derive(Event)]
-pub struct AuthoritativeEnemyDeath(pub Entity);
+pub struct CountedEnemyDefeat;
 
 /// A bot's yet-to-commit reaction to a noticed attack. Ticks down for
 /// [`REACTION_DELAY_SECS`] before becoming a [`PendingDefenderResponse`],
@@ -82,29 +77,25 @@ pub struct BotPlugin;
 
 impl Plugin for BotPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_authoritative_enemy_death)
+        app.add_observer(on_tactical_combatant_defeated)
             .add_observer(on_attack_started)
             .add_observer(on_targeted_attack_started)
             .add_systems(Update, (drive_offensive_melee_ai, tick_bot_reactions));
     }
 }
 
-fn on_authoritative_enemy_death(
-    death: On<AuthoritativeEnemyDeath>,
-    enemies: Query<(), (With<MissionEnemy>, Without<CountedEnemyDeath>)>,
+fn on_tactical_combatant_defeated(
+    defeated: On<TacticalCombatantDefeated>,
+    enemies: Query<(), (With<MissionEnemy>, Without<CountedEnemyDefeat>)>,
     mut commands: Commands,
     mut state: ResMut<MissionState>,
 ) {
-    let entity = death.0;
+    let entity = defeated.0;
     if enemies.get(entity).is_err() {
         return;
     }
-    commands.entity(entity).insert(CountedEnemyDeath);
-    state.enemies_killed = state.enemies_killed.saturating_add(1);
-}
-
-pub fn mission_objective_satisfied(required: u32, killed: u32) -> bool {
-    killed >= required
+    commands.entity(entity).insert(CountedEnemyDefeat);
+    state.enemies_defeated = state.enemies_defeated.saturating_add(1);
 }
 
 /// Predicts whether the nearest opposing AI facing a client attacker notices
@@ -413,12 +404,31 @@ mod tests {
     }
 
     #[test]
-    fn mission_success_requires_the_full_authoritative_objective() {
-        assert!(mission_objective_satisfied(0, 0));
-        assert!(!mission_objective_satisfied(3, 0));
-        assert!(!mission_objective_satisfied(3, 2));
-        assert!(mission_objective_satisfied(3, 3));
-        assert!(mission_objective_satisfied(3, 4));
+    fn enemy_defeat_is_counted_only_once() {
+        let mut app = App::new();
+        app.insert_resource(MissionState {
+            timeout: None,
+            enemies_defeated: 0,
+            required_enemy_defeats: 1,
+            expected_party_members: 1,
+            seen_party_members: Default::default(),
+            enrollment_begun: false,
+            enrollment_sealed: false,
+            abandonment_elapsed: Default::default(),
+            terminal_retry_not_before: Default::default(),
+            pending_resolution: None,
+            committed: false,
+        })
+        .add_observer(on_tactical_combatant_defeated);
+        let enemy = app.world_mut().spawn(MissionEnemy).id();
+
+        app.world_mut().trigger(TacticalCombatantDefeated(enemy));
+        app.update();
+        app.world_mut().trigger(TacticalCombatantDefeated(enemy));
+        app.update();
+
+        assert_eq!(app.world().resource::<MissionState>().enemies_defeated, 1);
+        assert!(app.world().entity(enemy).contains::<CountedEnemyDefeat>());
     }
 
     #[test]
@@ -639,5 +649,32 @@ mod tests {
             );
         }
         assert!(!app.world().resource::<RecordedAttacks>().0.is_empty());
+
+        let party_defeated = app
+            .world()
+            .entity(party)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .incapacitated;
+        let enemy_defeated = app
+            .world()
+            .entity(enemy)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .incapacitated;
+        let resolution = crate::terminal_resolution(crate::TerminalCombatSnapshot {
+            required_enemies: 1,
+            loaded_enemies: 1,
+            defeated_enemies: u32::from(enemy_defeated),
+            loaded_party: 1,
+            incapacitated_party: u32::from(party_defeated),
+            enrollment_sealed: true,
+        });
+        let expected = if party_defeated {
+            Some(crate::TacticalMissionResolution::Failed)
+        } else {
+            Some(crate::TacticalMissionResolution::Defeated)
+        };
+        assert_eq!(resolution, expected);
     }
 }

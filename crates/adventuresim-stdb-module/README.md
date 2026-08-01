@@ -37,8 +37,9 @@ player-identity-to-character ownership model.
 
 ## Tactical completion
 
-Mission requests bind a party, scene, one-use tactical-server claim, and private
-strategic mission authority. The registered tactical child keeps live
+Mission requests bind a party, its expected living member count, a scene, a
+one-use tactical-server claim, and private strategic mission authority. The
+registered tactical child keeps live
 simulation state in memory and calls `end_tactical_server` with its terminal
 resolution.
 

@@ -125,6 +125,7 @@ fn main() {
             let claim_hash = Sha256::digest(claim.as_bytes()).to_vec();
             let mission_id = request.mission_id.clone();
             let scene_key = request.scene_key.clone();
+            let expected_party_members = request.expected_party_members.to_string();
             let required_enemy_kills = request.required_enemy_kills.to_string();
             let enemy_combat_scale_bps = request.enemy_combat_scale_bps.to_string();
             let spawned = spawned_clone.clone();
@@ -148,6 +149,8 @@ fn main() {
                                 &mission_id,
                                 "--scene-key",
                                 &scene_key,
+                                "--expected-party-members",
+                                &expected_party_members,
                                 "--required-enemy-kills",
                                 &required_enemy_kills,
                                 "--enemy-combat-scale-bps",

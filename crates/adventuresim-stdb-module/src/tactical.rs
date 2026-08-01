@@ -50,6 +50,8 @@ pub struct TacticalServerRequest {
     pub scene_key: String,
     pub party_id: String,
     pub requested_by: u64,
+    /// Living strategic party members bound when the mission is requested.
+    pub expected_party_members: u32,
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
@@ -74,6 +76,7 @@ pub struct TacticalServer {
     pub party_id: String,
     pub addr: String,
     pub cert_digest: String,
+    pub expected_party_members: u32,
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
@@ -647,6 +650,12 @@ pub fn request_tactical_server(
         return Err("Tactical mission roster does not match bound mission authority".into());
     }
     log::info!("Tactical server for '{mission_id}' requested");
+    let expected_party_members =
+        u32::try_from(crate::strategic::living_party_member_ids(ctx, &party_id).len())
+            .map_err(|_| "Party is too large for tactical enrollment")?;
+    if expected_party_members == 0 {
+        return Err("A tactical mission requires at least one living party member".into());
+    }
     ctx.db
         .tactical_server_request_authority()
         .insert(TacticalServerRequest {
@@ -655,6 +664,7 @@ pub fn request_tactical_server(
             scene_key,
             party_id,
             requested_by: character_id,
+            expected_party_members,
             required_enemy_kills: mission.enemy_count,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
@@ -722,6 +732,7 @@ pub fn create_tactical_server_for_request(
         request.mission_id,
         request.scene_key,
         request.party_id,
+        request.expected_party_members,
         request.required_enemy_kills,
         request.enemy_difficulty,
         request.enemy_combat_scale_bps,
@@ -743,6 +754,7 @@ fn insert_tactical_server(
     mission_id: String,
     scene_key: String,
     party_id: String,
+    expected_party_members: u32,
     required_enemy_kills: u32,
     enemy_difficulty: i32,
     enemy_combat_scale_bps: u32,
@@ -783,6 +795,7 @@ fn insert_tactical_server(
         party_id,
         addr,
         cert_digest,
+        expected_party_members,
         required_enemy_kills,
         enemy_difficulty,
         enemy_combat_scale_bps,
@@ -967,6 +980,25 @@ mod authority_tests {
         assert!(source.contains(".tactical_server_claim()"));
         assert!(source.contains(".delete(&mission_id)"));
         assert!(!source.contains("pub claim:"));
+    }
+
+    #[test]
+    fn strategic_request_binds_expected_party_members_into_the_server() {
+        let source = include_str!("tactical.rs");
+        for schema in ["TacticalServerRequest", "TacticalServer"] {
+            let body = source
+                .split(&format!("pub struct {schema}"))
+                .nth(1)
+                .and_then(|tail| tail.split('}').next())
+                .expect("schema body");
+            assert!(body.contains("pub expected_party_members: u32"));
+        }
+        let create = source
+            .split("pub fn create_tactical_server_for_request")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Creates a new").next())
+            .expect("create reducer");
+        assert!(create.contains("request.expected_party_members"));
     }
 
     #[test]
