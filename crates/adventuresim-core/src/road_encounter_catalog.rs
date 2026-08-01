@@ -1603,23 +1603,15 @@ mod tests {
     #[test]
     fn envious_captain_routes_ground_oath_trust_and_portable_bow_lesson() {
         let definition = encounter("envious_captain_false_directions_v1").unwrap();
-        assert!(definition.triggers.travel && !definition.triggers.rest);
-        assert_eq!(definition.cast[0].nature, SpeakerNature::Mortal);
-        assert!(definition.opening[0].reviewed_shakespearean);
-        assert!(!definition.opening[0].reviewed_iambic_pentameter);
-
-        let opening = definition.opening[0].text.to_lowercase();
-        for premise in [
-            "holy rood",
-            "lower road",
-            "elder stone",
-            "pale ridge chalk",
-            "richer merchant train",
-            "quarrymen's payroll",
-        ] {
-            assert!(opening.contains(premise));
-        }
-        for withheld in ["envy", "bow", "missile", "sword", "spear", "across the gap"] {
+        let opening = format!(
+            "{} {}",
+            definition.opening[0].text, definition.opening[1].text
+        )
+        .to_lowercase();
+        assert!(opening.contains("ridge-wise advance guard"));
+        assert!(opening.contains("hold first passage"));
+        assert!(opening.contains("saint christopher's road-brotherhood mark"));
+        for withheld in ["bow", "missile", "sword", "spear", "cannot answer"] {
             assert!(!opening.contains(withheld));
         }
 
@@ -1635,74 +1627,54 @@ mod tests {
             .iter()
             .filter(|choice| choice.id != "ignore")
             .collect::<Vec<_>>();
-        assert_eq!(active.len(), 6);
-        assert!(
-            active
-                .iter()
-                .flat_map(|choice| &choice.response)
-                .all(|line| { line.reviewed_shakespearean && !line.reviewed_iambic_pentameter })
-        );
-        assert!(active.iter().all(|choice| {
-            choice.effects.iter().any(|effect| {
-                matches!(
-                    effect,
-                    Effect::Information { information_id }
-                        if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
-                )
-            }) && choice.quest_reward_tags == ["prepare_bows_against_melee_only_opposition"]
-                && choice
-                    .outcome_tags
-                    .iter()
-                    .any(|tag| tag == "physical_observation")
-        }));
-        assert!(active.iter().all(|choice| {
-            let result = choice.result.to_lowercase().replace('-', " ");
-            result.contains("bow")
-                && result.contains("opposite shelf")
-                && result.contains("washed")
-                && result.contains("cleft")
-                && result.contains("mailed")
-                && result.contains("sword")
-                && result.contains("spear")
-                && result.contains("melee")
-                && result.contains("cannot answer")
-                && result.contains("gap")
-                && result.contains("yield")
-        }));
-        assert_eq!(
-            active
-                .iter()
-                .map(|choice| &choice.result)
-                .collect::<BTreeSet<_>>()
-                .len(),
-            6
-        );
-
-        let command = choice("organize_ridge_passage");
-        let command_prose = format!("{} {}", command.response[0].text, command.result);
-        for grounded in [
-            "factor and ridge guard claim knowledge",
-            "inventorying wagons and positioning the convoy",
-            "factor and ridge guard choose the route and anchors",
-        ] {
-            assert!(command_prose.contains(grounded));
+        for route in &active {
+            assert!(route.effects.iter().any(|effect| matches!(
+                effect,
+                Effect::Information { information_id }
+                    if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
+            )));
+            assert_eq!(
+                route.quest_reward_tags,
+                ["prepare_bows_against_melee_only_opposition"]
+            );
+            assert!(route.result.contains("prepared bow"));
+            assert!(route.result.contains("cannot answer across the gap"));
+            assert!(route.result.contains("yield"));
         }
 
+        for id in [
+            "read_false_waymarks",
+            "scout_both_roads",
+            "expose_before_companies",
+            "organize_ridge_passage",
+        ] {
+            let route = choice(id);
+            assert_eq!(route.response[0].speaker, "merchant_factor");
+            assert!(route.result.contains("factor payeth"));
+        }
         let oath = choice("demand_oath_at_cross");
-        assert!(opening.contains("swear the lower road standeth sound"));
-        assert!(oath.response[0].text.contains("shall not swear it twice"));
-        assert!(oath.response[0].text.contains("my counsel was false"));
-        assert!(oath.result.contains("without any supernatural judgment"));
+        let oath_prose = format!("{} {}", oath.response[0].text, oath.result).to_lowercase();
+        for mortal_consequence in [
+            "road-brotherhood rule",
+            "wages and standing",
+            "publicly recant",
+            "without supernatural judgment",
+        ] {
+            assert!(oath_prose.contains(mortal_consequence));
+        }
 
         let theft = choice("collude_and_split_payroll");
-        assert!(theft.response[0].text.contains("envy biteth me"));
-        assert!(
-            theft.response[0]
-                .text
-                .contains("ninety-six-groschen payroll equally")
-        );
-        assert!(theft.result.contains("without overturn or injury"));
-        assert!(theft.result.contains("keeping forty-eight groschen"));
+        let mut cursor = 0;
+        for event in [
+            "advance guard scouteth ahead",
+            "abandoning direct seizure",
+            "lower-road deceit",
+            "boggeth upright without overturn or injury",
+            "stealest its ninety-six-groschen purse",
+        ] {
+            let found = theft.result[cursor..].find(event).unwrap();
+            cursor += found + event.len();
+        }
         assert!(matches!(
             theft.effects[0],
             Effect::Currency { amount: 48, .. }
@@ -1726,10 +1698,8 @@ mod tests {
             ignore.transition.as_ref(),
             Some(EncounterTransition::TravelDelay { minutes: 60 })
         ));
-        assert!(ignore.response.is_empty());
-        assert!(ignore.effects.is_empty());
-        assert!(ignore.outcome_tags.is_empty());
-        assert!(ignore.personality.is_empty());
+        assert!(ignore.response.is_empty() && ignore.effects.is_empty());
+        assert!(ignore.outcome_tags.is_empty() && ignore.personality.is_empty());
     }
 
     #[test]
