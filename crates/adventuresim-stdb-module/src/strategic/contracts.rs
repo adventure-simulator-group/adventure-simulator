@@ -33,6 +33,7 @@ fn record_contract_issuer_interaction(
         .id()
         .find(&contract_id)
         .ok_or("Contract not found")?;
+    contract.parsed_state()?;
     let expected = match stage {
         ContractInteractionStage::Accept => ContractStatus::Offered,
         ContractInteractionStage::Report => ContractStatus::ReadyToReport,
@@ -234,6 +235,7 @@ pub fn accept_contract(
     let Some(mut quest) = ctx.db.contract_authority().id().find(&contract_id) else {
         return Err("Quest not found".into());
     };
+    quest.parsed_state()?;
 
     if quest.status != ContractStatus::Offered {
         return Err("Quest is not available".into());
@@ -354,6 +356,7 @@ pub fn abandon_contract(
     let Some(mut quest) = ctx.db.contract_authority().id().find(&contract_id) else {
         return Err("Quest not found".into());
     };
+    quest.parsed_state()?;
 
     if quest.accepted_by.as_ref() != Some(&party_id) {
         return Err("This quest is not accepted by your party".into());

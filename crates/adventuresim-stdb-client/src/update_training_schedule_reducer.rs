@@ -11,7 +11,6 @@ use super::schedule_allocation_type::ScheduleAllocation;
 pub(super) struct UpdateTrainingScheduleArgs {
     pub character_id: u64,
     pub downtime: ScheduleAllocation,
-    pub travel: ScheduleAllocation,
 }
 
 impl From<UpdateTrainingScheduleArgs> for super::Reducer {
@@ -19,7 +18,6 @@ impl From<UpdateTrainingScheduleArgs> for super::Reducer {
         Self::UpdateTrainingSchedule {
             character_id: args.character_id,
             downtime: args.downtime,
-            travel: args.travel,
         }
     }
 }
@@ -43,9 +41,8 @@ pub trait update_training_schedule {
         &self,
         character_id: u64,
         downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
     ) -> __sdk::Result<()> {
-        self.update_training_schedule_then(character_id, downtime, travel, |_, _| {})
+        self.update_training_schedule_then(character_id, downtime, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `update_training_schedule` to run as soon as possible,
@@ -58,7 +55,6 @@ pub trait update_training_schedule {
         &self,
         character_id: u64,
         downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -73,7 +69,6 @@ impl update_training_schedule for super::RemoteReducers {
         &self,
         character_id: u64,
         downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -85,7 +80,6 @@ impl update_training_schedule for super::RemoteReducers {
             UpdateTrainingScheduleArgs {
                 character_id,
                 downtime,
-                travel,
             },
             callback,
         )

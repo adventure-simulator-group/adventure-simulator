@@ -1454,8 +1454,8 @@ pub(crate) fn ensure_bound_mission_authority(
             let group = ctx
                 .db
                 .hostile_group_authority()
-                .iter()
-                .find(|group| group.case_site_id == case_site.id)
+                .case_site_id_key()
+                .find(&case_site.id.value)
                 .ok_or("Case site has no materialized hostile group")?;
             if group.disposition != HostileGroupDisposition::Active {
                 return Err("Hostile group is already resolved".into());
@@ -1606,6 +1606,7 @@ pub(crate) fn ensure_bound_mission_authority(
         status: MissionAttemptStatus::Bound,
         committed_resolution: None,
         committed_capture_subject_id: None,
+        committed_capture_custody_version: None,
         scene_key: scene_key.to_string(),
         hostile_version: hostile_group.escalation_incident_ordinal,
         enemy_count: hostile_group.enemy_count,

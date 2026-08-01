@@ -150,6 +150,26 @@ pub struct Contract {
     pub paid_at_minute: Option<u64>,
 }
 
+impl Contract {
+    /// Parse the flattened row before lifecycle-sensitive reducer logic uses it.
+    pub fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::ContractState, String> {
+        use adventuresim_core::strategic_state::FlatContractStatus as Flat;
+        let status = match self.status {
+            ContractStatus::Offered => Flat::Offered,
+            ContractStatus::Accepted => Flat::Accepted,
+            ContractStatus::ReadyToReport => Flat::ReadyToReport,
+            ContractStatus::Paid => Flat::Paid,
+            ContractStatus::Withdrawn => Flat::Withdrawn,
+        };
+        adventuresim_core::strategic_state::ContractState::parse(
+            status,
+            self.accepted_by.clone(),
+            self.accepted_at_minute,
+            self.paid_at_minute,
+        ).map_err(|error| error.to_string())
+    }
+}
+
 /// Trusted-gateway projection. This is not a direct player subscription; web
 /// handlers still select only locally surfaced or party-accepted contracts.
 #[derive(Clone, Debug, SpacetimeType)]
@@ -1156,6 +1176,7 @@ pub struct MissionAuthority {
     pub status: MissionAttemptStatus,
     pub committed_resolution: Option<HostileResolutionKind>,
     pub committed_capture_subject_id: Option<String>,
+    pub committed_capture_custody_version: Option<u32>,
     pub scene_key: String,
     /// Immutable combat/loot snapshot captured when this mission binds.
     pub hostile_version: u16,
@@ -1165,6 +1186,21 @@ pub struct MissionAuthority {
     pub normalized_combat_power: u32,
     pub drop_item_id: Option<String>,
     pub drop_quantity: u32,
+}
+
+impl MissionAuthority {
+    /// Parse the flattened storage representation into its valid sum type.
+    pub fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::MissionAttemptState, String> {
+        use adventuresim_core::strategic_state::{FlatMissionState, FlatMissionStatus as Status, FlatResolution as Resolution};
+        adventuresim_core::strategic_state::MissionAttemptState::parse(FlatMissionState {
+            status: match self.status { MissionAttemptStatus::Bound => Status::Bound, MissionAttemptStatus::Committed => Status::Committed, MissionAttemptStatus::Failed => Status::Failed, MissionAttemptStatus::Cancelled => Status::Cancelled },
+            case_site_id: self.case_site_id.as_ref().map(|id| id.value.clone()),
+            hostile_group_id: self.hostile_group_id.clone(),
+            resolution: self.committed_resolution.map(|resolution| match resolution { HostileResolutionKind::Defeated => Resolution::Defeated, HostileResolutionKind::DrivenOff => Resolution::DrivenOff, HostileResolutionKind::Captured => Resolution::Captured, HostileResolutionKind::CaptureTargetKilled => Resolution::CaptureTargetKilled }),
+            subject_id: self.committed_capture_subject_id.clone(),
+            custody_version: self.committed_capture_custody_version,
+        }).map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]

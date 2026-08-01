@@ -210,13 +210,13 @@ pub fn prepare_herbal_remedy(
         .character_skills()
         .character_id()
         .find(character_id)
-        .expect("preflight guaranteed character skills");
+        .ok_or("Character skills disappeared before herbalism training")?;
     let attributes = ctx
         .db
         .character_attributes()
         .character_id()
         .find(character_id)
-        .expect("preflight guaranteed character attributes");
+        .ok_or("Character attributes disappeared before herbalism training")?;
     let gain = apply_direct_training(
         Skill::Herbalism,
         &mut skills.herbalism_hours,

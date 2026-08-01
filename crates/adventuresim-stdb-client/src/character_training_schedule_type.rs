@@ -11,7 +11,6 @@ use super::schedule_allocation_type::ScheduleAllocation;
 pub struct CharacterTrainingSchedule {
     pub character_id: u64,
     pub downtime: ScheduleAllocation,
-    pub travel: ScheduleAllocation,
 }
 
 impl __sdk::InModule for CharacterTrainingSchedule {
@@ -24,7 +23,6 @@ impl __sdk::InModule for CharacterTrainingSchedule {
 pub struct CharacterTrainingScheduleCols {
     pub character_id: __sdk::__query_builder::Col<CharacterTrainingSchedule, u64>,
     pub downtime: __sdk::__query_builder::Col<CharacterTrainingSchedule, ScheduleAllocation>,
-    pub travel: __sdk::__query_builder::Col<CharacterTrainingSchedule, ScheduleAllocation>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterTrainingSchedule {
@@ -33,7 +31,6 @@ impl __sdk::__query_builder::HasCols for CharacterTrainingSchedule {
         CharacterTrainingScheduleCols {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             downtime: __sdk::__query_builder::Col::new(table_name, "downtime"),
-            travel: __sdk::__query_builder::Col::new(table_name, "travel"),
         }
     }
 }

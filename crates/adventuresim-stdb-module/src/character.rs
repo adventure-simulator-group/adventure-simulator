@@ -371,7 +371,7 @@ pub fn transition_character_to_dead(
         ctx,
         character_id,
         strategic_minute,
-    );
+    )?;
     crate::social::prune_invalid_automatic_social_chats(ctx);
     if let Some(party_id) = party_id {
         crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;

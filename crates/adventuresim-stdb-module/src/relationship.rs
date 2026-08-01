@@ -224,6 +224,38 @@ pub struct ExclusiveCommitment {
     pub terminal_reason: Option<CommitmentTerminalReason>,
 }
 
+impl ExclusiveCommitment {
+    fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::CommitmentState, String> {
+        use adventuresim_core::strategic_state::{
+            FlatCommitmentReason as Reason, FlatCommitmentStatus as Flat,
+        };
+        adventuresim_core::strategic_state::CommitmentState::parse(
+            match self.status {
+                CommitmentStatus::Reserved => Flat::Reserved,
+                CommitmentStatus::Fulfilled => Flat::Fulfilled,
+                CommitmentStatus::Cancelled => Flat::Cancelled,
+                CommitmentStatus::Expired => Flat::Expired,
+                CommitmentStatus::Ended => Flat::Ended,
+            },
+            self.effective_minute,
+            self.resolved_minute,
+            self.terminal_reason.map(|reason| match reason {
+                CommitmentTerminalReason::WeddingCompleted => Reason::WeddingCompleted,
+                CommitmentTerminalReason::ParticipantDead => Reason::ParticipantDead,
+                CommitmentTerminalReason::ParticipantUnderage => Reason::ParticipantUnderage,
+                CommitmentTerminalReason::ResidenceUnavailable => Reason::ResidenceUnavailable,
+                CommitmentTerminalReason::CeremonyLocationUnavailable => {
+                    Reason::CeremonyLocationUnavailable
+                }
+                CommitmentTerminalReason::CancelledByParticipant => Reason::CancelledByParticipant,
+                CommitmentTerminalReason::ReservationExpired => Reason::ReservationExpired,
+                CommitmentTerminalReason::MarriageEnded => Reason::MarriageEnded,
+            }),
+        )
+        .map_err(|error| error.to_string())
+    }
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = exclusive_commitment_participant)]
 pub struct ExclusiveCommitmentParticipant {
@@ -266,6 +298,21 @@ pub struct Marriage {
     pub married_minute: u64,
     pub status: MarriageStatus,
     pub resolved_minute: Option<u64>,
+}
+
+impl Marriage {
+    fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::MarriageState, String> {
+        use adventuresim_core::strategic_state::{FlatMarriageStatus as Flat, MarriageState};
+        MarriageState::parse(
+            match self.status {
+                MarriageStatus::Active => Flat::Active,
+                MarriageStatus::Widowed => Flat::Widowed,
+                MarriageStatus::Ended => Flat::Ended,
+            },
+            self.resolved_minute,
+        )
+        .map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -324,6 +371,47 @@ pub struct CourtshipRecord {
     pub next_discovery_day: u64,
     pub resolved_minute: Option<u64>,
     pub terminal_reason: Option<CourtshipTerminalReason>,
+}
+
+impl CourtshipRecord {
+    fn parsed_state(
+        &self,
+    ) -> Result<
+        (
+            adventuresim_core::strategic_state::CourtshipRoute,
+            adventuresim_core::strategic_state::CourtshipState,
+        ),
+        String,
+    > {
+        use adventuresim_core::strategic_state::{
+            FlatCourtshipKind as Kind, FlatCourtshipSecrecyReason as Secrecy,
+            FlatCourtshipStatus as Status, FlatCourtshipTerminalReason as Terminal,
+        };
+        adventuresim_core::strategic_state::parse_courtship(
+            match self.kind {
+                CourtshipKind::Formal => Kind::Formal,
+                CourtshipKind::Informal => Kind::Informal,
+            },
+            self.secrecy_reason.map(|reason| match reason {
+                CourtshipSecrecyReason::FatherDisapproval => Secrecy::FatherDisapproval,
+                CourtshipSecrecyReason::FormalRouteUnavailable => Secrecy::FormalRouteUnavailable,
+            }),
+            self.approved_father_id,
+            self.planned_dowry_amount,
+            match self.status {
+                CourtshipStatus::Active => Status::Active,
+                CourtshipStatus::Exposed => Status::Exposed,
+                CourtshipStatus::Ended => Status::Ended,
+            },
+            self.resolved_minute,
+            self.terminal_reason.map(|reason| match reason {
+                CourtshipTerminalReason::EngagementScheduled => Terminal::EngagementScheduled,
+                CourtshipTerminalReason::EndedByParticipant => Terminal::EndedByParticipant,
+                CourtshipTerminalReason::PartnerUnavailable => Terminal::PartnerUnavailable,
+            }),
+        )
+        .map_err(|error| error.to_string())
+    }
 }
 
 /// Immutable receipt for every attempt, successful or not. The day is in the
@@ -387,6 +475,22 @@ pub struct Pregnancy {
     pub status: PregnancyStatus,
     pub birth_character_id: Option<u64>,
     pub resolved_minute: Option<u64>,
+}
+
+impl Pregnancy {
+    fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::PregnancyState, String> {
+        use adventuresim_core::strategic_state::{FlatPregnancyStatus as Flat, PregnancyState};
+        PregnancyState::parse(
+            match self.status {
+                PregnancyStatus::Active => Flat::Active,
+                PregnancyStatus::Born => Flat::Born,
+                PregnancyStatus::Ended => Flat::Ended,
+            },
+            self.birth_character_id,
+            self.resolved_minute,
+        )
+        .map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -971,9 +1075,10 @@ fn transition_commitment_terminal(
     status: CommitmentStatus,
     reason: CommitmentTerminalReason,
     minute: u64,
-) -> ExclusiveCommitment {
+) -> Result<ExclusiveCommitment, String> {
+    commitment.parsed_state()?;
     if commitment.status != CommitmentStatus::Reserved {
-        return commitment;
+        return Ok(commitment);
     }
     if status != CommitmentStatus::Fulfilled
         && let Some(escrow) = ctx.db.dowry_escrow().commitment_id().find(&commitment.id)
@@ -983,8 +1088,7 @@ fn transition_commitment_terminal(
             escrow.father_id,
             &commitment.ceremony_settlement_id,
             escrow.amount,
-        )
-        .expect("reserved dowry refund was validated when escrowed");
+        )?;
         ctx.db.dowry_escrow().commitment_id().delete(&commitment.id);
     }
     if reason == CommitmentTerminalReason::ParticipantDead {
@@ -1031,7 +1135,7 @@ fn transition_commitment_terminal(
         .id()
         .update(commitment.clone());
     record_commitment_event(ctx, &commitment, status, Some(reason), minute);
-    commitment
+    Ok(commitment)
 }
 
 /// Close relationship state whose subject can no longer reach a future
@@ -1041,7 +1145,7 @@ pub(crate) fn settle_relationship_lifecycle_for_death(
     ctx: &ReducerContext,
     character_id: u64,
     death_minute: u64,
-) {
+) -> Result<(), String> {
     let mut commitments = ctx
         .db
         .exclusive_commitment()
@@ -1062,7 +1166,7 @@ pub(crate) fn settle_relationship_lifecycle_for_death(
             CommitmentStatus::Cancelled,
             CommitmentTerminalReason::ParticipantDead,
             death_minute,
-        );
+        )?;
     }
 
     let mut courtships = ctx
@@ -1077,6 +1181,7 @@ pub(crate) fn settle_relationship_lifecycle_for_death(
         .collect::<Vec<_>>();
     courtships.sort_by(|left, right| left.id.cmp(&right.id));
     for mut courtship in courtships {
+        courtship.parsed_state()?;
         courtship.status = CourtshipStatus::Ended;
         courtship.resolved_minute = Some(death_minute);
         courtship.terminal_reason = Some(CourtshipTerminalReason::PartnerUnavailable);
@@ -1094,6 +1199,7 @@ pub(crate) fn settle_relationship_lifecycle_for_death(
         (left.conceived_minute, left.id.as_str()).cmp(&(right.conceived_minute, right.id.as_str()))
     });
     for mut pregnancy in pregnancies {
+        pregnancy.parsed_state()?;
         pregnancy.status = PregnancyStatus::Ended;
         pregnancy.resolved_minute = Some(death_minute);
         ctx.db.pregnancy().id().update(pregnancy.clone());
@@ -1119,6 +1225,7 @@ pub(crate) fn settle_relationship_lifecycle_for_death(
                 .delete(pregnancy.reserved_child_id);
         }
     }
+    Ok(())
 }
 
 /// Reserve two people now and schedule their marriage a year later.  The
@@ -1217,15 +1324,10 @@ pub fn reserve_wedding(
     };
     let courtship = ctx.db.courtship().id().find(&courtship_id);
     let dowry_escrow = courtship.as_ref().and_then(|courtship| {
-        (courtship.kind == CourtshipKind::Formal
-            && courtship.planned_dowry_amount > 0
-            && courtship.approved_father_id.is_some())
-        .then(|| {
-            (
-                courtship.approved_father_id.unwrap(),
-                courtship.planned_dowry_amount,
-            )
-        })
+        (courtship.kind == CourtshipKind::Formal && courtship.planned_dowry_amount > 0)
+            .then_some(courtship.approved_father_id)
+            .flatten()
+            .map(|father_id| (father_id, courtship.planned_dowry_amount))
     });
     if let Some((father_id, amount)) = dowry_escrow {
         if crate::item::personal_currency_total(ctx, father_id) < u64::from(amount) {
@@ -1550,7 +1652,7 @@ pub fn settle_due_weddings(
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantDead,
                 death_minute,
-            );
+            )?;
             continue;
         }
         // The ceremony is a hard synchronization point. Normal policy or
@@ -1586,7 +1688,7 @@ pub fn settle_due_weddings(
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantDead,
                 effective_minute,
-            );
+            )?;
             continue;
         };
         let Some(second) = ctx.db.character().id().find(commitment.second_character_id) else {
@@ -1596,7 +1698,7 @@ pub fn settle_due_weddings(
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantDead,
                 effective_minute,
-            );
+            )?;
             continue;
         };
         if !character_alive_at(ctx, first.id, effective_minute)
@@ -1608,7 +1710,7 @@ pub fn settle_due_weddings(
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantDead,
                 effective_minute,
-            );
+            )?;
             continue;
         }
         if effective_age_years(ctx, first.id, effective_minute).unwrap_or(first.age_years)
@@ -1622,7 +1724,7 @@ pub fn settle_due_weddings(
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ParticipantUnderage,
                 effective_minute,
-            );
+            )?;
             continue;
         }
         // Scheduling reserves attendance in the ceremony settlement. Resolve
@@ -1657,7 +1759,7 @@ pub fn settle_due_weddings(
                 CommitmentStatus::Cancelled,
                 CommitmentTerminalReason::ResidenceUnavailable,
                 effective_minute,
-            );
+            )?;
             continue;
         };
         let courtship_id = format!(
@@ -1721,8 +1823,7 @@ pub fn settle_due_weddings(
                 recipient_id,
                 &commitment.ceremony_settlement_id,
                 amount,
-            )
-            .expect("dowry currency was validated when escrowed");
+            )?;
             ctx.db.dowry_escrow().commitment_id().delete(&commitment.id);
         }
         let household_id = format!("household:{}", commitment.id);
@@ -1816,7 +1917,7 @@ pub fn settle_due_weddings(
             CommitmentStatus::Fulfilled,
             CommitmentTerminalReason::WeddingCompleted,
             effective_minute,
-        );
+        )?;
     }
     Ok(())
 }
@@ -2545,6 +2646,7 @@ fn household_id_at(ctx: &ReducerContext, character_id: u64, minute: u64) -> Opti
 }
 
 fn validate_due_birth(ctx: &ReducerContext, pregnancy: &Pregnancy) -> Result<(), String> {
+    pregnancy.parsed_state()?;
     if pregnancy.status != PregnancyStatus::Active {
         return Err("Pregnancy is not active".into());
     }
@@ -2788,7 +2890,7 @@ pub fn settle_due_lifecycle_events_global(
                             CommitmentStatus::Cancelled,
                             CommitmentTerminalReason::ResidenceUnavailable,
                             effective_minute,
-                        );
+                        )?;
                     }
                     record_lifecycle_failure(
                         ctx,
@@ -3452,6 +3554,7 @@ fn establish_courtship(
     let (first_character_id, second_character_id) = canonical_pair(suitor_id, partner_id);
     let id = format!("courtship:{first_character_id}:{second_character_id}");
     if let Some(existing) = ctx.db.courtship().id().find(&id) {
+        existing.parsed_state()?;
         return match (existing.status, existing.kind == kind) {
             (CourtshipStatus::Active | CourtshipStatus::Exposed, true) => Ok(()),
             (CourtshipStatus::Active | CourtshipStatus::Exposed, false) => {
@@ -3905,6 +4008,7 @@ pub fn cancel_wedding(
         .id()
         .find(&commitment_id)
         .ok_or("Commitment not found")?;
+    commitment.parsed_state()?;
     if actor_id != commitment.first_character_id && actor_id != commitment.second_character_id {
         return Err("Only a participant can cancel this wedding".into());
     }
@@ -3923,7 +4027,7 @@ pub fn cancel_wedding(
         CommitmentStatus::Cancelled,
         CommitmentTerminalReason::CancelledByParticipant,
         minute,
-    );
+    )?;
     Ok(())
 }
 
@@ -3940,13 +4044,14 @@ pub fn expire_wedding_reservation(
         .id()
         .find(&commitment_id.to_owned())
         .ok_or("Commitment not found")?;
+    commitment.parsed_state()?;
     transition_commitment_terminal(
         ctx,
         commitment,
         CommitmentStatus::Expired,
         CommitmentTerminalReason::ReservationExpired,
         minute,
-    );
+    )?;
     Ok(())
 }
 
@@ -4033,6 +4138,7 @@ pub fn end_marriage(
         .id()
         .find(&marriage_id)
         .ok_or("Marriage not found")?;
+    marriage.parsed_state()?;
     if actor_id != marriage.first_character_id && actor_id != marriage.second_character_id {
         return Err("Only a spouse can end this marriage".into());
     }

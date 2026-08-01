@@ -337,7 +337,8 @@ pub fn answer_dialogue_prompt(
         id,
         prompt_row_id: prompt_row_id.clone(),
         character_id,
-        choice_ids_json: serde_json::to_string(&chosen).unwrap(),
+        choice_ids_json: serde_json::to_string(&chosen)
+            .map_err(|_| "Could not encode dialogue answer")?,
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
     });
     let answer_count = ctx
@@ -486,7 +487,8 @@ pub fn answer_dialogue_prompt(
         }
         let mut prompt = prompt;
         prompt.state = "resolved".into();
-        prompt.resolved_choice_ids_json = serde_json::to_string(&winning).unwrap();
+        prompt.resolved_choice_ids_json = serde_json::to_string(&winning)
+            .map_err(|_| "Could not encode resolved dialogue answer")?;
         ctx.db.dialogue_prompt().id().update(prompt);
     }
     session.revision += 1;

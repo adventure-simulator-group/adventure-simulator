@@ -9,7 +9,7 @@ use adventuresim_core::strategic_time::{
     epoch_micros_for_official_minute, official_minutes as calculate_official_minutes,
 };
 use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
-use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
@@ -55,17 +55,6 @@ pub struct WorldClock {
     pub id: u64,
     pub official_minutes: u64,
     pub epoch_micros: i64,
-}
-
-/// Legacy scheduler row retained so existing databases can migrate without
-/// dropping a table. New clocks are derived on demand and no longer schedule
-/// a write every second.
-#[derive(Clone, Debug)]
-#[table(accessor = world_clock_schedule, scheduled(refresh_world_clock))]
-pub struct WorldClockSchedule {
-    #[primary_key]
-    pub scheduled_id: u64,
-    pub scheduled_at: ScheduleAt,
 }
 
 #[derive(Clone, Debug)]
@@ -129,16 +118,13 @@ pub enum ImmediateActivity {
     Raiding,
 }
 
-/// Daily settlement plan. The empty travel allocation is retained temporarily
-/// for database/client compatibility; travel never applies it.
+/// Daily settlement plan. Strategic travel never trains scheduled skills.
 #[derive(Clone, Debug)]
 #[table(accessor = character_training_schedule)]
 pub struct CharacterTrainingSchedule {
     #[primary_key]
     pub character_id: u64,
     pub downtime: ScheduleAllocation,
-    /// Legacy compatibility field. Reducers keep this empty and travel ignores it.
-    pub travel: ScheduleAllocation,
 }
 
 impl ScheduleAllocation {
@@ -155,22 +141,6 @@ impl ScheduleAllocation {
             self.profession_practice_minutes,
             self.reading_minutes,
         ])
-    }
-
-    fn uses_quarter_hours(&self) -> bool {
-        let values = vec![
-            self.labor_minutes,
-            self.prayer_minutes,
-            self.thievery_minutes,
-            self.raiding_minutes,
-            self.combat_training_minutes,
-            self.carousing_minutes,
-            self.socializing_minutes,
-            self.apprenticeship_minutes,
-            self.profession_practice_minutes,
-            self.reading_minutes,
-        ];
-        values.into_iter().all(|minutes| minutes % 15 == 0)
     }
 }
 
@@ -427,21 +397,6 @@ pub fn sync_development_clock_to_character(
             }
         }
     }
-    Ok(())
-}
-
-#[reducer]
-fn refresh_world_clock(ctx: &ReducerContext, schedule: WorldClockSchedule) -> Result<(), String> {
-    if ctx.sender() != ctx.database_identity() {
-        return Err("World clock may only be refreshed by its scheduler".into());
-    }
-    // Remove scheduler rows created by older module versions. The authoritative
-    // value is calculated from `epoch_micros` whenever an action needs it, and
-    // browsers advance their initial snapshot locally.
-    ctx.db
-        .world_clock_schedule()
-        .scheduled_id()
-        .delete(schedule.scheduled_id);
     Ok(())
 }
 
@@ -1058,7 +1013,6 @@ fn default_schedule(character_id: u64) -> CharacterTrainingSchedule {
     CharacterTrainingSchedule {
         character_id,
         downtime: ScheduleAllocation::default(),
-        travel: ScheduleAllocation::default(),
     }
 }
 
@@ -1202,13 +1156,13 @@ fn apply_training(
     schedule: &ScheduleAllocation,
     elapsed: u64,
     activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
-) -> f32 {
+) -> Result<f32, String> {
     let attributes = ctx
         .db
         .character_attributes()
         .character_id()
         .find(character_id)
-        .expect("character attributes must exist while training");
+        .ok_or("Character attributes not found while applying training")?;
     let mut hours = SkillHours {
         polearm: skills.polearm_hours,
         axe: skills.axe_hours,
@@ -1387,9 +1341,9 @@ fn apply_training(
     if schedule.reading_minutes > 0 {
         let reading_hours =
             elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(schedule.reading_minutes) / 60.0;
-        excess += apply_reading_training(ctx, character_id, skills, reading_hours, &attributes);
+        excess += apply_reading_training(ctx, character_id, skills, reading_hours, &attributes)?;
     }
-    excess
+    Ok(excess)
 }
 
 fn total_socializing_receipt_minutes(ctx: &ReducerContext, actor_id: u64) -> u64 {
@@ -1496,31 +1450,32 @@ fn apply_selected_book(
     book: &adventuresim_core::item_catalog_schema::Book,
     real_hours: f32,
     attributes: &CharacterAttributes,
-) -> adventuresim_core::book::BoundedBookGain {
+) -> Result<adventuresim_core::book::BoundedBookGain, String> {
     use adventuresim_core::item_catalog_schema::BookTarget;
     let medium_rank = adventuresim_core::book::written_rank(
         skills.written_languages.effective(book.medium),
         attributes.intelligence,
     );
-    let Some((rank, aptitude)) = target_snapshot(skills, &book.target, attributes) else {
-        return Default::default();
-    };
+    let (rank, aptitude) = target_snapshot(skills, &book.target, attributes)
+        .ok_or("Book catalog contains an unsupported training target")?;
     let (lower, upper) = adventuresim_core::book::rank_band(book);
     match &book.target {
-        BookTarget::Written { language } => adventuresim_core::book::apply_written_book_training(
-            &mut skills.written_languages,
-            book.medium,
-            *language,
-            rank,
-            attributes.intelligence,
-            lower,
-            upper,
-            real_hours,
-        ),
+        BookTarget::Written { language } => {
+            Ok(adventuresim_core::book::apply_written_book_training(
+                &mut skills.written_languages,
+                book.medium,
+                *language,
+                rank,
+                attributes.intelligence,
+                lower,
+                upper,
+                real_hours,
+            ))
+        }
         BookTarget::Religion { religion } => {
             let baseline = skills.religion_hours;
             let direct = skills.religion_hours.direct_mut(*religion);
-            adventuresim_core::book::apply_bounded_book_training(
+            Ok(adventuresim_core::book::apply_bounded_book_training(
                 direct,
                 rank,
                 aptitude,
@@ -1534,12 +1489,12 @@ fn apply_selected_book(
                     *projected.direct_mut(*religion) = candidate;
                     projected.effective(*religion)
                 },
-            )
+            ))
         }
         BookTarget::Bestiary { category } => {
             let baseline = skills.bestiary_hours;
             let direct = skills.bestiary_hours.direct_mut(*category);
-            adventuresim_core::book::apply_bounded_book_training(
+            Ok(adventuresim_core::book::apply_bounded_book_training(
                 direct,
                 rank,
                 aptitude,
@@ -1553,10 +1508,11 @@ fn apply_selected_book(
                     *projected.direct_mut(*category) = candidate;
                     projected.effective(*category)
                 },
-            )
+            ))
         }
         BookTarget::Terrain { terrain } => {
-            let skill = terrain_book_skill(terrain).expect("validated terrain book");
+            let skill = terrain_book_skill(terrain)
+                .ok_or("Book catalog contains an unsupported terrain target")?;
             let transferred = skill
                 .ordinary_correlations()
                 .iter()
@@ -1565,7 +1521,7 @@ fn apply_selected_book(
                 })
                 .sum::<f32>()
                 .max(0.0);
-            adventuresim_core::book::apply_bounded_book_training(
+            Ok(adventuresim_core::book::apply_bounded_book_training(
                 direct_skill_hours_mut(skills, skill),
                 rank,
                 aptitude,
@@ -1575,11 +1531,11 @@ fn apply_selected_book(
                 medium_rank,
                 |rank| skill.hours_for_rank(rank),
                 |candidate| candidate.max(0.0) + transferred,
-            )
+            ))
         }
         BookTarget::Skill { .. } => {
             let skill = adventuresim_core::book::ordinary_skill(&book.target)
-                .expect("validated ordinary book target");
+                .ok_or("Book catalog contains an unsupported skill target")?;
             let transferred = skill
                 .ordinary_correlations()
                 .iter()
@@ -1588,7 +1544,7 @@ fn apply_selected_book(
                 })
                 .sum::<f32>()
                 .max(0.0);
-            adventuresim_core::book::apply_bounded_book_training(
+            Ok(adventuresim_core::book::apply_bounded_book_training(
                 direct_skill_hours_mut(skills, skill),
                 rank,
                 aptitude,
@@ -1607,7 +1563,7 @@ fn apply_selected_book(
                         candidate + transferred
                     }
                 },
-            )
+            ))
         }
     }
 }
@@ -1618,12 +1574,15 @@ fn apply_reading_training(
     skills: &mut CharacterSkills,
     mut real_hours: f32,
     attributes: &CharacterAttributes,
-) -> f32 {
+) -> Result<f32, String> {
     use crate::item::inventory_item;
     use adventuresim_core::book::{BookCandidate, select_candidate};
-    let Some(character) = ctx.db.character().id().find(character_id) else {
-        return 0.0;
-    };
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character disappeared while applying reading training")?;
     let personal = ctx
         .db
         .inventory_item()
@@ -1682,7 +1641,7 @@ fn apply_reading_training(
         }) else {
             break;
         };
-        let gain = apply_selected_book(skills, selected.book, real_hours, attributes);
+        let gain = apply_selected_book(skills, selected.book, real_hours, attributes)?;
         if gain.accepted_effective_hours <= 0.0 {
             unusable.insert(selected.item_id.to_owned());
             continue;
@@ -1693,7 +1652,7 @@ fn apply_reading_training(
         }
         real_hours = gain.unused_real_hours;
     }
-    excess
+    Ok(excess)
 }
 
 pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
@@ -2049,7 +2008,7 @@ pub fn perform_immediate_activity(
         &effective_schedule,
         MINUTES_PER_DAY,
         profile,
-    );
+    )?;
     crate::condition::record_mastery_training_morale(
         ctx,
         character_id,
@@ -2378,7 +2337,7 @@ fn require_settlement_rest_service(
     };
     let service =
         required_settlement_rest_service(SettlementDowntimeAccess::PublicService { at_inn })
-            .expect("public settlement rest always names a service");
+            .ok_or("Public settlement rest has no configured service")?;
     if action_service_available(profile, service) {
         Ok(())
     } else {
@@ -2637,7 +2596,7 @@ fn rest_for_minutes(
             &effective_schedule,
             training_elapsed,
             activities,
-        );
+        )?;
         if let Some((_, language, coefficient)) = conversation_choice {
             excess += apply_oral_language_training(
                 ctx,
@@ -2916,7 +2875,7 @@ fn advance_personal_camp_time(
             .find(member_id)
             .ok_or("Character skill record not found")?;
         let activities = activity_training_profile(ctx, member_id)?;
-        let excess = apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
+        let excess = apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities)?;
         crate::condition::record_mastery_training_morale(ctx, member_id, downtime, excess);
         ctx.db.character_skills().character_id().update(skills);
         crate::condition::apply_settlement_leisure_condition(
@@ -3225,7 +3184,7 @@ pub fn rest_at_camp(
                 .ok_or("Character skill record not found")?;
             let activities = activity_training_profile(ctx, member_id)?;
             let mut excess =
-                apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
+                apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities)?;
             if let Some((language, coefficient)) = language_choices.get(&member_id) {
                 excess += apply_oral_language_training(
                     ctx,
@@ -3279,11 +3238,11 @@ pub fn rest_at_camp(
             .party_journey_encounter_authority()
             .party_id()
             .update(authority);
-        if reached {
+        if reached && let Some(narrative) = pending_narrative.as_ref() {
             crate::strategic::materialize_chance_narrative_encounter(
                 ctx,
                 &party_id,
-                pending_narrative.as_ref().unwrap(),
+                narrative,
                 crate::strategic::NarrativeEncounterOrigin::ChanceRest,
             )?;
         }
@@ -3490,7 +3449,7 @@ pub(crate) fn advance_stationary_character_to(
         &realized_training_schedule,
         training_elapsed,
         activities,
-    );
+    )?;
     crate::condition::record_mastery_training_morale(ctx, character_id, training_elapsed, excess);
     ctx.db.character_skills().character_id().update(skills);
     let risks = apply_activity_outcomes(
@@ -3565,24 +3524,65 @@ pub fn update_training_schedule(
     ctx: &ReducerContext,
     character_id: u64,
     downtime: ScheduleAllocation,
-    _travel: ScheduleAllocation,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if synchronize_character(ctx, character_id)? {
         return Ok(());
     }
+    let plan = adventuresim_core::strategic_schedule::validate_daily_allocation(
+        [
+            downtime.labor_minutes,
+            downtime.prayer_minutes,
+            downtime.thievery_minutes,
+            downtime.raiding_minutes,
+            downtime.combat_training_minutes,
+            downtime.carousing_minutes,
+            downtime.socializing_minutes,
+            downtime.apprenticeship_minutes,
+            downtime.profession_practice_minutes,
+            downtime.reading_minutes,
+        ],
+        (
+            downtime.apprenticeship_minutes,
+            downtime.apprenticeship_organization_id.clone(),
+        ),
+        (
+            downtime.profession_practice_minutes,
+            downtime.practice_organization_id.clone(),
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    let [
+        labor,
+        prayer,
+        thievery,
+        raiding,
+        combat_training,
+        carousing,
+        socializing,
+        _,
+        _,
+        reading,
+    ] = plan.activities;
+    let downtime = ScheduleAllocation {
+        reading_minutes: reading.get(),
+        combat_training_minutes: combat_training.get(),
+        carousing_minutes: carousing.get(),
+        socializing_minutes: socializing.get(),
+        apprenticeship_minutes: plan.apprenticeship.minutes(),
+        apprenticeship_organization_id: plan.apprenticeship.organization_id(),
+        profession_practice_minutes: plan.practice.minutes(),
+        practice_organization_id: plan.practice.organization_id(),
+        labor_minutes: labor.get(),
+        prayer_minutes: prayer.get(),
+        thievery_minutes: thievery.get(),
+        raiding_minutes: raiding.get(),
+    };
     let schedule = CharacterTrainingSchedule {
         character_id,
         downtime,
-        travel: ScheduleAllocation::default(),
     };
-    if schedule.downtime.allocated_minutes() > MINUTES_PER_DAY {
-        return Err("The downtime plan must fit within 24 hours".into());
-    }
-    if !schedule.downtime.uses_quarter_hours() {
-        return Err("Schedule allocations must use 15-minute increments".into());
-    }
     validate_organization_schedule(ctx, character_id, &schedule.downtime)?;
     ctx.db
         .character_training_schedule()

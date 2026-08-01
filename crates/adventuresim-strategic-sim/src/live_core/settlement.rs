@@ -625,7 +625,6 @@ impl LiveRunner {
             .update_training_schedule_then(
                 character_id,
                 schedule.clone(),
-                medical_rest_schedule(),
                 cb
             ));
         self.call(result)?;
@@ -655,7 +654,6 @@ impl LiveRunner {
             .update_training_schedule_then(
                 character_id,
                 schedule.clone(),
-                medical_rest_schedule(),
                 cb
             ));
         self.call(result)?;
@@ -692,7 +690,6 @@ impl LiveRunner {
                 .update_training_schedule_then(
                     character_id,
                     schedule.clone(),
-                    medical_rest_schedule(),
                     cb
                 ));
             self.call(result)?;
