@@ -158,6 +158,98 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
 }
 
 #[test]
+fn narrative_encounter_policy_uses_the_first_available_public_choice() {
+    let presentation = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+        opening: Vec::new(),
+        choices: vec![
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "authored-unavailable".into(),
+                label: "Unavailable".into(),
+                available: false,
+            },
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "authored-first".into(),
+                label: "First".into(),
+                available: true,
+            },
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "authored-second".into(),
+                label: "Second".into(),
+                available: true,
+            },
+        ],
+        response: Vec::new(),
+    };
+    let json = serde_json::to_string(&presentation).unwrap();
+    assert_eq!(
+        select_public_narrative_encounter_choice(&json).unwrap(),
+        Some("authored-first".into())
+    );
+
+    let no_available = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+        opening: Vec::new(),
+        choices: presentation
+            .choices
+            .into_iter()
+            .map(|mut choice| {
+                choice.available = false;
+                choice
+            })
+            .collect(),
+        response: Vec::new(),
+    };
+    assert_eq!(
+        select_public_narrative_encounter_choice(&serde_json::to_string(&no_available).unwrap())
+            .unwrap(),
+        None
+    );
+    assert!(select_public_narrative_encounter_choice("not-json").is_err());
+}
+
+#[test]
+fn travel_subscribes_resolves_and_rechecks_public_narrative_interruptions() {
+    let source = LIVE_CORE_SOURCE;
+    let subscription = source
+        .split("fn run_core_loop_inner")
+        .nth(1)
+        .and_then(|tail| tail.split("connection.run_threaded()").next())
+        .expect("live subscription");
+    assert!(subscription.contains("query.from.backend_road_challenges()"));
+
+    let travel = source
+        .split("fn travel_camps")
+        .nth(1)
+        .and_then(|tail| tail.split("fn continue_public_active_journey").next())
+        .expect("travel camp driver");
+    let narrative = travel
+        .find("active_public_narrative_challenge(party.leader_id)")
+        .expect("loop-top narrative interruption");
+    let combat = travel
+        .find("let pending_encounter")
+        .expect("combat interruption");
+    assert!(narrative < combat);
+    assert!(travel.contains(".resolve_errantry_road_challenge_then("));
+    assert!(travel.contains("narrative_encounter_has_no_available_public_choice"));
+    assert!(travel.contains("continue;"));
+
+    let post_rest = travel
+        .split("phase=post_rest")
+        .nth(1)
+        .and_then(|tail| tail.split("phase=post_continue").next())
+        .expect("post-rest continuation boundary");
+    let completed_camp = post_rest
+        .find("self.metrics.camp_stops")
+        .expect("completed camp accounting");
+    let interruption = post_rest
+        .find("party_has_public_travel_interruption")
+        .expect("post-rest public interruption recheck");
+    let continuation = post_rest
+        .find(".continue_camp_travel_then(")
+        .expect("post-rest continuation");
+    assert!(completed_camp < interruption && interruption < continuation);
+}
+
+#[test]
 fn between_camp_movement_is_validated_and_continues_until_a_recovery_boundary() {
     assert_eq!(
         classify_public_journey_camp_state(0),

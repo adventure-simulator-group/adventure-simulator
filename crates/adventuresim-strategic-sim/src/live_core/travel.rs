@@ -845,12 +845,117 @@ impl LiveRunner {
             .any(|row| row.party_id == party_id && row.status == "awaiting_choice")
     }
 
+    pub(super) fn active_public_narrative_challenge(
+        &self,
+        leader_id: u64,
+    ) -> Option<BackendRoadChallenge> {
+        let mut challenges = self
+            .connection
+            .db
+            .backend_road_challenges()
+            .iter()
+            .filter(|row| row.owner_character_id == leader_id && row.open && row.active)
+            .collect::<Vec<_>>();
+        challenges.sort_by(|left, right| {
+            left.absolute_minute
+                .cmp(&right.absolute_minute)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        challenges.into_iter().next()
+    }
+
+    pub(super) fn party_has_public_travel_interruption(
+        &self,
+        party_id: &str,
+        leader_id: u64,
+    ) -> bool {
+        self.party_has_unresolved_public_encounter(party_id)
+            || self.active_public_narrative_challenge(leader_id).is_some()
+    }
+
     pub(super) fn travel_camps(&mut self, party_id: &str) -> Result<JourneyTravelOutcome, String> {
         for _ in 0..MAX_CAMPS_PER_LEG {
             let party = self.party_by_id(party_id)?;
             if party.camp_destination.is_none() {
                 self.metrics.travel_legs += 1;
                 return Ok(JourneyTravelOutcome::Completed);
+            }
+            if let Some(challenge) = self.active_public_narrative_challenge(party.leader_id) {
+                let Some((leader_id, leader_agent)) = self.current_leader(party_id) else {
+                    return self.record_journey_hold(
+                        party_id,
+                        "journey_narrative_encounter",
+                        "narrative_encounter_has_no_actionable_leader",
+                    );
+                };
+                let choice = match select_public_narrative_encounter_choice(
+                    &challenge.presentation_json,
+                ) {
+                    Ok(Some(choice)) => choice,
+                    Ok(None) => {
+                        self.event(
+                            leader_agent,
+                            CoreLoopEventKind::Encounter,
+                            format!(
+                                "kind=narrative;id={};revision={};status=held_no_available_choice",
+                                bounded_event_field(&challenge.id),
+                                challenge.revision,
+                            ),
+                        );
+                        return self.record_journey_hold(
+                            party_id,
+                            "journey_narrative_encounter",
+                            "narrative_encounter_has_no_available_public_choice",
+                        );
+                    }
+                    Err(_) => {
+                        self.event(
+                            leader_agent,
+                            CoreLoopEventKind::Encounter,
+                            format!(
+                                "kind=narrative;id={};revision={};status=held_invalid_public_presentation",
+                                bounded_event_field(&challenge.id),
+                                challenge.revision,
+                            ),
+                        );
+                        return self.record_journey_hold(
+                            party_id,
+                            "journey_narrative_encounter",
+                            "narrative_encounter_public_presentation_invalid",
+                        );
+                    }
+                };
+                let action_id = format!(
+                    "sim-road-{}-r{}",
+                    blake3::hash(challenge.id.as_bytes()).to_hex(),
+                    challenge.revision,
+                );
+                let challenge_id = challenge.id.clone();
+                let revision = challenge.revision;
+                let result = reducer_call!(self, "resolve_errantry_road_challenge", |cb| self
+                    .connection
+                    .reducers
+                    .resolve_errantry_road_challenge_then(
+                        leader_id,
+                        challenge_id.clone(),
+                        revision,
+                        choice.clone(),
+                        action_id.clone(),
+                        cb,
+                    ));
+                self.call(result)?;
+                self.observe_deaths();
+                self.metrics.encounters = self.metrics.encounters.saturating_add(1);
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::Encounter,
+                    format!(
+                        "kind=narrative;id={};revision={revision};choice={};status=resolved",
+                        bounded_event_field(&challenge_id),
+                        bounded_event_field(&choice),
+                    ),
+                );
+                continue;
             }
             let remaining_before = party.camp_remaining_minutes;
             let Some((travel_actor, travel_agent, _)) = self.expedition_recovery_actor(party_id)
@@ -1148,6 +1253,10 @@ impl LiveRunner {
                     after_rest_party.camp_remaining_minutes,
                 ),
             );
+            self.metrics.camp_stops = self.metrics.camp_stops.saturating_add(1);
+            if self.party_has_public_travel_interruption(party_id, after_rest_party.leader_id) {
+                continue;
+            }
             let evacuation_leg = matches!(
                 after_rest_party.camp_destination,
                 Some(JourneyEndpoint::Settlement(_))
@@ -1173,7 +1282,6 @@ impl LiveRunner {
                 .continue_camp_travel_then(continue_actor, cb));
             self.call(result)?;
             self.observe_deaths();
-            self.metrics.camp_stops += 1;
             self.event(
                 agent,
                 CoreLoopEventKind::Camp,

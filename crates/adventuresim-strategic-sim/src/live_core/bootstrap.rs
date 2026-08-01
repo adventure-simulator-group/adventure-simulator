@@ -228,6 +228,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.party_member())
         .add_query(|query| query.from.party_stake())
         .add_query(|query| query.from.backend_contracts())
+        .add_query(|query| query.from.backend_road_challenges())
         .add_query(|query| query.from.backend_settlement_residents())
         .add_query(|query| query.from.strategic_encounter())
         .add_query(|query| query.from.repair_order())

@@ -44,6 +44,7 @@ use adventuresim_stdb_client::{
     backend_investigation_leads_table::BackendInvestigationLeadsTableAccess,
     backend_local_problem_trade_effects_table::BackendLocalProblemTradeEffectsTableAccess,
     backend_physiology_charts_table::BackendPhysiologyChartsTableAccess,
+    backend_road_challenges_table::BackendRoadChallengesTableAccess,
     backend_settlement_residents_table::BackendSettlementResidentsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -76,6 +77,7 @@ use adventuresim_stdb_client::{
     register_strategic_gateway_reducer::register_strategic_gateway,
     repair_order_table::RepairOrderTableAccess, report_contract_reducer::report_contract,
     request_general_party_join_reducer::request_general_party_join,
+    resolve_errantry_road_challenge_reducer::resolve_errantry_road_challenge,
     resolve_strategic_encounter_reducer::resolve_strategic_encounter,
     rest_at_camp_reducer::rest_at_camp, rest_at_settlement_hours_reducer::rest_at_settlement_hours,
     retrieve_repaired_item_reducer::retrieve_repaired_item,
@@ -1613,6 +1615,18 @@ fn select_expedition_encounter_choice(
         choice: "attack".into(),
         reason: "no_protective_response_available",
     })
+}
+
+fn select_public_narrative_encounter_choice(
+    presentation_json: &str,
+) -> Result<Option<String>, serde_json::Error> {
+    let presentation: adventuresim_core::road_encounter_catalog::EncounterPresentation =
+        serde_json::from_str(presentation_json)?;
+    Ok(presentation
+        .choices
+        .into_iter()
+        .find(|choice| choice.available)
+        .map(|choice| choice.id))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
