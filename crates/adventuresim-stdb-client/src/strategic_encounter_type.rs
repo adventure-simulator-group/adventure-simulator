@@ -24,6 +24,7 @@ pub struct StrategicEncounter {
     pub enemy_aware: bool,
     pub available_choices: Vec<String>,
     pub status: String,
+    pub revision: u32,
     pub selected_choice: Option<String>,
     pub selection_explanation: String,
     pub party_speed_m_per_minute: u32,
@@ -57,6 +58,7 @@ pub struct StrategicEncounterCols {
     pub enemy_aware: __sdk::__query_builder::Col<StrategicEncounter, bool>,
     pub available_choices: __sdk::__query_builder::Col<StrategicEncounter, Vec<String>>,
     pub status: __sdk::__query_builder::Col<StrategicEncounter, String>,
+    pub revision: __sdk::__query_builder::Col<StrategicEncounter, u32>,
     pub selected_choice: __sdk::__query_builder::Col<StrategicEncounter, Option<String>>,
     pub selection_explanation: __sdk::__query_builder::Col<StrategicEncounter, String>,
     pub party_speed_m_per_minute: __sdk::__query_builder::Col<StrategicEncounter, u32>,
@@ -92,6 +94,7 @@ impl __sdk::__query_builder::HasCols for StrategicEncounter {
             enemy_aware: __sdk::__query_builder::Col::new(table_name, "enemy_aware"),
             available_choices: __sdk::__query_builder::Col::new(table_name, "available_choices"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
+            revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             selected_choice: __sdk::__query_builder::Col::new(table_name, "selected_choice"),
             selection_explanation: __sdk::__query_builder::Col::new(
                 table_name,

@@ -99,15 +99,81 @@ pub struct EncounterChoice {
     pub transition: Option<EncounterTransition>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EncounterTransition {
     Noop,
-    Combat,
-    TravelDelay,
-    NpcState,
-    CaptiveState,
-    Injury,
+    StartCombat {
+        archetype: RoadCombatArchetype,
+        count: u16,
+        outcomes: CombatOutcomeSet,
+    },
+    TravelDelay {
+        minutes: u16,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub struct CombatOutcomeSet {
+    pub victory: CombatOutcomePayload,
+    pub defeat: CombatOutcomePayload,
+    pub escape: CombatOutcomePayload,
+    pub surrender: CombatOutcomePayload,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub struct CombatOutcomePayload {
+    pub result: String,
+    #[serde(default)]
+    pub effects: Vec<Effect>,
+    #[serde(default)]
+    pub personality: Vec<PersonalityDevelopment>,
+    #[serde(default)]
+    pub quest_reward_tags: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CombatOutcomeKind {
+    Victory,
+    Defeat,
+    Escape,
+    Surrender,
+}
+
+pub fn resolved_combat_outcome(outcome: &str) -> Result<CombatOutcomeKind, String> {
+    match outcome {
+        "victory" => Ok(CombatOutcomeKind::Victory),
+        "defeat" | "stalemate" => Ok(CombatOutcomeKind::Defeat),
+        "avoided" => Ok(CombatOutcomeKind::Escape),
+        "surrendered" => Ok(CombatOutcomeKind::Surrender),
+        _ => Err(format!("Unknown narrative combat outcome {outcome}")),
+    }
+}
+
+impl CombatOutcomeSet {
+    pub fn payload(&self, kind: CombatOutcomeKind) -> &CombatOutcomePayload {
+        match kind {
+            CombatOutcomeKind::Victory => &self.victory,
+            CombatOutcomeKind::Defeat => &self.defeat,
+            CombatOutcomeKind::Escape => &self.escape,
+            CombatOutcomeKind::Surrender => &self.surrender,
+        }
+    }
+}
+
+pub fn exemplified_virtue(developments: &[PersonalityDevelopment]) -> Option<VirtueId> {
+    developments
+        .iter()
+        .find(|development| development.delta > 0)
+        .map(|development| development.virtue)
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RoadCombatArchetype {
+    Bandits,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -147,6 +213,9 @@ pub enum Requirement {
     Item {
         item_id: String,
         minimum_quantity: u16,
+    },
+    Currency {
+        amount: u32,
     },
 }
 
@@ -325,6 +394,12 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                             ));
                         }
                     }
+                    Requirement::Currency { amount } if *amount == 0 => {
+                        return Err(format!(
+                            "{}:{} has a zero currency requirement",
+                            definition.id, choice.id
+                        ));
+                    }
                     _ => {}
                 }
             }
@@ -348,27 +423,7 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                 }
             }
             for effect in &choice.effects {
-                match effect {
-                    Effect::GrantItem { item_id, quantity }
-                    | Effect::ConsumeItem { item_id, quantity } => {
-                        validate_id(item_id, "effect.item_id")?;
-                        if *quantity == 0 {
-                            return Err("zero item quantity".into());
-                        }
-                    }
-                    Effect::Currency {
-                        currency_id,
-                        amount,
-                    } => {
-                        validate_id(currency_id, "effect.currency_id")?;
-                        if *amount == 0 {
-                            return Err("zero currency effect".into());
-                        }
-                    }
-                    Effect::Information { information_id } => {
-                        validate_id(information_id, "effect.information_id")?
-                    }
-                }
+                validate_effect(effect)?;
             }
             let mut axes = BTreeSet::new();
             let mut virtues = BTreeSet::new();
@@ -393,9 +448,48 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                     definition.id, choice.id
                 ));
             }
-            if !matches!(choice.transition, None | Some(EncounterTransition::Noop)) {
+            if let Some(EncounterTransition::StartCombat {
+                count, outcomes, ..
+            }) = &choice.transition
+            {
+                if !(1..=8).contains(count) {
+                    return Err(format!(
+                        "{}:{} has an unsafe combat count",
+                        definition.id, choice.id
+                    ));
+                }
+                validate_combat_outcome_payload(
+                    &definition.id,
+                    &choice.id,
+                    "victory",
+                    &outcomes.victory,
+                    true,
+                )?;
+                for (name, payload) in [
+                    ("defeat", &outcomes.defeat),
+                    ("escape", &outcomes.escape),
+                    ("surrender", &outcomes.surrender),
+                ] {
+                    validate_combat_outcome_payload(
+                        &definition.id,
+                        &choice.id,
+                        name,
+                        payload,
+                        false,
+                    )?;
+                }
+                if !choice.effects.is_empty() || !choice.quest_reward_tags.is_empty() {
+                    return Err(format!(
+                        "{}:{} combat rewards must be victory-scoped",
+                        definition.id, choice.id
+                    ));
+                }
+            }
+            if let Some(EncounterTransition::TravelDelay { minutes }) = &choice.transition
+                && !(1..=720).contains(minutes)
+            {
                 return Err(format!(
-                    "{}:{} uses an unsupported encounter transition",
+                    "{}:{} has an unsafe travel delay",
                     definition.id, choice.id
                 ));
             }
@@ -405,7 +499,12 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                     || !choice.effects.is_empty()
                     || !choice.personality.is_empty()
                     || !choice.quest_reward_tags.is_empty()
-                    || !choice.outcome_tags.is_empty())
+                    || !choice.outcome_tags.is_empty()
+                    || !matches!(
+                        choice.transition.as_ref(),
+                        None | Some(EncounterTransition::Noop)
+                            | Some(EncounterTransition::TravelDelay { .. })
+                    ))
             {
                 return Err(format!(
                     "{}: ignore choice must be consequence-free",
@@ -418,7 +517,7 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                         choice.requirements.as_slice(),
                         choice.checks.as_slice(),
                         choice.effects.as_slice(),
-                        choice.transition,
+                        choice.transition.as_ref(),
                     ))
                     .unwrap(),
                 );
@@ -438,6 +537,101 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
             || definition.provenance.adaptation_note.trim().is_empty()
         {
             return Err(format!("{}: incomplete provenance", definition.id));
+        }
+    }
+    Ok(())
+}
+
+fn validate_combat_outcome_payload(
+    definition_id: &str,
+    choice_id: &str,
+    outcome: &str,
+    payload: &CombatOutcomePayload,
+    allow_material_rewards: bool,
+) -> Result<(), String> {
+    if payload.result.trim().is_empty() || payload.result.len() > MAX_TEXT_BYTES {
+        return Err(format!(
+            "{definition_id}:{choice_id} has invalid {outcome} combat outcome text"
+        ));
+    }
+    validate_goal_neutral(&payload.result)?;
+    if payload.effects.len() > 8
+        || payload.personality.len() > 8
+        || payload.quest_reward_tags.len() > 8
+    {
+        return Err(format!(
+            "{definition_id}:{choice_id} has an oversized {outcome} combat payload"
+        ));
+    }
+    for effect in &payload.effects {
+        validate_effect(effect)?;
+        if !allow_material_rewards
+            && matches!(
+                effect,
+                Effect::GrantItem { .. }
+                    | Effect::Currency { amount: 1.., .. }
+                    | Effect::Information { .. }
+            )
+        {
+            return Err(format!(
+                "{definition_id}:{choice_id} grants a material reward on {outcome}"
+            ));
+        }
+    }
+    let mut axes = BTreeSet::new();
+    let mut virtues = BTreeSet::new();
+    for development in &payload.personality {
+        if development.delta == 0
+            || development.delta.unsigned_abs() > 10_000
+            || !axes.insert(development.axis)
+        {
+            return Err(format!(
+                "{definition_id}:{choice_id} has invalid {outcome} personality"
+            ));
+        }
+        virtues.insert(development.virtue);
+    }
+    if virtues.len() > 1 {
+        return Err(format!(
+            "{definition_id}:{choice_id} names multiple {outcome} virtues"
+        ));
+    }
+    let mut tags = BTreeSet::new();
+    for tag in &payload.quest_reward_tags {
+        validate_id(tag, "combat_outcome.quest_reward_tag")?;
+        if !tags.insert(tag) {
+            return Err(format!(
+                "{definition_id}:{choice_id} repeats a {outcome} quest reward tag"
+            ));
+        }
+    }
+    if !allow_material_rewards && !payload.quest_reward_tags.is_empty() {
+        return Err(format!(
+            "{definition_id}:{choice_id} grants quest rewards on {outcome}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_effect(effect: &Effect) -> Result<(), String> {
+    match effect {
+        Effect::GrantItem { item_id, quantity } | Effect::ConsumeItem { item_id, quantity } => {
+            validate_id(item_id, "effect.item_id")?;
+            if *quantity == 0 {
+                return Err("zero item quantity".into());
+            }
+        }
+        Effect::Currency {
+            currency_id,
+            amount,
+        } => {
+            validate_id(currency_id, "effect.currency_id")?;
+            if *amount == 0 {
+                return Err("zero currency effect".into());
+            }
+        }
+        Effect::Information { information_id } => {
+            validate_id(information_id, "effect.information_id")?
         }
     }
     Ok(())
@@ -469,6 +663,30 @@ pub fn validate_item_references(
                         "{}:{} references unknown item {item_id}",
                         definition.id, choice.id
                     ));
+                }
+            }
+            if let Some(EncounterTransition::StartCombat { outcomes, .. }) = &choice.transition {
+                for item_id in [
+                    &outcomes.victory,
+                    &outcomes.defeat,
+                    &outcomes.escape,
+                    &outcomes.surrender,
+                ]
+                .into_iter()
+                .flat_map(|payload| payload.effects.iter())
+                .filter_map(|effect| match effect {
+                    Effect::GrantItem { item_id, .. } | Effect::ConsumeItem { item_id, .. } => {
+                        Some(item_id.as_str())
+                    }
+                    Effect::Currency { currency_id, .. } => Some(currency_id.as_str()),
+                    Effect::Information { .. } => None,
+                }) {
+                    if !exists(item_id) {
+                        return Err(format!(
+                            "{}:{} references unknown item {item_id}",
+                            definition.id, choice.id
+                        ));
+                    }
                 }
             }
         }
@@ -667,7 +885,7 @@ mod tests {
 
     #[test]
     fn validator_rejects_dirty_ignore_and_non_mechanical_route_variants() {
-        let mut dirty = definitions()[0].clone();
+        let mut dirty = encounter("wounded_order_courier_v1").unwrap().clone();
         dirty
             .choices
             .iter_mut()
@@ -685,7 +903,7 @@ mod tests {
                 .contains("consequence-free")
         );
 
-        let mut duplicate = definitions()[0].clone();
+        let mut duplicate = encounter("wounded_order_courier_v1").unwrap().clone();
         let first = duplicate
             .choices
             .iter()
@@ -699,7 +917,7 @@ mod tests {
         duplicate.choices[second].requirements = duplicate.choices[first].requirements.clone();
         duplicate.choices[second].checks = duplicate.choices[first].checks.clone();
         duplicate.choices[second].effects = duplicate.choices[first].effects.clone();
-        duplicate.choices[second].transition = duplicate.choices[first].transition;
+        duplicate.choices[second].transition = duplicate.choices[first].transition.clone();
         duplicate
             .choices
             .retain(|choice| matches!(choice.id.as_str(), "aid" | "rally" | "ignore"));
@@ -798,6 +1016,169 @@ mod tests {
                 && choice("ignore").checks.is_empty()
                 && choice("ignore").effects.is_empty()
                 && choice("ignore").personality.is_empty()
+        );
+    }
+
+    #[test]
+    fn unlawful_bridge_uses_bounded_authored_combat_and_honest_rewards() {
+        let definition = encounter("unlawful_bridge_custom_v1").unwrap();
+        assert!(definition.triggers.travel && !definition.triggers.rest);
+        assert!(
+            definition
+                .cast
+                .iter()
+                .all(|speaker| speaker.nature == SpeakerNature::Mortal)
+        );
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        assert!(matches!(
+            choice("pay_toll").effects[0],
+            Effect::Currency { amount: -12, .. }
+        ));
+        assert!(matches!(
+            choice("pay_toll").requirements[0],
+            Requirement::Currency { amount: 12 }
+        ));
+        assert!(
+            matches!(choice("barter_rations").effects[0], Effect::ConsumeItem { ref item_id, quantity: 4 } if item_id == "travel_ration")
+        );
+        assert!(
+            matches!(choice("expose_charter").effects[0], Effect::Information { ref information_id }
+            if information_id == "unlawful_bridge_false_charter_marks")
+        );
+        assert!(matches!(
+            choice("join_watch").effects[0],
+            Effect::Currency { amount: 40, .. }
+        ));
+        assert!(choice("join_watch").personality[0].delta < 0);
+        assert_eq!(exemplified_virtue(&choice("join_watch").personality), None);
+        let EncounterTransition::StartCombat {
+            archetype,
+            count,
+            outcomes,
+            ..
+        } = choice("challenge_to_arms").transition.as_ref().unwrap()
+        else {
+            panic!("combat transition")
+        };
+        assert_eq!(*archetype, RoadCombatArchetype::Bandits);
+        assert_eq!(*count, 2);
+        assert!(choice("challenge_to_arms").effects.is_empty());
+        assert!(choice("challenge_to_arms").quest_reward_tags.is_empty());
+        assert!(
+            outcomes
+                .victory
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Currency { amount: 12, .. }))
+        );
+        assert!(outcomes.victory.effects.iter().any(|effect| matches!(effect,
+            Effect::Information { information_id } if information_id == "unlawful_bridge_keeper_fighting_method")));
+        assert_eq!(outcomes.victory.personality[0].virtue, VirtueId::Courage);
+        assert_eq!(
+            outcomes.victory.quest_reward_tags,
+            &["bridge_keeper_fighting_method"]
+        );
+        assert!(outcomes.escape.personality[0].delta < 0);
+        assert!(outcomes.surrender.personality[0].delta < 0);
+        assert_eq!(exemplified_virtue(&outcomes.escape.personality), None);
+        assert_eq!(exemplified_virtue(&outcomes.surrender.personality), None);
+        assert_eq!(
+            exemplified_virtue(&outcomes.victory.personality),
+            Some(VirtueId::Courage)
+        );
+        assert_ne!(outcomes.escape.result, outcomes.surrender.result);
+        assert!(matches!(
+            choice("ignore").transition.as_ref(),
+            Some(EncounterTransition::TravelDelay { minutes: 120 })
+        ));
+    }
+
+    #[test]
+    fn combat_transition_rejects_unsafe_counts() {
+        let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
+        let choice = definition
+            .choices
+            .iter_mut()
+            .find(|choice| choice.id == "challenge_to_arms")
+            .unwrap();
+        let Some(EncounterTransition::StartCombat { count, .. }) = &mut choice.transition else {
+            panic!("combat transition")
+        };
+        *count = 0;
+        assert!(
+            validate_definitions(&[definition])
+                .unwrap_err()
+                .contains("unsafe combat count")
+        );
+    }
+
+    #[test]
+    fn non_victory_combat_payloads_reject_material_rewards() {
+        let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
+        let choice = definition
+            .choices
+            .iter_mut()
+            .find(|choice| choice.id == "challenge_to_arms")
+            .unwrap();
+        let Some(EncounterTransition::StartCombat { outcomes, .. }) = &mut choice.transition else {
+            panic!("combat transition")
+        };
+        outcomes.surrender.effects.push(Effect::Currency {
+            currency_id: "brandenburg_groschen".into(),
+            amount: 1,
+        });
+        assert!(
+            validate_definitions(&[definition])
+                .unwrap_err()
+                .contains("material reward on surrender")
+        );
+    }
+
+    #[test]
+    fn resolved_combat_outcomes_are_closed_and_distinguish_surrender() {
+        assert_eq!(
+            resolved_combat_outcome("surrendered"),
+            Ok(CombatOutcomeKind::Surrender)
+        );
+        assert_eq!(
+            resolved_combat_outcome("avoided"),
+            Ok(CombatOutcomeKind::Escape)
+        );
+        assert!(resolved_combat_outcome("mysterious").is_err());
+    }
+
+    #[test]
+    fn travel_delay_and_currency_requirements_are_bounded() {
+        let mut delayed = encounter("unlawful_bridge_custom_v1").unwrap().clone();
+        let ignore = delayed
+            .choices
+            .iter_mut()
+            .find(|choice| choice.id == "ignore")
+            .unwrap();
+        ignore.transition = Some(EncounterTransition::TravelDelay { minutes: 0 });
+        assert!(
+            validate_definitions(&[delayed])
+                .unwrap_err()
+                .contains("unsafe travel delay")
+        );
+
+        let mut unpaid = encounter("unlawful_bridge_custom_v1").unwrap().clone();
+        let toll = unpaid
+            .choices
+            .iter_mut()
+            .find(|choice| choice.id == "pay_toll")
+            .unwrap();
+        toll.requirements = vec![Requirement::Currency { amount: 0 }];
+        assert!(
+            validate_definitions(&[unpaid])
+                .unwrap_err()
+                .contains("zero currency requirement")
         );
     }
 }

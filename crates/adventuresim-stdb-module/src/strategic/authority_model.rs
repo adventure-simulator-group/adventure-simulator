@@ -634,6 +634,7 @@ pub struct StrategicEncounter {
     pub enemy_aware: bool,
     pub available_choices: Vec<String>,
     pub status: String,
+    pub revision: u32,
     pub selected_choice: Option<String>,
     pub selection_explanation: String,
     pub party_speed_m_per_minute: u32,
@@ -642,6 +643,21 @@ pub struct StrategicEncounter {
     pub penalty_minutes: u64,
     pub loss_preview: Vec<StrategicEncounterLoss>,
     pub outcome: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = strategic_encounter_resolution_receipt)]
+pub struct StrategicEncounterResolutionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub encounter_id: String,
+    pub party_id: String,
+    pub character_id: u64,
+    pub action_id: String,
+    pub choice: String,
+    pub expected_revision: u32,
+    pub resulting_revision: u32,
+    pub outcome: String,
 }
 
 /// Typed elapsed-time camp coordinates for the journey tracker. Keeping these

@@ -104,6 +104,22 @@ reward, or pass by without consequence. Its provenance deliberately does not
 claim that the scene reproduces a particular episode from *Parzival* or
 Malory.
 
+`unlawful_bridge_custom_v1` implements the bridge-custom commonplace as a
+travel-only mortal encounter. The party may pay from its aggregate currency,
+barter four travel rations, expose the forged charter, join the extortion
+watch for the richest immediate payment, turn aside at the cost of a two-hour
+detour, or openly challenge two keepers. That challenge creates one ordinary pending
+bandit encounter; attack, flight, surrender, injuries, and defeat remain owned
+by the existing strategic combat flow. A private generic follow-up receipt
+suppresses random drops and grants the authored recovered toll, Courage
+development, and fighting-method information exactly once, and only after
+victory. Personality development remains bound to the character who initiated
+the challenge even if combat changes party leadership. Escape and surrender
+have distinct transcripts and grounded negative Nerve development, but negative
+development never publicly exemplifies Courage. The practical information is
+the quest boon; the combatant is not arbitrarily weakened. No catalog ID is
+special-cased by the transition dispatcher.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
@@ -128,6 +144,9 @@ personality changes, repeated personality axes, multiple virtues per choice,
 malformed/dangling/duplicate IDs and bounded values, and uses
 closed skill/religion/attribute/virtue enums, rejects quest-goal/runtime slots
 in generic prose, and requires every line's Shakespearean review marker.
+Combat transitions carry one closed payload each for victory, defeat, escape,
+and surrender. Every payload uses the same text/effect/personality/tag bounds;
+non-victory payloads cannot grant material or quest rewards.
 Supernatural lines additionally require a reviewed-iambic marker. This is an
 editorial inventory, not a claim of automatic meter proof.
 
@@ -137,6 +156,14 @@ Chance occurrence identity includes journey entropy, origin, departure and both
 cursors, so different journeys and travel/rest rolls cannot alias. Travel
 occurrences activate at the exact reached boundary; rest and errantry scenes
 activate only after the bound camp rest.
+Ordinary and authored strategic combats share one construction path and expose
+only an opaque deterministic 128-bit encounter ID. Resolution submissions bind that ID
+and its current server revision to a caller-supplied action ID; exact retries
+succeed without repeating effects, while an action-ID collision, stale revision,
+or stale encounter ID is rejected. If surrender losses changed, the server
+persists the new preview, advances the revision, and receipts that request as a
+preview refresh. Replaying the same request cannot surrender; confirmation
+requires a newly rendered request bound to the advanced revision.
 Private authority alone records chance-versus-errantry origin and quest binding.
 The gateway exposes only an observer-safe presentation DTO: visible speaker
 name, text and supernatural styling, choice ID/label/availability, and the

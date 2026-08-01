@@ -1072,7 +1072,10 @@ fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
             div class="encounter-actions" {
                 @for choice in &encounter.available_choices {
                     form action="/camp/encounter" method="post" {
+                        input type="hidden" name="encounter_id" value=(&encounter.encounter_id);
                         input type="hidden" name="choice" value=(choice);
+                        input type="hidden" name="expected_revision" value=(encounter.revision);
+                        input type="hidden" name="action_id" value=(format!("encounter-choice:{}:{}:{}", encounter.encounter_id, encounter.revision, choice));
                         button type="submit" class="btn btn-primary btn-small btn-block" {
                             (match choice.as_str() {
                                 "sneak" => "Sneak past",
@@ -1206,6 +1209,7 @@ mod tests {
             enemy_aware: true,
             available_choices: vec!["attack".into(), "surrender".into()],
             status: "awaiting_choice".into(),
+            revision: 4,
             selected_choice: None,
             selection_explanation: "deterministic awareness".into(),
             party_speed_m_per_minute: 60,
@@ -1228,6 +1232,8 @@ mod tests {
         assert!(rendered.contains("12 × gold_coin"));
         assert!(rendered.contains("value=\"attack\""));
         assert!(rendered.contains("value=\"surrender\""));
+        assert!(rendered.contains("name=\"expected_revision\" value=\"4\""));
+        assert!(rendered.contains("encounter-choice:party:3:4:surrender"));
         assert!(!rendered.contains("value=\"run\""));
         assert!(!rendered.contains("value=\"sneak\""));
     }
