@@ -2307,6 +2307,7 @@ pub(crate) fn insert_character_with_origin(
         chest_health: 1.0,
         stomach_health: 1.0,
     });
+    crate::condition::initialize_character_condition(ctx, character.id)?;
     if starting.is_some() {
         let mut personality = crate::personality::CharacterPersonality::neutral(id);
         for personality_trait in &starting.expect("checked above").personality.traits {
@@ -2480,7 +2481,6 @@ pub(crate) fn insert_character_with_origin(
             &starting_organization.organization_id,
         )?;
     }
-    crate::condition::initialize_character_condition(ctx, character.id)?;
     crate::capability::refresh_character_capability(ctx, character.id)?;
     if let Some(religion_id) = starting.and_then(|spec| spec.religion_id.as_ref()) {
         let mut condition = ctx
@@ -3282,7 +3282,7 @@ mod starting_character_boundary_tests {
     }
 
     #[test]
-    fn creation_initializes_condition_before_refreshing_capability() {
+    fn creation_initializes_condition_before_capability_dependent_side_effects() {
         let source = include_str!("character.rs");
         let insertion = source
             .split("pub(crate) fn insert_character_with_origin")
@@ -3294,12 +3294,26 @@ mod starting_character_boundary_tests {
         let condition = insertion
             .find("crate::condition::initialize_character_condition(ctx, character.id)?")
             .unwrap();
+        let currency = insertion
+            .find("crate::item::credit_personal_currency(")
+            .unwrap();
+        let starter_inventory = insertion
+            .find("add_inventory_item(ctx, character.id, \"torch\", 1)")
+            .unwrap();
         let capability = insertion
             .find("crate::capability::refresh_character_capability(ctx, character.id)?")
             .unwrap();
         assert!(
             condition < capability,
             "capability refresh loads the character condition and must run after initialization"
+        );
+        assert!(
+            condition < currency,
+            "currency mutations may refresh capability and must run after condition initialization"
+        );
+        assert!(
+            condition < starter_inventory,
+            "starter inventory mutations may refresh capability and must run after condition initialization"
         );
     }
 
