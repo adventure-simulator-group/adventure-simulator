@@ -865,6 +865,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/simulate_contract_issuer_interaction_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/simulation_character_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/simulation_character_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/simulation_quest_fixture_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/simulation_quest_fixture_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/simulation_quest_fixture_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/simulation_run_table.rs` — Generated SpacetimeDB table interface.

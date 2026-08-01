@@ -736,6 +736,7 @@ pub mod share_investigation_lead_reducer;
 pub mod simulate_contract_issuer_interaction_reducer;
 pub mod simulation_character_table;
 pub mod simulation_character_type;
+pub mod simulation_quest_fixture_authority_type;
 pub mod simulation_quest_fixture_table;
 pub mod simulation_quest_fixture_type;
 pub mod simulation_run_table;
@@ -1568,6 +1569,7 @@ pub use share_investigation_lead_reducer::share_investigation_lead;
 pub use simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction;
 pub use simulation_character_table::*;
 pub use simulation_character_type::SimulationCharacter;
+pub use simulation_quest_fixture_authority_type::SimulationQuestFixtureAuthority;
 pub use simulation_quest_fixture_table::*;
 pub use simulation_quest_fixture_type::SimulationQuestFixture;
 pub use simulation_run_table::*;
@@ -4955,12 +4957,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.simulation_character,
             )
             .with_updates_by_pk(|row| &row.character_id);
-        diff.simulation_quest_fixture = cache
-            .apply_diff_to_table::<SimulationQuestFixture>(
-                "simulation_quest_fixture",
-                &self.simulation_quest_fixture,
-            )
-            .with_updates_by_pk(|row| &row.id);
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
             .with_updates_by_pk(|row| &row.id);
@@ -5244,6 +5240,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_journey_route = cache.apply_diff_to_table::<PartyJourneyRoute>(
             "party_journey_route",
             &self.party_journey_route,
+        );
+        diff.simulation_quest_fixture = cache.apply_diff_to_table::<SimulationQuestFixture>(
+            "simulation_quest_fixture",
+            &self.simulation_quest_fixture,
         );
         diff.tactical_server =
             cache.apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server);

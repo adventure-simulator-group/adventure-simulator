@@ -53,21 +53,3 @@ impl __sdk::__query_builder::HasCols for SimulationQuestFixture {
         }
     }
 }
-
-/// Indexed column accessor struct for the table `SimulationQuestFixture`.
-///
-/// Provides typed access to indexed columns for query building.
-pub struct SimulationQuestFixtureIxCols {
-    pub id: __sdk::__query_builder::IxCol<SimulationQuestFixture, u64>,
-}
-
-impl __sdk::__query_builder::HasIxCols for SimulationQuestFixture {
-    type IxCols = SimulationQuestFixtureIxCols;
-    fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        SimulationQuestFixtureIxCols {
-            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-        }
-    }
-}
-
-impl __sdk::__query_builder::CanBeLookupTable for SimulationQuestFixture {}
