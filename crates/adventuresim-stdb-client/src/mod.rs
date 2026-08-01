@@ -690,6 +690,7 @@ pub mod sedimentary_rock_type;
 pub mod seed_npc_policy_for_development_reducer;
 pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
+pub mod seed_simulation_quest_fixture_reducer;
 pub mod seed_simulation_world_reducer;
 pub mod seed_standalone_tactical_mission_reducer;
 pub mod select_browser_character_reducer;
@@ -1518,6 +1519,7 @@ pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_npc_policy_for_development_reducer::seed_npc_policy_for_development;
 pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
+pub use seed_simulation_quest_fixture_reducer::seed_simulation_quest_fixture;
 pub use seed_simulation_world_reducer::seed_simulation_world;
 pub use seed_standalone_tactical_mission_reducer::seed_standalone_tactical_mission;
 pub use select_browser_character_reducer::select_browser_character;
@@ -2266,6 +2268,11 @@ pub enum Reducer {
         character_id: u64,
         inventory_item_id: u64,
     },
+    SeedSimulationQuestFixture {
+        nonce: String,
+        direct_leader_id: u64,
+        generated_leader_id: u64,
+    },
     SeedSimulationWorld {
         nonce: String,
     },
@@ -2618,6 +2625,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedNpcPolicyForDevelopment { .. } => "seed_npc_policy_for_development",
             Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
+            Reducer::SeedSimulationQuestFixture { .. } => "seed_simulation_quest_fixture",
             Reducer::SeedSimulationWorld { .. } => "seed_simulation_world",
             Reducer::SeedStandaloneTacticalMission { .. } => "seed_standalone_tactical_mission",
             Reducer::SelectBrowserCharacter { .. } => "select_browser_character",
@@ -3738,6 +3746,15 @@ Reducer::BeginFormalCourtship{
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
+}),
+            Reducer::SeedSimulationQuestFixture{
+                nonce,
+                direct_leader_id,
+                generated_leader_id,
+}             => __sats::bsatn::to_vec(&seed_simulation_quest_fixture_reducer::SeedSimulationQuestFixtureArgs {
+                nonce: nonce.clone(),
+                direct_leader_id: direct_leader_id.clone(),
+                generated_leader_id: generated_leader_id.clone(),
 }),
             Reducer::SeedSimulationWorld{
                 nonce,
