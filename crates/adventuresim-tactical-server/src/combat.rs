@@ -172,6 +172,15 @@ pub struct RangedAttackIntent {
     pub hit_precision: f32,
 }
 
+/// Announces a server-observed ranged windup. Clients and server-owned AI use
+/// this same seam before completing a shot.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct RangedAttackStartedIntent {
+    pub attacker: Entity,
+    pub target: Option<Entity>,
+    pub windup_secs: f32,
+}
+
 #[derive(Event, Clone, Copy, Debug)]
 struct ApplyMeleeAttackResult {
     attacker: Entity,
@@ -366,6 +375,7 @@ impl Plugin for CombatPlugin {
         app.init_resource::<TacticalConsequenceAccumulator>()
             .add_observer(on_melee_action_request)
             .add_observer(on_ranged_action_request)
+            .add_observer(on_ranged_attack_started)
             .add_observer(on_melee_attack_started)
             .add_observer(resolve_melee_attack)
             .add_observer(resolve_ranged_attack)
@@ -486,12 +496,7 @@ fn on_melee_action_request(
     }
 }
 
-fn on_ranged_action_request(
-    event: On<FromClient<RangedActionRequest>>,
-    mut cmd: Commands,
-    time: Res<Time<()>>,
-    mut authorities: Query<&mut RangedAttackAuthority>,
-) {
+fn on_ranged_action_request(event: On<FromClient<RangedActionRequest>>, mut cmd: Commands) {
     let Some(attacker) = event.client_id.entity() else {
         debug!(
             "Ignoring ranged action from unknown client: {:?}",
@@ -501,13 +506,10 @@ fn on_ranged_action_request(
     };
     match event.phase {
         RangedActionPhase::Start => {
-            let Ok(mut authority) = authorities.get_mut(attacker) else {
-                return;
-            };
-            let ready_at = time.elapsed_secs() + CLIENT_RANGED_WINDUP_SECS;
-            authority.windup = Some(ObservedRangedWindup {
-                ready_at,
-                expires_at: ready_at + RANGED_NETWORK_ALLOWANCE_SECS,
+            cmd.trigger(RangedAttackStartedIntent {
+                attacker,
+                target: None,
+                windup_secs: CLIENT_RANGED_WINDUP_SECS,
             });
         }
         RangedActionPhase::Complete => {
@@ -521,6 +523,21 @@ fn on_ranged_action_request(
             });
         }
     }
+}
+
+fn on_ranged_attack_started(
+    event: On<RangedAttackStartedIntent>,
+    mut authorities: Query<&mut RangedAttackAuthority>,
+    time: Res<Time<()>>,
+) {
+    let Ok(mut authority) = authorities.get_mut(event.attacker) else {
+        return;
+    };
+    let ready_at = time.elapsed_secs() + event.windup_secs.max(0.0);
+    authority.windup = Some(ObservedRangedWindup {
+        ready_at,
+        expires_at: ready_at + RANGED_NETWORK_ALLOWANCE_SECS,
+    });
 }
 
 fn authoritative_line_of_sight(

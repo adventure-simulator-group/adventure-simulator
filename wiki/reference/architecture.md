@@ -206,7 +206,9 @@ transient arrow consumption. Their bounded Party ammunition use is populated
 in the terminal receipt. Hit precision is the deliberate exception: the server
 rejects non-finite values but trusts finite client reports because authoritative
 skeletal animation and secondary physics are outside the headless simulation.
-Ranged AI remains deferred.
+Server-owned offensive AI uses the same internal ranged windup/completion and
+authoritative ammo path, holds a bounded standoff distance while firing, and
+falls back to melee behavior when ranged equipment or arrows are unavailable.
 
 Mission, hostile-group, battle, and outcome-source identities are separate.
 Tactical success never chooses a case objective, capture subject, contract
