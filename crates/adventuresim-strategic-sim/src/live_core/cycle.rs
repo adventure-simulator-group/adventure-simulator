@@ -200,7 +200,8 @@ impl LiveRunner {
                     leader_agent,
                     CoreLoopEventKind::AcceptContract,
                     format!(
-                        "cycle={cycle};quest={};title={};difficulty={};opposition={} {};distance_m={}",
+                        "cycle={cycle};party={};quest={};title={};difficulty={};opposition={} {};distance_m={}",
+                        bounded_event_field(party_id),
                         quest.id,
                         quest.title,
                         quest.difficulty,
@@ -254,7 +255,8 @@ impl LiveRunner {
                 leader_agent,
                 CoreLoopEventKind::Travel,
                 format!(
-                    "direct_contract={};outbound={}",
+                    "party={};direct_contract={};outbound={}",
+                    bounded_event_field(party_id),
                     bounded_event_field(&quest.id),
                     bounded_event_field(&case_site.case_site_id)
                 ),
@@ -359,7 +361,8 @@ impl LiveRunner {
                 CoreLoopEventKind::AutoresolveDefeat
             },
             format!(
-                "quest={};seed={};rounds={};summary={};log={:?}",
+                "party={};quest={};seed={};rounds={};summary={};log={:?}",
+                bounded_event_field(party_id),
                 bounded_event_field(&quest.id),
                 report.seed,
                 report.rounds,

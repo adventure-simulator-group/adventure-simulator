@@ -910,7 +910,10 @@ fn run_core_loop_inner(
         let direct_event = |kind: CoreLoopEventKind, token: &str| {
             direct_agent.is_some_and(|agent| {
                 runner.trace.iter().any(|event| {
-                    event.agent_id == agent && event.kind == kind && event.detail.contains(token)
+                    event.agent_id == agent
+                        && event.kind == kind
+                        && event.detail.contains(token)
+                        && event.detail.contains(&fixture.direct_party_id)
                 })
             })
         };
@@ -920,6 +923,7 @@ fn run_core_loop_inner(
                     event.agent_id == agent
                         && event.kind == kind
                         && event.detail.contains(&fixture.generated_case_id)
+                        && event.detail.contains(&fixture.generated_party_id)
                 })
             })
         };

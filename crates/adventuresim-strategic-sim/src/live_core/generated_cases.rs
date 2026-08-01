@@ -37,11 +37,20 @@ impl LiveRunner {
             self.metrics.generated_case_continuations =
                 self.metrics.generated_case_continuations.saturating_add(1);
         }
+        let party_id = self
+            .connection
+            .db
+            .backend_characters()
+            .iter()
+            .find(|character| character.id == owner_character_id)
+            .and_then(|character| character.party_id)
+            .unwrap_or_default();
         self.event(
             agent,
             CoreLoopEventKind::GeneratedCaseIntake,
             format!(
-                "owner={owner_character_id};case={};subject={};source={}",
+                "owner={owner_character_id};party={};case={};subject={};source={}",
+                bounded_event_field(&party_id),
                 bounded_event_field(case_id),
                 bounded_event_field(subject),
                 bounded_event_field(source),
@@ -73,11 +82,20 @@ impl LiveRunner {
                 self.generated_terminal_cases.insert(key);
                 self.metrics.generated_quests_completed += 1;
                 self.metrics.quests_completed += 1;
+                let party_id = self
+                    .connection
+                    .db
+                    .backend_characters()
+                    .iter()
+                    .find(|character| character.id == character_id)
+                    .and_then(|character| character.party_id)
+                    .unwrap_or_default();
                 self.event(
                     agent,
                     CoreLoopEventKind::GeneratedQuestCompleted,
                     format!(
-                        "case={};subject={};attribution=own_immediate_transition",
+                        "party={};case={};subject={};attribution=own_immediate_transition",
+                        bounded_event_field(&party_id),
                         bounded_event_field(case_id),
                         bounded_event_field(title)
                     ),
@@ -446,11 +464,20 @@ impl LiveRunner {
             );
             self.metrics.generated_quests_discovered += 1;
             self.metrics.generated_unique_party_cases_discovered += 1;
+            let party_id = self
+                .connection
+                .db
+                .backend_characters()
+                .iter()
+                .find(|character| character.id == character_id)
+                .and_then(|character| character.party_id)
+                .unwrap_or_default();
             self.event(
                 agent,
                 CoreLoopEventKind::GeneratedQuestDiscovered,
                 format!(
-                    "case={};subject={};npc={};location={}",
+                    "party={};case={};subject={};npc={};location={}",
+                    bounded_event_field(&party_id),
                     bounded_event_field(&case_id),
                     bounded_event_field(&subject),
                     bounded_event_field(&candidate.name),
@@ -1375,7 +1402,15 @@ impl LiveRunner {
         self.call(result)?;
         self.metrics.quests_completed += 1;
         self.metrics.direct_contracts_completed += 1;
-        self.event(leader_agent, CoreLoopEventKind::TurnIn, quest.id.clone());
+        self.event(
+            leader_agent,
+            CoreLoopEventKind::TurnIn,
+            format!(
+                "party={};quest={}",
+                bounded_event_field(&party_id),
+                bounded_event_field(&quest.id)
+            ),
+        );
         Ok(())
     }
 }
