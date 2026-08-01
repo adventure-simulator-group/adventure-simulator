@@ -115,11 +115,21 @@ impl LiveRunner {
             .is_some_and(|row| row.economy.services.contains(&SettlementService::Inn))
             .then(|| adventuresim_core::strategic_economy::inn_full_board_cost(1_440))
             .flatten();
+        let survival = self.public_survival_observation(character_id)?;
         Some(CoreLoopFailureAgent {
             agent_id,
             character_id,
             alive: character.alive,
             condition_status: condition.status,
+            thermal: survival.thermal,
+            wetness_bps: survival.wetness_bps,
+            thermal_strain: survival.thermal_strain,
+            ammunition: survival.ammunition,
+            carried_load_kg: survival.carried_load_kg,
+            carry_capacity_kg: survival.carry_capacity_kg,
+            encumbrance_remaining_bps: survival.encumbrance_remaining_bps,
+            equipment_ready: survival.equipment_ready,
+            party_tent_quantity: survival.party_tent_quantity,
             hunger: condition.hunger,
             thirst: condition.thirst,
             food_days: condition.food_days,
@@ -305,10 +315,29 @@ impl LiveRunner {
                 if source == Some(DeathSource::Disease) {
                     self.metrics.disease_deaths += 1;
                 }
+                let survival = self.public_survival_observation(character_id);
+                let condition = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == character_id);
                 self.event(
                     agent as u32,
                     CoreLoopEventKind::Death,
-                    format!("authoritative terminal state;source={source:?}"),
+                    format!(
+                        "terminal=authoritative;source={source:?};condition={};thermal={:.3};wetness_bps={};thermal_strain={};ammo={};carried_load_kg={:.3};carry_capacity_kg={:.3};encumbrance_remaining_bps={};equipment_ready={};party_tent_quantity={}",
+                        condition.as_ref().map_or("unavailable", |row| row.status.as_str()),
+                        survival.map_or(0.0, |row| row.thermal),
+                        survival.map_or(0, |row| row.wetness_bps),
+                        survival.map_or(0, |row| row.thermal_strain),
+                        survival.map_or(0, |row| row.ammunition),
+                        survival.map_or(0.0, |row| row.carried_load_kg),
+                        survival.map_or(0.0, |row| row.carry_capacity_kg),
+                        survival.map_or(0, |row| row.encumbrance_remaining_bps),
+                        survival.is_some_and(|row| row.equipment_ready),
+                        survival.map_or(0, |row| row.party_tent_quantity),
+                    ),
                 );
             }
         }

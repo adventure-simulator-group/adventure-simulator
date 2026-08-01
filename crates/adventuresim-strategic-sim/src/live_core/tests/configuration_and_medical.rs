@@ -181,7 +181,9 @@
             .expect("medical recovery driver");
         assert!(recovery.contains(".sponsor_party_member_inn_rest_then("));
         assert!(recovery.contains("sponsored_settlement_rest=completed"));
-        assert!(recovery.contains("exposure=not_publicly_projected"));
+        assert!(recovery.contains("thermal_before"));
+        assert!(recovery.contains("wetness_bps_before"));
+        assert!(recovery.contains("thermal_strain_before"));
         assert!(recovery.contains("emergency_temple_rest"));
         assert!(recovery.contains("actual_elapsed_minutes={actual_rest_minutes}"));
         assert!(recovery.contains("saturating_sub(rest_started_at)"));

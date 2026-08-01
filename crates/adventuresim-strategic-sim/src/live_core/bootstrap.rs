@@ -122,8 +122,11 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.battle_loot_item())
         .add_query(|query| query.from.battle_result())
         .add_query(|query| query.from.backend_characters())
+        .add_query(|query| query.from.backend_character_attributes())
         .add_query(|query| query.from.backend_character_capabilities())
+        .add_query(|query| query.from.backend_character_conditions())
         .add_query(|query| query.from.backend_character_deaths())
+        .add_query(|query| query.from.backend_character_limbs())
         .add_query(|query| query.from.character_equipped_item())
         .add_query(|query| query.from.equipment_occupancy())
         .add_query(|query| query.from.character_illness_status())
@@ -688,6 +691,9 @@ fn run_core_loop_inner(
         }
     }
     runner.observe_deaths();
+    for party_id in &party_ids {
+        runner.observe_survival_telemetry(party_id);
+    }
 
     let final_agents = runner
         .character_ids
@@ -790,6 +796,9 @@ fn run_core_loop_inner(
             let public = runner
                 .public_failure_agent(agent as u32, *character_id)
                 .ok_or("missing final public diagnostic state")?;
+            let survival = runner
+                .public_survival_observation(*character_id)
+                .ok_or("missing final public survival state")?;
             Ok(FinalAgentState {
                 agent_id: agent as u32,
                 character_id: *character_id,
@@ -804,6 +813,15 @@ fn run_core_loop_inner(
                     capability.endurance
                 ),
                 condition_status: condition.status,
+                thermal: survival.thermal,
+                wetness_bps: survival.wetness_bps,
+                thermal_strain: survival.thermal_strain,
+                ammunition: survival.ammunition,
+                carried_load_kg: survival.carried_load_kg,
+                carry_capacity_kg: survival.carry_capacity_kg,
+                encumbrance_remaining_bps: survival.encumbrance_remaining_bps,
+                equipment_ready: survival.equipment_ready,
+                party_tent_quantity: survival.party_tent_quantity,
                 worst_equipment_condition,
                 outstanding_repair_orders,
                 alive: character.alive,
@@ -836,6 +854,7 @@ fn run_core_loop_inner(
     let total_event_count = runner.sequence;
     let trace_truncated = total_event_count > runner.trace.len() as u64;
     Ok(CoreLoopReport {
+        format_version: crate::FORMAT_VERSION,
         backend_kind: "spacetimedb_authoritative_core_loop".into(),
         seed: config.seed,
         server_origin: config.host.clone(),

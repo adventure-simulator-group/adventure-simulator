@@ -37,7 +37,10 @@ use adventuresim_stdb_client::{
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
     backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
+    backend_character_attributes_table::BackendCharacterAttributesTableAccess,
+    backend_character_conditions_table::BackendCharacterConditionsTableAccess,
     backend_character_deaths_table::BackendCharacterDeathsTableAccess,
+    backend_character_limbs_table::BackendCharacterLimbsTableAccess,
     character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_illness_status_table::CharacterIllnessStatusTableAccess,
     backend_character_needs_table::BackendCharacterNeedsTableAccess,
@@ -112,6 +115,16 @@ const MAX_PUBLIC_JOURNEY_DIAGNOSTIC_INTERVALS: usize = MAX_CAMPS_PER_LEG as usiz
 /// covers fatigue-expanded outbound travel plus the return leg. The separate
 /// reserve day remains available for delays and encounters.
 const JOURNEY_PROVISION_ELAPSED_BOUND_FACTOR: u64 = 4;
+const PARTY_TENT_ITEM_ID: &str = "field_tent";
+const RANGED_AMMUNITION_ITEM_ID: &str = "arrow";
+/// One ordinary autoresolve can consume several arrows. Twenty leaves a
+/// conservative reserve for an encounter plus the disclosed quest fight.
+const RANGED_AMMUNITION_FLOOR: u32 = 20;
+/// Keep a material movement margin rather than departing at the point where
+/// the authoritative linear encumbrance rule reaches zero.
+const MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS: u32 = 2_000;
+const MAX_DEPARTURE_WETNESS_BPS: u16 = 8_000;
+const MAX_DEPARTURE_ABS_THERMAL_STRAIN: u32 = 2_500;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -260,6 +273,23 @@ pub struct CoreLoopMetrics {
     pub sale_proceeds: u64,
     pub equipment_purchases: u32,
     pub equipment_upgrades: u32,
+    pub party_tents_purchased: u32,
+    pub party_tent_gold_spent: u64,
+    pub tent_field_rests: u32,
+    pub tent_field_rest_failures: u32,
+    pub bivouac_field_rests: u32,
+    pub ammunition_purchases: u32,
+    pub ammunition_units_purchased: u32,
+    pub ammunition_gold_spent: u64,
+    pub ammunition_shortage_suppressions: u32,
+    pub load_readiness_suppressions: u32,
+    pub thermal_readiness_suppressions: u32,
+    pub survival_observations: u32,
+    pub max_party_carried_load_grams: u64,
+    pub max_party_carry_capacity_grams: u64,
+    pub min_party_encumbrance_remaining_bps: u32,
+    pub max_observed_wetness_bps: u16,
+    pub max_observed_abs_thermal_strain: u32,
     pub repair_submissions: u32,
     pub repair_retrievals: u32,
     pub repair_wait_minutes: u64,
@@ -356,6 +386,15 @@ pub struct FinalAgentState {
     pub equipment_item_ids: Vec<String>,
     pub capability_summary: String,
     pub condition_status: String,
+    pub thermal: f32,
+    pub wetness_bps: u16,
+    pub thermal_strain: i32,
+    pub ammunition: u32,
+    pub carried_load_kg: f32,
+    pub carry_capacity_kg: f32,
+    pub encumbrance_remaining_bps: u32,
+    pub equipment_ready: bool,
+    pub party_tent_quantity: u32,
     pub worst_equipment_condition: f32,
     pub outstanding_repair_orders: u32,
     pub alive: bool,
@@ -382,6 +421,7 @@ pub struct FinalAgentState {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CoreLoopReport {
+    pub format_version: u32,
     pub backend_kind: String,
     pub seed: u64,
     pub server_origin: String,
@@ -402,7 +442,7 @@ pub struct CoreLoopReport {
 }
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
-const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 5;
+const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 6;
 const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = 1_440;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -412,6 +452,15 @@ pub struct CoreLoopFailureAgent {
     pub character_id: u64,
     pub alive: bool,
     pub condition_status: String,
+    pub thermal: f32,
+    pub wetness_bps: u16,
+    pub thermal_strain: i32,
+    pub ammunition: u32,
+    pub carried_load_kg: f32,
+    pub carry_capacity_kg: f32,
+    pub encumbrance_remaining_bps: u32,
+    pub equipment_ready: bool,
+    pub party_tent_quantity: u32,
     pub hunger: f32,
     pub thirst: f32,
     pub food_days: f32,
@@ -453,6 +502,25 @@ struct FailureDraft {
     final_agents: Vec<CoreLoopFailureAgent>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PublicSurvivalObservation {
+    thermal: f32,
+    wetness_bps: u16,
+    thermal_strain: i32,
+    ammunition: u32,
+    carried_load_kg: f32,
+    carry_capacity_kg: f32,
+    encumbrance_remaining_bps: u32,
+    equipment_ready: bool,
+    party_tent_quantity: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DepartureReadiness {
+    Ready,
+    Deferred(&'static str),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct ActivityObservation {
     personal_gold_coin: u64,
@@ -489,6 +557,15 @@ struct ExpeditionMemberObservation {
     thirst: f32,
     food_days: f32,
     water_days: f32,
+    thermal: f32,
+    wetness_bps: u16,
+    thermal_strain: i32,
+    ammunition: u32,
+    carried_load_kg: f32,
+    carry_capacity_kg: f32,
+    encumbrance_remaining_bps: u32,
+    equipment_ready: bool,
+    party_tent_quantity: u32,
     symptomatic: bool,
     critical: bool,
     elapsed_minutes: u64,
@@ -1527,6 +1604,9 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "passive_no_actionable_rest",
         "sponsor_party_member_inn_rest",
         "purchase_journey_provisions",
+        "purchase_party_tent",
+        "purchase_ammunition",
+        "withdraw_ammunition_coin",
     ]
     .into_iter()
     .find(|operation| {
@@ -1548,6 +1628,12 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
         "discovery_contact_failed"
     } else if error.contains("purchase_journey_provisions") {
         "journey_provision_purchase_failed"
+    } else if error.contains("purchase_party_tent") {
+        "party_tent_purchase_failed"
+    } else if error.contains("purchase_ammunition")
+        || error.contains("withdraw_ammunition_coin")
+    {
+        "ammunition_purchase_failed"
     } else if error.contains("journey camp projection is incoherent")
         || error.contains("journey provisioning projection is incoherent")
     {
@@ -1597,6 +1683,18 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
         (
             "journey_provision_purchase_failed",
             "The public journey-provision purchase could not be completed.",
+        )
+    } else if error.contains("purchase_party_tent") {
+        (
+            "survival_purchase_failed",
+            "The public party-shelter purchase could not be completed.",
+        )
+    } else if error.contains("purchase_ammunition")
+        || error.contains("withdraw_ammunition_coin")
+    {
+        (
+            "survival_purchase_failed",
+            "The public ammunition preparation could not be completed.",
         )
     } else if error.contains("journey camp projection is incoherent")
         || error.contains("journey provisioning projection is incoherent")

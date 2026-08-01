@@ -74,12 +74,32 @@ impl LiveRunner {
             }
             self.maintain_equipment(agent)?;
         }
-        let Some((mut leader_agent, party)) =
+        let Some((mut leader_agent, mut party)) =
             self.refreshed_safe_party_for_owner(party_id, quest_owner)?
         else {
             return Ok(());
         };
         let mut leader = quest_owner;
+        if party.current_settlement_id.is_some() {
+            if let DepartureReadiness::Deferred(reason) =
+                self.prepare_party_for_departure(party_id, leader, leader_agent)?
+            {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!("cycle={cycle};reason={reason};phase=survival_readiness"),
+                );
+                self.settlement_activity_day(leader_agent)?;
+                return Ok(());
+            }
+            let Some((refreshed_agent, refreshed_party)) =
+                self.refreshed_safe_party_for_owner(party_id, quest_owner)?
+            else {
+                return Ok(());
+            };
+            leader_agent = refreshed_agent;
+            party = refreshed_party;
+        }
         let active_contract = self.active_direct_contract(&party);
         let resuming_contract = active_contract.is_some();
         let quest = active_contract
@@ -488,7 +508,10 @@ impl LiveRunner {
         if let Some((current_agent, _)) =
             self.refreshed_safe_party_for_owner(party_id, quest_owner)?
         {
-            self.try_upgrade(current_agent, &quest.settlement_id)?;
+            let current_leader = self.character_ids[current_agent as usize];
+            for party_agent in self.party_agents(current_leader)? {
+                self.try_upgrade(party_agent, &quest.settlement_id)?;
+            }
         }
         Ok(())
     }
@@ -549,6 +572,8 @@ impl LiveRunner {
             .iter()
             .find(|row| row.party_id == party_id && row.character_id == character_id)
             .map_or(0, |row| row.value);
+        let (party_load_kg, party_capacity_kg, _) =
+            self.public_party_load_and_capacity(&party_id);
         let mut candidates = definitions
             .iter()
             .filter_map(|candidate| {
@@ -572,11 +597,14 @@ impl LiveRunner {
                 let cost = adventuresim_core::strategic_economy::merchant_buy_price(
                     candidate.base_value.unwrap_or(1),
                 );
-                (utility > current && u64::from(cost) <= stake).then_some((
-                    utility - current,
-                    cost,
-                    candidate.clone(),
-                ))
+                let projected_remaining = public_encumbrance_remaining_bps(
+                    party_load_kg + candidate.weight.max(0.0),
+                    party_capacity_kg,
+                );
+                (utility > current
+                    && u64::from(cost) <= stake
+                    && projected_remaining >= MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS)
+                    .then_some((utility - current, cost, candidate.clone()))
             })
             .collect::<Vec<_>>();
         candidates.sort_by(|left, right| {

@@ -108,6 +108,9 @@ impl LiveRunner {
                     .iter()
                     .find(|row| row.character_id == character_id)
                     .map_or(0, |row| row.minutes);
+                let survival = self
+                    .public_survival_observation(character_id)
+                    .unwrap_or_default();
                 Ok(ExpeditionMemberObservation {
                     agent_id,
                     character_id,
@@ -119,6 +122,15 @@ impl LiveRunner {
                     thirst: condition.as_ref().map_or(0.0, |row| row.thirst),
                     food_days: condition.as_ref().map_or(0.0, |row| row.food_days),
                     water_days: condition.as_ref().map_or(0.0, |row| row.water_days),
+                    thermal: survival.thermal,
+                    wetness_bps: survival.wetness_bps,
+                    thermal_strain: survival.thermal_strain,
+                    ammunition: survival.ammunition,
+                    carried_load_kg: survival.carried_load_kg,
+                    carry_capacity_kg: survival.carry_capacity_kg,
+                    encumbrance_remaining_bps: survival.encumbrance_remaining_bps,
+                    equipment_ready: survival.equipment_ready,
+                    party_tent_quantity: survival.party_tent_quantity,
                     symptomatic: illness.as_ref().is_some_and(|row| row.symptomatic),
                     critical: illness.as_ref().is_some_and(|row| row.critical),
                     elapsed_minutes,
@@ -207,7 +219,7 @@ impl LiveRunner {
                 member_before.agent_id,
                 CoreLoopEventKind::ExpeditionRecovery,
                 format!(
-                    "party={};phase={};action={};reason={};member={};alive_before={};alive_after={};condition_before={};condition_after={};hunger_before={:.3};hunger_after={:.3};thirst_before={:.3};thirst_after={:.3};food_days_before={:.2};food_days_after={:.2};water_days_before={:.2};water_days_after={:.2};symptomatic_before={};symptomatic_after={};critical_before={};critical_after={};exposure=not_publicly_projected;elapsed_before={};elapsed_after={};elapsed_delta={};stored_food_kcal_before={:.0};stored_food_kcal_after={:.0};stored_food_kcal_consumed={:.0};portable_water_ml_before={:.0};portable_water_ml_after={:.0};portable_water_ml_consumed={:.0}",
+                    "party={};phase={};action={};reason={};member={};alive_before={};alive_after={};condition_before={};condition_after={};hunger_before={:.3};hunger_after={:.3};thirst_before={:.3};thirst_after={:.3};food_days_before={:.2};food_days_after={:.2};water_days_before={:.2};water_days_after={:.2};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={};symptomatic_before={};symptomatic_after={};critical_before={};critical_after={};elapsed_before={};elapsed_after={};elapsed_delta={};stored_food_kcal_before={:.0};stored_food_kcal_after={:.0};stored_food_kcal_consumed={:.0};portable_water_ml_before={:.0};portable_water_ml_after={:.0};portable_water_ml_consumed={:.0}",
                     bounded_event_field(party_id),
                     bounded_event_field(phase),
                     bounded_event_field(action),
@@ -225,6 +237,24 @@ impl LiveRunner {
                     member_after.food_days,
                     member_before.water_days,
                     member_after.water_days,
+                    member_before.thermal,
+                    member_after.thermal,
+                    member_before.wetness_bps,
+                    member_after.wetness_bps,
+                    member_before.thermal_strain,
+                    member_after.thermal_strain,
+                    member_before.ammunition,
+                    member_after.ammunition,
+                    member_before.carried_load_kg,
+                    member_after.carried_load_kg,
+                    member_before.carry_capacity_kg,
+                    member_after.carry_capacity_kg,
+                    member_before.encumbrance_remaining_bps,
+                    member_after.encumbrance_remaining_bps,
+                    member_before.equipment_ready,
+                    member_after.equipment_ready,
+                    member_before.party_tent_quantity,
+                    member_after.party_tent_quantity,
                     member_before.symptomatic,
                     member_after.symptomatic,
                     member_before.critical,
@@ -428,16 +458,12 @@ impl LiveRunner {
                 (actor.leader_id, "passive_no_actionable_rest")
             }
         };
-        let result = reducer_call!(self, operation, |cb| self
-            .connection
-            .reducers
-            .rest_at_camp_then(
-                character_id,
-                EXPEDITION_RECOVERY_REST_MINUTES,
-                FieldShelter::Bivouac,
-                cb,
-            ));
-        self.call(result)
+        self.rest_at_camp_with_party_shelter(
+            character_id,
+            EXPEDITION_RECOVERY_REST_MINUTES,
+            operation,
+        )
+        .map(|_| ())
     }
 
     pub(super) fn public_expedition_return_settlement(&self, party_id: &str) -> Option<String> {

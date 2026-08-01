@@ -254,8 +254,8 @@ fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
         travel
             .contains("let Some((travel_actor, _, _)) = self.expedition_recovery_actor(party_id)")
     );
-    assert!(travel.contains(".rest_at_camp_then(travel_actor, rest_minutes"));
-    assert!(!travel.contains(".rest_at_camp_then(travel_actor, 1_440"));
+    assert!(travel.contains("rest_at_camp_with_party_shelter"));
+    assert!(!travel.contains("rest_at_camp_with_party_shelter(\n                travel_actor,\n                1_440"));
     assert!(source.contains(
         "fn travel_camps(&mut self, party_id: &str) -> Result<JourneyTravelOutcome, String>"
     ));

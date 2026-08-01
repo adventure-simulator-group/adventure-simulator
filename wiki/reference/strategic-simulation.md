@@ -279,8 +279,9 @@ evidence: elapsed, total, and remaining journey time; destination; remaining
 camp movement; the active public forecast interval when present; living-member
 count; one-day food and water requirements; concrete stored food and portable
 water; and whether those supplies cover one rest day. The report counts these
-and health-driven journey holds in `expedition_holds`. It does not expose or
-infer private exposure or disease authority.
+and health-driven journey holds in `expedition_holds`. It records the public
+strategic thermal/wetness projection but does not expose or infer private
+exposure or disease authority.
 A held party is tracked separately from a party that performed an action.
 A hold with no public character-time progress does not make the cycle active
 and cannot by itself advance authoritative world time. If another party acts,
@@ -291,7 +292,7 @@ step holds.
 Successful final-agent rows carry the same public needs, visible food and water,
 remote location, journey destination, illness flags, settlement services,
 herbalist quote, and inn full-board cost used by failure diagnostics. Failure
-artifacts use schema version 5. In addition to the strict
+artifacts use schema version 6. In addition to the strict
 event vocabulary and activity-detail semantics, they retain only an allowlisted
 operation name and stable reason code for expected investigation and camp
 failures. `travel_camps`, `rest_at_camp`, and `continue_camp_travel` are
@@ -425,6 +426,26 @@ Their replacement utility is discounted by current condition, so maintenance com
 with buying a replacement. Reports include submissions, retrievals, repair wait time, worst final
 condition, and outstanding orders; deterministic simulation setup seeds damage through a reducer
 guarded to registered simulation characters.
+
+Before any settlement departure, the driver now prepares every living party member rather than only
+the leader. It buys a single general-market field tent directly into ordinary party custody, equips
+only upgrades that preserve at least 20 percent of the public linear carrying margin, and maintains
+twenty personally owned arrows for each member whose public equipped capability is ranged. Shared
+earned stake may be withdrawn through the ordinary custody reducer to fund a member's arrows, while
+the same visible medical reserve used elsewhere remains protected. If shelter, ammunition, public
+merchant projection, or carrying margin cannot be made safe, the party performs settlement activity
+instead of departing. Current wetness above 80 percent or absolute thermal strain above 2,500 also
+requires indoor recovery before departure; the driver does not inspect future or private weather.
+Every field-rest path selects a party-owned tent when present, including forecast camps, bounded
+expedition recovery, passive/evacuation recovery, and field investigation waits. The authoritative
+rest reducer still validates custody and applies the actual exposure mechanics.
+
+Core-loop reports expose per-agent thermal state, wetness, thermal strain, personal ammunition,
+carried load, carrying capacity, equipment readiness, and party-tent quantity. Aggregate metrics
+record tent purchases and uses, tent-rest failures, ammunition purchases and shortages, readiness
+suppressions, peak load/capacity, minimum carrying margin, and peak exposure. Death events and the
+structured failure artifact carry the same observer-safe survival context so a policy mistake can be
+distinguished from an authoritative reducer or mechanics failure without importing private state.
 
 Medical needs are evaluated before repairs, and repairs before equipment upgrades. The disposable
 fixture seeds one deterministic influenza episode behind the same claimed-run capability boundary as

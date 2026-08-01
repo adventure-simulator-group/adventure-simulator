@@ -8,6 +8,7 @@
 pub(crate) const LIVE_CORE_SOURCE: &str = concat!(
     include_str!("model.rs"),
     include_str!("policy.rs"),
+    include_str!("survival.rs"),
     include_str!("failure.rs"),
     include_str!("travel.rs"),
     include_str!("settlement.rs"),
@@ -20,6 +21,7 @@ pub(crate) const LIVE_CORE_SOURCE: &str = concat!(
 
 include!("model.rs");
 include!("policy.rs");
+include!("survival.rs");
 
 mod failure {
     use super::*;

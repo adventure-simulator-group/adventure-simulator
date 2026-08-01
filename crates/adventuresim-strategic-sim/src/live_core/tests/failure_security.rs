@@ -142,7 +142,7 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
 }
 
 #[test]
-fn failure_artifact_version_five_serializes_safe_operation_context() {
+fn failure_artifact_version_six_serializes_safe_operation_context() {
     let artifact = CoreLoopFailureArtifact {
         schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
         category: "investigation_temporally_unavailable".into(),
@@ -162,7 +162,7 @@ fn failure_artifact_version_five_serializes_safe_operation_context() {
         final_agents: Vec::new(),
     };
     let value = serde_json::to_value(artifact).unwrap();
-    assert_eq!(value["schema_version"], serde_json::json!(5));
+    assert_eq!(value["schema_version"], serde_json::json!(6));
     assert_eq!(
         value["operation"],
         serde_json::json!("perform_investigation_action")

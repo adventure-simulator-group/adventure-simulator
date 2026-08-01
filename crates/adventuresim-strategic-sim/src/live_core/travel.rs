@@ -808,11 +808,11 @@ impl LiveRunner {
             let camp_members_before = self.expedition_member_observations(party_id)?;
             let camp_supplies_before = self.expedition_supplies(party_id);
             let expected_completed_elapsed = camp_start.saturating_add(rest_minutes);
-            let result = reducer_call!(self, "rest_at_camp", |cb| self
-                .connection
-                .reducers
-                .rest_at_camp_then(travel_actor, rest_minutes, FieldShelter::Bivouac, cb));
-            self.call(result)?;
+            let shelter = self.rest_at_camp_with_party_shelter(
+                travel_actor,
+                rest_minutes,
+                "rest_at_camp",
+            )?;
             self.observe_deaths();
             let Some((continue_actor, agent, continue_actor_role)) =
                 self.expedition_recovery_actor(party_id)
@@ -870,7 +870,7 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::Camp,
                 format!(
-                    "phase=post_rest;party={};completed_elapsed={};total_elapsed={};rest_minutes={rest_minutes};remaining_movement={}",
+                    "phase=post_rest;party={};completed_elapsed={};total_elapsed={};rest_minutes={rest_minutes};shelter={shelter:?};remaining_movement={}",
                     bounded_event_field(party_id),
                     after_rest_journey.completed_elapsed_minutes,
                     after_rest_journey.total_elapsed_minutes,

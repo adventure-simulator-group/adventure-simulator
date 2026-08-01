@@ -732,17 +732,16 @@ impl LiveRunner {
                 "settlement_temple"
             }
         } else {
-            let result = reducer_call!(self, "wait_for_investigation_window_camp", |cb| self
-                .connection
-                .reducers
-                .rest_at_camp_then(
-                    owner_character_id,
-                    u64::from(wait_minutes),
-                    FieldShelter::Bivouac,
-                    cb,
-                ));
-            self.call(result)?;
-            "field_rest"
+            let shelter = self.rest_at_camp_with_party_shelter(
+                owner_character_id,
+                u64::from(wait_minutes),
+                "wait_for_investigation_window_camp",
+            )?;
+            if matches!(shelter, FieldShelter::Tent) {
+                "field_tent"
+            } else {
+                "field_bivouac"
+            }
         };
         self.metrics.generated_investigation_waits += 1;
         self.metrics.generated_investigation_wait_minutes = self
@@ -1041,6 +1040,26 @@ impl LiveRunner {
                     .ok_or("projected action travel had no exact owner-scoped site pin")?;
                 let site_id = pin.case_site_id.clone();
                 let distance_m = pin.distance_m;
+                let readiness = if self
+                    .party_for(character_id)?
+                    .current_settlement_id
+                    .is_some()
+                {
+                    self.prepare_party_for_departure(party_id, character_id, agent)?
+                } else {
+                    self.validate_party_departure_readiness(party_id)
+                };
+                if let DepartureReadiness::Deferred(reason) = readiness {
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::QuestSuppressed,
+                        format!(
+                            "generated_case={};reason={reason};phase=survival_readiness",
+                            bounded_event_field(case_id)
+                        ),
+                    );
+                    return Ok(false);
+                }
                 if matches!(
                     self.provision_case_site_journey(
                         party_id,
