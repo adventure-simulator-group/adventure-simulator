@@ -4,20 +4,21 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::tactical_consequence_receipt_type::TacticalConsequenceReceipt;
 use super::tactical_mission_resolution_type::TacticalMissionResolution;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct EndTacticalServerArgs {
     pub resolution: TacticalMissionResolution,
-    pub reported_xp_gained: i32,
+    pub receipt: TacticalConsequenceReceipt,
 }
 
 impl From<EndTacticalServerArgs> for super::Reducer {
     fn from(args: EndTacticalServerArgs) -> Self {
         Self::EndTacticalServer {
             resolution: args.resolution,
-            reported_xp_gained: args.reported_xp_gained,
+            receipt: args.receipt,
         }
     }
 }
@@ -40,9 +41,9 @@ pub trait end_tactical_server {
     fn end_tactical_server(
         &self,
         resolution: TacticalMissionResolution,
-        reported_xp_gained: i32,
+        receipt: TacticalConsequenceReceipt,
     ) -> __sdk::Result<()> {
-        self.end_tactical_server_then(resolution, reported_xp_gained, |_, _| {})
+        self.end_tactical_server_then(resolution, receipt, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `end_tactical_server` to run as soon as possible,
@@ -54,7 +55,7 @@ pub trait end_tactical_server {
     fn end_tactical_server_then(
         &self,
         resolution: TacticalMissionResolution,
-        reported_xp_gained: i32,
+        receipt: TacticalConsequenceReceipt,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -68,7 +69,7 @@ impl end_tactical_server for super::RemoteReducers {
     fn end_tactical_server_then(
         &self,
         resolution: TacticalMissionResolution,
-        reported_xp_gained: i32,
+        receipt: TacticalConsequenceReceipt,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -79,7 +80,7 @@ impl end_tactical_server for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             EndTacticalServerArgs {
                 resolution,
-                reported_xp_gained,
+                receipt,
             },
             callback,
         )
