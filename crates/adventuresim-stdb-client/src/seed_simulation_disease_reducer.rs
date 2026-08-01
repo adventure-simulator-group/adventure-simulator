@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct SeedSimulationDiseaseArgs {
     pub nonce: String,
     pub character_id: u64,
+    pub disease_id: String,
 }
 
 impl From<SeedSimulationDiseaseArgs> for super::Reducer {
@@ -16,6 +17,7 @@ impl From<SeedSimulationDiseaseArgs> for super::Reducer {
         Self::SeedSimulationDisease {
             nonce: args.nonce,
             character_id: args.character_id,
+            disease_id: args.disease_id,
         }
     }
 }
@@ -35,8 +37,13 @@ pub trait seed_simulation_disease {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`seed_simulation_disease:seed_simulation_disease_then`] to run a callback after the reducer completes.
-    fn seed_simulation_disease(&self, nonce: String, character_id: u64) -> __sdk::Result<()> {
-        self.seed_simulation_disease_then(nonce, character_id, |_, _| {})
+    fn seed_simulation_disease(
+        &self,
+        nonce: String,
+        character_id: u64,
+        disease_id: String,
+    ) -> __sdk::Result<()> {
+        self.seed_simulation_disease_then(nonce, character_id, disease_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `seed_simulation_disease` to run as soon as possible,
@@ -49,6 +56,7 @@ pub trait seed_simulation_disease {
         &self,
         nonce: String,
         character_id: u64,
+        disease_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -63,6 +71,7 @@ impl seed_simulation_disease for super::RemoteReducers {
         &self,
         nonce: String,
         character_id: u64,
+        disease_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -74,6 +83,7 @@ impl seed_simulation_disease for super::RemoteReducers {
             SeedSimulationDiseaseArgs {
                 nonce,
                 character_id,
+                disease_id,
             },
             callback,
         )

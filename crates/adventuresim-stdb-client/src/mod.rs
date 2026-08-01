@@ -2259,6 +2259,7 @@ pub enum Reducer {
     SeedSimulationDisease {
         nonce: String,
         character_id: u64,
+        disease_id: String,
     },
     SeedSimulationEquipmentDamage {
         nonce: String,
@@ -3723,9 +3724,11 @@ Reducer::BeginFormalCourtship{
             Reducer::SeedSimulationDisease{
                 nonce,
                 character_id,
+                disease_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_disease_reducer::SeedSimulationDiseaseArgs {
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
+                disease_id: disease_id.clone(),
 }),
             Reducer::SeedSimulationEquipmentDamage{
                 nonce,
