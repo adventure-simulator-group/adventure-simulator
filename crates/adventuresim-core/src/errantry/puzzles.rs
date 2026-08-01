@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::{OrderedSigilProjection, OrderedSigilPuzzle, OrderedSigilSubmission, Sigil};
 
 pub const TRUTHFUL_WITNESS_RULES_VERSION: u16 = 1;
-pub const RUNE_TRANSFORMATION_RULES_VERSION: u16 = 1;
+pub const RUNE_TRANSFORMATION_RULES_VERSION: u16 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PuzzleKind {
@@ -392,49 +392,86 @@ fn statement_set_is_irredundant(statements: &[WitnessStatement; 3]) -> bool {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RuneOperation {
-    AdvanceOne,
-    AdvanceTwo,
-    RetreatOne,
-    RetreatTwo,
-    Mirror,
+    ExchangeCrownHart,
+    ExchangeHartMoon,
+    ExchangeMoonRose,
+    ExchangeRoseSword,
+    ExchangeSwordCrown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum RuneGate {
+    Ash,
+    Briar,
+    Glass,
+}
+
+impl RuneGate {
+    pub const ALL: [Self; 3] = [Self::Ash, Self::Briar, Self::Glass];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Ash => "Gate of Ash",
+            Self::Briar => "Gate of Briar",
+            Self::Glass => "Gate of Glass",
+        }
+    }
+
+    const fn index(self) -> usize {
+        match self {
+            Self::Ash => 0,
+            Self::Briar => 1,
+            Self::Glass => 2,
+        }
+    }
 }
 
 impl RuneOperation {
     pub const ALL: [Self; 5] = [
-        Self::AdvanceOne,
-        Self::AdvanceTwo,
-        Self::RetreatOne,
-        Self::RetreatTwo,
-        Self::Mirror,
+        Self::ExchangeCrownHart,
+        Self::ExchangeHartMoon,
+        Self::ExchangeMoonRose,
+        Self::ExchangeRoseSword,
+        Self::ExchangeSwordCrown,
     ];
 
     pub const fn rule_text(self) -> &'static str {
         match self {
-            Self::AdvanceOne => "Advance one place around the cycle.",
-            Self::AdvanceTwo => "Advance two places around the cycle.",
-            Self::RetreatOne => "Retreat one place around the cycle.",
-            Self::RetreatTwo => "Retreat two places around the cycle.",
-            Self::Mirror => {
-                "Reflect across the written row: Crown with Sword, Hart with Rose, and Moon with itself."
+            Self::ExchangeCrownHart => {
+                "Exchange Crown with Hart; leave every other sigil unchanged."
+            }
+            Self::ExchangeHartMoon => "Exchange Hart with Moon; leave every other sigil unchanged.",
+            Self::ExchangeMoonRose => "Exchange Moon with Rose; leave every other sigil unchanged.",
+            Self::ExchangeRoseSword => {
+                "Exchange Rose with Sword; leave every other sigil unchanged."
+            }
+            Self::ExchangeSwordCrown => {
+                "Exchange Sword with Crown; leave every other sigil unchanged."
             }
         }
     }
 
     fn apply(self, input: Sigil) -> Sigil {
-        let index = Sigil::ALL.iter().position(|sigil| *sigil == input).unwrap();
-        let next = match self {
-            Self::AdvanceOne => (index + 1) % 5,
-            Self::AdvanceTwo => (index + 2) % 5,
-            Self::RetreatOne => (index + 4) % 5,
-            Self::RetreatTwo => (index + 3) % 5,
-            Self::Mirror => 4 - index,
+        let pair = match self {
+            Self::ExchangeCrownHart => (Sigil::Crown, Sigil::Hart),
+            Self::ExchangeHartMoon => (Sigil::Hart, Sigil::Moon),
+            Self::ExchangeMoonRose => (Sigil::Moon, Sigil::Rose),
+            Self::ExchangeRoseSword => (Sigil::Rose, Sigil::Sword),
+            Self::ExchangeSwordCrown => (Sigil::Sword, Sigil::Crown),
         };
-        Sigil::ALL[next]
+        if input == pair.0 {
+            pair.1
+        } else if input == pair.1 {
+            pair.0
+        } else {
+            input
+        }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuneExample {
+    pub gate: RuneGate,
     pub input: Sigil,
     pub output: Sigil,
 }
@@ -442,7 +479,8 @@ pub struct RuneExample {
 impl RuneExample {
     pub fn text(self) -> String {
         format!(
-            "When the {} enters, the {} emerges.",
+            "At the {}, when the {} enters, the {} emerges.",
+            self.gate.label(),
             self.input.label(),
             self.output.label()
         )
@@ -453,8 +491,9 @@ impl RuneExample {
 pub struct RuneTransformationPuzzle {
     pub rules_version: u16,
     pub seed: u64,
-    pub operation: RuneOperation,
+    pub gate_operations: [RuneOperation; 3],
     pub examples: Vec<RuneExample>,
+    pub route: [RuneGate; 3],
     pub query: Sigil,
     pub solution: Sigil,
 }
@@ -465,6 +504,7 @@ pub struct RuneTransformationProjection {
     pub sigils: [Sigil; 5],
     pub candidate_rules: [RuneOperation; 5],
     pub examples: Vec<RuneExample>,
+    pub route: [RuneGate; 3],
     pub query: Sigil,
 }
 
@@ -479,49 +519,68 @@ impl RuneTransformationPuzzle {
             return Err("unsupported rune-transformation rules version");
         }
         let mut rng = PuzzleRng(seed ^ 0x7275_6e65_5f74_7261);
-        let operation = RuneOperation::ALL[(rng.next() as usize) % RuneOperation::ALL.len()];
+        let gate_operations = RuneGate::ALL
+            .map(|_| RuneOperation::ALL[(rng.next() as usize) % RuneOperation::ALL.len()]);
         let query = Sigil::ALL[(rng.next() as usize) % Sigil::ALL.len()];
-        let solution = operation.apply(query);
-        let mut candidates = Sigil::ALL
-            .into_iter()
-            .filter(|input| *input != query)
-            .map(|input| RuneExample {
+        let mut route = RuneGate::ALL;
+        shuffle(&mut route, &mut rng);
+        let mut examples = Vec::with_capacity(6);
+        for gate in RuneGate::ALL {
+            let operation = gate_operations[gate.index()];
+            let mut inputs = Sigil::ALL;
+            shuffle(&mut inputs, &mut rng);
+            let pair = inputs
+                .iter()
+                .enumerate()
+                .flat_map(|(first, left)| {
+                    inputs
+                        .iter()
+                        .skip(first + 1)
+                        .map(move |right| (*left, *right))
+                })
+                .find(|(left, right)| {
+                    rune_operations_consistent_with(&[RuneExample {
+                        gate,
+                        input: *left,
+                        output: operation.apply(*left),
+                    }])
+                    .len()
+                        > 1
+                        && rune_operations_consistent_with(&[RuneExample {
+                            gate,
+                            input: *right,
+                            output: operation.apply(*right),
+                        }])
+                        .len()
+                            > 1
+                        && rune_operations_consistent_with(&[
+                            RuneExample {
+                                gate,
+                                input: *left,
+                                output: operation.apply(*left),
+                            },
+                            RuneExample {
+                                gate,
+                                input: *right,
+                                output: operation.apply(*right),
+                            },
+                        ]) == vec![operation]
+                })
+                .ok_or("could not generate an irredundant rune gate")?;
+            examples.extend([pair.0, pair.1].map(|input| RuneExample {
+                gate,
                 input,
                 output: operation.apply(input),
-            })
-            .collect::<Vec<_>>();
-        shuffle(&mut candidates, &mut rng);
-        let mut examples = None;
-        for cardinality in 1..=2 {
-            for first in 0..candidates.len() {
-                if cardinality == 1 {
-                    let trial = vec![candidates[first]];
-                    if rune_conclusion(&trial, query) == Some(solution) {
-                        examples = Some(trial);
-                        break;
-                    }
-                } else {
-                    for second in (first + 1)..candidates.len() {
-                        let trial = vec![candidates[first], candidates[second]];
-                        if rune_conclusion(&trial, query) == Some(solution) {
-                            examples = Some(trial);
-                            break;
-                        }
-                    }
-                }
-                if examples.is_some() {
-                    break;
-                }
-            }
-            if examples.is_some() {
-                break;
-            }
+            }));
         }
+        shuffle(&mut examples, &mut rng);
+        let solution = apply_rune_route(&gate_operations, route, query);
         let puzzle = Self {
             rules_version,
             seed,
-            operation,
-            examples: examples.ok_or("could not generate a unique rune transformation")?,
+            gate_operations,
+            examples,
+            route,
             query,
             solution,
         };
@@ -535,6 +594,7 @@ impl RuneTransformationPuzzle {
             sigils: Sigil::ALL,
             candidate_rules: RuneOperation::ALL,
             examples: self.examples.clone(),
+            route: self.route,
             query: self.query,
         }
     }
@@ -543,29 +603,38 @@ impl RuneTransformationPuzzle {
         if self.rules_version != RUNE_TRANSFORMATION_RULES_VERSION {
             return Err("unsupported rune-transformation rules version");
         }
-        if self.examples.is_empty() || self.examples.len() > 2 {
-            return Err("rune transformation must contain one or two examples");
+        if self.examples.len() != 6 {
+            return Err("rune transformation must contain two examples per gate");
         }
-        if self.solution != self.operation.apply(self.query)
+        if self.solution != apply_rune_route(&self.gate_operations, self.route, self.query)
             || self.examples.iter().any(|example| {
-                example.input == self.query || example.output != self.operation.apply(example.input)
+                example.output != self.gate_operations[example.gate.index()].apply(example.input)
+            })
+            || !RuneGate::ALL.iter().all(|gate| {
+                self.route
+                    .iter()
+                    .filter(|candidate| *candidate == gate)
+                    .count()
+                    == 1
             })
         {
             return Err("rune transformation contradicts private authority");
         }
-        if rune_conclusion(&self.examples, self.query) != Some(self.solution) {
-            return Err("rune examples do not prove one result");
-        }
-        if self.examples.len() > 1 {
-            for removed in 0..self.examples.len() {
-                let reduced = self
-                    .examples
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .filter_map(|(index, example)| (index != removed).then_some(example))
-                    .collect::<Vec<_>>();
-                if rune_conclusion(&reduced, self.query) == Some(self.solution) {
+        for gate in RuneGate::ALL {
+            let gate_examples = self
+                .examples
+                .iter()
+                .copied()
+                .filter(|example| example.gate == gate)
+                .collect::<Vec<_>>();
+            if gate_examples.len() != 2
+                || rune_operations_consistent_with(&gate_examples)
+                    != vec![self.gate_operations[gate.index()]]
+            {
+                return Err("rune examples do not prove every gate law");
+            }
+            for example in &gate_examples {
+                if rune_operations_consistent_with(&[*example]).len() <= 1 {
                     return Err("rune transformation contains a redundant example");
                 }
             }
@@ -574,20 +643,21 @@ impl RuneTransformationPuzzle {
     }
 }
 
-fn rune_conclusion(examples: &[RuneExample], query: Sigil) -> Option<Sigil> {
-    let operations = RuneOperation::ALL
+fn rune_operations_consistent_with(examples: &[RuneExample]) -> Vec<RuneOperation> {
+    RuneOperation::ALL
         .into_iter()
         .filter(|operation| {
             examples
                 .iter()
                 .all(|example| operation.apply(example.input) == example.output)
         })
-        .collect::<Vec<_>>();
-    let first = operations.first()?.apply(query);
-    operations
-        .iter()
-        .all(|operation| operation.apply(query) == first)
-        .then_some(first)
+        .collect()
+}
+
+fn apply_rune_route(operations: &[RuneOperation; 3], route: [RuneGate; 3], input: Sigil) -> Sigil {
+    route.into_iter().fold(input, |current, gate| {
+        operations[gate.index()].apply(current)
+    })
 }
 
 fn shuffle<T>(values: &mut [T], rng: &mut PuzzleRng) {
@@ -644,9 +714,25 @@ mod tests {
             let puzzle = RuneTransformationPuzzle::generate(seed);
             puzzle.validate().unwrap();
             let projection = serde_json::to_string(&puzzle.projection()).unwrap();
-            assert!(!projection.contains("\"operation\""));
+            assert!(!projection.contains("gate_operations"));
             assert!(!projection.contains("solution"));
             assert_eq!(puzzle.projection().candidate_rules, RuneOperation::ALL);
+            assert_eq!(puzzle.examples.len(), 6);
+            for gate in RuneGate::ALL {
+                let examples = puzzle
+                    .examples
+                    .iter()
+                    .copied()
+                    .filter(|example| example.gate == gate)
+                    .collect::<Vec<_>>();
+                assert_eq!(examples.len(), 2);
+                assert_eq!(rune_operations_consistent_with(&examples).len(), 1);
+                assert!(
+                    examples
+                        .iter()
+                        .all(|example| rune_operations_consistent_with(&[*example]).len() > 1)
+                );
+            }
         }
     }
 

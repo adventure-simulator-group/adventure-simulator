@@ -15,8 +15,8 @@ pub fn puzzle_page(
     solved: bool,
     last_attempt_correct: Option<bool>,
     last_submission: Option<&PuzzleSubmission>,
-    boon_item_id: Option<&str>,
-    boon_reduction_bps: Option<u32>,
+    tactical_insight_text: Option<&str>,
+    tactical_preparation_text: Option<&str>,
     character_name: &str,
 ) -> Markup {
     let kind = projection.kind();
@@ -58,11 +58,11 @@ pub fn puzzle_page(
                                         (line)
                                     }
                                 }
-                                @if let (Some(item_id), Some(reduction)) = (boon_item_id, boon_reduction_bps) {
+                                @if let (Some(finding), Some(preparation)) = (tactical_insight_text, tactical_preparation_text) {
                                     div class="chat-system-message notice success" data-chat-channel="info"
-                                        data-countermeasure-source=(challenge_id) {
-                                        "Received " (item_id) ". The boon reduces the bound finale's enemy combat scale by "
-                                        (reduction / 100) "% when that mission is first bound."
+                                        data-tactical-insight-source=(challenge_id) {
+                                        p { strong { "Learned weakness: " } (finding) }
+                                        p { strong { "Preparation: " } (preparation) }
                                     }
                                 }
                                 a class="btn btn-primary" href="/camp" { "Return to camp" }
@@ -114,12 +114,13 @@ fn puzzle_observations(catalog: FeyPresenterCatalogId, projection: &PuzzleProjec
         },
         PuzzleProjection::RuneTransformation(puzzle) => html! {
             div class="chat-system-message" data-chat-channel="info" {
-                "The sigils form this cycle: Crown → Hart → Moon → Rose → Sword → Crown. "
-                "The same hidden rule governs every example, and it is exactly one of these:"
+                "The five sigils are Crown, Hart, Moon, Rose, and Sword. "
+                "Each gate independently chooses one and only one rule below and uses it for both of its examples. "
+                "Never combine rules within a gate; different gates may use the same rule."
             }
             ul aria-label="Possible rune transformation rules" {
-                @for rule in puzzle.candidate_rules {
-                    li { (rule.rule_text()) }
+                @for (index, rule) in puzzle.candidate_rules.into_iter().enumerate() {
+                    li { "Candidate " ((b'A' + index as u8) as char) ": " (rule.rule_text()) }
                 }
             }
             ol aria-label="Rune transformation examples" {
@@ -128,7 +129,12 @@ fn puzzle_observations(catalog: FeyPresenterCatalogId, projection: &PuzzleProjec
                 }
             }
             p class="chat-system-message" {
-                "Question: when the " (puzzle.query.label()) " enters, which sigil emerges?"
+                "Question: the " (puzzle.query.label()) " passes through "
+                @for (index, gate) in puzzle.route.into_iter().enumerate() {
+                    @if index > 0 { ", then " }
+                    (gate.label())
+                }
+                ". Which sigil finally emerges?"
             }
         },
     }
@@ -189,7 +195,7 @@ fn puzzle_answer_fields(projection: &PuzzleProjection) -> Markup {
         },
         PuzzleProjection::RuneTransformation(puzzle) => html! {
             fieldset {
-                legend { "Choose the sigil produced by the hidden rule" }
+                legend { "Choose the sigil produced after all three gates" }
                 label {
                     span { "Result" }
                     select name="rune_result" required {
@@ -297,8 +303,8 @@ mod tests {
             true,
             Some(true),
             Some(&submission),
-            Some("favor_of_the_thorn_lady"),
-            Some(2_500),
+            Some("The armed retainers carry no missile weapons and must close to melee range before striking."),
+            Some("Bring bows and arrows; archers can strike while these enemies close."),
             "Ada",
         )
         .into_string();
@@ -306,9 +312,42 @@ mod tests {
         assert!(markup.contains("data-puzzle-submission"));
         assert!(markup.contains("Ada: "));
         assert!(markup.contains("The answer is the Sword."));
+        assert!(markup.contains("Learned weakness:"));
+        assert!(markup.contains("bows and arrows"));
+        assert!(!markup.contains("combat scale"));
         assert!(markup.contains("Return to camp"));
         assert!(
             include_str!("../../static/live-state.js").contains("[data-live-navigation-static]")
         );
+    }
+
+    #[test]
+    fn rune_prompt_requires_three_inferred_gate_laws_in_route_order() {
+        let puzzle = PuzzleAuthority::generate(
+            adventuresim_core::errantry::PuzzleKind::RuneTransformation,
+            19,
+        );
+        let markup = puzzle_page(
+            "challenge:test",
+            "case:test",
+            FeyPresenterCatalogId::LadyBeneathThornV1,
+            0,
+            &puzzle.projection(),
+            false,
+            None,
+            None,
+            None,
+            None,
+            "Ada",
+        )
+        .into_string();
+
+        assert!(markup.contains("one and only one rule"));
+        assert!(markup.contains("Never combine rules within a gate"));
+        assert!(markup.contains("Candidate A"));
+        assert!(markup.contains("Gate of Ash"));
+        assert!(markup.contains("Gate of Briar"));
+        assert!(markup.contains("Gate of Glass"));
+        assert!(markup.contains("after all three gates"));
     }
 }

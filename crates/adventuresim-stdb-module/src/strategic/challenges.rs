@@ -1,8 +1,6 @@
 pub const ERRANTRY_ISSUER_ORGANIZATION_ID: &str = "order_saint_george";
 pub const ERRANTRY_FINALE_THREAT_ID: &str = "armed_retainer";
-pub const FEY_COUNTERMEASURE_REDUCTION_BPS: u32 = 2_500;
-pub const FEY_COUNTERMEASURE_SCALE_FLOOR_BPS: u32 = 5_000;
-pub const FEY_COUNTERMEASURE_MULTIPLIER_BPS: u32 = 7_500;
+pub const ERRANTRY_COUNTERMEASURE_SCALE_FLOOR_BPS: u32 = 5_000;
 pub const DISPATCH_COUNTERMEASURE_REDUCTION_BPS: u32 = 1_500;
 pub const DISPATCH_COUNTERMEASURE_MULTIPLIER_BPS: u32 = 8_500;
 pub const OATH_TOKEN_COUNTERMEASURE_REDUCTION_BPS: u32 = 1_750;
@@ -43,7 +41,6 @@ pub enum ErrantryFinaleDefenseKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum ErrantryCountermeasureKind {
-    FavorOfTheThornLady,
     CapturedDispatch,
     Antidote,
     TrapWarning,
@@ -312,8 +309,25 @@ pub struct BackendChallenge {
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
     pub last_submission_json: Option<String>,
-    pub boon_item_id: Option<String>,
-    pub boon_combat_scale_reduction_bps: Option<u32>,
+    pub tactical_insight_text: Option<String>,
+    pub tactical_preparation_text: Option<String>,
+}
+
+fn bound_tactical_insight(
+    ctx: &ViewContext,
+    challenge: &ChallengeAuthority,
+) -> Option<adventuresim_core::errantry::TacticalInsight> {
+    challenge.solved_at_minute?;
+    let hostile_group = ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&challenge.finale_hostile_group_id)?;
+    let threat = hostile_group
+        .enemy_type
+        .parse::<adventuresim_core::bestiary::ThreatId>()
+        .ok()?;
+    adventuresim_core::errantry::tactical_insight_for(threat)
 }
 
 #[view(accessor = backend_challenges, public)]
@@ -347,6 +361,7 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
                 .challenge_id()
                 .filter(&challenge.id)
                 .max_by_key(|receipt| receipt.submitted_revision);
+            let tactical_insight = bound_tactical_insight(ctx, &challenge);
             Some(BackendChallenge {
                 id: challenge.id.clone(),
                 case_id: challenge.case_id,
@@ -361,18 +376,11 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
                 active,
                 last_attempt_correct: last_attempt.as_ref().map(|receipt| receipt.correct),
                 last_submission_json: last_attempt.map(|receipt| receipt.submission_json),
-                boon_item_id: ctx
-                    .db
-                    .errantry_countermeasure()
-                    .source_challenge_id()
-                    .find(&challenge.id)
-                    .map(|boon| boon.item_id),
-                boon_combat_scale_reduction_bps: ctx
-                    .db
-                    .errantry_countermeasure()
-                    .source_challenge_id()
-                    .find(&challenge.id)
-                    .map(|boon| boon.combat_scale_reduction_bps),
+                tactical_insight_text: tactical_insight
+                    .as_ref()
+                    .map(|insight| insight.finding.clone()),
+                tactical_preparation_text: tactical_insight
+                    .map(|insight| insight.preparation),
             })
         })
         .collect()
@@ -764,7 +772,7 @@ pub(crate) fn errantry_mission_scale_snapshot(
         .map(|item| item.source_challenge_id.clone());
     let enemy_scale = base_scale_bps
         .saturating_sub(resolution.enemy_scale_reduction_bps)
-        .max(FEY_COUNTERMEASURE_SCALE_FLOOR_BPS);
+        .max(ERRANTRY_COUNTERMEASURE_SCALE_FLOOR_BPS);
     let snapshot_json = serde_json::to_string(&resolution)
         .expect("finale approach resolution is serializable");
     (
@@ -794,7 +802,6 @@ fn core_countermeasure_kind(
 ) -> adventuresim_core::errantry::CountermeasureKind {
     use adventuresim_core::errantry::CountermeasureKind as Core;
     match kind {
-        ErrantryCountermeasureKind::FavorOfTheThornLady => Core::FavorOfTheThornLady,
         ErrantryCountermeasureKind::CapturedDispatch => Core::CapturedDispatch,
         ErrantryCountermeasureKind::Antidote => Core::Antidote,
         ErrantryCountermeasureKind::TrapWarning => Core::TrapWarning,
@@ -1006,20 +1013,6 @@ pub fn submit_puzzle_challenge(
     }
     ctx.db.challenge_authority().id().update(challenge.clone());
     if correct {
-        award_errantry_countermeasure(
-            ctx,
-            &challenge.id,
-            &challenge.party_id,
-            &challenge.case_id,
-            &challenge.finale_case_site_id,
-            &challenge.finale_hostile_group_id,
-            adventuresim_core::item_references::FEY_COUNTERMEASURE_ITEM_ID,
-            ErrantryCountermeasureKind::FavorOfTheThornLady,
-            ErrantryFinaleDefenseKind::UnnaturalProwess,
-            FEY_COUNTERMEASURE_REDUCTION_BPS,
-            FEY_COUNTERMEASURE_MULTIPLIER_BPS,
-            now,
-        )?;
         let solved_challenge_id = challenge.id.clone();
         ingest_case_outcome_fact(
             ctx,
@@ -1738,9 +1731,9 @@ fn materialize_order_errantry(
 #[cfg(test)]
 mod challenge_source_boundary_tests {
     use super::{
-        ChallengeAttemptReceipt, ERRANTRY_FINALE_THREAT_ID,
-        FEY_COUNTERMEASURE_MULTIPLIER_BPS, autoresolve_enemy_with_countermeasure,
-        puzzle_demo_suffix, validate_challenge_retry,
+        ChallengeAttemptReceipt, ERRANTRY_FINALE_THREAT_ID, ErrantryCountermeasureKind,
+        ErrantryFinaleDefenseKind, RoadChallengeDeed, RoadChallengeRequirement,
+        puzzle_demo_suffix, road_challenge_plan, validate_challenge_retry,
     };
 
     #[test]
@@ -1835,7 +1828,7 @@ mod challenge_source_boundary_tests {
     }
 
     #[test]
-    fn trial_is_optional_camp_authority_and_boon_is_snapshot_only() {
+    fn trial_is_optional_camp_authority_and_physical_rewards_are_separate() {
         let source = include_str!("challenges.rs");
         let camp_match = source
             .split("fn journey_at_bound_trial_camp")
@@ -1849,7 +1842,16 @@ mod challenge_source_boundary_tests {
         assert!(source.contains("encounter.status == \"awaiting_choice\""));
         assert!(!source.contains("insert(StrategicEncounter"));
         assert!(source.contains("ErrantryCountermeasure"));
-        assert!(source.contains("FEY_COUNTERMEASURE_SCALE_FLOOR_BPS"));
+        assert!(source.contains("ERRANTRY_COUNTERMEASURE_SCALE_FLOOR_BPS"));
+        let puzzle_submission = source
+            .split("pub fn submit_puzzle_challenge")
+            .nth(1)
+            .unwrap()
+            .split("pub fn resolve_errantry_road_challenge")
+            .next()
+            .unwrap();
+        assert!(!puzzle_submission.contains("award_errantry_countermeasure"));
+        assert!(source.contains("bound_tactical_insight"));
 
         let mission = include_str!("custody_objectives.rs");
         assert!(mission.contains("errantry_mission_scale_snapshot"));
@@ -1929,46 +1931,24 @@ mod challenge_source_boundary_tests {
     }
 
     #[test]
-    fn authored_finale_threat_and_boon_reduce_consumed_strength() {
+    fn authored_finale_threat_yields_only_a_modeled_physical_insight() {
+        let threat = ERRANTRY_FINALE_THREAT_ID
+            .parse::<adventuresim_core::bestiary::ThreatId>()
+            .unwrap();
+        assert_eq!(threat, adventuresim_core::bestiary::ThreatId::ArmedRetainer);
+        let profile_before = threat.profile().combat;
+        let insight = adventuresim_core::errantry::tactical_insight_for(threat).unwrap();
+        assert!(insight.finding.contains("no missile weapons"));
+        assert!(insight.preparation.contains("bows and arrows"));
         assert_eq!(
-            ERRANTRY_FINALE_THREAT_ID
-                .parse::<adventuresim_core::bestiary::ThreatId>()
-                .unwrap(),
-            adventuresim_core::bestiary::ThreatId::ArmedRetainer
-        );
-        let base = autoresolve_enemy_with_countermeasure(
-            1,
-            ERRANTRY_FINALE_THREAT_ID,
-            6,
-            10_000,
-            10_000,
-        )
-        .unwrap();
-        let aided = autoresolve_enemy_with_countermeasure(
-            2,
-            ERRANTRY_FINALE_THREAT_ID,
-            6,
-            7_500,
-            FEY_COUNTERMEASURE_MULTIPLIER_BPS,
-        )
-        .unwrap();
-        assert!(aided.attributes.endurance < base.attributes.endurance);
-        assert!(aided.skills.sword_hours < base.skills.sword_hours);
-        let (expected_physical, expected_training) =
-            adventuresim_core::threat_escalation::combat_scaling_multipliers(
-                7_500,
-                FEY_COUNTERMEASURE_MULTIPLIER_BPS,
-            );
-        assert!(
-            (aided.attributes.endurance / base.attributes.endurance - expected_physical).abs()
-                < 0.000_01
-        );
-        assert!(
-            (aided.skills.sword_hours / base.skills.sword_hours - expected_training).abs()
-                < 0.000_01
+            format!("{profile_before:?}"),
+            format!("{:?}", threat.profile().combat)
         );
 
         let source = include_str!("challenges.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!production.contains("FavorOfTheThornLady"));
+        assert!(!production.contains("FEY_COUNTERMEASURE_ITEM_ID"));
         assert!(source.contains("ERRANTRY_FINALE_THREAT_ID.into()"));
         assert!(source.contains("4,\n        6,"));
         assert!(source.contains("ErrantryLaunch::NormalTravel"));

@@ -65,13 +65,51 @@ pub enum FinaleDefenseKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum CountermeasureKind {
-    FavorOfTheThornLady,
     CapturedDispatch,
     Antidote,
     TrapWarning,
     ColdIronCharm,
     BlessedWeapon,
     RescuedAlly,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TacticalInsightKind {
+    MustCloseToMelee,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TacticalInsight {
+    pub kind: TacticalInsightKind,
+    pub threat_id: String,
+    pub finding: String,
+    pub preparation: String,
+}
+
+/// Knowledge awarded by a trial must describe mechanics already consumed by
+/// combat. It never changes the threat profile or applies a hidden modifier.
+pub fn tactical_insight_for(threat_id: crate::bestiary::ThreatId) -> Option<TacticalInsight> {
+    let profile = threat_id.profile();
+    if profile.combat.ranged {
+        return None;
+    }
+    let modeled = crate::bestiary::implemented_combat_lore(profile);
+    if !modeled
+        .weaknesses
+        .iter()
+        .any(|fact| fact == "Must close to melee range before attacking")
+    {
+        return None;
+    }
+    Some(TacticalInsight {
+        kind: TacticalInsightKind::MustCloseToMelee,
+        threat_id: threat_id.as_str().into(),
+        finding: format!(
+            "The {} carry no missile weapons and must close to melee range before striking.",
+            profile.plural_name
+        ),
+        preparation: "Bring bows and arrows; archers can strike while these enemies close.".into(),
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1024,7 +1062,7 @@ mod tests {
                     9_500,
                 ),
                 countermeasure(
-                    CountermeasureKind::FavorOfTheThornLady,
+                    CountermeasureKind::ColdIronCharm,
                     "challenge:fey",
                     "favor",
                     FinaleDefenseKind::UnnaturalProwess,
@@ -1058,6 +1096,19 @@ mod tests {
         assert!(resolution.unresolved_defenses.is_empty());
         assert_eq!(resolution.enemy_scale_reduction_bps, 4_000);
         assert_eq!(resolution.enemy_capability_multiplier_bps, 6_375);
+    }
+
+    #[test]
+    fn tactical_insight_reports_consumed_physical_mechanics_without_modifying_them() {
+        let threat = crate::bestiary::ThreatId::ArmedRetainer;
+        let before = threat.profile().combat;
+        let insight = tactical_insight_for(threat).expect("retainers must close to melee");
+        let after = threat.profile().combat;
+
+        assert_eq!(insight.kind, TacticalInsightKind::MustCloseToMelee);
+        assert!(insight.finding.contains("no missile weapons"));
+        assert!(insight.preparation.contains("bows and arrows"));
+        assert_eq!(format!("{before:?}"), format!("{after:?}"));
     }
 
     #[test]

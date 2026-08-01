@@ -302,6 +302,16 @@ pub(super) async fn camp(
     let trial = challenges
         .iter()
         .find(|challenge| challenge.active && challenge.open && !challenge.solved);
+    let tactical_insight = challenges.iter().find_map(|challenge| {
+        (challenge.active && challenge.solved)
+            .then(|| {
+                Some((
+                    challenge.tactical_insight_text.as_deref()?,
+                    challenge.tactical_preparation_text.as_deref()?,
+                ))
+            })
+            .flatten()
+    });
     let road_challenges = match state
         .db
         .query::<BackendRoadChallenge>(&format!(
@@ -365,6 +375,7 @@ pub(super) async fn camp(
                     trial.presenter_catalog_id,
                 )
             }),
+            tactical_insight,
             road_trial,
             road_result,
             foraging_dialog,
@@ -478,8 +489,8 @@ mod direct_demo_redirect_tests {
             active,
             last_attempt_correct: None,
             last_submission_json: None,
-            boon_item_id: None,
-            boon_combat_scale_reduction_bps: None,
+            tactical_insight_text: None,
+            tactical_preparation_text: None,
         }
     }
 

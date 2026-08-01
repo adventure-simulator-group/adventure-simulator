@@ -22,8 +22,8 @@ pub struct BackendChallenge {
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
     pub last_submission_json: Option<String>,
-    pub boon_item_id: Option<String>,
-    pub boon_combat_scale_reduction_bps: Option<u32>,
+    pub tactical_insight_text: Option<String>,
+    pub tactical_preparation_text: Option<String>,
 }
 
 impl __sdk::InModule for BackendChallenge {
@@ -48,8 +48,8 @@ pub struct BackendChallengeCols {
     pub active: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub last_attempt_correct: __sdk::__query_builder::Col<BackendChallenge, Option<bool>>,
     pub last_submission_json: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
-    pub boon_item_id: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
-    pub boon_combat_scale_reduction_bps: __sdk::__query_builder::Col<BackendChallenge, Option<u32>>,
+    pub tactical_insight_text: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
+    pub tactical_preparation_text: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendChallenge {
@@ -84,10 +84,13 @@ impl __sdk::__query_builder::HasCols for BackendChallenge {
                 table_name,
                 "last_submission_json",
             ),
-            boon_item_id: __sdk::__query_builder::Col::new(table_name, "boon_item_id"),
-            boon_combat_scale_reduction_bps: __sdk::__query_builder::Col::new(
+            tactical_insight_text: __sdk::__query_builder::Col::new(
                 table_name,
-                "boon_combat_scale_reduction_bps",
+                "tactical_insight_text",
+            ),
+            tactical_preparation_text: __sdk::__query_builder::Col::new(
+                table_name,
+                "tactical_preparation_text",
             ),
         }
     }

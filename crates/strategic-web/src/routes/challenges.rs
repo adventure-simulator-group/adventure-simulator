@@ -89,8 +89,8 @@ async fn show(
             challenge.solved,
             challenge.last_attempt_correct,
             last_submission.as_ref(),
-            challenge.boon_item_id.as_deref(),
-            challenge.boon_combat_scale_reduction_bps,
+            challenge.tactical_insight_text.as_deref(),
+            challenge.tactical_preparation_text.as_deref(),
             &character.name,
         )
         .into_string(),
