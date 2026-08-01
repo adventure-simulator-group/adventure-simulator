@@ -624,6 +624,10 @@ mod tests {
             terminal_retry_not_before: Default::default(),
             pending_resolution: None,
             pending_receipt: None,
+            terminal_in_flight: false,
+            terminal_ack_deadline: None,
+            terminal_transport_failed: false,
+            terminal_presentation: None,
             committed: false,
         })
         .add_observer(on_tactical_combatant_defeated);
