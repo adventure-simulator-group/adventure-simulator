@@ -12,12 +12,8 @@ pub enum DefendRequest {
     Parry,
 }
 
-/// Sent by the client the moment it starts a melee attack windup, before the
-/// hit itself is resolved. Carries no data of its own — the attacker is the
-/// message sender.
-#[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
-pub struct AttackStartedRequest;
-
+/// Requests enrollment of a strategic character in the tactical mission.
+/// The sender remains the authoritative network identity.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
 pub struct JoinRequest {
     pub player_id: u64,
@@ -30,12 +26,41 @@ pub struct PlayerInputRequest {
     pub jump: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MeleeActionPhase {
+    Start,
+    Complete,
+}
+
+/// Both melee phases share one mapped ordered stream, so a completion cannot
+/// overtake its server-observed start.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
-pub struct AttackRequest {
+pub struct MeleeActionRequest {
+    pub phase: MeleeActionPhase,
     #[entities]
-    pub target: Entity,
+    pub target: Option<Entity>,
     pub body_part: BodyPart,
     pub hit_precision: f32,
+}
+
+impl MeleeActionRequest {
+    pub fn start() -> Self {
+        Self {
+            phase: MeleeActionPhase::Start,
+            target: None,
+            body_part: BodyPart::Chest,
+            hit_precision: 0.0,
+        }
+    }
+
+    pub fn complete(target: Entity, body_part: BodyPart, hit_precision: f32) -> Self {
+        Self {
+            phase: MeleeActionPhase::Complete,
+            target: Some(target),
+            body_part,
+            hit_precision,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Event, Serialize, Deserialize, MapEntities)]
