@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/adventuresim-puzzles",
     "crates/adventuresim-dialogue",
     "crates/adventuresim-core",
     "crates/adventuresim-strategic-sim",
@@ -33,6 +34,7 @@ adventuresim-tactical-netcode = { version = "0.1.0", default-features = false }
 adventuresim-tactical-core = { version = "0.1.0" }
 adventuresim-stdb-client = { version = "0.1.0" }
 adventuresim-core = { version = "0.1.0" }
+adventuresim-puzzles = { version = "0.1.0", path = "crates/adventuresim-puzzles" }
 adventuresim-dialogue = { version = "0.1.0", path = "crates/adventuresim-dialogue" }
 adventuresim-strategic-sim = { version = "0.1.0" }
 adventuresim-world-schema = { version = "0.1.0", path = "crates/adventuresim-world-schema" }
@@ -99,6 +101,7 @@ adventuresim-tactical-netcode = { path = "crates/adventuresim-tactical-netcode" 
 adventuresim-tactical-core = { path = "crates/adventuresim-tactical-core" }
 adventuresim-stdb-client = { path = "crates/adventuresim-stdb-client" }
 adventuresim-core = { path = "crates/adventuresim-core" }
+adventuresim-puzzles = { path = "crates/adventuresim-puzzles" }
 adventuresim-strategic-sim = { path = "crates/adventuresim-strategic-sim" }
 
 # https://github.com/janhohenheim/bevy_ahoy/pull/66

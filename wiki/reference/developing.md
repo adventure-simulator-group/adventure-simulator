@@ -1,5 +1,9 @@
 # Development Workflow
 
+For fast puzzle generation, interactive play, structural difficulty sweeps,
+and deterministic regression replay without starting SpacetimeDB or the web
+stack, use the dependency-light [`puzzle-lab`](puzzle-lab.md) CLI.
+
 ## Puzzle demo
 
 Start a disposable strategic-only stack with `just puzzle-demo`. Create or

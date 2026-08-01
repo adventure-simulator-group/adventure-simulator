@@ -23,6 +23,12 @@ reducer will check it. The shared revision and immutable attempt receipt make
 wrong answers retryable and exact lost-response retries idempotent for every
 engine.
 
+The mechanics live in the dependency-light `adventuresim-puzzles` crate and
+are re-exported by `adventuresim-core::errantry`. Each private authority also
+retains a validated generation specification, allowing the same engine to be
+parameterized and replayed exactly in the `puzzle-lab` CLI without importing
+quest presentation or persistence. See [Puzzle laboratory](puzzle-lab.md).
+
 The presenter catalog is a separate boundary. The Lady Beneath the Thorn has
 closed introduction, instruction, failure, and success verse for every engine.
 Formal testimony and transformation examples remain data owned by the puzzle
@@ -31,7 +37,7 @@ lines use authored modern-spelling Shakespearean English in iambic pentameter.
 
 ## Ordered-sigil puzzle
 
-The first challenge engine orders five distinct sigils. Rules version 2:
+The first challenge engine orders five distinct sigils. Rules version 3:
 
 1. deterministically shuffles a canonical solution from a private seed;
 2. derives the complete pool of true typed `Exact`, `Before`, `Adjacent`, and
@@ -41,6 +47,11 @@ The first challenge engine orders five distinct sigils. Rules version 2:
    deterministic preferences for fewer `Exact` clues and then fewer `NotAt`
    clues; and
 5. replays the stored version and seed before accepting an attempt.
+
+The generation specification can enable or disable each clue family and set
+the clue ceiling. Production uses the standard specification above; laboratory
+runs can test other formal grammars while retaining the same minimizer and
+validator.
 
 All 120 possible solutions have exhaustive tests for global minimality and the
 necessity of every selected clue. Duplicates, omissions, unknown sigils, stale
@@ -69,7 +80,7 @@ needed. The public projection omits both the canonical path and liar.
 
 ## Rune-transformation puzzle
 
-The rune engine gives each of three named gates one of five typed exchange
+The standard rune engine gives each of three named gates one of five typed exchange
 operations over the same bounded five-sigil domain. Each law exchanges one
 adjacent pair in a closed ring and leaves the other three unchanged. It shows two input/output
 examples for each gate, then asks which sigil emerges after a new input passes
@@ -89,6 +100,11 @@ necessary to infer all three laws. The projection contains examples, route,
 query, and answer choices but not the operations or result. Icons may later
 decorate the sigils, but mechanically relevant names are always present as
 text.
+
+Its generation specification can vary the active gate count, route length,
+examples per gate, minimum ambiguity of a single example, operation reuse, and
+route-gate reuse. Validation always requires the displayed examples jointly to
+prove every active gate law and the final submitted result.
 
 ## Supernatural speech and chat
 

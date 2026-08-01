@@ -130,7 +130,7 @@ fn puzzle_observations(catalog: FeyPresenterCatalogId, projection: &PuzzleProjec
             }
             p class="chat-system-message" {
                 "Question: the " (puzzle.query.label()) " passes through "
-                @for (index, gate) in puzzle.route.into_iter().enumerate() {
+                @for (index, gate) in puzzle.route.iter().enumerate() {
                     @if index > 0 { ", then " }
                     (gate.label())
                 }
@@ -195,7 +195,7 @@ fn puzzle_answer_fields(projection: &PuzzleProjection) -> Markup {
         },
         PuzzleProjection::RuneTransformation(puzzle) => html! {
             fieldset {
-                legend { "Choose the sigil produced after all three gates" }
+                legend { "Choose the sigil produced after the complete gate route" }
                 label {
                     span { "Result" }
                     select name="rune_result" required {
@@ -348,6 +348,6 @@ mod tests {
         assert!(markup.contains("Gate of Ash"));
         assert!(markup.contains("Gate of Briar"));
         assert!(markup.contains("Gate of Glass"));
-        assert!(markup.contains("after all three gates"));
+        assert!(markup.contains("after the complete gate route"));
     }
 }
