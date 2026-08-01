@@ -299,18 +299,65 @@ fn quest_selection_trace_precedes_discovery_reducers() {
 #[test]
 fn generated_case_views_filter_by_owner_and_sort_stably() {
     let rows = vec![
-        (9, "case-b".into(), "B".into(), "open".into()),
-        (7, "case-z".into(), "Z".into(), "open".into()),
-        (9, "case-a".into(), "A".into(), "open".into()),
-        (9, "case-c".into(), "C".into(), "completed".into()),
+        (9, "case-b".into(), "B".into(), "open".into(), 10),
+        (7, "case-z".into(), "Z".into(), "open".into(), 1),
+        (9, "case-a".into(), "A".into(), "open".into(), 20),
+        (9, "case-c".into(), "C".into(), "completed".into(), 0),
     ];
     assert_eq!(
         stable_owned_open_cases(9, rows),
         vec![
-            ("case-a".to_owned(), "A".to_owned()),
-            ("case-b".to_owned(), "B".to_owned())
+            ("case-b".to_owned(), "B".to_owned()),
+            ("case-a".to_owned(), "A".to_owned())
         ]
     );
+}
+
+#[test]
+fn generated_case_fairness_continues_actionable_progress_then_round_robins() {
+    let cases = vec![
+        ("oldest".to_owned(), "Oldest".to_owned()),
+        ("newer".to_owned(), "Newer".to_owned()),
+    ];
+    assert_eq!(fair_open_case_index(&cases, None, false, None), 0);
+    assert_eq!(
+        fair_open_case_index(&cases, Some("oldest"), true, Some("oldest")),
+        0,
+        "a progressing actionable case retains focus"
+    );
+    assert_eq!(
+        fair_open_case_index(&cases, Some("oldest"), false, Some("oldest")),
+        1,
+        "a no-progress case yields to the next public case"
+    );
+    assert_eq!(
+        fair_open_case_index(&cases, None, false, Some("newer")),
+        0,
+        "round robin returns to the oldest case instead of starving it"
+    );
+}
+
+#[test]
+fn generated_case_selection_is_public_chronological_and_shared_by_both_paths() {
+    let source = LIVE_CORE_SOURCE;
+    let stable = source
+        .split("fn stable_owned_open_cases")
+        .nth(1)
+        .and_then(|tail| tail.split("enum GeneratedClosureAttribution").next())
+        .expect("stable public case ordering");
+    assert!(stable.contains("latest_update_at"));
+    assert!(!stable.contains("fixture"));
+    let bootstrap = source
+        .split("let open_generated_cases = runner.owned_open_generated_cases")
+        .nth(1)
+        .expect("core-loop case selection");
+    assert_eq!(
+        bootstrap.matches("select_owned_open_generated_case(leader)").count(),
+        2,
+        "continuation and post-discovery must share the same fair selector"
+    );
+    assert!(!bootstrap.contains("open_generated_cases[0]"));
+    assert!(!bootstrap.contains("owned_open_generated_cases(leader).into_iter().next()"));
 }
 
 #[test]
@@ -467,7 +514,10 @@ fn dialogue_candidates_are_filtered_by_the_authoritative_public_navigation_rule(
     let case_dialogue = source
         .split("pub(super) fn try_generated_dialogue_topic")
         .nth(1)
-        .and_then(|tail| tail.split("fn public_dialogue_progress_fingerprint").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn public_dialogue_progress_fingerprint")
+                .next()
+        })
         .expect("generated-case dialogue selection");
     assert!(case_dialogue.contains("self.visible_npc_candidates"));
     let preferred_filter = case_dialogue

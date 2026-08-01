@@ -220,6 +220,8 @@ fn run_core_loop_inner(
         generated_terminal_cases: HashSet::new(),
         generated_exact_site_cases: HashSet::new(),
         generated_traveled_cases: HashSet::new(),
+        generated_active_cases: HashMap::new(),
+        generated_case_cursors: HashMap::new(),
         generated_finance_blocks: HashMap::new(),
         generated_discovery_backoff: HashMap::new(),
         generated_dialogue_no_progress: HashMap::new(),
@@ -688,7 +690,12 @@ fn run_core_loop_inner(
             );
             match quest_path {
                 "generated_open_case" => {
-                    let (case_id, title) = open_generated_cases[0].clone();
+                    let Some((case_id, title)) =
+                        runner.select_owned_open_generated_case(leader)
+                    else {
+                        continue;
+                    };
+                    let before = runner.public_dialogue_progress_fingerprint(leader, &case_id);
                     let progressed = runner.advance_generated_case(
                         party_id,
                         leader,
@@ -697,6 +704,7 @@ fn run_core_loop_inner(
                         &case_id,
                         &title,
                     )?;
+                    runner.record_generated_case_attempt(leader, &case_id, &before);
                     if !progressed && runner.party_for(leader)?.current_settlement_id.is_some() {
                         runner.settlement_activity_day(leader_agent)?;
                     }
@@ -708,10 +716,12 @@ fn run_core_loop_inner(
                     let discovery = runner.discover_generated_case(leader, leader_agent, cycle)?;
                     if discovery.case_discovered() {
                         let Some((case_id, title)) =
-                            runner.owned_open_generated_cases(leader).into_iter().next()
+                            runner.select_owned_open_generated_case(leader)
                         else {
                             continue;
                         };
+                        let before =
+                            runner.public_dialogue_progress_fingerprint(leader, &case_id);
                         let progressed = runner.advance_generated_case(
                             party_id,
                             leader,
@@ -720,6 +730,7 @@ fn run_core_loop_inner(
                             &case_id,
                             &title,
                         )?;
+                        runner.record_generated_case_attempt(leader, &case_id, &before);
                         if !progressed && runner.party_for(leader)?.current_settlement_id.is_some()
                         {
                             runner.settlement_activity_day(leader_agent)?;

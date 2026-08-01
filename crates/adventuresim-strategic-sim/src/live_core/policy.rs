@@ -13,6 +13,8 @@ struct LiveRunner {
     generated_terminal_cases: HashSet<(u64, String)>,
     generated_exact_site_cases: HashSet<(u64, String)>,
     generated_traveled_cases: HashSet<(u64, String)>,
+    generated_active_cases: HashMap<u64, String>,
+    generated_case_cursors: HashMap<u64, String>,
     generated_finance_blocks: HashMap<(String, u64, String), (u64, u64)>,
     generated_discovery_backoff: HashMap<u64, PublicDiscoveryBackoff>,
     generated_dialogue_no_progress:

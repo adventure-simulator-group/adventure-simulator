@@ -1746,15 +1746,35 @@ fn stable_public_npc_candidates(
 
 fn stable_owned_open_cases(
     owner_character_id: u64,
-    rows: impl IntoIterator<Item = (u64, String, String, String)>,
+    rows: impl IntoIterator<Item = (u64, String, String, String, u64)>,
 ) -> Vec<(String, String)> {
     let mut cases = rows
         .into_iter()
-        .filter(|(owner, _, _, status)| *owner == owner_character_id && status == "open")
-        .map(|(_, case_id, title, _)| (case_id, title))
+        .filter(|(owner, _, _, status, _)| *owner == owner_character_id && status == "open")
+        .map(|(_, case_id, title, _, latest_update_at)| (latest_update_at, case_id, title))
         .collect::<Vec<_>>();
     cases.sort();
     cases
+        .into_iter()
+        .map(|(_, case_id, title)| (case_id, title))
+        .collect()
+}
+
+fn fair_open_case_index(
+    cases: &[(String, String)],
+    active_case_id: Option<&str>,
+    active_is_actionable: bool,
+    cursor_case_id: Option<&str>,
+) -> usize {
+    if active_is_actionable
+        && let Some(index) = active_case_id
+            .and_then(|active| cases.iter().position(|(case_id, _)| case_id == active))
+    {
+        return index;
+    }
+    cursor_case_id
+        .and_then(|cursor| cases.iter().position(|(case_id, _)| case_id == cursor))
+        .map_or(0, |index| (index + 1) % cases.len())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

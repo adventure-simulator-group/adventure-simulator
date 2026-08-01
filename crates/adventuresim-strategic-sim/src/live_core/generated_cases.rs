@@ -6,8 +6,107 @@ impl LiveRunner {
                 .db
                 .backend_investigation_cases()
                 .iter()
-                .map(|row| (row.owner_character_id, row.case_id, row.subject, row.status)),
+                .map(|row| {
+                    (
+                        row.owner_character_id,
+                        row.case_id,
+                        row.subject,
+                        row.status,
+                        row.latest_update_at,
+                    )
+                }),
         )
+    }
+
+    fn generated_case_has_public_actionable_step(
+        &self,
+        character_id: u64,
+        case_id: &str,
+    ) -> bool {
+        self.connection
+            .db
+            .backend_investigation_actions()
+            .iter()
+            .any(|row| {
+                row.owner_character_id == character_id
+                    && row.case_id == case_id
+                    && (row.available
+                        || row.can_travel_to_required_site
+                        || projected_investigation_wait_minutes(
+                            &row.unavailable_reason_code,
+                            row.wait_minutes,
+                        )
+                        .is_some())
+            })
+            || self
+                .connection
+                .db
+                .backend_investigation_leads()
+                .iter()
+                .any(|row| {
+                    row.owner_character_id == character_id
+                        && row.case_id == case_id
+                        && !row.witness_name.is_empty()
+                        && row.corrected_by.is_empty()
+                })
+            || self
+                .connection
+                .db
+                .backend_case_site_pins()
+                .iter()
+                .any(|row| row.owner_character_id == character_id && row.case_id == case_id)
+    }
+
+    pub(super) fn select_owned_open_generated_case(
+        &mut self,
+        character_id: u64,
+    ) -> Option<(String, String)> {
+        let cases = self.owned_open_generated_cases(character_id);
+        if cases.is_empty() {
+            self.generated_active_cases.remove(&character_id);
+            self.generated_case_cursors.remove(&character_id);
+            return None;
+        }
+        let active_case_id = self.generated_active_cases.get(&character_id).cloned();
+        let active_is_actionable = active_case_id.as_deref().is_some_and(|case_id| {
+            cases.iter().any(|(open_case_id, _)| open_case_id == case_id)
+                && self.generated_case_has_public_actionable_step(character_id, case_id)
+        });
+        let selected_index = fair_open_case_index(
+            &cases,
+            active_case_id.as_deref(),
+            active_is_actionable,
+            self.generated_case_cursors
+                .get(&character_id)
+                .map(String::as_str),
+        );
+        if active_is_actionable {
+            return Some(cases[selected_index].clone());
+        }
+        self.generated_active_cases.remove(&character_id);
+        let selected = cases[selected_index].clone();
+        self.generated_case_cursors
+            .insert(character_id, selected.0.clone());
+        Some(selected)
+    }
+
+    pub(super) fn record_generated_case_attempt(
+        &mut self,
+        character_id: u64,
+        case_id: &str,
+        before: &PublicDialogueProgressFingerprint,
+    ) {
+        let still_open = self.generated_case_status(character_id, case_id).as_deref() == Some("open");
+        let progressed = still_open
+            && self.public_dialogue_progress_fingerprint(character_id, case_id) != *before;
+        if progressed && self.generated_case_has_public_actionable_step(character_id, case_id) {
+            self.generated_active_cases
+                .insert(character_id, case_id.to_owned());
+        } else if self.generated_active_cases.get(&character_id).map(String::as_str)
+            == Some(case_id)
+        {
+            self.generated_active_cases.remove(&character_id);
+        }
     }
 
     pub(super) fn generated_case_status(&self, character_id: u64, case_id: &str) -> Option<String> {
@@ -676,7 +775,7 @@ impl LiveRunner {
         Ok(false)
     }
 
-    fn public_dialogue_progress_fingerprint(
+    pub(super) fn public_dialogue_progress_fingerprint(
         &self,
         character_id: u64,
         case_id: &str,
