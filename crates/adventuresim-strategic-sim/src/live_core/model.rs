@@ -1889,12 +1889,25 @@ impl FailureRecorder {
     }
 }
 
+const SAFE_TRAVEL_FAILURE_OPERATIONS: [&str; 11] = [
+    "travel_to_case_site",
+    "travel_to_generated_case_site",
+    "unsafe_contract_retreat_to_settlement",
+    "illness_retreat_to_settlement",
+    "defeat_retreat_to_settlement",
+    "return_to_settlement",
+    "return_completed_generated_case",
+    "generated_unchanged_defeat_retreat",
+    "generated_defeat_retreat_to_settlement",
+    "return_from_generated_case_site",
+    "expedition_health_evacuation",
+];
+
 fn safe_failure_operation(error: &str) -> Option<&'static str> {
     [
         "perform_investigation_action",
         "wait_for_investigation_window_settlement",
         "wait_for_investigation_window_camp",
-        "travel_to_generated_case_site",
         "start_discovery_dialogue",
         "choose_dialogue_topic",
         "rest_at_camp",
@@ -1912,11 +1925,17 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "administer_preparation",
     ]
     .into_iter()
+    .chain(SAFE_TRAVEL_FAILURE_OPERATIONS)
     .find(|operation| {
         error.starts_with(&format!("{operation} failed:"))
             || error.starts_with(&format!("{operation} timed out"))
             || error.starts_with(&format!("could not send {operation}:"))
     })
+}
+
+fn safe_travel_failure(error: &str) -> bool {
+    safe_failure_operation(error)
+        .is_some_and(|operation| SAFE_TRAVEL_FAILURE_OPERATIONS.contains(&operation))
 }
 
 fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
@@ -1927,6 +1946,8 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
         "journey_held_no_actionable_actor"
     } else if error.contains("Rest until the party reaches its next daylight walking window") {
         "journey_daylight_window_rest_required"
+    } else if safe_travel_failure(error) {
+        "journey_travel_reducer_failed"
     } else if error.contains("start_discovery_dialogue") {
         "discovery_contact_failed"
     } else if error.contains("purchase_journey_provisions") {
@@ -1984,6 +2005,11 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
         (
             "journey_temporally_unavailable",
             "Camp travel was continued outside its public projected walking window.",
+        )
+    } else if safe_travel_failure(error) {
+        (
+            "journey_travel_failed",
+            "The authoritative journey transition could not be completed.",
         )
     } else if error.contains("start_discovery_dialogue") {
         (

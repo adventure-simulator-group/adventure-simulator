@@ -202,6 +202,10 @@ fn whole_party_sneak_score(ctx: &ReducerContext, member_ids: &[u64]) -> u16 {
         .unwrap_or(0)
 }
 
+fn quest_influence_case_site_id(destination: &JourneyEndpoint) -> Option<&str> {
+    destination.case_site_id()
+}
+
 /// Truncates a walking leg at its first canonical random-encounter boundary.
 /// The caller advances ordinary time/needs/fatigue by the returned duration.
 fn maybe_interrupt_travel(
@@ -238,33 +242,35 @@ fn maybe_interrupt_travel(
         .party_journey_route_authority()
         .party_id()
         .find(&party_id.to_string());
-    let active_contract_archetype = ctx
-        .db
-        .party_authority()
-        .id()
-        .find(&party_id.to_string())
-        .and_then(|party| party.active_contract_id)
-        .and_then(|contract_id| ctx.db.contract_authority().id().find(&contract_id))
-        .filter(|contract| {
+    let active_contract_archetype =
+        quest_influence_case_site_id(&journey.destination).and_then(|destination_case_site_id| {
             ctx.db
-                .case_site_authority()
-                .id_key()
-                .find(&journey.destination.case_site_id().unwrap().to_string())
-                .is_some_and(|site| site.case_id == contract.case_id)
-        })
-        .and_then(|contract| {
-            ctx.db
-                .case_site_authority()
-                .case_id()
-                .filter(&contract.case_id)
-                .find_map(|site| {
+                .party_authority()
+                .id()
+                .find(&party_id.to_string())
+                .and_then(|party| party.active_contract_id)
+                .and_then(|contract_id| ctx.db.contract_authority().id().find(&contract_id))
+                .filter(|contract| {
                     ctx.db
-                        .hostile_group_authority()
-                        .iter()
-                        .find(|group| group.case_site_id == site.id)
+                        .case_site_authority()
+                        .id_key()
+                        .find(&destination_case_site_id.to_string())
+                        .is_some_and(|site| site.case_id == contract.case_id)
                 })
-        })
-        .and_then(|group| quest_encounter_archetype(&group.enemy_type));
+                .and_then(|contract| {
+                    ctx.db
+                        .case_site_authority()
+                        .case_id()
+                        .filter(&contract.case_id)
+                        .find_map(|site| {
+                            ctx.db
+                                .hostile_group_authority()
+                                .iter()
+                                .find(|group| group.case_site_id == site.id)
+                        })
+                })
+                .and_then(|group| quest_encounter_archetype(&group.enemy_type))
+        });
     let member_ids = living_party_member_ids(ctx, party_id);
     let capable = member_ids
         .iter()

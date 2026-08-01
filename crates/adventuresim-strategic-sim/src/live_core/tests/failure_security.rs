@@ -143,7 +143,8 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
 
 #[test]
 fn equipment_trade_failure_is_classified_without_backend_text() {
-    let raw = "purchase_personal_storefront_with_party_stake failed: hidden provider authority changed";
+    let raw =
+        "purchase_personal_storefront_with_party_stake failed: hidden provider authority changed";
     let (category, message) = safe_core_loop_failure(raw);
     assert_eq!(category, "equipment_purchase_failed");
     assert_eq!(
@@ -487,6 +488,16 @@ fn journey_camp_failures_are_allowlisted_without_raw_text() {
         "journey_held_no_actionable_actor"
     );
     assert!(!message.contains("hidden health authority"));
+
+    let travel = "return_to_settlement failed: hidden journey authority panic";
+    let (category, message) = safe_core_loop_failure(travel);
+    assert_eq!(category, "journey_travel_failed");
+    assert_eq!(safe_failure_operation(travel), Some("return_to_settlement"));
+    assert_eq!(
+        safe_failure_reason_code(travel, category),
+        "journey_travel_reducer_failed"
+    );
+    assert!(!message.contains("hidden journey authority panic"));
 }
 
 #[test]

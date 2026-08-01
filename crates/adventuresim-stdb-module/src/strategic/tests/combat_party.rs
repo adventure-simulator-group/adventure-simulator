@@ -51,6 +51,39 @@ fn sampler_fixture() -> (MissionAuthority, Vec<MissionOutcomeCandidate>) {
 }
 
 #[test]
+fn quest_encounter_influence_is_scoped_to_outbound_case_site_destinations() {
+    let outbound = JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
+        id: CaseSiteId::from("case-site:test".to_string()),
+        name: "Test Site".into(),
+    });
+    assert_eq!(
+        quest_influence_case_site_id(&outbound),
+        Some("case-site:test")
+    );
+    assert_eq!(
+        quest_encounter_archetype("bandit"),
+        Some(EncounterArchetype::Bandits)
+    );
+
+    let returning = JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+        id: "settlement:test".into(),
+        name: "Test Settlement".into(),
+    });
+    assert_eq!(quest_influence_case_site_id(&returning), None);
+
+    let interrupt = STRATEGIC_SOURCE
+        .split("fn maybe_interrupt_travel")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("fn advance_party_movement_until_encounter")
+                .next()
+        })
+        .unwrap();
+    assert!(interrupt.contains("quest_influence_case_site_id(&journey.destination)"));
+    assert!(!interrupt.contains("case_site_id().unwrap()"));
+}
+
+#[test]
 fn persistent_npc_chat_authority_accepts_generated_ids_without_trusting_their_prefix() {
     assert!(npc_conversation_authority_matches(
         "riverdale",

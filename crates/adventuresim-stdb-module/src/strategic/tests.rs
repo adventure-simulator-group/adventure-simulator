@@ -3,7 +3,8 @@ mod healing_tests {
     use super::{
         CaseAuthority, CaseFinaleAuthority, CaseResolutionStatus, CaseSiteAuthority, CaseSiteId,
         FinaleKind, FinaleStatus, HostileGroupAuthority, HostileGroupDisposition,
-        HostileResolutionKind, IncidentStatus, LocalChatMessage, MissionApproachCapability,
+        HostileResolutionKind, IncidentStatus, JourneyCaseSiteEndpoint, JourneyEndpoint,
+        JourneySettlementEndpoint, LocalChatMessage, MissionApproachCapability,
         MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate, QuestGenerationAuthority,
         RecruitmentOffer, RecruitmentOfferBindingFields, RecruitmentOfferId,
         RecruitmentOfferStatus, RecruitmentSourceId, STRATEGIC_SOURCE, activity_incident_source_id,
@@ -14,9 +15,10 @@ mod healing_tests {
         hostile_resolution_for_objective, incident_group_matches, merchant_storefront,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
-        quest_generation_context_commitment, recruitment_offer_binding_fields_are_live,
-        refreshed_recruitment_offer_status, renewed_recruitment_offer_expiry,
-        sample_mission_candidate, sanitized_encounter_body_weight, settlement_activity_stage_error,
+        quest_generation_context_commitment, quest_influence_case_site_id,
+        recruitment_offer_binding_fields_are_live, refreshed_recruitment_offer_status,
+        renewed_recruitment_offer_expiry, sample_mission_candidate,
+        sanitized_encounter_body_weight, settlement_activity_stage_error,
         simulation_quest_provisioning_economy, unique_default_merchant_provider,
         validate_quest_generation_authority, validated_generated_dialogue_manifest,
     };
