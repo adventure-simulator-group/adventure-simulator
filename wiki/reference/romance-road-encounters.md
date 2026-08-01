@@ -151,6 +151,23 @@ opening discloses the dangerous crossing and disputed fare, but withholds that
 deeper tactical conclusion. The encounter is travel-only, goal-neutral,
 entirely mortal, and uses no runtime catalog special case.
 
+`rash_cliff_hunt_v1` places a rash mortal young lord, his mail-clad squire, and
+light beaters below a dangerous shale ascent. The lord stakes twenty groschen
+on reaching an upper cairn and threatens his servants' wages if the mountain
+buck escapes. The party may stalk a safer switchback, use an owned hunting
+spear as a climbing brace without consuming it, order a belayed drive from the
+hunt's cords and poles, negotiate fair terms that preserve the servants' wages,
+rebuke the lord's vainglory through Christian duty, or falsely claim hunt
+service, rig a station, and abscond with the entrusted side stakes; the open
+road permits a consequence-free refusal. Every active route concretely
+witnesses light beaters drive the living buck onto its sole upper scree
+traverse, where it passes broadside above the lower spur without brush or rock
+to mask a ranged shot. This physical observation informs weapon preparation
+without granting quarry, killing or persisting the buck, damaging equipment,
+or weakening any opponent. The materially richest theft lowers Honesty without
+publicly exemplifying it. The encounter is travel-only, goal-neutral, entirely
+mortal, and requires no runtime catalog special case.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
