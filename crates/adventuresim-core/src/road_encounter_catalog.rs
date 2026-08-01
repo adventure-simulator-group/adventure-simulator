@@ -810,6 +810,7 @@ pub fn sources() -> Vec<EncounterSource> {
 #[cfg(all(test, runtime_catalog))]
 mod tests {
     use super::*;
+
     #[test]
     fn embedded_catalog_is_valid_and_provenanced() {
         validate_definitions(definitions()).unwrap();
@@ -1834,6 +1835,75 @@ mod tests {
         let ignore = choice("ignore");
         assert!(ignore.transition.is_none());
         assert!(ignore.effects.is_empty() && ignore.personality.is_empty());
+    }
+
+    #[test]
+    fn enchanted_fog_routes_are_local_grounded_and_share_bow_preparation() {
+        let definition = encounter("enchanted_fog_lost_forester_v1").unwrap();
+        assert!(definition.triggers.travel && definition.triggers.rest);
+        let lady = definition
+            .opening
+            .iter()
+            .filter(|line| line.speaker == "white_mere_lady")
+            .collect::<Vec<_>>();
+        assert_eq!(lady.len(), 3);
+        assert!(lady.iter().all(|line| line.reviewed_iambic_pentameter));
+        assert!(
+            definition
+                .choices
+                .iter()
+                .flat_map(|choice| &choice.response)
+                .all(|line| line.speaker != "white_mere_lady")
+        );
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        for route in definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+        {
+            let effects = serde_json::to_string(&route.effects).unwrap();
+            assert!(effects.contains(r#""item_id":"self_bow","quantity":1"#));
+            assert!(effects.contains(r#""item_id":"arrow","quantity":8"#));
+            assert!(effects.contains("melee_only_opposition_cannot_answer_prepared_bow_lane"));
+            assert_eq!(
+                route.quest_reward_tags,
+                ["prepare_bows_against_melee_only_opposition"]
+            );
+        }
+        assert!(crate::item_catalog::definition("self_bow").is_some());
+        assert!(crate::item_catalog::definition("arrow").is_some());
+        let command = choice("coordinate_reeves_mist_line");
+        assert!(
+            command
+                .result
+                .contains("reeve alone chooseth drainage, stakes, route, and order")
+        );
+        let faith = choice("keep_shared_litany");
+        assert!(
+            faith.effects.len() == 3
+                && faith.effects.iter().all(|effect| matches!(
+                    effect,
+                    Effect::GrantItem { .. } | Effect::Information { .. }
+                ))
+        );
+        let evil = choice("steal_reeves_wages_and_hunt_gear");
+        assert!(
+            evil.effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Currency { amount: 48, .. }))
+        );
+        assert!(evil.personality.len() == 1 && evil.personality[0].delta < 0);
+        let ignore = choice("ignore");
+        assert!(matches!(
+            ignore.transition,
+            Some(EncounterTransition::TravelDelay { minutes: 180 })
+        ));
     }
 
     #[test]

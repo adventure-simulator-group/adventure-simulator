@@ -269,6 +269,31 @@ richer betrayal lowers Honesty without publicly exemplifying it. The encounter
 is travel-only, goal-neutral, entirely mortal, and requires no runtime catalog
 special case.
 
+`enchanted_fog_lost_forester_v1` may interrupt either travel or rest with an
+occurrence-local white fog whose borrowed familiar voices tempt a forest
+company away from its established line while two mailed waylayers shadow the
+clear edge and await anyone drawn apart. Their weapons and lack of ranged answer
+remain unrevealed until the resolution. The Lady of the White Mere speaks only
+three short, manually reviewed iambic-pentameter lines; every reply belongs to
+the mortal forest reeve. The fog is narrative presentation for that occurrence
+only: it neither mutates nor persists strategic weather authority.
+
+Seven active routes let the party hold the staked line by will, read falling
+water beneath the reeve's premise, distinguish the real road-bell and stream,
+calm and name the company, coordinate the reeve's tethers and counts, keep a
+shared Christian litany, or betray his trust. The reeve always owns the local
+drainage, road-stake, route, and marching-order expertise. The litany supplies
+known cadence and moral focus without dispelling the fog or granting a magical
+effect. Near the clear edge, every active route physically witnesses the reeve
+prepare a self bow across a narrow drainage cut; two mailed, blade-only road
+robbers cannot answer at range and withdraw without a shot. Honest routes earn
+the declared spare `self_bow` and eight `arrow` items from his hunt stores,
+worth sixteen groschen. The richer betrayal waits until that lesson and safe
+line are established, sends the reeve ahead to count his charges under false
+color, and steals both the same gear and their previously declared forty-eight-
+groschen wage purse; reeve and charges still emerge safely. Ignoring the event
+waits 180 minutes for the occurrence fog to thin and grants nothing.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
