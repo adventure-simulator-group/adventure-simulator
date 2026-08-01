@@ -179,7 +179,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/tooltips.js?v=pinnable-lifecycle-3" defer {}
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
-                    script src="/static/live-state.js?v=sse-3" defer {}
+                    script src="/static/live-state.js?v=sse-4" defer {}
                     script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {

@@ -477,6 +477,7 @@ mod direct_demo_redirect_tests {
             solved,
             active,
             last_attempt_correct: None,
+            last_submission_json: None,
             boon_item_id: None,
             boon_combat_scale_reduction_bps: None,
         }

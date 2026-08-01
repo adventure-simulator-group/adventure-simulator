@@ -74,6 +74,12 @@ five-sigil domain: advance or retreat by one or two places in the canonical
 cycle, or mirror the cycle. It shows one or two input/output examples and asks
 which sigil one new input must produce.
 
+The public prompt states the canonical cycle and enumerates all five candidate
+rules, including the exact mirror pairs. Examples are evidence selecting among
+that closed rule family, not an invitation to guess an arbitrary mathematical
+function. A one-example puzzle is permitted only when that observation selects
+one result from the fully disclosed candidates.
+
 Generation exhaustively compares every operation consistent with the examples.
 An instance is accepted only when all remaining operations produce the same
 answer to the question. If two examples are retained, removing either must
@@ -85,10 +91,14 @@ sigils, but mechanically relevant names are always present as text.
 
 Every line spoken by the fey presenter is reviewed, authored text selected
 from a closed catalog. This includes all 90 reachable clue coordinates. The
-complete transcript, clue prompt, feedback, and ordering form appear within
-the shared chat visual. Submission is server-rendered POST/redirect/GET and
-does not require JavaScript. The former ruin-contraption presentation path is
-disabled until physical interaction has its own typed, non-dialogue contract.
+complete transcript, clue prompt, submitted answer, feedback, and ordering
+form appear within the shared chat visual. A challenge conversation opts out
+of location-driven live navigation, so background world updates cannot clear
+an answer being composed or dismiss a solved exchange. The submitted answer
+and response remain visible until the player explicitly returns to camp.
+Submission is server-rendered POST/redirect/GET and does not require JavaScript.
+The former ruin-contraption presentation path is disabled until physical
+interaction has its own typed, non-dialogue contract.
 
 ## Issuance, road trial, and boon
 

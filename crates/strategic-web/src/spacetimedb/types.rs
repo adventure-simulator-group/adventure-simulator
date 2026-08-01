@@ -14,6 +14,7 @@ pub struct BackendChallenge {
     pub solved: bool,
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
+    pub last_submission_json: Option<String>,
     pub boon_item_id: Option<String>,
     pub boon_combat_scale_reduction_bps: Option<u32>,
 }

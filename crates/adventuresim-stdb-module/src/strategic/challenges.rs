@@ -311,6 +311,7 @@ pub struct BackendChallenge {
     pub solved: bool,
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
+    pub last_submission_json: Option<String>,
     pub boon_item_id: Option<String>,
     pub boon_combat_scale_reduction_bps: Option<u32>,
 }
@@ -340,13 +341,12 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
                         && contract.accepted_by.as_deref() == Some(&challenge.party_id)
                 });
             let active = accepted && party_at_bound_trial_camp_view(ctx, &party, &challenge);
-            let last_attempt_correct = ctx
+            let last_attempt = ctx
                 .db
                 .challenge_attempt_receipt()
                 .challenge_id()
                 .filter(&challenge.id)
-                .max_by_key(|receipt| receipt.submitted_revision)
-                .map(|receipt| receipt.correct);
+                .max_by_key(|receipt| receipt.submitted_revision);
             Some(BackendChallenge {
                 id: challenge.id.clone(),
                 case_id: challenge.case_id,
@@ -359,7 +359,8 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
                 open: challenge.open,
                 solved: challenge.solved_at_minute.is_some(),
                 active,
-                last_attempt_correct,
+                last_attempt_correct: last_attempt.as_ref().map(|receipt| receipt.correct),
+                last_submission_json: last_attempt.map(|receipt| receipt.submission_json),
                 boon_item_id: ctx
                     .db
                     .errantry_countermeasure()

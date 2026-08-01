@@ -9,8 +9,10 @@ reuses a deterministic Order-sourced quest, active journey, persisted road
 camp, finale hostile, and selected puzzle trial, then redirects immediately to
 the playable chat challenge. This skips
 ordinary dialogue acceptance and travel setup. The no-JavaScript form uses
-POST/redirect/GET and preserves safe wrong/correct feedback. Solving awards
-the Favor of the Thorn Lady and returns to camp; the optional trial never
+POST/redirect/GET and preserves safe wrong/correct feedback. Background world
+updates do not replace the challenge page, and the solved transcript remains
+until **Return to camp** is selected. Solving awards the Favor of the Thorn
+Lady; the optional trial never
 blocks **Continue travel**. Rest for at least one hour at that bound camp to
 exercise the optional wounded-courier road trial. Aiding him adds his captured
 dispatch to party inventory; leaving him or continuing the journey remains

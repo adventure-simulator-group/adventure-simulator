@@ -1,6 +1,6 @@
 use adventuresim_core::errantry::{
-    FeyPresenterCatalogId, FeySpeechPart, PuzzleProjection, Sigil, WitnessPath, fey_clue_text,
-    fey_puzzle_speech,
+    FeyPresenterCatalogId, FeySpeechPart, PuzzleProjection, PuzzleSubmission, Sigil, WitnessPath,
+    fey_clue_text, fey_puzzle_speech,
 };
 use maud::{Markup, html};
 
@@ -14,6 +14,7 @@ pub fn puzzle_page(
     projection: &PuzzleProjection,
     solved: bool,
     last_attempt_correct: Option<bool>,
+    last_submission: Option<&PuzzleSubmission>,
     boon_item_id: Option<&str>,
     boon_reduction_bps: Option<u32>,
     character_name: &str,
@@ -21,7 +22,7 @@ pub fn puzzle_page(
     let kind = projection.kind();
     let content = html! {
         aside class="left-sidebar challenge-rail" aria-hidden="true" {}
-        main class="center-content challenge-page" {
+        main class="center-content challenge-page" data-live-navigation-static {
             section class="settlement-chat challenge-chat" aria-label="Fey conversation"
                 data-challenge-id=(challenge_id) data-presenter-catalog=(catalog.slug())
                 data-puzzle-kind=(kind.slug()) {
@@ -44,6 +45,12 @@ pub fn puzzle_page(
                                 }
                             }
                             (puzzle_observations(catalog, projection))
+                            @if let Some(submission) = last_submission {
+                                p class="player-spoken-line" data-puzzle-submission {
+                                    strong { (character_name) ": " }
+                                    (submission_text(submission))
+                                }
+                            }
                             @if solved {
                                 @for line in fey_puzzle_speech(catalog, kind, FeySpeechPart::Correct) {
                                     p class="supernatural-spoken-line notice success" role="status" {
@@ -107,7 +114,13 @@ fn puzzle_observations(catalog: FeyPresenterCatalogId, projection: &PuzzleProjec
         },
         PuzzleProjection::RuneTransformation(puzzle) => html! {
             div class="chat-system-message" data-chat-channel="info" {
-                "The same hidden transformation governs every example."
+                "The sigils form this cycle: Crown → Hart → Moon → Rose → Sword → Crown. "
+                "The same hidden rule governs every example, and it is exactly one of these:"
+            }
+            ul aria-label="Possible rune transformation rules" {
+                @for rule in puzzle.candidate_rules {
+                    li { (rule.rule_text()) }
+                }
             }
             ol aria-label="Rune transformation examples" {
                 @for example in &puzzle.examples {
@@ -118,6 +131,25 @@ fn puzzle_observations(catalog: FeyPresenterCatalogId, projection: &PuzzleProjec
                 "Question: when the " (puzzle.query.label()) " enters, which sigil emerges?"
             }
         },
+    }
+}
+
+fn submission_text(submission: &PuzzleSubmission) -> String {
+    match submission {
+        PuzzleSubmission::OrderedSigils { ordering } => format!(
+            "I place the sigils thus: {}.",
+            ordering
+                .iter()
+                .map(|sigil| sigil.label())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        PuzzleSubmission::TruthfulWitnesses { safe_path } => {
+            format!("I choose the {}.", safe_path.label())
+        }
+        PuzzleSubmission::RuneTransformation { result } => {
+            format!("The answer is the {}.", result.label())
+        }
     }
 }
 
@@ -231,11 +263,13 @@ mod tests {
                 Some(false),
                 None,
                 None,
+                None,
                 "Ada",
             )
             .into_string();
             assert!(markup.contains("settlement-chat"));
             assert!(markup.contains("settlement-chat-messages"));
+            assert!(markup.contains("data-live-navigation-static"));
             assert!(markup.contains("method=\"post\""));
             assert!(markup.contains("<fieldset>"));
             assert!(markup.contains("role=\"alert\""));
@@ -243,5 +277,38 @@ mod tests {
             assert!(!markup.contains("data-private-seed"));
             assert!(!markup.contains("operation"));
         }
+    }
+
+    #[test]
+    fn submitted_answer_remains_in_the_solved_chat_until_the_player_leaves() {
+        let puzzle = PuzzleAuthority::generate(
+            adventuresim_core::errantry::PuzzleKind::RuneTransformation,
+            4,
+        );
+        let submission = PuzzleSubmission::RuneTransformation {
+            result: Sigil::Sword,
+        };
+        let markup = puzzle_page(
+            "challenge:test",
+            "case:test",
+            FeyPresenterCatalogId::LadyBeneathThornV1,
+            1,
+            &puzzle.projection(),
+            true,
+            Some(true),
+            Some(&submission),
+            Some("favor_of_the_thorn_lady"),
+            Some(2_500),
+            "Ada",
+        )
+        .into_string();
+
+        assert!(markup.contains("data-puzzle-submission"));
+        assert!(markup.contains("Ada: "));
+        assert!(markup.contains("The answer is the Sword."));
+        assert!(markup.contains("Return to camp"));
+        assert!(
+            include_str!("../../static/live-state.js").contains("[data-live-navigation-static]")
+        );
     }
 }

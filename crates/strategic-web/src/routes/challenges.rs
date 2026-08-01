@@ -67,6 +67,13 @@ async fn show(
         Ok(value) => value,
         Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
     };
+    let last_submission = match challenge.last_submission_json.as_deref() {
+        Some(value) => match serde_json::from_str::<PuzzleSubmission>(value) {
+            Ok(submission) if submission.kind() == puzzle.kind() => Some(submission),
+            _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        },
+        None => None,
+    };
     let catalog = match challenge.presenter_catalog_id {
         crate::spacetimedb::ChallengePresenterCatalogId::LadyBeneathThornV1 => {
             adventuresim_core::errantry::FeyPresenterCatalogId::LadyBeneathThornV1
@@ -81,6 +88,7 @@ async fn show(
             &puzzle,
             challenge.solved,
             challenge.last_attempt_correct,
+            last_submission.as_ref(),
             challenge.boon_item_id.as_deref(),
             challenge.boon_combat_scale_reduction_bps,
             &character.name,

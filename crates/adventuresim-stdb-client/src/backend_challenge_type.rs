@@ -21,6 +21,7 @@ pub struct BackendChallenge {
     pub solved: bool,
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
+    pub last_submission_json: Option<String>,
     pub boon_item_id: Option<String>,
     pub boon_combat_scale_reduction_bps: Option<u32>,
 }
@@ -46,6 +47,7 @@ pub struct BackendChallengeCols {
     pub solved: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub active: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub last_attempt_correct: __sdk::__query_builder::Col<BackendChallenge, Option<bool>>,
+    pub last_submission_json: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
     pub boon_item_id: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
     pub boon_combat_scale_reduction_bps: __sdk::__query_builder::Col<BackendChallenge, Option<u32>>,
 }
@@ -77,6 +79,10 @@ impl __sdk::__query_builder::HasCols for BackendChallenge {
             last_attempt_correct: __sdk::__query_builder::Col::new(
                 table_name,
                 "last_attempt_correct",
+            ),
+            last_submission_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "last_submission_json",
             ),
             boon_item_id: __sdk::__query_builder::Col::new(table_name, "boon_item_id"),
             boon_combat_scale_reduction_bps: __sdk::__query_builder::Col::new(

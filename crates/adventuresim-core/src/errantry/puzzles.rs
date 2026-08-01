@@ -66,6 +66,16 @@ pub enum PuzzleSubmission {
     RuneTransformation { result: Sigil },
 }
 
+impl PuzzleSubmission {
+    pub const fn kind(&self) -> PuzzleKind {
+        match self {
+            Self::OrderedSigils { .. } => PuzzleKind::OrderedSigils,
+            Self::TruthfulWitnesses { .. } => PuzzleKind::TruthfulWitnesses,
+            Self::RuneTransformation { .. } => PuzzleKind::RuneTransformation,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PuzzleSubmissionError {
     WrongKind,
@@ -390,13 +400,25 @@ pub enum RuneOperation {
 }
 
 impl RuneOperation {
-    const ALL: [Self; 5] = [
+    pub const ALL: [Self; 5] = [
         Self::AdvanceOne,
         Self::AdvanceTwo,
         Self::RetreatOne,
         Self::RetreatTwo,
         Self::Mirror,
     ];
+
+    pub const fn rule_text(self) -> &'static str {
+        match self {
+            Self::AdvanceOne => "Advance one place around the cycle.",
+            Self::AdvanceTwo => "Advance two places around the cycle.",
+            Self::RetreatOne => "Retreat one place around the cycle.",
+            Self::RetreatTwo => "Retreat two places around the cycle.",
+            Self::Mirror => {
+                "Reflect across the written row: Crown with Sword, Hart with Rose, and Moon with itself."
+            }
+        }
+    }
 
     fn apply(self, input: Sigil) -> Sigil {
         let index = Sigil::ALL.iter().position(|sigil| *sigil == input).unwrap();
@@ -441,6 +463,7 @@ pub struct RuneTransformationPuzzle {
 pub struct RuneTransformationProjection {
     pub rules_version: u16,
     pub sigils: [Sigil; 5],
+    pub candidate_rules: [RuneOperation; 5],
     pub examples: Vec<RuneExample>,
     pub query: Sigil,
 }
@@ -510,6 +533,7 @@ impl RuneTransformationPuzzle {
         RuneTransformationProjection {
             rules_version: self.rules_version,
             sigils: Sigil::ALL,
+            candidate_rules: RuneOperation::ALL,
             examples: self.examples.clone(),
             query: self.query,
         }
@@ -615,13 +639,14 @@ mod tests {
     }
 
     #[test]
-    fn generated_rune_puzzles_prove_one_result_without_exposing_the_operation() {
+    fn generated_rune_puzzles_prove_one_result_without_exposing_the_chosen_rule() {
         for seed in 0..1_000 {
             let puzzle = RuneTransformationPuzzle::generate(seed);
             puzzle.validate().unwrap();
             let projection = serde_json::to_string(&puzzle.projection()).unwrap();
-            assert!(!projection.contains("operation"));
+            assert!(!projection.contains("\"operation\""));
             assert!(!projection.contains("solution"));
+            assert_eq!(puzzle.projection().candidate_rules, RuneOperation::ALL);
         }
     }
 
