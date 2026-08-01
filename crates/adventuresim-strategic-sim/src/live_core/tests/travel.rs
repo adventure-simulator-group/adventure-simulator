@@ -160,23 +160,18 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
 }
 
 #[test]
-fn narrative_encounter_policy_uses_the_first_available_public_choice() {
+fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
     let presentation = adventuresim_core::road_encounter_catalog::EncounterPresentation {
         opening: Vec::new(),
         choices: vec![
             adventuresim_core::road_encounter_catalog::PresentationChoice {
-                id: "authored-unavailable".into(),
-                label: "Unavailable".into(),
-                available: false,
-            },
-            adventuresim_core::road_encounter_catalog::PresentationChoice {
-                id: "authored-first".into(),
-                label: "First".into(),
+                id: "attempt_checked_action".into(),
+                label: "Attempt a difficult checked action".into(),
                 available: true,
             },
             adventuresim_core::road_encounter_catalog::PresentationChoice {
-                id: "authored-second".into(),
-                label: "Second".into(),
+                id: "ignore".into(),
+                label: "Continue on the road".into(),
                 available: true,
             },
         ],
@@ -185,27 +180,77 @@ fn narrative_encounter_policy_uses_the_first_available_public_choice() {
     let json = serde_json::to_string(&presentation).unwrap();
     assert_eq!(
         select_public_narrative_encounter_choice(&json).unwrap(),
-        Some("authored-first".into())
+        Some("ignore".into())
     );
 
-    let no_available = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+    let unavailable_ignore = adventuresim_core::road_encounter_catalog::EncounterPresentation {
         opening: Vec::new(),
-        choices: presentation
-            .choices
-            .into_iter()
-            .map(|mut choice| {
-                choice.available = false;
-                choice
-            })
-            .collect(),
+        choices: vec![
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "attempt_checked_action".into(),
+                label: "Attempt a difficult checked action".into(),
+                available: true,
+            },
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "ignore".into(),
+                label: "Continue on the road".into(),
+                available: false,
+            },
+        ],
         response: Vec::new(),
     };
     assert_eq!(
-        select_public_narrative_encounter_choice(&serde_json::to_string(&no_available).unwrap())
-            .unwrap(),
+        select_public_narrative_encounter_choice(
+            &serde_json::to_string(&unavailable_ignore).unwrap()
+        )
+        .unwrap(),
+        None
+    );
+    let missing_ignore = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+        opening: Vec::new(),
+        choices: vec![adventuresim_core::road_encounter_catalog::PresentationChoice {
+            id: "attempt_checked_action".into(),
+            label: "Attempt a difficult checked action".into(),
+            available: true,
+        }],
+        response: Vec::new(),
+    };
+    assert_eq!(
+        select_public_narrative_encounter_choice(
+            &serde_json::to_string(&missing_ignore).unwrap()
+        )
+        .unwrap(),
         None
     );
     assert!(select_public_narrative_encounter_choice("not-json").is_err());
+
+    let selector = LIVE_CORE_SOURCE
+        .split("fn select_public_narrative_encounter_choice")
+        .nth(1)
+        .and_then(|tail| tail.split("struct PublicCombatFingerprint").next())
+        .expect("public narrative selector");
+    assert!(selector.contains("choice.id == \"ignore\" && choice.available"));
+    assert!(!selector.contains("definitions()"));
+    assert!(!selector.contains("encounter("));
+}
+
+#[test]
+fn authored_narrative_ignore_choices_are_unconditionally_resolvable() {
+    let definitions = adventuresim_core::road_encounter_catalog::definitions();
+    assert!(!definitions.is_empty());
+    for definition in definitions {
+        let ignores = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id == "ignore")
+            .collect::<Vec<_>>();
+        assert_eq!(ignores.len(), 1, "{}", definition.id);
+        let ignore = ignores[0];
+        assert!(ignore.requirements.is_empty(), "{}", definition.id);
+        assert!(ignore.checks.is_empty(), "{}", definition.id);
+        let publicly_available_by_construction = ignore.requirements.is_empty();
+        assert!(publicly_available_by_construction, "{}", definition.id);
+    }
 }
 
 #[test]

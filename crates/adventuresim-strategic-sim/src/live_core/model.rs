@@ -1726,7 +1726,7 @@ fn select_public_narrative_encounter_choice(
     Ok(presentation
         .choices
         .into_iter()
-        .find(|choice| choice.available)
+        .find(|choice| choice.id == "ignore" && choice.available)
         .map(|choice| choice.id))
 }
 
