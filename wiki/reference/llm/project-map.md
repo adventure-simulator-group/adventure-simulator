@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1642)
+## Files (1644)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -136,8 +136,10 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-puzzles/src/analysis.rs` — Rust source module for this component.
 - `crates/adventuresim-puzzles/src/bin/puzzle-lab.rs` — Rust source module.
 - `crates/adventuresim-puzzles/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-puzzles/src/logic_grid.rs` — Rust source module for this component.
 - `crates/adventuresim-puzzles/src/ordered_sigils.rs` — Rust source module for this component.
 - `crates/adventuresim-puzzles/src/puzzles.rs` — Rust source module for this component.
+- `crates/adventuresim-puzzles/src/resource_allocation.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-stdb-client/README.md` — Component overview and usage notes.
 - `crates/adventuresim-stdb-client/src/abandon_contract_reducer.rs` — Generated SpacetimeDB reducer interface.

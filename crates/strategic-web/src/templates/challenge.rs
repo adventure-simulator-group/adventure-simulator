@@ -48,7 +48,7 @@ pub fn puzzle_page(
                             @if let Some(submission) = last_submission {
                                 p class="player-spoken-line" data-puzzle-submission {
                                     strong { (character_name) ": " }
-                                    (submission_text(submission))
+                                    (submission_text(submission, projection))
                                 }
                             }
                             @if solved {
@@ -137,10 +137,46 @@ fn puzzle_observations(catalog: FeyPresenterCatalogId, projection: &PuzzleProjec
                 ". Which sigil finally emerges?"
             }
         },
+        PuzzleProjection::LogicGrid(puzzle) => html! {
+            div class="chat-system-message" data-chat-channel="info" {
+                "Each traveler carried exactly one token and took exactly one road. Every token and road was used once."
+            }
+            p class="chat-system-message" {
+                strong { "Travelers: " } (puzzle.travelers.join(", ")) br;
+                strong { "Tokens: " } (puzzle.tokens.join(", ")) br;
+                strong { "Roads: " } (puzzle.roads.join(", "))
+            }
+            ol aria-label="Logic-grid clues" {
+                @for clue in &puzzle.clues {
+                    li { (clue.text()) }
+                }
+            }
+        },
+        PuzzleProjection::ResourceAllocation(puzzle) => html! {
+            div class="chat-system-message" data-chat-channel="info" {
+                "Choose provisions whose total weight is at most " (puzzle.capacity) ". "
+                "The pack must answer every named hazard. Among legal packs, maximize readiness; ties favor lower weight, then fewer items."
+            }
+            p class="chat-system-message" {
+                strong { "Hazards: " }
+                (puzzle.hazards.iter().map(|hazard| hazard.label()).collect::<Vec<_>>().join(", "))
+            }
+            ul aria-label="Available provisions" {
+                @for item in &puzzle.provisions {
+                    li {
+                        strong { (item.id.label()) }
+                        ": weight " (item.weight) ", readiness " (item.readiness)
+                        "; answers "
+                        (item.protections.iter().map(|hazard| hazard.label()).collect::<Vec<_>>().join(" and "))
+                        "."
+                    }
+                }
+            }
+        },
     }
 }
 
-fn submission_text(submission: &PuzzleSubmission) -> String {
+fn submission_text(submission: &PuzzleSubmission, projection: &PuzzleProjection) -> String {
     match submission {
         PuzzleSubmission::OrderedSigils { ordering } => format!(
             "I place the sigils thus: {}.",
@@ -156,6 +192,32 @@ fn submission_text(submission: &PuzzleSubmission) -> String {
         PuzzleSubmission::RuneTransformation { result } => {
             format!("The answer is the {}.", result.label())
         }
+        PuzzleSubmission::LogicGrid { assignments } => {
+            let PuzzleProjection::LogicGrid(puzzle) = projection else {
+                return "I submit the completed matching.".into();
+            };
+            format!(
+                "I match them thus: {}.",
+                assignments
+                    .iter()
+                    .map(|item| format!(
+                        "{} bears the {} upon the {}",
+                        puzzle.travelers[usize::from(item.traveler)],
+                        puzzle.tokens[usize::from(item.token)],
+                        puzzle.roads[usize::from(item.road)]
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        }
+        PuzzleSubmission::ResourceAllocation { provisions } => format!(
+            "I choose this pack: {}.",
+            provisions
+                .iter()
+                .map(|item| item.label())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 
@@ -202,6 +264,50 @@ fn puzzle_answer_fields(projection: &PuzzleProjection) -> Markup {
                         option value="" { "Choose a sigil" }
                         @for sigil in puzzle.sigils {
                             option value=(sigil.label()) { (sigil.label()) }
+                        }
+                    }
+                }
+            }
+        },
+        PuzzleProjection::LogicGrid(puzzle) => html! {
+            fieldset {
+                legend { "Match each traveler to a token and road" }
+                div class="challenge-ordering" {
+                    @for (traveler, name) in puzzle.travelers.iter().enumerate() {
+                        div class="challenge-grid-assignment" {
+                            strong { (name) }
+                            label {
+                                span { "Token" }
+                                select name=(format!("grid_token_{traveler}")) required {
+                                    option value="" { "Choose a token" }
+                                    @for token in &puzzle.tokens {
+                                        option value=(token) { (token) }
+                                    }
+                                }
+                            }
+                            label {
+                                span { "Road" }
+                                select name=(format!("grid_road_{traveler}")) required {
+                                    option value="" { "Choose a road" }
+                                    @for road in &puzzle.roads {
+                                        option value=(road) { (road) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        PuzzleProjection::ResourceAllocation(puzzle) => html! {
+            fieldset {
+                legend { "Choose the optimal provision pack" }
+                @for (index, item) in puzzle.provisions.iter().enumerate() {
+                    label class="challenge-provision-choice" {
+                        input type="checkbox" name=(format!("provision_{index}")) value="selected";
+                        span {
+                            strong { (item.id.label()) }
+                            " — weight " (item.weight) ", readiness " (item.readiness)
                         }
                     }
                 }
@@ -349,5 +455,53 @@ mod tests {
         assert!(markup.contains("Gate of Briar"));
         assert!(markup.contains("Gate of Glass"));
         assert!(markup.contains("after the complete gate route"));
+    }
+
+    #[test]
+    fn new_puzzle_families_are_fully_chat_native() {
+        let grid =
+            PuzzleAuthority::generate(adventuresim_core::errantry::PuzzleKind::LogicGrid, 41);
+        let grid_markup = puzzle_page(
+            "challenge:grid",
+            "case:test",
+            FeyPresenterCatalogId::LadyBeneathThornV1,
+            0,
+            &grid.projection(),
+            false,
+            None,
+            None,
+            None,
+            None,
+            "Ada",
+        )
+        .into_string();
+        assert!(grid_markup.contains("Each traveler carried exactly one token"));
+        assert!(grid_markup.contains("grid_token_0"));
+        assert!(grid_markup.contains("grid_road_0"));
+
+        let allocation = PuzzleAuthority::generate(
+            adventuresim_core::errantry::PuzzleKind::ResourceAllocation,
+            42,
+        );
+        let allocation_markup = puzzle_page(
+            "challenge:allocation",
+            "case:test",
+            FeyPresenterCatalogId::LadyBeneathThornV1,
+            0,
+            &allocation.projection(),
+            false,
+            None,
+            None,
+            None,
+            None,
+            "Ada",
+        )
+        .into_string();
+        assert!(allocation_markup.contains("maximize readiness"));
+        assert!(allocation_markup.contains("provision_0"));
+        assert!(allocation_markup.contains("total weight is at most"));
+        let css = include_str!("../../static/css/strategic.css");
+        assert!(css.contains(".challenge-page .challenge-chat"));
+        assert!(css.contains("overflow-wrap: anywhere"));
     }
 }

@@ -334,6 +334,42 @@ pub fn fey_puzzle_speech(
                 "My woodland path now opens at thy word.",
             ],
         },
+        PuzzleKind::LogicGrid => match (catalog, part) {
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+                "The pilgrims passed beneath my thorny bough.",
+                "Their roads and tokens lie concealed from thee.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+                "By every clue, restore the bonds I veiled.",
+                "Match each true road and token to its hand.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+                "Thy woven bonds do not accord with truth.",
+                "Unweave thy work, then bind each thread anew.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+                "Each pilgrim bears the sign and road ordained.",
+                "Thy ordered wit hath earned the onward way.",
+            ],
+        },
+        PuzzleKind::ResourceAllocation => match (catalog, part) {
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+                "Choose well the gear thy mortal hands may bear.",
+                "Each coming grief demands its fitting aid.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+                "Keep thou beneath the burden I decree.",
+                "Let readiness decide the worthiest load.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+                "Thy chosen load shall fail the road ahead.",
+                "Weigh need and worth, then choose thy gear anew.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+                "Thy measured pack shall meet each coming grief.",
+                "Bear forth thy gear; the guarded way lies clear.",
+            ],
+        },
     }
 }
 

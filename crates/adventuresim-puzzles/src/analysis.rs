@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     PuzzleAuthority, PuzzleKind, RuneExample, RuneGate, RuneGateLaw, RuneOperation, WitnessPath,
-    apply_rune_route, rune_operations_consistent_with, solutions, witness_solutions,
+    all_grid_solutions, allocation_legal_packs, allocation_optimal_packs, apply_rune_route,
+    grid_solutions, rune_operations_consistent_with, solutions, witness_solutions,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -201,6 +202,97 @@ impl PuzzleAuthority {
                     possible_answers: possible_answers.len() as u16,
                     all_facts_necessary_for_full_model: full_model_necessary,
                     all_facts_necessary_for_answer: answer_necessary,
+                    hypothesis_load: 0.0,
+                    structural_complexity: 0.0,
+                }
+                .finish()
+            }
+            Self::LogicGrid(puzzle) => {
+                let counts = (1..=puzzle.clues.len())
+                    .map(|end| {
+                        grid_solutions(puzzle.spec.size, &puzzle.clues[..end], usize::MAX).len()
+                            as u32
+                    })
+                    .collect::<Vec<_>>();
+                let necessary = (0..puzzle.clues.len()).all(|removed| {
+                    let reduced = puzzle
+                        .clues
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter_map(|(index, clue)| (index != removed).then_some(clue))
+                        .collect::<Vec<_>>();
+                    grid_solutions(puzzle.spec.size, &reduced, 2).len() != 1
+                });
+                PuzzleAnalysis {
+                    kind: PuzzleKind::LogicGrid,
+                    fact_count: puzzle.clues.len() as u16,
+                    initial_hypotheses: all_grid_solutions(puzzle.spec.size).len() as u32,
+                    final_hypotheses: counts.last().copied().unwrap_or(0),
+                    hypotheses_after_each_fact: counts,
+                    independently_inferred_rules: 0,
+                    application_depth: puzzle.clues.len() as u16,
+                    working_memory_items: u16::from(puzzle.spec.size) * 3,
+                    possible_answers: 1,
+                    all_facts_necessary_for_full_model: necessary,
+                    all_facts_necessary_for_answer: necessary,
+                    hypothesis_load: 0.0,
+                    structural_complexity: 0.0,
+                }
+                .finish()
+            }
+            Self::ResourceAllocation(puzzle) => {
+                let capacity_count =
+                    allocation_legal_packs(&puzzle.provisions, &[], puzzle.spec.capacity).len();
+                let mut counts = vec![capacity_count as u32];
+                counts.extend((1..=puzzle.hazards.len()).map(|end| {
+                    allocation_legal_packs(
+                        &puzzle.provisions,
+                        &puzzle.hazards[..end],
+                        puzzle.spec.capacity,
+                    )
+                    .len() as u32
+                }));
+                let optimal = allocation_optimal_packs(
+                    &puzzle.provisions,
+                    &puzzle.hazards,
+                    puzzle.spec.capacity,
+                );
+                counts.push(optimal.len() as u32);
+                let hazards_necessary = (0..puzzle.hazards.len()).all(|removed| {
+                    let reduced = puzzle
+                        .hazards
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter_map(|(index, hazard)| (index != removed).then_some(hazard))
+                        .collect::<Vec<_>>();
+                    allocation_optimal_packs(&puzzle.provisions, &reduced, puzzle.spec.capacity)
+                        != optimal
+                });
+                let capacity_necessary =
+                    allocation_optimal_packs(&puzzle.provisions, &puzzle.hazards, u8::MAX)
+                        != optimal;
+                let objective_necessary = allocation_legal_packs(
+                    &puzzle.provisions,
+                    &puzzle.hazards,
+                    puzzle.spec.capacity,
+                )
+                .len()
+                    > 1;
+                let necessary = hazards_necessary && capacity_necessary && objective_necessary;
+                PuzzleAnalysis {
+                    kind: PuzzleKind::ResourceAllocation,
+                    fact_count: (puzzle.hazards.len() + 2) as u16,
+                    initial_hypotheses: 1_u32 << puzzle.provisions.len(),
+                    final_hypotheses: optimal.len() as u32,
+                    hypotheses_after_each_fact: counts,
+                    independently_inferred_rules: puzzle.hazards.len() as u16,
+                    application_depth: (puzzle.hazards.len() + 2) as u16,
+                    working_memory_items: puzzle.provisions.len() as u16,
+                    possible_answers: optimal.len() as u16,
+                    all_facts_necessary_for_full_model: necessary,
+                    all_facts_necessary_for_answer: necessary,
                     hypothesis_load: 0.0,
                     structural_complexity: 0.0,
                 }

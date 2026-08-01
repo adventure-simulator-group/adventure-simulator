@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    OrderedSigilProjection, OrderedSigilPuzzle, OrderedSigilSpec, OrderedSigilSubmission, Sigil,
+    LogicGridProjection, LogicGridPuzzle, LogicGridSpec, OrderedSigilProjection,
+    OrderedSigilPuzzle, OrderedSigilSpec, OrderedSigilSubmission, ProvisionId,
+    ResourceAllocationProjection, ResourceAllocationPuzzle, ResourceAllocationSpec, Sigil,
 };
 
 pub const TRUTHFUL_WITNESS_RULES_VERSION: u16 = 2;
@@ -12,13 +14,17 @@ pub enum PuzzleKind {
     OrderedSigils,
     TruthfulWitnesses,
     RuneTransformation,
+    LogicGrid,
+    ResourceAllocation,
 }
 
 impl PuzzleKind {
-    pub const ALL: [Self; 3] = [
+    pub const ALL: [Self; 5] = [
         Self::OrderedSigils,
         Self::TruthfulWitnesses,
         Self::RuneTransformation,
+        Self::LogicGrid,
+        Self::ResourceAllocation,
     ];
 
     pub const fn slug(self) -> &'static str {
@@ -26,6 +32,8 @@ impl PuzzleKind {
             Self::OrderedSigils => "ordered-sigils",
             Self::TruthfulWitnesses => "truthful-witnesses",
             Self::RuneTransformation => "rune-transformation",
+            Self::LogicGrid => "logic-grid",
+            Self::ResourceAllocation => "resource-allocation",
         }
     }
 
@@ -46,6 +54,8 @@ pub enum PuzzleSpec {
     OrderedSigils(OrderedSigilSpec),
     TruthfulWitnesses(TruthfulWitnessSpec),
     RuneTransformation(RuneTransformationSpec),
+    LogicGrid(LogicGridSpec),
+    ResourceAllocation(ResourceAllocationSpec),
 }
 
 impl PuzzleSpec {
@@ -54,6 +64,8 @@ impl PuzzleSpec {
             Self::OrderedSigils(_) => PuzzleKind::OrderedSigils,
             Self::TruthfulWitnesses(_) => PuzzleKind::TruthfulWitnesses,
             Self::RuneTransformation(_) => PuzzleKind::RuneTransformation,
+            Self::LogicGrid(_) => PuzzleKind::LogicGrid,
+            Self::ResourceAllocation(_) => PuzzleKind::ResourceAllocation,
         }
     }
 
@@ -66,6 +78,10 @@ impl PuzzleSpec {
             PuzzleKind::RuneTransformation => {
                 Self::RuneTransformation(RuneTransformationSpec::default())
             }
+            PuzzleKind::LogicGrid => Self::LogicGrid(LogicGridSpec::default()),
+            PuzzleKind::ResourceAllocation => {
+                Self::ResourceAllocation(ResourceAllocationSpec::default())
+            }
         }
     }
 }
@@ -76,6 +92,8 @@ pub enum PuzzleAuthority {
     OrderedSigils(OrderedSigilPuzzle),
     TruthfulWitnesses(TruthfulWitnessPuzzle),
     RuneTransformation(RuneTransformationPuzzle),
+    LogicGrid(LogicGridPuzzle),
+    ResourceAllocation(ResourceAllocationPuzzle),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,6 +102,8 @@ pub enum PuzzleProjection {
     OrderedSigils(OrderedSigilProjection),
     TruthfulWitnesses(TruthfulWitnessProjection),
     RuneTransformation(RuneTransformationProjection),
+    LogicGrid(LogicGridProjection),
+    ResourceAllocation(ResourceAllocationProjection),
 }
 
 impl PuzzleProjection {
@@ -92,6 +112,8 @@ impl PuzzleProjection {
             Self::OrderedSigils(_) => PuzzleKind::OrderedSigils,
             Self::TruthfulWitnesses(_) => PuzzleKind::TruthfulWitnesses,
             Self::RuneTransformation(_) => PuzzleKind::RuneTransformation,
+            Self::LogicGrid(_) => PuzzleKind::LogicGrid,
+            Self::ResourceAllocation(_) => PuzzleKind::ResourceAllocation,
         }
     }
 }
@@ -99,9 +121,21 @@ impl PuzzleProjection {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "answer", rename_all = "snake_case")]
 pub enum PuzzleSubmission {
-    OrderedSigils { ordering: [Sigil; 5] },
-    TruthfulWitnesses { safe_path: WitnessPath },
-    RuneTransformation { result: Sigil },
+    OrderedSigils {
+        ordering: [Sigil; 5],
+    },
+    TruthfulWitnesses {
+        safe_path: WitnessPath,
+    },
+    RuneTransformation {
+        result: Sigil,
+    },
+    LogicGrid {
+        assignments: Vec<crate::LogicGridAssignment>,
+    },
+    ResourceAllocation {
+        provisions: Vec<ProvisionId>,
+    },
 }
 
 impl PuzzleSubmission {
@@ -110,6 +144,8 @@ impl PuzzleSubmission {
             Self::OrderedSigils { .. } => PuzzleKind::OrderedSigils,
             Self::TruthfulWitnesses { .. } => PuzzleKind::TruthfulWitnesses,
             Self::RuneTransformation { .. } => PuzzleKind::RuneTransformation,
+            Self::LogicGrid { .. } => PuzzleKind::LogicGrid,
+            Self::ResourceAllocation { .. } => PuzzleKind::ResourceAllocation,
         }
     }
 }
@@ -141,6 +177,12 @@ impl PuzzleAuthority {
             PuzzleSpec::RuneTransformation(spec) => {
                 Self::RuneTransformation(RuneTransformationPuzzle::generate_with_spec(seed, spec)?)
             }
+            PuzzleSpec::LogicGrid(spec) => {
+                Self::LogicGrid(LogicGridPuzzle::generate_with_spec(seed, spec)?)
+            }
+            PuzzleSpec::ResourceAllocation(spec) => {
+                Self::ResourceAllocation(ResourceAllocationPuzzle::generate_with_spec(seed, spec)?)
+            }
         })
     }
 
@@ -165,6 +207,14 @@ impl PuzzleAuthority {
                 seed: puzzle.seed,
                 spec: PuzzleSpec::RuneTransformation(puzzle.spec),
             },
+            Self::LogicGrid(puzzle) => GenerationRequest {
+                seed: puzzle.seed,
+                spec: PuzzleSpec::LogicGrid(puzzle.spec),
+            },
+            Self::ResourceAllocation(puzzle) => GenerationRequest {
+                seed: puzzle.seed,
+                spec: PuzzleSpec::ResourceAllocation(puzzle.spec),
+            },
         }
     }
 
@@ -173,6 +223,8 @@ impl PuzzleAuthority {
             Self::OrderedSigils(_) => PuzzleKind::OrderedSigils,
             Self::TruthfulWitnesses(_) => PuzzleKind::TruthfulWitnesses,
             Self::RuneTransformation(_) => PuzzleKind::RuneTransformation,
+            Self::LogicGrid(_) => PuzzleKind::LogicGrid,
+            Self::ResourceAllocation(_) => PuzzleKind::ResourceAllocation,
         }
     }
 
@@ -185,6 +237,10 @@ impl PuzzleAuthority {
             Self::RuneTransformation(puzzle) => {
                 PuzzleProjection::RuneTransformation(puzzle.projection())
             }
+            Self::LogicGrid(puzzle) => PuzzleProjection::LogicGrid(puzzle.projection()),
+            Self::ResourceAllocation(puzzle) => {
+                PuzzleProjection::ResourceAllocation(puzzle.projection())
+            }
         }
     }
 
@@ -193,6 +249,8 @@ impl PuzzleAuthority {
             Self::OrderedSigils(puzzle) => puzzle.validate(),
             Self::TruthfulWitnesses(puzzle) => puzzle.validate(),
             Self::RuneTransformation(puzzle) => puzzle.validate(),
+            Self::LogicGrid(puzzle) => puzzle.validate(),
+            Self::ResourceAllocation(puzzle) => puzzle.validate(),
         }
     }
 
@@ -206,6 +264,13 @@ impl PuzzleAuthority {
             )),
             Self::RuneTransformation(puzzle) => Ok(Self::RuneTransformation(
                 RuneTransformationPuzzle::generate_with_spec(puzzle.seed, puzzle.spec)?,
+            )),
+            Self::LogicGrid(puzzle) => Ok(Self::LogicGrid(LogicGridPuzzle::generate_with_spec(
+                puzzle.seed,
+                puzzle.spec,
+            )?)),
+            Self::ResourceAllocation(puzzle) => Ok(Self::ResourceAllocation(
+                ResourceAllocationPuzzle::generate_with_spec(puzzle.seed, puzzle.spec)?,
             )),
         }
     }
@@ -225,6 +290,15 @@ impl PuzzleAuthority {
             (Self::RuneTransformation(puzzle), PuzzleSubmission::RuneTransformation { result }) => {
                 Ok(*result == puzzle.solution)
             }
+            (Self::LogicGrid(puzzle), PuzzleSubmission::LogicGrid { assignments }) => puzzle
+                .check(assignments)
+                .map_err(|_| PuzzleSubmissionError::Malformed),
+            (
+                Self::ResourceAllocation(puzzle),
+                PuzzleSubmission::ResourceAllocation { provisions },
+            ) => puzzle
+                .check(provisions)
+                .map_err(|_| PuzzleSubmissionError::Malformed),
             _ => Err(PuzzleSubmissionError::WrongKind),
         }
     }
@@ -878,17 +952,17 @@ fn rune_gate_examples(
     })
 }
 
-fn shuffle<T>(values: &mut [T], rng: &mut PuzzleRng) {
+pub(crate) fn shuffle<T>(values: &mut [T], rng: &mut PuzzleRng) {
     for end in (1..values.len()).rev() {
         let selected = (rng.next() as usize) % (end + 1);
         values.swap(end, selected);
     }
 }
 
-struct PuzzleRng(u64);
+pub(crate) struct PuzzleRng(pub(crate) u64);
 
 impl PuzzleRng {
-    fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut value = self.0;
         value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -970,6 +1044,24 @@ mod tests {
                 PuzzleAuthority::RuneTransformation(puzzle) => {
                     PuzzleSubmission::RuneTransformation {
                         result: puzzle.solution,
+                    }
+                }
+                PuzzleAuthority::LogicGrid(puzzle) => PuzzleSubmission::LogicGrid {
+                    assignments: crate::grid_solutions(puzzle.spec.size, &puzzle.clues, 1)
+                        .into_iter()
+                        .next()
+                        .unwrap(),
+                },
+                PuzzleAuthority::ResourceAllocation(puzzle) => {
+                    PuzzleSubmission::ResourceAllocation {
+                        provisions: crate::allocation_optimal_packs(
+                            &puzzle.provisions,
+                            &puzzle.hazards,
+                            puzzle.spec.capacity,
+                        )
+                        .into_iter()
+                        .next()
+                        .unwrap(),
                     }
                 }
             };

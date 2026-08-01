@@ -169,7 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=developer-visibility-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1-equipment-slots-7-weather-status-2-residences-1-continuity-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1-equipment-slots-7-weather-status-2-residences-1-continuity-1-puzzle-chat-2";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -378,6 +378,18 @@ fn settlement_top_bar(
                         aria-label="Load the rune transformation puzzle demo"
                         title="Create an accepted errantry quest and open its puzzle immediately" {
                         "Rune puzzle"
+                    }
+                    button type="button" class="btn btn-small developer-puzzle-demo-button"
+                        data-developer-puzzle-demo data-puzzle-kind="logic-grid" data-developer-only
+                        aria-label="Load the logic-grid puzzle demo"
+                        title="Create an accepted errantry quest and open its puzzle immediately" {
+                        "Logic-grid puzzle"
+                    }
+                    button type="button" class="btn btn-small developer-puzzle-demo-button"
+                        data-developer-puzzle-demo data-puzzle-kind="resource-allocation" data-developer-only
+                        aria-label="Load the resource-allocation puzzle demo"
+                        title="Create an accepted errantry quest and open its puzzle immediately" {
+                        "Provision puzzle"
                     }
                     button type="button" class="btn btn-small developer-outbreak-demo-button"
                         data-developer-outbreak-demo data-developer-only

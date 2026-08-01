@@ -5,8 +5,9 @@ use std::{
 };
 
 use adventuresim_puzzles::{
-    GenerationRequest, OrderedSigilSpec, PuzzleAuthority, PuzzleKind, PuzzleProjection, PuzzleSpec,
-    PuzzleSubmission, RuneTransformationSpec, Sigil, TruthfulWitnessSpec, WitnessPath,
+    GenerationRequest, LogicGridAssignment, LogicGridSpec, OrderedSigilSpec, ProvisionId,
+    PuzzleAuthority, PuzzleKind, PuzzleProjection, PuzzleSpec, PuzzleSubmission,
+    ResourceAllocationSpec, RuneTransformationSpec, Sigil, TruthfulWitnessSpec, WitnessPath,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
@@ -74,6 +75,8 @@ enum KindArg {
     OrderedSigils,
     TruthfulWitnesses,
     RuneTransformation,
+    LogicGrid,
+    ResourceAllocation,
 }
 
 impl From<KindArg> for PuzzleKind {
@@ -82,6 +85,8 @@ impl From<KindArg> for PuzzleKind {
             KindArg::OrderedSigils => Self::OrderedSigils,
             KindArg::TruthfulWitnesses => Self::TruthfulWitnesses,
             KindArg::RuneTransformation => Self::RuneTransformation,
+            KindArg::LogicGrid => Self::LogicGrid,
+            KindArg::ResourceAllocation => Self::ResourceAllocation,
         }
     }
 }
@@ -128,6 +133,26 @@ struct GenerationArgs {
     repeated_operations: bool,
     #[arg(long)]
     repeated_route_gates: bool,
+
+    #[arg(long, default_value_t = 3)]
+    grid_size: u8,
+    #[arg(long, default_value_t = 6)]
+    grid_max_clues: u8,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    positive_grid_clues: bool,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    negative_grid_clues: bool,
+
+    #[arg(long, default_value_t = 6)]
+    provisions: u8,
+    #[arg(long, default_value_t = 3)]
+    hazards: u8,
+    #[arg(long, default_value_t = 7)]
+    capacity: u8,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    irredundant_hazards: bool,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    capacity_matters: bool,
 }
 
 impl GenerationArgs {
@@ -166,6 +191,21 @@ impl GenerationArgs {
                     minimum_single_example_candidates: self.minimum_example_candidates,
                     allow_repeated_operations: self.repeated_operations,
                     allow_repeated_route_gates: self.repeated_route_gates,
+                })
+            }
+            PuzzleKind::LogicGrid => PuzzleSpec::LogicGrid(LogicGridSpec {
+                size: self.grid_size,
+                allow_positive_clues: self.positive_grid_clues,
+                allow_negative_clues: self.negative_grid_clues,
+                max_clues: self.grid_max_clues,
+            }),
+            PuzzleKind::ResourceAllocation => {
+                PuzzleSpec::ResourceAllocation(ResourceAllocationSpec {
+                    provision_count: self.provisions,
+                    hazard_count: self.hazards,
+                    capacity: self.capacity,
+                    require_irredundant_hazards: self.irredundant_hazards,
+                    require_capacity_to_matter: self.capacity_matters,
                 })
             }
         };
@@ -361,6 +401,44 @@ fn render(projection: &PuzzleProjection) -> String {
                 .collect::<Vec<_>>()
                 .join(" -> "),
         ),
+        PuzzleProjection::LogicGrid(puzzle) => format!(
+            "Match each traveler to one token and one road.\nTravelers: {}\nTokens: {}\nRoads: {}\n{}\n",
+            puzzle.travelers.join(", "),
+            puzzle.tokens.join(", "),
+            puzzle.roads.join(", "),
+            puzzle
+                .clues
+                .iter()
+                .map(|clue| format!("- {}", clue.text()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+        PuzzleProjection::ResourceAllocation(puzzle) => format!(
+            "Choose a pack of weight at most {} that answers every hazard. Maximize readiness; ties favor lower weight, then fewer items.\nHazards: {}\n{}\n",
+            puzzle.capacity,
+            puzzle
+                .hazards
+                .iter()
+                .map(|hazard| hazard.label())
+                .collect::<Vec<_>>()
+                .join(", "),
+            puzzle
+                .provisions
+                .iter()
+                .map(|item| format!(
+                    "- {}: weight {}, readiness {}, answers {}",
+                    item.id.label(),
+                    item.weight,
+                    item.readiness,
+                    item.protections
+                        .iter()
+                        .map(|hazard| hazard.label())
+                        .collect::<Vec<_>>()
+                        .join(" and ")
+                ))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
     }
 }
 
@@ -390,6 +468,43 @@ fn play(puzzle: PuzzleAuthority) -> Result<(), String> {
         PuzzleAuthority::RuneTransformation(_) => PuzzleSubmission::RuneTransformation {
             result: parse_sigil(answer)?,
         },
+        PuzzleAuthority::LogicGrid(puzzle) => {
+            let projection = puzzle.projection();
+            let pairs = answer.split(',').map(str::trim).collect::<Vec<_>>();
+            if pairs.len() != projection.travelers.len() {
+                return Err(format!(
+                    "enter {} token/road pairs in traveler order",
+                    projection.travelers.len()
+                ));
+            }
+            let assignments = pairs
+                .iter()
+                .enumerate()
+                .map(|(traveler, pair)| {
+                    let (token, road) = pair
+                        .split_once('/')
+                        .ok_or_else(|| "use Token/Road for each traveler".to_owned())?;
+                    Ok(LogicGridAssignment {
+                        traveler: traveler as u8,
+                        token: parse_label(&projection.tokens, token.trim(), "token")?,
+                        road: parse_label(&projection.roads, road.trim(), "road")?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            PuzzleSubmission::LogicGrid { assignments }
+        }
+        PuzzleAuthority::ResourceAllocation(puzzle) => {
+            let provisions = if answer.is_empty() {
+                Vec::new()
+            } else {
+                answer
+                    .split(',')
+                    .map(str::trim)
+                    .map(|value| parse_provision(&puzzle.provisions, value))
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            PuzzleSubmission::ResourceAllocation { provisions }
+        }
     };
     println!(
         "{}",
@@ -423,4 +538,20 @@ fn parse_path(value: &str) -> Result<WitnessPath, String> {
                     .eq_ignore_ascii_case(value)
         })
         .ok_or_else(|| format!("unknown path: {value}"))
+}
+
+fn parse_label(values: &[String], value: &str, kind: &str) -> Result<u8, String> {
+    values
+        .iter()
+        .position(|candidate| candidate.eq_ignore_ascii_case(value))
+        .map(|index| index as u8)
+        .ok_or_else(|| format!("unknown {kind}: {value}"))
+}
+
+fn parse_provision(available: &[ProvisionId], value: &str) -> Result<ProvisionId, String> {
+    available
+        .iter()
+        .copied()
+        .find(|item| item.label().eq_ignore_ascii_case(value))
+        .ok_or_else(|| format!("unknown provision: {value}"))
 }

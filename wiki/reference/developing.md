@@ -8,7 +8,8 @@ stack, use the dependency-light [`puzzle-lab`](puzzle-lab.md) CLI.
 
 Start a disposable strategic-only stack with `just puzzle-demo`. Create or
 select an adventurer in a settlement, enable browser-local developer mode, and
-choose **Sigil puzzle**, **Witness puzzle**, or **Rune puzzle**. It creates or
+choose **Sigil puzzle**, **Witness puzzle**, **Rune puzzle**,
+**Logic-grid puzzle**, or **Provision puzzle**. It creates or
 reuses a deterministic Order-sourced quest, active journey, persisted road
 camp, finale hostile, and selected puzzle trial, then redirects immediately to
 the playable chat challenge. This skips

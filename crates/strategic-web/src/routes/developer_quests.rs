@@ -503,6 +503,10 @@ fn puzzle_kind_argument(kind: adventuresim_core::errantry::PuzzleKind) -> Value 
         adventuresim_core::errantry::PuzzleKind::RuneTransformation => {
             json!({ "runeTransformation": {} })
         }
+        adventuresim_core::errantry::PuzzleKind::LogicGrid => json!({ "logicGrid": {} }),
+        adventuresim_core::errantry::PuzzleKind::ResourceAllocation => {
+            json!({ "resourceAllocation": {} })
+        }
     }
 }
 
@@ -593,6 +597,14 @@ mod tests {
         assert_eq!(
             puzzle_kind_argument(PuzzleKind::RuneTransformation),
             json!({ "runeTransformation": {} })
+        );
+        assert_eq!(
+            puzzle_kind_argument(PuzzleKind::LogicGrid),
+            json!({ "logicGrid": {} })
+        );
+        assert_eq!(
+            puzzle_kind_argument(PuzzleKind::ResourceAllocation),
+            json!({ "resourceAllocation": {} })
         );
     }
 }

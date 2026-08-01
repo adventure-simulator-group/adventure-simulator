@@ -98,7 +98,7 @@ async fn show(
     .into_response()
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct ChallengeForm {
     expected_revision: u32,
     sigil_0: Option<String>,
@@ -108,6 +108,21 @@ struct ChallengeForm {
     sigil_4: Option<String>,
     safe_path: Option<String>,
     rune_result: Option<String>,
+    grid_token_0: Option<String>,
+    grid_token_1: Option<String>,
+    grid_token_2: Option<String>,
+    grid_token_3: Option<String>,
+    grid_road_0: Option<String>,
+    grid_road_1: Option<String>,
+    grid_road_2: Option<String>,
+    grid_road_3: Option<String>,
+    provision_0: Option<String>,
+    provision_1: Option<String>,
+    provision_2: Option<String>,
+    provision_3: Option<String>,
+    provision_4: Option<String>,
+    provision_5: Option<String>,
+    provision_6: Option<String>,
 }
 
 fn submission_for(
@@ -133,7 +148,63 @@ fn submission_for(
         PuzzleProjection::RuneTransformation(_) => Ok(PuzzleSubmission::RuneTransformation {
             result: parse_sigil(required(&form.rune_result)?)?,
         }),
+        PuzzleProjection::LogicGrid(puzzle) => {
+            let tokens = [
+                &form.grid_token_0,
+                &form.grid_token_1,
+                &form.grid_token_2,
+                &form.grid_token_3,
+            ];
+            let roads = [
+                &form.grid_road_0,
+                &form.grid_road_1,
+                &form.grid_road_2,
+                &form.grid_road_3,
+            ];
+            let assignments = (0..puzzle.travelers.len())
+                .map(|traveler| {
+                    Ok(adventuresim_core::errantry::LogicGridAssignment {
+                        traveler: traveler as u8,
+                        token: parse_projected_label(&puzzle.tokens, required(tokens[traveler])?)?,
+                        road: parse_projected_label(&puzzle.roads, required(roads[traveler])?)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, &'static str>>()?;
+            Ok(PuzzleSubmission::LogicGrid { assignments })
+        }
+        PuzzleProjection::ResourceAllocation(puzzle) => {
+            let selected = [
+                &form.provision_0,
+                &form.provision_1,
+                &form.provision_2,
+                &form.provision_3,
+                &form.provision_4,
+                &form.provision_5,
+                &form.provision_6,
+            ];
+            let provisions = selected
+                .iter()
+                .enumerate()
+                .filter_map(|(index, value)| value.as_ref().map(|_| index))
+                .map(|index| {
+                    puzzle
+                        .provisions
+                        .get(index)
+                        .map(|item| item.id)
+                        .ok_or("Choose only listed provisions")
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(PuzzleSubmission::ResourceAllocation { provisions })
+        }
     }
+}
+
+fn parse_projected_label(values: &[String], value: &str) -> Result<u8, &'static str> {
+    values
+        .iter()
+        .position(|candidate| candidate == value)
+        .map(|index| index as u8)
+        .ok_or("Choose one of the listed values")
 }
 
 async fn submit(
@@ -218,6 +289,7 @@ mod tests {
             sigil_4: Some("Sword".into()),
             safe_path: None,
             rune_result: None,
+            ..ChallengeForm::default()
         };
         let ordered_projection =
             PuzzleAuthority::generate(PuzzleKind::OrderedSigils, 1).projection();
@@ -238,6 +310,7 @@ mod tests {
             sigil_4: None,
             rune_result: None,
             expected_revision: 0,
+            ..ChallengeForm::default()
         };
         assert!(matches!(
             submission_for(&witness_projection, &witness),
@@ -255,10 +328,40 @@ mod tests {
             sigil_3: None,
             sigil_4: None,
             expected_revision: 0,
+            ..ChallengeForm::default()
         };
         assert!(matches!(
             submission_for(&rune_projection, &rune),
             Ok(PuzzleSubmission::RuneTransformation { .. })
+        ));
+
+        let grid_projection = PuzzleAuthority::generate(PuzzleKind::LogicGrid, 4).projection();
+        let PuzzleProjection::LogicGrid(grid) = &grid_projection else {
+            unreachable!()
+        };
+        let grid_form = ChallengeForm {
+            grid_token_0: Some(grid.tokens[0].clone()),
+            grid_token_1: Some(grid.tokens[1].clone()),
+            grid_token_2: Some(grid.tokens[2].clone()),
+            grid_road_0: Some(grid.roads[0].clone()),
+            grid_road_1: Some(grid.roads[1].clone()),
+            grid_road_2: Some(grid.roads[2].clone()),
+            ..ChallengeForm::default()
+        };
+        assert!(matches!(
+            submission_for(&grid_projection, &grid_form),
+            Ok(PuzzleSubmission::LogicGrid { .. })
+        ));
+
+        let allocation_projection =
+            PuzzleAuthority::generate(PuzzleKind::ResourceAllocation, 5).projection();
+        let allocation_form = ChallengeForm {
+            provision_0: Some("selected".into()),
+            ..ChallengeForm::default()
+        };
+        assert!(matches!(
+            submission_for(&allocation_projection, &allocation_form),
+            Ok(PuzzleSubmission::ResourceAllocation { .. })
         ));
     }
 }

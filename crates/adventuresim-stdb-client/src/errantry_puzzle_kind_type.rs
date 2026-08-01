@@ -13,6 +13,10 @@ pub enum ErrantryPuzzleKind {
     TruthfulWitnesses,
 
     RuneTransformation,
+
+    LogicGrid,
+
+    ResourceAllocation,
 }
 
 impl __sdk::InModule for ErrantryPuzzleKind {

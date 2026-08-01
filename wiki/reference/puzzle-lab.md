@@ -22,6 +22,8 @@ cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- analyze rune-transforma
 cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- sweep rune-transformation --count 100000
 cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- find rune-transformation --minimum-complexity 20 --maximum-complexity 24
 cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- validate ordered-sigils --count 10000
+cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- analyze logic-grid --grid-size 4 --seed 42
+cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- sweep resource-allocation --provisions 7 --hazards 4 --capacity 9 --count 10000
 ```
 
 `show --reveal` includes private authority for debugging. `replay PATH` accepts
@@ -48,6 +50,20 @@ minimum number of laws consistent with each individual example, operation
 reuse, and route-gate reuse. Invalid combinations fail before generation. For
 example, one example cannot both remain ambiguous and uniquely identify its
 gate law.
+
+Logic-grid puzzles match each of three or four travelers to one token and one
+road. They expose grid size, positive and negative clue polarities, and a clue
+ceiling. Generation enumerates every pair of permutations, greedily selects
+the clue with the greatest information gain, proves uniqueness, and then
+removes every redundant clue. This is a documented bounded minimizer rather
+than a claim of global minimum cardinality for the four-by-four case.
+
+Resource-allocation puzzles expose the number of available provisions, number
+of hazards, carrying capacity, and whether every hazard and the capacity must
+change the optimum. They enumerate every provision subset. A legal pack must
+fit the capacity and answer every hazard; the explicit objective maximizes
+readiness, then minimizes weight, then minimizes item count. Generation rejects
+instances without exactly one best pack.
 
 ## Analysis and calibration
 

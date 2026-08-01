@@ -17,6 +17,8 @@ pub enum ErrantryPuzzleKind {
     OrderedSigils,
     TruthfulWitnesses,
     RuneTransformation,
+    LogicGrid,
+    ResourceAllocation,
 }
 
 impl ErrantryPuzzleKind {
@@ -25,6 +27,8 @@ impl ErrantryPuzzleKind {
             Self::OrderedSigils => adventuresim_core::errantry::PuzzleKind::OrderedSigils,
             Self::TruthfulWitnesses => adventuresim_core::errantry::PuzzleKind::TruthfulWitnesses,
             Self::RuneTransformation => adventuresim_core::errantry::PuzzleKind::RuneTransformation,
+            Self::LogicGrid => adventuresim_core::errantry::PuzzleKind::LogicGrid,
+            Self::ResourceAllocation => adventuresim_core::errantry::PuzzleKind::ResourceAllocation,
         }
     }
 }
@@ -1535,6 +1539,18 @@ fn materialize_order_errantry(
             "A knightly errand leads directly to a trial of a hidden rune law.",
             "changing-runes",
             "Study what enters and emerges, then name the rune the law must yield.",
+        ),
+        adventuresim_core::errantry::PuzzleKind::LogicGrid => (
+            "The Trial of the Pilgrims' Bonds",
+            "A knightly errand leads directly to a trial matching pilgrims, tokens, and roads.",
+            "pilgrims-bonds",
+            "Restore each pilgrim's token and road from the Lady's formal clues.",
+        ),
+        adventuresim_core::errantry::PuzzleKind::ResourceAllocation => (
+            "The Trial of the Measured Pack",
+            "A knightly errand leads directly to a trial of burdens and preparation.",
+            "measured-pack",
+            "Choose the most ready pack that meets every named hazard within its burden.",
         ),
     };
     ctx.db.contract_authority().insert(Contract {

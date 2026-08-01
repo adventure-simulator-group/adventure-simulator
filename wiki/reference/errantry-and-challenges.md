@@ -14,8 +14,9 @@ catalogs without changing puzzle truth.
 
 ## Puzzle authority and projections
 
-Puzzle challenges use a tagged, presenter-independent envelope with three
-variants: ordered sigils, truthful witnesses, and rune transformation. Private
+Puzzle challenges use a tagged, presenter-independent envelope with five
+variants: ordered sigils, truthful witnesses, rune transformation,
+multi-category logic grids, and resource allocation. Private
 authority contains the versioned seed and canonical truth. The observer-safe
 projection contains only formal observations and the legal answer domain. A
 typed submission must match the projected engine before the authoritative
@@ -106,6 +107,29 @@ examples per gate, minimum ambiguity of a single example, operation reuse, and
 route-gate reuse. Validation always requires the displayed examples jointly to
 prove every active gate law and the final submitted result.
 
+## Logic-grid puzzle
+
+The logic-grid engine matches three or four travelers across two additional
+one-to-one categories: carried tokens and chosen roads. Typed positive and
+negative clues can relate traveler to token, traveler to road, or token to
+road. The engine enumerates every legal pair of permutations, selects clues by
+bounded deterministic information gain, proves one complete assignment, and
+then removes every clue that is not necessary. The chat form presents ordinary
+select controls for every traveler; no world-space manipulation or hidden
+visual distinction is required.
+
+## Resource-allocation puzzle
+
+The allocation engine presents a finite provision catalog, a carrying limit,
+and named journey hazards. Every provision has explicit integer weight,
+readiness, and hazard coverage. The player chooses a pack that fits the limit
+and answers every hazard, then applies the stated lexicographic objective:
+greatest readiness, lowest weight, and fewest items. The engine exhaustively
+evaluates every subset and rejects generation unless exactly one pack is
+optimal. Standard instances also require every hazard and the capacity itself
+to change that optimum. Puzzle choices are hypothetical and never consume
+real inventory.
+
 ## Supernatural speech and chat
 
 Every line spoken by the fey presenter is reviewed, authored text selected
@@ -191,7 +215,8 @@ alter it. Existing missions and hostile-group authority are never mutated.
 ## Direct development demo
 
 Run `just puzzle-demo`, select a character in a settlement, enable developer
-mode, and choose **Sigil puzzle**, **Witness puzzle**, or **Rune puzzle**. The development-only reducer creates or
+mode, and choose **Sigil puzzle**, **Witness puzzle**, **Rune puzzle**,
+**Logic-grid puzzle**, or **Provision puzzle**. The development-only reducer creates or
 reuses a deterministic Order-sourced case, accepted contract, finale site and
 hostile group, active journey, persisted camp, and observer-bound challenge.
 The isolated development bootstrap seeds an authored Order chapter and its
