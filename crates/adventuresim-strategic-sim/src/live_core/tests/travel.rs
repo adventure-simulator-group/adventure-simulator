@@ -383,7 +383,7 @@ fn journey_holds_are_publicly_diagnosable_and_block_arrival_assumptions() {
 }
 
 #[test]
-fn direct_contract_provisions_before_acceptance_and_never_defers_by_abandoning() {
+fn direct_contract_provisions_before_acceptance_then_abandons_after_one_defeat() {
     let source = LIVE_CORE_SOURCE;
     let quest = source
         .split("fn cycle")
@@ -395,11 +395,14 @@ fn direct_contract_provisions_before_acceptance_and_never_defers_by_abandoning()
             < quest.find("accept_contract_then").unwrap()
     );
     assert!(!quest.contains("defer_unprovisioned_contract"));
-    assert!(quest.contains("failed_expedition_cannot_reprovision"));
     assert!(quest.contains(".min_by_key(|site| (site.distance_m, site.case_site_id.clone()))"));
     assert!(quest.matches("provision_case_site_journey").count() >= 2);
     assert!(quest.contains("accepted contract provisioning projection changed after disclosure"));
     assert!(quest.contains("refreshed_safe_party_for_owner(party_id, quest_owner)"));
+    assert_eq!(quest.matches("autoresolve_mission_then").count(), 1);
+    assert!(!quest.contains("retry_travel_to_case_site"));
+    assert!(quest.contains("abandon_defeated_quest"));
+    assert!(quest.contains("reason=unchanged_defeated_threat"));
 }
 
 #[test]
