@@ -39,7 +39,7 @@ pub struct CharacterCapability {
     pub religion: f32,
     #[default(0.0)]
     pub weapon_precision: f32,
-    #[default(0)]
+    #[default(0u64)]
     pub autoresolve_combat_power: u64,
 }
 

@@ -424,6 +424,7 @@ fn generated_hostile_materialization_preserves_manifest_identity_across_links() 
             hostile_group_authority_row(hostile_group_id, &site, threat.as_str().into(), *count, 2)
                 .expect("canonical hostile-group row materializes");
         assert_eq!(group.id, *hostile_group_id);
+        assert_eq!(group.case_site_id_key, site.id.value);
         assert_eq!(group.case_site_id, site.id);
 
         let linked_finales: Vec<_> = generated
@@ -540,6 +541,7 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
     };
     let group = HostileGroupAuthority {
         id: hostile_group_id.clone(),
+        case_site_id_key: site.id.value.clone(),
         case_site_id: site.id.clone(),
         enemy_type: "test-hostile".into(),
         base_enemy_count: 1,
@@ -686,6 +688,7 @@ fn hostile_group_authority_enforces_one_group_per_case_site() {
         .and_then(|tail| tail.split("fn materialize_hostile_group").next())
         .expect("hostile-group authority declaration");
     assert!(authority.contains("#[unique]"));
+    assert!(authority.contains("pub case_site_id_key: String"));
     assert!(authority.contains("pub case_site_id: CaseSiteId"));
 }
 

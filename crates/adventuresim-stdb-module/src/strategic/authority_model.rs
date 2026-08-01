@@ -202,8 +202,12 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                 .filter_map(|site| {
                     ctx.db
                         .hostile_group_authority()
-                        .iter()
-                        .find(|group| group.case_site_id == site.id)
+                        .case_site_id_key()
+                        .find(&site.id.value)
+                        .filter(|group| {
+                            group.case_site_id_key == group.case_site_id.value
+                                && group.case_site_id == site.id
+                        })
                 })
                 .map(|group| {
                     autoresolve_enemy(
@@ -1250,6 +1254,10 @@ fn validate_hostile_resolution_contract(
 pub struct HostileGroupAuthority {
     #[primary_key]
     pub id: String,
+    /// Primitive query key for view contexts; it must exactly mirror the typed
+    /// authority ID below.
+    #[unique]
+    pub case_site_id_key: String,
     #[unique]
     pub case_site_id: CaseSiteId,
     pub enemy_type: String,
@@ -1281,6 +1289,8 @@ fn materialize_hostile_group(
         hostile_group_authority_row(hostile_group_id, site, enemy_type, enemy_count, difficulty)?;
     if let Some(existing) = ctx.db.hostile_group_authority().id().find(&group.id) {
         return if existing.case_site_id == group.case_site_id
+            && existing.case_site_id_key == group.case_site_id_key
+            && existing.case_site_id_key == existing.case_site_id.value
             && existing.enemy_type == group.enemy_type
             && existing.base_enemy_count == group.base_enemy_count
             && existing.base_difficulty == group.base_difficulty
@@ -1319,6 +1329,7 @@ fn hostile_group_authority_row(
     );
     Ok(HostileGroupAuthority {
         id: hostile_group_id.to_string(),
+        case_site_id_key: site.id.value.clone(),
         case_site_id: site.id.clone(),
         drop_item_id: autoresolve_drop(&enemy_type)?.map(str::to_string),
         drop_quantity: base_enemy_count,

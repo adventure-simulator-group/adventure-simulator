@@ -463,6 +463,7 @@ pub fn seed_standalone_tactical_mission(
             .hostile_group_authority()
             .insert(HostileGroupAuthority {
                 id: hostile_group_id.clone(),
+                case_site_id_key: case_site.id.value.clone(),
                 case_site_id: case_site.id.clone(),
                 enemy_type: "bandit".into(),
                 base_enemy_count: required_enemy_kills
@@ -567,15 +568,14 @@ pub fn seed_standalone_tactical_mission(
             countermeasure_multiplier_bps,
             countermeasure_source_challenge_id,
             errantry_approach_snapshot_json,
-        ) =
-            errantry_mission_scale_snapshot(
-                ctx,
-                &party_id,
-                &case_id,
-                case_site.id.as_str(),
-                &hostile_group_id,
-                group.combat_scale_bps,
-            );
+        ) = errantry_mission_scale_snapshot(
+            ctx,
+            &party_id,
+            &case_id,
+            case_site.id.as_str(),
+            &hostile_group_id,
+            group.combat_scale_bps,
+        );
         let normalized_combat_power = u64::from(group.normalized_combat_power)
             .saturating_mul(u64::from(enemy_combat_scale_bps))
             .checked_div(u64::from(group.combat_scale_bps.max(1)))
@@ -740,13 +740,12 @@ pub(crate) fn seed_world(
         ),
     ];
     if include_errantry_demo_chapter {
-        let errantry_chapter_settlement_id = adventuresim_core::organization::organization(
-            ERRANTRY_ISSUER_ORGANIZATION_ID,
-        )
-        .filter(|organization| organization.errantry_issuance)
-        .and_then(|organization| organization.chapters.first())
-        .map(|chapter| chapter.settlement_id.as_str())
-        .ok_or("Order errantry demo has no canonical authored chapter")?;
+        let errantry_chapter_settlement_id =
+            adventuresim_core::organization::organization(ERRANTRY_ISSUER_ORGANIZATION_ID)
+                .filter(|organization| organization.errantry_issuance)
+                .and_then(|organization| organization.chapters.first())
+                .map(|chapter| chapter.settlement_id.as_str())
+                .ok_or("Order errantry demo has no canonical authored chapter")?;
         settlements.push((
             errantry_chapter_settlement_id,
             "St. George Chapter (Development Demo)",
@@ -2112,10 +2111,8 @@ mod developer_quest_source_tests {
 
     #[test]
     fn fresh_development_world_seeds_an_exact_order_errantry_issuer() {
-        let order = adventuresim_core::organization::organization(
-            ERRANTRY_ISSUER_ORGANIZATION_ID,
-        )
-        .expect("Order catalog entry");
+        let order = adventuresim_core::organization::organization(ERRANTRY_ISSUER_ORGANIZATION_ID)
+            .expect("Order catalog entry");
         assert!(order.errantry_issuance);
         let chapter = order.chapters.first().expect("authored Order chapter");
         let expected_representative =
@@ -2202,9 +2199,9 @@ mod developer_quest_source_tests {
             .next()
             .unwrap();
         assert!(materializer.contains("order_errantry_issuer(ctx)"));
-        assert!(materializer.contains(
-            "issuer_organization_id: ERRANTRY_ISSUER_ORGANIZATION_ID.into()"
-        ));
+        assert!(
+            materializer.contains("issuer_organization_id: ERRANTRY_ISSUER_ORGANIZATION_ID.into()")
+        );
     }
 
     #[test]

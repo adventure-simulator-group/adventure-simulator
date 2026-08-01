@@ -11,6 +11,7 @@ use super::hostile_group_disposition_type::HostileGroupDisposition;
 #[sats(crate = __lib)]
 pub struct HostileGroupAuthority {
     pub id: String,
+    pub case_site_id_key: String,
     pub case_site_id: CaseSiteId,
     pub enemy_type: String,
     pub base_enemy_count: u32,
@@ -36,6 +37,7 @@ impl __sdk::InModule for HostileGroupAuthority {
 /// Provides typed access to columns for query building.
 pub struct HostileGroupAuthorityCols {
     pub id: __sdk::__query_builder::Col<HostileGroupAuthority, String>,
+    pub case_site_id_key: __sdk::__query_builder::Col<HostileGroupAuthority, String>,
     pub case_site_id: __sdk::__query_builder::Col<HostileGroupAuthority, CaseSiteId>,
     pub enemy_type: __sdk::__query_builder::Col<HostileGroupAuthority, String>,
     pub base_enemy_count: __sdk::__query_builder::Col<HostileGroupAuthority, u32>,
@@ -57,6 +59,7 @@ impl __sdk::__query_builder::HasCols for HostileGroupAuthority {
     fn cols(table_name: &'static str) -> Self::Cols {
         HostileGroupAuthorityCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            case_site_id_key: __sdk::__query_builder::Col::new(table_name, "case_site_id_key"),
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
             enemy_type: __sdk::__query_builder::Col::new(table_name, "enemy_type"),
             base_enemy_count: __sdk::__query_builder::Col::new(table_name, "base_enemy_count"),
@@ -92,6 +95,7 @@ impl __sdk::__query_builder::HasCols for HostileGroupAuthority {
 /// Provides typed access to indexed columns for query building.
 pub struct HostileGroupAuthorityIxCols {
     pub case_site_id: __sdk::__query_builder::IxCol<HostileGroupAuthority, CaseSiteId>,
+    pub case_site_id_key: __sdk::__query_builder::IxCol<HostileGroupAuthority, String>,
     pub id: __sdk::__query_builder::IxCol<HostileGroupAuthority, String>,
 }
 
@@ -100,6 +104,7 @@ impl __sdk::__query_builder::HasIxCols for HostileGroupAuthority {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         HostileGroupAuthorityIxCols {
             case_site_id: __sdk::__query_builder::IxCol::new(table_name, "case_site_id"),
+            case_site_id_key: __sdk::__query_builder::IxCol::new(table_name, "case_site_id_key"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
         }
     }
