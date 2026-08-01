@@ -71,6 +71,7 @@ use adventuresim_stdb_client::{
     party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
     perform_investigation_action_reducer::perform_investigation_action,
     purchase_from_herbalist_reducer::purchase_from_herbalist,
+    purchase_personal_storefront_with_party_stake_reducer::purchase_personal_storefront_with_party_stake,
     register_strategic_gateway_reducer::register_strategic_gateway,
     repair_order_table::RepairOrderTableAccess, report_contract_reducer::report_contract,
     request_general_party_join_reducer::request_general_party_join,
@@ -1316,11 +1317,66 @@ fn public_settlement_economy_profile(
             SettlementService::Bookstore => world::SettlementService::Bookstore,
         })
         .collect();
+    navigability_profile.specializations = profile
+        .specializations
+        .iter()
+        .copied()
+        .map(public_stock_category)
+        .collect();
+    navigability_profile.stock = profile
+        .stock
+        .iter()
+        .map(|stock| adventuresim_world_schema::SettlementStock {
+            category: public_stock_category(stock.category),
+            abundance: stock.abundance,
+            provenance: adventuresim_world_schema::ProfileFactProvenance::DeterministicGapFill,
+        })
+        .collect();
 
     navigability_profile
         .validate()
         .ok()
         .map(|()| navigability_profile)
+}
+
+fn public_stock_category(category: StockCategory) -> adventuresim_world_schema::StockCategory {
+    use adventuresim_world_schema::StockCategory as World;
+    match category {
+        StockCategory::Grain => World::Grain,
+        StockCategory::Dairy => World::Dairy,
+        StockCategory::Meat => World::Meat,
+        StockCategory::Fish => World::Fish,
+        StockCategory::Cloth => World::Cloth,
+        StockCategory::Hides => World::Hides,
+        StockCategory::Timber => World::Timber,
+        StockCategory::Fuel => World::Fuel,
+        StockCategory::Stone => World::Stone,
+        StockCategory::Pottery => World::Pottery,
+        StockCategory::Salt => World::Salt,
+        StockCategory::Metalwares => World::Metalwares,
+        StockCategory::Weapons => World::Weapons,
+        StockCategory::Armor => World::Armor,
+        StockCategory::Herbs => World::Herbs,
+        StockCategory::GeneralGoods => World::GeneralGoods,
+        StockCategory::Books => World::Books,
+    }
+}
+
+fn public_economy_catalog_kind(
+    kind: ItemKind,
+) -> adventuresim_core::settlement_economy::CatalogKind {
+    use adventuresim_core::settlement_economy::CatalogKind as Catalog;
+    match kind {
+        ItemKind::Simple | ItemKind::Container => Catalog::Simple,
+        ItemKind::Weapon => Catalog::Weapon,
+        ItemKind::Armor => Catalog::Armor,
+        ItemKind::Shield => Catalog::Shield,
+        ItemKind::Clothing => Catalog::Clothing,
+        ItemKind::Currency => Catalog::Currency,
+        ItemKind::Ingredient => Catalog::Ingredient,
+        ItemKind::Medication => Catalog::Medication,
+        ItemKind::Food => Catalog::Food,
+    }
 }
 
 fn public_storefront_available(
@@ -1332,11 +1388,36 @@ fn public_storefront_available(
     })
 }
 
+fn public_storefront_stocks(
+    profile: &SettlementEconomyProfile,
+    storefront: adventuresim_core::settlement_economy::Storefront,
+    item: &Item,
+) -> bool {
+    public_settlement_economy_profile(profile).is_some_and(|profile| {
+        adventuresim_core::settlement_economy::storefront_stocks(
+            &profile,
+            storefront,
+            &item.id,
+            public_economy_catalog_kind(item.kind),
+        )
+    })
+}
+
 fn storefront_offer_unchanged(
     selected: &(String, u64, u64),
     current: Option<(String, u64, u64)>,
 ) -> bool {
     current.as_ref() == Some(selected)
+}
+
+fn visible_unique_default_provider(
+    providers: &[(u64, u16, u16)],
+    minute: u64,
+) -> Option<u64> {
+    let [(provider, start_minute, end_minute)] = providers else {
+        return None;
+    };
+    npc_is_publicly_present(*start_minute, *end_minute, minute).then_some(*provider)
 }
 
 fn retain_navigable_public_npc_candidates(
@@ -1828,6 +1909,7 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "withdraw_purchase_coin",
         "purchase_from_herbalist",
         "finalize_storefront_trade",
+        "purchase_personal_storefront_with_party_stake",
         "administer_preparation",
     ]
     .into_iter()
@@ -1858,7 +1940,9 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
         "ammunition_purchase_failed"
     } else if error.contains("purchase_from_herbalist") {
         "medical_purchase_failed"
-    } else if error.contains("finalize_storefront_trade") {
+    } else if error.contains("finalize_storefront_trade")
+        || error.contains("purchase_personal_storefront_with_party_stake")
+    {
         "equipment_storefront_trade_failed"
     } else if error.contains("administer_preparation") {
         "medical_intervention_failed"
@@ -1929,7 +2013,9 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
             "medical_purchase_failed",
             "The selected public herbalist preparation could not be purchased.",
         )
-    } else if error.contains("finalize_storefront_trade") {
+    } else if error.contains("finalize_storefront_trade")
+        || error.contains("purchase_personal_storefront_with_party_stake")
+    {
         (
             "equipment_purchase_failed",
             "The revalidated public equipment purchase was rejected by authoritative storefront rules.",

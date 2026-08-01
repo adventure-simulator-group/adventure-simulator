@@ -101,7 +101,9 @@ fn preparation_is_party_wide_and_rejects_overweight_upgrades() {
     assert!(upgrades.contains("public_party_load_and_capacity"));
     assert!(upgrades.contains("MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS"));
     assert!(upgrades.contains("public_equipment_storefront_offer"));
-    assert!(upgrades.contains("finalize_storefront_trade_then"));
+    assert!(upgrades.contains(
+        "purchase_personal_storefront_with_party_stake_then"
+    ));
     assert!(upgrades.contains("earned_shortfall"));
     assert!(upgrades.contains("medical_reserve"));
 
@@ -122,12 +124,8 @@ fn preparation_is_party_wide_and_rejects_overweight_upgrades() {
     }
     assert!(storefront.contains("public_storefront_available"));
     assert!(upgrades.contains("storefront_offer_unchanged"));
-    assert!(
-        upgrades.find("storefront_offer_unchanged").unwrap()
-            < upgrades
-                .find("withdraw_stake_for_personal_purchase")
-                .unwrap()
-    );
+    assert!(upgrades.contains("stake_before_trade"));
+    assert!(upgrades.contains("stake_after_trade"));
 }
 
 #[test]
@@ -145,6 +143,49 @@ fn resident_presence_cannot_create_an_unavailable_equipment_storefront() {
         &profile,
         adventuresim_core::settlement_economy::Storefront::Weapons,
     ));
+}
+
+#[test]
+fn equipment_storefront_requires_service_and_matching_stock_category() {
+    let canonical = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+    let mut profile = SettlementEconomyProfile {
+        rules_version: canonical.rules_version,
+        prosperity_score: 0,
+        prosperity_tier: ProsperityTier::Subsistence,
+        services: vec![SettlementService::Weaponsmith],
+        specializations: vec![],
+        stock: vec![],
+    };
+    let storefront = adventuresim_core::settlement_economy::Storefront::Weapons;
+    let projected = public_settlement_economy_profile(&profile).unwrap();
+    assert!(!adventuresim_core::settlement_economy::storefront_stocks(
+        &projected,
+        storefront,
+        "club",
+        adventuresim_core::settlement_economy::CatalogKind::Weapon,
+    ));
+    profile.stock.push(SettlementStock {
+        category: StockCategory::Weapons,
+        abundance: 1,
+        provenance: ProfileFactProvenance::DeterministicGapFill,
+    });
+    let projected = public_settlement_economy_profile(&profile).unwrap();
+    assert!(adventuresim_core::settlement_economy::storefront_stocks(
+        &projected,
+        storefront,
+        "club",
+        adventuresim_core::settlement_economy::CatalogKind::Weapon,
+    ));
+}
+
+#[test]
+fn staggered_default_providers_remain_ambiguous_before_hours_filtering() {
+    assert_eq!(
+        visible_unique_default_provider(&[(7, 0, 720), (8, 720, 1_440)], 300),
+        None
+    );
+    assert_eq!(visible_unique_default_provider(&[(7, 0, 720)], 300), Some(7));
+    assert_eq!(visible_unique_default_provider(&[(7, 0, 720)], 900), None);
 }
 
 #[test]

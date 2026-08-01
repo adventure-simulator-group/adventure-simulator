@@ -667,40 +667,52 @@ impl LiveRunner {
         ) {
             return Ok(());
         }
-        if !self.withdraw_stake_for_personal_purchase(
-            character_id,
-            &party_id,
-            earned_shortfall,
-        )? {
-            return Ok(());
-        }
         let purse_before_trade = self.personal_gold(character_id);
-        if purse_before_trade.saturating_sub(medical_reserve) < quoted_cost {
-            return Ok(());
-        }
-        let result = reducer_call!(self, "finalize_storefront_trade", |cb| self
+        let stake_before_trade = self
+            .connection
+            .db
+            .party_stake()
+            .iter()
+            .find(|row| row.party_id == party_id && row.character_id == character_id)
+            .map_or(0, |row| row.value);
+        let maximum_personal_payment = quoted_cost.saturating_sub(earned_shortfall);
+        let result = reducer_call!(self, "purchase_personal_storefront_with_party_stake", |cb| self
             .connection
             .reducers
-            .finalize_storefront_trade_then(
+            .purchase_personal_storefront_with_party_stake_then(
                 character_id,
                 settlement.to_string(),
                 service_id.clone(),
                 provider_id,
-                vec![candidate.id.clone()],
-                vec![1],
-                vec![],
-                vec![],
-                false,
+                candidate.id.clone(),
+                1,
+                quoted_cost,
+                maximum_personal_payment,
+                earned_shortfall,
                 cb,
             ));
         self.call(result)?;
-        let actual_cost = purse_before_trade.saturating_sub(self.personal_gold(character_id));
+        let purse_after_trade = self.personal_gold(character_id);
+        let stake_after_trade = self
+            .connection
+            .db
+            .party_stake()
+            .iter()
+            .find(|row| row.party_id == party_id && row.character_id == character_id)
+            .map_or(0, |row| row.value);
+        let personal_spent = purse_before_trade.saturating_sub(purse_after_trade);
+        let stake_spent = stake_before_trade.saturating_sub(stake_after_trade);
+        let actual_cost = personal_spent.saturating_add(stake_spent);
+        self.metrics.earned_gold_withdrawn = self
+            .metrics
+            .earned_gold_withdrawn
+            .saturating_add(stake_spent);
         self.metrics.equipment_purchases += 1;
         self.event(
             agent,
             CoreLoopEventKind::Purchase,
             format!(
-                "item={};storefront={service_id};provider={provider_id};upper_bound_quote={quoted_cost};actual_cost={actual_cost};earned_shortfall={earned_shortfall};medical_reserve={medical_reserve};utility_gain={improvement:.3}",
+                "item={};storefront={service_id};provider={provider_id};upper_bound_quote={quoted_cost};actual_cost={actual_cost};personal_spent={personal_spent};stake_spent={stake_spent};authorized_stake_max={earned_shortfall};medical_reserve={medical_reserve};utility_gain={improvement:.3}",
                 candidate.id,
             ),
         );

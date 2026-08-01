@@ -390,19 +390,24 @@ impl LiveRunner {
                             && presence.settlement_id == settlement_id
                             && presence.location_id == location_id
                             && presence.is_default
-                            && npc_is_publicly_present(
-                                presence.start_minute,
-                                presence.end_minute,
-                                minute,
-                            )
                     })
             })
-            .map(|npc| npc.character_id)
+            .filter_map(|npc| {
+                self.connection
+                    .db
+                    .settlement_resident_presence()
+                    .iter()
+                    .find(|presence| presence.character_id == npc.character_id)
+                    .map(|presence| {
+                        (
+                            npc.character_id,
+                            presence.start_minute,
+                            presence.end_minute,
+                        )
+                    })
+            })
             .collect::<Vec<_>>();
-        match providers.as_slice() {
-            [provider] => Some(*provider),
-            _ => None,
-        }
+        visible_unique_default_provider(&providers, minute)
     }
 
     pub(super) fn public_equipment_storefront_offer(
@@ -435,7 +440,9 @@ impl LiveRunner {
             .settlement()
             .iter()
             .find(|settlement| settlement.id == settlement_id)?;
-        if !public_storefront_available(&settlement.economy, storefront) {
+        if !public_storefront_available(&settlement.economy, storefront)
+            || !public_storefront_stocks(&settlement.economy, storefront, item)
+        {
             return None;
         }
         let provider = self.public_default_storefront_provider(

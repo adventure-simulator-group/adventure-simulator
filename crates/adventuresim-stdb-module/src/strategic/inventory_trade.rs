@@ -1761,6 +1761,186 @@ pub fn finalize_storefront_trade(
     )
 }
 
+/// Buy one personal storefront line while atomically funding the declared
+/// share from the caller's earned party stake. Any later validation failure
+/// rolls back the stake, party currency, personal currency, and inventory.
+#[reducer]
+pub fn purchase_personal_storefront_with_party_stake(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    service_id: String,
+    provider_resident_character_id: u64,
+    item_id: String,
+    quantity: u32,
+    maximum_unit_price: u64,
+    maximum_personal_payment: u64,
+    maximum_stake_payment: u64,
+) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    let (party_id, current_unit_price) = validate_personal_storefront_purchase(
+        ctx,
+        character_id,
+        &settlement_id,
+        &service_id,
+        provider_resident_character_id,
+        &item_id,
+        quantity,
+    )?;
+    if current_unit_price > maximum_unit_price {
+        return Err("Storefront quote exceeds the authorized maximum".into());
+    }
+    let total = current_unit_price
+        .checked_mul(u64::from(quantity))
+        .ok_or("Merchant purchase total overflow")?;
+    let (personal_payment, stake_payment) = personal_storefront_payment(
+        total,
+        maximum_personal_payment,
+        maximum_stake_payment,
+    )
+    .ok_or("Current storefront payment exceeds the authorized stake maximum")?;
+    if crate::item::personal_currency_total(ctx, character_id) < personal_payment {
+        return Err("Not enough personal coin".into());
+    }
+    let mut stake = ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(&party_id)
+        .find(|stake| stake.character_id == character_id)
+        .ok_or("Character has no earned party stake")?;
+    if stake.value < stake_payment || party_currency_total(ctx, &party_id) < stake_payment {
+        return Err("Earned party stake cannot fund this purchase".into());
+    }
+    if stake_payment > 0 {
+        transfer_party_currency_to_personal(ctx, &party_id, character_id, stake_payment)?;
+        stake.value -= stake_payment;
+        ctx.db.party_stake().id().update(stake);
+    }
+    finalize_storefront_trade_impl(
+        ctx,
+        character_id,
+        settlement_id,
+        service_id,
+        provider_resident_character_id,
+        vec![item_id],
+        vec![quantity],
+        Vec::new(),
+        Vec::new(),
+        false,
+    )
+}
+
+fn personal_storefront_payment(
+    total: u64,
+    maximum_personal_payment: u64,
+    maximum_stake_payment: u64,
+) -> Option<(u64, u64)> {
+    let personal = total.min(maximum_personal_payment);
+    let stake = total.saturating_sub(personal);
+    (stake <= maximum_stake_payment).then_some((personal, stake))
+}
+
+fn validate_personal_storefront_purchase(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+    service_id: &str,
+    provider_resident_character_id: u64,
+    item_id: &str,
+    quantity: u32,
+) -> Result<(String, u64), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if quantity == 0 || character.current_settlement_id.as_deref() != Some(settlement_id) {
+        return Err("Character must be at this settlement to purchase".into());
+    }
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let (storefront, location_id) = merchant_storefront(service_id)?;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id.to_string())
+        .ok_or("Settlement not found")?;
+    let item = ctx
+        .db
+        .item()
+        .id()
+        .find(&item_id.to_string())
+        .ok_or("Merchant item not found")?;
+    if matches!(item.kind, crate::ItemKind::Currency | crate::ItemKind::Medication)
+        || !adventuresim_core::settlement_economy::storefront_stocks(
+            &settlement.economy,
+            storefront,
+            item_id,
+            crate::item::economy_catalog_kind(item.kind),
+        )
+        || (storefront == adventuresim_core::settlement_economy::Storefront::Books
+            && adventuresim_core::item_catalog::definition(item_id)
+                .and_then(|definition| definition.capabilities.book.as_ref())
+                .is_none_or(|book| {
+                    !book.settlement_allowlist.is_empty()
+                        && !book.settlement_allowlist.contains(&settlement_id.to_string())
+                }))
+    {
+        return Err("This settlement does not stock that merchant item".into());
+    }
+    if default_merchant_provider(ctx, settlement_id, service_id, location_id)?
+        != provider_resident_character_id
+    {
+        return Err("Merchant service provider does not match this storefront".into());
+    }
+    let presence = ctx
+        .db
+        .settlement_resident_presence()
+        .character_id()
+        .find(provider_resident_character_id)
+        .ok_or("Merchant service provider has no presence")?;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    if !crate::settlement_population::npc_is_present(&presence, minute) {
+        return Err("Merchant service provider is not available".into());
+    }
+    let speaker = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character skills not found")?
+        .oral_languages;
+    let mut merchant = adventuresim_world_schema::OralLanguageHours::default();
+    *merchant.direct_mut(settlement.languages.dominant_german()) =
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+    let speaker_cap = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    let (_, shared_language) = adventuresim_world_schema::best_common_oral_language_capped(
+        speaker,
+        speaker_cap,
+        merchant,
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS,
+    );
+    let effects = crate::local_problem::settlement_effects(ctx, settlement_id, minute);
+    let quote = adventuresim_core::strategic_economy::language_adjusted_buy_price(
+        adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
+        shared_language,
+    );
+    Ok((
+        party_id,
+        u64::from(adventuresim_core::local_problem::adjust_price(
+            quote,
+            effects.buy_bps,
+        )),
+    ))
+}
+
 fn merchant_storefront(
     service_id: &str,
 ) -> Result<

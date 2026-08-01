@@ -600,6 +600,7 @@ pub mod promote_organization_membership_reducer;
 pub mod prosperity_tier_type;
 pub mod public_threat_disclosure_type;
 pub mod purchase_from_herbalist_reducer;
+pub mod purchase_personal_storefront_with_party_stake_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
 pub mod quest_generation_authority_type;
@@ -1431,6 +1432,7 @@ pub use promote_organization_membership_reducer::promote_organization_membership
 pub use prosperity_tier_type::ProsperityTier;
 pub use public_threat_disclosure_type::PublicThreatDisclosure;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
+pub use purchase_personal_storefront_with_party_stake_reducer::purchase_personal_storefront_with_party_stake;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
 pub use quest_generation_authority_type::QuestGenerationAuthority;
@@ -2115,6 +2117,17 @@ pub enum Reducer {
         item_ids: Vec<String>,
         quantities: Vec<u32>,
     },
+    PurchasePersonalStorefrontWithPartyStake {
+        character_id: u64,
+        settlement_id: String,
+        service_id: String,
+        provider_resident_character_id: u64,
+        item_id: String,
+        quantity: u32,
+        maximum_unit_price: u64,
+        maximum_personal_payment: u64,
+        maximum_stake_payment: u64,
+    },
     ReceiveInvestigationClaim {
         character_id: u64,
         action_id: String,
@@ -2595,6 +2608,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::PresentOrganization { .. } => "present_organization",
             Reducer::PromoteOrganizationMembership { .. } => "promote_organization_membership",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
+            Reducer::PurchasePersonalStorefrontWithPartyStake { .. } => {
+                "purchase_personal_storefront_with_party_stake"
+            }
             Reducer::ReceiveInvestigationClaim { .. } => "receive_investigation_claim",
             Reducer::ReceiveLocalProblemRumor { .. } => "receive_local_problem_rumor",
             Reducer::RecoverOwnedResidence { .. } => "recover_owned_residence",
@@ -3470,6 +3486,27 @@ Reducer::BeginFormalCourtship{
                 settlement_id: settlement_id.clone(),
                 item_ids: item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::PurchasePersonalStorefrontWithPartyStake{
+                character_id,
+                settlement_id,
+                service_id,
+                provider_resident_character_id,
+                item_id,
+                quantity,
+                maximum_unit_price,
+                maximum_personal_payment,
+                maximum_stake_payment,
+}             => __sats::bsatn::to_vec(&purchase_personal_storefront_with_party_stake_reducer::PurchasePersonalStorefrontWithPartyStakeArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                service_id: service_id.clone(),
+                provider_resident_character_id: provider_resident_character_id.clone(),
+                item_id: item_id.clone(),
+                quantity: quantity.clone(),
+                maximum_unit_price: maximum_unit_price.clone(),
+                maximum_personal_payment: maximum_personal_payment.clone(),
+                maximum_stake_payment: maximum_stake_payment.clone(),
 }),
             Reducer::ReceiveInvestigationClaim{
                 character_id,

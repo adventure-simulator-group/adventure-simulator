@@ -143,12 +143,12 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
 
 #[test]
 fn equipment_trade_failure_is_classified_without_backend_text() {
-    let raw = "finalize_storefront_trade failed: hidden provider authority changed";
+    let raw = "purchase_personal_storefront_with_party_stake failed: hidden provider authority changed";
     let (category, message) = safe_core_loop_failure(raw);
     assert_eq!(category, "equipment_purchase_failed");
     assert_eq!(
         safe_failure_operation(raw),
-        Some("finalize_storefront_trade")
+        Some("purchase_personal_storefront_with_party_stake")
     );
     assert_eq!(
         safe_failure_reason_code(raw, category),

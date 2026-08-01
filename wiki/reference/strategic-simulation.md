@@ -435,8 +435,11 @@ only upgrades that preserve at least 20 percent of the public linear carrying ma
 twenty personally owned arrows for each member whose public equipped capability is ranged. Shared
 earned stake may be withdrawn through the ordinary custody reducer to fund a member's arrows, while
 the same visible medical reserve used elsewhere remains protected. Equipment replacements route
-through their matching public forge, armoury, or tailor provider and use the ordinary storefront
-trade reducer with a conservative observer-safe quote. If a visible provider exists but shelter,
+through their matching public forge, armoury, or tailor provider. They require both the canonical
+service and item stock category, reject ambiguous default providers before applying current hours,
+and use one authoritative transaction to debit only the member's earned stake and complete the
+personal purchase within the conservative observer-safe quote. If a visible provider exists but
+shelter,
 ammunition, quote, or carrying margin cannot be made safe, the party performs settlement activity
 instead of departing. Current wetness above 80 percent or absolute thermal strain above 2,500 also
 requires indoor recovery before departure. The SDK exposes neither route-weather forecasts nor
@@ -579,8 +582,9 @@ Current limitations are:
 - the bounded bootstrap applies generated attributes, initial skills, and
   downtime schedules, while equipment starts from the normal character
   creator before policy-driven upgrades;
-- party loot is liquidated through the shared party treasury; upgrades must be
-  funded by withdrawing the character's earned stake before a personal trade;
+- party loot is liquidated through the shared party treasury; equipment
+  upgrades atomically consume at most the character's earned stake while
+  purchasing into personal custody;
 - duplicate detection covers the simulator's semantic action stream, not the
   strategic-web rendered DOM;
 - no tactical ticks and no persistent production NPC rows.
