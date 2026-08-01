@@ -20,7 +20,12 @@ use bevy::prelude::*;
 use bevy::time::Stopwatch;
 use clap::{ArgAction, Parser};
 
-use crate::{bot::MissionEnemy, stdb::SpacetimeDb, terrain::TerrainGenerator};
+use crate::{
+    bot::{MissionEnemy, OffensiveMeleeAi},
+    combat::TacticalCombatSide,
+    stdb::SpacetimeDb,
+    terrain::TerrainGenerator,
+};
 use input::AccumulatedInput;
 
 /// Default [`Args::timeout`] time.
@@ -185,7 +190,12 @@ fn spawn_connected_player(
     q_scene: &Query<&SceneTerrain>,
 ) {
     let entity = if player.character.temporary {
-        cmd.spawn(MissionEnemy).id()
+        cmd.spawn((
+            MissionEnemy,
+            OffensiveMeleeAi::default(),
+            TacticalCombatSide::Enemy,
+        ))
+        .id()
     } else {
         let Some((entity, _)) = q_loading
             .iter()
@@ -312,6 +322,11 @@ fn spawn_connected_player(
         limbs,
         attributes,
         stats,
+        if player.character.temporary {
+            TacticalCombatSide::Enemy
+        } else {
+            TacticalCombatSide::Party
+        },
         Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
         (
             player_collider.clone(),
