@@ -1482,6 +1482,125 @@ mod tests {
     }
 
     #[test]
+    fn rash_cliff_hunt_routes_are_mortal_observational_and_balanced() {
+        let definition = encounter("rash_cliff_hunt_v1").unwrap();
+        assert!(definition.triggers.travel && !definition.triggers.rest);
+        assert_eq!(definition.cast[0].nature, SpeakerNature::Mortal);
+
+        let opening = definition.opening[0].text.to_lowercase();
+        assert!(opening.contains("chief beater"));
+        assert!(opening.contains("safe anchors and a belayed order"));
+        assert!(opening.contains("lacketh rank to command"));
+        for withheld in ["lower spur", "bow", "ranged", "melee", "across the gap"] {
+            assert!(!opening.contains(withheld));
+        }
+
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        assert_eq!(active.len(), 6);
+        assert!(active.iter().all(|choice| {
+            choice.effects.iter().any(|effect| {
+                matches!(
+                    effect,
+                    Effect::Information { information_id }
+                        if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
+                )
+            }) && choice.quest_reward_tags == ["prepare_bows_against_melee_only_opposition"]
+        }));
+        assert!(active.iter().all(|choice| {
+            let result = choice.result.to_lowercase().replace('-', " ");
+            result.contains("lower spur")
+                && result.contains("bow")
+                && result.contains("exposed")
+                && result.contains("mail clad squire")
+                && result.contains("melee")
+                && result.contains("cannot answer")
+                && result.contains("gap")
+        }));
+
+        let spear = choice("climb_with_hunting_spear");
+        assert!(matches!(
+            spear.requirements.as_slice(),
+            [Requirement::Item {
+                item_id,
+                minimum_quantity: 1
+            }] if item_id == "hunting_spear"
+        ));
+        assert!(!spear.effects.iter().any(|effect| matches!(
+            effect,
+            Effect::ConsumeItem { item_id, .. } if item_id == "hunting_spear"
+        )));
+        assert!(spear.result.contains("keepest possession of it"));
+
+        let command = choice("order_belayed_drive");
+        assert!(
+            command.response[0]
+                .text
+                .contains("chief beater knoweth the safe anchors")
+        );
+        assert!(
+            command.response[0]
+                .text
+                .contains("Lend him thine authority")
+        );
+        assert!(
+            command
+                .result
+                .contains("enforcing and coordinating the chief beater's belay plan")
+        );
+        assert!(command.result.contains("he chooseth the safe anchors"));
+
+        assert!(
+            choice("rebuke_vainglory").response[0]
+                .text
+                .starts_with("Thy rebuke doth recall me")
+        );
+        let theft = choice("rig_station_and_steal_stakes");
+        assert!(matches!(
+            theft.effects[0],
+            Effect::Currency { amount: 48, .. }
+        ));
+        let largest_honest_coin = active
+            .iter()
+            .filter(|choice| choice.id != theft.id)
+            .flat_map(|choice| &choice.effects)
+            .filter_map(|effect| match effect {
+                Effect::Currency { amount, .. } if *amount > 0 => Some(*amount),
+                _ => None,
+            })
+            .max()
+            .unwrap();
+        assert!(48 > largest_honest_coin);
+        assert!(theft.personality.iter().all(|change| change.delta < 0));
+        assert_eq!(exemplified_virtue(&theft.personality), None);
+
+        let ignore = choice("ignore");
+        assert!(ignore.transition.is_none());
+        assert!(ignore.effects.is_empty());
+        assert!(ignore.personality.is_empty());
+        let authored = serde_json::to_string(definition).unwrap().to_lowercase();
+        for prohibited in [
+            "buck is slain",
+            "buck dieth",
+            "quarry item",
+            "equipment damage",
+            "injureth",
+        ] {
+            assert!(!authored.contains(prohibited));
+        }
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition

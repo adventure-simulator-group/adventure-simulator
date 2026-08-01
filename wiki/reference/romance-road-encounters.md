@@ -151,6 +151,26 @@ opening discloses the dangerous crossing and disputed fare, but withholds that
 deeper tactical conclusion. The encounter is travel-only, goal-neutral,
 entirely mortal, and uses no runtime catalog special case.
 
+`rash_cliff_hunt_v1` places a rash mortal young lord, his mail-clad squire, a
+knowledgeable but outranked chief beater, and frightened light beaters below a
+dangerous shale ascent. The lord stakes twenty groschen on reaching an upper
+cairn and threatens his servants' wages if the mountain buck escapes. The
+party may stalk a safer switchback, use an owned hunting spear as a climbing
+brace without consuming it, lend the chief beater enough authority to execute
+his own safe-anchor and belay plan, negotiate fair terms that preserve the
+servants' wages, rebuke the lord's vainglory through Christian duty, or falsely
+claim hunt service, rig a station, and abscond with the entrusted side stakes;
+the open road permits a consequence-free refusal. From a different grounded
+perspective, every active route demonstrates the same portable physical fact:
+a lightly equipped bow-bearing beater in a prepared lower-spur lane can engage
+the exposed traverse, while the mail-clad squire, armed only for melee with a
+hunting spear, cannot answer across the gap. This informs preparation of bows
+and arrows against known melee-only opposition—including the modeled armed
+retainer finale—without granting quarry, killing or persisting the buck,
+damaging equipment, or weakening any opponent. The materially richest theft
+lowers Honesty without publicly exemplifying it. The encounter is travel-only,
+goal-neutral, entirely mortal, and requires no runtime catalog special case.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,

@@ -1,0 +1,134 @@
+{
+  "encounters": [
+    {
+      "id": "rash_cliff_hunt_v1",
+      "version": 1,
+      "weight": 70,
+      "triggers": { "travel": true, "rest": false },
+      "provenance": {
+        "works": ["Parzival", "Wigalois", "Lanzelet", "Theuerdank", "Le Morte d'Arthur"],
+        "motifs": ["rash_noble_hunt", "mountain_quarry", "perilous_ascent", "unjust_wager", "betrayed_trust"],
+        "adaptation_note": "An original synthesis of hazardous noble hunts, proud wagers, imperiled attendants, and mountain trials common in chivalric romance; it does not reproduce a particular episode."
+      },
+      "cast": [
+        { "id": "young_lord", "name": "Young lord", "nature": "mortal" }
+      ],
+      "opening": [
+        {
+          "speaker": "young_lord",
+          "text": "Good travelers, a mountain buck hath mocked my hunt among these heights. My mail-clad squire and chief beater stand among a frightened company of lightly burdened beaters below a shale ascent, where one false foot promiseth a grievous fall. The chief saith he knoweth safe anchors and a belayed order, yet lacketh rank to command the disordered company. I wager twenty groschen that I shall reach the upper cairn before any champion among you. If the buck escapeth us, every servant here shall forfeit his wages.",
+          "reviewed_shakespearean": true
+        }
+      ],
+      "choices": [
+        {
+          "id": "stalk_safe_switchback",
+          "label": "Stalk the safer switchback and prove the sounder ascent",
+          "response": [{ "speaker": "young_lord", "text": "Thou readest these hills more soberly than I. Take the safer winding path, and twelve groschen shall answer thy better judgment if thou reachest the station.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest ninety minutes scouting the safer switchback and earnest twelve groschen. From a prepared bow lane upon the lower spur, thou watchest a lightly equipped, bow-bearing beater engage the buck as it crosseth the exposed upper traverse. Across the gap, the mail-clad squire, armed only for melee with a hunting spear, cannot answer the bowman.",
+          "deed": "stalk_safe_switchback_at_cliff_hunt",
+          "outcome_tags": ["prudence", "hillcraft", "physical_observation"],
+          "checks": [{ "kind": "skill", "skill": "terrain_hills", "difficulty_milli": 1100 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 12 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 110, "virtue": "prudence" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 90 }
+        },
+        {
+          "id": "climb_with_hunting_spear",
+          "label": "Climb the shale using thy hunting spear for purchase",
+          "response": [{ "speaker": "young_lord", "text": "Thy hunting spear may serve as staff and brace where shale betrayeth boots. Win thou the upper cairn by strength, and the full twenty-groschen wager shall be thine.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest an hour climbing with thy hunting spear as staff and brace, keepest possession of it, and winnest twenty groschen. From the cairn thou seest the chief place a lightly equipped bow-bearer in the prepared lower-spur lane. When the buck entereth the exposed traverse, that beater can engage it; the mail-clad squire, armed only for melee with his hunting spear, cannot answer across the gap.",
+          "deed": "climb_cliff_hunt_with_hunting_spear",
+          "outcome_tags": ["courage", "arduous_ascent", "physical_observation"],
+          "requirements": [{ "kind": "item", "item_id": "hunting_spear", "minimum_quantity": 1 }],
+          "checks": [{ "kind": "attribute", "attribute": "endurance", "difficulty_milli": 1250 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 20 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "nerve", "delta": 110, "virtue": "courage" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "order_belayed_drive",
+          "label": "Order a belayed drive with the hunt's cords and poles",
+          "response": [{ "speaker": "young_lord", "text": "My chief beater knoweth the safe anchors and belayed order, and my train beareth cords and stout poles, yet these frightened hands heed him not. Lend him thine authority, enforce his plan, and eight groschen shall reward thy command.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest seventy-five minutes enforcing and coordinating the chief beater's belay plan whilst he chooseth the safe anchors and directeth the mountain work. At his prepared lower-spur bow lane, a lightly equipped beater engageth the buck upon the exposed traverse. The mail-clad squire, armed only for melee with a hunting spear, cannot answer that bowman across the gap. Thou receivest eight groschen.",
+          "deed": "order_belayed_drive_at_cliff_hunt",
+          "outcome_tags": ["prudence", "command", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 8 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 100, "virtue": "prudence" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 75 }
+        },
+        {
+          "id": "persuade_fair_terms",
+          "label": "Persuade the lord to stake his own purse, not servant wages",
+          "response": [{ "speaker": "young_lord", "text": "Thy tongue hath made my wager seem unworthy of my rank. My servants shall retain their wages; inspect thou their stations, and sixteen groschen from mine own purse shall reward fair counsel.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest forty minutes securing the servants' wages and inspecting their stations, and receivest sixteen groschen from the lord's purse. At the fair lower-spur station thou seest a lightly equipped bow-bearing beater engage the buck upon the exposed traverse. Across the gap, the mail-clad squire, armed only for melee with his hunting spear, cannot answer him.",
+          "deed": "persuade_fair_terms_at_cliff_hunt",
+          "outcome_tags": ["justice", "fair_wager", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "charm", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "charm", "difficulty_milli": 1100 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 16 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "conscience", "delta": 90, "virtue": "justice" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "rebuke_vainglory",
+          "label": "Rebuke his vainglory and the threatened servants' wages",
+          "response": [{ "speaker": "young_lord", "text": "Thy rebuke doth recall me that vainglory maketh poor sport of another man's bread. My servants shall keep their wages; remain and show me how a worthier hunt is ordered.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest thirty-five minutes recalling the young lord to his Christian duty and allowing the chief beater to lead a careful drive. From his prepared lower-spur lane, a lightly equipped bow-bearing beater engageth the buck upon the exposed traverse. The mail-clad squire, armed only for melee with a hunting spear, cannot answer across the gap, and no servant's bread is forfeit.",
+          "deed": "rebuke_vainglory_at_cliff_hunt",
+          "outcome_tags": ["faith", "christian_duty", "physical_observation"],
+          "requirements": [{ "kind": "religion", "religion": "roman_catholic" }],
+          "checks": [{ "kind": "religion", "religion": "roman_catholic", "difficulty_milli": 1050 }],
+          "effects": [{ "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }],
+          "personality": [{ "axis": "conviction", "delta": 110, "virtue": "faith" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 35 }
+        },
+        {
+          "id": "rig_station_and_steal_stakes",
+          "label": "Claim hunt service, rig a station, and steal the side stakes",
+          "response": [{ "speaker": "young_lord", "text": "Thou hast served great hunts and knowest the side stakes? Take this entrusted purse, mark the lower station, and pay the waiting wagers when the drive is done.", "reviewed_shakespearean": true }],
+          "result": "Thou falsely claimest great-hunt service, takest the entrusted side stakes, and spendest an hour shifting the station marker behind a rock and across the wind. From the real prepared lower-spur lane thou seest a lightly equipped bow-bearing beater engage the buck upon the exposed traverse. The mail-clad squire, armed only for melee with a hunting spear, cannot answer that sightline across the gap. Then thou abscondest with forty-eight groschen.",
+          "deed": "rig_cliff_hunt_station_and_steal_stakes",
+          "outcome_tags": ["deception", "theft", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "deception", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "deception", "difficulty_milli": 1200 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 48 },
+            { "kind": "information", "information_id": "melee_only_opposition_cannot_answer_prepared_bow_lane" }
+          ],
+          "personality": [{ "axis": "transparency", "delta": -250, "virtue": "honesty" }],
+          "quest_reward_tags": ["prepare_bows_against_melee_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "ignore",
+          "label": "Continue along the open road",
+          "response": [],
+          "result": "Thou leavest the rash young lord and his hunt upon the shale heights, for the road remaineth open.",
+          "deed": "ignore_rash_cliff_hunt",
+          "outcome_tags": []
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information"]
+    }
+  ]
+}
