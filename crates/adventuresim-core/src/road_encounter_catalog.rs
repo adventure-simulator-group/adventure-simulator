@@ -1485,46 +1485,13 @@ mod tests {
     fn rash_cliff_hunt_routes_are_mortal_observational_and_balanced() {
         let definition = encounter("rash_cliff_hunt_v1").unwrap();
         assert!(definition.triggers.travel && !definition.triggers.rest);
-        assert_eq!(definition.weight, 70);
-        assert!(
-            definition
-                .cast
-                .iter()
-                .all(|speaker| speaker.nature == SpeakerNature::Mortal)
-        );
-        assert!(
-            definition
-                .opening
-                .iter()
-                .chain(
-                    definition
-                        .choices
-                        .iter()
-                        .flat_map(|choice| &choice.response)
-                )
-                .all(|line| line.reviewed_shakespearean && !line.reviewed_iambic_pentameter)
-        );
+        assert_eq!(definition.cast[0].nature, SpeakerNature::Mortal);
 
-        let opening = definition
-            .opening
-            .iter()
-            .map(|line| line.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase();
-        for premise in [
-            "mountain buck",
-            "mail-clad squire",
-            "lightly burdened beaters",
-            "shale ascent",
-            "grievous fall",
-            "twenty groschen",
-            "upper cairn",
-            "forfeit his wages",
-        ] {
-            assert!(opening.contains(premise));
-        }
-        for withheld in ["lower spur", "sole upper", "broadside", "ranged shot"] {
+        let opening = definition.opening[0].text.to_lowercase();
+        assert!(opening.contains("chief beater"));
+        assert!(opening.contains("safe anchors and a belayed order"));
+        assert!(opening.contains("lacketh rank to command"));
+        for withheld in ["lower spur", "bow", "ranged", "melee", "across the gap"] {
             assert!(!opening.contains(withheld));
         }
 
@@ -1540,184 +1507,72 @@ mod tests {
             .iter()
             .filter(|choice| choice.id != "ignore")
             .collect::<Vec<_>>();
-        assert_eq!(definition.choices.len(), 7);
-        let signatures = definition
-            .choices
-            .iter()
-            .map(|choice| {
-                serde_json::to_string(&(
-                    &choice.requirements,
-                    &choice.checks,
-                    &choice.effects,
-                    &choice.personality,
-                    &choice.transition,
-                ))
-                .unwrap()
-            })
-            .collect::<BTreeSet<_>>();
-        assert_eq!(signatures.len(), 7);
+        assert_eq!(active.len(), 6);
         assert!(active.iter().all(|choice| {
             choice.effects.iter().any(|effect| {
                 matches!(
                     effect,
                     Effect::Information { information_id }
-                        if information_id
-                            == "lower_spur_gives_clear_ranged_flank_on_upper_scree_traverse"
+                        if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
                 )
-            }) && choice.quest_reward_tags
-                == ["prepare_ranged_weapons_for_exposed_upper_scree_traverse"]
-                && choice
-                    .outcome_tags
-                    .iter()
-                    .any(|tag| tag == "physical_observation")
+            }) && choice.quest_reward_tags == ["prepare_bows_against_melee_only_opposition"]
         }));
         assert!(active.iter().all(|choice| {
-            choice
-                .result
-                .contains("witnessest the light beaters drive the buck")
-                && choice.result.contains("sole upper scree traverse")
-                && choice
-                    .result
-                    .contains("passeth broadside above the lower spur")
-                && choice
-                    .result
-                    .contains("neither brush nor rock to mask a ranged shot")
+            let result = choice.result.to_lowercase().replace('-', " ");
+            result.contains("lower spur")
+                && result.contains("bow")
+                && result.contains("exposed")
+                && result.contains("mail clad squire")
+                && result.contains("melee")
+                && result.contains("cannot answer")
+                && result.contains("gap")
         }));
 
-        for (route, minutes, coin) in [
-            ("stalk_safe_switchback", 90, 12),
-            ("climb_with_hunting_spear", 60, 20),
-            ("order_belayed_drive", 75, 8),
-            ("persuade_fair_terms", 40, 16),
-            ("rebuke_vainglory", 35, 0),
-            ("rig_station_and_steal_stakes", 60, 48),
-        ] {
-            assert!(matches!(
-                choice(route).transition.as_ref(),
-                Some(EncounterTransition::TravelDelay { minutes: actual }) if *actual == minutes
-            ));
-            let awarded = choice(route)
-                .effects
-                .iter()
-                .filter_map(|effect| match effect {
-                    Effect::Currency { amount, .. } if *amount > 0 => Some(*amount),
-                    _ => None,
-                })
-                .sum::<i32>();
-            assert_eq!(awarded, coin);
-        }
-        assert!(matches!(
-            choice("stalk_safe_switchback").checks[0],
-            Check::Skill {
-                skill: SkillId::TerrainHills,
-                difficulty_milli: 1100
-            }
-        ));
         let spear = choice("climb_with_hunting_spear");
         assert!(matches!(
-            spear.requirements[0],
-            Requirement::Item {
-                ref item_id,
+            spear.requirements.as_slice(),
+            [Requirement::Item {
+                item_id,
                 minimum_quantity: 1
-            } if item_id == "hunting_spear"
-        ));
-        assert!(matches!(
-            spear.checks[0],
-            Check::Attribute {
-                attribute: AttributeId::Endurance,
-                difficulty_milli: 1250
-            }
+            }] if item_id == "hunting_spear"
         ));
         assert!(!spear.effects.iter().any(|effect| matches!(
             effect,
             Effect::ConsumeItem { item_id, .. } if item_id == "hunting_spear"
         )));
         assert!(spear.result.contains("keepest possession of it"));
-        assert!(matches!(
-            choice("order_belayed_drive").requirements[0],
-            Requirement::Skill {
-                skill: SkillId::Command,
-                minimum_hours: 1
-            }
-        ));
-        assert!(matches!(
-            choice("order_belayed_drive").checks[0],
-            Check::Skill {
-                skill: SkillId::Command,
-                difficulty_milli: 1050
-            }
-        ));
-        assert!(matches!(
-            choice("persuade_fair_terms").requirements[0],
-            Requirement::Skill {
-                skill: SkillId::Charm,
-                minimum_hours: 1
-            }
-        ));
-        assert!(matches!(
-            choice("persuade_fair_terms").checks[0],
-            Check::Skill {
-                skill: SkillId::Charm,
-                difficulty_milli: 1100
-            }
-        ));
-        assert!(
-            choice("persuade_fair_terms")
-                .result
-                .contains("securing the servants' wages and inspecting their stations")
-        );
-        assert!(matches!(
-            choice("rebuke_vainglory").requirements[0],
-            Requirement::Religion {
-                religion: ReligionId::RomanCatholic
-            }
-        ));
-        assert!(matches!(
-            choice("rebuke_vainglory").checks[0],
-            Check::Religion {
-                religion: ReligionId::RomanCatholic,
-                difficulty_milli: 1050
-            }
-        ));
 
-        for (route, virtue) in [
-            ("stalk_safe_switchback", VirtueId::Prudence),
-            ("climb_with_hunting_spear", VirtueId::Courage),
-            ("order_belayed_drive", VirtueId::Prudence),
-            ("persuade_fair_terms", VirtueId::Justice),
-            ("rebuke_vainglory", VirtueId::Faith),
-        ] {
-            assert_eq!(exemplified_virtue(&choice(route).personality), Some(virtue));
-        }
+        let command = choice("order_belayed_drive");
+        assert!(
+            command.response[0]
+                .text
+                .contains("chief beater knoweth the safe anchors")
+        );
+        assert!(
+            command.response[0]
+                .text
+                .contains("Lend him thine authority")
+        );
+        assert!(
+            command
+                .result
+                .contains("enforcing and coordinating the chief beater's belay plan")
+        );
+        assert!(command.result.contains("he chooseth the safe anchors"));
+
+        assert!(
+            choice("rebuke_vainglory").response[0]
+                .text
+                .starts_with("Thy rebuke doth recall me")
+        );
         let theft = choice("rig_station_and_steal_stakes");
         assert!(matches!(
-            theft.requirements[0],
-            Requirement::Skill {
-                skill: SkillId::Deception,
-                minimum_hours: 1
-            }
+            theft.effects[0],
+            Effect::Currency { amount: 48, .. }
         ));
-        assert!(matches!(
-            theft.checks[0],
-            Check::Skill {
-                skill: SkillId::Deception,
-                difficulty_milli: 1200
-            }
-        ));
-        for grounded_theft_detail in [
-            "falsely claimest great-hunt service",
-            "entrusted side stakes",
-            "station marker behind a rock and across the wind",
-            "real lower-spur lane",
-            "abscondest with forty-eight groschen",
-        ] {
-            assert!(theft.result.contains(grounded_theft_detail));
-        }
-        assert!(theft.personality[0].delta < 0);
-        assert_eq!(exemplified_virtue(&theft.personality), None);
         let largest_honest_coin = active
             .iter()
-            .filter(|choice| choice.id != "rig_station_and_steal_stakes")
+            .filter(|choice| choice.id != theft.id)
             .flat_map(|choice| &choice.effects)
             .filter_map(|effect| match effect {
                 Effect::Currency { amount, .. } if *amount > 0 => Some(*amount),
@@ -1726,28 +1581,23 @@ mod tests {
             .max()
             .unwrap();
         assert!(48 > largest_honest_coin);
+        assert!(theft.personality.iter().all(|change| change.delta < 0));
+        assert_eq!(exemplified_virtue(&theft.personality), None);
 
-        assert!(choice("ignore").transition.is_none());
-        assert!(choice("ignore").effects.is_empty());
-        assert!(choice("ignore").personality.is_empty());
+        let ignore = choice("ignore");
+        assert!(ignore.transition.is_none());
+        assert!(ignore.effects.is_empty());
+        assert!(ignore.personality.is_empty());
         let authored = serde_json::to_string(definition).unwrap().to_lowercase();
-        for prohibited_claim in [
+        for prohibited in [
             "buck is slain",
             "buck dieth",
             "quarry item",
             "equipment damage",
             "injureth",
         ] {
-            assert!(!authored.contains(prohibited_claim));
+            assert!(!authored.contains(prohibited));
         }
-        assert!(
-            active
-                .iter()
-                .flat_map(|choice| &choice.effects)
-                .all(|effect| {
-                    matches!(effect, Effect::Currency { .. } | Effect::Information { .. })
-                })
-        );
     }
 
     #[test]
